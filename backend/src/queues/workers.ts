@@ -1,13 +1,11 @@
 import { Worker } from 'bullmq'
 import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
-import { QUEUE_NAMES } from './definitions'
-
-const connection = redis
+// Import QUEUE_NAMES here when activating the first processor below
 
 function createWorker(queueName: string, processor: string) {
   const worker = new Worker(queueName, processor, {
-    connection,
+    connection: redis,
     limiter: { max: 10, duration: 1000 },
   })
 
