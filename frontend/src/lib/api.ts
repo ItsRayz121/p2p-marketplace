@@ -105,8 +105,12 @@ export const api = {
 
 export type HealthCheckResponse = {
   status: 'ok' | 'degraded'
-  timestamp: string
-  services: {
+  // Fields below are only present in development — stripped in production
+  timestamp?: string
+  uptimeSeconds?: number
+  responseMs?: number
+  version?: string
+  services?: {
     db: { status: 'ok' | 'error'; latencyMs: number }
     redis: { status: 'ok' | 'error'; latencyMs: number }
   }

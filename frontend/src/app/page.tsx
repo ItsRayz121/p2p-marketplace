@@ -5,8 +5,8 @@ export const dynamic = 'force-dynamic'
 export default async function HomePage() {
   const health = await checkApiHealth()
 
-  const dbOk = health?.services.db.status === 'ok'
-  const redisOk = health?.services.redis.status === 'ok'
+  const dbOk = health?.services?.db.status === 'ok'
+  const redisOk = health?.services?.redis.status === 'ok'
   const apiOk = health?.status === 'ok'
 
   return (
@@ -27,24 +27,25 @@ export default async function HomePage() {
             <StatusRow
               label="API Server"
               ok={apiOk}
-              detail={health ? `${health.responseMs}ms` : 'Unreachable'}
+              detail={health ? (health.responseMs != null ? `${health.responseMs}ms` : 'OK') : 'Unreachable'}
             />
             <StatusRow
               label="Database"
               ok={dbOk}
-              detail={health?.services.db.latencyMs != null ? `${health.services.db.latencyMs}ms` : '—'}
+              detail={health?.services?.db.latencyMs != null ? `${health.services.db.latencyMs}ms` : '—'}
             />
             <StatusRow
               label="Redis"
               ok={redisOk}
-              detail={health?.services.redis.latencyMs != null ? `${health.services.redis.latencyMs}ms` : '—'}
+              detail={health?.services?.redis.latencyMs != null ? `${health.services.redis.latencyMs}ms` : '—'}
             />
           </div>
 
-          {health && (
+          {health && (health.version ?? health.timestamp) && (
             <p className="text-xs text-text-muted pt-2 border-t border-border">
-              Backend v{health.version} · Uptime {Math.floor(health.uptimeSeconds / 60)}m ·{' '}
-              {new Date(health.timestamp).toLocaleTimeString()}
+              {health.version && <>Backend v{health.version} · </>}
+              {health.uptimeSeconds != null && <>Uptime {Math.floor(health.uptimeSeconds / 60)}m · </>}
+              {health.timestamp && new Date(health.timestamp).toLocaleTimeString()}
             </p>
           )}
 
