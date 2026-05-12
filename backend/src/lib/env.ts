@@ -20,17 +20,13 @@ const envSchema = z.object({
   // Frontend
   FRONTEND_URL: z.string().url().default('http://localhost:3000'),
 
-  // AWS S3
-  AWS_ACCESS_KEY_ID: z.string().optional(),
-  AWS_SECRET_ACCESS_KEY: z.string().optional(),
-  AWS_REGION: z.string().default('ap-south-1'),
-  AWS_S3_BUCKET: z.string().optional(),
+  // Cloudinary (file storage — KYC docs, payment proof screenshots)
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 
-  // Email (SMTP)
-  SMTP_HOST: z.string().default('smtp.gmail.com'),
-  SMTP_PORT: z.coerce.number().default(587),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
+  // Resend (transactional email)
+  RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('PakSwap <noreply@pakswap.pk>'),
 
   // Rate Exchange APIs
