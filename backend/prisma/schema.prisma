@@ -1,0 +1,908 @@
+// PakSwap — Complete Prisma Schema
+// Source: FULL_SPEC.md Section 18 + GAS_FEE_SPEC.md Section 7
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Connection pool: Railway provides 25 max connections; use pgbouncer in prod
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  user
+  merchant
+  kyc_reviewer
+  dispute_agent
+  admin
+  super_admin
+}
+
+enum KycStatus {
+  none
+  pending
+  approved
+  rejected
+}
+
+enum KycLevel {
+  none
+  basic
+  enhanced
+}
+
+enum AdSide {
+  buy
+  sell
+}
+
+enum PriceType {
+  fixed
+  float
+}
+
+enum AdStatus {
+  active
+  paused
+  completed
+}
+
+enum TradeStatus {
+  payment_pending
+  payment_uploaded
+  payment_confirmed
+  crypto_sent
+  crypto_released
+  cancelled
+  disputed
+}
+
+enum InstantBuyStatus {
+  payment_pending
+  payment_uploaded
+  admin_review
+  completed
+  rejected
+  expired
+}
+
+enum VerificationStatus {
+  pending_layer1
+  layer1_passed
+  layer1_failed
+  layer2_approved
+  layer2_rejected
+}
+
+enum PaymentMode {
+  pkr
+  crypto
+}
+
+enum DisputeStatus {
+  open
+  under_review
+  escalated
+  awaiting_evidence
+  resolved
+}
+
+enum DisputeWinner {
+  buyer
+  seller
+}
+
+enum DisputeResolutionType {
+  buyer_wins
+  seller_wins
+  split
+}
+
+enum PaymentMethodType {
+  jazzcash
+  easypaisa
+  bank_transfer
+}
+
+enum TransactionType {
+  deposit
+  withdrawal
+  trade
+  fee
+  referral_reward
+  gas_fee_payment
+}
+
+enum ReferralRewardStatus {
+  pending
+  paid
+}
+
+enum MerchantStatus {
+  pending
+  pending_collateral
+  approved
+  rejected
+  suspended
+}
+
+enum MerchantRank {
+  bronze
+  silver
+  gold
+  platinum
+}
+
+enum CollateralStatus {
+  locked
+  unlocked
+  seized
+}
+
+enum WithdrawalStatus {
+  pending
+  first_approved
+  approved
+  sent
+  completed
+  rejected
+  cancelled
+}
+
+enum FraudSeverity {
+  low
+  medium
+  high
+}
+
+enum FraudFlagStatus {
+  open
+  reviewed
+}
+
+enum TraderBadge {
+  new
+  active
+  trusted
+  top
+  elite
+}
+
+enum GasChain {
+  TRON
+  BSC
+  ETH
+  SOL
+  MATIC
+  ARB
+  BASE
+  TON
+}
+
+enum GasFeeTier {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+enum GasFeeOrderStatus {
+  created
+  payment_pending
+  payment_detected
+  sending
+  delivered
+  expired
+  failed
+  refunded
+}
+
+enum RateAlertDirection {
+  above
+  below
+}
+
+enum RateAlertStatus {
+  active
+  triggered
+  cancelled
+}
+
+enum KycSubmissionTier {
+  basic
+  enhanced
+}
+
+enum BusinessProofType {
+  ntn
+  bank_statement
+  trade_license
+}
+
+enum SessionType {
+  refresh
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORE MODELS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  fullName      String
+  username      String    @unique
+  passwordHash  String
+
+  role          UserRole  @default(user)
+  intendedRole  String    @default("user")
+
+  kycStatus     KycStatus @default(none)
+  kycLevel      KycLevel  @default(none)
+
+  referralCode  String    @unique @default(cuid())
+  referredById  String?
+  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals     User[]    @relation("Referrals")
+
+  twoFaEnabled  Boolean   @default(false)
+  twoFaSecret   String?
+
+  isEmailVerified        Boolean @default(false)
+  isSuspended            Boolean @default(false)
+  isBanned               Boolean @default(false)
+  suspendReason          String?
+
+  dailyBuyUsed           Decimal @default(0) @db.Decimal(14, 2)
+  dailyBuyReset          DateTime?
+  monthlyBuyUsed         Decimal @default(0) @db.Decimal(14, 2)
+  monthlyBuyReset        DateTime?
+  dailyBuyLimit          Decimal @default(50000) @db.Decimal(14, 2)
+  dailySellLimit         Decimal @default(50000) @db.Decimal(14, 2)
+
+  completedSellTrades    Int     @default(0)
+  firstTradeBonusPaid    Boolean @default(false)
+  marketingEmailsEnabled Boolean @default(true)
+
+  socialLinks            Json    @default("{}")
+  socialLinksPublic      Boolean @default(false)
+
+  termsAcceptedAt        DateTime?
+  termsVersion           String?
+
+  lastSeenAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  // Relations — onDelete rules are explicit (no implicit RESTRICT surprises)
+  wallets                Wallet[]
+  trades                 Trade[]             @relation("TradeBuyer")
+  sellTrades             Trade[]             @relation("TradeSeller")
+  ads                    Ad[]
+  instantBuyOrders       InstantBuyOrder[]
+  kycSubmissions         KycSubmission[]
+  paymentMethods         PaymentMethod[]
+  savedAddresses         SavedAddress[]
+  withdrawals            Withdrawal[]
+  collateralLocks        CollateralLock[]
+  referralRewardsGiven   ReferralReward[]    @relation("ReferralRewardsGiven")
+  referralRewardsEarned  ReferralReward[]    @relation("ReferralRewardsEarned")
+  notifications          Notification[]
+  pushSubscriptions      PushSubscription[]
+  sessions               Session[]
+  tradeStats             TradeStats?
+  merchant               Merchant?
+  fraudFlags             FraudFlag[]
+  rateAlerts             RateAlert[]
+  adminNotes             AdminNote[]         @relation("AdminNoteTarget")
+  auditLogs              AuditLog[]
+  gasFeeOrders           GasFeeOrder[]
+
+  @@index([email])
+  @@index([username])
+  @@index([referralCode])
+}
+
+model Wallet {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  coin           String
+  network        String
+  balance        Decimal  @default(0) @db.Decimal(18, 8)
+  lockedBalance  Decimal  @default(0) @db.Decimal(18, 8)
+  depositAddress String?
+
+  transactions   Transaction[]
+
+  @@unique([userId, coin, network], name: "userId_coin_network")
+  @@index([userId])
+}
+
+model Transaction {
+  id        String          @id @default(cuid())
+  walletId  String
+  wallet    Wallet          @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  type      TransactionType
+  amount    Decimal         @db.Decimal(18, 8)
+  fee       Decimal         @default(0) @db.Decimal(18, 8)
+  txHash    String?
+  status    String          @default("completed")
+  metadata  Json            @default("{}")
+  createdAt DateTime        @default(now())
+
+  @@index([walletId])
+  @@index([txHash])
+}
+
+// Withdrawal — two-person approval flow (FULL_SPEC.md Section 27.28)
+model Withdrawal {
+  id               String           @id @default(cuid())
+  orderRef         String           @unique
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  coin             String
+  network          String
+  amount           Decimal          @db.Decimal(18, 8)
+  fee              Decimal          @default(0) @db.Decimal(18, 8)
+  toAddress        String
+  status           WithdrawalStatus @default(pending)
+  txHash           String?
+  firstApprovedBy  String?
+  secondApprovedBy String?
+  rejectedBy       String?
+  rejectionReason  String?          @db.VarChar(500)
+  adminNote        String?          @db.VarChar(500)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  completedAt      DateTime?
+
+  @@index([userId, status])
+  @@index([status])
+  @@index([orderRef])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2P TRADING
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Ad {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  side            AdSide
+  coin            String
+  network         String
+  priceType       PriceType @default(fixed)
+  price           Decimal   @db.Decimal(14, 2)
+  floatOffset     Decimal   @default(0) @db.Decimal(6, 4)
+  totalAmount     Decimal   @db.Decimal(18, 8)
+  availableAmount Decimal   @db.Decimal(18, 8)
+  lockedAmount    Decimal   @default(0) @db.Decimal(18, 8)
+  minOrder        Decimal   @db.Decimal(14, 2)
+  maxOrder        Decimal   @db.Decimal(14, 2)
+  paymentMethods  String[]
+  tradeWindow     Int       @default(30)
+  terms           String    @default("") @db.VarChar(2000)
+  status          AdStatus  @default(active)
+  lastPriceUpdate DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  trades          Trade[]
+
+  @@index([side, coin, status])
+  @@index([userId])
+}
+
+model Trade {
+  id                 String      @id @default(cuid())
+  orderRef           String      @unique
+  adId               String
+  ad                 Ad          @relation(fields: [adId], references: [id], onDelete: Restrict)
+  buyerId            String
+  buyer              User        @relation("TradeBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  sellerId           String
+  seller             User        @relation("TradeSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  coin               String
+  network            String
+  amount             Decimal     @db.Decimal(18, 8)
+  price              Decimal     @db.Decimal(14, 2)
+  fiatAmount         Decimal     @db.Decimal(14, 2)
+  paymentMethod      String
+  status             TradeStatus @default(payment_pending)
+  paymentProofUrl    String?
+  buyerWalletAddress String
+  sellerTxHash       String?
+  escrowReleased     Boolean     @default(false)
+  cancelledBy        String?
+  cancelReason       String?
+  cancelledAt        DateTime?
+  expiresAt          DateTime
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  messages           TradeMessage[]
+  dispute            Dispute?
+  ratings            TradeRating[]
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@index([orderRef])
+}
+
+model TradeMessage {
+  id            String   @id @default(cuid())
+  tradeId       String
+  trade         Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  senderId      String
+  message       String   @db.VarChar(500)
+  attachmentUrl String?
+  createdAt     DateTime @default(now())
+
+  @@index([tradeId])
+}
+
+model Dispute {
+  id             String                @id @default(cuid())
+  tradeId        String                @unique
+  trade          Trade                 @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  openedById     String
+  reason         String
+  description    String                @db.VarChar(5000)
+  status         DisputeStatus         @default(open)
+  resolution     String?               @db.VarChar(2000)
+  winner         DisputeWinner?
+  resolutionType DisputeResolutionType?
+  escalatedAt    DateTime?
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  messages       DisputeMessage[]
+
+  @@index([status])
+}
+
+model DisputeMessage {
+  id          String   @id @default(cuid())
+  disputeId   String
+  dispute     Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  senderId    String
+  message     String   @db.VarChar(2000)
+  evidenceUrl String?
+  createdAt   DateTime @default(now())
+
+  @@index([disputeId])
+}
+
+model TradeRating {
+  id            String   @id @default(cuid())
+  tradeId       String
+  trade         Trade    @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  ratedByUserId String
+  ratedUserId   String
+  rating        Int
+  comment       String?  @db.VarChar(500)
+  tags          String[]
+  createdAt     DateTime @default(now())
+
+  @@unique([tradeId, ratedByUserId])
+  @@index([ratedUserId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INSTANT BUY (OTC)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model InstantBuyOrder {
+  id                   String             @id @default(cuid())
+  orderRef             String             @unique
+  userId               String
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  coin                 String
+  network              String
+  paymentMode          PaymentMode
+  fiatAmount           Decimal?           @db.Decimal(14, 2)
+  coinAmount           Decimal            @db.Decimal(18, 8)
+  rate                 Decimal            @db.Decimal(14, 2)
+  fee                  Decimal            @db.Decimal(14, 4)
+  status               InstantBuyStatus   @default(payment_pending)
+  verificationStatus   VerificationStatus @default(pending_layer1)
+  paymentProofUrl      String?
+  paymentProofHash     String?
+  incomingTxHash       String?
+  toAddress            String
+  quoteExpiresAt       DateTime
+  rejectionReason      String?            @db.VarChar(500)
+  ocrConfidence        Int?
+  ocrExtractedAmount   Decimal?           @db.Decimal(14, 2)
+  resubmitCount        Int                @default(0)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([userId, status])
+  @@index([orderRef])
+  @@index([paymentProofHash])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KYC
+// ─────────────────────────────────────────────────────────────────────────────
+
+model KycSubmission {
+  id              String            @id @default(cuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status          KycStatus         @default(pending)
+  tier            KycSubmissionTier @default(basic)
+  frontUrl        String
+  backUrl         String
+  selfieUrl       String
+  cnicNumberHash  String
+  socialLinks     Json              @default("[]")
+  rejectionReason String?           @db.VarChar(500)
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  createdAt       DateTime          @default(now())
+
+  @@index([userId])
+  @@index([cnicNumberHash])
+}
+
+model MerchantKycSubmission {
+  id                  String            @id @default(cuid())
+  userId              String
+  businessName        String
+  businessDescription String            @db.VarChar(1000)
+  contactPhone        String
+  businessProofType   BusinessProofType
+  cnicFrontUrl        String
+  cnicBackUrl         String
+  selfieUrl           String
+  businessProofUrl    String
+  socialLinks         Json              @default("[]")
+  status              KycStatus         @default(pending)
+  rejectionReason     String?           @db.VarChar(500)
+  reviewedAt          DateTime?
+  reviewedBy          String?
+  createdAt           DateTime          @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYMENTS & WALLET
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PaymentMethod {
+  id            String            @id @default(cuid())
+  userId        String
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          PaymentMethodType
+  displayName   String
+  accountName   String
+  mobileNumber  String?
+  bankName      String?
+  ibanNumber    String?
+  accountNumber String?
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+
+  @@index([userId])
+}
+
+model SavedAddress {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coin      String
+  network   String
+  address   String
+  label     String
+
+  @@unique([userId, coin, network, address])
+  @@index([userId])
+}
+
+model CollateralLock {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  coin        String           @default("USDT")
+  amount      Decimal          @db.Decimal(18, 8)
+  status      CollateralStatus @default(locked)
+  lockedAt    DateTime         @default(now())
+  unlockedAt  DateTime?
+  seizedAt    DateTime?
+  seizeReason String?
+
+  @@index([userId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MERCHANT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Merchant {
+  id                  String         @id @default(cuid())
+  userId              String         @unique
+  user                User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  businessName        String
+  status              MerchantStatus @default(pending)
+  spreadBps           Int            @default(0)
+  approvedAt          DateTime?
+  rank                MerchantRank   @default(bronze)
+  rankUpdatedAt       DateTime?
+  disputeRate         Decimal        @default(0) @db.Decimal(6, 4)
+  socialLinks         Json           @default("{}")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  inventory           MerchantInventory[]
+}
+
+model MerchantInventory {
+  id              String   @id @default(cuid())
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  coin            String
+  network         String
+  availableAmount Decimal  @db.Decimal(18, 8)
+  pricePerUnit    Decimal  @db.Decimal(14, 2)
+  updatedAt       DateTime @updatedAt
+
+  @@index([merchantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REFERRAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ReferralReward {
+  id           String               @id @default(cuid())
+  referrerId   String
+  referrer     User                 @relation("ReferralRewardsGiven", fields: [referrerId], references: [id], onDelete: Restrict)
+  referredId   String
+  referred     User                 @relation("ReferralRewardsEarned", fields: [referredId], references: [id], onDelete: Restrict)
+  status       ReferralRewardStatus @default(pending)
+  rewardAmount Decimal              @db.Decimal(14, 2)
+  paidAt       DateTime?
+  createdAt    DateTime             @default(now())
+
+  @@index([referrerId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS & COMMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String
+  metadata  Json     @default("{}")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String
+  keys      Json
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, endpoint])
+  @@index([userId])
+}
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  template  String
+  toEmail   String
+  status    String   @default("sent")
+  sentAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model OtpCode {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, type])
+}
+
+model Session {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      SessionType @default(refresh)
+  token     String      @unique
+  userAgent String?
+  ip        String?
+  createdAt DateTime    @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLATFORM ADMIN
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PlatformConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([action])
+}
+
+model AdminNote {
+  id             String   @id @default(cuid())
+  targetUserId   String
+  targetUser     User     @relation("AdminNoteTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  authorAdminId  String
+  note           String   @db.VarChar(2000)
+  isInternal     Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  @@index([targetUserId])
+}
+
+model FraudFlag {
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reason       String
+  severity     FraudSeverity   @default(low)
+  status       FraudFlagStatus @default(open)
+  reviewedAt   DateTime?
+  actionTaken  String?
+  createdAt    DateTime        @default(now())
+
+  @@index([userId, status])
+  @@index([severity, status])
+}
+
+// AML: sanctioned entities list — checked on KYC and withdrawals
+model SanctionedEntity {
+  id          String   @id @default(cuid())
+  nameHash    String   @unique
+  listSource  String
+  addedAt     DateTime @default(now())
+  notes       String?
+
+  @@index([nameHash])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRUST & STATS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TradeStats {
+  id               String      @id @default(cuid())
+  userId           String      @unique
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalTrades      Int         @default(0)
+  completedTrades  Int         @default(0)
+  cancelledTrades  Int         @default(0)
+  completionRate   Decimal     @default(0) @db.Decimal(5, 4)
+  avgRating        Decimal     @default(0) @db.Decimal(3, 2)
+  totalReviews     Int         @default(0)
+  totalVolumePKR   Decimal     @default(0) @db.Decimal(18, 2)
+  trustScore       Int         @default(0)
+  badge            TraderBadge @default(new)
+  badgeLabel       String      @default("New Trader")
+  lastUpdated      DateTime    @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RATE ALERTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model RateAlert {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coin        String
+  network     String
+  direction   RateAlertDirection
+  targetRate  Decimal            @db.Decimal(14, 2)
+  status      RateAlertStatus    @default(active)
+  triggeredAt DateTime?
+  createdAt   DateTime           @default(now())
+
+  @@index([userId, status])
+  @@index([coin, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAS FEE SYSTEM (GAS_FEE_SPEC.md Section 7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GasFeeOrder {
+  id                  String            @id @default(cuid())
+  orderRef            String            @unique
+  userId              String?
+  user                User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ipAddress           String?
+
+  chain               GasChain
+  tier                GasFeeTier
+  gasAmountNative     Decimal           @db.Decimal(18, 8)
+  gasAmountUSD        Decimal           @db.Decimal(10, 4)
+  priceAtOrder        Decimal           @db.Decimal(18, 8)
+
+  paymentCoin         String            @default("USDT")
+  paymentNetwork      String
+  paymentAmount       Decimal           @db.Decimal(10, 4)
+  paymentTxHash       String?
+
+  toAddress           String
+  fromHotWallet       String?
+  deliveryTxHash      String?
+  deliveryConfirmed   Boolean           @default(false)
+
+  status              GasFeeOrderStatus @default(created)
+  failureReason       String?
+  retryCount          Int               @default(0)
+  expiresAt           DateTime
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  deliveredAt         DateTime?
+  refundedAt          DateTime?
+
+  @@index([status, expiresAt])
+  @@index([userId])
+  @@index([orderRef])
+  @@index([paymentTxHash])
+}
+
+model GasHotWallet {
+  id        String   @id @default(cuid())
+  chain     GasChain @unique
+  address   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([chain, isActive])
+}
