@@ -63,7 +63,7 @@ const config: Config = {
         xl: '1280px',
       },
       minHeight: {
-        screen: ['100vh', '100dvh'],
+        screen: '100dvh',
       },
       borderRadius: {
         lg: 'var(--radius)',
