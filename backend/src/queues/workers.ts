@@ -3,7 +3,7 @@ import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 // Import QUEUE_NAMES here when activating the first processor below
 
-function createWorker(queueName: string, processor: string) {
+export function createWorker(queueName: string, processor: string) {
   const worker = new Worker(queueName, processor, {
     connection: redis,
     limiter: { max: 10, duration: 1000 },
