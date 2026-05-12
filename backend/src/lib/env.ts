@@ -91,8 +91,9 @@ if (!parsed.success) {
   process.exit(1)
 }
 
-if (parsed.data.NODE_ENV === 'production') {
-  const missing = productionRequired.filter((key) => !parsed.data[key])
+if (parsed.data.NODE_ENV === 'production' && productionRequired.length > 0) {
+  const data = parsed.data as Record<string, unknown>
+  const missing = productionRequired.filter((key) => !data[key])
   if (missing.length > 0) {
     console.error(`❌ Missing required production environment variables: ${missing.join(', ')}`)
     process.exit(1)
