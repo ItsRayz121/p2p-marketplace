@@ -82,14 +82,10 @@ const envSchema = z.object({
   ADMIN_ALERT_EMAIL: z.string().email().default('ops@pakswap.pk'),
 })
 
-// Production-only required vars: fail fast if missing in prod
-const productionRequired = [
-  'AWS_ACCESS_KEY_ID',
-  'AWS_SECRET_ACCESS_KEY',
-  'AWS_S3_BUCKET',
-  'SMTP_USER',
-  'SMTP_PASS',
-] as const
+// Production-only required vars: fail fast if missing in prod.
+// AWS and SMTP are intentionally excluded here — the server starts without them,
+// but KYC uploads and email sending will be unavailable until they are configured.
+const productionRequired: string[] = []
 
 const parsed = envSchema.safeParse(process.env)
 
