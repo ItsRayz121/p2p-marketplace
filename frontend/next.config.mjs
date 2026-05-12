@@ -1,6 +1,5 @@
-import type { NextConfig } from 'next'
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   // API proxy — in development, proxies /api/* to backend to avoid CORS on localhost.
   // In production, NEXT_PUBLIC_API_URL is the full Railway backend URL; frontend calls it directly.
   async rewrites() {
@@ -36,9 +35,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-
-  // Standalone output for Docker if needed
-  // output: 'standalone',
 }
 
 export default nextConfig
