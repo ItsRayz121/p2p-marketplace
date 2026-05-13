@@ -75,6 +75,16 @@ export async function buildApp() {
     }, 'Incoming request')
   })
 
+  // Catch-all hook — fires for every error regardless of which error handler runs.
+  // Use console.error so it always appears in Railway stdout even if pino is broken.
+  app.addHook('onError', async (_req, _reply, error) => {
+    console.error('[onError hook]', {
+      name: error?.constructor?.name,
+      message: (error as Error)?.message,
+      stack: (error as Error)?.stack?.split('\n').slice(0, 6).join('\n'),
+    })
+  })
+
   // Global error handler
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof AppError) {
