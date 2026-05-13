@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { timingSafeEqual } from 'node:crypto'
+import { keccak256, toBytes } from 'viem'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
@@ -10,38 +11,46 @@ import {
   processDepositEvent,
 } from '../services/depositWatcher.service'
 
+/**
+ * Moralis Streams signs the webhook body as:
+ *   signature = keccak256( JSON.stringify(body) + secret )
+ *
+ * Both sides serialise via JSON.stringify(parsedBody), so we re-serialise the
+ * parsed body rather than relying on a raw-body plugin (which isn't registered
+ * here). The comparison is timing-safe.
+ *
+ * Returns true if the signature matches, false otherwise.
+ */
+function verifyMoralisSignature(body: unknown, signatureHeader: string | undefined, secret: string | undefined): boolean {
+  if (!signatureHeader || !secret) return false
+  const expected = keccak256(toBytes(JSON.stringify(body) + secret))
+  try {
+    return timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected))
+  } catch {
+    return false
+  }
+}
+
 export async function webhookRoutes(app: FastifyInstance) {
-  // POST /api/webhooks/deposit
-  // CSRF exempt — raw body needed for HMAC verification
-  app.post('/webhooks/deposit', {
-    config: { rawBody: true },
-  }, async (req, reply) => {
-    // 1. Verify HMAC signature
-    const signature = req.headers['x-signature'] as string | undefined
-    if (!signature || !env.MORALIS_WEBHOOK_SECRET) {
-      return reply.code(401).send({ error: 'Missing signature' })
+  // POST /api/webhooks/deposit — CSRF exempt (see lib/csrf.ts CSRF_EXEMPT).
+  //
+  // Moralis Streams verifies the endpoint by sending a signed POST with empty
+  // arrays (no txs / no erc20Transfers). We must:
+  //   1) verify the signature using Moralis's scheme (keccak256(body + secret))
+  //   2) return 200 OK with a JSON body even when there's nothing to process
+  // Anything else (401, 500, HTML body, redirect) makes the dashboard report
+  // "Could not send test webhook".
+  app.post('/webhooks/deposit', async (req, reply) => {
+    const signatureHeader = req.headers['x-signature'] as string | undefined
+
+    if (!env.MORALIS_WEBHOOK_SECRET) {
+      logger.error('MORALIS_WEBHOOK_SECRET not configured — refusing webhook')
+      return reply.code(503).send({ success: false, error: 'webhook_not_configured' })
     }
 
-    const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody
-    const bodyStr = rawBody ? rawBody.toString('utf8') : JSON.stringify(req.body)
-
-    const expected = createHmac('sha256', env.MORALIS_WEBHOOK_SECRET)
-      .update(bodyStr)
-      .digest('hex')
-
-    let signaturesMatch = false
-    try {
-      signaturesMatch = timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expected),
-      )
-    } catch {
-      signaturesMatch = false
-    }
-
-    if (!signaturesMatch) {
-      logger.warn({ signature }, 'Webhook signature mismatch')
-      return reply.code(401).send({ error: 'Invalid signature' })
+    if (!verifyMoralisSignature(req.body, signatureHeader, env.MORALIS_WEBHOOK_SECRET)) {
+      logger.warn({ signature: signatureHeader }, 'Webhook signature mismatch')
+      return reply.code(401).send({ success: false, error: 'invalid_signature' })
     }
 
     // The webhook is shared between two payload shapes:
@@ -67,8 +76,10 @@ export async function webhookRoutes(app: FastifyInstance) {
       confirmations?: number
     }
 
-    // Process Moralis-style payloads through the deposit watcher.
-    if (payload.chainId && (Array.isArray(payload.txs) || Array.isArray(payload.erc20Transfers))) {
+    // Process Moralis-style payloads through the deposit watcher. Presence of
+    // `chainId` is the discriminator — Moralis verification tests include it
+    // even when txs/erc20Transfers arrays are empty.
+    if (payload.chainId) {
       const events = normalizeMoralisEvent(payload)
       const results = []
       for (const event of events) {
