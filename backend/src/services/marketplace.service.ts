@@ -389,7 +389,8 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     db.ad.count({ where }),
   ])
 
-  const items: AdWithSeller[] = rawItems.map((ad: any) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items: AdWithSeller[] = (rawItems as any[]).map((ad) => {
     const stats = ad.user.tradeStats
     return {
       id: ad.id,

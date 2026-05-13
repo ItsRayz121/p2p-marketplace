@@ -96,6 +96,7 @@ export async function tradeRoutes(app: FastifyInstance) {
     app.get(path, { preHandler: [authenticate] }, async (req, reply) => {
       const userId = req.user!.id
       const query = req.query as Record<string, string>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const params: any = {
         page: query.page ? parseInt(query.page, 10) : 1,
         limit: query.limit ? parseInt(query.limit, 10) : 20,
@@ -122,6 +123,7 @@ export async function tradeRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
 
     // Get multipart file
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const file = await (req as any).file()
     if (!file) throw new AppError('VALIDATION_ERROR', 'No file uploaded', 400)
 
@@ -153,7 +155,7 @@ export async function tradeRoutes(app: FastifyInstance) {
           resource_type: 'image',
         },
         (error, result) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'))
+          if (error || !result) return reject(error instanceof Error ? error : new Error('Upload failed'))
           resolve(result as { secure_url: string })
         },
       )

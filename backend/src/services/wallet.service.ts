@@ -74,7 +74,7 @@ export async function requestWithdrawal(
   const fee = parseFloat(feeConfig?.value ?? '0')
   const totalDeduct = data.amount + fee
 
-  const result = await db.$transaction(async (tx: any) => {
+  const result = await db.$transaction(async (tx) => {
     // SELECT FOR UPDATE on wallet
     const wallets = await tx.$queryRaw<
       Array<{ id: string; balance: string; lockedBalance: string }>
@@ -135,7 +135,7 @@ export async function getUserWithdrawals(userId: string, params: { page: number;
 // ─── Collateral ───────────────────────────────────────────────────────────────
 
 export async function lockCollateral(userId: string, data: { coin: string; amount: number }) {
-  return db.$transaction(async (tx: any) => {
+  return db.$transaction(async (tx) => {
     const wallets = await tx.$queryRaw<
       Array<{ id: string; balance: string; lockedBalance: string }>
     >`
@@ -184,7 +184,7 @@ export async function unlockCollateral(userId: string, lockId: string) {
     throw new AppError('ACTIVE_TRADES', 'Cannot unlock collateral while you have active trades', 400)
   }
 
-  return db.$transaction(async (tx: any) => {
+  return db.$transaction(async (tx) => {
     const lock = await tx.collateralLock.findFirst({
       where: { id: lockId, userId, status: 'locked' },
     })
@@ -243,6 +243,7 @@ export async function addPaymentMethod(
   return db.paymentMethod.create({
     data: {
       userId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: data.type as any,
       displayName: data.displayName,
       accountName: data.accountName,

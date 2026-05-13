@@ -55,7 +55,7 @@ function verifyJwt<T>(token: string, secret: string): T | null {
   try {
     const payload = JSON.parse(base64UrlDecode(body!).toString()) as T & { exp: number }
     if (payload.exp < Math.floor(Date.now() / 1000)) return null
-    return payload as T
+    return payload
   } catch {
     return null
   }

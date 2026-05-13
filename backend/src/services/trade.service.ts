@@ -538,7 +538,7 @@ export async function rateTrade(
     select: { rating: true },
   })
   const totalRatings = allRatings.length
-  const avgRating = allRatings.reduce((sum: number, r: any) => sum + r.rating, 0) / totalRatings
+  const avgRating = allRatings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
 
   await db.tradeStats.upsert({
     where: { userId: rateeId },

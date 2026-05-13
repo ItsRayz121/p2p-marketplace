@@ -48,7 +48,7 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   })
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const TronWeb = require('tronweb')
     const tronWeb = new TronWeb({
       fullHost: env.TRON_FULL_NODE_URL,

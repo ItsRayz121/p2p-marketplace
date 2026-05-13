@@ -68,7 +68,8 @@ export async function walletRoutes(app: FastifyInstance) {
   // GET /api/wallet/balances — frontend-friendly alias returning WalletBalance shape
   app.get('/wallet/balances', { preHandler: [authenticate] }, async (req, reply) => {
     const wallets = await getUserWallets(req.user!.id)
-    const balances = wallets.map((w: any) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const balances = (wallets as any[]).map((w) => ({
       coin: w.coin,
       network: w.network,
       available: (parseFloat(w.balance) - parseFloat(w.lockedBalance)).toFixed(8),
@@ -82,7 +83,8 @@ export async function walletRoutes(app: FastifyInstance) {
   app.get('/wallet/balances/:coin', { preHandler: [authenticate] }, async (req, reply) => {
     const { coin } = req.params as { coin: string }
     const wallets = await getUserWallets(req.user!.id)
-    const w = wallets.find((x: any) => x.coin.toLowerCase() === coin.toLowerCase())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = (wallets as any[]).find((x) => (x.coin as string).toLowerCase() === coin.toLowerCase())
     if (!w) throw new AppError('NOT_FOUND', 'Wallet not found for this coin', 404)
     return reply.send({
       success: true,
@@ -102,6 +104,7 @@ export async function walletRoutes(app: FastifyInstance) {
     const query = req.query as Record<string, string>
     const page = Math.max(parseInt(query.page ?? '1', 10), 1)
     const limit = Math.min(parseInt(query.limit ?? '20', 10), 50)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = { userId }
     if (query.coin) where.coin = query.coin.toUpperCase()
     if (query.type) where.type = query.type
@@ -214,6 +217,7 @@ export async function walletRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const method = await addPaymentMethod(userId, parsed.data as any)
     return reply.code(201).send({ success: true, data: method })
   })

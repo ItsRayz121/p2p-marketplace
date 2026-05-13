@@ -61,6 +61,7 @@ export async function submitKyc(
   const submission = await db.kycSubmission.create({
     data: {
       userId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tier: data.tier as any,
       status: 'pending',
       frontUrl: data.frontUrl,

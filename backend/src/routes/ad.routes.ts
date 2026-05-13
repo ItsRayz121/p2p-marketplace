@@ -48,6 +48,7 @@ export async function adRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ad = await createAd(userId, parsed.data as any)
     return reply.code(201).send({ success: true, data: ad })
   })
@@ -74,6 +75,7 @@ export async function adRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ad = await updateAd(userId, id, parsed.data as any)
     return reply.send({ success: true, data: ad })
   })

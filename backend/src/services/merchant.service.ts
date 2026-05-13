@@ -98,7 +98,7 @@ export async function activateMerchant(userId: string) {
     throw new AppError('INSUFFICIENT_BALANCE', 'You need at least 100 USDT to activate merchant account', 400)
   }
 
-  const result = await db.$transaction(async (tx: any) => {
+  const result = await db.$transaction(async (tx) => {
     // Lock 100 USDT as collateral
     await tx.wallet.update({
       where: { id: wallet.id },

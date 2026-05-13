@@ -29,6 +29,7 @@ async function createAuditLog(
   details: Record<string, unknown>,
 ) {
   await db.auditLog.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: { actorId: adminId, action, targetType, targetId, metadata: details as any },
   })
 }

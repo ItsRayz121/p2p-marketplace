@@ -73,7 +73,7 @@ export function startWorkers() {
 
 // Run as standalone process: npm run workers
 if (require.main === module) {
-  import('../lib/env')
+  void import('../lib/env')
   startWorkers()
   logger.info('Worker process started')
 }

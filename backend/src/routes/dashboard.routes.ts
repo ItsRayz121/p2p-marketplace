@@ -40,6 +40,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         // InstantBuyOrder — try/catch in case model isn't migrated yet
         (async () => {
           try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return await (db as any).instantBuyOrder.findMany({
               where: { userId },
               take: 3,
