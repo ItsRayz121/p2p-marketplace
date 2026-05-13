@@ -1,7 +1,10 @@
 import { z } from 'zod'
 
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  NODE_ENV: z.preprocess(
+    (val) => (val === '' || val === undefined || val === null ? 'production' : val),
+    z.enum(['development', 'test', 'production'])
+  ),
   PORT: z.coerce.number().default(3001),
   HOST: z.string().default('0.0.0.0'),
 

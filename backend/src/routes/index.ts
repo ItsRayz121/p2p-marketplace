@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { healthRoutes } from './health.routes'
 import { authRoutes } from './auth.routes'
+import { marketplaceRoutes } from './marketplace.routes'
 import { adRoutes } from './ad.routes'
 import { tradeRoutes } from './trade.routes'
 import { walletRoutes } from './wallet.routes'
@@ -21,22 +22,23 @@ import { adminRoutes } from './admin.routes'
 
 export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes)
-  await app.register(authRoutes, { prefix: '/api/auth' })
-  await app.register(adRoutes, { prefix: '/api' })
-  await app.register(tradeRoutes, { prefix: '/api' })
-  await app.register(walletRoutes, { prefix: '/api' })
-  await app.register(kycRoutes, { prefix: '/api' })
-  await app.register(userRoutes, { prefix: '/api' })
-  await app.register(dashboardRoutes, { prefix: '/api' })
-  await app.register(merchantRoutes, { prefix: '/api' })
-  await app.register(instantBuyRoutes, { prefix: '/api' })
-  await app.register(disputeRoutes, { prefix: '/api' })
-  await app.register(notificationRoutes, { prefix: '/api' })
-  await app.register(referralRoutes, { prefix: '/api' })
-  await app.register(leaderboardRoutes, { prefix: '/api' })
-  await app.register(uploadRoutes, { prefix: '/api' })
-  await app.register(webhookRoutes, { prefix: '/api' })
-  await app.register(rateAlertRoutes, { prefix: '/api' })
-  await app.register(gasFeeRoutes, { prefix: '/api' })
-  await app.register(adminRoutes, { prefix: '/api' })
+  await app.register(authRoutes, { prefix: '/api/v1/auth' })
+  await app.register(marketplaceRoutes, { prefix: '/api/v1/marketplace' })
+  await app.register(adRoutes, { prefix: '/api/v1' })
+  await app.register(tradeRoutes, { prefix: '/api/v1' })
+  await app.register(walletRoutes, { prefix: '/api/v1' })
+  await app.register(kycRoutes, { prefix: '/api/v1' })
+  await app.register(userRoutes, { prefix: '/api/v1' })
+  await app.register(dashboardRoutes, { prefix: '/api/v1' })
+  await app.register(merchantRoutes, { prefix: '/api/v1' })
+  await app.register(instantBuyRoutes, { prefix: '/api/v1' })
+  await app.register(disputeRoutes, { prefix: '/api/v1' })
+  await app.register(notificationRoutes, { prefix: '/api/v1' })
+  await app.register(referralRoutes, { prefix: '/api/v1' })
+  await app.register(leaderboardRoutes, { prefix: '/api/v1' })
+  await app.register(uploadRoutes, { prefix: '/api/v1' })
+  await app.register(webhookRoutes, { prefix: '/api/v1' })
+  await app.register(rateAlertRoutes, { prefix: '/api/v1' })
+  await app.register(gasFeeRoutes, { prefix: '/api/v1' })
+  await app.register(adminRoutes, { prefix: '/api/v1' })
 }

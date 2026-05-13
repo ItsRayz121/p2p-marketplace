@@ -8,7 +8,7 @@ import { logger } from './lib/logger'
 import { redis } from './lib/redis'
 import { registerRoutes } from './routes/index'
 import { AppError } from './lib/errors'
-import { csrfHook, generateCsrfToken } from './lib/csrf'
+import { csrfHook } from './lib/csrf'
 
 export async function buildApp() {
   const app = Fastify({
@@ -71,11 +71,6 @@ export async function buildApp() {
       url: req.url,
       ip: req.ip,
     }, 'Incoming request')
-  })
-
-  // CSRF token endpoint — fetch before any mutating request
-  app.get('/api/v1/auth/csrf', async (_req, reply) => {
-    return reply.send({ token: generateCsrfToken() })
   })
 
   // Global error handler
