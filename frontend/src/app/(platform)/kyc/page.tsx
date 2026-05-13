@@ -78,24 +78,45 @@ function FileUploadField({
 }) {
   const { upload, uploading, error } = useFileUpload(uploadType)
   const [preview, setPreview] = useState<string | null>(null)
+  const [uploaded, setUploaded] = useState(false)
+  const [lastFile, setLastFile] = useState<File | null>(null)
+
+  const doUpload = async (file: File) => {
+    setUploaded(false)
+    try {
+      const url = await upload(file)
+      onUploaded(url)
+      setUploaded(true)
+    } catch { /* error shown below */ }
+  }
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setPreview(URL.createObjectURL(file))
-    try {
-      const url = await upload(file)
-      onUploaded(url)
-    } catch { /* error shown below */ }
+    setLastFile(file)
+    await doUpload(file)
   }
+
+  const handleRetry = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (lastFile) await doUpload(lastFile)
+  }
+
+  const borderClass = uploaded
+    ? 'border-success/40 bg-success/5'
+    : error
+    ? 'border-danger/40 bg-danger/5'
+    : preview
+    ? 'border-primary/40 bg-primary/5'
+    : 'border-border hover:border-primary/40 bg-surface'
 
   return (
     <div>
       <label className="block text-sm font-medium text-text-primary mb-1">{label}</label>
       <p className="text-xs text-text-muted mb-2">{hint}</p>
-      <label className={`block w-full border-2 border-dashed rounded-xl p-4 cursor-pointer text-center transition-colors ${
-        preview ? 'border-success/40 bg-success/5' : 'border-border hover:border-primary/40 bg-surface'
-      }`}>
+      <label className={`block w-full border-2 border-dashed rounded-xl p-4 cursor-pointer text-center transition-colors ${borderClass}`}>
         {uploading ? (
           <div className="flex flex-col items-center gap-2 py-4">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -105,7 +126,13 @@ function FileUploadField({
           <div className="space-y-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="Preview" className="h-24 object-cover rounded-lg mx-auto" />
-            <p className="text-xs text-success font-medium">Uploaded</p>
+            {uploaded ? (
+              <p className="text-xs text-success font-medium">Uploaded successfully</p>
+            ) : error ? (
+              <p className="text-xs text-danger font-medium">Upload failed — tap to choose a different file</p>
+            ) : (
+              <p className="text-xs text-text-muted font-medium">Preview selected</p>
+            )}
           </div>
         ) : (
           <div className="py-4">
@@ -119,7 +146,21 @@ function FileUploadField({
         )}
         <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleChange} />
       </label>
-      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+      {error && (
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <p className="text-xs text-danger">{error}</p>
+          {lastFile && (
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="text-xs font-medium text-primary hover:underline"
+              disabled={uploading}
+            >
+              Retry upload
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -16,6 +16,13 @@ interface UseFileUploadReturn {
 interface PresignResponse {
   url: string
   publicUrl: string
+  fields: {
+    api_key: string
+    timestamp: number
+    public_id: string
+    folder: string
+    signature: string
+  }
 }
 
 export function useFileUpload(type: UploadType): UseFileUploadReturn {
@@ -39,22 +46,31 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
 
     setUploading(true)
     try {
-      const { url, publicUrl } = await apiRequest<PresignResponse>('/upload/presign', {
+      const { url, publicUrl, fields } = await apiRequest<PresignResponse>('/upload/presign', {
         method: 'POST',
         body: JSON.stringify({ type, mimeType: file.type }),
       })
 
-      const putRes = await fetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      })
+      // Cloudinary signed upload requires POST multipart/form-data with the
+      // exact fields that were signed on the server.
+      const form = new FormData()
+      form.append('api_key', String(fields.api_key))
+      form.append('timestamp', String(fields.timestamp))
+      form.append('public_id', String(fields.public_id))
+      form.append('folder', String(fields.folder))
+      form.append('signature', String(fields.signature))
+      form.append('file', file)
 
-      if (!putRes.ok) {
-        throw new Error('Failed to upload file. Please try again.')
+      const cloudRes = await fetch(url, { method: 'POST', body: form })
+      let cloudData: { secure_url?: string; error?: { message?: string } } = {}
+      try { cloudData = await cloudRes.json() } catch { /* ignore */ }
+
+      if (!cloudRes.ok || !cloudData.secure_url) {
+        const msg = cloudData.error?.message ?? `Upload failed (HTTP ${cloudRes.status}). Please try again.`
+        throw new Error(msg)
       }
 
-      return publicUrl
+      return cloudData.secure_url ?? publicUrl
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setError(msg)
