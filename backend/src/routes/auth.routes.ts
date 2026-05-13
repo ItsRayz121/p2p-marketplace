@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { AppError } from '../lib/errors'
 import { generateCsrfToken } from '../lib/csrf'
 import { authenticate } from '../middleware/auth.middleware'
@@ -401,6 +402,23 @@ export async function authRoutes(app: FastifyInstance) {
         error: 'VALIDATION_ERROR',
         message: 'Invalid request data',
       })
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      if (err.code === 'P2025') {
+        return reply.status(404).send({ success: false, error: 'NOT_FOUND', message: 'Record not found' })
+      }
+      if (err.code === 'P2002') {
+        return reply.status(409).send({ success: false, error: 'CONFLICT', message: 'A record with this data already exists' })
+      }
+      req.log.error({ err, prismaCode: err.code }, 'Prisma error in auth')
+      return reply.status(500).send({ success: false, error: 'DATABASE_ERROR', message: 'A database error occurred' })
+    }
+    if (
+      err instanceof Prisma.PrismaClientInitializationError ||
+      err instanceof Prisma.PrismaClientRustPanicError
+    ) {
+      req.log.error({ err }, 'Database connection error in auth')
+      return reply.status(503).send({ success: false, error: 'DATABASE_UNAVAILABLE', message: 'Database is temporarily unavailable' })
     }
     req.log.error({ err }, 'Unhandled auth error')
     return reply.status(500).send({

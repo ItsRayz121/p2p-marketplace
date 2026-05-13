@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import cookie from '@fastify/cookie'
+import { Prisma } from '@prisma/client'
 import { env } from './lib/env'
 import { logger } from './lib/logger'
 import { redis } from './lib/redis'
@@ -91,6 +92,25 @@ export async function buildApp() {
         message: 'Invalid request data',
         details: error.validation,
       })
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2025') {
+        return reply.status(404).send({ success: false, error: 'NOT_FOUND', message: 'Record not found' })
+      }
+      if (error.code === 'P2002') {
+        return reply.status(409).send({ success: false, error: 'CONFLICT', message: 'A record with this data already exists' })
+      }
+      logger.error({ err: error, prismaCode: error.code }, 'Prisma error')
+      return reply.status(500).send({ success: false, error: 'DATABASE_ERROR', message: 'A database error occurred' })
+    }
+
+    if (
+      error instanceof Prisma.PrismaClientInitializationError ||
+      error instanceof Prisma.PrismaClientRustPanicError
+    ) {
+      logger.error({ err: error }, 'Database connection error')
+      return reply.status(503).send({ success: false, error: 'DATABASE_UNAVAILABLE', message: 'Database is temporarily unavailable' })
     }
 
     logger.error({ err: error }, 'Unhandled error')
