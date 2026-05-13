@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { AppError } from '../lib/errors'
 import { generateCsrfToken } from '../lib/csrf'
 import { authenticate } from '../middleware/auth.middleware'
+import { db } from '../lib/prisma'
+import { hashPassword, verifyPassword } from '../lib/hash'
 import {
   register,
   login,
@@ -199,7 +201,11 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/logout', { preHandler: [authenticate] }, async (req, reply) => {
     const refreshToken = req.cookies?.['refresh_token']
     await logout(req.user!.id, refreshToken)
-    reply.clearCookie('refresh_token', { path: '/' })
+    reply.clearCookie('refresh_token', {
+      path: '/',
+      sameSite: COOKIE_OPTIONS.sameSite,
+      secure: COOKIE_OPTIONS.secure,
+    })
     return reply.send({ success: true, data: { message: 'Logged out successfully.' } })
   })
 
@@ -254,6 +260,113 @@ export async function authRoutes(app: FastifyInstance) {
       })
     },
   )
+
+  // GET /check-username?username=...
+  app.get('/check-username', async (req, reply) => {
+    const username = (req.query as { username?: string }).username?.trim()
+    if (!username || username.length < 3 || username.length > 30) {
+      return reply.send({ success: true, data: { available: false } })
+    }
+    const existing = await db.user.findUnique({ where: { username }, select: { id: true } })
+    return reply.send({ success: true, data: { available: !existing } })
+  })
+
+  // PATCH /profile — update fullName/username
+  const profileSchema = z.object({
+    fullName: z.string().min(2).max(100).optional(),
+    username: z
+      .string()
+      .min(3)
+      .max(30)
+      .regex(/^[a-zA-Z0-9_]+$/, 'Username may contain only letters, numbers, and underscores')
+      .optional(),
+  })
+  app.patch('/profile', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = profileSchema.parse(req.body)
+    if (parsed.username) {
+      const taken = await db.user.findFirst({
+        where: { username: parsed.username, NOT: { id: req.user!.id } },
+        select: { id: true },
+      })
+      if (taken) throw new AppError('CONFLICT', 'Username is already taken', 409)
+    }
+    const data: Record<string, string> = {}
+    if (parsed.fullName) data.fullName = parsed.fullName
+    if (parsed.username) data.username = parsed.username
+    const updated = await db.user.update({
+      where: { id: req.user!.id },
+      data,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        username: true,
+        role: true,
+        kycStatus: true,
+        kycLevel: true,
+        isEmailVerified: true,
+        twoFaEnabled: true,
+        referralCode: true,
+        createdAt: true,
+      },
+    })
+    return reply.send({ success: true, data: updated })
+  })
+
+  // POST /change-password
+  const changePasswordSchema = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8).max(128),
+  })
+  app.post('/change-password', { preHandler: [authenticate] }, async (req, reply) => {
+    const { currentPassword, newPassword } = changePasswordSchema.parse(req.body)
+    const user = await db.user.findUnique({
+      where: { id: req.user!.id },
+      select: { passwordHash: true },
+    })
+    if (!user) throw new AppError('NOT_FOUND', 'User not found', 404)
+    const ok = await verifyPassword(currentPassword, user.passwordHash)
+    if (!ok) throw new AppError('UNAUTHORIZED', 'Current password is incorrect', 401)
+    const newHash = await hashPassword(newPassword)
+    await db.user.update({ where: { id: req.user!.id }, data: { passwordHash: newHash } })
+    // Revoke all refresh sessions so other devices are signed out.
+    await db.session.updateMany({
+      where: { userId: req.user!.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
+    return reply.send({ success: true, data: { message: 'Password changed successfully.' } })
+  })
+
+  // GET /sessions — list active refresh sessions
+  app.get('/sessions', { preHandler: [authenticate] }, async (req, reply) => {
+    const currentToken = req.cookies?.['refresh_token']
+    const sessions = await db.session.findMany({
+      where: { userId: req.user!.id, type: 'refresh', revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, userAgent: true, ip: true, createdAt: true, token: true },
+    })
+    return reply.send({
+      success: true,
+      data: sessions.map((s) => ({
+        id: s.id,
+        userAgent: s.userAgent ?? '',
+        ip: s.ip ?? '',
+        createdAt: s.createdAt,
+        lastActiveAt: s.createdAt,
+        isCurrent: currentToken ? s.token === currentToken : false,
+      })),
+    })
+  })
+
+  // DELETE /sessions/:id — revoke a session
+  app.delete('/sessions/:id', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const session = await db.session.findUnique({ where: { id }, select: { userId: true } })
+    if (!session) throw new AppError('NOT_FOUND', 'Session not found', 404)
+    if (session.userId !== req.user!.id) throw new AppError('FORBIDDEN', 'Forbidden', 403)
+    await db.session.update({ where: { id }, data: { revokedAt: new Date() } })
+    return reply.send({ success: true, data: { message: 'Session revoked.' } })
+  })
 
   // Global Zod error handler for this plugin scope
   app.setErrorHandler((err, _req, reply) => {

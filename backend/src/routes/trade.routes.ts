@@ -91,19 +91,21 @@ export async function tradeRoutes(app: FastifyInstance) {
     return reply.code(201).send({ success: true, data: trade })
   })
 
-  // GET /api/trades
-  app.get('/trades', { preHandler: [authenticate] }, async (req, reply) => {
-    const userId = req.user!.id
-    const query = req.query as Record<string, string>
-    const params: any = {
-      page: query.page ? parseInt(query.page, 10) : 1,
-      limit: query.limit ? parseInt(query.limit, 10) : 20,
-    }
-    if (query.status) params.status = query.status
-    if (query.role) params.role = query.role as 'buyer' | 'seller'
-    const result = await getTrades(userId, params)
-    return reply.send({ success: true, data: result })
-  })
+  // GET /api/trades and /api/trades/me (alias) — current user's trades
+  for (const path of ['/trades', '/trades/me'] as const) {
+    app.get(path, { preHandler: [authenticate] }, async (req, reply) => {
+      const userId = req.user!.id
+      const query = req.query as Record<string, string>
+      const params: any = {
+        page: query.page ? parseInt(query.page, 10) : 1,
+        limit: query.limit ? parseInt(query.limit, 10) : 20,
+      }
+      if (query.status) params.status = query.status
+      if (query.role) params.role = query.role as 'buyer' | 'seller'
+      const result = await getTrades(userId, params)
+      return reply.send({ success: true, data: result })
+    })
+  }
 
   // GET /api/trades/:id
   app.get('/trades/:id', { preHandler: [authenticate] }, async (req, reply) => {
@@ -162,14 +164,16 @@ export async function tradeRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: updated })
   })
 
-  // POST /api/trades/:id/confirm-payment
-  app.post('/trades/:id/confirm-payment', { preHandler: [authenticate] }, async (req, reply) => {
-    const userId = req.user!.id
-    const role = req.user!.role
-    const { id } = req.params as { id: string }
-    const trade = await confirmPayment(id, userId, role)
-    return reply.send({ success: true, data: trade })
-  })
+  // POST /api/trades/:id/confirm-payment (also /mark-paid alias used by frontend)
+  for (const path of ['/trades/:id/confirm-payment', '/trades/:id/mark-paid'] as const) {
+    app.post(path, { preHandler: [authenticate] }, async (req, reply) => {
+      const userId = req.user!.id
+      const role = req.user!.role
+      const { id } = req.params as { id: string }
+      const trade = await confirmPayment(id, userId, role)
+      return reply.send({ success: true, data: trade })
+    })
+  }
 
   // POST /api/trades/:id/crypto-sent
   app.post('/trades/:id/crypto-sent', { preHandler: [authenticate] }, async (req, reply) => {

@@ -36,6 +36,14 @@ export async function notificationRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /api/notifications/unread-count — navbar bell badge
+  app.get('/notifications/unread-count', { preHandler: [authenticate] }, async (req, reply) => {
+    const count = await db.notification.count({
+      where: { userId: req.user!.id, isRead: false },
+    })
+    return reply.send({ success: true, data: { count } })
+  })
+
   // PATCH /api/notifications/:id/read
   app.patch('/notifications/:id/read', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id

@@ -1,9 +1,20 @@
 // In dev, Next.js rewrites /api/* → backend, so we use '' (same-origin).
 // In production, we call the Railway backend URL directly.
-const API_BASE =
-  process.env.NODE_ENV === 'development'
-    ? ''
-    : (process.env.NEXT_PUBLIC_API_URL ?? '')
+function resolveApiBase(): string {
+  if (process.env.NODE_ENV === 'development') return ''
+  const v = process.env.NEXT_PUBLIC_API_URL
+  if (!v) {
+    if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[PakSwap] NEXT_PUBLIC_API_URL is not set — API calls will hit the current origin and 404. Set it in Vercel → Settings → Environment Variables to your Railway backend URL (no trailing slash, no /api).',
+      )
+    }
+    return ''
+  }
+  return v.replace(/\/$/, '')
+}
+const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
 import type { AuthUser } from '../store/auth.store'
@@ -30,13 +41,28 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 let isRefreshing = false
 let refreshQueue: Array<(token: string) => void> = []
 
+// Backend wraps every successful response in { success: true, data: <T> }.
+// Unwrap so callers get the inner data directly.
+function unwrapEnvelope<T>(raw: unknown): T {
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    'success' in (raw as Record<string, unknown>) &&
+    'data' in (raw as Record<string, unknown>)
+  ) {
+    return (raw as { data: T }).data
+  }
+  return raw as T
+}
+
 async function doRefresh(): Promise<string> {
   const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
   })
   if (!res.ok) throw new Error('Refresh failed')
-  const data = (await res.json()) as { accessToken: string }
+  const raw = await res.json()
+  const data = unwrapEnvelope<{ accessToken: string }>(raw)
   return data.accessToken
 }
 
@@ -104,7 +130,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
               (retryData as { requestId?: string }).requestId,
             )
           }
-          return retryData as T
+          return unwrapEnvelope<T>(retryData)
         } finally {
           clearTimeout(retryTimeout)
         }
@@ -139,7 +165,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
                   retryRes.status,
                 ))
               } else {
-                resolve(retryData as T)
+                resolve(unwrapEnvelope<T>(retryData))
               }
             } finally {
               clearTimeout(retryTimeout)
@@ -194,7 +220,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     )
   }
 
-  return data as T
+  return unwrapEnvelope<T>(data)
 }
 
 // Legacy api object for compatibility
@@ -324,8 +350,10 @@ export const authApi = {
     apiRequest<{ accessToken: string }>('/auth/refresh', { method: 'POST' }),
   logout: () =>
     apiRequest<void>('/auth/logout', { method: 'POST' }),
-  me: () =>
-    apiRequest<AuthUser>('/auth/me'),
+  me: async (): Promise<AuthUser> => {
+    const res = await apiRequest<{ user: AuthUser }>('/auth/me')
+    return res.user
+  },
   getCsrf: () =>
     apiRequest<{ token: string }>('/auth/csrf'),
   forgotPassword: (email: string) =>
@@ -393,7 +421,16 @@ export const walletApi = {
   getDepositAddress: (coin: string) =>
     apiRequest<{ address: string; network: string; memo?: string }>(`/wallet/deposit/${coin}`),
   requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string }) =>
-    apiRequest<{ id: string; status: string }>('/wallet/withdraw', { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<{ id: string; status: string }>('/wallet/withdraw', {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': cryptoRandomId() },
+      body: JSON.stringify({
+        coin: data.coin,
+        network: data.network,
+        amount: Number(data.amount),
+        toAddress: data.address,
+      }),
+    }),
 }
 
 export const tradesApi = {
@@ -484,9 +521,9 @@ export const notificationsApi = {
     return apiRequest<{ notifications: Notification[]; total: number; unreadCount: number }>('/notifications' + qs)
   },
   markRead: (id: string) =>
-    apiRequest<void>(`/notifications/${id}/read`, { method: 'POST' }),
+    apiRequest<void>(`/notifications/${id}/read`, { method: 'PATCH' }),
   markAllRead: () =>
-    apiRequest<void>('/notifications/read-all', { method: 'POST' }),
+    apiRequest<void>('/notifications/read-all', { method: 'PATCH' }),
   getUnreadCount: () =>
     apiRequest<{ count: number }>('/notifications/unread-count'),
 }
@@ -521,7 +558,7 @@ export const instantBuyApi = {
   getQuote: (data: { coin: string; amountPkr: number }) =>
     apiRequest<{ coin: string; amountPkr: number; amountCrypto: string; rate: number; fee: string; expiresAt: string }>('/instant-buy/quote', { method: 'POST', body: JSON.stringify(data) }),
   executeOrder: (data: { quoteId: string; paymentMethod: string }) =>
-    apiRequest<{ orderId: string; status: string; paymentInstructions: Record<string, string> }>('/instant-buy/order', { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<{ orderId: string; status: string; paymentInstructions: Record<string, string> }>('/instant-buy/orders', { method: 'POST', body: JSON.stringify(data) }),
   getOrder: (id: string) =>
     apiRequest<{ id: string; status: string; coin: string; amount: string; amountPkr: string; createdAt: string }>(`/instant-buy/orders/${id}`),
 }
@@ -568,6 +605,13 @@ export const gasFeeApi = {
     apiRequest<{ fee: string; feePkr: string; estimatedTime: string }>('/gas-fee/estimate', { method: 'POST', body: JSON.stringify(data) }),
 }
 
+function cryptoRandomId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return (crypto as { randomUUID: () => string }).randomUUID()
+  }
+  return `idem_${Date.now()}_${Math.random().toString(36).slice(2)}`
+}
+
 function buildQs(params?: Record<string, string | number | undefined>): string {
   if (!params) return ''
   const entries = Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
@@ -577,7 +621,7 @@ function buildQs(params?: Record<string, string | number | undefined>): string {
 export const adminApi = {
   // Dashboard
   getStats: () =>
-    apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; pendingKyc: number; openDisputes: number; pendingWithdrawals?: number; pendingInstantBuy?: number; todayRevenuePkr?: string }>('/admin/stats'),
+    apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; pendingKyc: number; openDisputes: number; pendingWithdrawals?: number; pendingInstantBuy?: number; todayRevenuePkr?: string }>('/admin/dashboard/stats'),
 
   // Users
   getUsers: (params?: Record<string, string | number | undefined>) =>
@@ -665,11 +709,11 @@ export const adminApi = {
 
   // Gas Orders
   getGasOrders: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ orders: unknown[]; total: number }>('/admin/gas-orders' + buildQs(params)),
+    apiRequest<{ orders: unknown[]; total: number }>('/admin/gas/orders' + buildQs(params)),
   retryGasOrder: (id: string) =>
-    apiRequest<void>(`/admin/gas-orders/${id}/retry`, { method: 'POST' }),
+    apiRequest<void>(`/admin/gas/orders/${id}/retry`, { method: 'POST' }),
   refundGasOrder: (id: string) =>
-    apiRequest<void>(`/admin/gas-orders/${id}/refund`, { method: 'POST' }),
+    apiRequest<void>(`/admin/gas/orders/${id}/refund`, { method: 'POST' }),
 
   // Audit Log
   getAuditLog: (params?: Record<string, string | number | undefined>) =>

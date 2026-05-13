@@ -81,9 +81,12 @@ export interface SafeUser {
   } | null
 }
 
+// In production the frontend (Vercel) and backend (Railway) live on different
+// origins, so the refresh-token cookie must be SameSite=None;Secure to survive
+// cross-site fetches. Locally we keep 'lax' (works with http://localhost).
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  sameSite: 'strict' as const,
+  sameSite: (env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
   secure: env.NODE_ENV === 'production',
   path: '/',
   maxAge: 7 * 24 * 60 * 60, // 7 days in seconds

@@ -52,17 +52,19 @@ export async function adRoutes(app: FastifyInstance) {
     return reply.code(201).send({ success: true, data: ad })
   })
 
-  // GET /api/ads — user's own ads
-  app.get('/ads', { preHandler: [authenticate] }, async (req, reply) => {
-    const userId = req.user!.id
-    const query = req.query as Record<string, string>
-    const result = await getUserAds(userId, {
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.page ? { page: parseInt(query.page) } : {}),
-      ...(query.limit ? { limit: parseInt(query.limit) } : {}),
+  // GET /api/ads — user's own ads (also exposed at /ads/me for frontend convenience)
+  for (const path of ['/ads', '/ads/me'] as const) {
+    app.get(path, { preHandler: [authenticate] }, async (req, reply) => {
+      const userId = req.user!.id
+      const query = req.query as Record<string, string>
+      const result = await getUserAds(userId, {
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.page ? { page: parseInt(query.page) } : {}),
+        ...(query.limit ? { limit: parseInt(query.limit) } : {}),
+      })
+      return reply.send({ success: true, data: result })
     })
-    return reply.send({ success: true, data: result })
-  })
+  }
 
   // PATCH /api/ads/:id — update ad
   app.patch('/ads/:id', { preHandler: [authenticate] }, async (req, reply) => {
@@ -85,6 +87,22 @@ export async function adRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const ad = await toggleAdStatus(userId, id, parsed.data.status)
+    return reply.send({ success: true, data: ad })
+  })
+
+  // POST /api/ads/:id/pause — alias of PATCH /:id/status { status: 'paused' }
+  app.post('/ads/:id/pause', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const ad = await toggleAdStatus(userId, id, 'paused')
+    return reply.send({ success: true, data: ad })
+  })
+
+  // POST /api/ads/:id/activate — alias of PATCH /:id/status { status: 'active' }
+  app.post('/ads/:id/activate', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const ad = await toggleAdStatus(userId, id, 'active')
     return reply.send({ success: true, data: ad })
   })
 
