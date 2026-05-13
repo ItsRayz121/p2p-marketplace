@@ -405,7 +405,15 @@ export async function authRoutes(app: FastifyInstance) {
       req.log.error({ err }, 'Database connection error in auth')
       return reply.status(503).send({ success: false, error: 'DATABASE_UNAVAILABLE', message: 'Database is temporarily unavailable' })
     }
-    req.log.error({ err }, 'Unhandled auth error')
+    if (err instanceof Prisma.PrismaClientValidationError) {
+      req.log.error({ err, message: err.message }, 'Prisma validation error in auth — likely schema/query mismatch')
+      return reply.status(500).send({ success: false, error: 'DATABASE_ERROR', message: 'A database error occurred' })
+    }
+    if (err instanceof Prisma.PrismaClientUnknownRequestError) {
+      req.log.error({ err, message: err.message }, 'Prisma unknown request error in auth')
+      return reply.status(500).send({ success: false, error: 'DATABASE_ERROR', message: 'A database error occurred' })
+    }
+    req.log.error({ err, message: (err as Error).message, stack: (err as Error).stack }, 'Unhandled auth error')
     return reply.status(500).send({
       success: false,
       error: 'INTERNAL_SERVER_ERROR',

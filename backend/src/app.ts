@@ -6,7 +6,7 @@ import cookie from '@fastify/cookie'
 import { Prisma } from '@prisma/client'
 import { env } from './lib/env'
 import { logger } from './lib/logger'
-import { redis } from './lib/redis'
+import { rateLimitRedis } from './lib/redis'
 import { registerRoutes } from './routes/index'
 import { AppError } from './lib/errors'
 import { csrfHook } from './lib/csrf'
@@ -48,7 +48,8 @@ export async function buildApp() {
 
   // Global rate limiting — per-route limits are set in route files
   await app.register(rateLimit, {
-    redis,
+    redis: rateLimitRedis,
+    skipOnError: true, // fail open if Redis is unavailable — never block a request with 500
     global: true,
     max: 200,
     timeWindow: '1 minute',
@@ -113,7 +114,17 @@ export async function buildApp() {
       return reply.status(503).send({ success: false, error: 'DATABASE_UNAVAILABLE', message: 'Database is temporarily unavailable' })
     }
 
-    logger.error({ err: error }, 'Unhandled error')
+    if (error instanceof Prisma.PrismaClientValidationError) {
+      logger.error({ err: error, message: error.message }, 'Prisma validation error — likely schema/query mismatch')
+      return reply.status(500).send({ success: false, error: 'DATABASE_ERROR', message: 'A database error occurred' })
+    }
+
+    if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+      logger.error({ err: error, message: error.message }, 'Prisma unknown request error')
+      return reply.status(500).send({ success: false, error: 'DATABASE_ERROR', message: 'A database error occurred' })
+    }
+
+    logger.error({ err: error, message: error.message, stack: error.stack }, 'Unhandled error')
 
     return reply.status(500).send({
       success: false,
