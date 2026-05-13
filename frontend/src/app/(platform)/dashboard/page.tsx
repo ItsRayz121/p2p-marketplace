@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { dashboardApi, tradesApi, notificationsApi } from '@/lib/api'
+import { dashboardApi, tradesApi, notificationsApi, marketplaceApi } from '@/lib/api'
 import type { WalletBalance, Trade, Notification } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
@@ -84,17 +84,16 @@ export default function DashboardPage() {
       ])
 
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value)
-      if (tradesRes.status === 'fulfilled') setTrades(tradesRes.value.trades)
-      if (notifRes.status === 'fulfilled') setNotifications(notifRes.value.notifications)
+      if (tradesRes.status === 'fulfilled') setTrades(tradesRes.value.trades ?? [])
+      if (notifRes.status === 'fulfilled') setNotifications(notifRes.value.notifications ?? [])
 
-      // Try getting USDT rate for PKR equivalent
+      // USDT rate for PKR equivalent — optional, never block dashboard render.
+      // Use the API client so requests resolve to the configured backend origin
+      // (Vercel has no /api/v1 route — a relative fetch always 404s in prod).
       try {
-        const rateRes = await fetch('/api/v1/marketplace/rate/USDT', { credentials: 'include' })
-        if (rateRes.ok) {
-          const d = await rateRes.json() as { rate: number; source?: string }
-          setUsdtRate(d.rate)
-          setUsdtRateSource(d.source ?? '')
-        }
+        const rate = await marketplaceApi.getRate('USDT')
+        setUsdtRate(rate.rate)
+        setUsdtRateSource(rate.source ?? '')
       } catch { /* optional */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
@@ -242,10 +241,10 @@ export default function DashboardPage() {
           <Link href="/orders" className="text-xs text-primary hover:underline">View all</Link>
         </div>
         <div className="bg-white rounded-xl border border-border divide-y divide-border">
-          {trades.length === 0 ? (
+          {(trades ?? []).length === 0 ? (
             <p className="text-sm text-text-muted text-center py-6">No trades yet.</p>
           ) : (
-            trades.slice(0, 5).map((t) => {
+            (trades ?? []).slice(0, 5).map((t) => {
               const isUserBuyer = t.buyerId === user?.id
               const counterparty = isUserBuyer
                 ? (t.seller?.username || 'Seller')
@@ -268,13 +267,13 @@ export default function DashboardPage() {
       </section>
 
       {/* ── 5. Recent Instant Buy ── */}
-      {instantOrders.length > 0 && (
+      {(instantOrders ?? []).length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold text-text-primary">Recent Instant Buy</h2>
           </div>
           <div className="bg-white rounded-xl border border-border divide-y divide-border">
-            {instantOrders.slice(0, 3).map((o) => (
+            {(instantOrders ?? []).slice(0, 3).map((o) => (
               <div key={o.id} className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
                   <Badge variant={o.status === 'completed' ? 'success' : 'warning'} size="sm">{o.status}</Badge>
@@ -312,14 +311,14 @@ export default function DashboardPage() {
       </section>
 
       {/* ── 7. Notifications ── */}
-      {notifications.length > 0 && (
+      {(notifications ?? []).length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold text-text-primary">Notifications</h2>
             <Link href="/notifications" className="text-xs text-primary hover:underline">View all</Link>
           </div>
           <div className="bg-white rounded-xl border border-border divide-y divide-border">
-            {notifications.map((n) => (
+            {(notifications ?? []).map((n) => (
               <div key={n.id} className="flex items-start gap-3 px-4 py-3">
                 <div className={`mt-0.5 ${notifIconColor[n.type] ?? 'text-text-muted'}`}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

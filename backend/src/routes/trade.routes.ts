@@ -104,7 +104,8 @@ export async function tradeRoutes(app: FastifyInstance) {
       if (query.status) params.status = query.status
       if (query.role) params.role = query.role as 'buyer' | 'seller'
       const result = await getTrades(userId, params)
-      return reply.send({ success: true, data: result })
+      const { items, ...rest } = result
+      return reply.send({ success: true, data: { trades: items, ...rest } })
     })
   }
 
