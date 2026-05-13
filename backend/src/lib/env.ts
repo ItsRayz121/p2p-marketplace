@@ -29,8 +29,11 @@ const envSchema = z.object({
   CLOUDINARY_API_SECRET: z.string().optional(),
 
   // Resend (transactional email)
+  // EMAIL_FROM must be a Resend-verified sender; format is either
+  // 'noreply@yourdomain.com' or 'Display Name <noreply@yourdomain.com>'.
+  // No default — an invalid/missing value disables outbound email with a warning log.
   RESEND_API_KEY: z.string().optional(),
-  EMAIL_FROM: z.string().default('PakSwap <noreply@pakswap.pk>'),
+  EMAIL_FROM: z.string().optional(),
 
   // Rate Exchange APIs
   BINANCE_API_KEY: z.string().optional(),
@@ -67,7 +70,7 @@ const envSchema = z.object({
   FCM_SERVER_KEY: z.string().optional(),
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
-  VAPID_SUBJECT: z.string().default('mailto:ops@pakswap.pk'),
+  VAPID_SUBJECT: z.string().optional(),
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
 
   // Cloudflare Turnstile
@@ -78,7 +81,7 @@ const envSchema = z.object({
   POSTHOG_API_KEY: z.string().optional(),
 
   // Alerts
-  ADMIN_ALERT_EMAIL: z.string().email().default('ops@pakswap.pk'),
+  ADMIN_ALERT_EMAIL: z.string().email().optional(),
 })
 
 // Production-only required vars: fail fast if missing in prod.

@@ -1,4 +1,4 @@
-import { resend, EMAIL_FROM } from '../lib/resend'
+import { resend, EMAIL_FROM, isEmailConfigured } from '../lib/resend'
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
@@ -47,11 +47,20 @@ async function send(
   template: string,
   userId?: string,
 ): Promise<void> {
+  if (!isEmailConfigured() || !EMAIL_FROM) {
+    logger.warn(
+      { template, to },
+      'Skipping email send — EMAIL_FROM or RESEND_API_KEY is missing/invalid. ' +
+        'Configure them in Railway and ensure the sender domain is verified in Resend.',
+    )
+    await logEmail(template, to, 'failed', userId)
+    return
+  }
   try {
     await resend.emails.send({ from: EMAIL_FROM, to, subject, html })
     await logEmail(template, to, 'sent', userId)
   } catch (err) {
-    logger.error({ err, template, to }, 'Email send failed')
+    logger.error({ err, template, to, from: EMAIL_FROM }, 'Email send failed')
     await logEmail(template, to, 'failed', userId)
     // Never throw — email failure must not crash the app
   }
@@ -226,6 +235,10 @@ export async function sendBadgeEmail(
 }
 
 export async function sendAdminAlertEmail(subject: string, body: string): Promise<void> {
+  if (!env.ADMIN_ALERT_EMAIL) {
+    logger.warn({ subject }, 'ADMIN_ALERT_EMAIL is not set — admin alert email skipped')
+    return
+  }
   const html = htmlShell(`
     <h2 style="margin: 0 0 16px; color: #dc2626;">Admin Alert</h2>
     <pre style="background: #f8fafc; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">${body}</pre>
