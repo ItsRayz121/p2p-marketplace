@@ -13,6 +13,7 @@ export default function Providers({ children }: ProvidersProps) {
   const setUser = useAuthStore((s) => s.setUser)
   const setCsrfToken = useAuthStore((s) => s.setCsrfToken)
   const setLoading = useAuthStore((s) => s.setLoading)
+  const clearAuth = useAuthStore((s) => s.clearAuth)
 
   useEffect(() => {
     async function init() {
@@ -23,7 +24,9 @@ export default function Providers({ children }: ProvidersProps) {
         const user = await authApi.me()
         setUser(user)
       } catch {
-        // Not logged in — that's fine
+        // Not logged in — drop any stale hint cookie so the middleware
+        // doesn't keep us on /dashboard with an expired backend session.
+        clearAuth()
       }
 
       try {

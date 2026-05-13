@@ -1,5 +1,6 @@
 'use client'
 import { create } from 'zustand'
+import { setAuthHint, clearAuthHint } from '../lib/authCookie'
 
 export interface AuthUser {
   id: string
@@ -36,7 +37,17 @@ export const useAuthStore = create<AuthStore>((set) => ({
   isLoading: true,
   setAccessToken: (token) => set({ accessToken: token }),
   setCsrfToken: (token) => set({ csrfToken: token }),
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    // Mirror authenticated state into a non-HttpOnly cookie on the frontend
+    // domain so the Next.js middleware (running on Vercel) can gate routes.
+    // The real refresh_token cookie lives on the Railway backend domain and
+    // is not visible to Vercel.
+    setAuthHint()
+    set({ user })
+  },
   setLoading: (loading) => set({ isLoading: loading }),
-  clearAuth: () => set({ accessToken: null, user: null }),
+  clearAuth: () => {
+    clearAuthHint()
+    set({ accessToken: null, user: null })
+  },
 }))
