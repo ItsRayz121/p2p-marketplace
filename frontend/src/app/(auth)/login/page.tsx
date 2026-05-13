@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
-import { authApi } from '@/lib/api'
+import { authApi, ApiError } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -23,6 +23,7 @@ export default function LoginPage() {
   const setUser = useAuthStore((s) => s.setUser)
   const [showPassword, setShowPassword] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
 
   const {
     register,
@@ -32,6 +33,7 @@ export default function LoginPage() {
 
   async function onSubmit(values: FormValues) {
     setServerError(null)
+    setUnverifiedEmail(null)
     try {
       const res = await authApi.login(values)
 
@@ -57,7 +59,11 @@ export default function LoginPage() {
         router.push('/dashboard')
       }
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Login failed. Please try again.')
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        setUnverifiedEmail(values.email)
+      } else {
+        setServerError(err instanceof Error ? err.message : 'Login failed. Please try again.')
+      }
     }
   }
 
@@ -116,6 +122,35 @@ export default function LoginPage() {
           <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">
             {serverError}
           </p>
+        )}
+
+        {unverifiedEmail && (
+          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <p>Your email is not verified yet.</p>
+            <Link
+              href={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+              className="font-medium underline hover:no-underline"
+            >
+              Verify your email
+            </Link>
+            {' or '}
+            <button
+              type="button"
+              className="font-medium underline hover:no-underline"
+              onClick={async () => {
+                try {
+                  await authApi.resendOtp(unverifiedEmail)
+                  setServerError(null)
+                  setUnverifiedEmail(null)
+                  router.push(`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`)
+                } catch {
+                  setServerError('Failed to resend verification email. Please try again.')
+                }
+              }}
+            >
+              resend verification email
+            </button>
+          </div>
         )}
 
         <Button type="submit" fullWidth size="lg" loading={isSubmitting}>

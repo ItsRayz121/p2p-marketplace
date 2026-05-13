@@ -41,6 +41,19 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 let isRefreshing = false
 let refreshQueue: Array<(token: string) => void> = []
 
+// These endpoints handle their own auth — a 401 from them is a real failure,
+// not a token-expiry. Never attempt a refresh cycle for them.
+const NO_REFRESH_PATHS = new Set([
+  '/auth/login',
+  '/auth/register',
+  '/auth/verify-email',
+  '/auth/resend-otp',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/refresh',
+  '/auth/2fa/verify',
+])
+
 // Backend wraps every successful response in { success: true, data: <T> }.
 // Unwrap so callers get the inner data directly.
 function unwrapEnvelope<T>(raw: unknown): T {
@@ -101,6 +114,19 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
 
   // Handle 401 with refresh + retry
   if (res.status === 401) {
+    // Public auth endpoints return 401 for legitimate failures (wrong password, etc.).
+    // Do not attempt a refresh for them — just surface the backend error directly.
+    if (NO_REFRESH_PATHS.has(path)) {
+      let body: unknown = {}
+      try { body = await res.json() } catch { /* empty */ }
+      throw new ApiError(
+        (body as { error?: string }).error ?? 'UNAUTHORIZED',
+        (body as { message?: string }).message ?? 'Invalid credentials',
+        401,
+        (body as { requestId?: string }).requestId,
+      )
+    }
+
     if (!isRefreshing) {
       isRefreshing = true
       try {
@@ -137,8 +163,13 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       } catch {
         isRefreshing = false
         refreshQueue = []
+        const wasAuthenticated = !!useAuthStore.getState().user
         useAuthStore.getState().clearAuth()
-        if (typeof window !== 'undefined') window.location.href = '/login'
+        // Only redirect to login if the user had an active session — avoids
+        // spurious redirects when visiting public pages without a session.
+        if (typeof window !== 'undefined' && wasAuthenticated) {
+          window.location.href = '/login'
+        }
         throw new ApiError('UNAUTHORIZED', 'Session expired', 401)
       }
     } else {
