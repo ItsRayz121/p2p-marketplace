@@ -242,9 +242,12 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       )
     }
 
-    // Stale CSRF token — clear cache and let caller retry once
+    // Stale CSRF token — clear cache and silently fetch a fresh one for the next request
     if (res.status === 403 && (data as { error?: string }).error === 'INVALID_CSRF_TOKEN') {
       invalidateCsrfToken()
+      apiRequest<{ token: string }>('/auth/csrf')
+        .then((d) => useAuthStore.getState().setCsrfToken(d.token))
+        .catch(() => {})
     }
 
     throw new ApiError(
@@ -430,7 +433,7 @@ export const authApi = {
     apiRequest<AuthUser>('/auth/profile', { method: 'PATCH', body: JSON.stringify(data) }),
   checkUsername: (username: string) =>
     apiRequest<{ available: boolean }>('/auth/check-username?username=' + encodeURIComponent(username)),
-  verify2fa: (data: { preAuthToken: string; totpCode: string }) =>
+  verify2fa: (data: { preAuthToken: string; code: string }) =>
     apiRequest<{ accessToken: string; user: AuthUser }>('/auth/2fa/verify', { method: 'POST', body: JSON.stringify(data) }),
   changePassword: (data: { currentPassword: string; newPassword: string }) =>
     apiRequest<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),

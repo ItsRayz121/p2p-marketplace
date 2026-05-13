@@ -69,6 +69,8 @@ export interface SafeUser {
   isEmailVerified: boolean
   twoFaEnabled: boolean
   referralCode: string
+  dailyBuyUsed: number
+  dailyBuyLimit: number
   createdAt: Date
   tradeStats: {
     totalTrades: number
@@ -106,6 +108,8 @@ function toSafeUser(
     isEmailVerified: boolean
     twoFaEnabled: boolean
     referralCode: string
+    dailyBuyUsed: { toNumber: () => number }
+    dailyBuyLimit: { toNumber: () => number }
     createdAt: Date
     tradeStats: {
       totalTrades: number
@@ -129,6 +133,8 @@ function toSafeUser(
     isEmailVerified: user.isEmailVerified,
     twoFaEnabled: user.twoFaEnabled,
     referralCode: user.referralCode,
+    dailyBuyUsed: user.dailyBuyUsed.toNumber(),
+    dailyBuyLimit: user.dailyBuyLimit.toNumber(),
     createdAt: user.createdAt,
     tradeStats: user.tradeStats
       ? {
@@ -155,6 +161,8 @@ const USER_SELECT = {
   isEmailVerified: true,
   twoFaEnabled: true,
   referralCode: true,
+  dailyBuyUsed: true,
+  dailyBuyLimit: true,
   createdAt: true,
   tradeStats: {
     select: {

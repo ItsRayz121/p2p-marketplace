@@ -302,24 +302,9 @@ export async function authRoutes(app: FastifyInstance) {
     const data: Record<string, string> = {}
     if (parsed.fullName) data.fullName = parsed.fullName
     if (parsed.username) data.username = parsed.username
-    const updated = await db.user.update({
-      where: { id: req.user!.id },
-      data,
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        username: true,
-        role: true,
-        kycStatus: true,
-        kycLevel: true,
-        isEmailVerified: true,
-        twoFaEnabled: true,
-        referralCode: true,
-        createdAt: true,
-      },
-    })
-    return reply.send({ success: true, data: updated })
+    await db.user.update({ where: { id: req.user!.id }, data })
+    const user = await getMe(req.user!.id)
+    return reply.send({ success: true, data: user })
   })
 
   // POST /change-password
