@@ -16,8 +16,32 @@ import { db } from '../lib/prisma'
 import { ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { logger } from '../lib/logger'
 
+function assertPrismaClientIsCurrent() {
+  // The generated client is missing models when `prisma generate` wasn't run
+  // against the current schema. Most common cause: `railway run` spawned a
+  // container that skipped the build step. Fail loudly with a fix-it message
+  // instead of the bare "Cannot read properties of undefined" we'd otherwise
+  // get from `db.depositAddress.count(...)`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbAny = db as any
+  const missing: string[] = []
+  if (!dbAny.depositAddress) missing.push('depositAddress')
+  if (!dbAny.moralisStreamSubscription) missing.push('moralisStreamSubscription')
+  if (missing.length > 0) {
+    console.error(
+      '\n[fatal] Prisma client is missing model(s): ' + missing.join(', ') + '\n' +
+        '         The @prisma/client in this environment was generated against an\n' +
+        '         older schema. Run `prisma generate` against the current schema\n' +
+        '         before this script. The npm script already does this — make sure\n' +
+        '         you ran `npm run moralis:backfill` (not `tsx` directly).\n',
+    )
+    process.exit(2)
+  }
+}
+
 async function main() {
   logger.info('Moralis backfill starting...')
+  assertPrismaClientIsCurrent()
 
   const total = await db.depositAddress.count({ where: { chainFamily: 'EVM' } })
   logger.info({ total }, 'Total EVM DepositAddress rows to inspect')
