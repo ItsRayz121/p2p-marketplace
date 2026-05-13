@@ -32,10 +32,11 @@ export async function marketplaceRoutes(app: FastifyInstance) {
 
   app.get('/ads', async (req, reply) => {
     const query = req.query as Record<string, string | undefined>
+    const resolvedSide = query.side ?? query.type
     const data = await marketplaceService.getAds({
       page: query.page ? parseInt(query.page, 10) : 1,
       limit: Math.min(query.limit ? parseInt(query.limit, 10) : 20, 50),
-      ...(query.side || query.type ? { side: query.side ?? query.type } : {}),
+      ...(resolvedSide !== undefined ? { side: resolvedSide } : {}),
       ...(query.coin ? { coin: query.coin.toUpperCase() } : {}),
       ...(query.network ? { network: query.network } : {}),
       ...(query.paymentMethod ? { paymentMethod: query.paymentMethod } : {}),
