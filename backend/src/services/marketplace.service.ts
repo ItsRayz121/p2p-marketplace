@@ -8,12 +8,13 @@ import { Prisma } from '@prisma/client'
 export interface RateCoinResult {
   rate: number
   updatedAt: string
-  source: 'live' | 'cached'
+  source: string        // e.g. 'coingecko' | 'kraken' | 'bybit' | 'binance' | 'stale-cache' | 'db'
 }
 
 export interface AllRatesResult {
   rates: Record<string, number>
   updatedAt: string
+  source: string
 }
 
 export interface PlatformStats {
@@ -95,8 +96,12 @@ export async function getRateCoin(coin: string): Promise<RateCoinResult> {
   const cached = await redis.get(redisKey)
   if (cached) {
     try {
-      const parsed = JSON.parse(cached) as { rate: number; updatedAt: string }
-      return { rate: parsed.rate, updatedAt: parsed.updatedAt, source: 'live' }
+      const parsed = JSON.parse(cached) as { rate: number; updatedAt: string; source?: string }
+      return {
+        rate: parsed.rate,
+        updatedAt: parsed.updatedAt,
+        source: parsed.source ?? 'live',
+      }
     } catch {
       // fall through
     }
@@ -112,7 +117,7 @@ export async function getRateCoin(coin: string): Promise<RateCoinResult> {
   return {
     rate: parseFloat(config.value),
     updatedAt: config.updatedAt.toISOString(),
-    source: 'cached',
+    source: 'db',
   }
 }
 
@@ -121,6 +126,7 @@ export async function getAllRates(): Promise<AllRatesResult> {
 
   const rates: Record<string, number> = {}
   let updatedAt = new Date().toISOString()
+  let source = 'live'
 
   if (keys.length > 0) {
     const values = await redis.mget(...keys)
@@ -131,9 +137,10 @@ export async function getAllRates(): Promise<AllRatesResult> {
       const coinName = key.replace('rate:', '').toUpperCase()
       if (coinName === 'USD_PKR') continue // internal key
       try {
-        const parsed = JSON.parse(val) as { rate: number; updatedAt: string }
+        const parsed = JSON.parse(val) as { rate: number; updatedAt: string; source?: string }
         rates[coinName] = parsed.rate
         updatedAt = parsed.updatedAt
+        if (parsed.source) source = parsed.source
       } catch {
         const numVal = parseFloat(val)
         if (!isNaN(numVal)) rates[coinName] = numVal
@@ -153,10 +160,11 @@ export async function getAllRates(): Promise<AllRatesResult> {
       const coin = cfg.key.replace('rate_', '').replace('_PKR', '')
       rates[coin] = parseFloat(cfg.value)
       updatedAt = cfg.updatedAt.toISOString()
+      if (missingCoins.length === KNOWN_COINS.length) source = 'db'
     }
   }
 
-  return { rates, updatedAt }
+  return { rates, updatedAt, source }
 }
 
 export async function getStats(): Promise<PlatformStats> {

@@ -453,7 +453,7 @@ export const marketplaceApi = {
   getRate: (coin: string) =>
     apiRequest<{ rate: number; updatedAt: string; source: string }>(`/marketplace/rate/${coin}`),
   getRates: () =>
-    apiRequest<{ rates: Record<string, number>; updatedAt: string }>('/marketplace/rates'),
+    apiRequest<{ rates: Record<string, number>; updatedAt: string; source: string }>('/marketplace/rates'),
   getStats: () =>
     apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; activeMerchants: number }>('/marketplace/stats'),
   getTopAds: () =>

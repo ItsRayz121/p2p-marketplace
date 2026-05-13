@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 
+const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
+  coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
+  kraken:    { label: 'Kraken',    url: 'https://www.kraken.com' },
+  bybit:     { label: 'Bybit',     url: 'https://www.bybit.com' },
+  binance:   { label: 'Binance',   url: 'https://www.binance.com' },
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DashboardSummary {
@@ -64,6 +71,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [instantOrders, setInstantOrders] = useState<InstantOrder[]>([])
   const [usdtRate, setUsdtRate] = useState<number>(0)
+  const [usdtRateSource, setUsdtRateSource] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -83,8 +91,9 @@ export default function DashboardPage() {
       try {
         const rateRes = await fetch('/api/v1/marketplace/rate/USDT', { credentials: 'include' })
         if (rateRes.ok) {
-          const d = await rateRes.json() as { rate: number }
+          const d = await rateRes.json() as { rate: number; source?: string }
           setUsdtRate(d.rate)
+          setUsdtRateSource(d.source ?? '')
         }
       } catch { /* optional */ }
     } catch (err) {
@@ -172,9 +181,21 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-lg font-bold text-text-primary">{parseFloat(b.available).toFixed(4)}</p>
                 {usdtRate > 0 && b.coin === 'USDT' && (
-                  <p className="text-xs text-text-muted mt-0.5">
-                    ≈ PKR {(parseFloat(b.available) * usdtRate).toLocaleString()}
-                  </p>
+                  <div className="mt-0.5">
+                    <p className="text-xs text-text-muted">
+                      ≈ PKR {(parseFloat(b.available) * usdtRate).toLocaleString()}
+                    </p>
+                    {SOURCE_LABELS[usdtRateSource] && (
+                      <a
+                        href={SOURCE_LABELS[usdtRateSource].url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-text-muted hover:text-primary"
+                      >
+                        via {SOURCE_LABELS[usdtRateSource].label}
+                      </a>
+                    )}
+                  </div>
                 )}
                 <p className="text-xs text-text-muted mt-0.5">
                   Locked: {parseFloat(b.locked).toFixed(4)}

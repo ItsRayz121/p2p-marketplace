@@ -8,6 +8,30 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Spinner } from '@/components/ui/Spinner'
 
+// ─── Rate source attribution ──────────────────────────────────────────────────
+
+const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
+  coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
+  kraken:    { label: 'Kraken',    url: 'https://www.kraken.com' },
+  bybit:     { label: 'Bybit',     url: 'https://www.bybit.com' },
+  binance:   { label: 'Binance',   url: 'https://www.binance.com' },
+}
+
+function RateSourceBadge({ source }: { source: string }) {
+  const info = SOURCE_LABELS[source]
+  if (!info) return null
+  return (
+    <a
+      href={info.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[10px] text-text-muted border border-border rounded px-1.5 py-0.5 hover:text-primary transition-colors"
+    >
+      via {info.label}
+    </a>
+  )
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface InstantOrder {
@@ -96,6 +120,7 @@ export default function InstantBuyPage() {
   const [amount, setAmount] = useState('')
   const [destAddress, setDestAddress] = useState('')
   const [rate, setRate] = useState<number>(0)
+  const [rateSource, setRateSource] = useState<string>('')
   const [rateLoading, setRateLoading] = useState(false)
   const [dailyLimit, setDailyLimit] = useState<number>(0)
   const [dailyUsed, setDailyUsed] = useState<number>(0)
@@ -124,6 +149,7 @@ export default function InstantBuyPage() {
     try {
       const r = await marketplaceApi.getRate(selectedCoin)
       setRate(r.rate)
+      setRateSource(r.source ?? '')
     } catch {
       // ignore
     } finally {
@@ -308,9 +334,12 @@ export default function InstantBuyPage() {
                   <p className="text-sm text-text-muted">Rate unavailable</p>
                 )}
                 {rate > 0 && (
-                  <p className="text-xs text-text-muted mt-1">
-                    Rate: 1 {selectedCoin} = PKR {rate.toLocaleString()}
-                  </p>
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    <p className="text-xs text-text-muted">
+                      Rate: 1 {selectedCoin} = PKR {rate.toLocaleString()}
+                    </p>
+                    <RateSourceBadge source={rateSource} />
+                  </div>
                 )}
               </div>
             )}

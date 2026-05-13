@@ -8,6 +8,28 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 
+const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
+  coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
+  kraken:    { label: 'Kraken',    url: 'https://www.kraken.com' },
+  bybit:     { label: 'Bybit',     url: 'https://www.bybit.com' },
+  binance:   { label: 'Binance',   url: 'https://www.binance.com' },
+}
+
+function RateSourceBadge({ source }: { source: string }) {
+  const info = SOURCE_LABELS[source]
+  if (!info) return null
+  return (
+    <a
+      href={info.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[10px] text-text-muted border border-border rounded px-1.5 py-0.5 hover:text-primary transition-colors"
+    >
+      via {info.label}
+    </a>
+  )
+}
+
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const COINS = ['USDT', 'BTC', 'ETH', 'BNB', 'TRX']
@@ -87,6 +109,7 @@ function CreateAdPageContent() {
 
   const [form, setForm] = useState<FormState>(defaultForm)
   const [marketRate, setMarketRate] = useState<number>(0)
+  const [marketRateSource, setMarketRateSource] = useState<string>('')
   const [rateLoading, setRateLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -124,6 +147,7 @@ function CreateAdPageContent() {
     try {
       const r = await marketplaceApi.getRate(coin)
       setMarketRate(r.rate)
+      setMarketRateSource(r.source ?? '')
     } catch { setMarketRate(0) } finally { setRateLoading(false) }
   }, [])
 
@@ -297,9 +321,12 @@ function CreateAdPageContent() {
               onChange={(e) => setField('floatOffset', e.target.value)}
             />
             <div className="mt-2 bg-surface rounded-lg p-2.5">
-              <p className="text-xs text-text-muted">
-                Market rate: {rateLoading ? '...' : `PKR ${marketRate.toLocaleString()}`}
-              </p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-xs text-text-muted">
+                  Market rate: {rateLoading ? '...' : `PKR ${marketRate.toLocaleString()}`}
+                </p>
+                {!rateLoading && <RateSourceBadge source={marketRateSource} />}
+              </div>
               {calculatedPrice && (
                 <p className="text-sm font-bold text-text-primary mt-0.5">
                   Your price: PKR {parseFloat(calculatedPrice).toLocaleString()}
