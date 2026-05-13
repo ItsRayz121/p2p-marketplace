@@ -150,11 +150,11 @@ export async function getStreamStatusSummary() {
     by: ['chain', 'status'],
     _count: { _all: true },
   })
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perChain: Record<string, Record<string, number>> = {}
   for (const r of rows) {
-    perChain[r.chain] = perChain[r.chain] ?? {}
-    perChain[r.chain][r.status] = r._count._all
+    const bucket = perChain[r.chain] ?? {}
+    bucket[r.status] = r._count._all
+    perChain[r.chain] = bucket
   }
   // Operator-visible status per chain: stream id configured + reachable?
   const chains = await Promise.all(
