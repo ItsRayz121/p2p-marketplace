@@ -106,7 +106,7 @@ export async function authRoutes(app: FastifyInstance) {
     '/login',
     {
       config: {
-        rateLimit: { max: 5, timeWindow: '15 minutes' },
+        rateLimit: { max: 10, timeWindow: '15 minutes' },
       },
     },
     async (req, reply) => {
@@ -367,6 +367,23 @@ export async function authRoutes(app: FastifyInstance) {
   // so we must reply directly for every shape we care about — re-throwing
   // turns AppError(401) into a generic 500.
   app.setErrorHandler((err, req, reply) => {
+    // @fastify/rate-limit and FastifyError (body parsing) carry statusCode, not instanceof Error
+    const httpStatus = (err as { statusCode?: number }).statusCode
+    if (httpStatus === 429) {
+      return reply.status(429).send({
+        success: false,
+        error: 'TOO_MANY_REQUESTS',
+        message: (err as { message?: string }).message ?? 'Too many requests. Please wait before retrying.',
+      })
+    }
+    if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+      return reply.status(httpStatus).send({
+        success: false,
+        error: 'REQUEST_ERROR',
+        message: (err as { message?: string }).message ?? 'Invalid request',
+      })
+    }
+
     if (err instanceof z.ZodError) {
       return reply.status(400).send({
         success: false,

@@ -84,8 +84,11 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   const url = `${API_BASE}/api/v1${path}`
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string>),
+  }
+  // Only set Content-Type when there is a body — Fastify rejects empty bodies with this header
+  if (options?.body !== undefined && options.body !== null) {
+    headers['Content-Type'] = 'application/json'
   }
 
   // Attach access token from store

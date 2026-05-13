@@ -76,17 +76,27 @@ export async function buildApp() {
   })
 
   // Catch-all hook — fires for every error regardless of which error handler runs.
-  // Use console.error so it always appears in Railway stdout even if pino is broken.
-  app.addHook('onError', async (_req, _reply, error) => {
-    console.error('[onError hook]', {
-      name: error?.constructor?.name,
-      message: (error as Error)?.message,
-      stack: (error as Error)?.stack?.split('\n').slice(0, 6).join('\n'),
-    })
-  })
-
   // Global error handler
   app.setErrorHandler((error, _req, reply) => {
+    // @fastify/rate-limit throws either a plain object or an HTTP error with statusCode.
+    // FastifyError (e.g. empty body with Content-Type: application/json) also has statusCode.
+    // Handle both before any instanceof checks which only work on real Error instances.
+    const httpStatus = (error as { statusCode?: number }).statusCode
+    if (httpStatus === 429) {
+      return reply.status(429).send({
+        success: false,
+        error: 'TOO_MANY_REQUESTS',
+        message: (error as { message?: string }).message ?? 'Too many requests. Please wait before retrying.',
+      })
+    }
+    if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+      return reply.status(httpStatus).send({
+        success: false,
+        error: 'REQUEST_ERROR',
+        message: (error as { message?: string }).message ?? 'Invalid request',
+      })
+    }
+
     if (error instanceof AppError) {
       return reply.status(error.statusCode).send({
         success: false,
