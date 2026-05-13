@@ -31,7 +31,14 @@ export async function getMerchantProfile(userId: string) {
 
 export async function applyMerchant(
   userId: string,
-  data: { businessName: string; description: string; proofUrl: string },
+  data: {
+    businessName: string
+    description: string
+    proofUrl?: string
+    cnicFrontUrl?: string
+    cnicBackUrl?: string
+    selfieUrl?: string
+  },
 ) {
   // Check KYC is approved
   const user = await db.user.findUnique({
@@ -59,10 +66,10 @@ export async function applyMerchant(
       businessDescription: data.description,
       contactPhone: '',
       businessProofType: 'bank_statement',
-      cnicFrontUrl: '',
-      cnicBackUrl: '',
-      selfieUrl: '',
-      businessProofUrl: data.proofUrl,
+      cnicFrontUrl: data.cnicFrontUrl ?? '',
+      cnicBackUrl: data.cnicBackUrl ?? '',
+      selfieUrl: data.selfieUrl ?? '',
+      businessProofUrl: data.proofUrl ?? '',
       status: 'pending',
     },
   })
@@ -72,6 +79,14 @@ export async function applyMerchant(
 // ─── activateMerchant ─────────────────────────────────────────────────────────
 
 export async function activateMerchant(userId: string) {
+  // Verify merchant KYC application was approved by admin
+  const approvedKyc = await db.merchantKycSubmission.findFirst({
+    where: { userId, status: 'approved' },
+  })
+  if (!approvedKyc) {
+    throw new AppError('KYC_REQUIRED', 'Merchant KYC application must be approved by admin before activation', 403)
+  }
+
   // Find USDT wallet
   const wallet = await db.wallet.findFirst({
     where: { userId, coin: 'USDT' },

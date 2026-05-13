@@ -60,10 +60,11 @@ function NotifIcon({ type }: { type: string }) {
 }
 
 function getNavTarget(notif: Notification): string | null {
-  const data = notif.data as Record<string, string> | undefined
-  if (notif.type === 'trade' && data?.tradeId) return `/trade/${data.tradeId}`
+  const meta = notif.metadata as Record<string, string> | undefined
+  if (notif.type === 'trade' && meta?.tradeId) return `/trade/${meta.tradeId}`
   if (notif.type === 'kyc') return '/kyc'
   if (notif.type === 'wallet' || notif.type === 'payment') return '/wallet'
+  if (notif.type === 'referral') return '/referral'
   return null
 }
 
@@ -86,7 +87,7 @@ export default function NotificationsPage() {
     else setLoading(true)
     try {
       const res = await notificationsApi.getAll({ page: pg, limit: PAGE_SIZE })
-      setTotal(res.total)
+      setTotal(res.pagination?.total ?? 0)
       if (append) {
         setNotifications((prev) => [...prev, ...res.notifications])
       } else {
@@ -106,14 +107,14 @@ export default function NotificationsPage() {
     setMarkingAll(true)
     try {
       await notificationsApi.markAllRead()
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
     } catch { /* silent */ } finally { setMarkingAll(false) }
   }
 
   const handleClick = async (notif: Notification) => {
-    if (!notif.read) {
+    if (!notif.isRead) {
       notificationsApi.markRead(notif.id).catch(() => {})
-      setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, read: true } : n))
+      setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, isRead: true } : n))
     }
     const target = getNavTarget(notif)
     if (target) router.push(target)
@@ -125,7 +126,7 @@ export default function NotificationsPage() {
     fetchPage(nextPage, true)
   }
 
-  const unread = notifications.filter((n) => !n.read).length
+  const unread = notifications.filter((n) => !n.isRead).length
 
   if (loading) return <LoadingState message="Loading notifications..." />
   if (error) return <ErrorState title={error} onRetry={() => fetchPage(1)} />
@@ -156,7 +157,7 @@ export default function NotificationsPage() {
               key={notif.id}
               onClick={() => handleClick(notif)}
               className={`w-full flex items-start gap-3 px-4 py-4 text-left hover:bg-surface transition-colors ${
-                !notif.read ? 'bg-primary/5' : ''
+                !notif.isRead ? 'bg-primary/5' : ''
               }`}
             >
               <div className="flex-shrink-0 mt-0.5 w-8 h-8 rounded-full bg-surface flex items-center justify-center">
@@ -164,14 +165,14 @@ export default function NotificationsPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <p className={`text-sm ${!notif.read ? 'font-semibold text-text-primary' : 'font-medium text-text-primary'}`}>
+                  <p className={`text-sm ${!notif.isRead ? 'font-semibold text-text-primary' : 'font-medium text-text-primary'}`}>
                     {notif.title}
                   </p>
                   <span className="text-xs text-text-muted flex-shrink-0">{timeAgo(notif.createdAt)}</span>
                 </div>
                 <p className="text-sm text-text-muted mt-0.5 line-clamp-2">{notif.body}</p>
               </div>
-              {!notif.read && (
+              {!notif.isRead && (
                 <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-2" />
               )}
             </button>

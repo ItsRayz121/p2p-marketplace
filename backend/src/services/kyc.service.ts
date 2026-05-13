@@ -3,6 +3,7 @@ import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { hashCnic } from '../lib/hash'
 import { sendKycEmail } from './email.service'
+import { assertCloudinaryUrl } from '../lib/upload'
 
 export async function getKycStatus(userId: string) {
   const [user, submission] = await Promise.all([
@@ -29,6 +30,10 @@ export async function submitKyc(
     socialLinks?: Array<{ platform: string; url: string }>
   },
 ) {
+  assertCloudinaryUrl(data.frontUrl, 'frontUrl')
+  assertCloudinaryUrl(data.backUrl, 'backUrl')
+  assertCloudinaryUrl(data.selfieUrl, 'selfieUrl')
+
   // Rate limit: max 3 submissions per 24h
   const rateLimitKey = `kyc_submit:${userId}`
   const count = await redis.incr(rateLimitKey)

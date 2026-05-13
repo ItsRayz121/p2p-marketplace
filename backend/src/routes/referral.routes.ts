@@ -41,15 +41,58 @@ export async function referralRoutes(app: FastifyInstance) {
       }),
     ])
 
+    const responseData = {
+      referralCode: user.referralCode,
+      referralCount,
+      totalEarned: totalEarnedResult._sum.rewardAmount ?? 0,
+      rewards,
+      referredUsers,
+    }
+
+    return reply.send({ success: true, data: responseData })
+  })
+
+  // GET /api/referral/stats — alias for frontend dashboard
+  app.get('/referral/stats', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+
+    const user = await db.user.findUnique({ where: { id: userId }, select: { referralCode: true } })
+    if (!user) throw Errors.NOT_FOUND('User')
+
+    const [totalReferrals, totalEarnedResult, pendingResult] = await Promise.all([
+      db.user.count({ where: { referredById: userId } }),
+      db.referralReward.aggregate({
+        where: { referrerId: userId, status: 'paid' },
+        _sum: { rewardAmount: true },
+      }),
+      db.referralReward.aggregate({
+        where: { referrerId: userId, status: 'pending' },
+        _sum: { rewardAmount: true },
+      }),
+    ])
+
     return reply.send({
       success: true,
       data: {
         referralCode: user.referralCode,
-        referralCount,
+        totalReferrals,
         totalEarned: totalEarnedResult._sum.rewardAmount ?? 0,
-        rewards,
-        referredUsers,
+        pendingEarnings: pendingResult._sum.rewardAmount ?? 0,
       },
     })
+  })
+
+  // GET /api/referral/list — alias for frontend referral list
+  app.get('/referral/list', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+
+    const referredUsers = await db.user.findMany({
+      where: { referredById: userId },
+      select: { id: true, username: true, createdAt: true, kycStatus: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    })
+
+    return reply.send({ success: true, data: { referrals: referredUsers } })
   })
 }

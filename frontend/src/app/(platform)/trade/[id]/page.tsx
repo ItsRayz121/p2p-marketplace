@@ -34,24 +34,41 @@ interface ExtendedTrade extends Trade {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TIMELINE_STEPS = [
-  { key: 'pending', label: 'Order Created', icon: '📋' },
-  { key: 'paid', label: 'Payment Uploaded', icon: '💳' },
-  { key: 'released', label: 'Crypto Released', icon: '✅' },
+  { key: 'payment_pending', label: 'Order Created', icon: '📋' },
+  { key: 'payment_uploaded', label: 'Proof Uploaded', icon: '💳' },
+  { key: 'payment_confirmed', label: 'Payment Confirmed', icon: '✔️' },
+  { key: 'crypto_sent', label: 'Crypto Sent', icon: '🚀' },
+  { key: 'crypto_released', label: 'Trade Complete', icon: '✅' },
 ]
 
 function stepIndex(status: string): number {
-  if (status === 'pending') return 0
-  if (status === 'paid') return 1
-  if (status === 'released' || status === 'completed') return 2
+  if (status === 'payment_pending') return 0
+  if (status === 'payment_uploaded') return 1
+  if (status === 'payment_confirmed') return 2
+  if (status === 'crypto_sent') return 3
+  if (status === 'crypto_released') return 4
   return 0
 }
 
 function statusVariant(status: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (status === 'released') return 'success'
-  if (status === 'paid') return 'warning'
-  if (status === 'disputed') return 'danger'
-  if (status === 'cancelled' || status === 'expired') return 'danger'
+  if (status === 'crypto_released') return 'success'
+  if (['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(status)) return 'warning'
+  if (['disputed', 'cancelled', 'expired'].includes(status)) return 'danger'
   return 'default'
+}
+
+function statusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    payment_pending: 'Awaiting Payment',
+    payment_uploaded: 'Proof Uploaded',
+    payment_confirmed: 'Payment Confirmed',
+    crypto_sent: 'Crypto Sent',
+    crypto_released: 'Completed',
+    disputed: 'Disputed',
+    cancelled: 'Cancelled',
+    expired: 'Expired',
+  }
+  return labels[status] ?? status
 }
 
 // ─── Rating Modal ─────────────────────────────────────────────────────────────
@@ -151,12 +168,14 @@ export default function TradePage() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const [showCancelModal, setShowCancelModal] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
   const [showReleaseModal, setShowReleaseModal] = useState(false)
   const [showRatingModal, setShowRatingModal] = useState(false)
   const [ratedAlready, setRatedAlready] = useState(false)
 
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
+  const [showCryptoSentForm, setShowCryptoSentForm] = useState(false)
   const [txHash, setTxHash] = useState('')
 
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -186,9 +205,9 @@ export default function TradePage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Show rating modal after released
+  // Show rating modal after trade completes
   useEffect(() => {
-    if (trade?.status === 'released' && !ratedAlready) {
+    if (trade?.status === 'crypto_released' && !ratedAlready) {
       const timeout = setTimeout(() => setShowRatingModal(true), 1000)
       return () => clearTimeout(timeout)
     }
@@ -198,23 +217,24 @@ export default function TradePage() {
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
+  // Buyer: upload payment proof (payment_pending → payment_uploaded)
   const handleUploadProof = async (file: File) => {
     setActionError(null)
     try {
       const url = await upload(file)
-      await tradesApi.markPaid(id, { paymentProofKey: url })
+      await tradesApi.uploadPaymentProof(id, url)
       await fetchTrade()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Upload failed')
     }
   }
 
+  // Seller: confirm payment received (payment_uploaded → payment_confirmed)
   const handleConfirmPayment = async () => {
     setActionLoading(true)
     setActionError(null)
     try {
-      // Seller confirms payment was received
-      await tradesApi.markPaid(id)
+      await tradesApi.confirmPayment(id)
       await fetchTrade()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Action failed')
@@ -223,6 +243,24 @@ export default function TradePage() {
     }
   }
 
+  // Seller: mark crypto sent (payment_confirmed → crypto_sent)
+  const handleMarkCryptoSent = async () => {
+    if (!txHash.trim()) return
+    setActionLoading(true)
+    setActionError(null)
+    try {
+      await tradesApi.markCryptoSent(id, txHash.trim())
+      await fetchTrade()
+      setShowCryptoSentForm(false)
+      setTxHash('')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  // Buyer: release escrow (crypto_sent → crypto_released)
   const handleRelease = async () => {
     setActionLoading(true)
     setActionError(null)
@@ -241,9 +279,10 @@ export default function TradePage() {
     setActionLoading(true)
     setActionError(null)
     try {
-      await tradesApi.cancelTrade(id)
+      await tradesApi.cancelTrade(id, cancelReason.trim() || 'Cancelled by user')
       await fetchTrade()
       setShowCancelModal(false)
+      setCancelReason('')
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Cancel failed')
     } finally {
@@ -278,8 +317,10 @@ export default function TradePage() {
     finally { setSendingMsg(false) }
   }
 
-  const handleRatingSubmit = async (_rating: number, _comment: string, _tags: string[]) => {
-    // Rating endpoint not defined in API — simulate
+  const handleRatingSubmit = async (rating: number, comment: string, tags: string[]) => {
+    try {
+      await tradesApi.rateTrade(id, { rating, comment: comment.trim() || undefined, tags: tags.length ? tags : undefined })
+    } catch { /* non-critical */ }
     setRatedAlready(true)
     setShowRatingModal(false)
   }
@@ -288,8 +329,8 @@ export default function TradePage() {
   if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={fetchTrade} />
 
   const currentStep = stepIndex(trade.status)
-  const canCancel = isUserBuyer && (trade.status === 'pending' || trade.status === 'paid')
-  const canDispute = trade.status === 'paid' || trade.status === 'disputed'
+  const canCancel = isUserBuyer && trade.status === 'payment_pending'
+  const canDispute = ['payment_uploaded', 'payment_confirmed'].includes(trade.status)
   const counterparty = isUserBuyer
     ? (trade.seller?.username || 'Seller')
     : (trade.buyer?.username || 'Buyer')
@@ -305,7 +346,7 @@ export default function TradePage() {
           <p className="text-xs text-text-muted font-mono mt-0.5">{trade.id}</p>
         </div>
         <Badge variant={statusVariant(trade.status)}>
-          {trade.status.charAt(0).toUpperCase() + trade.status.slice(1)}
+          {statusLabel(trade.status)}
         </Badge>
       </div>
 
@@ -313,7 +354,7 @@ export default function TradePage() {
         {/* Left: status + actions */}
         <div className="space-y-5">
           {/* Countdown */}
-          {trade.expiresAt && trade.status === 'pending' && (
+          {trade.expiresAt && trade.status === 'payment_pending' && (
             <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-center gap-3">
               <svg className="w-5 h-5 text-warning flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -363,8 +404,8 @@ export default function TradePage() {
           <div className="bg-white rounded-xl border border-border p-5 space-y-3">
             <h2 className="text-sm font-semibold text-text-primary mb-1">Actions</h2>
 
-            {/* Buyer: upload payment proof */}
-            {isUserBuyer && trade.status === 'pending' && (
+            {/* Buyer: upload payment proof (payment_pending) */}
+            {isUserBuyer && trade.status === 'payment_pending' && (
               <>
                 <input
                   ref={fileInputRef}
@@ -376,6 +417,7 @@ export default function TradePage() {
                 <Button
                   fullWidth
                   loading={uploading}
+                  disabled={uploading || actionLoading}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   Upload Payment Proof
@@ -383,17 +425,42 @@ export default function TradePage() {
               </>
             )}
 
-            {/* Seller: confirm payment */}
-            {!isUserBuyer && trade.status === 'paid' && (
-              <Button fullWidth loading={actionLoading} onClick={handleConfirmPayment}>
+            {/* Seller: confirm payment received (payment_uploaded) */}
+            {!isUserBuyer && trade.status === 'payment_uploaded' && (
+              <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>
                 Confirm Payment Received
               </Button>
             )}
 
-            {/* Buyer: release crypto */}
-            {isUserBuyer && trade.status === 'paid' && (
-              <Button fullWidth loading={actionLoading} onClick={() => setShowReleaseModal(true)}>
-                Release &amp; Confirm Receipt
+            {/* Seller: mark crypto sent (payment_confirmed) */}
+            {!isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
+              <Button fullWidth onClick={() => setShowCryptoSentForm(true)}>
+                I&apos;ve Sent the Crypto
+              </Button>
+            )}
+
+            {showCryptoSentForm && !isUserBuyer && (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={txHash}
+                  onChange={(e) => setTxHash(e.target.value)}
+                  placeholder="Enter transaction hash (txHash)"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                />
+                <div className="flex gap-2">
+                  <Button variant="secondary" fullWidth onClick={() => setShowCryptoSentForm(false)}>Cancel</Button>
+                  <Button fullWidth loading={actionLoading} disabled={!txHash.trim() || actionLoading} onClick={handleMarkCryptoSent}>
+                    Confirm Sent
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Buyer: release escrow (crypto_sent) */}
+            {isUserBuyer && trade.status === 'crypto_sent' && (
+              <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>
+                I Received the Crypto — Release
               </Button>
             )}
 
@@ -484,15 +551,25 @@ export default function TradePage() {
       </div>
 
       {/* Modals */}
-      <ConfirmModal
-        isOpen={showCancelModal}
-        onClose={() => setShowCancelModal(false)}
-        onConfirm={handleCancel}
-        title="Cancel Trade"
-        description="Are you sure you want to cancel this trade? This action cannot be undone."
-        confirmLabel="Cancel Trade"
-        confirmVariant="danger"
-      />
+      <Modal isOpen={showCancelModal} onClose={() => { setShowCancelModal(false); setCancelReason('') }} title="Cancel Trade">
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">Are you sure you want to cancel this trade? This action cannot be undone.</p>
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">Reason (optional)</label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Tell the other party why you're cancelling..."
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div className="flex gap-3">
+            <Button variant="secondary" fullWidth onClick={() => { setShowCancelModal(false); setCancelReason('') }}>Keep Trade</Button>
+            <Button variant="danger" fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleCancel}>Cancel Trade</Button>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmModal
         isOpen={showReleaseModal}

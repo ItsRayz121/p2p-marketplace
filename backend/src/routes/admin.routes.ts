@@ -5,6 +5,8 @@ import { db } from '../lib/prisma'
 import { AppError, Errors } from '../lib/errors'
 import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
+import { Prisma } from '@prisma/client'
+type JsonValue = Prisma.InputJsonValue
 
 const adminOrSuper = requireRole('admin', 'super_admin')
 const adminOrSuperOrKyc = requireRole('admin', 'super_admin', 'kyc_reviewer')
@@ -29,6 +31,10 @@ async function createAuditLog(
   await db.auditLog.create({
     data: { actorId: adminId, action, targetType, targetId, metadata: details as any },
   })
+}
+
+function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
+  db.notification.create({ data: { userId, type, title, body, metadata: metadata as JsonValue } }).catch(() => {})
 }
 
 // ─── Route Export ─────────────────────────────────────────────────────────────
@@ -136,7 +142,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: user })
   })
 
-  app.post('/admin/users/:id/ban', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/users/:id/ban', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500) })
     const parsed = bodySchema.safeParse(req.body)
@@ -151,7 +157,16 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
-  app.post('/admin/users/:id/suspend', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/users/:id/unban', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const user = await db.user.findUnique({ where: { id }, select: { email: true } })
+    if (!user) throw Errors.NOT_FOUND('User')
+    await db.user.update({ where: { id }, data: { isBanned: false, isSuspended: false, suspendReason: null } })
+    await createAuditLog(req.user!.id, 'USER_UNBANNED', 'User', id, {})
+    return reply.send({ success: true })
+  })
+
+  app.post('/admin/users/:id/suspend', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500), until: z.string().datetime().optional() })
     const parsed = bodySchema.safeParse(req.body)
@@ -229,7 +244,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: submission })
   })
 
-  app.post('/admin/kyc/:id/approve', { preHandler: [authenticate, adminOrSuperOrKyc] }, async (req, reply) => {
+  app.post('/admin/kyc/:id/approve', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
     const submission = await db.kycSubmission.findUnique({
@@ -256,11 +271,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
     await createAuditLog(req.user!.id, 'KYC_APPROVED', 'KycSubmission', id, { userId: submission.userId, level: kycLevel })
     await sendKycEmail('approved', submission.user.email, { level: kycLevel })
+    notify(submission.userId, 'kyc', 'KYC Approved', 'Your identity has been verified. You now have full platform access.', { tier: kycLevel })
 
     return reply.send({ success: true })
   })
 
-  app.post('/admin/kyc/:id/reject', { preHandler: [authenticate, adminOrSuperOrKyc] }, async (req, reply) => {
+  app.post('/admin/kyc/:id/reject', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500) })
     const parsed = bodySchema.safeParse(req.body)
@@ -283,6 +299,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     await createAuditLog(req.user!.id, 'KYC_REJECTED', 'KycSubmission', id, { reason: parsed.data.reason })
     await sendKycEmail('rejected', submission.user.email, { reason: parsed.data.reason })
+    notify(submission.userId, 'kyc', 'KYC Rejected', `Your KYC submission was rejected. Reason: ${parsed.data.reason}`, { rejectionReason: parsed.data.reason })
 
     return reply.send({ success: true })
   })
@@ -309,7 +326,7 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
-  app.post('/admin/merchants/:id/approve', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/merchants/:id/approve', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
     const submission = await db.merchantKycSubmission.findUnique({ where: { id } })
@@ -343,7 +360,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
-  app.post('/admin/merchants/:id/reject', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/merchants/:id/reject', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500) })
     const parsed = bodySchema.safeParse(req.body)
@@ -482,7 +499,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: dispute })
   })
 
-  app.post('/admin/disputes/:id/resolve', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/disputes/:id/resolve', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({
       winner: z.enum(['buyer', 'seller']),

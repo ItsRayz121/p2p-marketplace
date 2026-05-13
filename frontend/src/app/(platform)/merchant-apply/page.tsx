@@ -13,11 +13,17 @@ export default function MerchantApplyPage() {
   const [businessName, setBusinessName] = useState('')
   const [description, setDescription] = useState('')
   const [proofUrl, setProofUrl] = useState('')
+  const [cnicFrontUrl, setCnicFrontUrl] = useState('')
+  const [cnicBackUrl, setCnicBackUrl] = useState('')
+  const [selfieUrl, setSelfieUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
   const { upload, uploading, error: uploadError } = useFileUpload('merchant-proof')
+  const { upload: uploadCnicFront, uploading: uploadingFront, error: frontError } = useFileUpload('kyc-front')
+  const { upload: uploadCnicBack, uploading: uploadingBack, error: backError } = useFileUpload('kyc-back')
+  const { upload: uploadSelfie, uploading: uploadingSelfie, error: selfieError } = useFileUpload('kyc-selfie')
 
   const kycApproved = user?.kycStatus === 'approved'
 
@@ -68,6 +74,8 @@ export default function MerchantApplyPage() {
     } catch { /* handled by hook */ }
   }
 
+  const anyUploading = uploading || uploadingFront || uploadingBack || uploadingSelfie
+
   const handleSubmit = async () => {
     if (!businessName.trim()) { setError('Business name is required'); return }
     setSubmitting(true)
@@ -75,8 +83,11 @@ export default function MerchantApplyPage() {
     try {
       await merchantsApi.apply({
         businessName: businessName.trim(),
-        description: description.trim() || undefined,
-        proofKey: proofUrl || undefined,
+        description: description.trim() || 'N/A',
+        ...(proofUrl ? { proofUrl } : {}),
+        ...(cnicFrontUrl ? { cnicFrontUrl } : {}),
+        ...(cnicBackUrl ? { cnicBackUrl } : {}),
+        ...(selfieUrl ? { selfieUrl } : {}),
       })
       setSuccess(true)
     } catch (err) {
@@ -160,13 +171,44 @@ export default function MerchantApplyPage() {
           </label>
           {uploadError && <p className="text-sm text-danger mt-1">{uploadError}</p>}
         </div>
+
+        <div>
+          <label className="text-sm font-medium text-text-primary block mb-1.5">Identity Documents (optional)</label>
+          <p className="text-xs text-text-muted mb-3">Upload your CNIC front, back, and a selfie to speed up approval.</p>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'CNIC Front', url: cnicFrontUrl, setUrl: setCnicFrontUrl, uploading: uploadingFront, uploadFn: uploadCnicFront, err: frontError },
+              { label: 'CNIC Back', url: cnicBackUrl, setUrl: setCnicBackUrl, uploading: uploadingBack, uploadFn: uploadCnicBack, err: backError },
+              { label: 'Selfie', url: selfieUrl, setUrl: setSelfieUrl, uploading: uploadingSelfie, uploadFn: uploadSelfie, err: selfieError },
+            ].map(({ label, url, setUrl, uploading: isUploading, uploadFn, err }) => (
+              <div key={label}>
+                <p className="text-xs text-text-muted mb-1">{label}</p>
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-3 cursor-pointer hover:border-primary/50 transition-colors min-h-[80px]">
+                  {isUploading ? (
+                    <Spinner size="sm" />
+                  ) : url ? (
+                    <img src={url} alt={label} className="w-full rounded object-cover" />
+                  ) : (
+                    <p className="text-xs text-text-muted text-center">Tap to upload</p>
+                  )}
+                  <input type="file" accept="image/*" className="hidden" disabled={isUploading} onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    try { setUrl(await uploadFn(file)) } catch { /* handled by hook */ }
+                  }} />
+                </label>
+                {err && <p className="text-xs text-danger mt-0.5">{err}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {error && (
         <div className="bg-danger/10 border border-danger/30 rounded-lg p-3 text-sm text-danger">{error}</div>
       )}
 
-      <Button className="w-full" onClick={handleSubmit} disabled={submitting || uploading}>
+      <Button className="w-full" onClick={handleSubmit} disabled={submitting || anyUploading}>
         {submitting ? <Spinner size="sm" /> : 'Submit Application'}
       </Button>
     </div>

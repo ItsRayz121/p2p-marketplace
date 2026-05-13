@@ -18,7 +18,10 @@ import { db } from '../lib/prisma'
 const applySchema = z.object({
   businessName: z.string().min(2).max(200),
   description: z.string().min(10).max(1000),
-  proofUrl: z.string().url(),
+  proofUrl: z.string().url().optional(),
+  cnicFrontUrl: z.string().url().optional(),
+  cnicBackUrl: z.string().url().optional(),
+  selfieUrl: z.string().url().optional(),
 })
 
 const spreadSchema = z.object({
@@ -45,7 +48,15 @@ export async function merchantRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const submission = await applyMerchant(req.user!.id, parsed.data)
+    const { businessName, description, proofUrl, cnicFrontUrl, cnicBackUrl, selfieUrl } = parsed.data
+    const submission = await applyMerchant(req.user!.id, {
+      businessName,
+      description,
+      ...(proofUrl !== undefined ? { proofUrl } : {}),
+      ...(cnicFrontUrl !== undefined ? { cnicFrontUrl } : {}),
+      ...(cnicBackUrl !== undefined ? { cnicBackUrl } : {}),
+      ...(selfieUrl !== undefined ? { selfieUrl } : {}),
+    })
     return reply.code(201).send({ success: true, data: submission })
   })
 

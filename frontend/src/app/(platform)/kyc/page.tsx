@@ -130,7 +130,7 @@ export default function KycPage() {
   const [uiState, setUiState] = useState<UIState>('loading')
   const [kycStatus, setKycStatus] = useState<string>('none')
   const [kycLevel, setKycLevel] = useState<string>('none')
-  const [documents, setDocuments] = useState<KycDocument[]>([])
+  const [latestSubmission, setLatestSubmission] = useState<KycDocument | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [selectedTier, setSelectedTier] = useState<KycTier | null>(null)
@@ -147,14 +147,15 @@ export default function KycPage() {
   const fetchStatus = useCallback(async () => {
     try {
       const res = await kycApi.getStatus()
-      setKycStatus(res.status)
-      setKycLevel(res.level)
-      setDocuments(res.documents)
+      setKycStatus(res.status ?? 'none')
+      setKycLevel(res.level ?? 'none')
+      setLatestSubmission(res.latestSubmission)
 
-      if (res.status === 'none' || res.status === '') setUiState('none')
-      else if (res.status === 'pending') setUiState('pending')
-      else if (res.status === 'approved') setUiState('approved')
-      else if (res.status === 'rejected') setUiState('rejected')
+      const s = res.status ?? 'none'
+      if (!s || s === 'none' || s === '') setUiState('none')
+      else if (s === 'pending') setUiState('pending')
+      else if (s === 'approved') setUiState('approved')
+      else if (s === 'rejected') setUiState('rejected')
       else setUiState('none')
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load KYC status')
@@ -190,6 +191,10 @@ export default function KycPage() {
   }
 
   const handleSubmit = async () => {
+    if (!selectedTier) {
+      setSubmitError('Please select a KYC tier.')
+      return
+    }
     if (!frontUrl || !backUrl || !selfieUrl || !cnicNumber) {
       setSubmitError('Please fill all required fields and upload all documents.')
       return
@@ -205,15 +210,15 @@ export default function KycPage() {
     setSubmitting(true)
     setSubmitError(null)
     try {
-      if (selectedTier === 'basic') {
-        await kycApi.submitBasic({
-          documentType: 'cnic',
-          frontKey: frontUrl,
-          backKey: backUrl,
-        })
-      } else {
-        await kycApi.submitEnhanced({ selfieKey: selfieUrl })
-      }
+      const validLinks = socialLinks.filter((l) => l.url.trim())
+      await kycApi.submit({
+        tier: selectedTier,
+        cnicNumber,
+        frontUrl,
+        backUrl,
+        selfieUrl,
+        ...(selectedTier === 'enhanced' && validLinks.length > 0 ? { socialLinks: validLinks } : {}),
+      })
       await fetchStatus()
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed')
@@ -222,7 +227,7 @@ export default function KycPage() {
     }
   }
 
-  const lastDoc = documents.at(-1)
+  const lastDoc = latestSubmission
 
   if (uiState === 'loading') return <LoadingState message="Loading KYC status..." />
   if (uiState === 'error') return <ErrorState title={loadError ?? 'Error'} onRetry={fetchStatus} />
@@ -269,7 +274,7 @@ export default function KycPage() {
             <div className="w-10 h-10 bg-danger/20 rounded-full flex items-center justify-center text-danger text-lg">✗</div>
             <div>
               <h2 className="text-base font-bold text-danger">Verification Rejected</h2>
-              {lastDoc?.notes && <p className="text-sm text-text-secondary mt-0.5">{lastDoc.notes}</p>}
+              {(lastDoc?.rejectionReason || lastDoc?.notes) && <p className="text-sm text-text-secondary mt-0.5">{lastDoc.rejectionReason ?? lastDoc.notes}</p>}
             </div>
           </div>
           <Button onClick={() => { setUiState('none'); setSubmitError(null) }}>

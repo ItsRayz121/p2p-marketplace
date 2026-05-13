@@ -5,6 +5,8 @@ import { QUEUE_NAMES, queues } from './definitions'
 import { updateRates } from '../jobs/rateUpdater.job'
 import { runTradeEscalation } from '../jobs/tradeEscalation.job'
 import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
+import { processReferralPayout } from '../jobs/referralPayout.job'
+import { sendAdminAlertEmail } from '../services/email.service'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createWorker(queueName: string, processor: Processor<any, any, string>) {
@@ -20,8 +22,10 @@ export function createWorker(queueName: string, processor: Processor<any, any, s
     )
 
     if (job && job.attemptsMade >= (job.opts.attempts ?? 3)) {
-      // TODO: send admin alert email on final failure
-      logger.error({ jobId: job.id, queue: queueName }, 'Job reached max retries — admin alert required')
+      sendAdminAlertEmail(
+        `Background job failed permanently: ${queueName}/${job.id}`,
+        `Queue: ${queueName}\nJob ID: ${job.id}\nAttempts: ${job.attemptsMade}\nData: ${JSON.stringify(job.data)}\nError: ${err?.message ?? 'Unknown error'}`,
+      ).catch(() => {})
     }
   })
 
@@ -60,16 +64,9 @@ export function startWorkers() {
     await recalculateUserBadge(job.data.userId as string)
   })
 
-  // Workers are registered here as job processors are built.
-  // createWorker(QUEUE_NAMES.OCR, ...)
-  // createWorker(QUEUE_NAMES.GAS_FEE, ...)
-  // createWorker(QUEUE_NAMES.PUSH_NOTIFICATIONS, ...)
-  // createWorker(QUEUE_NAMES.EMAIL_SENDER, ...)
-  // createWorker(QUEUE_NAMES.REFERRAL_PAYOUT, ...)
-  // createWorker(QUEUE_NAMES.FRAUD_DETECTOR, ...)
-  // createWorker(QUEUE_NAMES.LEADERBOARD_CACHE, ...)
-  // createWorker(QUEUE_NAMES.MERCHANT_RANK_UPDATER, ...)
-  // createWorker(QUEUE_NAMES.DATABASE_BACKUP, ...)
+  createWorker(QUEUE_NAMES.REFERRAL_PAYOUT, async (job) => {
+    await processReferralPayout(job)
+  })
 
   logger.info('BullMQ workers ready')
 }

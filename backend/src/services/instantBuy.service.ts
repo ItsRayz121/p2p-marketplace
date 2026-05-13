@@ -3,6 +3,7 @@ import { redis } from '../lib/redis'
 import { AppError, Errors } from '../lib/errors'
 import { generateOrderRef } from '../lib/hash'
 import { queues } from '../queues/definitions'
+import { assertCloudinaryUrl } from '../lib/upload'
 
 // ─── createOrder ──────────────────────────────────────────────────────────────
 
@@ -167,6 +168,8 @@ export async function uploadPaymentProof(orderId: string, userId: string, proofU
   if (order.status !== 'payment_pending') {
     throw new AppError('INVALID_STATUS', `Order is in status ${order.status}, expected payment_pending`, 400)
   }
+
+  assertCloudinaryUrl(proofUrl, 'proofUrl')
 
   const updated = await db.instantBuyOrder.update({
     where: { id: orderId },

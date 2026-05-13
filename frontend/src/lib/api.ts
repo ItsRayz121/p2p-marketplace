@@ -259,6 +259,7 @@ export interface Session {
 
 export interface Trade {
   id: string
+  orderRef?: string
   adId: string
   buyerId: string
   sellerId: string
@@ -266,8 +267,12 @@ export interface Trade {
   amount: string
   price: string
   totalPkr: string
-  status: 'pending' | 'paid' | 'released' | 'disputed' | 'cancelled' | 'expired'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_confirmed' | 'crypto_sent' | 'crypto_released' | 'cancelled' | 'disputed' | 'expired'
   paymentMethod: string
+  paymentProofUrl?: string
+  txHash?: string
+  buyerRated?: boolean
+  sellerRated?: boolean
   expiresAt: string
   createdAt: string
   updatedAt: string
@@ -295,15 +300,15 @@ export interface Ad {
 export interface KycDocument {
   id: string
   userId: string
-  level: 'basic' | 'enhanced'
-  status: 'pending' | 'approved' | 'rejected'
-  documentType: string
-  frontKey?: string
-  backKey?: string
-  selfieKey?: string
-  notes?: string
-  reviewedAt?: string
+  tier: 'basic' | 'enhanced'
+  status: 'pending' | 'approved' | 'rejected' | 'needs_revision'
+  frontUrl?: string
+  backUrl?: string
+  selfieUrl?: string
+  rejectionReason?: string | null
+  notes?: string | null
   createdAt: string
+  reviewedAt?: string | null
 }
 
 export interface Notification {
@@ -312,8 +317,8 @@ export interface Notification {
   type: string
   title: string
   body: string
-  read: boolean
-  data?: Record<string, unknown>
+  isRead: boolean
+  metadata?: Record<string, unknown>
   createdAt: string
 }
 
@@ -448,14 +453,24 @@ export const tradesApi = {
       : ''
     return apiRequest<{ trades: Trade[]; total: number }>('/trades/me' + qs)
   },
-  markPaid: (id: string, data?: { paymentReference?: string; paymentProofKey?: string }) =>
-    apiRequest<Trade>(`/trades/${id}/mark-paid`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  // Buyer: upload payment proof (transitions payment_pending → payment_uploaded)
+  uploadPaymentProof: (id: string, paymentProofUrl: string) =>
+    apiRequest<Trade>(`/trades/${id}/payment-proof`, { method: 'POST', body: JSON.stringify({ paymentProofUrl }) }),
+  // Seller: confirm payment received (transitions payment_uploaded → payment_confirmed)
+  confirmPayment: (id: string) =>
+    apiRequest<Trade>(`/trades/${id}/confirm-payment`, { method: 'POST' }),
+  // Seller: mark crypto sent with txHash (transitions payment_confirmed → crypto_sent)
+  markCryptoSent: (id: string, txHash: string) =>
+    apiRequest<Trade>(`/trades/${id}/crypto-sent`, { method: 'POST', body: JSON.stringify({ txHash }) }),
+  // Buyer: release escrow (transitions crypto_sent → crypto_released)
   releaseCrypto: (id: string) =>
     apiRequest<Trade>(`/trades/${id}/release`, { method: 'POST' }),
-  cancelTrade: (id: string, reason?: string) =>
+  cancelTrade: (id: string, reason: string) =>
     apiRequest<Trade>(`/trades/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
-  openDispute: (id: string, data: { reason: string; evidenceKey?: string }) =>
+  openDispute: (id: string, data: { reason: string }) =>
     apiRequest<Trade>(`/trades/${id}/dispute`, { method: 'POST', body: JSON.stringify(data) }),
+  rateTrade: (id: string, data: { rating: number; comment?: string; tags?: string[] }) =>
+    apiRequest<void>(`/trades/${id}/rate`, { method: 'POST', body: JSON.stringify(data) }),
   sendMessage: (id: string, message: string) =>
     apiRequest<{ id: string; message: string; createdAt: string }>(`/trades/${id}/messages`, { method: 'POST', body: JSON.stringify({ message }) }),
   getMessages: (id: string) =>
@@ -489,24 +504,18 @@ export const adsApi = {
 
 export const kycApi = {
   getStatus: () =>
-    apiRequest<{ status: string; level: string; documents: KycDocument[] }>('/kyc/status'),
-  submitBasic: (data: { documentType: string; frontKey: string; backKey?: string }) =>
-    apiRequest<KycDocument>('/kyc/basic', { method: 'POST', body: JSON.stringify(data) }),
-  submitEnhanced: (data: { selfieKey: string; additionalDocKey?: string }) =>
-    apiRequest<KycDocument>('/kyc/enhanced', { method: 'POST', body: JSON.stringify(data) }),
-  // Admin/reviewer endpoints
-  getPendingReviews: (params?: { page?: number; limit?: number }) => {
-    const qs = params
-      ? '?' + new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined)
-            .map(([k, v]) => [k, String(v)])
-        ).toString()
-      : ''
-    return apiRequest<{ documents: KycDocument[]; total: number }>('/kyc/pending' + qs)
-  },
-  reviewDocument: (id: string, data: { status: 'approved' | 'rejected'; notes?: string }) =>
-    apiRequest<KycDocument>(`/kyc/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<{ status: string; level: string | null; latestSubmission: KycDocument | null }>('/kyc/status'),
+  submit: (data: {
+    tier: 'basic' | 'enhanced'
+    cnicNumber: string
+    frontUrl: string
+    backUrl: string
+    selfieUrl: string
+    socialLinks?: Array<{ platform: string; url: string }>
+  }) =>
+    apiRequest<KycDocument>('/kyc/submit', { method: 'POST', body: JSON.stringify(data) }),
+  getSubmissions: () =>
+    apiRequest<{ submissions: KycDocument[] }>('/kyc/submissions'),
 }
 
 export const notificationsApi = {
@@ -518,7 +527,11 @@ export const notificationsApi = {
             .map(([k, v]) => [k, String(v)])
         ).toString()
       : ''
-    return apiRequest<{ notifications: Notification[]; total: number; unreadCount: number }>('/notifications' + qs)
+    return apiRequest<{
+      notifications: Notification[]
+      unreadCount: number
+      pagination: { page: number; limit: number; total: number; pages: number }
+    }>('/notifications' + qs)
   },
   markRead: (id: string) =>
     apiRequest<void>(`/notifications/${id}/read`, { method: 'PATCH' }),
@@ -542,8 +555,15 @@ export const dashboardApi = {
 }
 
 export const merchantsApi = {
-  apply: (data: { businessName?: string; description?: string; proofKey?: string }) =>
-    apiRequest<{ applicationId: string; status: string }>('/merchants/apply', { method: 'POST', body: JSON.stringify(data) }),
+  apply: (data: {
+    businessName: string
+    description: string
+    proofUrl?: string
+    cnicFrontUrl?: string
+    cnicBackUrl?: string
+    selfieUrl?: string
+  }) =>
+    apiRequest<{ id: string; status: string }>('/merchants/apply', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: () =>
     apiRequest<{ id: string; userId: string; status: string; businessName?: string; rating: number; totalTrades: number }>('/merchants/me'),
   getPublicProfile: (id: string) =>
@@ -651,11 +671,11 @@ export const adminApi = {
 
   // Merchant KYC
   getMerchantKycQueue: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ submissions: unknown[]; total: number }>('/admin/merchant-kyc/queue' + buildQs(params)),
+    apiRequest<{ submissions: unknown[]; total: number }>('/admin/merchants/queue' + buildQs(params)),
   approveMerchantKyc: (id: string) =>
-    apiRequest<void>(`/admin/merchant-kyc/${id}/approve`, { method: 'POST' }),
+    apiRequest<void>(`/admin/merchants/${id}/approve`, { method: 'POST' }),
   rejectMerchantKyc: (id: string, data: { reason: string }) =>
-    apiRequest<void>(`/admin/merchant-kyc/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<void>(`/admin/merchants/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Trades
   getTrades: (params?: Record<string, string | number | undefined>) =>

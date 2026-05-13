@@ -19,6 +19,7 @@ import {
   deleteSavedAddress,
 } from '../services/wallet.service'
 import { AppError } from '../lib/errors'
+import { db } from '../lib/prisma'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -53,11 +54,75 @@ const savedAddressSchema = z.object({
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+const DEFAULT_NETWORKS: Record<string, string> = {
+  USDT: 'TRC20', BTC: 'BTC', ETH: 'ERC20', BNB: 'BEP20', TRX: 'TRC20',
+}
+
 export async function walletRoutes(app: FastifyInstance) {
   // GET /api/wallet
   app.get('/wallet', { preHandler: [authenticate] }, async (req, reply) => {
     const wallets = await getUserWallets(req.user!.id)
     return reply.send({ success: true, data: wallets })
+  })
+
+  // GET /api/wallet/balances — frontend-friendly alias returning WalletBalance shape
+  app.get('/wallet/balances', { preHandler: [authenticate] }, async (req, reply) => {
+    const wallets = await getUserWallets(req.user!.id)
+    const balances = wallets.map((w: any) => ({
+      coin: w.coin,
+      network: w.network,
+      available: (parseFloat(w.balance) - parseFloat(w.lockedBalance)).toFixed(8),
+      locked: w.lockedBalance,
+      total: w.balance,
+    }))
+    return reply.send({ success: true, data: { balances } })
+  })
+
+  // GET /api/wallet/balances/:coin
+  app.get('/wallet/balances/:coin', { preHandler: [authenticate] }, async (req, reply) => {
+    const { coin } = req.params as { coin: string }
+    const wallets = await getUserWallets(req.user!.id)
+    const w = wallets.find((x: any) => x.coin.toLowerCase() === coin.toLowerCase())
+    if (!w) throw new AppError('NOT_FOUND', 'Wallet not found for this coin', 404)
+    return reply.send({
+      success: true,
+      data: {
+        coin: w.coin,
+        network: w.network,
+        available: (Number(w.balance) - Number(w.lockedBalance)).toFixed(8),
+        locked: w.lockedBalance.toString(),
+        total: w.balance.toString(),
+      },
+    })
+  })
+
+  // GET /api/wallet/transactions — paginated transaction history
+  app.get('/wallet/transactions', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const query = req.query as Record<string, string>
+    const page = Math.max(parseInt(query.page ?? '1', 10), 1)
+    const limit = Math.min(parseInt(query.limit ?? '20', 10), 50)
+    const where: any = { userId }
+    if (query.coin) where.coin = query.coin.toUpperCase()
+    if (query.type) where.type = query.type
+    const [transactions, total] = await Promise.all([
+      db.transaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.transaction.count({ where }),
+    ])
+    return reply.send({ success: true, data: { transactions, total, page, limit } })
+  })
+
+  // GET /api/wallet/deposit/:coin — simple alias using default network per coin
+  app.get('/wallet/deposit/:coin', { preHandler: [authenticate] }, async (req, reply) => {
+    const { coin } = req.params as { coin: string }
+    const network = DEFAULT_NETWORKS[coin.toUpperCase()] ?? 'TRC20'
+    const result = await getDepositAddress(coin.toUpperCase(), network)
+    return reply.send({ success: true, data: result })
   })
 
   // GET /api/wallet/address/:coin/:network

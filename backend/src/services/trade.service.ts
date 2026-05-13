@@ -2,10 +2,26 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
+import { assertCloudinaryUrl } from '../lib/upload'
+type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
 import { sendTradeEmail } from './email.service'
 import { queues } from '../queues/definitions'
 import { generateOrderRef } from '../lib/hash'
+
+// ─── Notification Helper ──────────────────────────────────────────────────────
+
+function notify(
+  userId: string,
+  type: string,
+  title: string,
+  body: string,
+  metadata: Record<string, unknown>,
+) {
+  db.notification
+    .create({ data: { userId, type, title, body, metadata: metadata as JsonValue } })
+    .catch(() => {})
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -194,12 +210,16 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
     throw new AppError('INVALID_STATUS', `Cannot upload proof for trade in status: ${trade.status}`, 400)
   }
 
+  assertCloudinaryUrl(proofUrl, 'proofUrl')
+
   const updated = await db.trade.update({
     where: { id: tradeId },
     data: { status: 'payment_uploaded', paymentProofUrl: proofUrl },
   })
 
-  // Notify seller
+  notify(trade.sellerId, 'trade', 'Payment Proof Uploaded', 'The buyer has uploaded payment proof. Please review and confirm.', { tradeId })
+
+  // Notify seller via email
   await sendTradeEmail(
     'payment_uploaded',
     {
@@ -216,34 +236,50 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
 }
 
 export async function confirmPayment(tradeId: string, actorId: string, role: string) {
-  const trade = await db.trade.findUnique({ where: { id: tradeId } })
-  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  const updated = await db.$transaction(async (tx: Tx) => {
+    const rows = await tx.$queryRaw<Array<{ id: string; status: string; sellerId: string; buyerId: string }>>`
+      SELECT id, status, "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE
+    `
+    const trade = rows[0]
+    if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
-  if (role !== 'admin' && trade.sellerId !== actorId) {
-    throw new AppError('FORBIDDEN', 'Only the seller or admin can confirm payment', 403)
-  }
-  if (trade.status !== 'payment_uploaded') {
-    throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${trade.status}`, 400)
-  }
+    if (role !== 'admin' && trade.sellerId !== actorId) {
+      throw new AppError('FORBIDDEN', 'Only the seller or admin can confirm payment', 403)
+    }
+    if (trade.status !== 'payment_uploaded') {
+      throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${trade.status}`, 400)
+    }
 
-  return db.trade.update({
-    where: { id: tradeId },
-    data: { status: 'payment_confirmed' },
+    return tx.trade.update({
+      where: { id: tradeId },
+      data: { status: 'payment_confirmed' },
+    })
   })
+
+  notify(updated.buyerId, 'trade', 'Payment Confirmed', 'The seller has confirmed your payment. Crypto will be sent soon.', { tradeId })
+  return updated
 }
 
 export async function markCryptoSent(tradeId: string, sellerId: string, txHash: string) {
-  const trade = await db.trade.findUnique({ where: { id: tradeId } })
-  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-  if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
-  if (trade.status !== 'payment_confirmed') {
-    throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${trade.status}`, 400)
-  }
+  const updated = await db.$transaction(async (tx: Tx) => {
+    const rows = await tx.$queryRaw<Array<{ id: string; status: string; sellerId: string; buyerId: string }>>`
+      SELECT id, status, "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE
+    `
+    const trade = rows[0]
+    if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+    if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
+    if (trade.status !== 'payment_confirmed') {
+      throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${trade.status}`, 400)
+    }
 
-  return db.trade.update({
-    where: { id: tradeId },
-    data: { status: 'crypto_sent', sellerTxHash: txHash },
+    return tx.trade.update({
+      where: { id: tradeId },
+      data: { status: 'crypto_sent', sellerTxHash: txHash },
+    })
   })
+
+  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', 'The seller has sent the crypto. Please verify and release once received.', { tradeId })
+  return updated
 }
 
 export async function releaseTrade(tradeId: string, buyerId: string) {
@@ -285,6 +321,8 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
   if (!trade.buyer.firstTradeBonusPaid) {
     await queues.referralPayout.add('first-trade', { userId: buyerId, tradeId })
   }
+
+  notify(trade.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId })
 
   // Send completion emails
   await sendTradeEmail(
@@ -344,6 +382,9 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
     })
   })
 
+  const otherPartyId = actorId === trade.buyerId ? trade.sellerId : trade.buyerId
+  notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId })
+
   return db.trade.findUnique({ where: { id: tradeId } })
 }
 
@@ -382,6 +423,11 @@ export async function openDispute(
 
     return newDispute
   })
+
+  const otherPartyId = openedById === trade.buyerId ? trade.sellerId : trade.buyerId
+  notify(otherPartyId, 'dispute', 'Dispute Opened', `A dispute has been opened on your trade. Reason: ${reason}`, { tradeId, disputeId: dispute.id })
+  // Notify admins via a system user placeholder — admin panel polls disputes directly
+  notify(openedById, 'dispute', 'Dispute Submitted', 'Your dispute has been submitted and will be reviewed by an admin.', { tradeId, disputeId: dispute.id })
 
   return dispute
 }

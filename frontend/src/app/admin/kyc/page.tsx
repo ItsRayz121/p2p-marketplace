@@ -242,33 +242,33 @@ export default function KycQueuePage() {
             {/* Document previews */}
             <div className="space-y-2">
               <p className="text-sm font-medium text-text-primary">Documents</p>
-              <div className="flex flex-wrap gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {selected.frontUrl && (
-                  <a href={selected.frontUrl} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-surface text-sm text-primary">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                    CNIC Front
-                  </a>
+                  <div className="space-y-1">
+                    <p className="text-xs text-text-muted">CNIC Front</p>
+                    <a href={selected.frontUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={selected.frontUrl} alt="CNIC Front" className="rounded-lg w-full object-cover border border-border hover:opacity-80 transition-opacity" />
+                    </a>
+                  </div>
                 )}
                 {selected.backUrl && (
-                  <a href={selected.backUrl} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-surface text-sm text-primary">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                    CNIC Back
-                  </a>
+                  <div className="space-y-1">
+                    <p className="text-xs text-text-muted">CNIC Back</p>
+                    <a href={selected.backUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={selected.backUrl} alt="CNIC Back" className="rounded-lg w-full object-cover border border-border hover:opacity-80 transition-opacity" />
+                    </a>
+                  </div>
                 )}
                 {selected.selfieUrl && (
-                  <a href={selected.selfieUrl} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-surface text-sm text-primary">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                    Selfie
-                  </a>
+                  <div className="space-y-1">
+                    <p className="text-xs text-text-muted">Selfie</p>
+                    <a href={selected.selfieUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={selected.selfieUrl} alt="Selfie" className="rounded-lg w-full object-cover border border-border hover:opacity-80 transition-opacity" />
+                    </a>
+                  </div>
+                )}
+                {!selected.frontUrl && !selected.backUrl && !selected.selfieUrl && (
+                  <p className="text-sm text-text-muted col-span-3">No documents uploaded</p>
                 )}
               </div>
             </div>

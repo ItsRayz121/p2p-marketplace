@@ -10,10 +10,20 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 
-const STATUS_OPTIONS = ['all', 'pending', 'paid', 'released', 'cancelled', 'disputed', 'expired'] as const
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'payment_pending', label: 'Awaiting Payment' },
+  { value: 'payment_uploaded', label: 'Proof Uploaded' },
+  { value: 'payment_confirmed', label: 'Confirmed' },
+  { value: 'crypto_sent', label: 'Crypto Sent' },
+  { value: 'crypto_released', label: 'Completed' },
+  { value: 'disputed', label: 'Disputed' },
+  { value: 'cancelled', label: 'Cancelled' },
+] as const
+
 const ROLE_OPTIONS = ['all', 'buyer', 'seller'] as const
 
-type StatusFilter = typeof STATUS_OPTIONS[number]
+type StatusFilter = typeof STATUS_OPTIONS[number]['value']
 type RoleFilter = typeof ROLE_OPTIONS[number]
 
 const PAGE_SIZE = 20
@@ -31,10 +41,24 @@ function timeAgo(dateStr: string): string {
 }
 
 function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (s === 'released') return 'success'
-  if (s === 'paid') return 'warning'
-  if (s === 'disputed' || s === 'cancelled' || s === 'expired') return 'danger'
+  if (s === 'crypto_released') return 'success'
+  if (['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(s)) return 'warning'
+  if (['disputed', 'cancelled', 'expired'].includes(s)) return 'danger'
   return 'default'
+}
+
+function statusLabel(s: string): string {
+  const labels: Record<string, string> = {
+    payment_pending: 'Awaiting Payment',
+    payment_uploaded: 'Proof Uploaded',
+    payment_confirmed: 'Confirmed',
+    crypto_sent: 'Crypto Sent',
+    crypto_released: 'Completed',
+    disputed: 'Disputed',
+    cancelled: 'Cancelled',
+    expired: 'Expired',
+  }
+  return labels[s] ?? s
 }
 
 export default function OrdersPage() {
@@ -89,17 +113,17 @@ export default function OrdersPage() {
       <div className="flex flex-wrap gap-3 mb-6">
         {/* Status */}
         <div className="flex flex-wrap gap-1">
-          {STATUS_OPTIONS.map((s) => (
+          {STATUS_OPTIONS.map((opt) => (
             <button
-              key={s}
-              onClick={() => setStatus(s)}
+              key={opt.value}
+              onClick={() => setStatus(opt.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                status === s
+                status === opt.value
                   ? 'bg-primary text-white'
                   : 'bg-white border border-border text-text-secondary hover:bg-surface'
               }`}
             >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
+              {opt.label}
             </button>
           ))}
         </div>
@@ -157,7 +181,7 @@ export default function OrdersPage() {
                   return (
                     <tr key={t.id} className="hover:bg-surface/50 transition-colors">
                       <td className="px-4 py-3">
-                        <Badge variant={statusVariant(t.status)} size="sm">{t.status}</Badge>
+                        <Badge variant={statusVariant(t.status)} size="sm">{statusLabel(t.status)}</Badge>
                       </td>
                       <td className="px-4 py-3 text-sm text-text-secondary">{isBuyer ? 'Buyer' : 'Seller'}</td>
                       <td className="px-4 py-3 text-sm font-medium text-text-primary">{counterparty}</td>
@@ -191,7 +215,7 @@ export default function OrdersPage() {
                   <div className="bg-white rounded-xl border border-border p-4 hover:shadow-sm transition-shadow">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <Badge variant={statusVariant(t.status)} size="sm">{t.status}</Badge>
+                        <Badge variant={statusVariant(t.status)} size="sm">{statusLabel(t.status)}</Badge>
                         <p className="text-sm font-medium text-text-primary mt-1">{counterparty}</p>
                         <p className="text-xs text-text-muted">{isBuyer ? 'You bought' : 'You sold'}</p>
                       </div>

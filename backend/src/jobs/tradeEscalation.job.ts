@@ -8,10 +8,9 @@ import { sendAdminAlertEmail } from '../services/email.service'
 export async function runTradeEscalation(): Promise<void> {
   const now = new Date()
 
-  // 1. Auto-cancel payment_pending trades older than 4 hours
-  const cancelBefore = new Date(now.getTime() - 4 * 60 * 60 * 1000)
+  // 1. Auto-cancel payment_pending trades that have passed their expiresAt deadline
   const stalePending = await db.trade.findMany({
-    where: { status: 'payment_pending', createdAt: { lt: cancelBefore } },
+    where: { status: 'payment_pending', expiresAt: { lt: now } },
     include: {
       buyer: { select: { email: true } },
       seller: { select: { email: true } },
