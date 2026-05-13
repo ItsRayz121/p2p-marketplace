@@ -1,7 +1,6 @@
 'use client'
 import { createAppKit } from '@reown/appkit/react'
-import { mainnet, bsc, polygon, arbitrum, optimism, base } from '@reown/appkit/networks'
-import { wagmiAdapter, WALLETCONNECT_PROJECT_ID } from './wagmi'
+import { wagmiAdapter, WALLETCONNECT_PROJECT_ID, APPKIT_NETWORKS } from './wagmi'
 
 let initialized = false
 
@@ -14,7 +13,8 @@ export function ensureAppKit() {
   initialized = true
   createAppKit({
     adapters: [wagmiAdapter],
-    networks: [mainnet, bsc, polygon, arbitrum, optimism, base],
+    // Same object references used by WagmiAdapter — see wagmi.ts.
+    networks: APPKIT_NETWORKS,
     projectId: WALLETCONNECT_PROJECT_ID,
     metadata: {
       name: 'PakSwap',

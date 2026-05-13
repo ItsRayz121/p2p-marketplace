@@ -1,7 +1,6 @@
 import { http } from 'viem'
-import { mainnet, bsc, polygon, arbitrum, optimism, base } from 'viem/chains'
+import { mainnet, bsc, polygon, arbitrum, optimism, base } from '@reown/appkit/networks'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
-import { SUPPORTED_CHAINS } from './chains'
 
 /**
  * Reown AppKit project id. Provision one at https://cloud.reown.com and set the
@@ -11,8 +10,19 @@ import { SUPPORTED_CHAINS } from './chains'
 export const WALLETCONNECT_PROJECT_ID =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? ''
 
+/**
+ * EVM networks PakSwap supports. Imported from `@reown/appkit/networks` (which
+ * re-exports the viem chain defs with AppKit's type wrapping) so the same
+ * references flow into both `WagmiAdapter` and `createAppKit()`. If we mixed
+ * viem-chain refs with AppKit-chain refs the modal would silently fail to
+ * recognise the active chain.
+ */
+export const APPKIT_NETWORKS = [mainnet, bsc, polygon, arbitrum, optimism, base] as [
+  typeof mainnet, typeof bsc, typeof polygon, typeof arbitrum, typeof optimism, typeof base,
+]
+
 export const wagmiAdapter = new WagmiAdapter({
-  networks: SUPPORTED_CHAINS as unknown as Parameters<typeof WagmiAdapter>[0]['networks'],
+  networks: APPKIT_NETWORKS,
   projectId: WALLETCONNECT_PROJECT_ID,
   ssr: true,
   transports: {
