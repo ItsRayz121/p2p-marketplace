@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { AppError, Errors } from '../lib/errors'
 import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
+import { logger as log } from '../lib/logger'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { Prisma } from '@prisma/client'
 type JsonValue = Prisma.InputJsonValue
@@ -680,14 +682,22 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/moralis-streams/backfill', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const adminId = req.user!.id
     const total = await db.depositAddress.count({ where: { chainFamily: 'EVM' } })
+    const runId = randomUUID()
+
+    log.info({ runId, adminId, totalRows: total }, 'Moralis backfill started via admin endpoint')
 
     // Fire-and-forget. We don't await — operator gets an immediate 202 with
     // the row count to expect, and the work proceeds asynchronously while
-    // /admin/moralis-streams/status reflects progress in real time.
+    // /admin/moralis-streams/status reflects progress in real time. Errors
+    // on individual rows are logged and counted but never abort the loop —
+    // a single problematic address must not block the rest of the backfill.
     ;(async () => {
       const batchSize = 100
       let cursor: string | undefined
       let scanned = 0
+      let perAddressErrors = 0
+      let enqueuedJobs = 0
+      const startedAt = Date.now()
       try {
         for (;;) {
           const batch = await db.depositAddress.findMany({
@@ -699,22 +709,123 @@ export async function adminRoutes(app: FastifyInstance) {
           })
           if (batch.length === 0) break
           for (const da of batch) {
-            await ensureSubscriptionRows(da.id)
-            await enqueuePendingSubscriptions(da.id)
-            scanned += 1
+            try {
+              await ensureSubscriptionRows(da.id)
+              const pending = await db.moralisStreamSubscription.count({
+                where: { depositAddressId: da.id, status: 'pending' },
+              })
+              await enqueuePendingSubscriptions(da.id)
+              enqueuedJobs += pending
+              scanned += 1
+            } catch (rowErr) {
+              perAddressErrors += 1
+              log.error(
+                { runId, depositAddressId: da.id, err: rowErr instanceof Error ? rowErr.message : 'unknown' },
+                'Backfill failed for one address — continuing',
+              )
+            }
           }
           cursor = batch[batch.length - 1]!.id
+          log.info({ runId, scanned, total, enqueuedJobs, perAddressErrors }, 'Backfill batch complete')
         }
       } catch (err) {
-        // Logged but not surfaced — operator inspects /status to see the
-        // state of subscription rows.
-        // eslint-disable-next-line no-console
-        console.error('Moralis backfill failed mid-flight', err)
+        log.error({ runId, err: err instanceof Error ? err.message : 'unknown' }, 'Moralis backfill aborted')
       }
+      log.info(
+        { runId, scanned, total, enqueuedJobs, perAddressErrors, elapsedMs: Date.now() - startedAt },
+        'Moralis backfill complete',
+      )
     })()
 
-    void createAuditLog(adminId, 'MORALIS_STREAMS_BACKFILL_STARTED', 'MoralisStreamSubscription', 'all', { total })
-    return reply.code(202).send({ success: true, data: { startedFor: total, message: 'Backfill running in background. Poll /admin/moralis-streams/status to watch progress.' } })
+    void createAuditLog(adminId, 'MORALIS_STREAMS_BACKFILL_STARTED', 'MoralisStreamSubscription', 'all', { total, runId })
+    return reply.code(202).send({
+      success: true,
+      data: {
+        runId,
+        startedFor: total,
+        message: 'Backfill running in background. Poll /admin/moralis-streams/status to watch progress.',
+      },
+    })
+  })
+
+  // GET /admin/moralis-streams/debug — single consolidated payload for ops.
+  // Returns everything the operator wants to glance at on one screen:
+  //   - per-chain status + counts
+  //   - sample of pending and failed subscriptions
+  //   - last 25 deposits (any status) with user info
+  //   - last 25 credited deposits
+  //   - last 25 webhook events that hit `Deposit` rows
+  //   - audit-log entries for MORALIS_* and DEPOSIT_* actions
+  // No secrets or full payloads are included. Safe to give super_admin access.
+  app.get('/admin/moralis-streams/debug', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const [status, pendingSubs, failedSubs, recentDeposits, recentCredited, recentAuditLogs] = await Promise.all([
+      getStreamStatusSummary(),
+      db.moralisStreamSubscription.findMany({
+        where: { status: 'pending' },
+        take: 25,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          depositAddress: {
+            select: {
+              address: true,
+              user: { select: { id: true, username: true, email: true } },
+            },
+          },
+        },
+      }),
+      db.moralisStreamSubscription.findMany({
+        where: { status: 'failed' },
+        take: 25,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          depositAddress: {
+            select: {
+              address: true,
+              user: { select: { id: true, username: true, email: true } },
+            },
+          },
+        },
+      }),
+      db.deposit.findMany({
+        take: 25,
+        orderBy: { detectedAt: 'desc' },
+        include: { user: { select: { id: true, username: true, email: true } } },
+      }),
+      db.deposit.findMany({
+        where: { status: 'credited' },
+        take: 25,
+        orderBy: { creditedAt: 'desc' },
+        include: { user: { select: { id: true, username: true, email: true } } },
+      }),
+      db.auditLog.findMany({
+        where: {
+          OR: [
+            { action: { startsWith: 'MORALIS_' } },
+            { action: { startsWith: 'DEPOSIT_' } },
+            { action: { startsWith: 'WITHDRAWAL_' } },
+          ],
+        },
+        take: 50,
+        orderBy: { createdAt: 'desc' },
+        include: { actor: { select: { id: true, username: true, email: true } } },
+      }),
+    ])
+
+    return reply.send({
+      success: true,
+      data: {
+        status,
+        subscriptions: {
+          pending: pendingSubs,
+          failed: failedSubs,
+        },
+        deposits: {
+          recent: recentDeposits,
+          credited: recentCredited,
+        },
+        auditLogs: recentAuditLogs,
+      },
+    })
   })
 
   // POST /admin/moralis-streams/retry/:id — re-enqueue a single failed sub.
@@ -729,6 +840,35 @@ export async function adminRoutes(app: FastifyInstance) {
     await queues.moralisSubscribe.add('subscribe', { subscriptionId: id }, { jobId: 'moralis-sub-retry-' + id + '-' + Date.now() })
     void createAuditLog(req.user!.id, 'MORALIS_SUBSCRIPTION_RETRIED', 'MoralisStreamSubscription', id, {})
     return reply.send({ success: true })
+  })
+
+  // POST /admin/moralis-streams/retry-all-failed — bulk retry every failed
+  // subscription. Useful after a Moralis-side outage where many rows ended
+  // up in `failed` due to fatal API codes (e.g. a stream id was wrong then
+  // corrected). Each row is flipped back to `pending` and re-enqueued.
+  app.post('/admin/moralis-streams/retry-all-failed', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const failedRows = await db.moralisStreamSubscription.findMany({
+      where: { status: 'failed' },
+      select: { id: true },
+    })
+    if (failedRows.length === 0) {
+      return reply.send({ success: true, data: { retried: 0 } })
+    }
+    await db.moralisStreamSubscription.updateMany({
+      where: { id: { in: failedRows.map((r) => r.id) } },
+      data: { status: 'pending', lastError: null },
+    })
+    await Promise.all(
+      failedRows.map((r) =>
+        queues.moralisSubscribe
+          .add('subscribe', { subscriptionId: r.id }, { jobId: 'moralis-sub-retry-' + r.id + '-' + Date.now() })
+          .catch((err) => log.warn({ err, id: r.id }, 'Bulk retry enqueue failed')),
+      ),
+    )
+    void createAuditLog(req.user!.id, 'MORALIS_SUBSCRIPTIONS_BULK_RETRIED', 'MoralisStreamSubscription', 'all', {
+      count: failedRows.length,
+    })
+    return reply.send({ success: true, data: { retried: failedRows.length } })
   })
 
   // GET /admin/deposits — paginated on-chain deposit history with filters.

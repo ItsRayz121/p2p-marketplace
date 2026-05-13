@@ -8,6 +8,7 @@ import { env } from './lib/env'
 import { startWorkers } from './queues/workers'
 import { validateWalletCustodyAtStartup } from './lib/walletCrypto'
 import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
+import { validatePrismaSchemaAtStartup } from './lib/schemaValidation'
 
 async function start() {
   let app: Awaited<ReturnType<typeof buildApp>> | null = null
@@ -20,6 +21,12 @@ async function start() {
     // configured/not without ever printing key material.
     const custody = validateWalletCustodyAtStartup()
     logger.info({ configured: custody.configured }, 'Wallet custody validated')
+
+    // Verify the generated Prisma client has every model we rely on. Logs an
+    // error (not throw) so the operator sees the gap without losing the
+    // service — the missing models would show up at first user request
+    // otherwise with cryptic "Cannot read properties of undefined" errors.
+    validatePrismaSchemaAtStartup()
 
     await connectRedis()
     logger.info('Redis connected')
