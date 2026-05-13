@@ -1,9 +1,13 @@
-import { Worker } from 'bullmq'
+import { Worker, type Processor } from 'bullmq'
 import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
-// Import QUEUE_NAMES here when activating the first processor below
+import { QUEUE_NAMES, queues } from './definitions'
+import { updateRates } from '../jobs/rateUpdater.job'
+import { runTradeEscalation } from '../jobs/tradeEscalation.job'
+import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
 
-export function createWorker(queueName: string, processor: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createWorker(queueName: string, processor: Processor<any, any, string>) {
   const worker = new Worker(queueName, processor, {
     connection: redis,
     limiter: { max: 10, duration: 1000 },
@@ -31,24 +35,43 @@ export function createWorker(queueName: string, processor: string) {
 export function startWorkers() {
   logger.info('Starting BullMQ workers...')
 
-  // Workers are registered here as job processors are built.
-  // Each worker points to a processor file in src/jobs/.
-  //
-  // createWorker(QUEUE_NAMES.OCR, require.resolve('../jobs/ocr.job'))
-  // createWorker(QUEUE_NAMES.GAS_FEE, require.resolve('../jobs/gasFee/sendGas.job'))
-  // createWorker(QUEUE_NAMES.PUSH_NOTIFICATIONS, require.resolve('../jobs/pushNotification.job'))
-  // createWorker(QUEUE_NAMES.TRADE_ESCALATION, require.resolve('../jobs/tradeEscalation.job'))
-  // createWorker(QUEUE_NAMES.BADGE_RECALCULATE, require.resolve('../jobs/badgeRecalculate.job'))
-  // createWorker(QUEUE_NAMES.EMAIL_SENDER, require.resolve('../jobs/email.job'))
-  // createWorker(QUEUE_NAMES.RATE_UPDATER, require.resolve('../jobs/rateUpdater.job'))
-  // createWorker(QUEUE_NAMES.REFERRAL_PAYOUT, require.resolve('../jobs/referralPayout.job'))
-  // createWorker(QUEUE_NAMES.FRAUD_DETECTOR, require.resolve('../jobs/fraudDetector.job'))
-  // createWorker(QUEUE_NAMES.LEADERBOARD_CACHE, require.resolve('../jobs/leaderboardCache.job'))
-  // createWorker(QUEUE_NAMES.MERCHANT_RANK_UPDATER, require.resolve('../jobs/merchantRankUpdater.job'))
-  // createWorker(QUEUE_NAMES.DATABASE_BACKUP, require.resolve('../jobs/databaseBackup.job'))
-  // createWorker(QUEUE_NAMES.GAS_FEE, require.resolve('../jobs/gasFee/expireOrder.job'))
+  // Rate updater repeatable job (every 5 minutes)
+  queues.rateUpdater.add('update-rates', {}, { repeat: { every: 5 * 60 * 1000 } }).catch((err) =>
+    logger.error({ err }, 'Failed to schedule rate-updater repeatable job'),
+  )
 
-  logger.info('BullMQ workers ready (no processors active yet — add them as features are built)')
+  // Trade escalation repeatable job (every 30 minutes)
+  queues.tradeEscalation
+    .add('escalate', {}, { repeat: { every: 30 * 60 * 1000 } })
+    .catch((err) =>
+      logger.error({ err }, 'Failed to schedule trade-escalation repeatable job'),
+    )
+
+  // Active workers
+  createWorker(QUEUE_NAMES.RATE_UPDATER, async () => {
+    await updateRates()
+  })
+
+  createWorker(QUEUE_NAMES.TRADE_ESCALATION, async () => {
+    await runTradeEscalation()
+  })
+
+  createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {
+    await recalculateUserBadge(job.data.userId as string)
+  })
+
+  // Workers are registered here as job processors are built.
+  // createWorker(QUEUE_NAMES.OCR, ...)
+  // createWorker(QUEUE_NAMES.GAS_FEE, ...)
+  // createWorker(QUEUE_NAMES.PUSH_NOTIFICATIONS, ...)
+  // createWorker(QUEUE_NAMES.EMAIL_SENDER, ...)
+  // createWorker(QUEUE_NAMES.REFERRAL_PAYOUT, ...)
+  // createWorker(QUEUE_NAMES.FRAUD_DETECTOR, ...)
+  // createWorker(QUEUE_NAMES.LEADERBOARD_CACHE, ...)
+  // createWorker(QUEUE_NAMES.MERCHANT_RANK_UPDATER, ...)
+  // createWorker(QUEUE_NAMES.DATABASE_BACKUP, ...)
+
+  logger.info('BullMQ workers ready')
 }
 
 // Run as standalone process: npm run workers

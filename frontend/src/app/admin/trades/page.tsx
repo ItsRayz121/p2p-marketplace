@@ -1,0 +1,284 @@
+﻿'use client'
+import { useState, useCallback } from 'react'
+import { adminApi } from '@/lib/api'
+import { usePolling } from '@/hooks/usePolling'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { Input } from '@/components/ui/Input'
+
+interface AdminTrade {
+  id: string
+  buyerId: string
+  sellerId: string
+  coin: string
+  amount: string
+  totalPkr?: string
+  status: string
+  paymentMethod?: string
+  buyer?: { email: string; username: string }
+  seller?: { email: string; username: string }
+  createdAt: string
+}
+
+interface TradesResponse {
+  trades: AdminTrade[]
+  total: number
+}
+
+const statusVariant = (s: string) => {
+  if (s === 'released' || s === 'completed') return 'success'
+  if (s === 'disputed') return 'danger'
+  if (s === 'cancelled' || s === 'expired') return 'warning'
+  if (s === 'payment_uploaded' || s === 'paid') return 'gold'
+  return 'default'
+}
+
+export default function TradesPage() {
+  const [trades, setTrades] = useState<AdminTrade[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [coinFilter, setCoinFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  const [selectedTrade, setSelectedTrade] = useState<AdminTrade | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [confirmConfirm, setConfirmConfirm] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+
+  const limit = 20
+
+  const fetchTrades = useCallback(async () => {
+    try {
+      const params: Record<string, string | number> = { page, limit }
+      if (statusFilter !== 'all') params.status = statusFilter
+      if (coinFilter) params.coin = coinFilter
+      if (dateFrom) params.dateFrom = dateFrom
+      if (dateTo) params.dateTo = dateTo
+      const data = await adminApi.getTrades(params) as TradesResponse
+      setTrades(data.trades ?? [])
+      setTotal(data.total ?? 0)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load trades')
+    } finally {
+      setLoading(false)
+    }
+  }, [page, statusFilter, coinFilter, dateFrom, dateTo])
+
+  usePolling(fetchTrades, 30_000)
+
+  async function handleConfirmPayment() {
+    if (!selectedTrade) return
+    setActionError(null)
+    try {
+      await adminApi.adminConfirmPayment(selectedTrade.id)
+      setConfirmConfirm(false)
+      setSelectedTrade(null)
+      setActionSuccess('Payment confirmed successfully.')
+      fetchTrades()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to confirm payment')
+    }
+  }
+
+  async function handleCancelTrade() {
+    if (!selectedTrade) return
+    setActionError(null)
+    try {
+      await adminApi.adminCancelTrade(selectedTrade.id)
+      setConfirmCancel(false)
+      setSelectedTrade(null)
+      setActionSuccess('Trade cancelled successfully.')
+      fetchTrades()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to cancel trade')
+    }
+  }
+
+  const totalPages = Math.ceil(total / limit)
+
+  if (loading) return <LoadingState message="Loading trades..." />
+  if (error && trades.length === 0) return <ErrorState title={error} onRetry={fetchTrades} />
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold text-text-primary">Trades</h1>
+        <p className="text-text-muted text-sm mt-0.5">{total.toLocaleString()} trades</p>
+      </div>
+
+      {actionSuccess && (
+        <div className="px-4 py-3 bg-success/10 border border-success/20 rounded-xl text-success text-sm">
+          {actionSuccess}
+        </div>
+      )}
+      {actionError && (
+        <div className="px-4 py-3 bg-danger/10 border border-danger/20 rounded-xl text-danger text-sm">
+          {actionError}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-3">
+        <select
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="all">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="active">Active</option>
+          <option value="paid">Paid</option>
+          <option value="payment_uploaded">Payment Uploaded</option>
+          <option value="released">Released</option>
+          <option value="disputed">Disputed</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="expired">Expired</option>
+        </select>
+        <div className="w-36">
+          <Input
+            placeholder="Coin (BTC, USDT...)"
+            value={coinFilter}
+            onChange={(e) => { setCoinFilter(e.target.value.toUpperCase()); setPage(1) }}
+          />
+        </div>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
+          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
+          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        {(statusFilter !== 'all' || coinFilter || dateFrom || dateTo) && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setStatusFilter('all'); setCoinFilter(''); setDateFrom(''); setDateTo(''); setPage(1) }}
+          >
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {trades.length === 0 ? (
+        <EmptyState title="No trades found" description="No trades match the current filters." />
+      ) : (
+        <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface border-b border-border">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Trade ID</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Buyer</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Seller</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Coin</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Amount</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Date</th>
+                  <th className="px-4 py-3 text-right font-medium text-text-muted">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {trades.map((t) => (
+                  <tr key={t.id} className="hover:bg-surface/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">
+                      {t.id.slice(0, 8)}...
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-text-primary">{t.buyer?.username || t.buyerId.slice(0, 8)}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-text-primary">{t.seller?.username || t.sellerId.slice(0, 8)}</p>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-text-primary">{t.coin}</td>
+                    <td className="px-4 py-3 font-medium text-text-primary">{t.amount}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={statusVariant(t.status)} size="sm">{t.status}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary">{new Date(t.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {(t.status === 'payment_uploaded' || t.status === 'paid') && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setSelectedTrade(t)
+                              setActionError(null)
+                              setConfirmConfirm(true)
+                            }}
+                          >
+                            Confirm Payment
+                          </Button>
+                        )}
+                        {(t.status === 'active' || t.status === 'pending') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setSelectedTrade(t)
+                              setCancelReason('')
+                              setActionError(null)
+                              setConfirmCancel(true)
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <p className="text-text-muted text-sm">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
+                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={confirmConfirm}
+        onClose={() => setConfirmConfirm(false)}
+        onConfirm={handleConfirmPayment}
+        title="Confirm Payment"
+        description={`Manually confirm payment for trade ${selectedTrade?.id.slice(0, 8)}...? This will advance the trade to the release stage.`}
+        confirmLabel="Confirm Payment"
+        confirmVariant="primary"
+      />
+
+      <ConfirmModal
+        isOpen={confirmCancel}
+        onClose={() => setConfirmCancel(false)}
+        onConfirm={handleCancelTrade}
+        title="Cancel Trade"
+        description={`Cancel trade ${selectedTrade?.id.slice(0, 8)}...? The locked crypto will be returned to the seller.`}
+        confirmLabel="Cancel Trade"
+        confirmVariant="danger"
+      />
+    </div>
+  )
+}
+

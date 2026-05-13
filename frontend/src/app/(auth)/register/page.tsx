@@ -1,0 +1,296 @@
+'use client'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import Link from 'next/link'
+import { cn } from '@/lib/utils'
+import { authApi } from '@/lib/api'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
+
+type AccountType = 'user' | 'merchant'
+
+const schema = z
+  .object({
+    fullName: z.string().min(2, 'Full name must be at least 2 characters'),
+    email: z.string().email('Please enter a valid email address'),
+    password: z.string().min(8, 'Password must be at least 8 characters'),
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
+    referralCode: z.string().optional(),
+    terms: z.literal(true, { errorMap: () => ({ message: 'You must accept the terms to continue' }) }),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+
+type FormValues = z.infer<typeof schema>
+
+function UserIcon() {
+  return (
+    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  )
+}
+
+function ShopIcon() {
+  return (
+    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  )
+}
+
+export default function RegisterPage() {
+  const router = useRouter()
+  const [step, setStep] = useState<1 | 2>(1)
+  const [accountType, setAccountType] = useState<AccountType>('user')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<FormValues>({ resolver: zodResolver(schema) })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('referralCode')
+      if (stored) setValue('referralCode', stored)
+    }
+  }, [setValue])
+
+  async function onSubmit(values: FormValues) {
+    setServerError(null)
+    try {
+      await authApi.register({
+        email: values.email,
+        fullName: values.fullName,
+        password: values.password,
+        referralCode: values.referralCode || undefined,
+        intendedRole: accountType === 'merchant' ? 'merchant' : undefined,
+      })
+      router.push(`/verify-email?email=${encodeURIComponent(values.email)}`)
+    } catch (err) {
+      setServerError(err instanceof Error ? err.message : 'Registration failed. Please try again.')
+    }
+  }
+
+  const EyeIcon = ({ open }: { open: boolean }) =>
+    open ? (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+      </svg>
+    )
+
+  if (step === 1) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-text-primary mb-1">Create your account</h2>
+        <p className="text-text-muted text-sm mb-6">Choose the account type that fits your needs</p>
+
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          {(
+            [
+              {
+                type: 'user' as AccountType,
+                icon: <UserIcon />,
+                title: 'Personal Account',
+                description: 'Buy & sell crypto peer-to-peer',
+              },
+              {
+                type: 'merchant' as AccountType,
+                icon: <ShopIcon />,
+                title: 'Merchant Account',
+                description: 'Sell crypto at scale with advanced tools',
+              },
+            ] as const
+          ).map(({ type, icon, title, description }) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => setAccountType(type)}
+              className={cn(
+                'flex flex-col items-center gap-3 p-5 rounded-xl border-2 text-center transition-all',
+                'hover:border-primary hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                accountType === type
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border bg-white',
+              )}
+            >
+              <span
+                className={cn(
+                  'transition-colors',
+                  accountType === type ? 'text-primary' : 'text-text-muted',
+                )}
+              >
+                {icon}
+              </span>
+              <div>
+                <p
+                  className={cn(
+                    'font-semibold text-sm',
+                    accountType === type ? 'text-primary' : 'text-text-primary',
+                  )}
+                >
+                  {title}
+                </p>
+                <p className="text-xs text-text-muted mt-0.5 leading-tight">{description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <Button fullWidth size="lg" onClick={() => setStep(2)}>
+          Continue
+        </Button>
+
+        <p className="text-center text-sm text-text-muted mt-6">
+          Already have an account?{' '}
+          <Link href="/login" className="text-primary font-medium hover:underline">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setStep(1)}
+        className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors mb-4 focus:outline-none"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Back
+      </button>
+
+      <h2 className="text-xl font-semibold text-text-primary mb-1">
+        {accountType === 'merchant' ? 'Merchant' : 'Personal'} Account
+      </h2>
+      <p className="text-text-muted text-sm mb-6">Fill in your details to get started</p>
+
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+        <Input
+          label="Full name"
+          type="text"
+          autoComplete="name"
+          placeholder="Your full name"
+          error={errors.fullName?.message}
+          {...register('fullName')}
+        />
+
+        <Input
+          label="Email address"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          error={errors.email?.message}
+          {...register('email')}
+        />
+
+        <Input
+          label="Password"
+          type={showPassword ? 'text' : 'password'}
+          autoComplete="new-password"
+          placeholder="At least 8 characters"
+          error={errors.password?.message}
+          rightElement={
+            <button
+              type="button"
+              onClick={() => setShowPassword((p) => !p)}
+              className="text-text-muted hover:text-text-primary transition-colors focus:outline-none"
+              tabIndex={-1}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              <EyeIcon open={showPassword} />
+            </button>
+          }
+          {...register('password')}
+        />
+
+        <Input
+          label="Confirm password"
+          type={showConfirm ? 'text' : 'password'}
+          autoComplete="new-password"
+          placeholder="Re-enter your password"
+          error={errors.confirmPassword?.message}
+          rightElement={
+            <button
+              type="button"
+              onClick={() => setShowConfirm((p) => !p)}
+              className="text-text-muted hover:text-text-primary transition-colors focus:outline-none"
+              tabIndex={-1}
+              aria-label={showConfirm ? 'Hide confirm password' : 'Show confirm password'}
+            >
+              <EyeIcon open={showConfirm} />
+            </button>
+          }
+          {...register('confirmPassword')}
+        />
+
+        <Input
+          label="Referral code (optional)"
+          type="text"
+          autoComplete="off"
+          placeholder="Enter referral code"
+          {...register('referralCode')}
+        />
+
+        <div className="flex flex-col gap-1">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30 cursor-pointer"
+              {...register('terms')}
+            />
+            <span className="text-sm text-text-secondary leading-snug">
+              I agree to the{' '}
+              <a href="/terms" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                Terms of Service
+              </a>{' '}
+              and{' '}
+              <a href="/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                Privacy Policy
+              </a>
+            </span>
+          </label>
+          {errors.terms && (
+            <p className="text-sm text-danger pl-6">{errors.terms.message}</p>
+          )}
+        </div>
+
+        {serverError && (
+          <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">
+            {serverError}
+          </p>
+        )}
+
+        <Button type="submit" fullWidth size="lg" loading={isSubmitting}>
+          Create Account
+        </Button>
+      </form>
+
+      <p className="text-center text-sm text-text-muted mt-6">
+        Already have an account?{' '}
+        <Link href="/login" className="text-primary font-medium hover:underline">
+          Sign in
+        </Link>
+      </p>
+    </div>
+  )
+}

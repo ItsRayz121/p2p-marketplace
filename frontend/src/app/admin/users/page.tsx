@@ -1,0 +1,434 @@
+﻿'use client'
+import { useState, useCallback } from 'react'
+import { adminApi } from '@/lib/api'
+import type { AuthUser } from '@/store/auth.store'
+import { usePolling } from '@/hooks/usePolling'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { Input } from '@/components/ui/Input'
+
+interface AdminUser extends AuthUser {
+  isBanned?: boolean
+  isSuspended?: boolean
+  tradeCount?: number
+  banReason?: string
+  suspendReason?: string
+  trades?: Array<{ id: string; coin: string; amount: string; status: string; createdAt: string }>
+  kycSubmissions?: Array<{ id: string; level: string; status: string; createdAt: string }>
+}
+
+interface UsersResponse {
+  users: AdminUser[]
+  total: number
+}
+
+type UserTab = 'profile' | 'trades' | 'kyc'
+
+export default function UsersPage() {
+  const [users, setUsers] = useState<AdminUser[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [kycFilter, setKycFilter] = useState('')
+
+  const [selected, setSelected] = useState<AdminUser | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<UserTab>('profile')
+  const [actionReason, setActionReason] = useState('')
+  const [confirmBan, setConfirmBan] = useState(false)
+  const [confirmSuspend, setConfirmSuspend] = useState(false)
+  const [confirmSeize, setConfirmSeize] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+
+  const limit = 20
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      const params: Record<string, string | number> = { page, limit }
+      if (search) params.search = search
+      if (roleFilter) params.role = roleFilter
+      if (kycFilter) params.kycStatus = kycFilter
+      const data = await adminApi.getUsers(params) as UsersResponse
+      setUsers(data.users ?? [])
+      setTotal(data.total ?? 0)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load users')
+    } finally {
+      setLoading(false)
+    }
+  }, [page, search, roleFilter, kycFilter])
+
+  usePolling(fetchUsers, 60_000)
+
+  async function openUserModal(u: AdminUser) {
+    setSelected(u)
+    setActiveTab('profile')
+    setActionReason('')
+    setActionError(null)
+    setActionSuccess(null)
+    setModalOpen(true)
+  }
+
+  async function handleBan() {
+    if (!selected) return
+    setActionError(null)
+    try {
+      await adminApi.banUser(selected.id, { reason: actionReason })
+      setConfirmBan(false)
+      setActionSuccess('User has been banned.')
+      fetchUsers()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to ban user')
+    }
+  }
+
+  async function handleSuspend() {
+    if (!selected) return
+    setActionError(null)
+    try {
+      await adminApi.suspendUser(selected.id, { reason: actionReason })
+      setConfirmSuspend(false)
+      setActionSuccess('User has been suspended.')
+      fetchUsers()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to suspend user')
+    }
+  }
+
+  async function handleSeize() {
+    if (!selected) return
+    setActionError(null)
+    try {
+      await adminApi.seizeCollateral(selected.id)
+      setConfirmSeize(false)
+      setActionSuccess('Collateral has been seized.')
+      fetchUsers()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to seize collateral')
+    }
+  }
+
+  const totalPages = Math.ceil(total / limit)
+
+  const kycVariant = (s: string) => {
+    if (s === 'approved') return 'success'
+    if (s === 'rejected') return 'danger'
+    if (s === 'pending') return 'warning'
+    return 'default'
+  }
+
+  if (loading) return <LoadingState message="Loading users..." />
+  if (error && users.length === 0) return <ErrorState title={error} onRetry={fetchUsers} />
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold text-text-primary">Users</h1>
+        <p className="text-text-muted text-sm mt-0.5">{total.toLocaleString()} users</p>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-3">
+        <div className="flex-1 min-w-48">
+          <Input
+            placeholder="Search email or username..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+          />
+        </div>
+        <select
+          value={roleFilter}
+          onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }}
+          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">All Roles</option>
+          <option value="user">User</option>
+          <option value="merchant">Merchant</option>
+          <option value="kyc_reviewer">KYC Reviewer</option>
+          <option value="admin">Admin</option>
+          <option value="super_admin">Super Admin</option>
+        </select>
+        <select
+          value={kycFilter}
+          onChange={(e) => { setKycFilter(e.target.value); setPage(1) }}
+          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">All KYC</option>
+          <option value="none">None</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+
+      {users.length === 0 ? (
+        <EmptyState title="No users found" description="Try adjusting your filters." />
+      ) : (
+        <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface border-b border-border">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Role</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">KYC</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Trades</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Joined</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {users.map((u) => (
+                  <tr key={u.id} className="hover:bg-surface/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-text-primary">{u.username || 'â€”'}</p>
+                      <p className="text-xs text-text-muted">{u.email}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="outline" size="sm">{u.role}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={kycVariant(u.kycStatus)} size="sm">{u.kycStatus}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.isBanned ? (
+                        <Badge variant="danger" size="sm">Banned</Badge>
+                      ) : u.isSuspended ? (
+                        <Badge variant="warning" size="sm">Suspended</Badge>
+                      ) : (
+                        <Badge variant="success" size="sm">Active</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary">{u.tradeCount ?? 0}</td>
+                    <td className="px-4 py-3 text-text-secondary">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Button size="sm" variant="ghost" onClick={() => openUserModal(u)}>View</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <p className="text-text-muted text-sm">Page {page} of {totalPages}</p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
+                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* User Detail Modal */}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="User Details" size="lg">
+        {selected && (
+          <div className="space-y-5">
+            {/* Tabs */}
+            <div className="flex gap-1 border-b border-border">
+              {(['profile', 'trades', 'kyc'] as UserTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
+                    activeTab === tab
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'profile' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-text-muted">Username</p>
+                    <p className="font-medium text-text-primary">{selected.username || 'â€”'}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Email</p>
+                    <p className="text-text-primary">{selected.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Full Name</p>
+                    <p className="text-text-primary">{selected.fullName || 'â€”'}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Role</p>
+                    <Badge variant="outline">{selected.role}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">KYC Status</p>
+                    <Badge variant={kycVariant(selected.kycStatus)}>{selected.kycStatus}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">KYC Level</p>
+                    <p className="text-text-primary">{selected.kycLevel}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">2FA</p>
+                    <Badge variant={selected.twoFaEnabled ? 'success' : 'default'}>{selected.twoFaEnabled ? 'Enabled' : 'Disabled'}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Email Verified</p>
+                    <Badge variant={selected.isEmailVerified ? 'success' : 'warning'}>{selected.isEmailVerified ? 'Yes' : 'No'}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Joined</p>
+                    <p className="text-text-secondary">{new Date(selected.createdAt).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-muted">Account Status</p>
+                    {selected.isBanned ? (
+                      <Badge variant="danger">Banned â€” {selected.banReason}</Badge>
+                    ) : selected.isSuspended ? (
+                      <Badge variant="warning">Suspended â€” {selected.suspendReason}</Badge>
+                    ) : (
+                      <Badge variant="success">Active</Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div>
+                  <p className="text-sm font-medium text-text-primary mb-2">Action Reason</p>
+                  <textarea
+                    value={actionReason}
+                    onChange={(e) => setActionReason(e.target.value)}
+                    rows={2}
+                    placeholder="Required for ban/suspend actions..."
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  />
+                </div>
+
+                {actionError && (
+                  <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">{actionError}</div>
+                )}
+                {actionSuccess && (
+                  <div className="px-3 py-2 bg-success/10 border border-success/20 rounded-lg text-success text-sm">{actionSuccess}</div>
+                )}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={!actionReason.trim() || !!selected.isBanned}
+                    onClick={() => setConfirmBan(true)}
+                  >
+                    {selected.isBanned ? 'Already Banned' : 'Ban User'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!actionReason.trim() || !!selected.isSuspended}
+                    onClick={() => setConfirmSuspend(true)}
+                  >
+                    {selected.isSuspended ? 'Already Suspended' : 'Suspend User'}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => setConfirmSeize(true)}
+                  >
+                    Seize Collateral
+                  </Button>
+                </div>
+
+                {selected.isBanned && (
+                  <p className="text-sm text-text-muted">To unban, use the platform config or contact a super admin.</p>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'trades' && (
+              <div>
+                {!selected.trades || selected.trades.length === 0 ? (
+                  <EmptyState title="No trades" description="This user has no trade history." />
+                ) : (
+                  <div className="divide-y divide-border">
+                    {selected.trades.slice(0, 10).map((t) => (
+                      <div key={t.id} className="py-2.5 flex items-center justify-between text-sm">
+                        <div>
+                          <p className="font-mono text-xs text-text-muted">{t.id.slice(0, 8)}...</p>
+                          <p className="text-text-primary">{t.amount} {t.coin}</p>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant="default" size="sm">{t.status}</Badge>
+                          <p className="text-xs text-text-muted mt-0.5">{new Date(t.createdAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'kyc' && (
+              <div>
+                {!selected.kycSubmissions || selected.kycSubmissions.length === 0 ? (
+                  <EmptyState title="No KYC submissions" description="This user has not submitted KYC." />
+                ) : (
+                  <div className="divide-y divide-border">
+                    {selected.kycSubmissions.map((k) => (
+                      <div key={k.id} className="py-2.5 flex items-center justify-between text-sm">
+                        <div>
+                          <p className="text-text-primary capitalize">{k.level} KYC</p>
+                          <p className="text-xs text-text-muted">{new Date(k.createdAt).toLocaleDateString()}</p>
+                        </div>
+                        <Badge variant={kycVariant(k.status)} size="sm">{k.status}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmModal
+        isOpen={confirmBan}
+        onClose={() => setConfirmBan(false)}
+        onConfirm={handleBan}
+        title="Ban User"
+        description={`Permanently ban ${selected?.email}? They will lose access to the platform.`}
+        confirmLabel="Ban User"
+        confirmVariant="danger"
+      />
+      <ConfirmModal
+        isOpen={confirmSuspend}
+        onClose={() => setConfirmSuspend(false)}
+        onConfirm={handleSuspend}
+        title="Suspend User"
+        description={`Suspend ${selected?.email}? Their account will be temporarily restricted.`}
+        confirmLabel="Suspend"
+        confirmVariant="danger"
+      />
+      <ConfirmModal
+        isOpen={confirmSeize}
+        onClose={() => setConfirmSeize(false)}
+        onConfirm={handleSeize}
+        title="Seize Collateral"
+        description={`Seize all collateral from ${selected?.email}? This action cannot be undone.`}
+        confirmLabel="Seize Collateral"
+        confirmVariant="danger"
+      />
+    </div>
+  )
+}
+

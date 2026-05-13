@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import './lib/env'
 import { buildApp } from './app'
 import { connectRedis, disconnectRedis } from './lib/redis'

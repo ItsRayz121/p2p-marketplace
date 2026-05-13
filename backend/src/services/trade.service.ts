@@ -1,0 +1,573 @@
+import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
+import { AppError } from '../lib/errors'
+import { Prisma } from '@prisma/client'
+type Tx = Prisma.TransactionClient
+import { sendTradeEmail } from './email.service'
+import { queues } from '../queues/definitions'
+import { generateOrderRef } from '../lib/hash'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface CreateTradeInput {
+  amount: number
+  paymentMethod: string
+  buyerWalletAddress: string
+}
+
+export interface GetTradesParams {
+  status?: string
+  page?: number
+  limit?: number
+  role?: 'buyer' | 'seller'
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function upsertTradeStats(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  isCompleted: boolean,
+  fiatAmount: Prisma.Decimal,
+) {
+  const stats = await tx.tradeStats.findUnique({ where: { userId } })
+  if (!stats) {
+    const completedTrades = isCompleted ? 1 : 0
+    await tx.tradeStats.create({
+      data: {
+        userId,
+        totalTrades: 1,
+        completedTrades,
+        cancelledTrades: 0,
+        completionRate: new Prisma.Decimal(isCompleted ? 1 : 0),
+        totalVolumePKR: isCompleted ? fiatAmount : new Prisma.Decimal(0),
+      },
+    })
+  } else {
+    const newTotal = stats.totalTrades + 1
+    const newCompleted = stats.completedTrades + (isCompleted ? 1 : 0)
+    const completionRate = new Prisma.Decimal(newCompleted).div(new Prisma.Decimal(newTotal))
+    await tx.tradeStats.update({
+      where: { userId },
+      data: {
+        totalTrades: newTotal,
+        completedTrades: newCompleted,
+        completionRate,
+        ...(isCompleted ? { totalVolumePKR: { increment: fiatAmount } } : {}),
+      },
+    })
+  }
+}
+
+// ─── Service Functions ────────────────────────────────────────────────────────
+
+export async function createTrade(buyerId: string, adId: string, data: CreateTradeInput) {
+  // Idempotency check
+  const idempKey = `idempotency:trade:${buyerId}:${adId}:${data.amount}`
+  const existing = await redis.get(idempKey)
+  if (existing) {
+    const trade = await db.trade.findUnique({ where: { id: existing } })
+    if (trade) return trade
+  }
+
+  const trade = await db.$transaction(async (tx: Tx) => {
+    // SELECT FOR UPDATE on buyer user
+    const [buyerRows] = await tx.$queryRaw<Array<{ id: string; dailyBuyUsed: Prisma.Decimal; dailyBuyLimit: Prisma.Decimal; isBanned: boolean; isSuspended: boolean }>>`
+      SELECT id, "dailyBuyUsed", "dailyBuyLimit", "isBanned", "isSuspended"
+      FROM "User"
+      WHERE id = ${buyerId}
+      FOR UPDATE
+    `
+    if (!buyerRows) throw new AppError('NOT_FOUND', 'Buyer not found', 404)
+    if (buyerRows.isBanned) throw new AppError('ACCOUNT_BANNED', 'Account is banned', 403)
+    if (buyerRows.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Account is suspended', 403)
+
+    // SELECT FOR UPDATE on ad
+    const [adRows] = await tx.$queryRaw<Array<{
+      id: string
+      userId: string
+      side: string
+      coin: string
+      network: string
+      price: Prisma.Decimal
+      availableAmount: Prisma.Decimal
+      minOrder: Prisma.Decimal
+      maxOrder: Prisma.Decimal
+      status: string
+      tradeWindow: number
+      paymentMethods: string[]
+    }>>`
+      SELECT id, "userId", side, coin, network, price, "availableAmount", "minOrder", "maxOrder", status, "tradeWindow", "paymentMethods"
+      FROM "Ad"
+      WHERE id = ${adId}
+      FOR UPDATE
+    `
+    if (!adRows) throw new AppError('NOT_FOUND', 'Ad not found', 404)
+
+    if (adRows.status !== 'active') throw new AppError('AD_INACTIVE', 'This ad is not active', 400)
+    if (adRows.side !== 'sell') throw new AppError('INVALID_AD', 'Can only trade on sell ads', 400)
+    if (adRows.userId === buyerId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
+
+    const amount = new Prisma.Decimal(data.amount)
+    if (amount.lt(adRows.minOrder)) {
+      throw new AppError('AMOUNT_TOO_LOW', `Minimum order is ${adRows.minOrder}`, 400)
+    }
+    if (amount.gt(adRows.maxOrder)) {
+      throw new AppError('AMOUNT_TOO_HIGH', `Maximum order is ${adRows.maxOrder}`, 400)
+    }
+    if (amount.gt(adRows.availableAmount)) {
+      throw new AppError('INSUFFICIENT_AMOUNT', 'Requested amount exceeds available amount', 400)
+    }
+
+    // Check daily buy limit
+    const dailyBuyUsed = new Prisma.Decimal(buyerRows.dailyBuyUsed)
+    const dailyBuyLimit = new Prisma.Decimal(buyerRows.dailyBuyLimit)
+    const fiatAmount = amount.mul(adRows.price)
+    if (dailyBuyUsed.add(fiatAmount).gt(dailyBuyLimit)) {
+      throw new AppError('DAILY_LIMIT_EXCEEDED', 'Daily buy limit would be exceeded', 400)
+    }
+
+    // Decrement availableAmount
+    const newAvailable = adRows.availableAmount.sub(amount)
+    const newAdStatus = newAvailable.lte(0) ? 'completed' : 'active'
+
+    await tx.ad.update({
+      where: { id: adId },
+      data: { availableAmount: newAvailable, status: newAdStatus },
+    })
+
+    // Increment buyer dailyBuyUsed
+    await tx.user.update({
+      where: { id: buyerId },
+      data: { dailyBuyUsed: { increment: fiatAmount } },
+    })
+
+    // Create the trade
+    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000)
+    const orderRef = generateOrderRef('TRD')
+
+    const newTrade = await tx.trade.create({
+      data: {
+        orderRef,
+        adId,
+        buyerId,
+        sellerId: adRows.userId,
+        coin: adRows.coin,
+        network: adRows.network,
+        amount,
+        price: adRows.price,
+        fiatAmount,
+        paymentMethod: data.paymentMethod,
+        buyerWalletAddress: data.buyerWalletAddress,
+        status: 'payment_pending',
+        expiresAt,
+      },
+    })
+
+    // System message
+    await tx.tradeMessage.create({
+      data: {
+        tradeId: newTrade.id,
+        senderId: buyerId,
+        message: 'Trade created. Please upload payment proof within the trade window.',
+      },
+    })
+
+    return newTrade
+  })
+
+  // Store idempotency key (5 min TTL)
+  await redis.set(idempKey, trade.id, 'EX', 300)
+
+  return trade
+}
+
+export async function uploadPaymentProof(tradeId: string, buyerId: string, proofUrl: string) {
+  const trade = await db.trade.findUnique({
+    where: { id: tradeId },
+    include: { seller: { select: { email: true, username: true } } },
+  })
+
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Not your trade', 403)
+  if (trade.status !== 'payment_pending') {
+    throw new AppError('INVALID_STATUS', `Cannot upload proof for trade in status: ${trade.status}`, 400)
+  }
+
+  const updated = await db.trade.update({
+    where: { id: tradeId },
+    data: { status: 'payment_uploaded', paymentProofUrl: proofUrl },
+  })
+
+  // Notify seller
+  await sendTradeEmail(
+    'payment_uploaded',
+    {
+      orderRef: trade.orderRef,
+      coin: trade.coin,
+      amount: trade.amount.toString(),
+      pkrValue: trade.fiatAmount.toString(),
+      counterpartyUsername: 'Buyer',
+    },
+    trade.seller.email,
+  )
+
+  return updated
+}
+
+export async function confirmPayment(tradeId: string, actorId: string, role: string) {
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  if (role !== 'admin' && trade.sellerId !== actorId) {
+    throw new AppError('FORBIDDEN', 'Only the seller or admin can confirm payment', 403)
+  }
+  if (trade.status !== 'payment_uploaded') {
+    throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${trade.status}`, 400)
+  }
+
+  return db.trade.update({
+    where: { id: tradeId },
+    data: { status: 'payment_confirmed' },
+  })
+}
+
+export async function markCryptoSent(tradeId: string, sellerId: string, txHash: string) {
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
+  if (trade.status !== 'payment_confirmed') {
+    throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${trade.status}`, 400)
+  }
+
+  return db.trade.update({
+    where: { id: tradeId },
+    data: { status: 'crypto_sent', sellerTxHash: txHash },
+  })
+}
+
+export async function releaseTrade(tradeId: string, buyerId: string) {
+  const trade = await db.trade.findUnique({
+    where: { id: tradeId },
+    include: {
+      buyer: { select: { email: true, username: true, firstTradeBonusPaid: true } },
+      seller: { select: { email: true, username: true } },
+    },
+  })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can release the trade', 403)
+  if (trade.status !== 'crypto_sent') {
+    throw new AppError('INVALID_STATUS', `Cannot release trade in status: ${trade.status}`, 400)
+  }
+
+  await db.$transaction(async (tx: Tx) => {
+    await tx.trade.update({
+      where: { id: tradeId },
+      data: { status: 'crypto_released', escrowReleased: true },
+    })
+
+    // Increment completedSellTrades for seller
+    await tx.user.update({
+      where: { id: trade.sellerId },
+      data: { completedSellTrades: { increment: 1 } },
+    })
+
+    // Update TradeStats for buyer and seller
+    await upsertTradeStats(tx, buyerId, true, trade.fiatAmount)
+    await upsertTradeStats(tx, trade.sellerId, true, trade.fiatAmount)
+  })
+
+  // Queue badge recalculation for both
+  await queues.badgeRecalculate.add('recalculate', { userId: buyerId })
+  await queues.badgeRecalculate.add('recalculate', { userId: trade.sellerId })
+
+  // Queue referral payout if first trade bonus not yet paid
+  if (!trade.buyer.firstTradeBonusPaid) {
+    await queues.referralPayout.add('first-trade', { userId: buyerId, tradeId })
+  }
+
+  // Send completion emails
+  await sendTradeEmail(
+    'completed',
+    {
+      orderRef: trade.orderRef,
+      coin: trade.coin,
+      amount: trade.amount.toString(),
+      pkrValue: trade.fiatAmount.toString(),
+      counterpartyUsername: trade.seller.username,
+    },
+    trade.buyer.email,
+  )
+
+  return db.trade.findUnique({ where: { id: tradeId } })
+}
+
+export async function cancelTrade(tradeId: string, actorId: string, role: string, reason: string) {
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  if (role !== 'admin' && trade.buyerId !== actorId && trade.sellerId !== actorId) {
+    throw new AppError('FORBIDDEN', 'Not authorized to cancel this trade', 403)
+  }
+
+  const cancellableStatuses = ['payment_pending', 'payment_uploaded']
+  if (!cancellableStatuses.includes(trade.status)) {
+    throw new AppError('INVALID_STATUS', `Cannot cancel trade in status: ${trade.status}`, 400)
+  }
+
+  await db.$transaction(async (tx: Tx) => {
+    await tx.trade.update({
+      where: { id: tradeId },
+      data: {
+        status: 'cancelled',
+        cancelReason: reason,
+        cancelledAt: new Date(),
+        cancelledBy: actorId,
+      },
+    })
+
+    // Restore ad availableAmount
+    const ad = await tx.ad.findUnique({ where: { id: trade.adId } })
+    if (ad) {
+      const restoredAmount = ad.availableAmount.add(trade.amount)
+      const newStatus = ad.status === 'completed' ? 'active' : ad.status
+      await tx.ad.update({
+        where: { id: trade.adId },
+        data: { availableAmount: restoredAmount, status: newStatus },
+      })
+    }
+
+    // Restore buyer dailyBuyUsed
+    await tx.user.update({
+      where: { id: trade.buyerId },
+      data: { dailyBuyUsed: { decrement: trade.fiatAmount } },
+    })
+  })
+
+  return db.trade.findUnique({ where: { id: tradeId } })
+}
+
+export async function openDispute(
+  tradeId: string,
+  openedById: string,
+  reason: string,
+  description: string,
+) {
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  if (trade.buyerId !== openedById && trade.sellerId !== openedById) {
+    throw new AppError('FORBIDDEN', 'Only buyer or seller can open a dispute', 403)
+  }
+
+  const disputeStatuses = ['payment_uploaded', 'payment_confirmed']
+  if (!disputeStatuses.includes(trade.status)) {
+    throw new AppError('INVALID_STATUS', `Cannot open dispute for trade in status: ${trade.status}`, 400)
+  }
+
+  const existingDispute = await db.dispute.findUnique({ where: { tradeId } })
+  if (existingDispute) {
+    throw new AppError('CONFLICT', 'A dispute already exists for this trade', 409)
+  }
+
+  const dispute = await db.$transaction(async (tx: Tx) => {
+    const newDispute = await tx.dispute.create({
+      data: { tradeId, openedById, reason, description },
+    })
+
+    await tx.trade.update({
+      where: { id: tradeId },
+      data: { status: 'disputed' },
+    })
+
+    return newDispute
+  })
+
+  return dispute
+}
+
+export async function sendMessage(
+  tradeId: string,
+  senderId: string,
+  content: string,
+  attachmentUrl?: string,
+) {
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  // Sender must be buyer, seller — admin check done via role in route
+  const isParticipant = trade.buyerId === senderId || trade.sellerId === senderId
+  if (!isParticipant) throw new AppError('FORBIDDEN', 'Not a participant in this trade', 403)
+
+  return db.tradeMessage.create({
+    data: {
+      tradeId,
+      senderId,
+      message: content,
+      attachmentUrl: attachmentUrl ?? null,
+    },
+  })
+}
+
+export async function sendMessageAsAdmin(
+  tradeId: string,
+  senderId: string,
+  content: string,
+  attachmentUrl?: string,
+) {
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  return db.tradeMessage.create({
+    data: {
+      tradeId,
+      senderId,
+      message: content,
+      attachmentUrl: attachmentUrl ?? null,
+    },
+  })
+}
+
+export async function getMessages(tradeId: string, userId: string, role: string) {
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  const isAdmin = ['admin', 'super_admin', 'dispute_agent'].includes(role)
+  const isParticipant = trade.buyerId === userId || trade.sellerId === userId
+
+  if (!isAdmin && !isParticipant) {
+    throw new AppError('FORBIDDEN', 'Not authorized to view messages', 403)
+  }
+
+  return db.tradeMessage.findMany({
+    where: { tradeId },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      // We store senderId but can join for display info
+    },
+  })
+}
+
+export async function rateTrade(
+  tradeId: string,
+  raterId: string,
+  rating: number,
+  comment: string,
+  tags: string[],
+) {
+  if (rating < 1 || rating > 5) throw new AppError('VALIDATION_ERROR', 'Rating must be between 1 and 5', 400)
+
+  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (trade.status !== 'crypto_released') {
+    throw new AppError('INVALID_STATUS', 'Trade must be completed before rating', 400)
+  }
+
+  const isBuyer = trade.buyerId === raterId
+  const isSeller = trade.sellerId === raterId
+  if (!isBuyer && !isSeller) throw new AppError('FORBIDDEN', 'Only trade participants can rate', 403)
+
+  // Check for duplicate rating
+  const existing = await db.tradeRating.findUnique({
+    where: { tradeId_ratedByUserId: { tradeId, ratedByUserId: raterId } },
+  })
+  if (existing) throw new AppError('CONFLICT', 'You have already rated this trade', 409)
+
+  const rateeId = isBuyer ? trade.sellerId : trade.buyerId
+
+  const tradeRating = await db.tradeRating.create({
+    data: {
+      tradeId,
+      ratedByUserId: raterId,
+      ratedUserId: rateeId,
+      rating,
+      comment,
+      tags,
+    },
+  })
+
+  // Update ratee's avgRating in TradeStats
+  const allRatings = await db.tradeRating.findMany({
+    where: { ratedUserId: rateeId },
+    select: { rating: true },
+  })
+  const totalRatings = allRatings.length
+  const avgRating = allRatings.reduce((sum: number, r: any) => sum + r.rating, 0) / totalRatings
+
+  await db.tradeStats.upsert({
+    where: { userId: rateeId },
+    create: {
+      userId: rateeId,
+      avgRating: new Prisma.Decimal(avgRating.toFixed(2)),
+      totalReviews: totalRatings,
+    },
+    update: {
+      avgRating: new Prisma.Decimal(avgRating.toFixed(2)),
+      totalReviews: totalRatings,
+    },
+  })
+
+  return tradeRating
+}
+
+export async function getTrades(userId: string, params: GetTradesParams) {
+  const page = params.page ?? 1
+  const limit = Math.min(params.limit ?? 20, 50)
+  const skip = (page - 1) * limit
+
+  const statusFilter = params.status
+    ? { status: params.status as 'payment_pending' | 'payment_uploaded' | 'payment_confirmed' | 'crypto_sent' | 'crypto_released' | 'cancelled' | 'disputed' }
+    : {}
+
+  let where: Prisma.TradeWhereInput
+
+  if (params.role === 'buyer') {
+    where = { buyerId: userId, ...statusFilter }
+  } else if (params.role === 'seller') {
+    where = { sellerId: userId, ...statusFilter }
+  } else {
+    where = { OR: [{ buyerId: userId }, { sellerId: userId }], ...statusFilter }
+  }
+
+  const [items, total] = await Promise.all([
+    db.trade.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        ad: { select: { id: true, side: true, coin: true, network: true } },
+        buyer: { select: { id: true, username: true } },
+        seller: { select: { id: true, username: true } },
+      },
+    }),
+    db.trade.count({ where }),
+  ])
+
+  return { items, total, page, limit, totalPages: Math.ceil(total / limit) }
+}
+
+export async function getTradeById(tradeId: string, userId: string, role: string) {
+  const trade = await db.trade.findUnique({
+    where: { id: tradeId },
+    include: {
+      ad: true,
+      buyer: { select: { id: true, username: true, kycStatus: true } },
+      seller: { select: { id: true, username: true, kycStatus: true } },
+      messages: { orderBy: { createdAt: 'asc' } },
+      dispute: true,
+      ratings: true,
+    },
+  })
+
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  const isAdmin = ['admin', 'super_admin', 'dispute_agent'].includes(role)
+  const isParticipant = trade.buyerId === userId || trade.sellerId === userId
+
+  if (!isAdmin && !isParticipant) {
+    throw new AppError('FORBIDDEN', 'Not authorized to view this trade', 403)
+  }
+
+  return trade
+}

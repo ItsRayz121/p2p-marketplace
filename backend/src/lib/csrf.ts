@@ -11,6 +11,17 @@ const CSRF_EXEMPT = new Set([
   '/health/ping',
   '/api/v1/webhooks/moralis',
   '/api/v1/webhooks/tatum',
+  '/api/auth/register',
+  '/api/auth/login',
+  '/api/auth/verify-email',
+  '/api/auth/resend-otp',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/refresh',
+  '/api/auth/2fa/verify',
+  '/api/gas-fee/orders',
+  '/api/gas-fee/prices',
+  '/api/webhooks/deposit',
 ])
 
 function sign(payload: string): string {

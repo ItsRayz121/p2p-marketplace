@@ -13,6 +13,7 @@ redis.on('error', (err) => logger.error({ err }, 'Redis error'))
 redis.on('reconnecting', () => logger.warn('Redis reconnecting'))
 
 export async function connectRedis(): Promise<void> {
+  if (redis.status === 'ready' || redis.status === 'connect' || redis.status === 'connecting') return
   await redis.connect()
 }
 

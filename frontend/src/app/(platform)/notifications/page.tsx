@@ -1,0 +1,191 @@
+'use client'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { notificationsApi } from '@/lib/api'
+import type { Notification } from '@/lib/api'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Button } from '@/components/ui/Button'
+import { Spinner } from '@/components/ui/Spinner'
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  if (hrs < 168) return `${Math.floor(hrs / 24)}d ago`
+  return new Date(dateStr).toLocaleDateString()
+}
+
+function NotifIcon({ type }: { type: string }) {
+  const base = 'w-5 h-5'
+  switch (type) {
+    case 'trade':
+      return (
+        <svg className={`${base} text-primary`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+        </svg>
+      )
+    case 'kyc':
+      return (
+        <svg className={`${base} text-warning`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+      )
+    case 'badge':
+      return (
+        <svg className={`${base} text-gold`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+        </svg>
+      )
+    case 'payment':
+    case 'wallet':
+      return (
+        <svg className={`${base} text-success`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+        </svg>
+      )
+    default:
+      return (
+        <svg className={`${base} text-text-muted`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+      )
+  }
+}
+
+function getNavTarget(notif: Notification): string | null {
+  const data = notif.data as Record<string, string> | undefined
+  if (notif.type === 'trade' && data?.tradeId) return `/trade/${data.tradeId}`
+  if (notif.type === 'kyc') return '/kyc'
+  if (notif.type === 'wallet' || notif.type === 'payment') return '/wallet'
+  return null
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 20
+
+export default function NotificationsPage() {
+  const router = useRouter()
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState('')
+  const [markingAll, setMarkingAll] = useState(false)
+
+  const fetchPage = useCallback(async (pg: number, append = false) => {
+    if (append) setLoadingMore(true)
+    else setLoading(true)
+    try {
+      const res = await notificationsApi.getAll({ page: pg, limit: PAGE_SIZE })
+      setTotal(res.total)
+      if (append) {
+        setNotifications((prev) => [...prev, ...res.notifications])
+      } else {
+        setNotifications(res.notifications)
+      }
+    } catch (err) {
+      if (!append) setError(err instanceof Error ? err.message : 'Failed to load notifications')
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchPage(1) }, [fetchPage])
+
+  const handleMarkAllRead = async () => {
+    setMarkingAll(true)
+    try {
+      await notificationsApi.markAllRead()
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    } catch { /* silent */ } finally { setMarkingAll(false) }
+  }
+
+  const handleClick = async (notif: Notification) => {
+    if (!notif.read) {
+      notificationsApi.markRead(notif.id).catch(() => {})
+      setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, read: true } : n))
+    }
+    const target = getNavTarget(notif)
+    if (target) router.push(target)
+  }
+
+  const loadMore = () => {
+    const nextPage = page + 1
+    setPage(nextPage)
+    fetchPage(nextPage, true)
+  }
+
+  const unread = notifications.filter((n) => !n.read).length
+
+  if (loading) return <LoadingState message="Loading notifications..." />
+  if (error) return <ErrorState title={error} onRetry={() => fetchPage(1)} />
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-6 pb-24 lg:pb-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Notifications</h1>
+          {unread > 0 && (
+            <p className="text-sm text-text-muted">{unread} unread</p>
+          )}
+        </div>
+        {unread > 0 && (
+          <Button size="sm" variant="secondary" onClick={handleMarkAllRead} disabled={markingAll}>
+            {markingAll ? <Spinner size="sm" /> : 'Mark all read'}
+          </Button>
+        )}
+      </div>
+
+      {notifications.length === 0 ? (
+        <EmptyState title="No notifications" description="You're all caught up." />
+      ) : (
+        <div className="bg-white border border-border rounded-xl overflow-hidden divide-y divide-border">
+          {notifications.map((notif) => (
+            <button
+              key={notif.id}
+              onClick={() => handleClick(notif)}
+              className={`w-full flex items-start gap-3 px-4 py-4 text-left hover:bg-surface transition-colors ${
+                !notif.read ? 'bg-primary/5' : ''
+              }`}
+            >
+              <div className="flex-shrink-0 mt-0.5 w-8 h-8 rounded-full bg-surface flex items-center justify-center">
+                <NotifIcon type={notif.type} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <p className={`text-sm ${!notif.read ? 'font-semibold text-text-primary' : 'font-medium text-text-primary'}`}>
+                    {notif.title}
+                  </p>
+                  <span className="text-xs text-text-muted flex-shrink-0">{timeAgo(notif.createdAt)}</span>
+                </div>
+                <p className="text-sm text-text-muted mt-0.5 line-clamp-2">{notif.body}</p>
+              </div>
+              {!notif.read && (
+                <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-2" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {notifications.length < total && (
+        <div className="mt-4 text-center">
+          <Button variant="secondary" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? <Spinner size="sm" /> : `Load more (${total - notifications.length} remaining)`}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
