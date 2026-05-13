@@ -503,6 +503,10 @@ export const walletApi = {
         toAddress: data.address,
       }),
     }),
+  getLiveFee: (coin: string, network: string) =>
+    apiRequest<{ networkFee: string; platformFee: string; coin: string; network: string }>(
+      `/wallet/live-fee?coin=${encodeURIComponent(coin)}&network=${encodeURIComponent(network)}`,
+    ),
 }
 
 export const tradesApi = {

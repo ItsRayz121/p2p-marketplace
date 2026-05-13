@@ -1,6 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { walletApi, gasFeeApi } from '@/lib/api'
+import { walletApi, marketplaceApi } from '@/lib/api'
 import type { WalletBalance, Transaction } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { CopyButton } from '@/components/ui/CopyButton'
@@ -85,18 +85,33 @@ function WithdrawModal({
     if (!state.network || !coin) return
     setState((s) => ({ ...s, loadingFee: true, feeError: null }))
     try {
-      const res = await gasFeeApi.estimate({ coin, network: state.network })
-      setState((s) => ({ ...s, fee: res.fee, feePkr: res.feePkr, loadingFee: false }))
+      const liveFee = await walletApi.getLiveFee(coin, state.network)
+      const networkFee = liveFee?.networkFee ?? '0'
+
+      // Best-effort PKR conversion — if the rate call fails we still show
+      // the fee in coin units instead of breaking the modal.
+      let feePkr = '0'
+      try {
+        const rate = await marketplaceApi.getRate(coin)
+        const feeNum = parseFloat(networkFee)
+        if (Number.isFinite(feeNum) && Number.isFinite(rate?.rate)) {
+          feePkr = (feeNum * rate.rate).toFixed(2)
+        }
+      } catch { /* leave feePkr as '0' */ }
+
+      setState((s) => ({ ...s, fee: networkFee, feePkr, loadingFee: false, feeError: null }))
     } catch {
-      setState((s) => ({ ...s, feeError: 'Could not fetch fee', loadingFee: false }))
+      setState((s) => ({ ...s, fee: '0', feePkr: '0', feeError: 'Fee unavailable', loadingFee: false }))
     }
   }, [coin, state.network])
 
   useEffect(() => { if (isOpen) fetchFee() }, [isOpen, fetchFee])
   usePolling(fetchFee, 30_000, isOpen)
 
-  const total = state.amount
-    ? (parseFloat(state.amount) + parseFloat(state.fee || '0')).toFixed(6)
+  const amountNum = parseFloat(state.amount)
+  const feeNum = parseFloat(state.fee || '0')
+  const total = state.amount && Number.isFinite(amountNum)
+    ? (amountNum + (Number.isFinite(feeNum) ? feeNum : 0)).toFixed(6)
     : '—'
 
   const handleSubmit = async () => {
@@ -178,21 +193,39 @@ function WithdrawModal({
 
             {/* Fee display */}
             <div className="bg-surface rounded-lg p-3 space-y-2 text-sm">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-text-muted">Network Fee</span>
-                <span className="font-medium text-text-primary flex items-center gap-1">
+                <span className="font-medium text-text-primary flex items-center gap-2">
                   {state.loadingFee ? (
-                    <span className="text-xs text-text-muted">Loading...</span>
+                    <>
+                      <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      <span className="text-xs text-text-muted">Loading…</span>
+                    </>
                   ) : state.feeError ? (
-                    <span className="text-xs text-danger">Error</span>
+                    <button
+                      type="button"
+                      onClick={fetchFee}
+                      className="text-xs text-warning hover:underline"
+                    >
+                      Fee unavailable — retry
+                    </button>
                   ) : (
-                    `${state.fee} ${coin} (≈ PKR ${parseFloat(state.feePkr).toLocaleString()})`
+                    <>
+                      {state.fee} {coin}
+                      {parseFloat(state.feePkr) > 0 && (
+                        <span className="text-text-muted">
+                          {' '}(≈ PKR {parseFloat(state.feePkr).toLocaleString()})
+                        </span>
+                      )}
+                    </>
                   )}
                 </span>
               </div>
               <div className="flex justify-between border-t border-border pt-2">
                 <span className="text-text-muted font-medium">Total Deduction</span>
-                <span className="font-bold text-text-primary">{total} {coin}</span>
+                <span className="font-bold text-text-primary">
+                  {state.feeError || state.loadingFee ? '—' : total} {coin}
+                </span>
               </div>
             </div>
 
@@ -202,10 +235,10 @@ function WithdrawModal({
 
             <Button
               fullWidth
-              disabled={!state.address || !state.amount}
+              disabled={!state.address || !state.amount || state.loadingFee || !!state.feeError}
               onClick={() => setShowConfirm(true)}
             >
-              Continue
+              {state.loadingFee ? 'Loading fee…' : state.feeError ? 'Fee unavailable' : 'Continue'}
             </Button>
           </div>
         )}
