@@ -502,6 +502,23 @@ export const walletApi = {
     apiRequest<{ chains: Array<{ id: string; chainId: number; name: string; family: string; nativeSymbol: string; networkLabel: string; minConfirmations: number; tokens: Array<{ symbol: string; decimals: number }> }> }>(
       '/wallet/chains',
     ),
+  getRecentDeposits: () =>
+    apiRequest<{ deposits: Array<{
+      id: string
+      chain: string
+      chainName: string
+      symbol: string
+      amount: string
+      confirmations: number
+      minConfirmations: number
+      progress: number | null
+      status: 'detected' | 'credited' | 'rejected'
+      rejectionReason: string | null
+      txHash: string
+      explorerUrl?: string
+      detectedAt: string
+      creditedAt: string | null
+    }> }>('/wallet/deposits'),
   requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string }) =>
     apiRequest<{ id: string; status: string }>('/wallet/withdraw', {
       method: 'POST',

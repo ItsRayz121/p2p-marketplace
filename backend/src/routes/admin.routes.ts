@@ -8,6 +8,8 @@ import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../servi
 import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
+import { getChainById } from '../lib/chains'
+import { processDepositEvent } from '../services/depositWatcher.service'
 import { Prisma } from '@prisma/client'
 type JsonValue = Prisma.InputJsonValue
 
@@ -869,6 +871,157 @@ export async function adminRoutes(app: FastifyInstance) {
       count: failedRows.length,
     })
     return reply.send({ success: true, data: { retried: failedRows.length } })
+  })
+
+  // POST /admin/deposits/rescan — manual reconciliation. The operator pastes
+  // a txHash + chain + asset + amount and we feed it through the same
+  // processDepositEvent pipeline a real webhook would. Use this when a
+  // Moralis webhook was missed (outage, dropped delivery, stream not
+  // subscribed at the time) and a user is waiting on credit they actually
+  // sent. The watcher's idempotency (unique txHash+chain+asset) makes this
+  // safe to call multiple times — a previously-credited tx is a no-op.
+  app.post('/admin/deposits/rescan', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const schema = z.object({
+      txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'txHash must be 0x + 64 hex chars'),
+      chain: z.string().min(1),
+      asset: z.string().min(1), // '0x...' contract address or 'native'
+      symbol: z.string().optional(),
+      fromAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'fromAddress must be 0x + 40 hex chars'),
+      toAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'toAddress must be 0x + 40 hex chars'),
+      rawAmount: z.string().regex(/^\d+$/, 'rawAmount must be a decimal integer string (raw on-chain units)'),
+      confirmations: z.number().int().nonnegative(),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { txHash, chain, asset, symbol, fromAddress, toAddress, rawAmount, confirmations } = parsed.data
+
+    const chainCfg = getChainById(chain)
+    if (!chainCfg || chainCfg.chainId == null) {
+      throw new AppError('UNSUPPORTED_CHAIN', `Chain ${chain} is not supported`, 400)
+    }
+
+    const result = await processDepositEvent({
+      chainId: chainCfg.chainId,
+      txHash,
+      fromAddress,
+      toAddress,
+      asset,
+      symbol: symbol ?? '',
+      amount: rawAmount,
+      confirmations,
+    })
+
+    void createAuditLog(req.user!.id, 'DEPOSIT_RESCAN_TRIGGERED', 'Deposit', txHash, {
+      chain, asset, rawAmount, confirmations, result,
+    })
+    return reply.send({ success: true, data: { result } })
+  })
+
+  // POST /admin/deposits/:id/force-credit — admin-driven credit when the
+  // watcher rejected or skipped a legitimate deposit. Heavily audit-logged.
+  // Requires a non-empty reason. Refuses if the Deposit row is already
+  // credited (use rescan instead) or if it doesn't have a linked user.
+  app.post('/admin/deposits/:id/force-credit', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const schema = z.object({ reason: z.string().min(10).max(500) })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Reason is required (10-500 chars)', 400)
+
+    const deposit = await db.deposit.findUnique({ where: { id } })
+    if (!deposit) throw Errors.NOT_FOUND('Deposit')
+    if (deposit.status === 'credited') {
+      throw new AppError('ALREADY_CREDITED', 'Deposit is already credited', 409)
+    }
+    if (!deposit.userId) {
+      throw new AppError('NO_USER', 'Deposit has no associated user — cannot force-credit', 400)
+    }
+
+    const chainCfg = getChainById(deposit.chain)
+    const network = chainCfg?.networkLabel ?? deposit.chain.toUpperCase()
+    const symbol = deposit.symbol
+    const amountStr = deposit.amount.toString()
+    const userId = deposit.userId
+
+    // Atomic credit — same shape as the watcher's credit path. Uses an
+    // updateMany gate so two concurrent force-credit attempts can't double.
+    const result = await db.$transaction(async (tx) => {
+      const claimed = await tx.deposit.updateMany({
+        where: { id: deposit.id, status: { in: ['detected', 'rejected'] } },
+        data: { status: 'credited', creditedAt: new Date() },
+      })
+      if (claimed.count === 0) return null
+
+      const wallet = await tx.wallet.upsert({
+        where: { userId_coin_network: { userId, coin: symbol, network } },
+        create: { userId, coin: symbol, network, balance: amountStr, lockedBalance: '0' },
+        update: { balance: { increment: new Prisma.Decimal(amountStr) } },
+      })
+
+      const txn = await tx.transaction.create({
+        data: {
+          walletId: wallet.id,
+          type: 'deposit',
+          amount: amountStr,
+          fee: '0',
+          txHash: deposit.txHash,
+          status: 'completed',
+          metadata: {
+            forceCredit: true,
+            adminId: req.user!.id,
+            reason: parsed.data.reason,
+            chain: deposit.chain,
+            asset: deposit.asset,
+            symbol,
+          },
+        },
+      })
+
+      await tx.deposit.update({
+        where: { id: deposit.id },
+        data: { walletId: wallet.id, creditedTransactionId: txn.id, rejectionReason: null },
+      })
+
+      return { walletId: wallet.id, transactionId: txn.id }
+    })
+
+    void createAuditLog(req.user!.id, 'DEPOSIT_FORCE_CREDITED', 'Deposit', deposit.id, {
+      reason: parsed.data.reason,
+      userId,
+      symbol,
+      amount: amountStr,
+      txHash: deposit.txHash,
+    })
+
+    return reply.send({ success: true, data: { result, alreadyCredited: result === null } })
+  })
+
+  // POST /admin/deposits/:id/reject — mark a Deposit row as rejected.
+  // Used when a deposit was a false positive (e.g. test-net leak, internal
+  // sweep, spam token). Reversible via force-credit. Heavily audit-logged.
+  app.post('/admin/deposits/:id/reject', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const schema = z.object({ reason: z.string().min(10).max(500) })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Reason is required (10-500 chars)', 400)
+
+    const deposit = await db.deposit.findUnique({ where: { id } })
+    if (!deposit) throw Errors.NOT_FOUND('Deposit')
+    if (deposit.status === 'credited') {
+      throw new AppError('ALREADY_CREDITED', 'Cannot reject an already-credited deposit. Open a manual reversal ticket instead.', 409)
+    }
+
+    await db.deposit.update({
+      where: { id: deposit.id },
+      data: { status: 'rejected', rejectionReason: parsed.data.reason.slice(0, 500) },
+    })
+
+    void createAuditLog(req.user!.id, 'DEPOSIT_REJECTED', 'Deposit', deposit.id, {
+      reason: parsed.data.reason,
+      txHash: deposit.txHash,
+      chain: deposit.chain,
+    })
+
+    return reply.send({ success: true })
   })
 
   // GET /admin/deposits — paginated on-chain deposit history with filters.

@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ConnectButton } from '@/components/wallet/ConnectButton'
 import { ChainSwitcher } from '@/components/wallet/ChainSwitcher'
 import { ConnectedBalances } from '@/components/wallet/ConnectedBalances'
+import { RecentDeposits } from '@/components/wallet/RecentDeposits'
 import { UI_CHAINS } from '@/lib/web3/chains'
 import { useAccount } from 'wagmi'
 
@@ -532,6 +533,8 @@ export default function WalletPage() {
           </div>
         )}
       </section>
+
+      <RecentDeposits />
 
       {/* ── Transaction history ── */}
       <section>

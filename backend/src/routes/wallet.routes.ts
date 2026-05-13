@@ -20,7 +20,7 @@ import {
 } from '../services/wallet.service'
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
-import { ALL_CHAINS } from '../lib/chains'
+import { ALL_CHAINS, explorerTxUrl, getChainById } from '../lib/chains'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -133,6 +133,47 @@ export async function walletRoutes(app: FastifyInstance) {
       keyGenerator: (req: any) => `wallet-deposit:${req.user?.id ?? req.ip}`,
     },
   }
+
+  // GET /api/wallet/deposits — the user's own recent on-chain deposits with
+  // confirmation progress and explorer links. Backs the "Recent deposits"
+  // widget on the wallet page so users can see the state of a transfer
+  // between "I sent it" and "PakSwap balance went up".
+  app.get('/wallet/deposits', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const query = req.query as Record<string, string>
+    const limit = Math.min(parseInt(query.limit ?? '20', 10), 50)
+
+    const rows = await db.deposit.findMany({
+      where: { userId },
+      orderBy: { detectedAt: 'desc' },
+      take: limit,
+    })
+
+    const data = rows.map((r) => {
+      const chain = getChainById(r.chain)
+      const minConfirmations = chain?.minConfirmations ?? 0
+      return {
+        id: r.id,
+        chain: r.chain,
+        chainName: chain?.name ?? r.chain,
+        symbol: r.symbol,
+        amount: r.amount.toString(),
+        confirmations: r.confirmations,
+        minConfirmations,
+        progress: minConfirmations > 0
+          ? Math.min(1, r.confirmations / minConfirmations)
+          : null,
+        status: r.status, // 'detected' | 'credited' | 'rejected'
+        rejectionReason: r.rejectionReason,
+        txHash: r.txHash,
+        explorerUrl: explorerTxUrl(r.chain, r.txHash),
+        detectedAt: r.detectedAt,
+        creditedAt: r.creditedAt,
+      }
+    })
+
+    return reply.send({ success: true, data: { deposits: data } })
+  })
 
   // GET /api/wallet/deposit/:coin — simple alias using default network per coin
   app.get('/wallet/deposit/:coin', {
