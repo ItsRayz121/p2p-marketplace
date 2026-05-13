@@ -5,7 +5,7 @@ import { db } from '../lib/prisma'
 import { AppError, Errors } from '../lib/errors'
 import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
-import { getStreamStatusSummary } from '../services/moralisStreams.service'
+import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { Prisma } from '@prisma/client'
 type JsonValue = Prisma.InputJsonValue
 
@@ -670,6 +670,51 @@ export async function adminRoutes(app: FastifyInstance) {
       success: true,
       data: { subscriptions, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
+  })
+
+  // POST /admin/moralis-streams/backfill — walk all existing DepositAddress
+  // rows, create any missing MoralisStreamSubscription rows, and enqueue
+  // subscribe jobs for everything that's pending. Idempotent. Returns 202
+  // immediately and runs in the background — operator polls /status to watch
+  // it complete. Safe to call repeatedly (e.g. after adding a new chain).
+  app.post('/admin/moralis-streams/backfill', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const adminId = req.user!.id
+    const total = await db.depositAddress.count({ where: { chainFamily: 'EVM' } })
+
+    // Fire-and-forget. We don't await — operator gets an immediate 202 with
+    // the row count to expect, and the work proceeds asynchronously while
+    // /admin/moralis-streams/status reflects progress in real time.
+    ;(async () => {
+      const batchSize = 100
+      let cursor: string | undefined
+      let scanned = 0
+      try {
+        for (;;) {
+          const batch = await db.depositAddress.findMany({
+            where: { chainFamily: 'EVM' },
+            orderBy: { createdAt: 'asc' },
+            take: batchSize,
+            ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+            select: { id: true },
+          })
+          if (batch.length === 0) break
+          for (const da of batch) {
+            await ensureSubscriptionRows(da.id)
+            await enqueuePendingSubscriptions(da.id)
+            scanned += 1
+          }
+          cursor = batch[batch.length - 1]!.id
+        }
+      } catch (err) {
+        // Logged but not surfaced — operator inspects /status to see the
+        // state of subscription rows.
+        // eslint-disable-next-line no-console
+        console.error('Moralis backfill failed mid-flight', err)
+      }
+    })()
+
+    void createAuditLog(adminId, 'MORALIS_STREAMS_BACKFILL_STARTED', 'MoralisStreamSubscription', 'all', { total })
+    return reply.code(202).send({ success: true, data: { startedFor: total, message: 'Backfill running in background. Poll /admin/moralis-streams/status to watch progress.' } })
   })
 
   // POST /admin/moralis-streams/retry/:id — re-enqueue a single failed sub.
