@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { marketplaceApi } from '@/lib/api'
-import type { Ad } from '@/lib/api'
+import type { MarketplaceAd } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -22,18 +22,19 @@ interface Filters {
   maxAmount: string
 }
 
-function AdRow({ ad }: { ad: Ad }) {
+function AdRow({ ad }: { ad: MarketplaceAd }) {
+  const methods = ad.paymentMethods ?? []
   return (
     <div className="bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         {/* Seller info */}
         <div className="flex items-center gap-3 sm:w-48">
           <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center flex-shrink-0">
-            {(ad.user?.username || 'U').charAt(0).toUpperCase()}
+            {(ad.seller?.username || 'U').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-text-primary truncate">
-              {ad.user?.username || 'Anonymous'}
+              {ad.seller?.username || 'Anonymous'}
             </p>
           </div>
         </div>
@@ -50,7 +51,7 @@ function AdRow({ ad }: { ad: Ad }) {
         <div className="sm:w-40">
           <p className="text-xs text-text-muted">Limit</p>
           <p className="text-sm font-medium text-text-primary">
-            {Number(ad.minAmount).toLocaleString()} – {Number(ad.maxAmount).toLocaleString()} PKR
+            {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()} PKR
           </p>
         </div>
 
@@ -58,11 +59,11 @@ function AdRow({ ad }: { ad: Ad }) {
         <div className="sm:w-40">
           <p className="text-xs text-text-muted mb-1">Payment</p>
           <div className="flex flex-wrap gap-1">
-            {ad.paymentMethods.slice(0, 2).map((pm) => (
+            {methods.slice(0, 2).map((pm) => (
               <Badge key={pm} variant="default" size="sm">{pm}</Badge>
             ))}
-            {ad.paymentMethods.length > 2 && (
-              <Badge variant="default" size="sm">+{ad.paymentMethods.length - 2}</Badge>
+            {methods.length > 2 && (
+              <Badge variant="default" size="sm">+{methods.length - 2}</Badge>
             )}
           </div>
         </div>
@@ -84,7 +85,7 @@ export default function MarketplacePage() {
     minAmount: '',
     maxAmount: '',
   })
-  const [ads, setAds] = useState<Ad[]>([])
+  const [ads, setAds] = useState<MarketplaceAd[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)

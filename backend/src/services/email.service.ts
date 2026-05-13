@@ -57,10 +57,25 @@ async function send(
     return
   }
   try {
-    await resend.emails.send({ from: EMAIL_FROM, to, subject, html })
+    const result = await resend.emails.send({ from: EMAIL_FROM, to, subject, html })
+    // Resend SDK returns { data, error } — a non-null error means the API rejected it
+    if ((result as { error?: unknown }).error) {
+      const apiErr = (result as { error: { statusCode?: number; message?: string; name?: string } }).error
+      logger.error(
+        { template, to, from: EMAIL_FROM, resendStatus: apiErr.statusCode, resendError: apiErr.message, resendName: apiErr.name },
+        'Resend API rejected email — check API key scope and sender domain in Resend dashboard',
+      )
+      await logEmail(template, to, 'failed', userId)
+      return
+    }
+    logger.info({ template, to, from: EMAIL_FROM }, 'Email sent successfully')
     await logEmail(template, to, 'sent', userId)
-  } catch (err) {
-    logger.error({ err, template, to, from: EMAIL_FROM }, 'Email send failed')
+  } catch (err: unknown) {
+    const apiErr = err as { statusCode?: number; message?: string; name?: string }
+    logger.error(
+      { err, template, to, from: EMAIL_FROM, resendStatus: apiErr.statusCode, resendError: apiErr.message, resendName: apiErr.name },
+      'Email send threw — check RESEND_API_KEY and that sender domain is verified in the correct Resend project',
+    )
     await logEmail(template, to, 'failed', userId)
     // Never throw — email failure must not crash the app
   }

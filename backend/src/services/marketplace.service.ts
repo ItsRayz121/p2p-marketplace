@@ -328,7 +328,15 @@ export async function getPublicConfig(): Promise<PublicConfig> {
   return result
 }
 
-export async function getAds(params: GetAdsParams): Promise<PaginatedResult<AdWithSeller>> {
+export interface AdsResult {
+  ads: AdWithSeller[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   const page = params.page ?? 1
   const limit = Math.min(params.limit ?? 20, 50)
   const skip = (page - 1) * limit
@@ -416,7 +424,7 @@ export async function getAds(params: GetAdsParams): Promise<PaginatedResult<AdWi
   })
 
   return {
-    items,
+    ads: items,
     total,
     page,
     limit,

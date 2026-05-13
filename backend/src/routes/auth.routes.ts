@@ -4,7 +4,7 @@ import { AppError } from '../lib/errors'
 import { generateCsrfToken } from '../lib/csrf'
 import { authenticate } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
-import { hashPassword, verifyPassword } from '../lib/hash'
+import { hashPassword, verifyPassword, hashToken } from '../lib/hash'
 import {
   register,
   login,
@@ -353,7 +353,7 @@ export async function authRoutes(app: FastifyInstance) {
         ip: s.ip ?? '',
         createdAt: s.createdAt,
         lastActiveAt: s.createdAt,
-        isCurrent: currentToken ? s.token === currentToken : false,
+        isCurrent: currentToken ? s.token === hashToken(currentToken) : false,
       })),
     })
   })

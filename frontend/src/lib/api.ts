@@ -328,6 +328,32 @@ export interface Ad {
   user?: Partial<AuthUser>
 }
 
+// Shape returned by GET /marketplace/ads
+export interface MarketplaceAd {
+  id: string
+  side: string
+  coin: string
+  network: string
+  priceType: string
+  price: string
+  floatOffset: string
+  availableAmount: string
+  minOrder: string
+  maxOrder: string
+  paymentMethods: string[]
+  tradeWindow: number
+  terms: string
+  status: string
+  createdAt: string
+  seller: {
+    id: string
+    username: string
+    badge: string
+    tradeStats: { completionRate: string; totalTrades: number; avgRating: string } | null
+    hasCollateral: boolean
+  }
+}
+
 export interface KycDocument {
   id: string
   userId: string
@@ -378,8 +404,8 @@ export const authApi = {
     apiRequest<{ userId: string; email: string }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   verifyEmail: (data: { email: string; code: string }) =>
     apiRequest<{ verified: boolean }>('/auth/verify-email', { method: 'POST', body: JSON.stringify(data) }),
-  resendOtp: (email: string) =>
-    apiRequest<{ sent: boolean }>('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email }) }),
+  resendOtp: (email: string, type: 'verify' | 'reset' = 'verify') =>
+    apiRequest<{ sent: boolean }>('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email, type }) }),
   login: (data: { email: string; password: string }) =>
     apiRequest<{ accessToken?: string; preAuthToken?: string; user?: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   refresh: () =>
@@ -435,7 +461,7 @@ export const marketplaceApi = {
             .map(([k, v]) => [k, String(v)])
         ).toString()
       : ''
-    return apiRequest<{ ads: Ad[]; total: number; page: number; limit: number }>('/marketplace/ads' + qs)
+    return apiRequest<{ ads: MarketplaceAd[]; total: number; page: number; limit: number }>('/marketplace/ads' + qs)
   },
 }
 
