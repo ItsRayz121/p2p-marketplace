@@ -7,6 +7,7 @@ import { logger } from './lib/logger'
 import { env } from './lib/env'
 import { startWorkers } from './queues/workers'
 import { validateWalletCustodyAtStartup } from './lib/walletCrypto'
+import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
 
 async function start() {
   let app: Awaited<ReturnType<typeof buildApp>> | null = null
@@ -34,6 +35,10 @@ async function start() {
     logger.info(`Server listening on ${env.HOST}:${env.PORT}`)
     logger.info(`Health check: http://${env.HOST}:${env.PORT}/health`)
     logger.info(`Environment: ${env.NODE_ENV}`)
+
+    // Async, fire-and-forget — never blocks listen(). Logs an ops report
+    // (which streams are configured, which respond) without throwing.
+    void reportMoralisStartupStatus()
   } catch (err) {
     logger.error({ err }, 'Failed to start server')
     process.exit(1)

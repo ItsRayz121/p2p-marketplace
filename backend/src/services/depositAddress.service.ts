@@ -4,6 +4,7 @@ import { AppError } from '../lib/errors'
 import { deriveEvmAddress, walletCustodyIsConfigured } from '../lib/walletCrypto'
 import { recordAuditLog } from '../lib/audit'
 import { logger } from '../lib/logger'
+import { provisionSubscriptions } from './moralisStreams.service'
 
 const EVM_INDEX_KEY = 'next_evm_derivation_index'
 
@@ -100,6 +101,12 @@ export async function getOrCreateEvmDepositAddress(
       derivationIndex: index,
       address,
     })
+
+    // Fire-and-forget: register this address in every configured Moralis
+    // Stream. provisionSubscriptions handles its own errors so a Moralis
+    // outage never blocks the user's deposit-address fetch.
+    void provisionSubscriptions(row.id)
+
     return { address: row.address, derivationIndex: row.derivationIndex }
   } catch (err) {
     // Unique violation on (userId, chainFamily) — another request beat us.

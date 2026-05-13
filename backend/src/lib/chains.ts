@@ -5,6 +5,7 @@
  * so the `family: 'EVM'` group routes through the HD-derived address service.
  * Non-EVM families (TRON, TON, SUI, BTC) plug into their own custody paths later.
  */
+import { env } from './env'
 
 export type ChainFamily = 'EVM' | 'TRON'
 
@@ -128,4 +129,21 @@ export function getChainById(id: string): ChainConfig | undefined {
 export function isEvmNetwork(network: string): boolean {
   const c = getChainByNetworkLabel(network)
   return c?.family === 'EVM'
+}
+
+/**
+ * Look up the configured Moralis Stream id for a given chain id. Returns
+ * undefined if the operator hasn't set the corresponding env var yet —
+ * callers should treat that as "skip this chain", not an error.
+ */
+export function getMoralisStreamId(chainId: string): string | undefined {
+  switch (chainId) {
+    case 'ethereum': return env.MORALIS_STREAM_ID_ETHEREUM || undefined
+    case 'bsc': return env.MORALIS_STREAM_ID_BSC || undefined
+    case 'polygon': return env.MORALIS_STREAM_ID_POLYGON || undefined
+    case 'arbitrum': return env.MORALIS_STREAM_ID_ARBITRUM || undefined
+    case 'optimism': return env.MORALIS_STREAM_ID_OPTIMISM || undefined
+    case 'base': return env.MORALIS_STREAM_ID_BASE || undefined
+    default: return undefined
+  }
 }

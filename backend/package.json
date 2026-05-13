@@ -14,7 +14,8 @@
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
     "workers": "tsx src/queues/workers.ts",
-    "wallet:bootstrap": "tsx src/scripts/walletBootstrap.ts"
+    "wallet:bootstrap": "tsx src/scripts/walletBootstrap.ts",
+    "moralis:backfill": "tsx src/scripts/moralisBackfill.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.3.1",

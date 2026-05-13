@@ -7,12 +7,13 @@ import { runTradeEscalation } from '../jobs/tradeEscalation.job'
 import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
 import { processReferralPayout } from '../jobs/referralPayout.job'
 import { sendAdminAlertEmail } from '../services/email.service'
+import { processSubscription } from '../services/moralisStreams.service'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createWorker(queueName: string, processor: Processor<any, any, string>) {
+export function createWorker(queueName: string, processor: Processor<any, any, string>, options?: { max?: number; duration?: number }) {
   const worker = new Worker(queueName, processor, {
     connection: redis,
-    limiter: { max: 10, duration: 1000 },
+    limiter: { max: options?.max ?? 10, duration: options?.duration ?? 1000 },
   })
 
   worker.on('failed', (job, err) => {
@@ -67,6 +68,22 @@ export function startWorkers() {
   createWorker(QUEUE_NAMES.REFERRAL_PAYOUT, async (job) => {
     await processReferralPayout(job)
   })
+
+  // Moralis Streams subscriber. Conservative rate limit — Moralis free-tier
+  // accepts a few RPS comfortably. If the result says `retryable`, throw so
+  // BullMQ schedules an exponential-backoff retry; otherwise return normally.
+  createWorker(
+    QUEUE_NAMES.MORALIS_SUBSCRIBE,
+    async (job) => {
+      const subscriptionId = (job.data as { subscriptionId?: string }).subscriptionId
+      if (!subscriptionId) throw new Error('subscriptionId missing in job data')
+      const result = await processSubscription(subscriptionId)
+      if (result.retryable) {
+        throw new Error('moralis_subscription_retryable')
+      }
+    },
+    { max: 3, duration: 1000 }, // 3 req/sec ceiling
+  )
 
   logger.info('BullMQ workers ready')
 }

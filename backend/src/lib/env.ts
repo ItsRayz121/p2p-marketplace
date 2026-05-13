@@ -43,6 +43,16 @@ const envSchema = z.object({
   // Blockchain Monitoring
   MORALIS_API_KEY: z.string().optional(),
   MORALIS_WEBHOOK_SECRET: z.string().optional(),
+  MORALIS_API_BASE_URL: z.string().url().default('https://api.moralis-streams.com'),
+  // Per-chain stream ids — set after you create each Moralis Stream in the
+  // dashboard. The subscribe worker skips chains whose id is unset and marks
+  // their MoralisStreamSubscription rows as status='skipped'.
+  MORALIS_STREAM_ID_ETHEREUM: z.string().optional(),
+  MORALIS_STREAM_ID_BSC: z.string().optional(),
+  MORALIS_STREAM_ID_POLYGON: z.string().optional(),
+  MORALIS_STREAM_ID_ARBITRUM: z.string().optional(),
+  MORALIS_STREAM_ID_OPTIMISM: z.string().optional(),
+  MORALIS_STREAM_ID_BASE: z.string().optional(),
   TATUM_API_KEY: z.string().optional(),
   TATUM_WEBHOOK_SECRET: z.string().optional(),
   BLOCKCYPHER_TOKEN: z.string().optional(),

@@ -926,9 +926,35 @@ model DepositAddress {
   derivationIndex  Int
   createdAt        DateTime @default(now())
 
+  subscriptions    MoralisStreamSubscription[]
+
   @@unique([userId, chainFamily])
   @@unique([address])
   @@index([chainFamily])
+}
+
+// One row per (DepositAddress, chain) tracking Moralis Stream subscription
+// state. We create one row per supported EVM chain when a new DepositAddress
+// is generated, then a worker walks the rows in status='pending' and POSTs
+// the address into each chain's Moralis Stream. Idempotent: the unique
+// constraint prevents duplicate enqueueing for the same address/chain.
+model MoralisStreamSubscription {
+  id                 String          @id @default(cuid())
+  depositAddressId   String
+  depositAddress     DepositAddress  @relation(fields: [depositAddressId], references: [id], onDelete: Cascade)
+  chain              String          // matches ChainConfig.id ('ethereum', 'bsc', …)
+  streamId           String?         // null until the operator sets MORALIS_STREAM_ID_<CHAIN>
+  status             String          @default("pending") // pending | subscribed | failed | skipped
+  attempts           Int             @default(0)
+  lastError          String?
+  lastAttemptAt      DateTime?
+  subscribedAt       DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@unique([depositAddressId, chain])
+  @@index([status])
+  @@index([chain, status])
 }
 
 // Append-only audit trail of every on-chain deposit we've seen. A row exists

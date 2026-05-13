@@ -24,6 +24,7 @@ export const QUEUE_NAMES = {
   LEADERBOARD_CACHE: 'leaderboard-cache',
   MERCHANT_RANK_UPDATER: 'merchant-rank-updater',
   DATABASE_BACKUP: 'database-backup',
+  MORALIS_SUBSCRIBE: 'moralis-subscribe',
 } as const
 
 export const queues = {
@@ -39,4 +40,12 @@ export const queues = {
   leaderboardCache: new Queue(QUEUE_NAMES.LEADERBOARD_CACHE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
   merchantRankUpdater: new Queue(QUEUE_NAMES.MERCHANT_RANK_UPDATER, { connection, defaultJobOptions }),
   databaseBackup: new Queue(QUEUE_NAMES.DATABASE_BACKUP, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 2 } }),
+  moralisSubscribe: new Queue(QUEUE_NAMES.MORALIS_SUBSCRIBE, {
+    connection,
+    defaultJobOptions: {
+      ...defaultJobOptions,
+      attempts: 6, // a few extra to ride out longer Moralis outages
+      backoff: { type: 'exponential', delay: 15_000 },
+    },
+  }),
 }

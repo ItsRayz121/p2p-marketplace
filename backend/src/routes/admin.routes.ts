@@ -5,6 +5,7 @@ import { db } from '../lib/prisma'
 import { AppError, Errors } from '../lib/errors'
 import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
+import { getStreamStatusSummary } from '../services/moralisStreams.service'
 import { Prisma } from '@prisma/client'
 type JsonValue = Prisma.InputJsonValue
 
@@ -630,6 +631,60 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // ── Withdrawals ────────────────────────────────────────────────────────────
+
+  // GET /admin/moralis-streams/status — per-chain stream config + counts +
+  // reachability check. Lets ops see at a glance which chains are wired up,
+  // how many addresses are subscribed/pending/failed, and whether the
+  // Moralis API answered on the latest probe.
+  app.get('/admin/moralis-streams/status', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const summary = await getStreamStatusSummary()
+    return reply.send({ success: true, data: summary })
+  })
+
+  // GET /admin/moralis-streams/subscriptions — paginated subscription rows.
+  // Useful for inspecting "what's stuck in failed".
+  app.get('/admin/moralis-streams/subscriptions', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+    const where: Record<string, unknown> = {}
+    if (query.status) where.status = query.status
+    if (query.chain) where.chain = query.chain
+    const [subscriptions, total] = await Promise.all([
+      db.moralisStreamSubscription.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          depositAddress: {
+            select: {
+              address: true,
+              user: { select: { id: true, username: true, email: true } },
+            },
+          },
+        },
+      }),
+      db.moralisStreamSubscription.count({ where }),
+    ])
+    return reply.send({
+      success: true,
+      data: { subscriptions, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
+
+  // POST /admin/moralis-streams/retry/:id — re-enqueue a single failed sub.
+  app.post('/admin/moralis-streams/retry/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const sub = await db.moralisStreamSubscription.findUnique({ where: { id } })
+    if (!sub) throw Errors.NOT_FOUND('Subscription')
+    await db.moralisStreamSubscription.update({
+      where: { id },
+      data: { status: 'pending', lastError: null },
+    })
+    await queues.moralisSubscribe.add('subscribe', { subscriptionId: id }, { jobId: 'moralis-sub-retry-' + id + '-' + Date.now() })
+    void createAuditLog(req.user!.id, 'MORALIS_SUBSCRIPTION_RETRIED', 'MoralisStreamSubscription', id, {})
+    return reply.send({ success: true })
+  })
 
   // GET /admin/deposits — paginated on-chain deposit history with filters.
   // Returns the full Deposit + DepositAddress audit trail so ops can debug
