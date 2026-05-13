@@ -631,6 +631,63 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ── Withdrawals ────────────────────────────────────────────────────────────
 
+  // GET /admin/deposits — paginated on-chain deposit history with filters.
+  // Returns the full Deposit + DepositAddress audit trail so ops can debug
+  // stuck/pending credits, failed crediting, suspicious addresses, etc.
+  app.get('/admin/deposits', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+
+    const where: Record<string, unknown> = {}
+    if (query.status) where.status = query.status
+    if (query.chain) where.chain = query.chain
+    if (query.userId) where.userId = query.userId
+    if (query.toAddress) where.toAddress = query.toAddress
+
+    const [deposits, total] = await Promise.all([
+      db.deposit.findMany({
+        where,
+        orderBy: { detectedAt: 'desc' },
+        skip,
+        take: limit,
+        include: { user: { select: { id: true, username: true, email: true } } },
+      }),
+      db.deposit.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      data: { deposits, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
+
+  // GET /admin/deposit-addresses — audit who owns which HD-derived address.
+  app.get('/admin/deposit-addresses', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+
+    const where: Record<string, unknown> = {}
+    if (query.chainFamily) where.chainFamily = query.chainFamily
+    if (query.userId) where.userId = query.userId
+    if (query.address) where.address = query.address
+
+    const [addresses, total] = await Promise.all([
+      db.depositAddress.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: { user: { select: { id: true, username: true, email: true } } },
+      }),
+      db.depositAddress.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      data: { addresses, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
+
   app.get('/admin/withdrawals', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)

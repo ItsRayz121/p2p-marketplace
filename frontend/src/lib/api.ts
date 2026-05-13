@@ -490,8 +490,18 @@ export const walletApi = {
       : ''
     return apiRequest<{ transactions: Transaction[]; total: number }>('/wallet/transactions' + qs)
   },
-  getDepositAddress: (coin: string) =>
-    apiRequest<{ address: string; network: string; memo?: string }>(`/wallet/deposit/${coin}`),
+  getDepositAddress: (coin: string, network?: string) =>
+    network
+      ? apiRequest<{ address: string; coin: string; network: string; chainId?: number; chainName?: string; minConfirmations?: number; family?: string; memo?: string }>(
+          `/wallet/address/${coin}/${network}`,
+        )
+      : apiRequest<{ address: string; coin: string; network: string; chainId?: number; chainName?: string; minConfirmations?: number; family?: string; memo?: string }>(
+          `/wallet/deposit/${coin}`,
+        ),
+  getChains: () =>
+    apiRequest<{ chains: Array<{ id: string; chainId: number; name: string; family: string; nativeSymbol: string; networkLabel: string; minConfirmations: number; tokens: Array<{ symbol: string; decimals: number }> }> }>(
+      '/wallet/chains',
+    ),
   requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string }) =>
     apiRequest<{ id: string; status: string }>('/wallet/withdraw', {
       method: 'POST',

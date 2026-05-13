@@ -5,6 +5,7 @@ import Footer from '@/components/layout/Footer'
 import BottomNav from '@/components/layout/BottomNav'
 import { usePolling } from '@/hooks/usePolling'
 import { marketplaceApi } from '@/lib/api'
+import { Web3Provider } from '@/lib/web3/Web3Provider'
 
 interface SiteConfig {
   site_notice?: string
@@ -61,28 +62,30 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const showNotice = notice && !dismissed
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <Navbar />
+    <Web3Provider>
+      <div className="flex flex-col min-h-screen">
+        <Navbar />
 
-      {showNotice && (
-        <div className={`border-b px-4 py-2 flex items-center justify-between gap-4 text-sm ${noticeColors[noticeType] ?? noticeColors.info}`}>
-          <p className="flex-1 text-center">{notice}</p>
-          <button
-            onClick={handleDismiss}
-            aria-label="Dismiss notice"
-            className="flex-shrink-0 p-1 rounded hover:opacity-70 transition-opacity"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      )}
+        {showNotice && (
+          <div className={`border-b px-4 py-2 flex items-center justify-between gap-4 text-sm ${noticeColors[noticeType] ?? noticeColors.info}`}>
+            <p className="flex-1 text-center">{notice}</p>
+            <button
+              onClick={handleDismiss}
+              aria-label="Dismiss notice"
+              className="flex-shrink-0 p-1 rounded hover:opacity-70 transition-opacity"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
 
-      <main className="flex-1">{children}</main>
+        <main className="flex-1">{children}</main>
 
-      <Footer />
-      <BottomNav />
-    </div>
+        <Footer />
+        <BottomNav />
+      </div>
+    </Web3Provider>
   )
 }

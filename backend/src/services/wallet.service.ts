@@ -2,6 +2,9 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { generateOrderRef } from '../lib/hash'
+import { getChainByNetworkLabel, isEvmNetwork } from '../lib/chains'
+import { getOrCreateEvmDepositAddress } from './depositAddress.service'
+import { recordAuditLog } from '../lib/audit'
 
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
@@ -9,11 +12,56 @@ export async function getUserWallets(userId: string) {
   return db.wallet.findMany({ where: { userId } })
 }
 
-export async function getDepositAddress(coin: string, network: string) {
+/**
+ * Resolve a deposit address for {userId, coin, network}:
+ *   - EVM networks (ERC20/BEP20/POLYGON/ARBITRUM/OPTIMISM/BASE): HD-derived
+ *     per-user address (same address shared across all EVM chains).
+ *   - Non-EVM networks (TRC20 today, TON/SUI later): legacy shared address
+ *     stored in PlatformConfig under `deposit_address_<COIN>_<NETWORK>`.
+ *
+ * On any misconfiguration we return 503 ("temporarily unavailable") instead of
+ * 404 ("not configured") so the UI never reads as a hard "we don't support
+ * this" state.
+ */
+export async function getDepositAddress(userId: string, coin: string, network: string) {
+  if (isEvmNetwork(network)) {
+    const chain = getChainByNetworkLabel(network)
+    if (!chain) {
+      throw new AppError('UNSUPPORTED_NETWORK', `Network ${network} is not supported`, 400)
+    }
+    // Validate that the coin is supported on this chain (or is the chain's native asset).
+    const isNative = coin.toUpperCase() === chain.nativeSymbol
+    const tokenOk = chain.tokens.some((t) => t.symbol === coin.toUpperCase())
+    if (!isNative && !tokenOk) {
+      throw new AppError(
+        'UNSUPPORTED_ASSET',
+        `${coin} is not supported on ${chain.name}`,
+        400,
+      )
+    }
+    const { address } = await getOrCreateEvmDepositAddress(userId)
+    return {
+      address,
+      coin,
+      network,
+      chainId: chain.chainId,
+      chainName: chain.name,
+      minConfirmations: chain.minConfirmations,
+      family: 'EVM',
+    }
+  }
+
+  // Non-EVM fallback — shared platform address.
   const key = `deposit_address_${coin}_${network}`
   const config = await db.platformConfig.findUnique({ where: { key } })
-  if (!config) throw new AppError('NOT_FOUND', 'Deposit address not configured', 404)
-  return { address: config.value, coin, network }
+  if (!config || !config.value) {
+    throw new AppError(
+      'DEPOSIT_UNAVAILABLE',
+      'Deposit address temporarily unavailable — please retry shortly',
+      503,
+    )
+  }
+  return { address: config.value, coin, network, family: 'NON_EVM' as const }
 }
 
 // ─── Fees ─────────────────────────────────────────────────────────────────────
@@ -115,6 +163,18 @@ export async function requestWithdrawal(
 
   // Cache idempotency result for 24h
   await redis.set(idempKey, JSON.stringify(result), 'EX', 86400)
+
+  // Audit-trail every withdrawal request. Admin two-person approval is logged
+  // separately in admin.routes.ts.
+  void recordAuditLog(userId, 'WITHDRAWAL_REQUESTED', 'Withdrawal', result.id, {
+    coin: data.coin,
+    network: data.network,
+    amount: data.amount,
+    fee,
+    toAddress: data.toAddress,
+    orderRef: result.orderRef,
+  })
+
   return result
 }
 

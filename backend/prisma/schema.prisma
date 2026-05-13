@@ -302,6 +302,8 @@ model User {
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
   auditLogs              AuditLog[]
   gasFeeOrders           GasFeeOrder[]
+  depositAddresses       DepositAddress[]
+  deposits               Deposit[]
 
   @@index([email])
   @@index([username])
@@ -905,4 +907,55 @@ model GasHotWallet {
   createdAt DateTime @default(now())
 
   @@index([chain, isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HD-DERIVED DEPOSIT INFRASTRUCTURE
+// ─────────────────────────────────────────────────────────────────────────────
+
+// One HD-derived deposit address per user per chain family. EVM family addresses
+// are shared across all EVM chains (Eth, BSC, Polygon, Arb, Op, Base). The
+// derivation index is a monotonic counter — see PlatformConfig key
+// `next_evm_derivation_index` for allocation.
+model DepositAddress {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chainFamily      String   // 'EVM' for now; 'TRON' | 'TON' | 'SUI' later
+  address          String
+  derivationIndex  Int
+  createdAt        DateTime @default(now())
+
+  @@unique([userId, chainFamily])
+  @@unique([address])
+  @@index([chainFamily])
+}
+
+// Append-only audit trail of every on-chain deposit we've seen. A row exists
+// from the moment the deposit-watcher first observes the transaction;
+// `creditedAt` flips once confirmations meet the chain threshold and we move
+// the funds into the user's internal Wallet balance.
+model Deposit {
+  id                   String   @id @default(cuid())
+  txHash               String
+  chain                String   // matches ChainConfig.id (ethereum, bsc, ...)
+  asset                String   // ERC20 contract address or 'native'
+  symbol               String   // resolved symbol (USDT, USDC, ETH, ...)
+  fromAddress          String
+  toAddress            String
+  amount               Decimal  @db.Decimal(38, 18)
+  confirmations        Int      @default(0)
+  userId               String?
+  user                 User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  walletId             String?
+  creditedTransactionId String?
+  status               String   @default("detected") // detected | credited | rejected
+  rejectionReason      String?
+  detectedAt           DateTime @default(now())
+  creditedAt           DateTime?
+
+  @@unique([txHash, chain, asset])
+  @@index([toAddress])
+  @@index([userId])
+  @@index([status])
 }

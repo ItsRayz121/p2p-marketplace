@@ -11,13 +11,44 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ConnectButton } from '@/components/wallet/ConnectButton'
+import { ChainSwitcher } from '@/components/wallet/ChainSwitcher'
+import { ConnectedBalances } from '@/components/wallet/ConnectedBalances'
+import { UI_CHAINS } from '@/lib/web3/chains'
+import { useAccount } from 'wagmi'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DepositInfo {
   address: string
   network: string
+  chainName?: string
+  minConfirmations?: number
   memo?: string
+}
+
+// Networks PakSwap accepts for each coin. EVM networks share one HD-derived
+// address per user; TRC20 uses the legacy shared platform address.
+const COIN_NETWORKS: Record<string, string[]> = {
+  USDT: ['ERC20', 'BEP20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'TRC20'],
+  USDC: ['ERC20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'BASE'],
+  ETH: ['ERC20', 'ARBITRUM', 'OPTIMISM', 'BASE'],
+  BNB: ['BEP20'],
+  POL: ['POLYGON'],
+}
+
+function networksFor(coin: string): string[] {
+  return COIN_NETWORKS[coin.toUpperCase()] ?? ['TRC20']
+}
+
+function DisconnectedHint() {
+  const { isConnected } = useAccount()
+  if (isConnected) return null
+  return (
+    <p className="text-sm text-text-muted">
+      Connect MetaMask, WalletConnect, or Coinbase Wallet to see your on-chain balances. Your PakSwap escrow balance below works without a connection.
+    </p>
+  )
 }
 
 interface WithdrawState {
@@ -266,59 +297,113 @@ function DepositModal({
   onClose: () => void
   coin: string
 }) {
+  const networks = networksFor(coin)
+  const [network, setNetwork] = useState<string>(networks[0] ?? 'TRC20')
   const [info, setInfo] = useState<DepositInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Reset network when modal reopens with a different coin
+  useEffect(() => {
+    if (isOpen) setNetwork(networksFor(coin)[0] ?? 'TRC20')
+  }, [isOpen, coin])
+
+  const fetchAddress = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await walletApi.getDepositAddress(coin, network)
+      setInfo({
+        address: res.address,
+        network: res.network,
+        chainName: res.chainName,
+        minConfirmations: res.minConfirmations,
+        memo: res.memo,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load deposit address')
+    } finally {
+      setLoading(false)
+    }
+  }, [coin, network])
+
   useEffect(() => {
     if (!isOpen) return
-    setLoading(true)
-    walletApi.getDepositAddress(coin)
-      .then(setInfo)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [isOpen, coin])
+    fetchAddress()
+  }, [isOpen, fetchAddress])
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Deposit ${coin}`}>
-      {loading ? (
-        <div className="flex justify-center py-6"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>
-      ) : error ? (
-        <p className="text-sm text-danger text-center py-4">{error}</p>
-      ) : info ? (
-        <div className="space-y-4">
-          <div className="bg-surface rounded-xl p-4 text-center">
-            <p className="text-xs text-text-muted mb-2">Network: {info.network}</p>
-            <div className="w-32 h-32 bg-white border border-border rounded-lg flex items-center justify-center mx-auto mb-3">
-              <span className="text-xs text-text-muted text-center px-2">QR code for<br />{coin} address</span>
-            </div>
-            <p className="font-mono text-xs text-text-primary break-all">{info.address}</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              readOnly
-              value={info.address}
-              className="flex-1 px-3 py-2 text-xs font-mono border border-border rounded-lg bg-white"
-            />
-            <CopyButton text={info.address} />
-          </div>
-
-          {info.memo && (
-            <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-              <p className="text-xs font-medium text-warning">Memo Required</p>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="font-mono text-sm text-text-primary flex-1">{info.memo}</p>
-                <CopyButton text={info.memo} />
-              </div>
-            </div>
-          )}
-
-          <p className="text-xs text-text-muted text-center">
-            Only send {coin} on {info.network} network. Sending other tokens may result in permanent loss.
-          </p>
+      <div className="space-y-4">
+        {/* Network selector */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Network</label>
+          <select
+            value={network}
+            onChange={(e) => setNetwork(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            {networks.map((n) => <option key={n}>{n}</option>)}
+          </select>
         </div>
-      ) : null}
+
+        {loading ? (
+          <div className="flex flex-col items-center py-8 gap-2">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs text-text-muted">Loading deposit address…</p>
+          </div>
+        ) : error ? (
+          <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-3 text-center space-y-2">
+            <p className="text-sm text-warning font-medium">{error}</p>
+            <Button size="sm" variant="ghost" onClick={fetchAddress}>Retry</Button>
+          </div>
+        ) : info ? (
+          <>
+            <div className="bg-surface rounded-xl p-4 text-center">
+              <p className="text-xs text-text-muted mb-2">
+                Network: <span className="font-medium text-text-primary">{info.chainName ?? info.network}</span>
+              </p>
+              <div className="w-32 h-32 bg-white border border-border rounded-lg flex items-center justify-center mx-auto mb-3">
+                <span className="text-xs text-text-muted text-center px-2">QR code for<br />{coin} address</span>
+              </div>
+              <p className="font-mono text-xs text-text-primary break-all">{info.address}</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={info.address}
+                className="flex-1 px-3 py-2 text-xs font-mono border border-border rounded-lg bg-white"
+              />
+              <CopyButton text={info.address} />
+            </div>
+
+            {info.memo && (
+              <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
+                <p className="text-xs font-medium text-warning">Memo Required</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="font-mono text-sm text-text-primary flex-1">{info.memo}</p>
+                  <CopyButton text={info.memo} />
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-text-muted text-center">
+              Only send {coin} on {info.chainName ?? info.network}. Sending other tokens or using a different chain may result in permanent loss.
+            </p>
+            {typeof info.minConfirmations === 'number' && (
+              <div className="bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 text-xs text-text-secondary text-center">
+                Waiting for {info.minConfirmations} blockchain confirmations before your PakSwap balance is credited. Pending deposits appear in your transaction history.
+              </div>
+            )}
+            {UI_CHAINS.some((c) => c.networkLabel === info.network) && (
+              <p className="text-xs text-text-muted text-center">
+                The same address is valid across every EVM network we support — pick the one you're sending from above.
+              </p>
+            )}
+          </>
+        ) : null}
+      </div>
     </Modal>
   )
 }
@@ -386,11 +471,23 @@ export default function WalletPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6 space-y-8">
-      <h1 className="text-2xl font-bold text-text-primary">Wallet</h1>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h1 className="text-2xl font-bold text-text-primary">Wallet</h1>
+        <ConnectButton />
+      </div>
 
-      {/* ── Balances ── */}
+      {/* ── Connected wallet ── */}
+      <section className="space-y-4 bg-white rounded-xl border border-border p-5">
+        <h2 className="text-base font-semibold text-text-primary">Connected wallet</h2>
+        <ChainSwitcher />
+        <ConnectedBalances />
+        <DisconnectedHint />
+      </section>
+
+      {/* ── PakSwap internal balances ── */}
       <section>
-        <h2 className="text-base font-semibold text-text-primary mb-3">Balances</h2>
+        <h2 className="text-base font-semibold text-text-primary mb-1">PakSwap balance</h2>
+        <p className="text-xs text-text-muted mb-3">Held in escrow on PakSwap — backs your P2P trades. Deposit on-chain to top up; withdrawals are reviewed by admins.</p>
         {balances.length === 0 ? (
           <EmptyState title="No balances" description="Make a deposit to get started" />
         ) : (

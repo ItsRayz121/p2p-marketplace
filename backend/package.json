@@ -13,7 +13,8 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
-    "workers": "tsx src/queues/workers.ts"
+    "workers": "tsx src/queues/workers.ts",
+    "wallet:bootstrap": "tsx src/scripts/walletBootstrap.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.3.1",
@@ -37,6 +38,7 @@
     "resend": "^4.0.0",
     "prisma": "^5.16.0",
     "typescript": "^5.9.3",
+    "viem": "^2.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

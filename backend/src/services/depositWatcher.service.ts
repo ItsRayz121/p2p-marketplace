@@ -1,0 +1,327 @@
+import { Prisma } from '@prisma/client'
+import { formatUnits } from 'viem'
+import { db } from '../lib/prisma'
+import { logger } from '../lib/logger'
+import { ALL_CHAINS, type ChainConfig } from '../lib/chains'
+import { findUserByDepositAddress } from './depositAddress.service'
+
+/**
+ * Normalized deposit event consumed by `processDepositEvent`. The webhook
+ * handler is responsible for translating provider-specific payloads (Moralis
+ * Streams, Tatum, etc.) into one of these per native-or-token transfer.
+ */
+export interface NormalizedDepositEvent {
+  chainId: number
+  txHash: string
+  fromAddress: string
+  toAddress: string
+  /** Contract address of the token, or 'native' for the chain's gas asset. */
+  asset: string
+  /** Token symbol (USDT, USDC, ETH, BNB, POL, …). */
+  symbol: string
+  /** Raw on-chain amount as a decimal string already scaled to token units. */
+  amount: string
+  confirmations: number
+}
+
+export type ProcessResult =
+  | { status: 'ignored'; reason: string }
+  | { status: 'pending'; depositId: string; required: number; confirmations: number }
+  | { status: 'credited'; depositId: string; userId: string; symbol: string; amount: string }
+  | { status: 'rejected'; depositId: string; reason: string }
+
+function chainFromId(chainId: number): ChainConfig | undefined {
+  return ALL_CHAINS.find((c) => c.chainId === chainId)
+}
+
+/**
+ * Resolve the asset on a chain. Returns the configured token (with decimals)
+ * for ERC20 contracts, or a synthesized native-asset descriptor.
+ */
+function resolveAsset(chain: ChainConfig, assetField: string, symbolHint?: string) {
+  if (assetField === 'native') {
+    return { symbol: chain.nativeSymbol, decimals: 18, isNative: true as const }
+  }
+  const lower = assetField.toLowerCase()
+  const token = chain.tokens.find((t) => t.address?.toLowerCase() === lower)
+  if (token) return { symbol: token.symbol, decimals: token.decimals, isNative: false as const }
+  if (symbolHint && symbolHint.toUpperCase() === chain.nativeSymbol) {
+    return { symbol: chain.nativeSymbol, decimals: 18, isNative: true as const }
+  }
+  return null
+}
+
+/**
+ * Convert a raw on-chain amount ("1000000") to its human-readable decimal
+ * representation ("1.0") using the token's decimals. Required because the
+ * internal Wallet.balance is a Decimal(18, 8) holding token-denominated
+ * values, not raw wei/units.
+ */
+function toHumanAmount(rawAmount: string, decimals: number): string {
+  // Defensive: Moralis sometimes emits floats for native txs ("0.01") and
+  // sometimes integers ("10000000000000000"). If it parses cleanly as a
+  // BigInt, treat it as raw units; otherwise pass through as-is.
+  try {
+    const big = BigInt(rawAmount)
+    return formatUnits(big, decimals)
+  } catch {
+    return rawAmount
+  }
+}
+
+/**
+ * Idempotently record a deposit and credit the user's internal balance once
+ * enough confirmations have arrived.
+ *
+ * Calling this with the same (txHash, chain, asset) repeatedly is safe:
+ *   - The first call inserts a row in status='detected' (or 'credited' if it
+ *     already meets the confirmation threshold).
+ *   - Subsequent calls only update `confirmations`. The credit step only fires
+ *     once, gated by an atomic UPDATE that compares status='detected'.
+ *   - Crediting moves funds in a single Prisma transaction: it bumps
+ *     Wallet.balance, writes a Transaction(type='deposit'), and flips the
+ *     Deposit row to status='credited' all-or-nothing.
+ */
+export async function processDepositEvent(event: NormalizedDepositEvent): Promise<ProcessResult> {
+  const chain = chainFromId(event.chainId)
+  if (!chain) {
+    return { status: 'ignored', reason: `unsupported chainId ${event.chainId}` }
+  }
+
+  const asset = resolveAsset(chain, event.asset, event.symbol)
+  if (!asset) {
+    return { status: 'ignored', reason: `asset ${event.asset} is not whitelisted on ${chain.id}` }
+  }
+
+  // Case-insensitive — findUserByDepositAddress uses mode: 'insensitive'.
+  const userId = await findUserByDepositAddress(event.toAddress)
+  if (!userId) {
+    return { status: 'ignored', reason: 'toAddress is not a known PakSwap deposit address' }
+  }
+
+  // Upsert Deposit row. Unique (txHash, chain, asset) makes this idempotent.
+  const existing = await db.deposit.findUnique({
+    where: {
+      txHash_chain_asset: { txHash: event.txHash, chain: chain.id, asset: event.asset },
+    },
+  })
+
+  // Normalise raw on-chain units to human-readable decimal once, here, so the
+  // Deposit row and the eventual credit both use the same denomination.
+  const humanAmount = toHumanAmount(event.amount, asset.decimals)
+
+  if (existing && existing.status === 'credited') {
+    return { status: 'credited', depositId: existing.id, userId, symbol: asset.symbol, amount: humanAmount }
+  }
+  if (existing && existing.status === 'rejected') {
+    return { status: 'rejected', depositId: existing.id, reason: existing.rejectionReason ?? 'previously rejected' }
+  }
+
+  const deposit = existing
+    ? await db.deposit.update({
+        where: { id: existing.id },
+        data: { confirmations: event.confirmations },
+      })
+    : await db.deposit.create({
+        data: {
+          txHash: event.txHash,
+          chain: chain.id,
+          asset: event.asset,
+          symbol: asset.symbol,
+          fromAddress: event.fromAddress,
+          toAddress: event.toAddress,
+          amount: humanAmount,
+          confirmations: event.confirmations,
+          userId,
+          status: 'detected',
+        },
+      })
+
+  if (event.confirmations < chain.minConfirmations) {
+    return {
+      status: 'pending',
+      depositId: deposit.id,
+      required: chain.minConfirmations,
+      confirmations: event.confirmations,
+    }
+  }
+
+  // Credit the user atomically. The where clause includes status='detected'
+  // so concurrent crediting attempts collapse to one — the others get zero
+  // affected rows from the Deposit update and bail.
+  try {
+    const result = await db.$transaction(async (tx) => {
+      // Atomically claim the credit step: only one transaction can flip
+      // status from 'detected' → 'credited'.
+      const claimed = await tx.deposit.updateMany({
+        where: { id: deposit.id, status: 'detected' },
+        data: { status: 'credited', creditedAt: new Date() },
+      })
+      if (claimed.count === 0) {
+        return null // someone else already credited it
+      }
+
+      // Find-or-create the internal Wallet row for this user+coin+network.
+      const network = chain.networkLabel
+      const wallet = await tx.wallet.upsert({
+        where: {
+          userId_coin_network: { userId, coin: asset.symbol, network },
+        },
+        create: {
+          userId,
+          coin: asset.symbol,
+          network,
+          balance: humanAmount,
+          lockedBalance: '0',
+        },
+        update: {
+          balance: { increment: new Prisma.Decimal(humanAmount) },
+        },
+      })
+
+      const txn = await tx.transaction.create({
+        data: {
+          walletId: wallet.id,
+          type: 'deposit',
+          amount: humanAmount,
+          fee: '0',
+          txHash: event.txHash,
+          status: 'completed',
+          metadata: {
+            chain: chain.id,
+            asset: event.asset,
+            symbol: asset.symbol,
+            rawAmount: event.amount,
+            decimals: asset.decimals,
+            fromAddress: event.fromAddress,
+            toAddress: event.toAddress,
+            confirmations: event.confirmations,
+          },
+        },
+      })
+
+      await tx.deposit.update({
+        where: { id: deposit.id },
+        data: { walletId: wallet.id, creditedTransactionId: txn.id },
+      })
+
+      return { walletId: wallet.id, txnId: txn.id }
+    })
+
+    if (!result) {
+      return {
+        status: 'credited',
+        depositId: deposit.id,
+        userId,
+        symbol: asset.symbol,
+        amount: humanAmount,
+      }
+    }
+
+    logger.info(
+      {
+        depositId: deposit.id,
+        userId,
+        chain: chain.id,
+        symbol: asset.symbol,
+        amount: humanAmount,
+        txHash: event.txHash,
+      },
+      'Deposit credited to internal balance',
+    )
+
+    return {
+      status: 'credited',
+      depositId: deposit.id,
+      userId,
+      symbol: asset.symbol,
+      amount: humanAmount,
+    }
+  } catch (err) {
+    logger.error({ err, depositId: deposit.id }, 'Failed to credit deposit')
+    // Mark for manual review rather than retry-storm. Operators inspect
+    // /admin/deposits and re-run the credit pathway manually.
+    await db.deposit.update({
+      where: { id: deposit.id },
+      data: {
+        status: 'rejected',
+        rejectionReason: err instanceof Error ? err.message.slice(0, 500) : 'credit failed',
+      },
+    })
+    return {
+      status: 'rejected',
+      depositId: deposit.id,
+      reason: 'credit transaction failed — flagged for admin review',
+    }
+  }
+}
+
+/**
+ * Convert a Moralis Streams webhook payload into one or more normalized
+ * deposit events. Handles native ETH/BNB/etc. transfers and ERC20 transfers
+ * in the same payload. Returns an empty array if the payload contains nothing
+ * actionable (e.g. internal txs or transfers we don't index).
+ *
+ * Reference shape (abbreviated):
+ *   {
+ *     confirmed: boolean,
+ *     chainId: '0x1',
+ *     block: { number, hash, timestamp },
+ *     txs: [ { hash, fromAddress, toAddress, value } ],
+ *     erc20Transfers: [ { transactionHash, from, to, value, contract, tokenSymbol } ],
+ *     confirmations?: number
+ *   }
+ */
+export function normalizeMoralisEvent(
+  payload: unknown,
+): NormalizedDepositEvent[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = payload as any
+  if (!p || typeof p !== 'object') return []
+
+  const chainIdHex: string | undefined = p.chainId
+  const chainId = chainIdHex ? Number.parseInt(chainIdHex, 16) : Number(p.chainIdDecimal)
+  if (!Number.isFinite(chainId)) return []
+
+  const confirmations: number = Number(p.confirmations ?? (p.confirmed ? 1 : 0))
+
+  const out: NormalizedDepositEvent[] = []
+
+  // Native transfers
+  if (Array.isArray(p.txs)) {
+    for (const t of p.txs) {
+      if (!t?.hash || !t?.toAddress) continue
+      const value = String(t.value ?? '0')
+      if (value === '0') continue
+      out.push({
+        chainId,
+        txHash: String(t.hash),
+        fromAddress: String(t.fromAddress ?? ''),
+        toAddress: String(t.toAddress),
+        asset: 'native',
+        symbol: '',
+        amount: value,
+        confirmations,
+      })
+    }
+  }
+
+  // ERC20 transfers
+  if (Array.isArray(p.erc20Transfers)) {
+    for (const t of p.erc20Transfers) {
+      if (!t?.transactionHash || !t?.to || !t?.contract) continue
+      out.push({
+        chainId,
+        txHash: String(t.transactionHash),
+        fromAddress: String(t.from ?? ''),
+        toAddress: String(t.to),
+        asset: String(t.contract),
+        symbol: String(t.tokenSymbol ?? ''),
+        amount: String(t.value ?? '0'),
+        confirmations,
+      })
+    }
+  }
+
+  return out
+}

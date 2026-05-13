@@ -61,10 +61,17 @@ const envSchema = z.object({
   GAS_MARKUP_MULTIPLIER_TRON: z.coerce.number().default(1.5),
   COINGECKO_API_KEY: z.string().optional(),
 
-  // P2P Platform Deposit Addresses
+  // P2P Platform Deposit Addresses (legacy shared addresses — fallback only)
   PLATFORM_DEPOSIT_USDT_TRC20: z.string().optional(),
   PLATFORM_DEPOSIT_USDT_BEP20: z.string().optional(),
   PLATFORM_DEPOSIT_USDT_ERC20: z.string().optional(),
+
+  // Wallet HD-derivation custody
+  // WALLET_MASTER_KEY: 64-char hex (32 bytes) — AES-256-GCM key wrapping the master seed
+  // WALLET_MASTER_SEED_CIPHERTEXT: base64-encoded `iv(12) || authTag(16) || ciphertext` of a BIP39 entropy or seed
+  // Generate both via `npm run wallet:bootstrap` — see backend/src/scripts/walletBootstrap.ts
+  WALLET_MASTER_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'WALLET_MASTER_KEY must be 64-char hex (32 bytes)').optional(),
+  WALLET_MASTER_SEED_CIPHERTEXT: z.string().optional(),
 
   // Firebase Push Notifications
   FCM_SERVER_KEY: z.string().optional(),

@@ -20,6 +20,7 @@ import {
 } from '../services/wallet.service'
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
+import { ALL_CHAINS } from '../lib/chains'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -120,19 +121,53 @@ export async function walletRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { transactions, total, page, limit } })
   })
 
+  // Tight per-user rate limit on deposit-address endpoints. Each lookup may
+  // trigger HD derivation + a DB write, so we cap at 30 requests/minute keyed
+  // off the authenticated user id (falls back to IP for unauthenticated
+  // requests, which won't actually reach the handler given `authenticate`).
+  const depositAddressRateLimit = {
+    rateLimit: {
+      max: 30,
+      timeWindow: '1 minute',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      keyGenerator: (req: any) => `wallet-deposit:${req.user?.id ?? req.ip}`,
+    },
+  }
+
   // GET /api/wallet/deposit/:coin — simple alias using default network per coin
-  app.get('/wallet/deposit/:coin', { preHandler: [authenticate] }, async (req, reply) => {
+  app.get('/wallet/deposit/:coin', {
+    preHandler: [authenticate],
+    config: depositAddressRateLimit,
+  }, async (req, reply) => {
     const { coin } = req.params as { coin: string }
     const network = DEFAULT_NETWORKS[coin.toUpperCase()] ?? 'TRC20'
-    const result = await getDepositAddress(coin.toUpperCase(), network)
+    const result = await getDepositAddress(req.user!.id, coin.toUpperCase(), network)
     return reply.send({ success: true, data: result })
   })
 
   // GET /api/wallet/address/:coin/:network
-  app.get('/wallet/address/:coin/:network', { preHandler: [authenticate] }, async (req, reply) => {
+  app.get('/wallet/address/:coin/:network', {
+    preHandler: [authenticate],
+    config: depositAddressRateLimit,
+  }, async (req, reply) => {
     const { coin, network } = req.params as { coin: string; network: string }
-    const result = await getDepositAddress(coin, network)
+    const result = await getDepositAddress(req.user!.id, coin.toUpperCase(), network.toUpperCase())
     return reply.send({ success: true, data: result })
+  })
+
+  // GET /api/wallet/chains — public catalogue of supported chains + tokens
+  app.get('/wallet/chains', async (_req, reply) => {
+    const chains = ALL_CHAINS.map((c) => ({
+      id: c.id,
+      chainId: c.chainId,
+      name: c.name,
+      family: c.family,
+      nativeSymbol: c.nativeSymbol,
+      networkLabel: c.networkLabel,
+      minConfirmations: c.minConfirmations,
+      tokens: c.tokens.map((t) => ({ symbol: t.symbol, decimals: t.decimals })),
+    }))
+    return reply.send({ success: true, data: { chains } })
   })
 
   // GET /api/wallet/live-fee?coin=USDT&network=TRC20

@@ -6,12 +6,19 @@ import { db } from './lib/prisma'
 import { logger } from './lib/logger'
 import { env } from './lib/env'
 import { startWorkers } from './queues/workers'
+import { validateWalletCustodyAtStartup } from './lib/walletCrypto'
 
 async function start() {
   let app: Awaited<ReturnType<typeof buildApp>> | null = null
 
   try {
     logger.info('Starting PakSwap backend...')
+
+    // Validate wallet custody config before accepting traffic. Throws if the
+    // master key/ciphertext are half-configured or fail to decrypt. Logs
+    // configured/not without ever printing key material.
+    const custody = validateWalletCustodyAtStartup()
+    logger.info({ configured: custody.configured }, 'Wallet custody validated')
 
     await connectRedis()
     logger.info('Redis connected')

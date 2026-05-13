@@ -5,6 +5,10 @@ import { redis } from '../lib/redis'
 import { env } from '../lib/env'
 import { queues } from '../queues/definitions'
 import { logger } from '../lib/logger'
+import {
+  normalizeMoralisEvent,
+  processDepositEvent,
+} from '../services/depositWatcher.service'
 
 export async function webhookRoutes(app: FastifyInstance) {
   // POST /api/webhooks/deposit
@@ -40,7 +44,21 @@ export async function webhookRoutes(app: FastifyInstance) {
       return reply.code(401).send({ error: 'Invalid signature' })
     }
 
+    // The webhook is shared between two payload shapes:
+    //   (a) Native Moralis Streams payload (chainId + txs/erc20Transfers arrays)
+    //   (b) Legacy normalized payload used by InstantBuy / GasFee matching
+    //       ({ txHash, toAddress, amount, coin, network, confirmations })
+    //
+    // We dispatch (a) to the deposit watcher and fall through to (b) for the
+    // InstantBuy/GasFee paths that already exist below. A real Moralis payload
+    // does not carry InstantBuy/GasFee metadata, so those branches simply
+    // produce no match — safe to run unconditionally.
     const payload = req.body as {
+      // Moralis-style
+      chainId?: string
+      txs?: unknown[]
+      erc20Transfers?: unknown[]
+      // Legacy / normalized
       txHash?: string
       toAddress?: string
       amount?: string
@@ -49,13 +67,32 @@ export async function webhookRoutes(app: FastifyInstance) {
       confirmations?: number
     }
 
+    // Process Moralis-style payloads through the deposit watcher.
+    if (payload.chainId && (Array.isArray(payload.txs) || Array.isArray(payload.erc20Transfers))) {
+      const events = normalizeMoralisEvent(payload)
+      const results = []
+      for (const event of events) {
+        try {
+          const r = await processDepositEvent(event)
+          results.push({ txHash: event.txHash, asset: event.asset, result: r })
+        } catch (err) {
+          logger.error({ err, txHash: event.txHash }, 'Deposit watcher failed')
+          results.push({ txHash: event.txHash, asset: event.asset, error: 'processing_failed' })
+        }
+      }
+      // Legacy InstantBuy/GasFee matching is skipped for Moralis-style payloads —
+      // those flows use the normalized shape below.
+      return reply.send({ success: true, processed: results.length, results })
+    }
+
     const { txHash, toAddress, coin } = payload
 
     if (!txHash || !toAddress) {
       return reply.code(400).send({ error: 'Missing required fields' })
     }
 
-    // 2. Idempotency check
+    // 2. Idempotency check (legacy path only — Moralis events are de-duped
+    //    inside processDepositEvent via the (txHash, chain, asset) unique).
     const idemKey = `webhook_event:${txHash}`
     const alreadyProcessed = await redis.get(idemKey)
     if (alreadyProcessed) {
