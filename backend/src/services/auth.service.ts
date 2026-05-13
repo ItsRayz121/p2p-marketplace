@@ -96,6 +96,15 @@ const COOKIE_OPTIONS = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Prisma Decimal fields return a Decimal object, but if a column is null (e.g.
+// older rows before a db push added the column) calling .toNumber() throws.
+// Plain JS numbers are also accepted so the helper is safe in both cases.
+function dec(val: { toNumber: () => number } | number | null | undefined, fallback = 0): number {
+  if (val == null) return fallback
+  if (typeof val === 'number') return val
+  return val.toNumber()
+}
+
 function toSafeUser(
   user: {
     id: string
@@ -108,14 +117,14 @@ function toSafeUser(
     isEmailVerified: boolean
     twoFaEnabled: boolean
     referralCode: string
-    dailyBuyUsed: { toNumber: () => number }
-    dailyBuyLimit: { toNumber: () => number }
+    dailyBuyUsed: { toNumber: () => number } | number | null
+    dailyBuyLimit: { toNumber: () => number } | number | null
     createdAt: Date
     tradeStats: {
       totalTrades: number
       completedTrades: number
-      completionRate: { toNumber: () => number }
-      avgRating: { toNumber: () => number }
+      completionRate: { toNumber: () => number } | number | null
+      avgRating: { toNumber: () => number } | number | null
       badge: string
       badgeLabel: string
       trustScore: number
@@ -133,15 +142,15 @@ function toSafeUser(
     isEmailVerified: user.isEmailVerified,
     twoFaEnabled: user.twoFaEnabled,
     referralCode: user.referralCode,
-    dailyBuyUsed: user.dailyBuyUsed.toNumber(),
-    dailyBuyLimit: user.dailyBuyLimit.toNumber(),
+    dailyBuyUsed: dec(user.dailyBuyUsed),
+    dailyBuyLimit: dec(user.dailyBuyLimit, 50000),
     createdAt: user.createdAt,
     tradeStats: user.tradeStats
       ? {
           totalTrades: user.tradeStats.totalTrades,
           completedTrades: user.tradeStats.completedTrades,
-          completionRate: user.tradeStats.completionRate.toNumber(),
-          avgRating: user.tradeStats.avgRating.toNumber(),
+          completionRate: dec(user.tradeStats.completionRate),
+          avgRating: dec(user.tradeStats.avgRating),
           badge: user.tradeStats.badge,
           badgeLabel: user.tradeStats.badgeLabel,
           trustScore: user.tradeStats.trustScore,
