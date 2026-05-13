@@ -368,8 +368,11 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { message: 'Session revoked.' } })
   })
 
-  // Global Zod error handler for this plugin scope
-  app.setErrorHandler((err, _req, reply) => {
+  // Local error handler for this plugin scope.
+  // Fastify does NOT re-process errors thrown from inside a setErrorHandler,
+  // so we must reply directly for every shape we care about — re-throwing
+  // turns AppError(401) into a generic 500.
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof z.ZodError) {
       return reply.status(400).send({
         success: false,
@@ -377,6 +380,25 @@ export async function authRoutes(app: FastifyInstance) {
         message: err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '),
       })
     }
-    throw err // Let global handler take it
+    if (err instanceof AppError) {
+      return reply.status(err.statusCode).send({
+        success: false,
+        error: err.code,
+        message: err.message,
+      })
+    }
+    if ((err as { validation?: unknown }).validation) {
+      return reply.status(400).send({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Invalid request data',
+      })
+    }
+    req.log.error({ err }, 'Unhandled auth error')
+    return reply.status(500).send({
+      success: false,
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'An unexpected error occurred',
+    })
   })
 }

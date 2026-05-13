@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
+import { EMAIL_FROM, isEmailConfigured } from '../lib/resend'
 
 // Simple in-process TTL cache — avoids hammering DB on every Railway health poll
 let cachedHealth: { result: object; status: number; cachedAt: number } | null = null
@@ -60,5 +61,31 @@ export async function healthRoutes(app: FastifyInstance) {
 
   app.get('/health/ping', async (_req, reply) => {
     return reply.send({ pong: true })
+  })
+
+  // GET /health/email — Resend sender diagnostic.
+  // Reports whether outbound email will work and lists the last 10 attempts
+  // from the email log. Safe to expose: no secrets, no PII beyond toEmail which
+  // the operator already has access to via Resend's dashboard.
+  app.get('/health/email', async (_req, reply) => {
+    const recentLogs = await db.emailLog
+      .findMany({
+        orderBy: { sentAt: 'desc' },
+        take: 10,
+        select: { template: true, toEmail: true, status: true, sentAt: true },
+      })
+      .catch(() => [] as Array<{ template: string; toEmail: string; status: string; sentAt: Date }>)
+
+    return reply.send({
+      configured: isEmailConfigured(),
+      emailFromConfigured: EMAIL_FROM,
+      emailFromRaw: env.EMAIL_FROM ?? null,
+      resendApiKeySet: Boolean(env.RESEND_API_KEY),
+      adminAlertEmail: env.ADMIN_ALERT_EMAIL ?? null,
+      recent: recentLogs,
+      hint: !isEmailConfigured()
+        ? 'Set EMAIL_FROM in Railway to a Resend-verified sender (e.g. "PakSwap <noreply@yourdomain.com>") and ensure RESEND_API_KEY is set, then redeploy.'
+        : 'Configuration looks valid. If sends still fail, check that the sender domain is verified in your Resend dashboard.',
+    })
   })
 }
