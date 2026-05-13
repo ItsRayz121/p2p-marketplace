@@ -170,7 +170,11 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
         if (typeof window !== 'undefined' && wasAuthenticated) {
           window.location.href = '/login'
         }
-        throw new ApiError('UNAUTHORIZED', 'Session expired', 401)
+        throw new ApiError(
+          'UNAUTHORIZED',
+          wasAuthenticated ? 'Session expired. Please log in again.' : 'Please log in to continue.',
+          401,
+        )
       }
     } else {
       // Queue this request until refresh completes
@@ -403,7 +407,7 @@ export const authApi = {
   register: (data: { email: string; fullName: string; password: string; referralCode?: string; intendedRole?: 'user' | 'merchant' }) =>
     apiRequest<{ userId: string; email: string }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   verifyEmail: (data: { email: string; code: string }) =>
-    apiRequest<{ verified: boolean }>('/auth/verify-email', { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<{ message: string; accessToken: string; user: AuthUser }>('/auth/verify-email', { method: 'POST', body: JSON.stringify(data) }),
   resendOtp: (email: string, type: 'verify' | 'reset' = 'verify') =>
     apiRequest<{ sent: boolean }>('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email, type }) }),
   login: (data: { email: string; password: string }) =>

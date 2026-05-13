@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { authApi } from '@/lib/api'
+import { useAuthStore } from '@/store/auth.store'
 import { Button } from '@/components/ui/Button'
 import { useCountdown } from '@/hooks/useCountdown'
 import { cn } from '@/lib/utils'
@@ -12,6 +13,8 @@ function VerifyEmailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const email = searchParams.get('email') ?? ''
+  const setAccessToken = useAuthStore((s) => s.setAccessToken)
+  const setUser = useAuthStore((s) => s.setUser)
 
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''))
   const [loading, setLoading] = useState(false)
@@ -34,7 +37,11 @@ function VerifyEmailContent() {
       setLoading(true)
       setError(null)
       try {
-        await authApi.verifyEmail({ email, code })
+        const result = await authApi.verifyEmail({ email, code })
+        // Backend now auto-creates a session on verify — store the token
+        // so the user is immediately logged in without a separate login step.
+        setAccessToken(result.accessToken)
+        setUser(result.user)
         router.push('/setup-username')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Invalid or expired code. Please try again.')

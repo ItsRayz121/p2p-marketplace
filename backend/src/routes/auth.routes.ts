@@ -8,7 +8,7 @@ import { hashPassword, verifyPassword, hashToken } from '../lib/hash'
 import {
   register,
   login,
-  verifyEmail,
+  verifyEmailAndLogin,
   resendOtp,
   forgotPassword,
   resetPassword,
@@ -133,15 +133,23 @@ export async function authRoutes(app: FastifyInstance) {
     },
   )
 
-  // POST /verify-email
+  // POST /verify-email — verifies OTP and auto-creates a session so the
+  // frontend can proceed without a separate login step.
   app.post('/verify-email', async (req, reply) => {
     const { email, code } = verifyEmailSchema.parse(req.body)
-    // Look up userId from email
-    const { db } = await import('../lib/prisma')
     const user = await db.user.findUnique({ where: { email }, select: { id: true } })
     if (!user) throw new AppError('NOT_FOUND', 'User not found', 404)
-    await verifyEmail(user.id, code)
-    return reply.send({ success: true, data: { message: 'Email verified successfully.' } })
+    const ua = req.headers['user-agent']
+    const result = await verifyEmailAndLogin(user.id, code, ua ?? undefined, req.ip)
+    reply.setCookie('refresh_token', result.refreshToken, COOKIE_OPTIONS)
+    return reply.send({
+      success: true,
+      data: {
+        message: 'Email verified successfully.',
+        accessToken: result.accessToken,
+        user: result.user,
+      },
+    })
   })
 
   // POST /resend-otp

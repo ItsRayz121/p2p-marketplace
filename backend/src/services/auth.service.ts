@@ -311,6 +311,24 @@ export async function verifyEmail(userId: string, code: string): Promise<void> {
   ])
 }
 
+// Verifies the OTP and immediately creates a login session so the frontend
+// can redirect the user into the app without a separate login step.
+export async function verifyEmailAndLogin(
+  userId: string,
+  code: string,
+  userAgent?: string,
+  ip?: string,
+): Promise<{ accessToken: string; refreshToken: string; user: SafeUser }> {
+  await verifyEmail(userId, code)
+
+  const user = await db.user.findUnique({ where: { id: userId }, select: USER_SELECT })
+  if (!user) throw new AppError('NOT_FOUND', 'User not found', 404)
+
+  const { accessToken, refreshToken } = await createSession(user.id, user.email, user.role, userAgent, ip)
+
+  return { accessToken, refreshToken, user: toSafeUser(user) }
+}
+
 export async function resendOtp(email: string, type: 'verify' | 'reset'): Promise<void> {
   const user = await db.user.findUnique({ where: { email }, select: { id: true, isEmailVerified: true } })
   // Silently succeed if user not found (prevents email enumeration)
