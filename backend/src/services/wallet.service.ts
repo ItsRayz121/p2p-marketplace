@@ -5,6 +5,7 @@ import { generateOrderRef } from '../lib/hash'
 import { getChainByNetworkLabel, isEvmNetwork } from '../lib/chains'
 import { getOrCreateEvmDepositAddress } from './depositAddress.service'
 import { recordAuditLog } from '../lib/audit'
+import { assessWithdrawalRisk } from './withdrawal-risk.service'
 
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,10 @@ export async function requestWithdrawal(
     }
   }
 
+  // Risk assessment (runs outside transaction — read-only queries)
+  const risk = await assessWithdrawalRisk(userId, data.amount, data.coin, data.toAddress, db)
+  const initialStatus = deriveInitialStatus(risk)
+
   // Read network fee from PlatformConfig
   const feeConfig = await db.platformConfig.findUnique({
     where: { key: `network_fee_${data.coin}_${data.network}` },
@@ -155,14 +160,17 @@ export async function requestWithdrawal(
         amount: data.amount,
         fee,
         toAddress: data.toAddress,
-        status: 'pending',
+        status: initialStatus,
+        tier: risk.tier,
+        riskScore: risk.riskScore,
+        riskFlags: risk.riskFlags,
+        ...(risk.amountUsd > 0 ? { amountUsd: risk.amountUsd } : {}),
       },
     })
 
     // Create a Transaction row so the user sees the withdrawal immediately
-    // in their transaction history (GET /wallet/transactions). Status starts
-    // as 'pending' and is never updated here — admin approval/rejection
-    // creates a second row or updates this one via the admin routes.
+    // in their transaction history. Status is 'pending' for all tiers —
+    // the tier/risk detail is internal to the admin layer.
     await tx.transaction.create({
       data: {
         walletId: w.id,
@@ -177,6 +185,7 @@ export async function requestWithdrawal(
           toAddress: data.toAddress,
           network: data.network,
           coin: data.coin,
+          tier: risk.tier,
         } as any,
       },
     })
@@ -187,8 +196,6 @@ export async function requestWithdrawal(
   // Cache idempotency result for 24h
   await redis.set(idempKey, JSON.stringify(result), 'EX', 86400)
 
-  // Audit-trail every withdrawal request. Admin two-person approval is logged
-  // separately in admin.routes.ts.
   void recordAuditLog(userId, 'WITHDRAWAL_REQUESTED', 'Withdrawal', result.id, {
     coin: data.coin,
     network: data.network,
@@ -196,9 +203,22 @@ export async function requestWithdrawal(
     fee,
     toAddress: data.toAddress,
     orderRef: result.orderRef,
+    tier: risk.tier,
+    riskScore: risk.riskScore,
+    riskFlags: risk.riskFlags,
+    initialStatus,
   })
 
   return result
+}
+
+function deriveInitialStatus(
+  risk: import('./withdrawal-risk.service').RiskAssessment,
+): import('@prisma/client').WithdrawalStatus {
+  if (risk.requiresHold) return 'on_hold'
+  // Tier 1 with no flags and auto-approve enabled → skip admin queue entirely
+  if (risk.tier === 1) return 'auto_approved'
+  return 'pending'
 }
 
 export async function getUserWithdrawals(userId: string, params: { page: number; limit: number }) {

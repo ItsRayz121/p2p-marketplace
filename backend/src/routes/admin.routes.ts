@@ -14,6 +14,7 @@ import { refreshDepositFromRpc } from '../services/depositReconcile.service'
 import { getRpcUrl } from '../lib/chains'
 import { getTransactionByHash, getTransactionReceipt, getBlockNumber } from '../lib/evmRpc'
 import { Prisma } from '@prisma/client'
+import { getWithdrawalTierConfig, upsertWithdrawalTierConfig } from '../services/withdrawal-risk.service'
 type JsonValue = Prisma.InputJsonValue
 
 const adminOrSuper = requireRole('admin', 'super_admin')
@@ -1290,6 +1291,8 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── Withdrawals ────────────────────────────────────────────────────────────
+
   app.get('/admin/withdrawals', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
@@ -1314,6 +1317,7 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // Tier-aware approve: tier 1/2 → single approval; tier 3/4 → dual approval.
   app.post('/admin/withdrawals/:id/approve', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const adminId = req.user!.id
@@ -1321,30 +1325,41 @@ export async function adminRoutes(app: FastifyInstance) {
     const withdrawal = await db.withdrawal.findUnique({ where: { id } })
     if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
     if (!['pending', 'first_approved'].includes(withdrawal.status)) {
-      throw new AppError('INVALID_STATUS', `Withdrawal is in status ${withdrawal.status}`, 400)
+      throw new AppError('INVALID_STATUS', `Withdrawal is in status '${withdrawal.status}' and cannot be approved`, 400)
     }
 
-    // Two-person approval
-    if (!withdrawal.firstApprovedBy) {
-      // First approval
-      await db.withdrawal.update({
-        where: { id },
-        data: { status: 'first_approved', firstApprovedBy: adminId },
-      })
-      await createAuditLog(adminId, 'WITHDRAWAL_FIRST_APPROVED', 'Withdrawal', id, {})
-      return reply.send({ success: true, message: 'First approval recorded. Requires second admin approval.' })
-    } else {
-      // Second approval — must be different admin
-      if (withdrawal.firstApprovedBy === adminId) {
-        throw new AppError('SAME_ADMIN', 'A different admin must provide the second approval', 403)
+    const tier = withdrawal.tier ?? 3
+
+    if (withdrawal.status === 'pending') {
+      if (tier <= 2) {
+        // Single-admin approval path (tier 1 escalated by risk flags, or tier 2)
+        await db.withdrawal.update({
+          where: { id },
+          data: { status: 'approved', firstApprovedBy: adminId },
+        })
+        await createAuditLog(adminId, 'WITHDRAWAL_APPROVED', 'Withdrawal', id, { tier, singleApproval: true })
+        return reply.send({ success: true, message: 'Withdrawal approved and ready to send.' })
+      } else {
+        // Dual-approval path (tier 3+): first approval
+        await db.withdrawal.update({
+          where: { id },
+          data: { status: 'first_approved', firstApprovedBy: adminId },
+        })
+        await createAuditLog(adminId, 'WITHDRAWAL_FIRST_APPROVED', 'Withdrawal', id, { tier })
+        return reply.send({ success: true, message: 'First approval recorded. A second admin must approve before it can be sent.' })
       }
-      await db.withdrawal.update({
-        where: { id },
-        data: { status: 'approved', secondApprovedBy: adminId },
-      })
-      await createAuditLog(adminId, 'WITHDRAWAL_SECOND_APPROVED', 'Withdrawal', id, {})
-      return reply.send({ success: true, message: 'Withdrawal fully approved.' })
     }
+
+    // status === 'first_approved' — always requires a different admin
+    if (withdrawal.firstApprovedBy === adminId) {
+      throw new AppError('SAME_ADMIN', 'A different admin must provide the second approval', 403)
+    }
+    await db.withdrawal.update({
+      where: { id },
+      data: { status: 'approved', secondApprovedBy: adminId },
+    })
+    await createAuditLog(adminId, 'WITHDRAWAL_SECOND_APPROVED', 'Withdrawal', id, { tier })
+    return reply.send({ success: true, message: 'Withdrawal fully approved and ready to send.' })
   })
 
   app.post('/admin/withdrawals/:id/reject', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
@@ -1358,12 +1373,11 @@ export async function adminRoutes(app: FastifyInstance) {
       include: { user: { select: { email: true } } },
     })
     if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
-    if (withdrawal.status === 'completed' || withdrawal.status === 'sent') {
+    if (['completed', 'sent'].includes(withdrawal.status)) {
       throw new AppError('INVALID_STATUS', 'Cannot reject a completed or sent withdrawal', 400)
     }
 
     await db.$transaction(async (tx) => {
-      // Resolve wallet first so we can create a Transaction row.
       const wallet = await tx.wallet.findFirst({
         where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
         select: { id: true },
@@ -1374,14 +1388,11 @@ export async function adminRoutes(app: FastifyInstance) {
         data: { status: 'rejected', rejectedBy: req.user!.id, rejectionReason: parsed.data.reason },
       })
 
-      // Refund amount + fee to wallet
       await tx.wallet.updateMany({
         where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
         data: { balance: { increment: new Prisma.Decimal(Number(withdrawal.amount) + Number(withdrawal.fee)) } },
       })
 
-      // Create a Transaction row so the user sees the rejection + refund in
-      // their transaction history. status='failed' maps to the red badge.
       if (wallet) {
         await tx.transaction.create({
           data: {
@@ -1413,13 +1424,87 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
+  // Place a withdrawal on security hold (any non-terminal status → on_hold).
+  app.post('/admin/withdrawals/:id/hold', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ reason: z.string().min(1).max(500) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const withdrawal = await db.withdrawal.findUnique({ where: { id } })
+    if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
+    if (['sent', 'completed', 'rejected', 'cancelled', 'on_hold'].includes(withdrawal.status)) {
+      throw new AppError('INVALID_STATUS', `Cannot hold a withdrawal in status '${withdrawal.status}'`, 400)
+    }
+
+    await db.withdrawal.update({
+      where: { id },
+      data: { status: 'on_hold', onHoldBy: req.user!.id, onHoldReason: parsed.data.reason },
+    })
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_HELD', 'Withdrawal', id, { reason: parsed.data.reason })
+    return reply.send({ success: true, message: 'Withdrawal placed on hold.' })
+  })
+
+  // Release a held withdrawal back to pending for normal approval flow.
+  app.post('/admin/withdrawals/:id/release-hold', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+
+    const withdrawal = await db.withdrawal.findUnique({ where: { id } })
+    if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
+    if (withdrawal.status !== 'on_hold') {
+      throw new AppError('INVALID_STATUS', 'Withdrawal is not on hold', 400)
+    }
+
+    await db.withdrawal.update({
+      where: { id },
+      data: {
+        status: 'pending',
+        // Reset approval chain so it goes through full approval flow from the top
+        firstApprovedBy: null,
+        secondApprovedBy: null,
+      },
+    })
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_HOLD_RELEASED', 'Withdrawal', id, {})
+    return reply.send({ success: true, message: 'Hold released. Withdrawal returned to pending.' })
+  })
+
+  // Admin risk override: acknowledge risk flags and reduce effective tier.
+  // Useful when a first-withdrawal by a known/trusted user is safe to approve faster.
+  app.post('/admin/withdrawals/:id/risk-override', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({
+      note: z.string().min(1).max(500),
+      overrideTier: z.number().int().min(1).max(4).optional(),
+    })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const withdrawal = await db.withdrawal.findUnique({ where: { id } })
+    if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
+    if (['sent', 'completed', 'rejected', 'cancelled'].includes(withdrawal.status)) {
+      throw new AppError('INVALID_STATUS', 'Cannot override risk on a terminal withdrawal', 400)
+    }
+
+    const newTier = parsed.data.overrideTier ?? withdrawal.tier
+    await db.withdrawal.update({
+      where: { id },
+      data: {
+        riskOverride: true,
+        riskOverrideBy: req.user!.id,
+        riskOverrideNote: parsed.data.note,
+        tier: newTier,
+      },
+    })
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_RISK_OVERRIDE', 'Withdrawal', id, {
+      note: parsed.data.note,
+      originalTier: withdrawal.tier,
+      newTier,
+    })
+    return reply.send({ success: true, message: 'Risk override applied.' })
+  })
+
   // POST /admin/withdrawals/:id/mark-sent — operator calls this after manually
-  // broadcasting the on-chain payout. Requires the tx hash. Moves the
-  // withdrawal from 'approved' → 'sent', creates a completed Transaction row
-  // so the user sees a txHash in their history, and sends a notification email.
-  // Heavily audit-logged. Does NOT auto-verify the txHash on-chain — that is
-  // the operator's responsibility (two-person approval upstream already covers
-  // the approval gate).
+  // broadcasting the on-chain payout. Accepts both 'approved' and 'auto_approved'.
   app.post('/admin/withdrawals/:id/mark-sent', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const schema = z.object({
@@ -1434,10 +1519,10 @@ export async function adminRoutes(app: FastifyInstance) {
       include: { user: { select: { email: true } } },
     })
     if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
-    if (withdrawal.status !== 'approved') {
+    if (!['approved', 'auto_approved'].includes(withdrawal.status)) {
       throw new AppError(
         'INVALID_STATUS',
-        `Withdrawal must be in 'approved' status to mark as sent (current: ${withdrawal.status})`,
+        `Withdrawal must be 'approved' or 'auto_approved' to mark as sent (current: ${withdrawal.status})`,
         400,
       )
     }
@@ -1458,8 +1543,6 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       })
 
-      // Create a completed Transaction row so the user sees the txHash and
-      // 'completed' status badge in their wallet transaction history.
       if (wallet) {
         await tx.transaction.create({
           data: {
@@ -1482,15 +1565,7 @@ export async function adminRoutes(app: FastifyInstance) {
     })
 
     log.info(
-      {
-        adminId: req.user!.id,
-        withdrawalId: withdrawal.id,
-        orderRef: withdrawal.orderRef,
-        txHash: parsed.data.txHash,
-        userId: withdrawal.userId,
-        coin: withdrawal.coin,
-        amount: withdrawal.amount.toString(),
-      },
+      { adminId: req.user!.id, withdrawalId: id, txHash: parsed.data.txHash, coin: withdrawal.coin },
       'Withdrawal marked as sent',
     )
 
@@ -1503,7 +1578,6 @@ export async function adminRoutes(app: FastifyInstance) {
       toAddress: withdrawal.toAddress,
     })
 
-    // 'approved' template body already reads "approved and sent — txHash: …"
     await sendWithdrawalEmail('approved', withdrawal.user.email, {
       amount: withdrawal.amount.toString(),
       coin: withdrawal.coin,
@@ -1511,6 +1585,33 @@ export async function adminRoutes(app: FastifyInstance) {
     }).catch(() => {})
 
     return reply.send({ success: true, data: { status: 'sent', txHash: parsed.data.txHash } })
+  })
+
+  // GET /admin/withdrawal-tiers — read current tier thresholds + risk config
+  app.get('/admin/withdrawal-tiers', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const config = await getWithdrawalTierConfig(db)
+    return reply.send({ success: true, data: config })
+  })
+
+  // PUT /admin/withdrawal-tiers — update tier thresholds + risk config
+  app.put('/admin/withdrawal-tiers', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const schema = z.object({
+      tier1MaxUsd: z.number().positive().optional(),
+      tier2MaxUsd: z.number().positive().optional(),
+      tier3MaxUsd: z.number().positive().optional(),
+      autoApproveEnabled: z.boolean().optional(),
+      firstWithdrawalReview: z.boolean().optional(),
+      newWalletReview: z.boolean().optional(),
+      velocityWindowMins: z.number().int().min(1).optional(),
+      velocityMaxCount: z.number().int().min(1).optional(),
+      coinPricesUsd: z.record(z.string(), z.number().positive()).optional(),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const updated = await upsertWithdrawalTierConfig(db, { ...parsed.data, updatedBy: req.user!.id })
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_TIERS_UPDATED', 'WithdrawalTierConfig', '1', parsed.data)
+    return reply.send({ success: true, data: updated })
   })
 
   // ── Config ─────────────────────────────────────────────────────────────────

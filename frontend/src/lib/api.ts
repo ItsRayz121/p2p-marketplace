@@ -813,6 +813,16 @@ export const adminApi = {
     apiRequest<void>(`/admin/withdrawals/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
   markWithdrawalSent: (id: string, data: { txHash: string; adminNote?: string }) =>
     apiRequest<void>(`/admin/withdrawals/${id}/mark-sent`, { method: 'POST', body: JSON.stringify(data) }),
+  holdWithdrawal: (id: string, data: { reason: string }) =>
+    apiRequest<void>(`/admin/withdrawals/${id}/hold`, { method: 'POST', body: JSON.stringify(data) }),
+  releaseWithdrawalHold: (id: string) =>
+    apiRequest<void>(`/admin/withdrawals/${id}/release-hold`, { method: 'POST' }),
+  overrideWithdrawalRisk: (id: string, data: { note: string; overrideTier?: number }) =>
+    apiRequest<void>(`/admin/withdrawals/${id}/risk-override`, { method: 'POST', body: JSON.stringify(data) }),
+  getWithdrawalTiers: () =>
+    apiRequest<{ tier1MaxUsd: number; tier2MaxUsd: number; tier3MaxUsd: number; autoApproveEnabled: boolean; firstWithdrawalReview: boolean; newWalletReview: boolean; velocityWindowMins: number; velocityMaxCount: number; coinPricesUsd: Record<string, number> }>('/admin/withdrawal-tiers'),
+  updateWithdrawalTiers: (data: Record<string, unknown>) =>
+    apiRequest<void>('/admin/withdrawal-tiers', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Config
   getConfig: () =>

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDate, fmtDateTime } from '@/lib/fmt'
 import { useAuthStore } from '@/store/auth.store'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -11,6 +12,21 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+type WithdrawalStatus =
+  | 'pending'
+  | 'first_approved'
+  | 'approved'
+  | 'auto_approved'
+  | 'on_hold'
+  | 'sent'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled'
+
+type RiskFlag = 'FIRST_WITHDRAWAL' | 'NEW_WALLET' | 'VELOCITY_EXCEEDED' | 'AMOUNT_SPIKE'
+
 interface Withdrawal {
   id: string
   userId: string
@@ -18,13 +34,20 @@ interface Withdrawal {
   coin: string
   amount: string
   fee: string
-  // Prisma field is `toAddress` — NOT `address`
   toAddress: string
   network: string
-  status: 'pending' | 'first_approved' | 'approved' | 'rejected' | 'sent' | 'completed'
+  status: WithdrawalStatus
+  tier: number
+  riskScore: number
+  riskFlags: RiskFlag[]
+  amountUsd?: string
   firstApprovedBy?: string
   txHash?: string
   rejectionReason?: string
+  onHoldBy?: string
+  onHoldReason?: string
+  riskOverride?: boolean
+  riskOverrideNote?: string
   createdAt: string
 }
 
@@ -33,29 +56,69 @@ interface WithdrawalsResponse {
   pagination: { page: number; limit: number; total: number; pages: number }
 }
 
-type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'all'
+// ─── Status display helpers ────────────────────────────────────────────────────
+
+type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved' | 'on_hold' | 'all'
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'pending', label: 'Pending' },
   { value: 'first_approved', label: '1st Approved' },
   { value: 'approved', label: 'Ready to Send' },
+  { value: 'auto_approved', label: 'Auto-Approved' },
+  { value: 'on_hold', label: 'On Hold' },
   { value: 'all', label: 'All' },
 ]
 
-const statusVariant = (s: string) => {
-  if (s === 'first_approved') return 'default'
+const statusVariant = (s: WithdrawalStatus): 'default' | 'success' | 'warning' | 'danger' | 'outline' => {
+  if (s === 'auto_approved') return 'success'
   if (s === 'approved') return 'warning'
+  if (s === 'first_approved') return 'default'
+  if (s === 'on_hold') return 'danger'
   if (s === 'sent' || s === 'completed') return 'success'
   if (s === 'rejected') return 'danger'
-  return 'warning'
+  return 'outline'
 }
 
-const statusLabel = (s: string) => {
-  if (s === 'first_approved') return '1 of 2 Approved'
-  if (s === 'approved') return 'Ready to Send'
-  if (s === 'sent') return 'Sent'
-  return s.charAt(0).toUpperCase() + s.slice(1)
+const statusLabel = (s: WithdrawalStatus): string => {
+  const labels: Record<WithdrawalStatus, string> = {
+    pending: 'Pending',
+    first_approved: '1 of 2 Approved',
+    approved: 'Ready to Send',
+    auto_approved: 'Auto-Approved',
+    on_hold: 'On Hold',
+    sent: 'Sent',
+    completed: 'Sent',
+    rejected: 'Rejected',
+    cancelled: 'Cancelled',
+  }
+  return labels[s] ?? s
 }
+
+const tierLabel = (tier: number) => {
+  if (tier === 1) return 'T1 · Auto'
+  if (tier === 2) return 'T2 · 1 Admin'
+  if (tier === 3) return 'T3 · 2 Admins'
+  return 'T4 · Hold'
+}
+
+const tierColor = (tier: number) => {
+  if (tier === 1) return 'text-success bg-success/10'
+  if (tier === 2) return 'text-primary bg-primary/10'
+  if (tier === 3) return 'text-warning bg-warning/10'
+  return 'text-danger bg-danger/10'
+}
+
+const riskFlagLabel = (flag: RiskFlag) => {
+  const labels: Record<RiskFlag, string> = {
+    FIRST_WITHDRAWAL: 'First withdrawal',
+    NEW_WALLET: 'New address',
+    VELOCITY_EXCEEDED: 'High velocity',
+    AMOUNT_SPIKE: 'Amount spike',
+  }
+  return labels[flag] ?? flag
+}
+
+// ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function WithdrawalsPage() {
   const { user } = useAuthStore()
@@ -66,14 +129,19 @@ export default function WithdrawalsPage() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
 
+  // review modal
   const [selected, setSelected] = useState<Withdrawal | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  const [holdReason, setHoldReason] = useState('')
+  const [overrideNote, setOverrideNote] = useState('')
   const [confirmApprove, setConfirmApprove] = useState(false)
   const [confirmReject, setConfirmReject] = useState(false)
+  const [confirmHold, setConfirmHold] = useState(false)
+  const [confirmRelease, setConfirmRelease] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  // mark-sent state
+  // mark-sent modal
   const [markSentOpen, setMarkSentOpen] = useState(false)
   const [txHash, setTxHash] = useState('')
   const [adminNote, setAdminNote] = useState('')
@@ -101,6 +169,8 @@ export default function WithdrawalsPage() {
   function openModal(w: Withdrawal) {
     setSelected(w)
     setRejectReason('')
+    setHoldReason('')
+    setOverrideNote('')
     setActionError(null)
     setModalOpen(true)
   }
@@ -139,6 +209,44 @@ export default function WithdrawalsPage() {
     }
   }
 
+  async function handleHold() {
+    if (!selected) return
+    setActionError(null)
+    try {
+      await adminApi.holdWithdrawal(selected.id, { reason: holdReason })
+      setConfirmHold(false)
+      setModalOpen(false)
+      fetchWithdrawals()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to place hold')
+    }
+  }
+
+  async function handleRelease() {
+    if (!selected) return
+    setActionError(null)
+    try {
+      await adminApi.releaseWithdrawalHold(selected.id)
+      setConfirmRelease(false)
+      setModalOpen(false)
+      fetchWithdrawals()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to release hold')
+    }
+  }
+
+  async function handleRiskOverride() {
+    if (!selected || !overrideNote.trim()) return
+    setActionError(null)
+    try {
+      await adminApi.overrideWithdrawalRisk(selected.id, { note: overrideNote })
+      fetchWithdrawals()
+      setOverrideNote('')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to apply risk override')
+    }
+  }
+
   async function handleMarkSent() {
     if (!selected) return
     setActionError(null)
@@ -148,15 +256,14 @@ export default function WithdrawalsPage() {
       setMarkSentOpen(false)
       fetchWithdrawals()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to mark withdrawal as sent')
+      setActionError(err instanceof Error ? err.message : 'Failed to mark as sent')
     }
   }
 
   const isSameAdmin = selected?.firstApprovedBy === user?.id
-  const canFinalApprove = selected?.status === 'first_approved' && !isSameAdmin
-  const canFirstApprove = selected?.status === 'pending'
-  const canMarkSent = selected?.status === 'approved'
-
+  const canApprove = selected?.status === 'pending' || (selected?.status === 'first_approved' && !isSameAdmin)
+  const canMarkSent = selected?.status === 'approved' || selected?.status === 'auto_approved'
+  const canHold = selected ? !['sent', 'completed', 'rejected', 'cancelled', 'on_hold'].includes(selected.status) : false
   const totalPages = Math.ceil(total / limit)
 
   if (loading) return <LoadingState message="Loading withdrawals..." />
@@ -166,11 +273,13 @@ export default function WithdrawalsPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Withdrawals</h1>
-        <p className="text-text-muted text-sm mt-0.5">Two-person approval required before marking as sent</p>
+        <p className="text-text-muted text-sm mt-0.5">
+          Tiered approval: T1 auto-approved · T2 single admin · T3 dual admin · T4 security hold
+        </p>
       </div>
 
       {/* Status filter tabs */}
-      <div className="flex gap-1 p-1 bg-surface rounded-xl border border-border w-fit">
+      <div className="flex flex-wrap gap-1 p-1 bg-surface rounded-xl border border-border w-fit">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.value}
@@ -187,7 +296,10 @@ export default function WithdrawalsPage() {
       </div>
 
       {withdrawals.length === 0 ? (
-        <EmptyState title="No withdrawals" description={`No ${statusFilter === 'all' ? '' : statusFilter.replace('_', ' ')} withdrawals found.`} />
+        <EmptyState
+          title="No withdrawals"
+          description={`No ${statusFilter === 'all' ? '' : statusFilter.replace('_', ' ')} withdrawals found.`}
+        />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
@@ -197,7 +309,7 @@ export default function WithdrawalsPage() {
                   <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Coin</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Amount</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Fee</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Tier / Risk</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Address</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Date</th>
@@ -212,21 +324,34 @@ export default function WithdrawalsPage() {
                       <p className="text-xs text-text-muted">{w.user?.email}</p>
                     </td>
                     <td className="px-4 py-3 font-medium text-text-primary">{w.coin}</td>
-                    <td className="px-4 py-3 font-semibold text-text-primary">{w.amount}</td>
-                    <td className="px-4 py-3 text-text-secondary">{w.fee}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-text-primary">{w.amount} {w.coin}</p>
+                      {w.amountUsd && (
+                        <p className="text-xs text-text-muted">≈ ${parseFloat(w.amountUsd).toFixed(2)}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${tierColor(w.tier ?? 3)}`}>
+                        {tierLabel(w.tier ?? 3)}
+                      </span>
+                      {w.riskFlags?.length > 0 && (
+                        <p className="text-xs text-danger mt-0.5">⚠ {w.riskFlags.length} flag{w.riskFlags.length > 1 ? 's' : ''}</p>
+                      )}
+                      {w.riskOverride && (
+                        <p className="text-xs text-text-muted mt-0.5">Override applied</p>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">
-                      {w.toAddress
-                        ? `${w.toAddress.slice(0, 8)}...${w.toAddress.slice(-6)}`
-                        : '—'}
+                      {w.toAddress ? `${w.toAddress.slice(0, 8)}...${w.toAddress.slice(-6)}` : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={statusVariant(w.status)} size="sm">
                         {statusLabel(w.status)}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{new Date(w.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-text-secondary">{fmtDate(w.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
-                      {w.status === 'approved' ? (
+                      {canMarkSentFor(w) ? (
                         <Button size="sm" variant="primary" onClick={() => openMarkSent(w)}>Mark Sent</Button>
                       ) : (
                         <Button size="sm" variant="ghost" onClick={() => openModal(w)}>Review</Button>
@@ -249,10 +374,11 @@ export default function WithdrawalsPage() {
         </div>
       )}
 
-      {/* Approve / Reject Detail Modal */}
+      {/* ── Review / Detail Modal ───────────────────────────────────────────── */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Withdrawal Details" size="lg">
         {selected && (
           <div className="space-y-5">
+            {/* Summary grid */}
             <div className="grid grid-cols-2 gap-4 p-4 bg-surface rounded-xl text-sm">
               <div>
                 <p className="text-text-muted">User</p>
@@ -262,6 +388,9 @@ export default function WithdrawalsPage() {
               <div>
                 <p className="text-text-muted">Amount</p>
                 <p className="font-bold text-text-primary text-lg">{selected.amount} {selected.coin}</p>
+                {selected.amountUsd && (
+                  <p className="text-xs text-text-muted">≈ ${parseFloat(selected.amountUsd).toFixed(2)} USD</p>
+                )}
               </div>
               <div>
                 <p className="text-text-muted">Network Fee</p>
@@ -281,13 +410,73 @@ export default function WithdrawalsPage() {
               </div>
               <div>
                 <p className="text-text-muted">Submitted</p>
-                <p className="text-text-secondary">{new Date(selected.createdAt).toLocaleString()}</p>
+                <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
               </div>
             </div>
 
+            {/* Risk assessment panel */}
+            <div className={`p-4 rounded-xl border text-sm ${selected.riskFlags?.length > 0 ? 'bg-warning/5 border-warning/20' : 'bg-surface border-border'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-medium text-text-primary">Risk Assessment</p>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${tierColor(selected.tier ?? 3)}`}>
+                    {tierLabel(selected.tier ?? 3)}
+                  </span>
+                  <span className={`text-xs font-medium ${(selected.riskScore ?? 0) >= 50 ? 'text-danger' : (selected.riskScore ?? 0) >= 25 ? 'text-warning' : 'text-success'}`}>
+                    Score {selected.riskScore ?? 0}/100
+                  </span>
+                </div>
+              </div>
+              {selected.riskFlags?.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {selected.riskFlags.map((f) => (
+                    <span key={f} className="text-xs px-2 py-0.5 bg-warning/15 text-warning rounded-full font-medium">
+                      ⚠ {riskFlagLabel(f)}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-text-muted text-xs">No risk flags — clean profile</p>
+              )}
+              {selected.riskOverride && (
+                <p className="text-xs text-text-muted mt-2">
+                  Override applied: {selected.riskOverrideNote}
+                </p>
+              )}
+
+              {/* Risk override input */}
+              {!selected.riskOverride && selected.riskFlags?.length > 0 && (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={overrideNote}
+                    onChange={(e) => setOverrideNote(e.target.value)}
+                    placeholder="Override reason (e.g. known trusted user)"
+                    className="flex-1 px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!overrideNote.trim()}
+                    onClick={handleRiskOverride}
+                  >
+                    Override Risk
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Hold info */}
+            {selected.status === 'on_hold' && selected.onHoldReason && (
+              <div className="px-4 py-3 bg-danger/5 border border-danger/20 rounded-xl text-sm text-danger">
+                <span className="font-medium">On Hold:</span> {selected.onHoldReason}
+              </div>
+            )}
+
+            {/* first_approved info */}
             {selected.status === 'first_approved' && (
               <div className="px-4 py-3 bg-primary/5 border border-primary/20 rounded-xl text-sm text-primary">
-                First approval completed. {isSameAdmin
+                First approval recorded.{' '}
+                {isSameAdmin
                   ? 'You approved this — a different admin must provide final approval.'
                   : 'You can provide the final approval.'}
               </div>
@@ -305,22 +494,8 @@ export default function WithdrawalsPage() {
               </div>
             )}
 
-            {(canFirstApprove || canFinalApprove) && (
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1.5">
-                  Rejection Reason (required to reject)
-                </label>
-                <textarea
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  rows={2}
-                  placeholder="Reason for rejection..."
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-              </div>
-            )}
-
-            {(canFirstApprove || canFinalApprove) && (
+            {/* Actions */}
+            {selected.status === 'on_hold' ? (
               <div className="flex gap-3 pt-2">
                 <Button
                   variant="danger"
@@ -330,31 +505,78 @@ export default function WithdrawalsPage() {
                 >
                   Reject
                 </Button>
-
-                {canFirstApprove && (
-                  <Button variant="primary" onClick={() => setConfirmApprove(true)} className="flex-1">
-                    Approve (1st)
-                  </Button>
-                )}
-
-                {selected.status === 'first_approved' && isSameAdmin && (
-                  <div className="flex-1 flex items-center justify-center px-4 py-2 bg-surface rounded-lg text-sm text-text-muted border border-border text-center">
-                    Awaiting 2nd approval
-                  </div>
-                )}
-
-                {canFinalApprove && (
-                  <Button variant="primary" onClick={() => setConfirmApprove(true)} className="flex-1">
-                    Approve (Final)
-                  </Button>
-                )}
+                <Button variant="primary" onClick={() => setConfirmRelease(true)} className="flex-1">
+                  Release Hold
+                </Button>
               </div>
+            ) : canApprove ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">
+                    Rejection Reason (required to reject)
+                  </label>
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    rows={2}
+                    placeholder="Reason for rejection..."
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    variant="danger"
+                    onClick={() => { if (rejectReason.trim()) setConfirmReject(true) }}
+                    disabled={!rejectReason.trim()}
+                    className="flex-1"
+                  >
+                    Reject
+                  </Button>
+
+                  {canHold && (
+                    <div className="flex-1 space-y-1.5">
+                      <input
+                        value={holdReason}
+                        onChange={(e) => setHoldReason(e.target.value)}
+                        placeholder="Hold reason..."
+                        className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-warning"
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={!holdReason.trim()}
+                        onClick={() => setConfirmHold(true)}
+                        className="w-full"
+                      >
+                        Place on Hold
+                      </Button>
+                    </div>
+                  )}
+
+                  <Button
+                    variant="primary"
+                    onClick={() => setConfirmApprove(true)}
+                    className="flex-1"
+                  >
+                    {selected.status === 'pending' && (selected.tier ?? 3) <= 2
+                      ? 'Approve'
+                      : selected.status === 'pending'
+                        ? 'Approve (1st)'
+                        : 'Approve (Final)'}
+                  </Button>
+                </div>
+              </>
+            ) : null}
+
+            {/* Reject-only for rejected/cancelled/completed */}
+            {['rejected', 'cancelled', 'sent', 'completed'].includes(selected.status) && (
+              <p className="text-text-muted text-sm text-center">This withdrawal has been finalised.</p>
             )}
           </div>
         )}
       </Modal>
 
-      {/* Mark Sent Modal */}
+      {/* ── Mark Sent Modal ─────────────────────────────────────────────────── */}
       <Modal isOpen={markSentOpen} onClose={() => setMarkSentOpen(false)} title="Mark Withdrawal as Sent" size="lg">
         {selected && (
           <div className="space-y-5">
@@ -364,6 +586,11 @@ export default function WithdrawalsPage() {
                 Broadcasting <span className="font-bold">{selected.amount} {selected.coin}</span> to{' '}
                 <span className="font-mono">{selected.toAddress?.slice(0, 12)}...{selected.toAddress?.slice(-6)}</span> on {selected.network}.
               </p>
+              {selected.status === 'auto_approved' && (
+                <p className="mt-1.5 text-success text-xs font-medium">
+                  Tier 1 — auto-approved (no admin approval required)
+                </p>
+              )}
             </div>
 
             <div>
@@ -399,9 +626,7 @@ export default function WithdrawalsPage() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button variant="secondary" onClick={() => setMarkSentOpen(false)} className="flex-1">
-                Cancel
-              </Button>
+              <Button variant="secondary" onClick={() => setMarkSentOpen(false)} className="flex-1">Cancel</Button>
               <Button
                 variant="primary"
                 onClick={() => { if (txHash.trim()) setConfirmMarkSent(true) }}
@@ -415,15 +640,18 @@ export default function WithdrawalsPage() {
         )}
       </Modal>
 
+      {/* ── Confirm modals ──────────────────────────────────────────────────── */}
       <ConfirmModal
         isOpen={confirmApprove}
         onClose={() => setConfirmApprove(false)}
         onConfirm={handleApprove}
-        title={selected?.status === 'pending' ? 'First Approval' : 'Final Approval'}
+        title={selected?.status === 'pending' && (selected?.tier ?? 3) <= 2 ? 'Approve Withdrawal' : selected?.status === 'first_approved' ? 'Final Approval' : 'First Approval'}
         description={
-          selected?.status === 'pending'
-            ? `Provide first approval for ${selected?.amount} ${selected?.coin} withdrawal? A second admin must approve before it can be sent.`
-            : `Provide final approval for ${selected?.amount} ${selected?.coin} withdrawal? Status will become "Ready to Send."`
+          selected?.status === 'first_approved'
+            ? `Provide final approval for ${selected?.amount} ${selected?.coin}? Status will become "Ready to Send."`
+            : (selected?.tier ?? 3) <= 2
+              ? `Approve ${selected?.amount} ${selected?.coin}? (Tier ${selected?.tier} — single admin approval)`
+              : `Provide first approval for ${selected?.amount} ${selected?.coin}? A second admin must still approve before it can be sent.`
         }
         confirmLabel="Approve"
         confirmVariant="primary"
@@ -434,9 +662,29 @@ export default function WithdrawalsPage() {
         onClose={() => setConfirmReject(false)}
         onConfirm={handleReject}
         title="Reject Withdrawal"
-        description={`Reject this withdrawal of ${selected?.amount} ${selected?.coin}? The funds will be returned to the user's balance.`}
+        description={`Reject ${selected?.amount} ${selected?.coin}? Funds will be returned to the user's balance.`}
         confirmLabel="Reject"
         confirmVariant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={confirmHold}
+        onClose={() => setConfirmHold(false)}
+        onConfirm={handleHold}
+        title="Place on Security Hold"
+        description={`Place this ${selected?.amount} ${selected?.coin} withdrawal on hold for manual review?`}
+        confirmLabel="Place on Hold"
+        confirmVariant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={confirmRelease}
+        onClose={() => setConfirmRelease(false)}
+        onConfirm={handleRelease}
+        title="Release Security Hold"
+        description={`Release this withdrawal and return it to pending status for normal approval flow?`}
+        confirmLabel="Release Hold"
+        confirmVariant="primary"
       />
 
       <ConfirmModal
@@ -444,10 +692,15 @@ export default function WithdrawalsPage() {
         onClose={() => setConfirmMarkSent(false)}
         onConfirm={handleMarkSent}
         title="Confirm Mark as Sent"
-        description={`Mark ${selected?.amount} ${selected?.coin} withdrawal as sent with tx hash ${txHash.slice(0, 16)}...? This action cannot be undone.`}
+        description={`Mark ${selected?.amount} ${selected?.coin} withdrawal as sent with tx ${txHash.slice(0, 16)}...? This cannot be undone.`}
         confirmLabel="Mark as Sent"
         confirmVariant="primary"
       />
     </div>
   )
+}
+
+// Helper — avoids inline ternary complexity in the table row
+function canMarkSentFor(w: Withdrawal): boolean {
+  return w.status === 'approved' || w.status === 'auto_approved'
 }

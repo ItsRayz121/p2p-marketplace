@@ -149,6 +149,8 @@ enum WithdrawalStatus {
   pending
   first_approved
   approved
+  auto_approved
+  on_hold
   sent
   completed
   rejected
@@ -342,7 +344,11 @@ model Transaction {
   @@index([txHash])
 }
 
-// Withdrawal — two-person approval flow (FULL_SPEC.md Section 27.28)
+// Withdrawal — tiered risk-based approval flow
+// Tier 1 (<$200, no flags): auto_approved → mark-sent directly
+// Tier 2 ($200–$500, or tier 1 with risk flags): pending → 1 admin → approved
+// Tier 3 ($500–$2000): pending → first_approved → approved (2 admins)
+// Tier 4 (>$2000): on_hold → admin reviews → pending → tier 3 flow
 model Withdrawal {
   id               String           @id @default(cuid())
   orderRef         String           @unique
@@ -354,12 +360,21 @@ model Withdrawal {
   fee              Decimal          @default(0) @db.Decimal(18, 8)
   toAddress        String
   status           WithdrawalStatus @default(pending)
+  tier             Int              @default(3)
+  riskScore        Int              @default(0)
+  riskFlags        String[]         @default([])
+  amountUsd        Decimal?         @db.Decimal(18, 2)
   txHash           String?
   firstApprovedBy  String?
   secondApprovedBy String?
   rejectedBy       String?
   rejectionReason  String?          @db.VarChar(500)
   adminNote        String?          @db.VarChar(500)
+  onHoldBy         String?
+  onHoldReason     String?          @db.VarChar(500)
+  riskOverride     Boolean          @default(false)
+  riskOverrideBy   String?
+  riskOverrideNote String?          @db.VarChar(500)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   completedAt      DateTime?
@@ -367,6 +382,25 @@ model Withdrawal {
   @@index([userId, status])
   @@index([status])
   @@index([orderRef])
+}
+
+// Single-row config for withdrawal tier thresholds and risk rules.
+// id is always 1; use upsert to create or update.
+model WithdrawalTierConfig {
+  id                    Int      @id @default(1)
+  tier1MaxUsd           Decimal  @default(200)  @db.Decimal(10, 2)
+  tier2MaxUsd           Decimal  @default(500)  @db.Decimal(10, 2)
+  tier3MaxUsd           Decimal  @default(2000) @db.Decimal(10, 2)
+  autoApproveEnabled    Boolean  @default(true)
+  firstWithdrawalReview Boolean  @default(true)
+  newWalletReview       Boolean  @default(true)
+  velocityWindowMins    Int      @default(60)
+  velocityMaxCount      Int      @default(3)
+  // JSON map of coin → USD price used to bucket withdrawals into tiers.
+  // Example: {"USDT":1,"BNB":600,"ETH":3000,"BTC":60000}
+  coinPricesUsd         Json     @default("{\"USDT\":1,\"USDC\":1,\"BNB\":600,\"ETH\":3000,\"BTC\":60000}")
+  updatedAt             DateTime @updatedAt
+  updatedBy             String?
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
