@@ -154,16 +154,20 @@ const nav: NavItem[] = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user } = useAuthStore()
+  const { user, isLoading } = useAuthStore()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
 
   useEffect(() => {
-    if (!user) return
+    if (isLoading) return
+    if (!user) {
+      router.replace('/login')
+      return
+    }
     if (!ALLOWED_ROLES.includes(user.role as AdminRole)) {
       router.replace('/dashboard')
     }
-  }, [user, router])
+  }, [user, isLoading, router])
 
   const visibleNav = nav.filter((item) =>
     user ? item.roles.includes(user.role as AdminRole) : false,
@@ -269,9 +273,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="hidden sm:block text-text-muted text-sm">{user?.username || user?.email}</span>
         </header>
 
-        {/* Page content */}
+        {/* Page content — do NOT render until auth hydration completes.
+            Without this gate, page components mount and start polling before
+            the access token is available, triggering a 401 → doRefresh race
+            that clears auth and shows "Please log in to continue." */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {children}
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="flex items-center gap-3 text-text-muted">
+                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm">Loading…</span>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>

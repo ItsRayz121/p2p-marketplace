@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDate } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -166,7 +167,7 @@ export default function GasPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{new Date(o.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-text-secondary">{fmtDate(o.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {o.status === 'failed' && (

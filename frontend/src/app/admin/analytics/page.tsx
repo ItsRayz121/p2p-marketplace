@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback, useEffect } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtNumber } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 
@@ -123,7 +124,7 @@ export default function AnalyticsPage() {
                 {data.userGrowth.map((d) => (
                   <div key={d.date} className="flex items-center gap-4 text-sm">
                     <span className="text-text-muted w-24 flex-shrink-0">
-                      {new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      {d.date ? new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                     </span>
                     <div className="flex-1">
                       <SimpleBar value={d.newUsers} max={maxUsers} color="bg-primary" />
@@ -155,10 +156,10 @@ export default function AnalyticsPage() {
                     {data.tradeVolume.map((d) => (
                       <tr key={d.date} className="hover:bg-surface/50">
                         <td className="px-4 py-2.5 text-text-secondary">
-                          {new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          {d.date ? new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                         </td>
                         <td className="px-4 py-2.5 font-medium text-text-primary">
-                          ${Number(d.volume).toLocaleString()}
+                          ${fmtNumber(d.volume)}
                         </td>
                         <td className="px-4 py-2.5 text-text-secondary">{d.count}</td>
                         <td className="px-4 py-2.5">
@@ -224,11 +225,11 @@ export default function AnalyticsPage() {
                         <td className="px-4 py-3 text-text-muted font-medium">{i + 1}</td>
                         <td className="px-4 py-3 font-medium text-text-primary">{t.username}</td>
                         <td className="px-4 py-3 capitalize text-text-secondary">{t.badge || 'â€”'}</td>
-                        <td className="px-4 py-3 font-medium text-text-primary">${Number(t.volume).toLocaleString()}</td>
+                        <td className="px-4 py-3 font-medium text-text-primary">${fmtNumber(t.volume)}</td>
                         <td className="px-4 py-3 text-text-secondary">{t.tradeCount}</td>
                         <td className="px-4 py-3">
-                          <span className={`font-medium ${t.completionRate >= 90 ? 'text-success' : t.completionRate >= 70 ? 'text-warning' : 'text-danger'}`}>
-                            {t.completionRate}%
+                          <span className={`font-medium ${(t.completionRate ?? 0) >= 90 ? 'text-success' : (t.completionRate ?? 0) >= 70 ? 'text-warning' : 'text-danger'}`}>
+                            {t.completionRate ?? 0}%
                           </span>
                         </td>
                       </tr>

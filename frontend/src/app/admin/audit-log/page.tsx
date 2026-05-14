@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback, useEffect } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDateTime } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -88,7 +89,7 @@ export default function AuditLogPage() {
                 {entries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3 text-text-muted text-xs whitespace-nowrap">
-                      {new Date(entry.createdAt).toLocaleString()}
+                      {fmtDateTime(entry.createdAt)}
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-text-primary font-medium">{entry.user?.username || 'Unknown'}</p>
@@ -135,7 +136,7 @@ export default function AuditLogPage() {
               </div>
               <div>
                 <p className="text-text-muted">Timestamp</p>
-                <p className="text-text-secondary">{new Date(selected.createdAt).toLocaleString()}</p>
+                <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
               </div>
               <div>
                 <p className="text-text-muted">Action</p>

@@ -1,0 +1,73 @@
+/**
+ * Safe formatting helpers used across admin and platform pages.
+ * These never throw — they return a safe fallback string instead.
+ */
+
+/** Format a date string as localised date. Returns '—' for null/undefined/invalid. */
+export function fmtDate(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString()
+}
+
+/** Format a date string as localised date + time. Returns '—' for null/undefined/invalid. */
+export function fmtDateTime(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleString()
+}
+
+/** Format a date string as localised time only. Returns '—' for null/undefined/invalid. */
+export function fmtTime(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString()
+}
+
+/**
+ * Safely convert a string|number|Decimal to a localised integer string.
+ * Returns '0' for null/undefined/NaN.
+ */
+export function fmtNumber(value: string | number | null | undefined, fallback = '0'): string {
+  if (value == null) return fallback
+  const n = Number(value)
+  if (isNaN(n)) return fallback
+  return n.toLocaleString()
+}
+
+/**
+ * Safely parse and format a crypto amount string to N decimal places.
+ * Returns '0.000000' for null/undefined/NaN.
+ */
+export function fmtAmount(
+  value: string | number | null | undefined,
+  decimals = 6,
+  fallback?: string,
+): string {
+  if (value == null) return fallback ?? (0).toFixed(decimals)
+  const n = parseFloat(String(value))
+  if (isNaN(n)) return fallback ?? (0).toFixed(decimals)
+  return n.toFixed(decimals)
+}
+
+/** Format as PKR amount string with commas. Returns 'PKR 0' for null/undefined/NaN. */
+export function fmtPkr(value: string | number | null | undefined): string {
+  if (value == null) return 'PKR 0'
+  const n = Number(value)
+  if (isNaN(n)) return 'PKR 0'
+  return `PKR ${n.toLocaleString()}`
+}
+
+/** Truncate an address/hash for display. Returns '—' if falsy. */
+export function fmtAddress(
+  value: string | null | undefined,
+  prefixLen = 8,
+  suffixLen = 6,
+): string {
+  if (!value) return '—'
+  if (value.length <= prefixLen + suffixLen + 3) return value
+  return `${value.slice(0, prefixLen)}...${value.slice(-suffixLen)}`
+}

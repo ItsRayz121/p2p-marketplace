@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback, useEffect } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDate, fmtDateTime } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -41,7 +42,7 @@ export default function WalletPage() {
     try {
       const [addrData, payoutData] = await Promise.all([
         adminApi.getWalletAddresses() as Promise<{ addresses: WalletAddress[] }>,
-        adminApi.getWithdrawals({ status: 'approved' }) as Promise<{ withdrawals: PendingWithdrawal[]; total: number }>,
+        adminApi.getWithdrawals({ status: 'approved' }) as Promise<{ withdrawals: PendingWithdrawal[]; pagination: { total: number } }>,
       ])
       setAddresses(addrData.addresses ?? (Array.isArray(addrData) ? addrData as WalletAddress[] : []))
       setPayouts(payoutData.withdrawals ?? [])
@@ -140,7 +141,7 @@ export default function WalletPage() {
                         <p className="font-mono text-xs text-text-secondary break-all">{addr.address || 'Not set'}</p>
                       )}
                       {addr.updatedAt && !isEditing && (
-                        <p className="text-xs text-text-muted mt-1">Updated {new Date(addr.updatedAt).toLocaleString()}</p>
+                        <p className="text-xs text-text-muted mt-1">Updated {fmtDateTime(addr.updatedAt)}</p>
                       )}
                       {isEditing && saveError && (
                         <p className="text-danger text-xs mt-1">{saveError}</p>
@@ -202,7 +203,7 @@ export default function WalletPage() {
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">
                       {p.address.slice(0, 10)}...{p.address.slice(-6)}
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{new Date(p.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-text-secondary">{fmtDate(p.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>

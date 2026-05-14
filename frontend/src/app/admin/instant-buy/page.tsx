@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDate, fmtPkr } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -147,7 +148,7 @@ export default function InstantBuyPage() {
                     </td>
                     <td className="px-4 py-3 font-medium text-text-primary">{o.coin}</td>
                     <td className="px-4 py-3">
-                      <p className="text-text-primary">PKR {Number(o.amountPkr).toLocaleString()}</p>
+                      <p className="text-text-primary">{fmtPkr(o.amountPkr)}</p>
                       <p className="text-xs text-text-muted">{o.amountCrypto} {o.coin}</p>
                     </td>
                     <td className="px-4 py-3">
@@ -171,7 +172,7 @@ export default function InstantBuyPage() {
                         <span className="text-text-muted">â€”</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{new Date(o.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-text-secondary">{fmtDate(o.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => openModal(o)}>Review</Button>
                     </td>
@@ -208,7 +209,7 @@ export default function InstantBuyPage() {
               </div>
               <div>
                 <p className="text-text-muted">Amount</p>
-                <p className="font-semibold text-text-primary">PKR {Number(selected.amountPkr).toLocaleString()}</p>
+                <p className="font-semibold text-text-primary">{fmtPkr(selected.amountPkr)}</p>
                 <p className="text-xs text-text-muted">{selected.amountCrypto} {selected.coin}</p>
               </div>
               <div>

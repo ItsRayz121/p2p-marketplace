@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDate, fmtDateTime } from '@/lib/fmt'
 import type { AuthUser } from '@/store/auth.store'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -211,7 +212,7 @@ export default function UsersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{u.tradeCount ?? 0}</td>
-                    <td className="px-4 py-3 text-text-secondary">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-text-secondary">{fmtDate(u.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => openUserModal(u)}>View</Button>
                     </td>
@@ -290,7 +291,7 @@ export default function UsersPage() {
                   </div>
                   <div>
                     <p className="text-text-muted">Joined</p>
-                    <p className="text-text-secondary">{new Date(selected.createdAt).toLocaleString()}</p>
+                    <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
                   </div>
                   <div>
                     <p className="text-text-muted">Account Status</p>
@@ -369,7 +370,7 @@ export default function UsersPage() {
                         </div>
                         <div className="text-right">
                           <Badge variant="default" size="sm">{t.status}</Badge>
-                          <p className="text-xs text-text-muted mt-0.5">{new Date(t.createdAt).toLocaleDateString()}</p>
+                          <p className="text-xs text-text-muted mt-0.5">{fmtDate(t.createdAt)}</p>
                         </div>
                       </div>
                     ))}
@@ -388,7 +389,7 @@ export default function UsersPage() {
                       <div key={k.id} className="py-2.5 flex items-center justify-between text-sm">
                         <div>
                           <p className="text-text-primary capitalize">{k.level} KYC</p>
-                          <p className="text-xs text-text-muted">{new Date(k.createdAt).toLocaleDateString()}</p>
+                          <p className="text-xs text-text-muted">{fmtDate(k.createdAt)}</p>
                         </div>
                         <Badge variant={kycVariant(k.status)} size="sm">{k.status}</Badge>
                       </div>

@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDate, fmtTime } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -154,9 +155,9 @@ export default function DisputesPage() {
                 {disputes.map((d) => (
                   <tr key={d.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">{d.id.slice(0, 8)}...</td>
-                    <td className="px-4 py-3 text-text-primary">{d.buyer?.username || d.buyerId.slice(0, 8)}</td>
-                    <td className="px-4 py-3 text-text-primary">{d.seller?.username || d.sellerId.slice(0, 8)}</td>
-                    <td className="px-4 py-3 text-text-secondary">{new Date(d.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-text-primary">{d.buyer?.username || d.buyerId?.slice(0, 8) || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-text-primary">{d.seller?.username || d.sellerId?.slice(0, 8) || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-text-secondary">{fmtDate(d.createdAt)}</td>
                     <td className="px-4 py-3">
                       <span className={`font-medium ${daysAgo(d.createdAt) > 2 ? 'text-danger' : 'text-text-secondary'}`}>
                         {daysAgo(d.createdAt)}d
@@ -201,12 +202,12 @@ export default function DisputesPage() {
               </div>
               <div>
                 <p className="text-text-muted">Buyer</p>
-                <p className="text-text-primary">{selected.buyer?.username || selected.buyerId.slice(0, 8)}</p>
+                <p className="text-text-primary">{selected.buyer?.username || selected.buyerId?.slice(0, 8) || 'Unknown'}</p>
                 <p className="text-xs text-text-muted">{selected.buyer?.email}</p>
               </div>
               <div>
                 <p className="text-text-muted">Seller</p>
-                <p className="text-text-primary">{selected.seller?.username || selected.sellerId.slice(0, 8)}</p>
+                <p className="text-text-primary">{selected.seller?.username || selected.sellerId?.slice(0, 8) || 'Unknown'}</p>
                 <p className="text-xs text-text-muted">{selected.seller?.email}</p>
               </div>
             </div>
@@ -237,7 +238,7 @@ export default function DisputesPage() {
                         {msg.senderId === selected.buyerId ? 'Buyer' : 'Seller'}:
                       </span>
                       <span className="text-text-secondary ml-1">{msg.message}</span>
-                      <span className="text-text-muted ml-2">{new Date(msg.createdAt).toLocaleTimeString()}</span>
+                      <span className="text-text-muted ml-2">{fmtTime(msg.createdAt)}</span>
                     </div>
                   ))}
                 </div>

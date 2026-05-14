@@ -401,7 +401,9 @@ export interface Transaction {
   userId: string
   type: 'deposit' | 'withdrawal' | 'trade_lock' | 'trade_release' | 'fee' | 'referral_bonus'
   coin: string
+  network: string
   amount: string
+  fee?: string
   status: 'pending' | 'completed' | 'failed'
   reference?: string
   createdAt: string
@@ -802,12 +804,15 @@ export const adminApi = {
     apiRequest<void>(`/admin/instant-buy/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Withdrawals
+  // Backend returns { withdrawals: [...], pagination: { page, limit, total, pages } }
   getWithdrawals: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ withdrawals: unknown[]; total: number }>('/admin/withdrawals' + buildQs(params)),
+    apiRequest<{ withdrawals: unknown[]; pagination: { page: number; limit: number; total: number; pages: number } }>('/admin/withdrawals' + buildQs(params)),
   approveWithdrawal: (id: string) =>
     apiRequest<void>(`/admin/withdrawals/${id}/approve`, { method: 'POST' }),
   rejectWithdrawal: (id: string, data: { reason: string }) =>
     apiRequest<void>(`/admin/withdrawals/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+  markWithdrawalSent: (id: string, data: { txHash: string; adminNote?: string }) =>
+    apiRequest<void>(`/admin/withdrawals/${id}/mark-sent`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Config
   getConfig: () =>

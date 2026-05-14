@@ -463,6 +463,14 @@ export default function WalletPage() {
     return 'default'
   }
 
+  // Show contextual status labels — withdrawal "pending" means admin review, not on-chain pending
+  const txStatusLabel = (tx: Transaction): string => {
+    if (tx.type === 'withdrawal' && tx.status === 'pending') return 'Pending Review'
+    if (tx.type === 'withdrawal' && tx.status === 'completed') return 'Sent'
+    if (tx.status === 'failed') return 'Failed / Refunded'
+    return tx.status.charAt(0).toUpperCase() + tx.status.slice(1)
+  }
+
   const txTypeIcon: Record<string, string> = {
     deposit: '↓',
     withdrawal: '↑',
@@ -564,7 +572,7 @@ export default function WalletPage() {
                     <p className={`text-sm font-bold ${tx.type === 'withdrawal' || tx.type === 'fee' ? 'text-danger' : 'text-success'}`}>
                       {tx.type === 'withdrawal' || tx.type === 'fee' ? '-' : '+'}{parseFloat(tx.amount).toFixed(4)} {tx.coin}
                     </p>
-                    <Badge variant={txStatusVariant(tx.status)} size="sm">{tx.status}</Badge>
+                    <Badge variant={txStatusVariant(tx.status)} size="sm">{txStatusLabel(tx)}</Badge>
                   </div>
                 </div>
               ))}

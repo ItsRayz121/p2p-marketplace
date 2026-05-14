@@ -6,6 +6,7 @@ import BottomNav from '@/components/layout/BottomNav'
 import { usePolling } from '@/hooks/usePolling'
 import { marketplaceApi } from '@/lib/api'
 import { Web3Provider } from '@/lib/web3/Web3Provider'
+import { useAuthStore } from '@/store/auth.store'
 
 interface SiteConfig {
   site_notice?: string
@@ -27,6 +28,7 @@ const noticeColors: Record<string, string> = {
 }
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
+  const { isLoading: authLoading } = useAuthStore()
   const [config, setConfig] = useState<SiteConfig>({})
   const [dismissed, setDismissed] = useState(false)
 
@@ -81,7 +83,15 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           </div>
         )}
 
-        <main className="flex-1">{children}</main>
+        {/* Hold page content until auth hydration finishes to avoid unauthenticated
+            API calls racing with the refresh cycle in Providers.tsx */}
+        <main className="flex-1">
+          {authLoading ? (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : children}
+        </main>
 
         <Footer />
         <BottomNav />

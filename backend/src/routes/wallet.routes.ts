@@ -74,8 +74,8 @@ export async function walletRoutes(app: FastifyInstance) {
       coin: w.coin,
       network: w.network,
       available: (parseFloat(w.balance) - parseFloat(w.lockedBalance)).toFixed(8),
-      locked: w.lockedBalance,
-      total: w.balance,
+      locked: w.lockedBalance.toString(),
+      total: w.balance.toString(),
     }))
     return reply.send({ success: true, data: { balances } })
   })

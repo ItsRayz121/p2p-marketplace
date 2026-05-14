@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
+import { fmtDate, fmtDateTime } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -165,7 +166,7 @@ export default function MerchantKycPage() {
                         {sub.status}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{new Date(sub.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-text-secondary">{fmtDate(sub.createdAt)}</td>
                     <td className="px-4 py-3">
                       <span className={`text-sm font-medium ${daysAgo(sub.createdAt) > 3 ? 'text-danger' : 'text-text-secondary'}`}>
                         {daysAgo(sub.createdAt)}d
@@ -211,7 +212,7 @@ export default function MerchantKycPage() {
               </div>
               <div>
                 <p className="text-text-muted">Submitted</p>
-                <p className="text-text-secondary">{new Date(selected.createdAt).toLocaleString()}</p>
+                <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
               </div>
               <div>
                 <p className="text-text-muted">Current Status</p>
