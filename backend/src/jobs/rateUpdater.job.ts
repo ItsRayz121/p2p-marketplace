@@ -141,12 +141,19 @@ async function fetchPricesFromBinance(): Promise<Record<string, number>> {
   return priceMap
 }
 
+// Coins that MUST be present for a source to be considered a valid result.
+// Kraken does not list TRX/BNB/TON, so it will fail this check and we fall
+// through to Bybit which covers all of them.
+const REQUIRED_COINS = ['TRX', 'BTC', 'ETH'] as const
+
 // Try each source in order; return first success with source label.
+// A source is only accepted if its priceMap contains all REQUIRED_COINS.
 async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, number>; source: string }> {
   const sources: Array<{ name: string; fn: () => Promise<Record<string, number>> }> = [
     { name: 'coingecko', fn: fetchPricesFromCoinGecko },
-    { name: 'kraken', fn: fetchPricesFromKraken },
+    // Bybit before Kraken — Bybit covers TRX/BNB/TON; Kraken does not.
     { name: 'bybit', fn: fetchPricesFromBybit },
+    { name: 'kraken', fn: fetchPricesFromKraken },
     { name: 'binance', fn: fetchPricesFromBinance },
   ]
 
@@ -154,7 +161,14 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
   for (const { name, fn } of sources) {
     try {
       const priceMap = await fn()
-      logger.info({ coins: Object.keys(priceMap).length, source: name }, 'Prices fetched')
+      const missingRequired = REQUIRED_COINS.filter((c) => !priceMap[c])
+      if (missingRequired.length > 0) {
+        const msg = `missing required coins: ${missingRequired.join(', ')}`
+        logger.warn({ source: name, missingRequired, available: Object.keys(priceMap) }, `${name} succeeded but ${msg} — trying next source`)
+        errors.push(`${name}: ${msg}`)
+        continue
+      }
+      logger.info({ coins: Object.keys(priceMap), source: name }, 'Prices fetched')
       return { priceMap, source: name }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -211,20 +225,28 @@ export async function updateRates(): Promise<void> {
     updates.push({ key: 'rate_USDT_PKR', value: String(usdPkr.toFixed(2)) })
     await redis.set('rate:USDT', JSON.stringify({ rate: usdPkr, updatedAt: now, source: priceSource }), 'EX', 600)
 
+    const skippedCoins: string[] = []
     for (const coin of Object.keys(COINGECKO_IDS)) {
       const usdPrice = priceMap[coin]
-      if (!usdPrice) continue
+      if (!usdPrice) {
+        skippedCoins.push(coin)
+        continue
+      }
       const pkrRate = (usdPrice * usdPkr).toFixed(2)
+      const redisKey = `rate:${coin}`
+      const redisValue = JSON.stringify({ rate: parseFloat(pkrRate), updatedAt: now, source: priceSource })
       updates.push({ key: `rate_${coin}_PKR`, value: pkrRate })
-      await redis.set(
-        `rate:${coin}`,
-        JSON.stringify({ rate: parseFloat(pkrRate), updatedAt: now, source: priceSource }),
-        'EX',
-        600,
-      )
+      logger.debug({ key: redisKey, usdPrice, pkrRate }, 'Setting coin rate in Redis')
+      await redis.set(redisKey, redisValue, 'EX', 600)
+      logger.debug({ key: redisKey }, 'Redis SET confirmed')
+    }
+
+    if (skippedCoins.length > 0) {
+      logger.warn({ skippedCoins, source: priceSource }, 'Some coins missing from priceMap — Redis keys NOT written for these coins')
     }
 
     await redis.set('rate:USD_PKR', String(usdPkr), 'EX', 3600)
+    logger.debug({ key: 'rate:USD_PKR', usdPkr }, 'Redis SET rate:USD_PKR confirmed')
 
     await Promise.all(
       updates.map(({ key, value }) =>
@@ -234,7 +256,10 @@ export async function updateRates(): Promise<void> {
 
     await redis.del('rate_update_fail_count')
 
-    logger.info({ coinsUpdated: updates.length, usdPkr, source: priceSource }, 'Rates updated successfully')
+    logger.info(
+      { coinsUpdated: updates.length, skippedCoins, usdPkr, source: priceSource, writtenKeys: updates.map(u => u.key) },
+      'Rates updated successfully',
+    )
   } catch (err) {
     logger.error({ err }, 'Rate update failed')
     const failCount = await redis.incr('rate_update_fail_count')
