@@ -1388,6 +1388,9 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('INVALID_STATUS', 'Cannot reject a completed or sent withdrawal', 400)
     }
 
+    // email_pending withdrawals never had their balance deducted — do not refund.
+    const balanceWasDeducted = withdrawal.status !== 'email_pending'
+
     await db.$transaction(async (tx) => {
       const wallet = await tx.wallet.findFirst({
         where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
@@ -1399,29 +1402,31 @@ export async function adminRoutes(app: FastifyInstance) {
         data: { status: 'rejected', rejectedBy: req.user!.id, rejectionReason: parsed.data.reason },
       })
 
-      await tx.wallet.updateMany({
-        where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
-        data: { balance: { increment: new Prisma.Decimal(Number(withdrawal.amount) + Number(withdrawal.fee)) } },
-      })
-
-      if (wallet) {
-        await tx.transaction.create({
-          data: {
-            walletId: wallet.id,
-            type: 'withdrawal',
-            amount: withdrawal.amount,
-            fee: withdrawal.fee,
-            status: 'failed',
-            metadata: {
-              withdrawalId: withdrawal.id,
-              orderRef: withdrawal.orderRef,
-              toAddress: withdrawal.toAddress,
-              rejectionReason: parsed.data.reason,
-              rejectedBy: req.user!.id,
-              refunded: true,
-            } as JsonValue,
-          },
+      if (balanceWasDeducted) {
+        await tx.wallet.updateMany({
+          where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
+          data: { balance: { increment: new Prisma.Decimal(Number(withdrawal.amount) + Number(withdrawal.fee)) } },
         })
+
+        if (wallet) {
+          await tx.transaction.create({
+            data: {
+              walletId: wallet.id,
+              type: 'withdrawal',
+              amount: withdrawal.amount,
+              fee: withdrawal.fee,
+              status: 'failed',
+              metadata: {
+                withdrawalId: withdrawal.id,
+                orderRef: withdrawal.orderRef,
+                toAddress: withdrawal.toAddress,
+                rejectionReason: parsed.data.reason,
+                rejectedBy: req.user!.id,
+                refunded: true,
+              } as JsonValue,
+            },
+          })
+        }
       }
     })
 
@@ -1444,7 +1449,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const withdrawal = await db.withdrawal.findUnique({ where: { id } })
     if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
-    if (['sent', 'completed', 'rejected', 'cancelled', 'on_hold'].includes(withdrawal.status)) {
+    if (['email_pending', 'sent', 'completed', 'rejected', 'cancelled', 'on_hold'].includes(withdrawal.status)) {
       throw new AppError('INVALID_STATUS', `Cannot hold a withdrawal in status '${withdrawal.status}'`, 400)
     }
 
@@ -1622,6 +1627,9 @@ export async function adminRoutes(app: FastifyInstance) {
       velocityWindowMins: z.number().int().min(1).optional(),
       velocityMaxCount: z.number().int().min(1).optional(),
       coinPricesUsd: z.record(z.string(), z.number().positive()).optional(),
+      emailConfirmationEnabled: z.boolean().optional(),
+      emailConfirmationTtlMins: z.number().int().min(1).max(1440).optional(),
+      addressActivationHours: z.number().int().min(0).max(168).optional(),
     })
     const parsed = schema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
