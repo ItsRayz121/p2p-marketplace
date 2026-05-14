@@ -30,15 +30,20 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   // ── GET /api/gas-fee/prices — no auth ──────────────────────────────────────
 
   app.get('/gas-fee/prices', async (_req, reply) => {
-    const trxRateStr  = await redis.get('rate:TRX')
-    const usdPkrStr   = await redis.get('rate:USD:PKR')
-    const trxRate     = trxRateStr  ? parseFloat(trxRateStr)  : 0
-    const usdPkrRate  = usdPkrStr   ? parseFloat(usdPkrStr)   : 280
+    // rate:TRX is stored as JSON { rate: <PKR_PRICE>, ... } by rateUpdater.job.ts
+    // rate:USD_PKR is stored as a plain float string
+    const trxJson    = await redis.get('rate:TRX')
+    const usdPkrStr  = await redis.get('rate:USD_PKR')
+
+    const trxPkrRate  = trxJson   ? (JSON.parse(trxJson) as { rate: number }).rate : 0
+    const usdPkrRate  = usdPkrStr ? parseFloat(usdPkrStr) : 280
+    // Derive TRX/USD: TRX_PKR ÷ USD_PKR
+    const trxUsdRate  = trxPkrRate > 0 && usdPkrRate > 0 ? trxPkrRate / usdPkrRate : 0
     const markup      = env.GAS_MARKUP_MULTIPLIER_TRON
 
-    const rateStale = !(trxRate > 0)
+    const rateStale = !(trxUsdRate > 0)
     if (rateStale) {
-      logger.warn('rate:TRX missing or zero on /prices — returning stale flag. Is the rate-updater job running?')
+      logger.warn({ trxJson, usdPkrStr }, 'rate:TRX or rate:USD_PKR missing/zero on /prices — is the rate-updater job running?')
     }
 
     const tiers = (Object.entries(GAS_TIERS) as [TierKey, { trxAmount: number }][]).map(
@@ -46,8 +51,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         id:        name.toLowerCase(),
         name,
         trxAmount,
-        usdtPrice: (trxAmount * trxRate * markup).toFixed(2),
-        pkrPrice:  (trxAmount * trxRate * markup * usdPkrRate).toFixed(0),
+        usdtPrice: (trxAmount * trxUsdRate * markup).toFixed(2),
+        pkrPrice:  (trxAmount * trxPkrRate * markup).toFixed(0),
       }),
     )
 
@@ -55,7 +60,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       success: true,
       data: {
         tiers,
-        trxPriceUsd: trxRate,
+        trxPriceUsd: trxUsdRate,
         rateStale,
         updatedAt: new Date().toISOString(),
       },
@@ -122,10 +127,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
 
     // 6. Get TRX rate + calculate amounts
-    const trxRateStr = await redis.get('rate:TRX')
-    const trxRate = trxRateStr ? parseFloat(trxRateStr) : 0
+    // rate:TRX stores JSON { rate: <PKR_PRICE> }; rate:USD_PKR stores plain USD→PKR float
+    const trxJson    = await redis.get('rate:TRX')
+    const usdPkrStr  = await redis.get('rate:USD_PKR')
+    const trxPkrRate = trxJson   ? (JSON.parse(trxJson) as { rate: number }).rate : 0
+    const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 0
+    const trxRate    = trxPkrRate > 0 && usdPkrRate > 0 ? trxPkrRate / usdPkrRate : 0
     if (!(trxRate > 0)) {
-      logger.error('rate:TRX missing or zero — cannot create gas order. Is the rate-updater job running?')
+      logger.error({ trxJson, usdPkrStr }, 'rate:TRX or rate:USD_PKR missing/zero — cannot create gas order. Is the rate-updater job running?')
       throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again in a moment.', 503)
     }
     const markup = env.GAS_MARKUP_MULTIPLIER_TRON
