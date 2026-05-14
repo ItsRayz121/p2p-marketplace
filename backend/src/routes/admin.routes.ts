@@ -1858,4 +1858,173 @@ export async function adminRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true })
   })
+
+  // GET /admin/gas/orders/:ref — order detail
+  app.get('/admin/gas/orders/:ref', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { ref } = req.params as { ref: string }
+    const order = await db.gasFeeOrder.findUnique({
+      where: { orderRef: ref },
+      include: { user: { select: { username: true, email: true } } },
+    })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+    return reply.send({ success: true, data: order })
+  })
+
+  // GET /admin/gas/stats — today's metrics + hot wallet status
+  app.get('/admin/gas/stats', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { redis: redisClient } = await import('../lib/redis')
+    const { env: envConfig } = await import('../lib/env')
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const [todayOrders, todayRevenue, pendingCount, failedCount, wallet] = await Promise.all([
+      db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
+      db.gasFeeOrder.aggregate({
+        where: { status: 'delivered', deliveredAt: { gte: today } },
+        _sum: { paymentAmount: true },
+      }),
+      db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_detected', 'sending'] } } }),
+      db.gasFeeOrder.count({ where: { status: 'failed' } }),
+      db.gasHotWallet.findUnique({ where: { chain: 'TRON' } }),
+    ])
+
+    const [balanceCached, isPaused] = await Promise.all([
+      redisClient.get('gas_wallet_balance:TRON'),
+      redisClient.get('gas_wallet_paused:TRON'),
+    ])
+
+    const balanceTRX = balanceCached ? parseFloat(balanceCached) : null
+    const alertThreshold = envConfig.GAS_WALLET_ALERT_THRESHOLD_TRON
+    const pauseThreshold = envConfig.GAS_WALLET_PAUSE_THRESHOLD_TRON
+
+    let walletStatus: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured' = 'unconfigured'
+    if (wallet) {
+      if (!wallet.isActive || isPaused) walletStatus = 'paused'
+      else if (balanceTRX !== null && balanceTRX < pauseThreshold) walletStatus = 'critical'
+      else if (balanceTRX !== null && balanceTRX < alertThreshold) walletStatus = 'warning'
+      else walletStatus = 'healthy'
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        todayOrders,
+        todayRevenue: todayRevenue._sum.paymentAmount ?? 0,
+        pendingCount,
+        failedCount,
+        wallet: wallet
+          ? {
+              chain: 'TRON',
+              address: wallet.address,
+              isActive: wallet.isActive,
+              balanceTRX,
+              status: walletStatus,
+              alertThreshold,
+              pauseThreshold,
+            }
+          : null,
+      },
+    })
+  })
+
+  // GET /admin/gas/wallets — list hot wallets with cached balances
+  app.get('/admin/gas/wallets', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { redis: redisClient } = await import('../lib/redis')
+
+    const wallets = await db.gasHotWallet.findMany()
+    const walletsWithBalance = await Promise.all(
+      wallets.map(async (w) => {
+        const balanceCached = await redisClient.get(`gas_wallet_balance:${w.chain}`)
+        const isPaused = await redisClient.get(`gas_wallet_paused:${w.chain}`)
+        return {
+          ...w,
+          balanceTRX: balanceCached ? parseFloat(balanceCached) : null,
+          isAutoPaused: !!isPaused,
+        }
+      }),
+    )
+    return reply.send({ success: true, data: { wallets: walletsWithBalance } })
+  })
+
+  // POST /admin/gas/wallets/:chain/balance — manually override cached balance (super_admin)
+  app.post('/admin/gas/wallets/:chain/balance', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const { balanceTRX } = req.body as { balanceTRX: number }
+    if (typeof balanceTRX !== 'number' || balanceTRX < 0) {
+      throw new AppError('VALIDATION_ERROR', 'balanceTRX must be a non-negative number', 400)
+    }
+
+    const { redis: redisClient } = await import('../lib/redis')
+    await redisClient.set(`gas_wallet_balance:${chain}`, String(balanceTRX), 'EX', 1800)
+    await createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_OVERRIDE', 'GasHotWallet', chain, { balanceTRX })
+
+    return reply.send({ success: true })
+  })
+
+  // POST /admin/gas/chains/:chain/toggle — pause/resume a chain (super_admin)
+  app.post('/admin/gas/chains/:chain/toggle', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+
+    // Validate chain exists in DB
+    const wallet = await db.gasHotWallet.findUnique({ where: { chain: chain as 'TRON' } })
+    if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
+
+    const updated = await db.gasHotWallet.update({
+      where: { chain: chain as 'TRON' },
+      data: { isActive: !wallet.isActive },
+    })
+    await createAuditLog(req.user!.id, 'GAS_CHAIN_TOGGLED', 'GasHotWallet', wallet.id, {
+      chain,
+      isActive: updated.isActive,
+    })
+
+    return reply.send({ success: true, data: { chain, isActive: updated.isActive } })
+  })
+
+  // GET /admin/gas/unattributed — payments received with no matching order
+  app.get('/admin/gas/unattributed', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { redis: redisClient } = await import('../lib/redis')
+
+    // Sorted set: members are JSON strings, scores are epoch timestamps
+    const raw = await redisClient.zrevrange('gas_unattributed', 0, 49)
+    const payments = raw.flatMap((entry) => {
+      try { return [JSON.parse(entry) as Record<string, unknown>] } catch { return [] }
+    })
+    return reply.send({ success: true, data: { payments, total: payments.length } })
+  })
+
+  // POST /admin/gas/unattributed/:txHash/attribute — link an unattributed payment to an order
+  app.post('/admin/gas/unattributed/:txHash/attribute', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { txHash } = req.params as { txHash: string }
+    const { orderId } = req.body as { orderId: string }
+    if (!orderId) throw new AppError('VALIDATION_ERROR', 'orderId is required', 400)
+
+    const { redis: redisClient } = await import('../lib/redis')
+
+    // Find and remove the matching entry from the sorted set
+    const raw = await redisClient.zrevrange('gas_unattributed', 0, 99)
+    for (const entry of raw) {
+      try {
+        const parsed = JSON.parse(entry) as { txHash?: string }
+        if (parsed.txHash === txHash) {
+          await redisClient.zrem('gas_unattributed', entry)
+          break
+        }
+      } catch { /* skip malformed entries */ }
+    }
+
+    // Update the gas order to payment_detected and enqueue delivery
+    const order = await db.gasFeeOrder.findUnique({ where: { id: orderId } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    await db.gasFeeOrder.update({
+      where: { id: orderId },
+      data: { status: 'payment_detected', paymentTxHash: txHash },
+    })
+    await queues.gasFee.add('deliver', { orderId }, { priority: 1 })
+    await createAuditLog(req.user!.id, 'GAS_UNATTRIBUTED_ATTRIBUTED', 'GasFeeOrder', orderId, { txHash })
+
+    return reply.send({ success: true })
+  })
 }

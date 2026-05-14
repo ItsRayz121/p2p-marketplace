@@ -3,6 +3,7 @@ import { db } from '../lib/prisma'
 import { env } from '../lib/env'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
+import { queues } from '../queues/definitions'
 
 export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   const { orderId } = job.data
@@ -45,7 +46,7 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const TronWeb = require('tronweb')
     const tronWeb = new TronWeb({
-      fullHost: env.TRON_FULL_NODE_URL,
+      fullHost: env.TRON_FULLNODE_URL,
       headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
       privateKey,
     })
@@ -67,10 +68,22 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
       data: {
         status: 'delivered',
         deliveryTxHash,
-        deliveryConfirmed: true,
+        deliveryConfirmed: false, // confirmation job will flip this to true once tx is on-chain
         deliveredAt: new Date(),
       },
     })
+
+    // Enqueue on-chain confirmation check 60s after send (10 retries × 60s = 10 min window)
+    await queues.gasFee.add(
+      'check-delivery',
+      { orderId, txHash: deliveryTxHash },
+      {
+        delay: 60_000,
+        jobId: `gas-check-delivery-${orderId}`,
+        attempts: 10,
+        backoff: { type: 'fixed', delay: 60_000 },
+      },
+    )
 
     logger.info({ orderId, deliveryTxHash }, 'Gas fee delivered successfully')
   } catch (err) {

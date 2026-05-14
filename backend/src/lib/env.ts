@@ -75,7 +75,7 @@ const envSchema = z.object({
   BLOCKCYPHER_TOKEN: z.string().optional(),
 
   // Blockchain RPCs
-  TRON_FULL_NODE_URL: z.string().url().default('https://api.trongrid.io'),
+  TRON_FULLNODE_URL: z.string().url().default('https://api.trongrid.io'),
   TRONGRID_API_KEY: z.string().optional(),
   ETHERSCAN_API_KEY: z.string().optional(),
 
@@ -86,6 +86,7 @@ const envSchema = z.object({
   GAS_WALLET_ALERT_THRESHOLD_TRON: z.coerce.number().default(5000),
   GAS_WALLET_PAUSE_THRESHOLD_TRON: z.coerce.number().default(1000),
   GAS_MARKUP_MULTIPLIER_TRON: z.coerce.number().default(1.5),
+  GAS_GUEST_DAILY_LIMIT_USD: z.coerce.number().default(10),
   COINGECKO_API_KEY: z.string().optional(),
 
   // P2P Platform Deposit Addresses (legacy shared addresses — fallback only)

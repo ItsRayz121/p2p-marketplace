@@ -7,6 +7,9 @@ import { runTradeEscalation } from '../jobs/tradeEscalation.job'
 import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
 import { processReferralPayout } from '../jobs/referralPayout.job'
 import { processGasFeeOrder } from '../jobs/gasFee.job'
+import { runGasExpiryJob } from '../jobs/gasExpiry.job'
+import { checkGasDelivery } from '../jobs/gasDeliveryCheck.job'
+import { runGasMonitorBalances } from '../jobs/gasMonitorBalances.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
@@ -26,10 +29,13 @@ export function createWorker(queueName: string, processor: Processor<any, any, s
     )
 
     if (job && job.attemptsMade >= (job.opts.attempts ?? 3)) {
+      // Only include safe, non-sensitive fields from job.data in the alert email.
+      // Never serialize the full data object — it may contain private keys or credentials.
+      const safeData = { orderId: (job.data as Record<string, unknown>)?.orderId ?? '(none)' }
       sendAdminAlertEmail(
         `Background job failed permanently: ${queueName}/${job.id}`,
-        `Queue: ${queueName}\nJob ID: ${job.id}\nAttempts: ${job.attemptsMade}\nData: ${JSON.stringify(job.data)}\nError: ${err?.message ?? 'Unknown error'}`,
-      ).catch(() => {})
+        `Queue: ${queueName}\nJob ID: ${job.id}\nJob name: ${job.name}\nAttempts: ${job.attemptsMade}\nOrder ID: ${safeData.orderId}\nError: ${err?.message ?? 'Unknown error'}`,
+      ).catch((emailErr) => logger.warn({ emailErr, jobId: job.id, queue: queueName }, 'Failed to send permanent-failure alert email'))
     }
   })
 
@@ -72,8 +78,36 @@ export function startWorkers() {
     await processReferralPayout(job)
   })
 
-  // Gas fee delivery worker — rate-limited to 2 concurrent to avoid TRON RPC saturation
-  createWorker(QUEUE_NAMES.GAS_FEE, processGasFeeOrder, { max: 2, duration: 1000 })
+  // Gas fee repeatable jobs
+  queues.gasFee
+    .add('expire-sweep', {}, { repeat: { every: 60_000 }, jobId: 'gas-expire-sweep-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule gas expiry sweep'))
+
+  queues.gasFee
+    .add('monitor-balances', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'gas-monitor-balances-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule gas balance monitor'))
+
+  // Gas fee dispatcher — routes to the correct handler by job name.
+  // Rate-limited to 2 concurrent to avoid TRON RPC saturation.
+  createWorker(
+    QUEUE_NAMES.GAS_FEE,
+    async (job) => {
+      switch (job.name) {
+        case 'deliver':
+          return processGasFeeOrder(job as Parameters<typeof processGasFeeOrder>[0])
+        case 'expire-order':
+        case 'expire-sweep':
+          return runGasExpiryJob(job as Parameters<typeof runGasExpiryJob>[0])
+        case 'check-delivery':
+          return checkGasDelivery(job as Parameters<typeof checkGasDelivery>[0])
+        case 'monitor-balances':
+          return runGasMonitorBalances()
+        default:
+          logger.warn({ jobName: job.name }, 'Unknown gas fee job name — skipping')
+      }
+    },
+    { max: 2, duration: 1000 },
+  )
 
   // Deposit reconciler: defence-in-depth against missed Moralis Stream events.
   // Repeats every DEPOSIT_RECONCILE_INTERVAL_SECONDS (default 60s).

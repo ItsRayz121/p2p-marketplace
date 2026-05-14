@@ -11,6 +11,7 @@ import {
   normalizeMoralisEvent,
   processDepositEvent,
 } from '../services/depositWatcher.service'
+import { sendAdminAlertEmail } from '../services/email.service'
 
 /**
  * Compute a candidate Moralis Streams signature.
@@ -276,24 +277,51 @@ export async function webhookRoutes(app: FastifyInstance) {
     }
 
     // 4. Match GasFeeOrder
-    const gasOrder = await db.gasFeeOrder.findFirst({
-      where: {
-        toAddress: toAddress,
-        status: 'payment_pending',
-      },
-    })
+    // Payment goes to the platform gas fee deposit address (NOT the user's TRX wallet).
+    // GasFeeOrder.toAddress is the user's TRX delivery address — do not match on it here.
+    // Instead: verify payment went to our deposit address, then match by amount (±1%).
+    if (
+      env.GAS_FEE_DEPOSIT_ADDRESS_TRC20 &&
+      toAddress?.toLowerCase() === env.GAS_FEE_DEPOSIT_ADDRESS_TRC20.toLowerCase()
+    ) {
+      const incoming = parseFloat((payload as { amount?: string }).amount ?? '0')
+      if (incoming > 0) {
+        const lo = (incoming * 0.99).toFixed(4)
+        const hi = (incoming * 1.01).toFixed(4)
+        const gasOrder = await db.gasFeeOrder.findFirst({
+          where: {
+            status: 'payment_pending',
+            paymentAmount: { gte: lo, lte: hi },
+            expiresAt: { gt: new Date() },
+          },
+          orderBy: { createdAt: 'asc' }, // oldest matching order first (spec §6)
+        })
 
-    if (gasOrder) {
-      await db.gasFeeOrder.update({
-        where: { id: gasOrder.id },
-        data: {
-          status: 'payment_detected',
-          paymentTxHash: txHash,
-        },
-      })
-      // Queue gas fee delivery
-      await queues.gasFee.add('deliver', { orderId: gasOrder.id })
-      logger.info({ txHash, orderId: gasOrder.id }, 'Payment detected for gas fee order')
+        if (gasOrder) {
+          await db.gasFeeOrder.update({
+            where: { id: gasOrder.id },
+            data: { status: 'payment_detected', paymentTxHash: txHash },
+          })
+          await queues.gasFee.add('deliver', { orderId: gasOrder.id }, { priority: 1 })
+          logger.info({ txHash, orderId: gasOrder.id }, 'Payment detected for gas fee order')
+        } else {
+          // No matching active order — store for admin review
+          const member = JSON.stringify({
+            txHash,
+            amount: (payload as { amount?: string }).amount,
+            network: (payload as { network?: string }).network ?? 'TRC20',
+            toAddress,
+            detectedAt: new Date().toISOString(),
+          })
+          await redis.zadd('gas_unattributed', Date.now(), member)
+          await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
+          logger.warn({ txHash, amount: incoming }, 'Unattributed gas fee payment received')
+          sendAdminAlertEmail(
+            'Unattributed Gas Fee Payment Received',
+            `A USDT payment arrived at the gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${(payload as { network?: string }).network ?? 'TRC20'}\n\nReview at /admin/gas and attribute manually.`,
+          ).catch(() => {})
+        }
+      }
     }
 
     return reply.send({ success: true })

@@ -907,11 +907,43 @@ export const adminApi = {
 
   // Gas Orders
   getGasOrders: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ orders: unknown[]; total: number }>('/admin/gas/orders' + buildQs(params)),
+    apiRequest<{ orders: unknown[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/gas/orders' + buildQs(params)),
+  getGasOrder: (ref: string) =>
+    apiRequest<unknown>(`/admin/gas/orders/${ref}`),
   retryGasOrder: (id: string) =>
     apiRequest<void>(`/admin/gas/orders/${id}/retry`, { method: 'POST' }),
   refundGasOrder: (id: string) =>
     apiRequest<void>(`/admin/gas/orders/${id}/refund`, { method: 'POST' }),
+
+  // Gas Stats & Wallet
+  getGasStats: () =>
+    apiRequest<{
+      todayOrders: number
+      todayRevenue: string | number
+      pendingCount: number
+      failedCount: number
+      wallet: {
+        chain: string
+        address: string
+        isActive: boolean
+        balanceTRX: number | null
+        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+        alertThreshold: number
+        pauseThreshold: number
+      } | null
+    }>('/admin/gas/stats'),
+  getGasWallets: () =>
+    apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
+  updateGasWalletBalance: (chain: string, balanceTRX: number) =>
+    apiRequest<void>(`/admin/gas/wallets/${chain}/balance`, { method: 'POST', body: JSON.stringify({ balanceTRX }) }),
+  toggleGasChain: (chain: string) =>
+    apiRequest<{ chain: string; isActive: boolean }>(`/admin/gas/chains/${chain}/toggle`, { method: 'POST' }),
+
+  // Gas Unattributed Payments
+  getGasUnattributed: () =>
+    apiRequest<{ payments: unknown[]; total: number }>('/admin/gas/unattributed'),
+  attributeGasPayment: (txHash: string, orderId: string) =>
+    apiRequest<void>(`/admin/gas/unattributed/${encodeURIComponent(txHash)}/attribute`, { method: 'POST', body: JSON.stringify({ orderId }) }),
 
   // Audit Log
   getAuditLog: (params?: Record<string, string | number | undefined>) =>

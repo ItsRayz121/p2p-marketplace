@@ -155,7 +155,7 @@ export default function GasPage() {
     try {
       const o = await apiRequest<GasOrder>('/gas-fee/orders', {
         method: 'POST',
-        body: JSON.stringify({ toAddress: address, tier: selectedTier.id }),
+        body: JSON.stringify({ toAddress: address, tier: selectedTier.id, chain: selectedChain }),
       })
       setOrder(o)
       setPollErrorCount(0)
