@@ -22,15 +22,16 @@ interface Tier {
   pkrPrice: string
 }
 
+// Status values match the backend GasFeeOrderStatus enum exactly
 interface GasOrder {
   id: string
   orderRef: string
-  status: 'awaiting_payment' | 'payment_detected' | 'delivery_in_progress' | 'completed' | 'failed' | 'expired'
+  status: 'payment_pending' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded'
   toAddress: string
   tier: string
   paymentAddress: string
-  usdtAmount: string
-  txHash?: string
+  paymentAmount: string      // backend field name (was usdtAmount — fixed)
+  deliveryTxHash?: string   // backend field name (was txHash — fixed)
   expiresAt: string
   createdAt: string
 }
@@ -42,6 +43,25 @@ interface PricesResponse {
 
 const TIER_ICONS: Record<string, string> = { SMALL: 'S', MEDIUM: 'M', LARGE: 'L' }
 const TRC20_REGEX = /^T[A-Za-z1-9]{33}$/
+
+// ─── Status helpers — keyed on real backend enum values ───────────────────────
+
+function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' {
+  if (s === 'delivered') return 'success'
+  if (s === 'failed' || s === 'expired') return 'danger'
+  if (s === 'payment_detected' || s === 'sending') return 'warning'
+  return 'default'
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  payment_pending:  'Awaiting Payment',
+  payment_detected: 'Payment Detected',
+  sending:          'Delivering TRX...',
+  delivered:        'Completed',
+  failed:           'Failed',
+  expired:          'Expired',
+  refunded:         'Refunded',
+}
 
 // ─── Step Indicator ───────────────────────────────────────────────────────────
 
@@ -76,25 +96,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
   )
 }
 
-// ─── Status Display ───────────────────────────────────────────────────────────
-
-function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' {
-  if (s === 'completed') return 'success'
-  if (s === 'failed' || s === 'expired') return 'danger'
-  if (s === 'payment_detected' || s === 'delivery_in_progress') return 'warning'
-  return 'default'
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  awaiting_payment: 'Awaiting Payment',
-  payment_detected: 'Payment Detected',
-  delivery_in_progress: 'Delivering TRX...',
-  completed: 'Completed',
-  failed: 'Failed',
-  expired: 'Expired',
-}
-
-// ─── Page ────────────────────────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GasPage() {
   const [step, setStep] = useState(0)
@@ -117,6 +119,9 @@ export default function GasPage() {
   const [order, setOrder] = useState<GasOrder | null>(null)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
+
+  // Poll failure tracking — surface connection errors after 3 consecutive failures
+  const [pollErrorCount, setPollErrorCount] = useState(0)
 
   const fetchTiers = useCallback(async () => {
     setTiersLoading(true)
@@ -153,6 +158,7 @@ export default function GasPage() {
         body: JSON.stringify({ toAddress: address, tier: selectedTier.id }),
       })
       setOrder(o)
+      setPollErrorCount(0)
       setStep(3)
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create order')
@@ -166,10 +172,19 @@ export default function GasPage() {
     try {
       const o = await apiRequest<GasOrder>(`/gas-fee/orders/${order.orderRef}`)
       setOrder(o)
-    } catch { /* silent */ }
+      setPollErrorCount(0) // reset on success
+    } catch {
+      setPollErrorCount(c => c + 1)
+    }
   }, [order?.orderRef])
 
-  const isDone = order?.status === 'completed' || order?.status === 'failed' || order?.status === 'expired'
+  // isDone uses real backend status values — polling stops correctly on 'delivered'
+  const isDone =
+    order?.status === 'delivered' ||
+    order?.status === 'failed' ||
+    order?.status === 'expired' ||
+    order?.status === 'refunded'
+
   usePolling(pollOrder, 10_000, step === 3 && !isDone)
 
   return (
@@ -204,13 +219,13 @@ export default function GasPage() {
               <div className="flex flex-col items-center gap-2 p-4 bg-white border border-border rounded-xl opacity-60 cursor-not-allowed">
                 <div className="w-10 h-10 rounded-full bg-surface text-text-muted font-bold text-sm flex items-center justify-center">ETH</div>
                 <span className="text-sm font-medium text-text-muted">Ethereum</span>
-                <Badge variant="default" size="sm">Coming Soon</Badge>
+                <Badge variant="default" size="sm">Soon</Badge>
               </div>
               {/* BSC — Coming Soon */}
               <div className="flex flex-col items-center gap-2 p-4 bg-white border border-border rounded-xl opacity-60 cursor-not-allowed">
                 <div className="w-10 h-10 rounded-full bg-surface text-text-muted font-bold text-sm flex items-center justify-center">BNB</div>
                 <span className="text-sm font-medium text-text-muted">BSC</span>
-                <Badge variant="default" size="sm">Coming Soon</Badge>
+                <Badge variant="default" size="sm">Soon</Badge>
               </div>
             </div>
           </div>
@@ -318,7 +333,7 @@ export default function GasPage() {
           </div>
         )}
 
-        {/* ── Step 3: Payment ── */}
+        {/* ── Step 3: Payment & Status ── */}
         {step === 3 && order && (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
@@ -328,16 +343,30 @@ export default function GasPage() {
               </Badge>
             </div>
 
-            {/* Timer */}
-            {!isDone && (
+            {/* Countdown timer — only while waiting for payment */}
+            {order.status === 'payment_pending' && (
               <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 flex items-center justify-between">
                 <span className="text-sm font-medium text-warning">Pay within</span>
-                <CountdownTimer expiresAt={order.expiresAt} showLabel={false} onExpire={() => setOrder((o) => o ? { ...o, status: 'expired' } : o)} />
+                <CountdownTimer
+                  expiresAt={order.expiresAt}
+                  showLabel={false}
+                  onExpire={() => setOrder((o) => o ? { ...o, status: 'expired' } : o)}
+                />
               </div>
             )}
 
-            {/* Payment Details */}
-            {(order.status === 'awaiting_payment') && (
+            {/* Poll connection error warning */}
+            {pollErrorCount >= 3 && !isDone && (
+              <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 text-sm text-warning">
+                Having trouble connecting. Your order is safe —{' '}
+                <button className="underline font-medium" onClick={() => { setPollErrorCount(0); pollOrder() }}>
+                  tap to refresh
+                </button>
+              </div>
+            )}
+
+            {/* Payment Details — shown while awaiting payment */}
+            {order.status === 'payment_pending' && (
               <div className="bg-white border border-border rounded-xl p-5 space-y-4">
                 <p className="text-sm font-semibold text-text-primary">Send USDT (TRC20) to this address:</p>
 
@@ -352,8 +381,9 @@ export default function GasPage() {
                 <div className="bg-surface rounded-lg p-3">
                   <p className="text-xs text-text-muted mb-1">Exact Amount</p>
                   <div className="flex items-center justify-between">
-                    <p className="text-lg font-bold text-text-primary">{order.usdtAmount} USDT</p>
-                    <CopyButton text={order.usdtAmount} />
+                    {/* paymentAmount is the correct backend field (was usdtAmount) */}
+                    <p className="text-lg font-bold text-text-primary">{order.paymentAmount} USDT</p>
+                    <CopyButton text={order.paymentAmount} />
                   </div>
                 </div>
 
@@ -365,21 +395,23 @@ export default function GasPage() {
               </div>
             )}
 
-            {/* Processing */}
-            {(order.status === 'payment_detected' || order.status === 'delivery_in_progress') && (
+            {/* Processing — payment detected or delivery in progress */}
+            {(order.status === 'payment_detected' || order.status === 'sending') && (
               <div className="bg-warning/10 border border-warning/30 rounded-xl p-5 text-center">
                 <Spinner size="md" />
                 <p className="text-base font-bold text-text-primary mt-3 mb-1">
                   {order.status === 'payment_detected' ? 'Payment Detected!' : 'Delivering TRX...'}
                 </p>
                 <p className="text-sm text-text-muted">
-                  {order.status === 'payment_detected' ? 'Preparing your TRX...' : `Sending ${selectedTier?.trxAmount} TRX to your wallet.`}
+                  {order.status === 'payment_detected'
+                    ? 'Preparing your TRX...'
+                    : `Sending ${selectedTier?.trxAmount} TRX to your wallet.`}
                 </p>
               </div>
             )}
 
-            {/* Completed */}
-            {order.status === 'completed' && (
+            {/* Success — real backend status is 'delivered' not 'completed' */}
+            {order.status === 'delivered' && (
               <div className="bg-success/10 border border-success/30 rounded-xl p-5 space-y-3">
                 <div className="text-center">
                   <svg className="w-12 h-12 mx-auto text-success mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -390,9 +422,10 @@ export default function GasPage() {
                     {selectedTier?.trxAmount} TRX has been sent to {order.toAddress.slice(0, 10)}...
                   </p>
                 </div>
-                {order.txHash && (
+                {/* deliveryTxHash is the correct backend field (was txHash) */}
+                {order.deliveryTxHash && (
                   <a
-                    href={`https://tronscan.org/#/transaction/${order.txHash}`}
+                    href={`https://tronscan.org/#/transaction/${order.deliveryTxHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-1.5 text-primary text-sm underline"
@@ -406,16 +439,18 @@ export default function GasPage() {
               </div>
             )}
 
-            {/* Expired */}
+            {/* Expired or Failed */}
             {(order.status === 'expired' || order.status === 'failed') && (
               <div className="bg-danger/10 border border-danger/30 rounded-xl p-5 text-center">
                 <p className="text-base font-bold text-danger">
                   {order.status === 'expired' ? 'Order Expired' : 'Order Failed'}
                 </p>
                 <p className="text-sm text-text-muted mt-1 mb-4">
-                  {order.status === 'expired' ? 'Payment was not received in time.' : 'Something went wrong. Please contact support.'}
+                  {order.status === 'expired'
+                    ? 'Payment was not received in time.'
+                    : 'Something went wrong. Please contact support.'}
                 </p>
-                <Button onClick={() => { setOrder(null); setAddress(''); setSelectedTier(null); setStep(0) }}>
+                <Button onClick={() => { setOrder(null); setAddress(''); setSelectedTier(null); setPollErrorCount(0); setStep(0) }}>
                   Try Again
                 </Button>
               </div>

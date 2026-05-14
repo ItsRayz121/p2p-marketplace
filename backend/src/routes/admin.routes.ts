@@ -1814,16 +1814,22 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post('/admin/gas/orders/:id/retry', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const order = await db.gasFeeOrder.findUnique({ where: { id } })
-    if (!order) throw Errors.NOT_FOUND('Gas fee order')
 
-    if (!['failed', 'payment_detected'].includes(order.status)) {
-      throw new AppError('INVALID_STATUS', 'Order cannot be retried in its current status', 400)
+    // CAS: only transition failed → payment_detected. Concurrent retries will
+    // find count=0 on the second call and hit the conflict branch below.
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id, status: 'failed' },
+      data: { status: 'payment_detected', failureReason: null, retryCount: { increment: 1 } },
+    })
+
+    if (claimed.count === 0) {
+      const order = await db.gasFeeOrder.findUnique({ where: { id } })
+      if (!order) throw Errors.NOT_FOUND('Gas fee order')
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — only failed orders can be retried`, 409)
     }
 
-    await db.gasFeeOrder.update({ where: { id }, data: { status: 'payment_detected', failureReason: null } })
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, {})
+    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus: 'failed' })
 
     return reply.send({ success: true })
   })
@@ -1833,11 +1839,22 @@ export async function adminRoutes(app: FastifyInstance) {
     const order = await db.gasFeeOrder.findUnique({ where: { id } })
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
 
+    if (order.status !== 'failed') {
+      throw new AppError(
+        'INVALID_STATUS',
+        `Cannot refund an order with status '${order.status}'. Only failed orders can be refunded.`,
+        400,
+      )
+    }
+
     await db.gasFeeOrder.update({
       where: { id },
       data: { status: 'refunded', refundedAt: new Date() },
     })
-    await createAuditLog(req.user!.id, 'GAS_ORDER_REFUNDED', 'GasFeeOrder', id, {})
+    await createAuditLog(req.user!.id, 'GAS_ORDER_REFUNDED', 'GasFeeOrder', id, {
+      previousStatus: order.status,
+      orderRef: order.orderRef,
+    })
 
     return reply.send({ success: true })
   })

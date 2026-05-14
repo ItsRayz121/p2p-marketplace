@@ -6,6 +6,7 @@ import { updateRates } from '../jobs/rateUpdater.job'
 import { runTradeEscalation } from '../jobs/tradeEscalation.job'
 import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
 import { processReferralPayout } from '../jobs/referralPayout.job'
+import { processGasFeeOrder } from '../jobs/gasFee.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
@@ -70,6 +71,9 @@ export function startWorkers() {
   createWorker(QUEUE_NAMES.REFERRAL_PAYOUT, async (job) => {
     await processReferralPayout(job)
   })
+
+  // Gas fee delivery worker — rate-limited to 2 concurrent to avoid TRON RPC saturation
+  createWorker(QUEUE_NAMES.GAS_FEE, processGasFeeOrder, { max: 2, duration: 1000 })
 
   // Deposit reconciler: defence-in-depth against missed Moralis Stream events.
   // Repeats every DEPOSIT_RECONCILE_INTERVAL_SECONDS (default 60s).

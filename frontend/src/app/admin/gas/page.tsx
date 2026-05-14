@@ -13,24 +13,34 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 interface GasOrder {
   id: string
   orderRef: string
-  tier: string
+  tier: string | null
   toAddress: string
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded'
-  txHash?: string
-  errorMessage?: string
+  status: 'payment_pending' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded'
+  deliveryTxHash?: string
+  failureReason?: string
   createdAt: string
 }
 
 interface GasOrdersResponse {
   orders: GasOrder[]
-  total: number
+  pagination: { total: number; page: number; limit: number; pages: number }
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  payment_pending: 'Awaiting Payment',
+  payment_detected: 'Payment Detected',
+  sending: 'Delivering...',
+  delivered: 'Delivered',
+  expired: 'Expired',
+  failed: 'Failed',
+  refunded: 'Refunded',
 }
 
 const statusVariant = (s: string) => {
-  if (s === 'completed') return 'success'
-  if (s === 'failed') return 'danger'
+  if (s === 'delivered') return 'success'
+  if (s === 'failed' || s === 'expired') return 'danger'
   if (s === 'refunded') return 'warning'
-  if (s === 'processing') return 'default'
+  if (s === 'payment_detected' || s === 'sending') return 'default'
   return 'outline'
 }
 
@@ -54,9 +64,9 @@ export default function GasPage() {
     try {
       const params: Record<string, string | number> = { page, limit }
       if (statusFilter !== 'all') params.status = statusFilter
-      const data = await adminApi.getGasOrders(params) as GasOrdersResponse
+      const data = await adminApi.getGasOrders(params) as unknown as GasOrdersResponse
       setOrders(data.orders ?? [])
-      setTotal(data.total ?? 0)
+      setTotal(data.pagination?.total ?? 0)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load gas orders')
@@ -118,17 +128,17 @@ export default function GasPage() {
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-2">
-        {['all', 'pending', 'processing', 'completed', 'failed', 'refunded'].map((s) => (
+        {['all', 'payment_pending', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
           <button
             key={s}
             onClick={() => { setStatusFilter(s); setPage(1) }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border capitalize ${
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
               statusFilter === s
                 ? 'bg-primary text-white border-primary'
                 : 'bg-white text-text-secondary border-border hover:bg-surface'
             }`}
           >
-            {s}
+            {s === 'all' ? 'All' : (STATUS_LABELS[s] ?? s)}
           </button>
         ))}
       </div>
@@ -154,16 +164,16 @@ export default function GasPage() {
                   <tr key={o.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">{o.orderRef}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" size="sm">{o.tier}</Badge>
+                      <Badge variant="outline" size="sm">{o.tier ?? '—'}</Badge>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">
                       {o.toAddress.slice(0, 8)}...{o.toAddress.slice(-6)}
                     </td>
                     <td className="px-4 py-3">
                       <div>
-                        <Badge variant={statusVariant(o.status)} size="sm">{o.status}</Badge>
-                        {o.errorMessage && (
-                          <p className="text-xs text-danger mt-0.5 max-w-xs truncate">{o.errorMessage}</p>
+                        <Badge variant={statusVariant(o.status)} size="sm">{STATUS_LABELS[o.status] ?? o.status}</Badge>
+                        {o.failureReason && (
+                          <p className="text-xs text-danger mt-0.5 max-w-xs truncate">{o.failureReason}</p>
                         )}
                       </div>
                     </td>
@@ -179,13 +189,15 @@ export default function GasPage() {
                             Retry
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRefund(true) }}
-                        >
-                          Refund
-                        </Button>
+                        {o.status === 'failed' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRefund(true) }}
+                          >
+                            Refund
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
