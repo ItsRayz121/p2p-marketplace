@@ -10,6 +10,8 @@ import { processGasFeeOrder } from '../jobs/gasFee.job'
 import { runGasExpiryJob } from '../jobs/gasExpiry.job'
 import { checkGasDelivery } from '../jobs/gasDeliveryCheck.job'
 import { runGasMonitorBalances } from '../jobs/gasMonitorBalances.job'
+import { processGasRefund } from '../jobs/gasRefund.job'
+import { fireGasWebhook } from '../jobs/gasWebhook.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
@@ -102,11 +104,22 @@ export function startWorkers() {
           return checkGasDelivery(job as Parameters<typeof checkGasDelivery>[0])
         case 'monitor-balances':
           return runGasMonitorBalances()
+        case 'process-refund':
+          return processGasRefund(job as Parameters<typeof processGasRefund>[0])
         default:
           logger.warn({ jobName: job.name }, 'Unknown gas fee job name — skipping')
       }
     },
     { max: 2, duration: 1000 },
+  )
+
+  // Merchant webhook dispatcher
+  createWorker(
+    QUEUE_NAMES.GAS_WEBHOOK,
+    async (job) => {
+      await fireGasWebhook(job as Parameters<typeof fireGasWebhook>[0])
+    },
+    { max: 10, duration: 1000 },
   )
 
   // Deposit reconciler: defence-in-depth against missed Moralis Stream events.

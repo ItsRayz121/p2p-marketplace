@@ -192,6 +192,8 @@ enum GasFeeTier {
   SMALL
   MEDIUM
   LARGE
+  XLARGE
+  JUMBO
 }
 
 enum GasFeeOrderStatus {
@@ -202,6 +204,7 @@ enum GasFeeOrderStatus {
   delivered
   expired
   failed
+  refund_pending
   refunded
 }
 
@@ -310,6 +313,7 @@ model User {
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
   auditLogs              AuditLog[]
   gasFeeOrders           GasFeeOrder[]
+  merchantApiKeys        MerchantApiKey[]
   depositAddresses       DepositAddress[]
   deposits               Deposit[]
   trustedAddresses       TrustedWithdrawalAddress[]
@@ -934,6 +938,8 @@ model GasFeeOrder {
   orderRef            String            @unique
   userId              String?
   user                User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  merchantApiKeyId    String?
+  merchantApiKey      MerchantApiKey?   @relation(fields: [merchantApiKeyId], references: [id], onDelete: SetNull)
   ipAddress           String?
 
   chain               GasChain
@@ -942,15 +948,19 @@ model GasFeeOrder {
   gasAmountUSD        Decimal           @db.Decimal(10, 4)
   priceAtOrder        Decimal           @db.Decimal(18, 8)
 
-  paymentCoin         String            @default("USDT")
-  paymentNetwork      String
-  paymentAmount       Decimal           @db.Decimal(10, 4)
-  paymentTxHash       String?
+  paymentCoin          String            @default("USDT")
+  paymentNetwork       String
+  paymentAmount        Decimal           @db.Decimal(10, 4)
+  paymentTxHash        String?
+  paymentSenderAddress String?
 
   toAddress           String
   fromHotWallet       String?
   deliveryTxHash      String?
   deliveryConfirmed   Boolean           @default(false)
+
+  refundTxHash        String?
+  refundAmount        Decimal?          @db.Decimal(10, 4)
 
   status              GasFeeOrderStatus @default(created)
   failureReason       String?
@@ -1053,4 +1063,36 @@ model Deposit {
   @@index([toAddress])
   @@index([userId])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MERCHANT API KEYS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// API keys for programmatic gas fee access.
+// Key format: mpak_{keyId}_{secret}
+// Only `keyId` and a bcrypt hash of `secret` are stored.
+model MerchantApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  keyId       String   @unique  // short unique token embedded in the key for O(1) lookup
+  keyHash     String            // bcrypt hash of the secret portion
+  keyPrefix   String            // first 14 chars of full key — display only
+  name        String            // "My App Integration"
+
+  isActive    Boolean  @default(true)
+  rateLimit   Int      @default(60)   // max requests per minute
+  lastUsedAt  DateTime?
+
+  webhookUrl     String?   // POST target for order status callbacks
+  webhookSecret  String?   // HMAC-SHA256 signing secret for callbacks
+
+  createdAt   DateTime @default(now())
+
+  gasOrders   GasFeeOrder[]
+
+  @@index([userId])
+  @@index([isActive])
 }

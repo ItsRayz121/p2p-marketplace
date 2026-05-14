@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { optionalAuth } from '../middleware/auth.middleware'
+import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError, Errors } from '../lib/errors'
@@ -8,63 +8,100 @@ import { generateOrderRef } from '../lib/hash'
 import { env } from '../lib/env'
 import { queues } from '../queues/definitions'
 import { logger } from '../lib/logger'
+import { GAS_CHAINS, SUPPORTED_GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
 
-const TRC20_ADDRESS_RE = /^T[A-Za-z1-9]{33}$/
+const RATE_COIN: Record<GasChainId, string> = {
+  TRON:     'TRX',
+  BSC:      'BNB',
+  ETHEREUM: 'ETH',
+}
 
-const GAS_TIERS = {
-  SMALL:  { trxAmount: 10 },
-  MEDIUM: { trxAmount: 50 },
-  LARGE:  { trxAmount: 100 },
-} as const
+async function getNativeUsdRate(chain: GasChainId): Promise<number> {
+  const coin = RATE_COIN[chain]
+  const usdPkrStr = await redis.get('rate:USD_PKR')
+  const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 0
 
-type TierKey = keyof typeof GAS_TIERS
+  if (chain === 'TRON') {
+    // TRX rate is stored as { rate: <PKR> } — derive USD via USD_PKR
+    const trxJson = await redis.get('rate:TRX')
+    const trxPkr = trxJson ? (JSON.parse(trxJson) as { rate: number }).rate : 0
+    return trxPkr > 0 && usdPkrRate > 0 ? trxPkr / usdPkrRate : 0
+  }
+
+  // BNB / ETH: stored as { rate: <PKR> }
+  const raw = await redis.get(`rate:${coin}`)
+  const pkrRate = raw ? (JSON.parse(raw) as { rate: number }).rate : 0
+  return pkrRate > 0 && usdPkrRate > 0 ? pkrRate / usdPkrRate : 0
+}
 
 const createOrderSchema = z.object({
-  chain:           z.string().default('TRON'),
-  tier:            z.enum(['SMALL', 'MEDIUM', 'LARGE']),
-  toAddress:       z.string().min(1),
-  idempotencyKey:  z.string().optional(),
+  chain:          z.enum(['TRON', 'BSC', 'ETHEREUM']).default('TRON'),
+  tier:           z.enum(['SMALL', 'MEDIUM', 'LARGE', 'XLARGE', 'JUMBO']),
+  toAddress:      z.string().min(1),
+  idempotencyKey: z.string().optional(),
 })
 
 export async function gasFeeRoutes(app: FastifyInstance) {
   // ── GET /api/gas-fee/prices — no auth ──────────────────────────────────────
+  // Returns prices for TRON only (the active chain). When BSC/ETH are live,
+  // clients should pass ?chain=BSC to get chain-specific pricing.
 
-  app.get('/gas-fee/prices', async (_req, reply) => {
-    // rate:TRX is stored as JSON { rate: <PKR_PRICE>, ... } by rateUpdater.job.ts
-    // rate:USD_PKR is stored as a plain float string
-    const trxJson    = await redis.get('rate:TRX')
-    const usdPkrStr  = await redis.get('rate:USD_PKR')
+  app.get('/gas-fee/prices', async (req, reply) => {
+    const chain = ((req.query as { chain?: string }).chain?.toUpperCase() as GasChainId | undefined) ?? 'TRON'
+    const chainConfig = GAS_CHAINS[chain as GasChainId]
+    if (!chainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chain}' is not supported`, 400)
 
-    const trxPkrRate  = trxJson   ? (JSON.parse(trxJson) as { rate: number }).rate : 0
-    const usdPkrRate  = usdPkrStr ? parseFloat(usdPkrStr) : 280
-    // Derive TRX/USD: TRX_PKR ÷ USD_PKR
-    const trxUsdRate  = trxPkrRate > 0 && usdPkrRate > 0 ? trxPkrRate / usdPkrRate : 0
-    const markup      = env.GAS_MARKUP_MULTIPLIER_TRON
+    const usdPkrStr = await redis.get('rate:USD_PKR')
+    const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 280
+    const nativeUsdRate = await getNativeUsdRate(chain as GasChainId)
+    const nativePkrRate = nativeUsdRate * usdPkrRate
+    const markup = chainConfig.getMarkupMultiplier()
 
-    const rateStale = !(trxUsdRate > 0)
+    const rateStale = !(nativeUsdRate > 0)
     if (rateStale) {
-      logger.warn({ trxJson, usdPkrStr }, 'rate:TRX or rate:USD_PKR missing/zero on /prices — is the rate-updater job running?')
+      logger.warn({ chain }, 'rate missing/zero on /gas-fee/prices — is the rate-updater job running?')
     }
 
-    const tiers = (Object.entries(GAS_TIERS) as [TierKey, { trxAmount: number }][]).map(
-      ([name, { trxAmount }]) => ({
-        id:        name.toLowerCase(),
-        name,
-        trxAmount,
-        usdtPrice: (trxAmount * trxUsdRate * markup).toFixed(2),
-        pkrPrice:  (trxAmount * trxPkrRate * markup).toFixed(0),
-      }),
-    )
+    const tiers = Object.entries(chainConfig.nativeTierAmounts).map(([name, nativeAmount]) => ({
+      id:           name.toLowerCase(),
+      name,
+      nativeAmount,
+      nativeSymbol: chainConfig.nativeSymbol,
+      usdtPrice:    (nativeAmount * nativeUsdRate * markup).toFixed(2),
+      pkrPrice:     (nativeAmount * nativePkrRate * markup).toFixed(0),
+    }))
 
     return reply.send({
       success: true,
       data: {
+        chain,
         tiers,
-        trxPriceUsd: trxUsdRate,
+        nativePriceUsd: nativeUsdRate,
         rateStale,
         updatedAt: new Date().toISOString(),
       },
     })
+  })
+
+  // ── GET /api/gas-fee/chains — list supported chains + availability ─────────
+
+  app.get('/gas-fee/chains', async (_req, reply) => {
+    const chains = await Promise.all(
+      SUPPORTED_GAS_CHAINS.map(async (chainId) => {
+        const config = GAS_CHAINS[chainId]
+        const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(chainId), isActive: true } })
+        const isPaused = await redis.get(`gas_wallet_paused:${toDbChain(chainId)}`)
+        const depositAddress = config.getDepositAddress()
+        return {
+          id:              chainId,
+          name:            config.name,
+          nativeSymbol:    config.nativeSymbol,
+          networkLabel:    config.networkLabel,
+          isAvailable:     !!(hotWallet && !isPaused && depositAddress),
+        }
+      }),
+    )
+    return reply.send({ success: true, data: { chains } })
   })
 
   // ── POST /api/gas-fee/orders — optionalAuth, guest allowed ─────────────────
@@ -75,27 +112,35 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const { chain, tier, toAddress } = parsed.data
+    const chainConfig = GAS_CHAINS[chain]
 
     // Idempotency key: prefer header, fall back to body field
     const idempotencyKey =
       (req.headers['idempotency-key'] as string | undefined) ??
       parsed.data.idempotencyKey
 
-    // 1. Chain validation — only TRON supported in Phase 1
-    if (chain !== 'TRON') {
-      throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chain}' is not yet supported. Only TRON is available.`, 400)
+    // 1. Address format validation (chain-specific)
+    if (!chainConfig.validateAddress(toAddress)) {
+      throw new AppError(
+        'INVALID_ADDRESS',
+        `Invalid ${chainConfig.networkLabel} address format`,
+        400,
+      )
     }
 
-    // 2. Address format validation
-    if (!TRC20_ADDRESS_RE.test(toAddress)) {
-      throw new AppError('INVALID_ADDRESS', 'Invalid TRC20 address format (must start with T, 34 characters)', 400)
+    // 2. Deposit address must be configured for this chain
+    const depositAddress = chainConfig.getDepositAddress()
+    if (!depositAddress) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${chain} gas is not yet available.`, 400)
     }
 
     // 3. Hot wallet availability check
-    const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: 'TRON', isActive: true } })
-    const isAutoPaused = await redis.get('gas_wallet_paused:TRON')
+    const hotWallet = await db.gasHotWallet.findFirst({
+      where: { chain: toDbChain(chain), isActive: true },
+    })
+    const isAutoPaused = await redis.get(`gas_wallet_paused:${toDbChain(chain)}`)
     if (!hotWallet || isAutoPaused) {
-      throw new AppError('GAS_UNAVAILABLE', 'Gas is temporarily unavailable for TRON. Please try again later.', 503)
+      throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chain}. Please try again later.`, 503)
     }
 
     // 4. IP rate limit: 3 orders per clock-hour per IP
@@ -117,37 +162,32 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         if (existing) {
           return reply.send({
             success: true,
-            data: {
-              ...existing,
-              paymentAddress: env.GAS_FEE_DEPOSIT_ADDRESS_TRC20 ?? '',
-            },
+            data: { ...existing, paymentAddress: depositAddress },
           })
         }
       }
     }
 
-    // 6. Get TRX rate + calculate amounts
-    // rate:TRX stores JSON { rate: <PKR_PRICE> }; rate:USD_PKR stores plain USD→PKR float
-    const trxJson    = await redis.get('rate:TRX')
-    const usdPkrStr  = await redis.get('rate:USD_PKR')
-    const trxPkrRate = trxJson   ? (JSON.parse(trxJson) as { rate: number }).rate : 0
-    const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 0
-    const trxRate    = trxPkrRate > 0 && usdPkrRate > 0 ? trxPkrRate / usdPkrRate : 0
-    if (!(trxRate > 0)) {
-      logger.error({ trxJson, usdPkrStr }, 'rate:TRX or rate:USD_PKR missing/zero — cannot create gas order. Is the rate-updater job running?')
+    // 6. Get native token USD rate
+    const nativeUsdRate = await getNativeUsdRate(chain)
+    if (!(nativeUsdRate > 0)) {
+      logger.error({ chain }, 'native USD rate missing — cannot create gas order. Is the rate-updater job running?')
       throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again in a moment.', 503)
     }
-    const markup = env.GAS_MARKUP_MULTIPLIER_TRON
+    const markup = chainConfig.getMarkupMultiplier()
 
-    const gasAmountNative = GAS_TIERS[tier].trxAmount
-    const gasAmountUSD    = gasAmountNative * trxRate
-    const priceAtOrder    = trxRate
+    const gasAmountNative = chainConfig.nativeTierAmounts[tier]
+    if (gasAmountNative === undefined) {
+      throw new AppError('VALIDATION_ERROR', `Tier '${tier}' is not supported for chain ${chain}`, 400)
+    }
+    const gasAmountUSD    = gasAmountNative * nativeUsdRate
+    const priceAtOrder    = nativeUsdRate
     const paymentAmount   = gasAmountUSD * markup
 
     // 7. Guest daily spend check (only unauthenticated users)
     const userId = req.user?.id ?? null
     if (!userId) {
-      const today    = new Date().toISOString().slice(0, 10) // 'YYYY-MM-DD'
+      const today    = new Date().toISOString().slice(0, 10)
       const spendKey = `gas_guest_spend:${clientIp}:${today}`
       const currentSpend = parseFloat((await redis.get(spendKey)) ?? '0')
       if (currentSpend + paymentAmount > env.GAS_GUEST_DAILY_LIMIT_USD) {
@@ -183,18 +223,18 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       data: {
         orderRef,
         ...(userId ? { userId } : {}),
-        ipAddress:        clientIp,
-        chain:            'TRON',
+        ipAddress:      clientIp,
+        chain:          toDbChain(chain),
         tier,
         gasAmountNative,
         gasAmountUSD,
         priceAtOrder,
-        paymentCoin:      'USDT',
-        paymentNetwork:   'TRC20',
+        paymentCoin:    'USDT',
+        paymentNetwork: chainConfig.networkLabel,
         paymentAmount,
         toAddress,
-        fromHotWallet:    hotWallet.address,
-        status:           'payment_pending',
+        fromHotWallet:  hotWallet.address,
+        status:         'payment_pending',
         expiresAt,
       },
     })
@@ -221,13 +261,64 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     return reply.code(201).send({
       success: true,
       data: {
-        orderRef:         order.orderRef,
-        paymentAddress:   env.GAS_FEE_DEPOSIT_ADDRESS_TRC20 ?? '',
-        paymentAmount:    order.paymentAmount.toString(),
-        paymentNetwork:   order.paymentNetwork,
-        gasAmountNative:  order.gasAmountNative.toString(),
-        chain:            order.chain,
-        expiresAt:        order.expiresAt.toISOString(),
+        orderRef:        order.orderRef,
+        paymentAddress:  depositAddress,
+        paymentAmount:   order.paymentAmount.toString(),
+        paymentNetwork:  order.paymentNetwork,
+        gasAmountNative: order.gasAmountNative.toString(),
+        nativeSymbol:    chainConfig.nativeSymbol,
+        chain:           order.chain,
+        expiresAt:       order.expiresAt.toISOString(),
+      },
+    })
+  })
+
+  // ── GET /api/gas-fee/orders/history — requires auth, paginated ───────────
+
+  app.get('/gas-fee/orders/history', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const querySchema = z.object({
+      page:  z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().min(1).max(50).default(20),
+    })
+    const { page, limit } = querySchema.parse(req.query)
+    const skip = (page - 1) * limit
+
+    const [orders, total] = await Promise.all([
+      db.gasFeeOrder.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          orderRef:        true,
+          chain:           true,
+          tier:            true,
+          gasAmountNative: true,
+          paymentAmount:   true,
+          paymentNetwork:  true,
+          toAddress:       true,
+          deliveryTxHash:  true,
+          refundTxHash:    true,
+          status:          true,
+          createdAt:       true,
+          deliveredAt:     true,
+          refundedAt:      true,
+        },
+      }),
+      db.gasFeeOrder.count({ where: { userId } }),
+    ])
+
+    return reply.send({
+      success: true,
+      data: {
+        orders,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       },
     })
   })
@@ -253,10 +344,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
-        orderRef:     order.orderRef,
-        status:       order.status,
-        isRefunded:   order.status === 'refunded',
-        refundedAt:   order.refundedAt,
+        orderRef:      order.orderRef,
+        status:        order.status,
+        isRefunded:    order.status === 'refunded',
+        refundedAt:    order.refundedAt,
         failureReason: order.failureReason,
       },
     })

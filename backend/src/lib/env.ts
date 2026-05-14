@@ -79,13 +79,29 @@ const envSchema = z.object({
   TRONGRID_API_KEY: z.string().optional(),
   ETHERSCAN_API_KEY: z.string().optional(),
 
-  // Gas Fee System
+  // Gas Fee System — TRON
   GAS_FEE_DEPOSIT_ADDRESS_TRC20: z.string().optional(),
   GAS_WALLET_PRIVATE_KEY_TRON: z.string().optional(),
   GAS_WALLET_SECRET_ARN_TRON: z.string().optional(),
   GAS_WALLET_ALERT_THRESHOLD_TRON: z.coerce.number().default(5000),
   GAS_WALLET_PAUSE_THRESHOLD_TRON: z.coerce.number().default(1000),
   GAS_MARKUP_MULTIPLIER_TRON: z.coerce.number().default(1.5),
+
+  // Gas Fee System — BSC
+  GAS_FEE_DEPOSIT_ADDRESS_BEP20: z.string().optional(),
+  GAS_WALLET_PRIVATE_KEY_BSC: z.string().optional(),
+  GAS_WALLET_ALERT_THRESHOLD_BSC: z.coerce.number().default(5),
+  GAS_WALLET_PAUSE_THRESHOLD_BSC: z.coerce.number().default(1),
+  GAS_MARKUP_MULTIPLIER_BSC: z.coerce.number().default(1.5),
+
+  // Gas Fee System — Ethereum
+  GAS_FEE_DEPOSIT_ADDRESS_ERC20: z.string().optional(),
+  GAS_WALLET_PRIVATE_KEY_ETH: z.string().optional(),
+  GAS_WALLET_ALERT_THRESHOLD_ETH: z.coerce.number().default(0.5),
+  GAS_WALLET_PAUSE_THRESHOLD_ETH: z.coerce.number().default(0.1),
+  GAS_MARKUP_MULTIPLIER_ETH: z.coerce.number().default(1.5),
+
+  // Gas Fee System — shared
   GAS_GUEST_DAILY_LIMIT_USD: z.coerce.number().default(10),
   COINGECKO_API_KEY: z.string().optional(),
 

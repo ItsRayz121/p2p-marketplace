@@ -277,13 +277,20 @@ export async function webhookRoutes(app: FastifyInstance) {
     }
 
     // 4. Match GasFeeOrder
-    // Payment goes to the platform gas fee deposit address (NOT the user's TRX wallet).
-    // GasFeeOrder.toAddress is the user's TRX delivery address — do not match on it here.
-    // Instead: verify payment went to our deposit address, then match by amount (±1%).
-    if (
-      env.GAS_FEE_DEPOSIT_ADDRESS_TRC20 &&
-      toAddress?.toLowerCase() === env.GAS_FEE_DEPOSIT_ADDRESS_TRC20.toLowerCase()
-    ) {
+    // Payment goes to the platform gas fee deposit address for the relevant chain.
+    // GasFeeOrder.toAddress is the user's delivery address — do not match on it here.
+    // Match by deposit address → chain, then by amount (±1% tolerance), oldest first.
+    const GAS_DEPOSIT_ADDRESSES = [
+      { address: env.GAS_FEE_DEPOSIT_ADDRESS_TRC20, chain: 'TRON',     network: 'TRC20' },
+      { address: env.GAS_FEE_DEPOSIT_ADDRESS_BEP20, chain: 'BSC',      network: 'BEP20' },
+      { address: env.GAS_FEE_DEPOSIT_ADDRESS_ERC20, chain: 'ETHEREUM', network: 'ERC20' },
+    ].filter((d): d is { address: string; chain: string; network: string } => !!d.address)
+
+    const matchedDeposit = GAS_DEPOSIT_ADDRESSES.find(
+      (d) => toAddress?.toLowerCase() === d.address.toLowerCase(),
+    )
+
+    if (matchedDeposit) {
       const incoming = parseFloat((payload as { amount?: string }).amount ?? '0')
       if (incoming > 0) {
         const lo = (incoming * 0.99).toFixed(4)
@@ -291,6 +298,7 @@ export async function webhookRoutes(app: FastifyInstance) {
         const gasOrder = await db.gasFeeOrder.findFirst({
           where: {
             status: 'payment_pending',
+            chain: matchedDeposit.chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON',
             paymentAmount: { gte: lo, lte: hi },
             expiresAt: { gt: new Date() },
           },
@@ -303,22 +311,23 @@ export async function webhookRoutes(app: FastifyInstance) {
             data: { status: 'payment_detected', paymentTxHash: txHash },
           })
           await queues.gasFee.add('deliver', { orderId: gasOrder.id }, { priority: 1 })
-          logger.info({ txHash, orderId: gasOrder.id }, 'Payment detected for gas fee order')
+          logger.info({ txHash, orderId: gasOrder.id, chain: matchedDeposit.chain }, 'Payment detected for gas fee order')
         } else {
           // No matching active order — store for admin review
           const member = JSON.stringify({
             txHash,
             amount: (payload as { amount?: string }).amount,
-            network: (payload as { network?: string }).network ?? 'TRC20',
+            chain: matchedDeposit.chain,
+            network: matchedDeposit.network,
             toAddress,
             detectedAt: new Date().toISOString(),
           })
           await redis.zadd('gas_unattributed', Date.now(), member)
           await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
-          logger.warn({ txHash, amount: incoming }, 'Unattributed gas fee payment received')
+          logger.warn({ txHash, amount: incoming, chain: matchedDeposit.chain }, 'Unattributed gas fee payment received')
           sendAdminAlertEmail(
             'Unattributed Gas Fee Payment Received',
-            `A USDT payment arrived at the gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${(payload as { network?: string }).network ?? 'TRC20'}\n\nReview at /admin/gas and attribute manually.`,
+            `A USDT payment arrived at the ${matchedDeposit.chain} gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${matchedDeposit.network}\n\nReview at /admin/gas and attribute manually.`,
           ).catch(() => {})
         }
       }

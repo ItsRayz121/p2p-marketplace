@@ -1870,15 +1870,15 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: order })
   })
 
-  // GET /admin/gas/stats — today's metrics + hot wallet status
+  // GET /admin/gas/stats — today's metrics + all hot wallet statuses
   app.get('/admin/gas/stats', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { redis: redisClient } = await import('../lib/redis')
-    const { env: envConfig } = await import('../lib/env')
+    const { GAS_CHAINS } = await import('../lib/gas/gas.chains')
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const [todayOrders, todayRevenue, pendingCount, failedCount, wallet] = await Promise.all([
+    const [todayOrders, todayRevenue, pendingCount, failedCount, refundPendingCount, allWallets] = await Promise.all([
       db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
       db.gasFeeOrder.aggregate({
         where: { status: 'delivered', deliveredAt: { gte: today } },
@@ -1886,25 +1886,39 @@ export async function adminRoutes(app: FastifyInstance) {
       }),
       db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_detected', 'sending'] } } }),
       db.gasFeeOrder.count({ where: { status: 'failed' } }),
-      db.gasHotWallet.findUnique({ where: { chain: 'TRON' } }),
+      db.gasFeeOrder.count({ where: { status: 'refund_pending' } }),
+      db.gasHotWallet.findMany(),
     ])
 
-    const [balanceCached, isPaused] = await Promise.all([
-      redisClient.get('gas_wallet_balance:TRON'),
-      redisClient.get('gas_wallet_paused:TRON'),
-    ])
+    const wallets = await Promise.all(
+      allWallets.map(async (w) => {
+        const chainConfig = GAS_CHAINS[w.chain as keyof typeof GAS_CHAINS]
+        const balanceCached = await redisClient.get(`gas_wallet_balance:${w.chain}`)
+        const isPaused = await redisClient.get(`gas_wallet_paused:${w.chain}`)
+        const balance = balanceCached ? parseFloat(balanceCached) : null
+        const alertThreshold = chainConfig?.getAlertThreshold() ?? 0
+        const pauseThreshold = chainConfig?.getPauseThreshold() ?? 0
 
-    const balanceTRX = balanceCached ? parseFloat(balanceCached) : null
-    const alertThreshold = envConfig.GAS_WALLET_ALERT_THRESHOLD_TRON
-    const pauseThreshold = envConfig.GAS_WALLET_PAUSE_THRESHOLD_TRON
+        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured' = 'healthy'
+        if (!w.isActive || isPaused) status = 'paused'
+        else if (balance !== null && balance < pauseThreshold) status = 'critical'
+        else if (balance !== null && balance < alertThreshold) status = 'warning'
 
-    let walletStatus: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured' = 'unconfigured'
-    if (wallet) {
-      if (!wallet.isActive || isPaused) walletStatus = 'paused'
-      else if (balanceTRX !== null && balanceTRX < pauseThreshold) walletStatus = 'critical'
-      else if (balanceTRX !== null && balanceTRX < alertThreshold) walletStatus = 'warning'
-      else walletStatus = 'healthy'
-    }
+        return {
+          chain:           w.chain,
+          address:         w.address,
+          isActive:        w.isActive,
+          balance,
+          nativeSymbol:    chainConfig?.nativeSymbol ?? w.chain,
+          status,
+          alertThreshold,
+          pauseThreshold,
+        }
+      }),
+    )
+
+    // Backward-compat: surface TRON wallet as primary `wallet` field
+    const tronWallet = wallets.find((w) => w.chain === 'TRON') ?? null
 
     return reply.send({
       success: true,
@@ -1913,17 +1927,9 @@ export async function adminRoutes(app: FastifyInstance) {
         todayRevenue: todayRevenue._sum.paymentAmount ?? 0,
         pendingCount,
         failedCount,
-        wallet: wallet
-          ? {
-              chain: 'TRON',
-              address: wallet.address,
-              isActive: wallet.isActive,
-              balanceTRX,
-              status: walletStatus,
-              alertThreshold,
-              pauseThreshold,
-            }
-          : null,
+        refundPendingCount,
+        wallet: tronWallet,
+        wallets,
       },
     })
   })
@@ -1967,11 +1973,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const { chain } = req.params as { chain: string }
 
     // Validate chain exists in DB
-    const wallet = await db.gasHotWallet.findUnique({ where: { chain: chain as 'TRON' } })
+    const wallet = await db.gasHotWallet.findUnique({ where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' } })
     if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
 
     const updated = await db.gasHotWallet.update({
-      where: { chain: chain as 'TRON' },
+      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' },
       data: { isActive: !wallet.isActive },
     })
     await createAuditLog(req.user!.id, 'GAS_CHAIN_TOGGLED', 'GasHotWallet', wallet.id, {
