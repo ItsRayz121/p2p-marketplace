@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { walletApi } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -7,7 +7,7 @@ import { Spinner } from '@/components/ui/Spinner'
 
 type Stage = 'loading' | 'confirmed' | 'cancelled' | 'error'
 
-export default function ConfirmWithdrawalPage() {
+function ConfirmWithdrawalContent() {
   const params = useSearchParams()
   const router = useRouter()
 
@@ -83,41 +83,56 @@ export default function ConfirmWithdrawalPage() {
   }[stage]
 
   return (
+    <>
+      {stage === 'loading' ? (
+        <div className="flex justify-center py-8">
+          <Spinner className="w-10 h-10" />
+        </div>
+      ) : (
+        <>
+          <div className={`text-5xl font-bold ${color}`}>{icon}</div>
+          <h2 className="text-xl font-semibold text-text-primary">{heading}</h2>
+          <p className="text-text-muted text-sm">{message}</p>
+        </>
+      )}
+
+      {(stage === 'confirmed' || stage === 'cancelled') && (
+        <Button
+          onClick={() => router.push('/wallet')}
+          className="w-full mt-4"
+        >
+          Go to Wallet
+        </Button>
+      )}
+
+      {stage === 'error' && (
+        <div className="space-y-2">
+          <p className="text-text-muted text-xs">
+            If this keeps happening, check your email for the latest confirmation link or contact support.
+          </p>
+          <Button variant="secondary" onClick={() => router.push('/wallet')} className="w-full">
+            Go to Wallet
+          </Button>
+        </div>
+      )}
+    </>
+  )
+}
+
+export default function ConfirmWithdrawalPage() {
+  return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="max-w-md w-full bg-surface border border-border rounded-2xl p-8 text-center space-y-4">
         <h1 className="text-2xl font-bold text-text-primary">PakSwap</h1>
-
-        {stage === 'loading' ? (
-          <div className="flex justify-center py-8">
-            <Spinner className="w-10 h-10" />
-          </div>
-        ) : (
-          <>
-            <div className={`text-5xl font-bold ${color}`}>{icon}</div>
-            <h2 className="text-xl font-semibold text-text-primary">{heading}</h2>
-            <p className="text-text-muted text-sm">{message}</p>
-          </>
-        )}
-
-        {(stage === 'confirmed' || stage === 'cancelled') && (
-          <Button
-            onClick={() => router.push('/wallet')}
-            className="w-full mt-4"
-          >
-            Go to Wallet
-          </Button>
-        )}
-
-        {stage === 'error' && (
-          <div className="space-y-2">
-            <p className="text-text-muted text-xs">
-              If this keeps happening, check your email for the latest confirmation link or contact support.
-            </p>
-            <Button variant="secondary" onClick={() => router.push('/wallet')} className="w-full">
-              Go to Wallet
-            </Button>
-          </div>
-        )}
+        <Suspense
+          fallback={
+            <div className="flex justify-center py-8">
+              <Spinner className="w-10 h-10" />
+            </div>
+          }
+        >
+          <ConfirmWithdrawalContent />
+        </Suspense>
       </div>
     </div>
   )
