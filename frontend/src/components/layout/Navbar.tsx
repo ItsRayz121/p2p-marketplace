@@ -36,7 +36,7 @@ export default function Navbar() {
           {/* Center nav — desktop only */}
           <nav className="hidden lg:flex items-center gap-1">
             <NavLink href="/marketplace">Marketplace</NavLink>
-            <NavLink href="/instant-buy">Buy Crypto</NavLink>
+            <NavLink href="/gas">Buy Gas</NavLink>
             <NavLink href="/leaderboard">Leaderboard</NavLink>
           </nav>
 
@@ -120,9 +120,6 @@ export default function Navbar() {
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
                         <Link href="/wallet" className={dropdownItemCls}>Wallet</Link>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item asChild>
-                        <Link href="/gas" className={dropdownItemCls}>Gas Fee</Link>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
                         <Link href="/ads" className={dropdownItemCls}>My Ads</Link>
