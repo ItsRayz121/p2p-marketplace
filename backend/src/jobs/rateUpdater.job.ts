@@ -141,17 +141,84 @@ async function fetchPricesFromBinance(): Promise<Record<string, number>> {
   return priceMap
 }
 
-// Coins that MUST be present for a source to be considered a valid result.
-// Kraken does not list TRX/BNB/TON, so it will fail this check and we fall
-// through to Bybit which covers all of them.
-const REQUIRED_COINS = ['TRX', 'BTC', 'ETH'] as const
+// Lightweight dedicated TRX/USD fetchers.
+// CoinPaprika and CryptoCompare are free, no API key, and are not geo-blocked
+// on Railway cloud. Called after the bulk source succeeds but is missing TRX
+// (e.g. Kraken does not list TRX pairs).
+async function fetchTrxUsdPrice(): Promise<number | null> {
+  const attempts: Array<{ name: string; fn: () => Promise<number> }> = [
+    {
+      name: 'coinpaprika',
+      fn: async () => {
+        const res = await fetch('https://api.coinpaprika.com/v1/tickers/trx-tron', {
+          signal: AbortSignal.timeout(8000),
+        })
+        if (!res.ok) throw new Error(`CoinPaprika HTTP ${res.status}`)
+        const data = (await res.json()) as { quotes?: { USD?: { price?: number } } }
+        const price = data.quotes?.USD?.price
+        if (!price) throw new Error('CoinPaprika: no TRX price in response')
+        return price
+      },
+    },
+    {
+      name: 'cryptocompare',
+      fn: async () => {
+        const res = await fetch(
+          'https://min-api.cryptocompare.com/data/price?fsym=TRX&tsyms=USD',
+          { signal: AbortSignal.timeout(8000) },
+        )
+        if (!res.ok) throw new Error(`CryptoCompare HTTP ${res.status}`)
+        const data = (await res.json()) as { USD?: number }
+        const price = data.USD
+        if (!price) throw new Error('CryptoCompare: no TRX price in response')
+        return price
+      },
+    },
+    {
+      name: 'coingecko-simple',
+      fn: async () => {
+        // Single-coin request — much less likely to be rate-limited than the full batch.
+        const isPro = !!env.COINGECKO_API_KEY
+        const base = isPro
+          ? 'https://pro-api.coingecko.com/api/v3'
+          : 'https://api.coingecko.com/api/v3'
+        const headers: Record<string, string> = isPro
+          ? { 'x-cg-pro-api-key': env.COINGECKO_API_KEY! }
+          : {}
+        const res = await fetch(`${base}/simple/price?ids=tron&vs_currencies=usd`, {
+          headers,
+          signal: AbortSignal.timeout(8000),
+        })
+        if (!res.ok) throw new Error(`CoinGecko simple HTTP ${res.status}`)
+        const data = (await res.json()) as { tron?: { usd?: number } }
+        const price = data.tron?.usd
+        if (!price) throw new Error('CoinGecko simple: no TRX price')
+        return price
+      },
+    },
+  ]
 
-// Try each source in order; return first success with source label.
-// A source is only accepted if its priceMap contains all REQUIRED_COINS.
+  for (const { name, fn } of attempts) {
+    try {
+      const price = await fn()
+      logger.info({ source: name, trxUsdPrice: price }, 'TRX price fetched from dedicated source')
+      return price
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn({ source: name, err: msg }, `Dedicated TRX fetcher ${name} failed — trying next`)
+    }
+  }
+  logger.error('All dedicated TRX price fetchers failed — rate:TRX will not be updated this cycle')
+  return null
+}
+
+// Try each source in order; return first non-empty priceMap with source label.
+// Sources are accepted even if they are missing some coins (e.g. Kraken has no
+// TRX pairs). Missing gas-critical coins are patched in separately afterwards
+// by fetchTrxUsdPrice, so we never reject a whole source just because it lacks TRX.
 async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, number>; source: string }> {
   const sources: Array<{ name: string; fn: () => Promise<Record<string, number>> }> = [
     { name: 'coingecko', fn: fetchPricesFromCoinGecko },
-    // Bybit before Kraken — Bybit covers TRX/BNB/TON; Kraken does not.
     { name: 'bybit', fn: fetchPricesFromBybit },
     { name: 'kraken', fn: fetchPricesFromKraken },
     { name: 'binance', fn: fetchPricesFromBinance },
@@ -161,13 +228,6 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
   for (const { name, fn } of sources) {
     try {
       const priceMap = await fn()
-      const missingRequired = REQUIRED_COINS.filter((c) => !priceMap[c])
-      if (missingRequired.length > 0) {
-        const msg = `missing required coins: ${missingRequired.join(', ')}`
-        logger.warn({ source: name, missingRequired, available: Object.keys(priceMap) }, `${name} succeeded but ${msg} — trying next source`)
-        errors.push(`${name}: ${msg}`)
-        continue
-      }
       logger.info({ coins: Object.keys(priceMap), source: name }, 'Prices fetched')
       return { priceMap, source: name }
     } catch (err) {
@@ -217,6 +277,14 @@ export async function updateRates(): Promise<void> {
 
     // 2. Fetch crypto prices with multi-source fallback chain
     const { priceMap, source: priceSource } = await fetchPricesWithFallback()
+
+    // 2b. Fill in any gas-critical coins that the bulk source didn't cover.
+    // Kraken (which often wins on Railway) lacks TRX — fetch it separately.
+    if (!priceMap['TRX']) {
+      logger.warn({ source: priceSource }, 'TRX missing from bulk source — running dedicated TRX fetcher')
+      const trxUsd = await fetchTrxUsdPrice()
+      if (trxUsd) priceMap['TRX'] = trxUsd
+    }
 
     // 3. Calculate PKR rates and write to Redis + DB
     const now = new Date().toISOString()
