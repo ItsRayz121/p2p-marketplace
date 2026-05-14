@@ -409,6 +409,31 @@ export interface Transaction {
   createdAt: string
 }
 
+export type WithdrawalStatus =
+  | 'email_pending'
+  | 'pending'
+  | 'first_approved'
+  | 'approved'
+  | 'auto_approved'
+  | 'on_hold'
+  | 'sent'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled'
+
+export interface TrustedAddress {
+  id: string
+  userId: string
+  coin: string
+  network: string
+  address: string
+  label: string
+  activatesAt: string
+  addedAt: string
+  lastUsedAt: string | null
+  removedAt: string | null
+}
+
 // ─── API Modules ─────────────────────────────────────────────────────────────
 
 export const authApi = {
@@ -522,7 +547,7 @@ export const walletApi = {
       creditedAt: string | null
     }> }>('/wallet/deposits'),
   requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string }) =>
-    apiRequest<{ id: string; status: string }>('/wallet/withdraw', {
+    apiRequest<{ id: string; status: WithdrawalStatus; orderRef: string }>('/wallet/withdraw', {
       method: 'POST',
       headers: { 'X-Idempotency-Key': cryptoRandomId() },
       body: JSON.stringify({
@@ -532,6 +557,30 @@ export const walletApi = {
         toAddress: data.address,
       }),
     }),
+  confirmWithdrawal: (wid: string, token: string) =>
+    apiRequest<{ id: string; status: WithdrawalStatus }>('/wallet/withdraw/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ wid, token }),
+    }),
+  cancelWithdrawal: (wid: string, cancelToken: string) =>
+    apiRequest<{ id: string; status: WithdrawalStatus }>('/wallet/withdraw/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ wid, cancelToken }),
+    }),
+  resendWithdrawalConfirmation: (id: string) =>
+    apiRequest<{ resendCount: number; maxResends: number }>(
+      `/wallet/withdrawals/${id}/resend-confirmation`,
+      { method: 'POST' },
+    ),
+  getTrustedAddresses: () =>
+    apiRequest<TrustedAddress[]>('/wallet/trusted-addresses'),
+  addTrustedAddress: (data: { coin: string; network: string; address: string; label: string }) =>
+    apiRequest<TrustedAddress>('/wallet/trusted-addresses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  removeTrustedAddress: (id: string) =>
+    apiRequest<void>(`/wallet/trusted-addresses/${id}`, { method: 'DELETE' }),
   getLiveFee: (coin: string, network: string) =>
     apiRequest<{ networkFee: string; platformFee: string; coin: string; network: string }>(
       `/wallet/live-fee?coin=${encodeURIComponent(coin)}&network=${encodeURIComponent(network)}`,

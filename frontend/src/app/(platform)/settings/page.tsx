@@ -174,8 +174,28 @@ function SecurityTab() {
     } finally { setTwoFaLoading(false) }
   }
 
+  // Withdrawal lock computed from user data
+  const wdLocked = user?.withdrawalLockedUntil
+    ? new Date(user.withdrawalLockedUntil) > new Date()
+    : false
+
   return (
     <div className="space-y-6">
+      {/* Withdrawal lock notice */}
+      {wdLocked && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-amber-500 text-xl mt-0.5">🔒</span>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Due to a recent <strong>{user?.withdrawalLockReason ?? 'security change'}</strong>, withdrawals are locked until{' '}
+              <strong>{new Date(user!.withdrawalLockedUntil!).toLocaleString()}</strong>.
+              This is a security measure — no action is required.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Change Password */}
       <div className="bg-white border border-border rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-bold text-text-primary">Change Password</h3>

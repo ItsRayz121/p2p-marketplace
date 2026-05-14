@@ -8,6 +8,12 @@ import {
   getFeeSchedule,
   requestWithdrawal,
   getUserWithdrawals,
+  confirmWithdrawal,
+  cancelWithdrawalByToken,
+  resendWithdrawalConfirmation,
+  getTrustedAddresses,
+  addTrustedAddress,
+  removeTrustedAddress,
   lockCollateral,
   unlockCollateral,
   getCollateralStatus,
@@ -47,6 +53,13 @@ const paymentMethodSchema = z.object({
 })
 
 const savedAddressSchema = z.object({
+  coin: z.string().min(1),
+  network: z.string().min(1),
+  address: z.string().min(1),
+  label: z.string().min(1).max(100),
+})
+
+const trustedAddressSchema = z.object({
   coin: z.string().min(1),
   network: z.string().min(1),
   address: z.string().min(1),
@@ -272,6 +285,95 @@ export async function walletRoutes(app: FastifyInstance) {
       limit: Math.min(query.limit ? parseInt(query.limit, 10) : 20, 50),
     })
     return reply.send({ success: true, data: result })
+  })
+
+  // POST /api/wallet/withdraw/confirm — user confirms from email link
+  // Accepts either authenticated (user clicks while logged in) or token-only.
+  // We identify the user from the withdrawal's userId, not the auth token,
+  // so the confirm link works even if the session has been refreshed.
+  app.post(
+    '/wallet/withdraw/confirm',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as Record<string, string>
+      const { wid, token } = body
+      if (!wid || !token) {
+        throw new AppError('VALIDATION_ERROR', 'wid and token are required', 400)
+      }
+      // Load the withdrawal to get userId (no session required)
+      const wd = await db.withdrawal.findUnique({
+        where: { id: wid },
+        select: { userId: true },
+      })
+      if (!wd) throw new AppError('NOT_FOUND', 'Withdrawal not found', 404)
+
+      const result = await confirmWithdrawal(wid, wd.userId, token)
+      return reply.send({ success: true, data: result })
+    },
+  )
+
+  // POST /api/wallet/withdraw/cancel — user cancels from email link
+  app.post(
+    '/wallet/withdraw/cancel',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as Record<string, string>
+      const { wid, cancelToken } = body
+      if (!wid || !cancelToken) {
+        throw new AppError('VALIDATION_ERROR', 'wid and cancelToken are required', 400)
+      }
+      const wd = await db.withdrawal.findUnique({
+        where: { id: wid },
+        select: { userId: true },
+      })
+      if (!wd) throw new AppError('NOT_FOUND', 'Withdrawal not found', 404)
+
+      const result = await cancelWithdrawalByToken(wid, wd.userId, cancelToken)
+      return reply.send({ success: true, data: result })
+    },
+  )
+
+  // POST /api/wallet/withdrawals/:id/resend-confirmation
+  app.post(
+    '/wallet/withdrawals/:id/resend-confirmation',
+    {
+      preHandler: [authenticate],
+      config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string }
+      const result = await resendWithdrawalConfirmation(id, req.user!.id)
+      return reply.send({ success: true, data: result })
+    },
+  )
+
+  // GET /api/wallet/trusted-addresses
+  app.get('/wallet/trusted-addresses', { preHandler: [authenticate] }, async (req, reply) => {
+    const addresses = await getTrustedAddresses(req.user!.id)
+    return reply.send({ success: true, data: addresses })
+  })
+
+  // POST /api/wallet/trusted-addresses
+  app.post('/wallet/trusted-addresses', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const parsed = trustedAddressSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    const address = await addTrustedAddress(userId, parsed.data)
+    return reply.code(201).send({ success: true, data: address })
+  })
+
+  // DELETE /api/wallet/trusted-addresses/:id
+  app.delete('/wallet/trusted-addresses/:id', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    await removeTrustedAddress(userId, id)
+    return reply.send({ success: true, message: 'Trusted address removed' })
   })
 
   // POST /api/wallet/lock-collateral

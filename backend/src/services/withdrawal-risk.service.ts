@@ -26,6 +26,9 @@ export interface TierConfig {
   velocityWindowMins: number
   velocityMaxCount: number
   coinPricesUsd: Record<string, number>
+  emailConfirmationEnabled: boolean
+  emailConfirmationTtlMins: number
+  addressActivationHours: number
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -40,6 +43,9 @@ const DEFAULTS: TierConfig = {
   velocityWindowMins: 60,
   velocityMaxCount: 3,
   coinPricesUsd: { USDT: 1, USDC: 1, BNB: 600, ETH: 3000, BTC: 60000 },
+  emailConfirmationEnabled: true,
+  emailConfirmationTtlMins: 15,
+  addressActivationHours: 24,
 }
 
 // ─── Config helpers ───────────────────────────────────────────────────────────
@@ -57,6 +63,9 @@ export async function getWithdrawalTierConfig(prisma: PrismaClient): Promise<Tie
     velocityWindowMins: row.velocityWindowMins,
     velocityMaxCount: row.velocityMaxCount,
     coinPricesUsd: (row.coinPricesUsd as Record<string, number>) ?? DEFAULTS.coinPricesUsd,
+    emailConfirmationEnabled: row.emailConfirmationEnabled,
+    emailConfirmationTtlMins: row.emailConfirmationTtlMins,
+    addressActivationHours: row.addressActivationHours,
   }
 }
 
@@ -72,6 +81,9 @@ export async function upsertWithdrawalTierConfig(
     velocityWindowMins?: number | undefined
     velocityMaxCount?: number | undefined
     coinPricesUsd?: Record<string, number> | undefined
+    emailConfirmationEnabled?: boolean | undefined
+    emailConfirmationTtlMins?: number | undefined
+    addressActivationHours?: number | undefined
     updatedBy: string
   },
 ): Promise<TierConfig> {
@@ -94,6 +106,9 @@ export async function upsertWithdrawalTierConfig(
       velocityWindowMins: merged.velocityWindowMins,
       velocityMaxCount: merged.velocityMaxCount,
       coinPricesUsd: merged.coinPricesUsd,
+      emailConfirmationEnabled: merged.emailConfirmationEnabled,
+      emailConfirmationTtlMins: merged.emailConfirmationTtlMins,
+      addressActivationHours: merged.addressActivationHours,
       updatedBy: patch.updatedBy,
     },
     update: {
@@ -106,6 +121,9 @@ export async function upsertWithdrawalTierConfig(
       velocityWindowMins: merged.velocityWindowMins,
       velocityMaxCount: merged.velocityMaxCount,
       coinPricesUsd: merged.coinPricesUsd,
+      emailConfirmationEnabled: merged.emailConfirmationEnabled,
+      emailConfirmationTtlMins: merged.emailConfirmationTtlMins,
+      addressActivationHours: merged.addressActivationHours,
       updatedBy: patch.updatedBy,
     },
   })
@@ -152,18 +170,21 @@ export async function assessWithdrawalRisk(
     }
   }
 
-  // Check 2: destination address never used successfully before
+  // Check 2: destination address not trusted (whitelist) and never used before
   if (cfg.newWalletReview) {
-    const knownAddressCount = await prisma.withdrawal.count({
-      where: {
-        userId,
-        toAddress,
-        status: { in: ['sent', 'completed'] },
-      },
+    const trusted = await prisma.trustedWithdrawalAddress.findFirst({
+      where: { userId, address: toAddress, removedAt: null },
     })
-    if (knownAddressCount === 0) {
-      flags.push('NEW_WALLET')
-      riskScore += 15
+    const isTrustedAndActive = trusted && trusted.activatesAt <= new Date()
+    if (!isTrustedAndActive) {
+      // Also check historical successful withdrawals as a fallback trust signal
+      const knownCount = await prisma.withdrawal.count({
+        where: { userId, toAddress, status: { in: ['sent', 'completed'] } },
+      })
+      if (knownCount === 0) {
+        flags.push('NEW_WALLET')
+        riskScore += 15
+      }
     }
   }
 

@@ -6,6 +6,7 @@ import { generateCsrfToken } from '../lib/csrf'
 import { authenticate } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { hashPassword, verifyPassword, hashToken } from '../lib/hash'
+import { applyWithdrawalLock } from '../services/withdrawal-security.service'
 import {
   register,
   login,
@@ -328,6 +329,8 @@ export async function authRoutes(app: FastifyInstance) {
       where: { userId: req.user!.id, revokedAt: null },
       data: { revokedAt: new Date() },
     })
+    // Lock withdrawals for 24h after a password change (security policy).
+    void applyWithdrawalLock(req.user!.id, 'password_changed').catch(() => {})
     return reply.send({ success: true, data: { message: 'Password changed successfully.' } })
   })
 

@@ -146,6 +146,7 @@ enum CollateralStatus {
 }
 
 enum WithdrawalStatus {
+  email_pending   // awaiting user email confirmation before balance deduction
   pending
   first_approved
   approved
@@ -255,6 +256,11 @@ model User {
   twoFaEnabled  Boolean   @default(false)
   twoFaSecret   String?
 
+  // Withdrawal security lock — set after password/email/2FA changes.
+  // requestWithdrawal checks this before creating any withdrawal.
+  withdrawalLockedUntil DateTime?
+  withdrawalLockReason  String?   @db.VarChar(200)
+
   isEmailVerified        Boolean @default(false)
   isSuspended            Boolean @default(false)
   isBanned               Boolean @default(false)
@@ -306,6 +312,7 @@ model User {
   gasFeeOrders           GasFeeOrder[]
   depositAddresses       DepositAddress[]
   deposits               Deposit[]
+  trustedAddresses       TrustedWithdrawalAddress[]
 
   @@index([email])
   @@index([username])
@@ -375,6 +382,9 @@ model Withdrawal {
   riskOverride     Boolean          @default(false)
   riskOverrideBy   String?
   riskOverrideNote String?          @db.VarChar(500)
+  // Email confirmation channel support — extensible to 'telegram' later
+  confirmationChannel  String   @default("email")
+  confirmationSentAt   DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   completedAt      DateTime?
@@ -399,6 +409,10 @@ model WithdrawalTierConfig {
   // JSON map of coin → USD price used to bucket withdrawals into tiers.
   // Example: {"USDT":1,"BNB":600,"ETH":3000,"BTC":60000}
   coinPricesUsd         Json     @default("{\"USDT\":1,\"USDC\":1,\"BNB\":600,\"ETH\":3000,\"BTC\":60000}")
+  // Phase 1 / Phase 3 security knobs
+  emailConfirmationEnabled  Boolean @default(true)
+  emailConfirmationTtlMins  Int     @default(15)   // how long the confirm link is valid
+  addressActivationHours    Int     @default(24)   // delay before a new trusted address is usable
   updatedAt             DateTime @updatedAt
   updatedBy             String?
 }
@@ -645,6 +659,27 @@ model SavedAddress {
 
   @@unique([userId, coin, network, address])
   @@index([userId])
+}
+
+// Trusted withdrawal addresses — addresses a user has explicitly whitelisted.
+// Newly-added addresses have a 24h activation delay before they can be used.
+// Withdrawals to non-whitelisted addresses raise the NEW_WALLET risk flag.
+model TrustedWithdrawalAddress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coin        String
+  network     String
+  address     String
+  label       String   @db.VarChar(100)
+  activatesAt DateTime                    // addedAt + activationHours
+  addedAt     DateTime @default(now())
+  lastUsedAt  DateTime?
+  removedAt   DateTime?                   // soft-delete
+
+  @@unique([userId, coin, network, address])
+  @@index([userId])
+  @@index([userId, removedAt])
 }
 
 model CollateralLock {

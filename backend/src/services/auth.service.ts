@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { applyWithdrawalLock } from './withdrawal-security.service'
 import {
   generate as otpGenerate,
   verify as otpVerify,
@@ -72,6 +73,8 @@ export interface SafeUser {
   dailyBuyUsed: number
   dailyBuyLimit: number
   createdAt: Date
+  withdrawalLockedUntil: Date | null
+  withdrawalLockReason: string | null
   tradeStats: {
     totalTrades: number
     completedTrades: number
@@ -120,6 +123,8 @@ function toSafeUser(
     dailyBuyUsed: { toNumber: () => number } | number | null
     dailyBuyLimit: { toNumber: () => number } | number | null
     createdAt: Date
+    withdrawalLockedUntil: Date | null
+    withdrawalLockReason: string | null
     tradeStats: {
       totalTrades: number
       completedTrades: number
@@ -145,6 +150,8 @@ function toSafeUser(
     dailyBuyUsed: dec(user.dailyBuyUsed),
     dailyBuyLimit: dec(user.dailyBuyLimit, 50000),
     createdAt: user.createdAt,
+    withdrawalLockedUntil: user.withdrawalLockedUntil,
+    withdrawalLockReason: user.withdrawalLockReason,
     tradeStats: user.tradeStats
       ? {
           totalTrades: user.tradeStats.totalTrades,
@@ -173,6 +180,8 @@ const USER_SELECT = {
   dailyBuyUsed: true,
   dailyBuyLimit: true,
   createdAt: true,
+  withdrawalLockedUntil: true,
+  withdrawalLockReason: true,
   tradeStats: {
     select: {
       totalTrades: true,
@@ -426,6 +435,10 @@ export async function resetPassword(email: string, code: string, newPassword: st
       data: { revokedAt: new Date() },
     }),
   ])
+
+  // Lock withdrawals for 24h after a password reset (security policy).
+  // Fire-and-forget — failure must not roll back the reset itself.
+  void applyWithdrawalLock(user.id, 'password_reset').catch(() => {})
 }
 
 export async function refreshAccessToken(
@@ -527,6 +540,9 @@ export async function disable2Fa(userId: string, code: string): Promise<void> {
     where: { id: userId },
     data: { twoFaEnabled: false, twoFaSecret: null },
   })
+
+  // Lock withdrawals for 72h after 2FA is disabled (security policy).
+  void applyWithdrawalLock(userId, '2fa_disabled').catch(() => {})
 }
 
 export async function verify2Fa(

@@ -201,8 +201,8 @@ export async function sendWithdrawalEmail(
   const configs: Record<typeof type, { subject: string; heading: string; body: string }> = {
     requested: {
       subject: `Withdrawal request received — ${data.amount} ${data.coin}`,
-      heading: 'Withdrawal Requested',
-      body: `Your withdrawal of <strong>${data.amount} ${data.coin}</strong> has been submitted and is pending approval.`,
+      heading: 'Withdrawal Being Processed',
+      body: `Your withdrawal of <strong>${data.amount} ${data.coin}</strong> has been confirmed and is now pending review.`,
     },
     approved: {
       subject: `Withdrawal sent — ${data.amount} ${data.coin}`,
@@ -219,6 +219,38 @@ export async function sendWithdrawalEmail(
   const { subject, heading, body } = configs[type]
   const html = htmlShell(`<h2 style="margin: 0 0 16px;">${heading}</h2><p style="color: #475569;">${body}</p>`)
   await send(email, subject, html, `withdrawal_${type}`)
+}
+
+export async function sendWithdrawalConfirmationEmail(
+  email: string,
+  data: {
+    amount: string
+    coin: string
+    network: string
+    toAddress: string
+    confirmUrl: string
+    cancelUrl: string
+    expiresInMins: number
+    userId?: string
+  },
+): Promise<void> {
+  const truncated = `${data.toAddress.slice(0, 8)}...${data.toAddress.slice(-6)}`
+  const html = htmlShell(`
+    <h2 style="margin: 0 0 8px;">Confirm Your Withdrawal</h2>
+    <p style="color: #475569; margin: 0 0 24px;">Please confirm this withdrawal request. If you did not make this request, cancel it immediately and secure your account.</p>
+    <table style="width: 100%; border-collapse: collapse; margin: 0 0 24px;">
+      <tr><td style="padding: 10px 8px; color: #64748b; border-bottom: 1px solid #e2e8f0; width: 120px;">Amount</td><td style="padding: 10px 8px; border-bottom: 1px solid #e2e8f0; font-weight: 700; font-size: 18px;">${data.amount} ${data.coin}</td></tr>
+      <tr><td style="padding: 10px 8px; color: #64748b; border-bottom: 1px solid #e2e8f0;">Network</td><td style="padding: 10px 8px; border-bottom: 1px solid #e2e8f0;">${data.network}</td></tr>
+      <tr><td style="padding: 10px 8px; color: #64748b;">To Address</td><td style="padding: 10px 8px; font-family: monospace; font-size: 13px;">${truncated}</td></tr>
+    </table>
+    <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+      <a href="${data.confirmUrl}" style="display: inline-block; background: #2563eb; color: white; font-weight: 600; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-size: 15px;">Confirm Withdrawal</a>
+      <a href="${data.cancelUrl}" style="display: inline-block; background: #dc2626; color: white; font-weight: 600; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-size: 15px; margin-left: 12px;">Cancel</a>
+    </div>
+    <p style="color: #94a3b8; font-size: 13px;">This link expires in ${data.expiresInMins} minutes. Do not share this link with anyone.</p>
+    <p style="color: #94a3b8; font-size: 13px;">If you did not request this withdrawal, cancel it and change your password immediately.</p>
+  `)
+  await send(email, `Confirm withdrawal of ${data.amount} ${data.coin}`, html, 'withdrawal_confirm', data.userId)
 }
 
 export async function sendReferralRewardEmail(email: string, amount: string): Promise<void> {

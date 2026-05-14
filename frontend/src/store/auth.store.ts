@@ -16,6 +16,8 @@ export interface AuthUser {
   dailyBuyUsed: number
   dailyBuyLimit: number
   createdAt: string
+  withdrawalLockedUntil: string | null
+  withdrawalLockReason: string | null
 }
 
 interface AuthStore {

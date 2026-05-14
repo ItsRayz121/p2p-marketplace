@@ -1,7 +1,8 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { walletApi, marketplaceApi } from '@/lib/api'
-import type { WalletBalance, Transaction } from '@/lib/api'
+import type { WalletBalance, Transaction, TrustedAddress } from '@/lib/api'
+import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { Modal } from '@/components/ui/Modal'
@@ -100,6 +101,10 @@ function WithdrawModal({
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [requiresEmailConfirm, setRequiresEmailConfirm] = useState(false)
+  const [pendingWithdrawalId, setPendingWithdrawalId] = useState<string | null>(null)
+  const [resending, setResending] = useState(false)
+  const [resendMsg, setResendMsg] = useState<string | null>(null)
 
   // Generate idempotency key on open
   const idempotencyKey = useRef(crypto.randomUUID())
@@ -108,6 +113,9 @@ function WithdrawModal({
       idempotencyKey.current = crypto.randomUUID()
       setState((s) => ({ ...s, address: '', amount: '', fee: '0', feePkr: '0' }))
       setSuccess(false)
+      setRequiresEmailConfirm(false)
+      setPendingWithdrawalId(null)
+      setResendMsg(null)
       setSubmitError(null)
     }
   }, [isOpen])
@@ -150,18 +158,37 @@ function WithdrawModal({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      await walletApi.requestWithdrawal({
+      const result = await walletApi.requestWithdrawal({
         coin,
         amount: state.amount,
         address: state.address,
         network: state.network,
       })
-      setSuccess(true)
       setShowConfirm(false)
+      if (result.status === 'email_pending') {
+        setRequiresEmailConfirm(true)
+        setPendingWithdrawalId(result.id)
+      } else {
+        setSuccess(true)
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Withdrawal failed')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleResend = async () => {
+    if (!pendingWithdrawalId) return
+    setResending(true)
+    setResendMsg(null)
+    try {
+      const r = await walletApi.resendWithdrawalConfirmation(pendingWithdrawalId)
+      setResendMsg(`Confirmation email resent (${r.resendCount}/${r.maxResends}).`)
+    } catch (err) {
+      setResendMsg(err instanceof Error ? err.message : 'Resend failed')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -177,7 +204,29 @@ function WithdrawModal({
   return (
     <>
       <Modal isOpen={isOpen} onClose={onClose} title={`Withdraw ${coin}`}>
-        {success ? (
+        {requiresEmailConfirm ? (
+          <div className="text-center py-6 space-y-3">
+            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto text-blue-600 text-2xl">✉</div>
+            <p className="text-sm font-medium text-text-primary">Check your email</p>
+            <p className="text-xs text-text-muted">
+              A confirmation email has been sent with Confirm and Cancel links. The link expires in 15 minutes.
+            </p>
+            <div className="bg-surface rounded-lg px-3 py-2 text-xs text-text-secondary space-y-1 text-left">
+              <p>• Click <strong>Confirm</strong> in the email to proceed with your withdrawal.</p>
+              <p>• Click <strong>Cancel</strong> to safely cancel it.</p>
+              <p>• Do not share the link with anyone.</p>
+            </div>
+            {resendMsg && (
+              <p className="text-xs text-text-muted">{resendMsg}</p>
+            )}
+            <div className="flex gap-2">
+              <Button variant="secondary" fullWidth onClick={handleResend} disabled={resending}>
+                {resending ? 'Sending…' : 'Resend Email'}
+              </Button>
+              <Button fullWidth onClick={onClose}>Done</Button>
+            </div>
+          </div>
+        ) : success ? (
           <div className="text-center py-6 space-y-3">
             <div className="w-12 h-12 bg-warning/10 rounded-full flex items-center justify-center mx-auto text-warning text-2xl">⏳</div>
             <p className="text-sm font-medium text-text-primary">Withdrawal request submitted</p>
@@ -416,7 +465,135 @@ function DepositModal({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+// ─── TrustedAddressesSection ──────────────────────────────────────────────────
+
+function TrustedAddressesSection() {
+  const [addresses, setAddresses] = useState<TrustedAddress[]>([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [form, setForm] = useState({ coin: 'USDT', network: 'TRC20', address: '', label: '' })
+  const [formError, setFormError] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const res = await walletApi.getTrustedAddresses()
+      setAddresses(res)
+    } catch { /* ignore */ } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleAdd = async () => {
+    if (!form.address || !form.label) { setFormError('Address and label are required'); return }
+    setAdding(true)
+    setFormError(null)
+    try {
+      await walletApi.addTrustedAddress(form)
+      setShowForm(false)
+      setForm({ coin: 'USDT', network: 'TRC20', address: '', label: '' })
+      await load()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to add address')
+    } finally { setAdding(false) }
+  }
+
+  const handleRemove = async (id: string) => {
+    try {
+      await walletApi.removeTrustedAddress(id)
+      await load()
+    } catch { /* ignore */ }
+  }
+
+  const isActive = (a: TrustedAddress) => new Date(a.activatesAt) <= new Date()
+  const hoursLeft = (a: TrustedAddress) => {
+    const ms = new Date(a.activatesAt).getTime() - Date.now()
+    if (ms <= 0) return null
+    const h = Math.ceil(ms / 3_600_000)
+    return `${h}h`
+  }
+
+  if (loading) return null
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-text-primary">Trusted Withdrawal Addresses</h2>
+          <p className="text-xs text-text-muted">Whitelisted addresses skip the NEW_WALLET risk flag. New addresses have a 24h activation delay.</p>
+        </div>
+        <Button size="sm" onClick={() => setShowForm((v) => !v)}>{showForm ? 'Cancel' : '+ Add'}</Button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-xl border border-border p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Coin</label>
+              <select value={form.coin} onChange={(e) => setForm((f) => ({ ...f, coin: e.target.value }))} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white">
+                {['USDT', 'USDC', 'ETH', 'BNB', 'BTC'].map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Network</label>
+              <input value={form.network} onChange={(e) => setForm((f) => ({ ...f, network: e.target.value }))} placeholder="e.g. TRC20" className="w-full px-3 py-2 text-sm border border-border rounded-lg" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Address</label>
+            <input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="Full wallet address" className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Label</label>
+            <input value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} placeholder="e.g. My Binance Wallet" className="w-full px-3 py-2 text-sm border border-border rounded-lg" />
+          </div>
+          {formError && <p className="text-xs text-danger">{formError}</p>}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+            This address will have a 24-hour activation delay before it can be used for withdrawals.
+          </div>
+          <Button fullWidth loading={adding} onClick={handleAdd}>Add Trusted Address</Button>
+        </div>
+      )}
+
+      {addresses.length === 0 ? (
+        <div className="bg-white rounded-xl border border-border p-4 text-center text-sm text-text-muted">
+          No trusted addresses yet. Add one to reduce friction on future withdrawals.
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-border divide-y divide-border overflow-hidden">
+          {addresses.map((a) => {
+            const active = isActive(a)
+            const wait = hoursLeft(a)
+            return (
+              <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-text-primary">{a.label}</span>
+                    <span className="text-xs text-text-muted">{a.coin} · {a.network}</span>
+                    {active ? (
+                      <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">Active</span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">Activates in {wait}</span>
+                    )}
+                  </div>
+                  <p className="font-mono text-xs text-text-muted truncate">{a.address}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => handleRemove(a.id)} className="text-danger hover:text-danger flex-shrink-0">
+                  Remove
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function WalletPage() {
+  const { user } = useAuth()
   const [balances, setBalances] = useState<WalletBalance[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [txTotal, setTxTotal] = useState(0)
@@ -483,12 +660,33 @@ export default function WalletPage() {
   if (loading) return <LoadingState message="Loading wallet..." />
   if (error) return <ErrorState title={error} onRetry={fetchBalances} />
 
+  // Compute withdrawal lock state from the user object
+  const wdLockActive = user?.withdrawalLockedUntil
+    ? new Date(user.withdrawalLockedUntil) > new Date()
+    : false
+  const wdLockUntil = user?.withdrawalLockedUntil
+    ? new Date(user.withdrawalLockedUntil).toLocaleString()
+    : null
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6 space-y-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-2xl font-bold text-text-primary">Wallet</h1>
         <ConnectButton />
       </div>
+
+      {/* ── Withdrawal security lock banner ── */}
+      {wdLockActive && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-amber-500 text-xl mt-0.5">🔒</span>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Due to a recent {user?.withdrawalLockReason ?? 'security change'}, withdrawals are locked until <strong>{wdLockUntil}</strong>. Deposits and trading are unaffected.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Connected wallet ── */}
       <section className="space-y-4 bg-white rounded-xl border border-border p-5">
@@ -597,6 +795,9 @@ export default function WalletPage() {
           </div>
         )}
       </section>
+
+      {/* ── Trusted addresses ── */}
+      <TrustedAddressesSection />
 
       {/* Deposit modal */}
       {depositCoin && (
