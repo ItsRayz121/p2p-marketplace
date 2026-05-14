@@ -117,10 +117,47 @@ export async function processDepositEvent(event: NormalizedDepositEvent): Promis
     return { status: 'rejected', depositId: existing.id, reason: existing.rejectionReason ?? 'previously rejected' }
   }
 
+  // Confirmation count must never go backwards. Moralis can emit the
+  // unconfirmed (confirmed:false → 0) event AFTER the confirmed (confirmed:true)
+  // event if delivery is reordered or the reconciler beats the webhook to it,
+  // and we don't want that to "uncredit" or lower a counter that's already at
+  // threshold.
+  const effectiveConfirmations = existing
+    ? Math.max(existing.confirmations, event.confirmations)
+    : event.confirmations
+
+  if (existing) {
+    logger.info(
+      {
+        depositId: existing.id,
+        txHash: event.txHash,
+        chain: chain.id,
+        before: existing.confirmations,
+        after: effectiveConfirmations,
+        threshold: chain.minConfirmations,
+        source: 'webhook',
+      },
+      'Deposit confirmation update',
+    )
+  } else {
+    logger.info(
+      {
+        txHash: event.txHash,
+        chain: chain.id,
+        asset: asset.symbol,
+        amount: humanAmount,
+        toAddress: event.toAddress,
+        confirmations: effectiveConfirmations,
+        threshold: chain.minConfirmations,
+      },
+      'Deposit detected (first sighting)',
+    )
+  }
+
   const deposit = existing
     ? await db.deposit.update({
         where: { id: existing.id },
-        data: { confirmations: event.confirmations },
+        data: { confirmations: effectiveConfirmations },
       })
     : await db.deposit.create({
         data: {
@@ -131,18 +168,18 @@ export async function processDepositEvent(event: NormalizedDepositEvent): Promis
           fromAddress: event.fromAddress,
           toAddress: event.toAddress,
           amount: humanAmount,
-          confirmations: event.confirmations,
+          confirmations: effectiveConfirmations,
           userId,
           status: 'detected',
         },
       })
 
-  if (event.confirmations < chain.minConfirmations) {
+  if (effectiveConfirmations < chain.minConfirmations) {
     return {
       status: 'pending',
       depositId: deposit.id,
       required: chain.minConfirmations,
-      confirmations: event.confirmations,
+      confirmations: effectiveConfirmations,
     }
   }
 
@@ -283,7 +320,31 @@ export function normalizeMoralisEvent(
   const chainId = chainIdHex ? Number.parseInt(chainIdHex, 16) : Number(p.chainIdDecimal)
   if (!Number.isFinite(chainId)) return []
 
-  const confirmations: number = Number(p.confirmations ?? (p.confirmed ? 1 : 0))
+  // Moralis Streams webhook payloads carry `confirmed: boolean` but no
+  // `confirmations` field. The stream fires exactly twice per tx:
+  //   1) confirmed:false when first seen in a block
+  //   2) confirmed:true once the stream's configured depth has been reached
+  // We treat `confirmed: true` as "fully confirmed at this chain's threshold"
+  // so the credit branch fires. The Moralis Stream's own confirmation depth
+  // MUST be configured to be at least chainConfig.minConfirmations in the
+  // dashboard — otherwise we'd credit too early. (See ops runbook.)
+  //
+  // `p.confirmations` is preserved as a fallback in case Moralis (or a future
+  // provider) ever sends an explicit count.
+  const chain = chainFromId(chainId)
+  const threshold = chain?.minConfirmations ?? 0
+  let confirmations: number
+  if (p.confirmations != null && Number.isFinite(Number(p.confirmations))) {
+    confirmations = Number(p.confirmations)
+  } else if (p.confirmed === true) {
+    confirmations = threshold > 0 ? threshold : 1
+    logger.info(
+      { chainId, threshold },
+      'Moralis confirmed:true interpreted as full confirmation',
+    )
+  } else {
+    confirmations = 0
+  }
 
   const out: NormalizedDepositEvent[] = []
 
@@ -324,4 +385,140 @@ export function normalizeMoralisEvent(
   }
 
   return out
+}
+
+export type CreditDepositOutcome =
+  | { status: 'credited'; depositId: string; userId: string; symbol: string; amount: string; alreadyCredited: false }
+  | { status: 'credited'; depositId: string; userId: string; symbol: string; amount: string; alreadyCredited: true }
+  | { status: 'rejected'; depositId: string; reason: string }
+  | { status: 'no_user'; depositId: string }
+
+/**
+ * Credit a Deposit row that's already been recorded in status='detected'
+ * (or, when `allowFromRejected` is true, in status='rejected'). Used by:
+ *   - the reconciler worker when on-chain confirmations cross threshold
+ *   - the admin force-credit endpoint after an on-chain verification check
+ *
+ * Idempotency: the atomic updateMany gate (status='detected' → 'credited')
+ * means two concurrent callers can never double-credit. A second caller
+ * observes claimed.count === 0 and returns alreadyCredited:true without
+ * touching the wallet.
+ *
+ * This deliberately does NOT lower status from 'credited' or re-credit a
+ * row. Crediting a row from 'rejected' is gated behind `allowFromRejected`
+ * because that path requires an explicit admin reason (logged separately).
+ */
+export async function creditDetectedDeposit(
+  depositId: string,
+  opts: {
+    source: 'webhook' | 'reconciler' | 'admin-force' | 'admin-refresh'
+    allowFromRejected?: boolean
+    /** Extra metadata stamped into the Transaction record (admin reason, RPC info, …). */
+    extraMetadata?: Record<string, unknown>
+  },
+): Promise<CreditDepositOutcome> {
+  const deposit = await db.deposit.findUnique({ where: { id: depositId } })
+  if (!deposit) {
+    return { status: 'rejected', depositId, reason: 'deposit_not_found' }
+  }
+  if (!deposit.userId) {
+    return { status: 'no_user', depositId }
+  }
+  if (deposit.status === 'credited') {
+    return {
+      status: 'credited',
+      depositId,
+      userId: deposit.userId,
+      symbol: deposit.symbol,
+      amount: deposit.amount.toString(),
+      alreadyCredited: true,
+    }
+  }
+  if (deposit.status === 'rejected' && !opts.allowFromRejected) {
+    return { status: 'rejected', depositId, reason: 'deposit_rejected' }
+  }
+
+  const chain = ALL_CHAINS.find((c) => c.id === deposit.chain)
+  const network = chain?.networkLabel ?? deposit.chain.toUpperCase()
+  const symbol = deposit.symbol
+  const amountStr = deposit.amount.toString()
+  const userId = deposit.userId
+  const allowedFromStatuses = opts.allowFromRejected ? ['detected', 'rejected'] : ['detected']
+
+  try {
+    const result = await db.$transaction(async (tx) => {
+      const claimed = await tx.deposit.updateMany({
+        where: { id: deposit.id, status: { in: allowedFromStatuses } },
+        data: { status: 'credited', creditedAt: new Date(), rejectionReason: null },
+      })
+      if (claimed.count === 0) return null
+
+      const wallet = await tx.wallet.upsert({
+        where: { userId_coin_network: { userId, coin: symbol, network } },
+        create: { userId, coin: symbol, network, balance: amountStr, lockedBalance: '0' },
+        update: { balance: { increment: new Prisma.Decimal(amountStr) } },
+      })
+
+      const txn = await tx.transaction.create({
+        data: {
+          walletId: wallet.id,
+          type: 'deposit',
+          amount: amountStr,
+          fee: '0',
+          txHash: deposit.txHash,
+          status: 'completed',
+          metadata: {
+            chain: deposit.chain,
+            asset: deposit.asset,
+            symbol,
+            fromAddress: deposit.fromAddress,
+            toAddress: deposit.toAddress,
+            confirmations: deposit.confirmations,
+            source: opts.source,
+            ...(opts.extraMetadata ?? {}),
+          },
+        },
+      })
+
+      await tx.deposit.update({
+        where: { id: deposit.id },
+        data: { walletId: wallet.id, creditedTransactionId: txn.id },
+      })
+
+      return { walletId: wallet.id, txnId: txn.id }
+    })
+
+    if (!result) {
+      // Lost the credit race — peer process beat us. That's a successful
+      // outcome from the caller's perspective.
+      return {
+        status: 'credited',
+        depositId,
+        userId,
+        symbol,
+        amount: amountStr,
+        alreadyCredited: true,
+      }
+    }
+
+    logger.info(
+      { depositId, userId, chain: deposit.chain, symbol, amount: amountStr, txHash: deposit.txHash, source: opts.source },
+      'Deposit credited',
+    )
+    return {
+      status: 'credited',
+      depositId,
+      userId,
+      symbol,
+      amount: amountStr,
+      alreadyCredited: false,
+    }
+  } catch (err) {
+    logger.error({ err, depositId, source: opts.source }, 'creditDetectedDeposit failed')
+    return {
+      status: 'rejected',
+      depositId,
+      reason: err instanceof Error ? err.message.slice(0, 500) : 'credit_failed',
+    }
+  }
 }

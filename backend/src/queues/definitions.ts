@@ -25,6 +25,7 @@ export const QUEUE_NAMES = {
   MERCHANT_RANK_UPDATER: 'merchant-rank-updater',
   DATABASE_BACKUP: 'database-backup',
   MORALIS_SUBSCRIBE: 'moralis-subscribe',
+  DEPOSIT_RECONCILE: 'deposit-reconcile',
 } as const
 
 export const queues = {
@@ -47,5 +48,13 @@ export const queues = {
       attempts: 6, // a few extra to ride out longer Moralis outages
       backoff: { type: 'exponential', delay: 15_000 },
     },
+  }),
+  // Reconciler ticks must not stack — if one tick is slow we'd rather skip
+  // overlapping ticks than process the same candidate rows concurrently.
+  // We achieve that via `jobId` on the repeatable job in workers.ts and by
+  // capping attempts at 1 so retries don't double up.
+  depositReconcile: new Queue(QUEUE_NAMES.DEPOSIT_RECONCILE, {
+    connection,
+    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
 }

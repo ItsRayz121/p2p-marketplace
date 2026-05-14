@@ -9,7 +9,10 @@ import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getChainById } from '../lib/chains'
-import { processDepositEvent } from '../services/depositWatcher.service'
+import { processDepositEvent, creditDetectedDeposit } from '../services/depositWatcher.service'
+import { refreshDepositFromRpc } from '../services/depositReconcile.service'
+import { getRpcUrl } from '../lib/chains'
+import { getTransactionByHash, getTransactionReceipt, getBlockNumber } from '../lib/evmRpc'
 import { Prisma } from '@prisma/client'
 type JsonValue = Prisma.InputJsonValue
 
@@ -917,13 +920,21 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { result } })
   })
 
-  // POST /admin/deposits/:id/force-credit — admin-driven credit when the
-  // watcher rejected or skipped a legitimate deposit. Heavily audit-logged.
-  // Requires a non-empty reason. Refuses if the Deposit row is already
-  // credited (use rescan instead) or if it doesn't have a linked user.
+  // POST /admin/deposits/:id/force-credit — admin-driven credit. Now requires
+  // either (a) a successful on-chain RPC verification that the tx exists, was
+  // not reverted, and was sent to the deposit row's `toAddress`, OR (b) the
+  // `skipChainVerification: true` override + a super_admin (NOT admin) actor.
+  // Heavily audit-logged either way.
   app.post('/admin/deposits/:id/force-credit', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const schema = z.object({ reason: z.string().min(10).max(500) })
+    const schema = z.object({
+      reason: z.string().min(10).max(500),
+      // Last-resort override for cases where the chain RPC is unavailable but
+      // the operator has separately verified the tx (e.g. via block explorer).
+      // Must be paired with a super_admin actor — adminOrSuper covers that
+      // here but we additionally enforce it below.
+      skipChainVerification: z.boolean().optional(),
+    })
     const parsed = schema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Reason is required (10-500 chars)', 400)
 
@@ -937,62 +948,260 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     const chainCfg = getChainById(deposit.chain)
-    const network = chainCfg?.networkLabel ?? deposit.chain.toUpperCase()
-    const symbol = deposit.symbol
-    const amountStr = deposit.amount.toString()
-    const userId = deposit.userId
+    if (!chainCfg) {
+      throw new AppError('UNSUPPORTED_CHAIN', `Chain ${deposit.chain} not configured`, 400)
+    }
 
-    // Atomic credit — same shape as the watcher's credit path. Uses an
-    // updateMany gate so two concurrent force-credit attempts can't double.
-    const result = await db.$transaction(async (tx) => {
-      const claimed = await tx.deposit.updateMany({
-        where: { id: deposit.id, status: { in: ['detected', 'rejected'] } },
-        data: { status: 'credited', creditedAt: new Date() },
-      })
-      if (claimed.count === 0) return null
+    // On-chain verification — required unless the actor opts out.
+    let verification:
+      | { verified: true; receiptStatus: '0x0' | '0x1'; txBlock: string; currentBlock: string; confirmations: number; onChainTo: string | null }
+      | { verified: false; reason: string }
+    if (parsed.data.skipChainVerification) {
+      if (req.user!.role !== 'super_admin') {
+        throw new AppError(
+          'SUPER_ADMIN_REQUIRED',
+          'Only super_admin may force-credit without on-chain verification',
+          403,
+        )
+      }
+      verification = { verified: false, reason: 'skipped_by_super_admin' }
+    } else {
+      const rpcUrl = getRpcUrl(deposit.chain)
+      if (!rpcUrl) {
+        throw new AppError('NO_RPC_URL', `No RPC configured for chain ${deposit.chain}`, 503)
+      }
+      try {
+        const [currentBlock, receipt] = await Promise.all([
+          getBlockNumber(rpcUrl, deposit.chain),
+          getTransactionReceipt(rpcUrl, deposit.chain, deposit.txHash),
+        ])
+        if (!receipt) {
+          throw new AppError(
+            'TX_NOT_FOUND',
+            'Transaction receipt not found on chain. Tx may be unmined, dropped, or txHash mismatched.',
+            400,
+          )
+        }
+        if (receipt.status === '0x0') {
+          throw new AppError('TX_REVERTED', 'On-chain transaction reverted (status=0x0). Refusing to credit.', 400)
+        }
+        // For ERC20 transfers, receipt.to is the token contract — not the
+        // recipient. For native transfers, receipt.to is the recipient. We
+        // only enforce the to-address check on native transfers.
+        if (deposit.asset === 'native' && receipt.to && receipt.to.toLowerCase() !== deposit.toAddress.toLowerCase()) {
+          throw new AppError(
+            'TX_RECIPIENT_MISMATCH',
+            `On-chain recipient ${receipt.to} does not match deposit toAddress ${deposit.toAddress}`,
+            400,
+          )
+        }
+        const confirmations = currentBlock >= receipt.blockNumber
+          ? Number(currentBlock - receipt.blockNumber + 1n)
+          : 0
+        verification = {
+          verified: true,
+          receiptStatus: receipt.status,
+          txBlock: receipt.blockNumber.toString(),
+          currentBlock: currentBlock.toString(),
+          confirmations,
+          onChainTo: receipt.to,
+        }
+      } catch (err) {
+        if (err instanceof AppError) throw err
+        throw new AppError(
+          'RPC_VERIFICATION_FAILED',
+          `On-chain verification failed: ${err instanceof Error ? err.message : 'unknown'}`,
+          502,
+        )
+      }
+    }
 
-      const wallet = await tx.wallet.upsert({
-        where: { userId_coin_network: { userId, coin: symbol, network } },
-        create: { userId, coin: symbol, network, balance: amountStr, lockedBalance: '0' },
-        update: { balance: { increment: new Prisma.Decimal(amountStr) } },
-      })
+    log.warn(
+      {
+        depositId: deposit.id,
+        adminId: req.user!.id,
+        adminRole: req.user!.role,
+        txHash: deposit.txHash,
+        chain: deposit.chain,
+        symbol: deposit.symbol,
+        amount: deposit.amount.toString(),
+        skipChainVerification: !!parsed.data.skipChainVerification,
+        verification,
+        reason: parsed.data.reason,
+      },
+      'Admin force-credit initiated',
+    )
 
-      const txn = await tx.transaction.create({
-        data: {
-          walletId: wallet.id,
-          type: 'deposit',
-          amount: amountStr,
-          fee: '0',
-          txHash: deposit.txHash,
-          status: 'completed',
-          metadata: {
-            forceCredit: true,
-            adminId: req.user!.id,
-            reason: parsed.data.reason,
-            chain: deposit.chain,
-            asset: deposit.asset,
-            symbol,
-          },
-        },
-      })
-
-      await tx.deposit.update({
-        where: { id: deposit.id },
-        data: { walletId: wallet.id, creditedTransactionId: txn.id, rejectionReason: null },
-      })
-
-      return { walletId: wallet.id, transactionId: txn.id }
+    const outcome = await creditDetectedDeposit(deposit.id, {
+      source: 'admin-force',
+      allowFromRejected: true,
+      extraMetadata: {
+        forceCredit: true,
+        adminId: req.user!.id,
+        adminRole: req.user!.role,
+        reason: parsed.data.reason,
+        verification,
+      },
     })
 
     void createAuditLog(req.user!.id, 'DEPOSIT_FORCE_CREDITED', 'Deposit', deposit.id, {
       reason: parsed.data.reason,
-      userId,
-      symbol,
-      amount: amountStr,
+      userId: deposit.userId,
+      symbol: deposit.symbol,
+      amount: deposit.amount.toString(),
       txHash: deposit.txHash,
+      skipChainVerification: !!parsed.data.skipChainVerification,
+      verification,
+      outcome,
     })
 
-    return reply.send({ success: true, data: { result, alreadyCredited: result === null } })
+    return reply.send({ success: true, data: { outcome, verification } })
+  })
+
+  // POST /admin/deposits/:id/refresh-confirmations — re-fetch the deposit's
+  // current on-chain confirmation count via RPC and update the row. If the
+  // refreshed count crosses the chain threshold the deposit is credited via
+  // the same atomic credit helper used by the webhook and reconciler paths.
+  // Safe to call repeatedly. Returns the verification + credit outcome.
+  app.post('/admin/deposits/:id/refresh-confirmations', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const deposit = await db.deposit.findUnique({ where: { id } })
+    if (!deposit) throw Errors.NOT_FOUND('Deposit')
+
+    const refresh = await refreshDepositFromRpc(id)
+    log.info({ depositId: id, adminId: req.user!.id, refresh }, 'Admin refresh-confirmations')
+
+    let credit: unknown = null
+    if (refresh.ok && refresh.receiptStatus === '0x1' && refresh.after >= refresh.threshold && deposit.status === 'detected') {
+      credit = await creditDetectedDeposit(id, {
+        source: 'admin-refresh',
+        extraMetadata: {
+          adminId: req.user!.id,
+          refresh: {
+            confirmations: refresh.after,
+            currentBlock: refresh.currentBlock.toString(),
+            txBlock: refresh.txBlock.toString(),
+          },
+        },
+      })
+    }
+
+    void createAuditLog(req.user!.id, 'DEPOSIT_REFRESH_CONFIRMATIONS', 'Deposit', id, {
+      txHash: deposit.txHash,
+      chain: deposit.chain,
+      refresh: refresh.ok
+        ? {
+            ok: true,
+            before: refresh.before,
+            after: refresh.after,
+            threshold: refresh.threshold,
+            receiptStatus: refresh.receiptStatus,
+            txBlock: refresh.txBlock.toString(),
+            currentBlock: refresh.currentBlock.toString(),
+          }
+        : refresh,
+      credit,
+    })
+
+    return reply.send({ success: true, data: { refresh, credit } })
+  })
+
+  // POST /admin/deposits/reconcile-by-tx — given (txHash, chain), look up the
+  // tx on chain via RPC, find or create the Deposit row, and run the standard
+  // detection + credit pipeline. Used when:
+  //   - Moralis never delivered the unconfirmed webhook (so no Deposit row exists)
+  //   - or the user pastes a txHash from their wallet and asks for manual help
+  // Idempotent — a previously-credited deposit just returns its status.
+  app.post('/admin/deposits/reconcile-by-tx', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const schema = z.object({
+      txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'txHash must be 0x + 64 hex chars'),
+      chain: z.string().min(1),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const chainCfg = getChainById(parsed.data.chain)
+    if (!chainCfg || chainCfg.chainId == null) {
+      throw new AppError('UNSUPPORTED_CHAIN', `Chain ${parsed.data.chain} is not supported`, 400)
+    }
+    const rpcUrl = getRpcUrl(chainCfg.id)
+    if (!rpcUrl) {
+      throw new AppError('NO_RPC_URL', `No RPC configured for chain ${chainCfg.id}`, 503)
+    }
+
+    // Pull tx + receipt from chain.
+    const [currentBlock, tx, receipt] = await Promise.all([
+      getBlockNumber(rpcUrl, chainCfg.id),
+      getTransactionByHash(rpcUrl, chainCfg.id, parsed.data.txHash),
+      getTransactionReceipt(rpcUrl, chainCfg.id, parsed.data.txHash),
+    ]).catch((err) => {
+      throw new AppError('RPC_FAILED', err instanceof Error ? err.message : 'rpc_failed', 502)
+    })
+
+    if (!tx) {
+      throw new AppError('TX_NOT_FOUND', `Transaction ${parsed.data.txHash} not found on ${chainCfg.id}`, 404)
+    }
+    if (!receipt) {
+      throw new AppError('TX_UNMINED', 'Transaction has not been mined yet — try again once it confirms', 409)
+    }
+    if (receipt.status === '0x0') {
+      throw new AppError('TX_REVERTED', 'On-chain tx reverted (status=0x0) — cannot credit', 400)
+    }
+
+    // Only native transfers carry a usable `value` directly on the tx. For
+    // ERC20 transfers the operator should use /admin/deposits/rescan or
+    // re-trigger the Moralis backfill — we can't safely reconstruct the
+    // recipient + token amount from a single eth_getTransactionByHash call.
+    if (tx.value === 0n) {
+      throw new AppError(
+        'ERC20_NOT_SUPPORTED_HERE',
+        'Reconcile-by-tx currently supports native-asset transfers only. For ERC20 deposits, use POST /admin/deposits/rescan with the full (txHash, chain, asset, toAddress, fromAddress, rawAmount) payload.',
+        400,
+      )
+    }
+    if (!tx.to) {
+      throw new AppError('TX_NO_RECIPIENT', 'Transaction has no recipient (contract creation?)', 400)
+    }
+
+    const confirmations = currentBlock >= receipt.blockNumber
+      ? Number(currentBlock - receipt.blockNumber + 1n)
+      : 0
+
+    log.info(
+      {
+        adminId: req.user!.id,
+        txHash: parsed.data.txHash,
+        chain: chainCfg.id,
+        from: tx.from,
+        to: tx.to,
+        valueWei: tx.value.toString(),
+        confirmations,
+      },
+      'Admin reconcile-by-tx via RPC',
+    )
+
+    const result = await processDepositEvent({
+      chainId: chainCfg.chainId,
+      txHash: parsed.data.txHash,
+      fromAddress: tx.from,
+      toAddress: tx.to,
+      asset: 'native',
+      symbol: chainCfg.nativeSymbol,
+      amount: tx.value.toString(),
+      confirmations,
+    })
+
+    void createAuditLog(req.user!.id, 'DEPOSIT_RECONCILE_BY_TX', 'Deposit', parsed.data.txHash, {
+      chain: chainCfg.id,
+      txHash: parsed.data.txHash,
+      from: tx.from,
+      to: tx.to,
+      valueWei: tx.value.toString(),
+      confirmations,
+      result,
+    })
+
+    return reply.send({ success: true, data: { result, onChain: { confirmations, currentBlock: currentBlock.toString(), txBlock: receipt.blockNumber.toString() } } })
   })
 
   // POST /admin/deposits/:id/reject — mark a Deposit row as rejected.

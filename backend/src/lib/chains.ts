@@ -154,6 +154,23 @@ export function isEvmNetwork(network: string): boolean {
  * undefined if the operator hasn't set the corresponding env var yet —
  * callers should treat that as "skip this chain", not an error.
  */
+/**
+ * Public JSON-RPC endpoint for each EVM chain. Used by the deposit reconciler
+ * to verify on-chain confirmations independently of Moralis Streams. Returns
+ * undefined for non-EVM chains.
+ */
+export function getRpcUrl(chainId: string): string | undefined {
+  switch (chainId) {
+    case 'ethereum': return env.ETHEREUM_RPC_URL
+    case 'bsc': return env.BSC_RPC_URL
+    case 'polygon': return env.POLYGON_RPC_URL
+    case 'arbitrum': return env.ARBITRUM_RPC_URL
+    case 'optimism': return env.OPTIMISM_RPC_URL
+    case 'base': return env.BASE_RPC_URL
+    default: return undefined
+  }
+}
+
 export function getMoralisStreamId(chainId: string): string | undefined {
   switch (chainId) {
     case 'ethereum': return env.MORALIS_STREAM_ID_ETHEREUM || undefined

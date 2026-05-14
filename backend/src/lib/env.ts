@@ -53,6 +53,23 @@ const envSchema = z.object({
   MORALIS_STREAM_ID_ARBITRUM: z.string().optional(),
   MORALIS_STREAM_ID_OPTIMISM: z.string().optional(),
   MORALIS_STREAM_ID_BASE: z.string().optional(),
+  // Public RPC endpoints used by the deposit reconciler worker (independent
+  // of Moralis Streams). Each defaults to a free, public endpoint — operators
+  // are strongly encouraged to point these at their own dedicated providers
+  // for production use.
+  ETHEREUM_RPC_URL: z.string().url().default('https://eth.llamarpc.com'),
+  BSC_RPC_URL: z.string().url().default('https://bsc-dataseed.binance.org'),
+  POLYGON_RPC_URL: z.string().url().default('https://polygon-rpc.com'),
+  ARBITRUM_RPC_URL: z.string().url().default('https://arb1.arbitrum.io/rpc'),
+  OPTIMISM_RPC_URL: z.string().url().default('https://mainnet.optimism.io'),
+  BASE_RPC_URL: z.string().url().default('https://mainnet.base.org'),
+  // Reconciler tuning. The reconciler scans detected deposits older than
+  // `DEPOSIT_RECONCILE_MIN_AGE_SECONDS` every `DEPOSIT_RECONCILE_INTERVAL_SECONDS`.
+  DEPOSIT_RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  DEPOSIT_RECONCILE_MIN_AGE_SECONDS: z.coerce.number().int().nonnegative().default(30),
+  DEPOSIT_RECONCILE_MAX_AGE_HOURS: z.coerce.number().int().positive().default(48),
+  DEPOSIT_RECONCILE_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+
   TATUM_API_KEY: z.string().optional(),
   TATUM_WEBHOOK_SECRET: z.string().optional(),
   BLOCKCYPHER_TOKEN: z.string().optional(),

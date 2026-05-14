@@ -8,6 +8,8 @@ import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
 import { processReferralPayout } from '../jobs/referralPayout.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
+import { runReconcileTick } from '../services/depositReconcile.service'
+import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createWorker(queueName: string, processor: Processor<any, any, string>, options?: { max?: number; duration?: number }) {
@@ -68,6 +70,21 @@ export function startWorkers() {
   createWorker(QUEUE_NAMES.REFERRAL_PAYOUT, async (job) => {
     await processReferralPayout(job)
   })
+
+  // Deposit reconciler: defence-in-depth against missed Moralis Stream events.
+  // Repeats every DEPOSIT_RECONCILE_INTERVAL_SECONDS (default 60s).
+  const reconcileIntervalMs = env.DEPOSIT_RECONCILE_INTERVAL_SECONDS * 1000
+  queues.depositReconcile
+    .add('tick', {}, { repeat: { every: reconcileIntervalMs }, jobId: 'deposit-reconcile-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule deposit-reconcile repeatable job'))
+
+  createWorker(
+    QUEUE_NAMES.DEPOSIT_RECONCILE,
+    async () => {
+      await runReconcileTick()
+    },
+    { max: 1, duration: 1000 },
+  )
 
   // Moralis Streams subscriber. Conservative rate limit — Moralis free-tier
   // accepts a few RPS comfortably. If the result says `retryable`, throw so
