@@ -693,11 +693,15 @@ export const notificationsApi = {
 export const dashboardApi = {
   getSummary: () =>
     apiRequest<{
-      totalTrades: number
-      activeTrades: number
-      completedTrades: number
-      totalVolumeUsd: string
-      balance: WalletBalance[]
+      wallets: WalletBalance[]
+      tradeStats: {
+        completedTrades: number
+        totalTrades: number
+        completionRate: number | null
+        totalVolumePKR: string | null
+        badge: string | null
+        badgeLabel: string | null
+      } | null
     }>('/dashboard/summary'),
   getRecentActivity: () =>
     apiRequest<{ activities: Array<{ type: string; description: string; createdAt: string }> }>('/dashboard/activity'),

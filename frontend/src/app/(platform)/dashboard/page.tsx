@@ -19,11 +19,15 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DashboardSummary {
-  totalTrades: number
-  activeTrades: number
-  completedTrades: number
-  totalVolumeUsd: string
-  balance: WalletBalance[]
+  wallets: WalletBalance[]
+  tradeStats: {
+    completedTrades: number
+    totalTrades: number
+    completionRate: number | null
+    totalVolumePKR: string | null
+    badge: string | null
+    badgeLabel: string | null
+  } | null
 }
 
 interface InstantOrder {
@@ -118,8 +122,8 @@ export default function DashboardPage() {
 
   const emailVerified = user?.isEmailVerified ?? false
   const kycApproved = kycStatus === 'approved'
-  const hasBalance = (summary?.balance ?? []).some((b) => parseFloat(b.available) > 0)
-  const hasCompletedTrade = (summary?.completedTrades ?? 0) > 0
+  const hasBalance = (summary?.wallets ?? []).some((b) => parseFloat(b.available) > 0)
+  const hasCompletedTrade = (summary?.tradeStats?.completedTrades ?? 0) > 0
 
   const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
 
@@ -168,9 +172,9 @@ export default function DashboardPage() {
       {/* ── 2. Portfolio ── */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Portfolio</h2>
-        {summary?.balance && summary.balance.length > 0 ? (
+        {summary?.wallets && summary.wallets.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {summary.balance.map((b) => (
+            {summary.wallets.map((b) => (
               <div key={b.coin} className="bg-white rounded-xl border border-border p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
@@ -292,17 +296,17 @@ export default function DashboardPage() {
           <h2 className="text-base font-semibold text-text-primary mb-3">Trader Badge</h2>
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-gold/10 text-gold text-lg font-bold flex items-center justify-center border-2 border-gold/30">
-              {summary && summary.completedTrades >= 100 ? '💎' : summary && summary.completedTrades >= 50 ? '🥇' : summary && summary.completedTrades >= 10 ? '🥈' : '🥉'}
+              {(summary?.tradeStats?.completedTrades ?? 0) >= 100 ? '💎' : (summary?.tradeStats?.completedTrades ?? 0) >= 50 ? '🥇' : (summary?.tradeStats?.completedTrades ?? 0) >= 10 ? '🥈' : '🥉'}
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-text-primary">
-                {summary && summary.completedTrades >= 100 ? 'Diamond' : summary && summary.completedTrades >= 50 ? 'Gold' : summary && summary.completedTrades >= 10 ? 'Silver' : 'Bronze'} Trader
+                {(summary?.tradeStats?.completedTrades ?? 0) >= 100 ? 'Diamond' : (summary?.tradeStats?.completedTrades ?? 0) >= 50 ? 'Gold' : (summary?.tradeStats?.completedTrades ?? 0) >= 10 ? 'Silver' : 'Bronze'} Trader
               </p>
-              <p className="text-xs text-text-muted">{summary?.completedTrades ?? 0} completed trades</p>
+              <p className="text-xs text-text-muted">{summary?.tradeStats?.completedTrades ?? 0} completed trades</p>
               <div className="h-2 bg-surface rounded-full overflow-hidden mt-2">
                 <div
                   className="h-full bg-gold rounded-full transition-all"
-                  style={{ width: `${Math.min(((summary?.completedTrades ?? 0) % 50) * 2, 100)}%` }}
+                  style={{ width: `${Math.min(((summary?.tradeStats?.completedTrades ?? 0) % 50) * 2, 100)}%` }}
                 />
               </div>
             </div>
