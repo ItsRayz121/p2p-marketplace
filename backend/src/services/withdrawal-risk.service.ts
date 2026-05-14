@@ -132,6 +132,7 @@ export async function assessWithdrawalRisk(
   const cfg = config ?? (await getWithdrawalTierConfig(prisma))
 
   const coinPrice = cfg.coinPricesUsd[coin.toUpperCase()] ?? 0
+  const coinPriceKnown = coinPrice > 0
   const amountUsd = amount * coinPrice
 
   const flags: RiskFlag[] = []
@@ -198,10 +199,17 @@ export async function assessWithdrawalRisk(
   const baseTier = computeBaseTier(amountUsd, cfg)
   let effectiveTier: 1 | 2 | 3 | 4 = baseTier
 
+  // FIX: Unknown coin price means we cannot compute a USD tier — default to T3 (dual
+  // approval) so large unknown-coin amounts are never silently auto-approved.
+  if (!coinPriceKnown && effectiveTier < 3) effectiveTier = 3
+
   // Risk flags escalate tier — a flagged tier-1 withdrawal needs at least 1 admin
   if (flags.length > 0 && effectiveTier === 1) effectiveTier = 2
   // High composite score requires dual approval
   if (riskScore >= 50 && effectiveTier < 3) effectiveTier = 3
+
+  // FIX: Master switch — if auto-approve is disabled, tier-1 must go through 1 admin
+  if (!cfg.autoApproveEnabled && effectiveTier === 1) effectiveTier = 2
 
   const requiresHold = baseTier === 4 || riskScore >= 70
 

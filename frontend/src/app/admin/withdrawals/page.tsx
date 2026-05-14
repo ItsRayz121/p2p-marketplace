@@ -135,6 +135,7 @@ export default function WithdrawalsPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [holdReason, setHoldReason] = useState('')
   const [overrideNote, setOverrideNote] = useState('')
+  const [overrideTier, setOverrideTier] = useState<number | null>(null)
   const [confirmApprove, setConfirmApprove] = useState(false)
   const [confirmReject, setConfirmReject] = useState(false)
   const [confirmHold, setConfirmHold] = useState(false)
@@ -171,6 +172,7 @@ export default function WithdrawalsPage() {
     setRejectReason('')
     setHoldReason('')
     setOverrideNote('')
+    setOverrideTier(null)
     setActionError(null)
     setModalOpen(true)
   }
@@ -239,9 +241,13 @@ export default function WithdrawalsPage() {
     if (!selected || !overrideNote.trim()) return
     setActionError(null)
     try {
-      await adminApi.overrideWithdrawalRisk(selected.id, { note: overrideNote })
+      await adminApi.overrideWithdrawalRisk(selected.id, {
+        note: overrideNote,
+        ...(overrideTier !== null ? { overrideTier } : {}),
+      })
       fetchWithdrawals()
       setOverrideNote('')
+      setOverrideTier(null)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to apply risk override')
     }
@@ -351,7 +357,13 @@ export default function WithdrawalsPage() {
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(w.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
-                      {canMarkSentFor(w) ? (
+                      {w.status === 'auto_approved' ? (
+                        // Auto-approved: show Mark Sent + a hold escape hatch
+                        <div className="flex items-center justify-end gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => openModal(w)}>Hold/Reject</Button>
+                          <Button size="sm" variant="primary" onClick={() => openMarkSent(w)}>Mark Sent</Button>
+                        </div>
+                      ) : canMarkSentFor(w) ? (
                         <Button size="sm" variant="primary" onClick={() => openMarkSent(w)}>Mark Sent</Button>
                       ) : (
                         <Button size="sm" variant="ghost" onClick={() => openModal(w)}>Review</Button>
@@ -446,21 +458,33 @@ export default function WithdrawalsPage() {
 
               {/* Risk override input */}
               {!selected.riskOverride && selected.riskFlags?.length > 0 && (
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 space-y-2">
                   <input
                     value={overrideNote}
                     onChange={(e) => setOverrideNote(e.target.value)}
                     placeholder="Override reason (e.g. known trusted user)"
-                    className="flex-1 px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                   />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={!overrideNote.trim()}
-                    onClick={handleRiskOverride}
-                  >
-                    Override Risk
-                  </Button>
+                  <div className="flex gap-2 items-center">
+                    <select
+                      value={overrideTier ?? ''}
+                      onChange={(e) => setOverrideTier(e.target.value ? Number(e.target.value) : null)}
+                      className="flex-1 px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="">Keep current tier (T{selected.tier ?? 3})</option>
+                      <option value="1">Override to T1 (auto-approve)</option>
+                      <option value="2">Override to T2 (1 admin)</option>
+                      <option value="3">Override to T3 (2 admins)</option>
+                    </select>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={!overrideNote.trim()}
+                      onClick={handleRiskOverride}
+                    >
+                      Apply Override
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -509,6 +533,50 @@ export default function WithdrawalsPage() {
                   Release Hold
                 </Button>
               </div>
+            ) : selected.status === 'auto_approved' ? (
+              // Auto-approved emergency controls: hold or reject before it gets sent
+              <>
+                <div className="px-4 py-3 bg-success/5 border border-success/20 rounded-xl text-sm text-success">
+                  This withdrawal was auto-approved (Tier 1). Use the controls below only if you need to intervene before it is sent.
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">Rejection Reason (required to reject)</label>
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    rows={2}
+                    placeholder="Reason for emergency rejection..."
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    variant="danger"
+                    onClick={() => { if (rejectReason.trim()) setConfirmReject(true) }}
+                    disabled={!rejectReason.trim()}
+                    className="flex-1"
+                  >
+                    Reject (Emergency)
+                  </Button>
+                  <div className="flex-1 space-y-1.5">
+                    <input
+                      value={holdReason}
+                      onChange={(e) => setHoldReason(e.target.value)}
+                      placeholder="Hold reason..."
+                      className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-warning"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!holdReason.trim()}
+                      onClick={() => setConfirmHold(true)}
+                      className="w-full"
+                    >
+                      Place on Hold
+                    </Button>
+                  </div>
+                </div>
+              </>
             ) : canApprove ? (
               <>
                 <div>

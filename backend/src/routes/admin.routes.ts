@@ -1332,19 +1332,26 @@ export async function adminRoutes(app: FastifyInstance) {
 
     if (withdrawal.status === 'pending') {
       if (tier <= 2) {
-        // Single-admin approval path (tier 1 escalated by risk flags, or tier 2)
-        await db.withdrawal.update({
-          where: { id },
+        // Single-admin approval path (tier 1 escalated by risk flags, or tier 2).
+        // Optimistic lock: include status in WHERE so concurrent approvals are idempotent.
+        const updated = await db.withdrawal.updateMany({
+          where: { id, status: 'pending' },
           data: { status: 'approved', firstApprovedBy: adminId },
         })
+        if (updated.count === 0) {
+          throw new AppError('CONFLICT', 'Withdrawal was already approved by another admin', 409)
+        }
         await createAuditLog(adminId, 'WITHDRAWAL_APPROVED', 'Withdrawal', id, { tier, singleApproval: true })
         return reply.send({ success: true, message: 'Withdrawal approved and ready to send.' })
       } else {
-        // Dual-approval path (tier 3+): first approval
-        await db.withdrawal.update({
-          where: { id },
+        // Dual-approval path (tier 3+): first approval with optimistic lock.
+        const updated = await db.withdrawal.updateMany({
+          where: { id, status: 'pending' },
           data: { status: 'first_approved', firstApprovedBy: adminId },
         })
+        if (updated.count === 0) {
+          throw new AppError('CONFLICT', 'Withdrawal status changed concurrently — please refresh and try again', 409)
+        }
         await createAuditLog(adminId, 'WITHDRAWAL_FIRST_APPROVED', 'Withdrawal', id, { tier })
         return reply.send({ success: true, message: 'First approval recorded. A second admin must approve before it can be sent.' })
       }
@@ -1354,10 +1361,14 @@ export async function adminRoutes(app: FastifyInstance) {
     if (withdrawal.firstApprovedBy === adminId) {
       throw new AppError('SAME_ADMIN', 'A different admin must provide the second approval', 403)
     }
-    await db.withdrawal.update({
-      where: { id },
+    // Optimistic lock: re-validate status is still first_approved when we commit.
+    const updated = await db.withdrawal.updateMany({
+      where: { id, status: 'first_approved' },
       data: { status: 'approved', secondApprovedBy: adminId },
     })
+    if (updated.count === 0) {
+      throw new AppError('CONFLICT', 'Withdrawal status changed concurrently — please refresh and try again', 409)
+    }
     await createAuditLog(adminId, 'WITHDRAWAL_SECOND_APPROVED', 'Withdrawal', id, { tier })
     return reply.send({ success: true, message: 'Withdrawal fully approved and ready to send.' })
   })
