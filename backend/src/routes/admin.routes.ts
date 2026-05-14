@@ -1544,8 +1544,11 @@ export async function adminRoutes(app: FastifyInstance) {
     })
 
     await db.$transaction(async (tx) => {
-      await tx.withdrawal.update({
-        where: { id },
+      // Optimistic lock inside the transaction: only update if status is still
+      // approved/auto_approved. Guards against two concurrent mark-sent calls
+      // both creating a completed Transaction row for the same withdrawal.
+      const locked = await tx.withdrawal.updateMany({
+        where: { id, status: { in: ['approved', 'auto_approved'] } },
         data: {
           status: 'sent',
           txHash: parsed.data.txHash,
@@ -1553,6 +1556,9 @@ export async function adminRoutes(app: FastifyInstance) {
           ...(parsed.data.adminNote ? { adminNote: parsed.data.adminNote } : {}),
         },
       })
+      if (locked.count === 0) {
+        throw new AppError('CONFLICT', 'Withdrawal was already marked as sent by another admin', 409)
+      }
 
       if (wallet) {
         await tx.transaction.create({

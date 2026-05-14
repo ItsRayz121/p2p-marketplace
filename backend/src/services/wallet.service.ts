@@ -6,6 +6,7 @@ import { getChainByNetworkLabel, isEvmNetwork } from '../lib/chains'
 import { getOrCreateEvmDepositAddress } from './depositAddress.service'
 import { recordAuditLog } from '../lib/audit'
 import { assessWithdrawalRisk } from './withdrawal-risk.service'
+import { sendWithdrawalEmail } from './email.service'
 
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
@@ -208,6 +209,19 @@ export async function requestWithdrawal(
     riskFlags: risk.riskFlags,
     initialStatus,
   })
+
+  // Notify user that their withdrawal has been received. Fire-and-forget —
+  // a failed email must never block the withdrawal from being created.
+  void db.user
+    .findUnique({ where: { id: userId }, select: { email: true } })
+    .then((u) => {
+      if (!u?.email) return
+      return sendWithdrawalEmail('requested', u.email, {
+        amount: data.amount.toString(),
+        coin: data.coin,
+      })
+    })
+    .catch(() => {})
 
   return result
 }
