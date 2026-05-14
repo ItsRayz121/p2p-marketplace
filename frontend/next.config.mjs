@@ -1,12 +1,22 @@
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Stub out optional deps that wagmi/WalletConnect import but we don't use.
-  // These are dead code paths inside the WalletConnect logger, wagmi's
-  // experimental Tempo connector, and the Porto wallet connector. Without
-  // these stubs the production build fails with "Module not found: 'accounts'"
-  // / "'porto/internal'" / "'pino-pretty'".
+  // Stub out optional/Node-only deps that wagmi/WalletConnect import but
+  // must not be bundled in the browser.
+  //
+  // 'ws'               — Node WebSocket used by isows; browser uses native WebSocket
+  // '@wagmi/core/tempo' — internal subpath in newer @wagmi/core, not present in
+  //                       the installed version; appkit-adapter-wagmi references it
+  // 'pino-pretty'      — WalletConnect logger prettifier (Node only)
+  // 'porto/internal'   — Porto wallet internal (optional connector)
+  // accounts/lokijs/encoding — other optional peer deps
   webpack: (config) => {
     config.resolve = config.resolve || {}
+
     config.resolve.fallback = {
       ...(config.resolve.fallback || {}),
       'pino-pretty': false,
@@ -14,7 +24,14 @@ const nextConfig = {
       accounts: false,
       lokijs: false,
       encoding: false,
+      ws: false,
     }
+
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@wagmi/core/tempo': path.resolve(__dirname, 'src/lib/web3/empty-module.js'),
+    }
+
     return config
   },
 
