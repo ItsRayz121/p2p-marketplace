@@ -99,25 +99,44 @@ export async function walletRoutes(app: FastifyInstance) {
     })
   })
 
-  // GET /api/wallet/transactions — paginated transaction history
+  // GET /api/wallet/transactions — paginated transaction history.
+  //
+  // The Transaction model is linked to Wallet (walletId), not User directly.
+  // We join through wallet: { userId } so Prisma resolves the relation
+  // correctly. `coin` and `network` are promoted from the wallet join into the
+  // response shape so the frontend can render them without a second request.
   app.get('/wallet/transactions', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
     const query = req.query as Record<string, string>
     const page = Math.max(parseInt(query.page ?? '1', 10), 1)
     const limit = Math.min(parseInt(query.limit ?? '20', 10), 50)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = { userId }
-    if (query.coin) where.coin = query.coin.toUpperCase()
-    if (query.type) where.type = query.type
-    const [transactions, total] = await Promise.all([
+
+    const walletWhere: Record<string, unknown> = { userId }
+    if (query.coin) walletWhere['coin'] = query.coin.toUpperCase()
+
+    const txWhere: Record<string, unknown> = { wallet: walletWhere }
+    if (query.type) txWhere['type'] = query.type
+
+    const [rows, total] = await Promise.all([
       db.transaction.findMany({
-        where,
+        where: txWhere,
+        include: { wallet: { select: { coin: true, network: true, userId: true } } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.transaction.count({ where }),
+      db.transaction.count({ where: txWhere }),
     ])
+
+    const transactions = rows.map(({ wallet: w, amount, fee, ...rest }) => ({
+      ...rest,
+      coin: w.coin,
+      network: w.network,
+      userId: w.userId,
+      amount: amount.toString(),
+      fee: fee.toString(),
+    }))
+
     return reply.send({ success: true, data: { transactions, total, page, limit } })
   })
 

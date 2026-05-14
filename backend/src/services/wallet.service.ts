@@ -158,6 +158,29 @@ export async function requestWithdrawal(
         status: 'pending',
       },
     })
+
+    // Create a Transaction row so the user sees the withdrawal immediately
+    // in their transaction history (GET /wallet/transactions). Status starts
+    // as 'pending' and is never updated here — admin approval/rejection
+    // creates a second row or updates this one via the admin routes.
+    await tx.transaction.create({
+      data: {
+        walletId: w.id,
+        type: 'withdrawal',
+        amount: data.amount,
+        fee,
+        status: 'pending',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        metadata: {
+          withdrawalId: withdrawal.id,
+          orderRef,
+          toAddress: data.toAddress,
+          network: data.network,
+          coin: data.coin,
+        } as any,
+      },
+    })
+
     return withdrawal
   })
 

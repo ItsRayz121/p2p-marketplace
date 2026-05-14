@@ -1363,15 +1363,44 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await db.$transaction(async (tx) => {
+      // Resolve wallet first so we can create a Transaction row.
+      const wallet = await tx.wallet.findFirst({
+        where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
+        select: { id: true },
+      })
+
       await tx.withdrawal.update({
         where: { id },
         data: { status: 'rejected', rejectedBy: req.user!.id, rejectionReason: parsed.data.reason },
       })
+
       // Refund amount + fee to wallet
       await tx.wallet.updateMany({
         where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
-        data: { balance: { increment: Number(withdrawal.amount) + Number(withdrawal.fee) } },
+        data: { balance: { increment: new Prisma.Decimal(Number(withdrawal.amount) + Number(withdrawal.fee)) } },
       })
+
+      // Create a Transaction row so the user sees the rejection + refund in
+      // their transaction history. status='failed' maps to the red badge.
+      if (wallet) {
+        await tx.transaction.create({
+          data: {
+            walletId: wallet.id,
+            type: 'withdrawal',
+            amount: withdrawal.amount,
+            fee: withdrawal.fee,
+            status: 'failed',
+            metadata: {
+              withdrawalId: withdrawal.id,
+              orderRef: withdrawal.orderRef,
+              toAddress: withdrawal.toAddress,
+              rejectionReason: parsed.data.reason,
+              rejectedBy: req.user!.id,
+              refunded: true,
+            } as JsonValue,
+          },
+        })
+      }
     })
 
     await createAuditLog(req.user!.id, 'WITHDRAWAL_REJECTED', 'Withdrawal', id, { reason: parsed.data.reason })
@@ -1382,6 +1411,106 @@ export async function adminRoutes(app: FastifyInstance) {
     })
 
     return reply.send({ success: true })
+  })
+
+  // POST /admin/withdrawals/:id/mark-sent — operator calls this after manually
+  // broadcasting the on-chain payout. Requires the tx hash. Moves the
+  // withdrawal from 'approved' → 'sent', creates a completed Transaction row
+  // so the user sees a txHash in their history, and sends a notification email.
+  // Heavily audit-logged. Does NOT auto-verify the txHash on-chain — that is
+  // the operator's responsibility (two-person approval upstream already covers
+  // the approval gate).
+  app.post('/admin/withdrawals/:id/mark-sent', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const schema = z.object({
+      txHash: z.string().min(1).max(200),
+      adminNote: z.string().max(500).optional(),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const withdrawal = await db.withdrawal.findUnique({
+      where: { id },
+      include: { user: { select: { email: true } } },
+    })
+    if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
+    if (withdrawal.status !== 'approved') {
+      throw new AppError(
+        'INVALID_STATUS',
+        `Withdrawal must be in 'approved' status to mark as sent (current: ${withdrawal.status})`,
+        400,
+      )
+    }
+
+    const wallet = await db.wallet.findFirst({
+      where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
+      select: { id: true },
+    })
+
+    await db.$transaction(async (tx) => {
+      await tx.withdrawal.update({
+        where: { id },
+        data: {
+          status: 'sent',
+          txHash: parsed.data.txHash,
+          completedAt: new Date(),
+          ...(parsed.data.adminNote ? { adminNote: parsed.data.adminNote } : {}),
+        },
+      })
+
+      // Create a completed Transaction row so the user sees the txHash and
+      // 'completed' status badge in their wallet transaction history.
+      if (wallet) {
+        await tx.transaction.create({
+          data: {
+            walletId: wallet.id,
+            type: 'withdrawal',
+            amount: withdrawal.amount,
+            fee: withdrawal.fee,
+            txHash: parsed.data.txHash,
+            status: 'completed',
+            metadata: {
+              withdrawalId: withdrawal.id,
+              orderRef: withdrawal.orderRef,
+              toAddress: withdrawal.toAddress,
+              markedSentBy: req.user!.id,
+              ...(parsed.data.adminNote ? { adminNote: parsed.data.adminNote } : {}),
+            } as JsonValue,
+          },
+        })
+      }
+    })
+
+    log.info(
+      {
+        adminId: req.user!.id,
+        withdrawalId: withdrawal.id,
+        orderRef: withdrawal.orderRef,
+        txHash: parsed.data.txHash,
+        userId: withdrawal.userId,
+        coin: withdrawal.coin,
+        amount: withdrawal.amount.toString(),
+      },
+      'Withdrawal marked as sent',
+    )
+
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_MARKED_SENT', 'Withdrawal', id, {
+      txHash: parsed.data.txHash,
+      adminNote: parsed.data.adminNote,
+      userId: withdrawal.userId,
+      coin: withdrawal.coin,
+      amount: withdrawal.amount.toString(),
+      toAddress: withdrawal.toAddress,
+    })
+
+    // 'approved' template body already reads "approved and sent — txHash: …"
+    await sendWithdrawalEmail('approved', withdrawal.user.email, {
+      amount: withdrawal.amount.toString(),
+      coin: withdrawal.coin,
+      txHash: parsed.data.txHash,
+    }).catch(() => {})
+
+    return reply.send({ success: true, data: { status: 'sent', txHash: parsed.data.txHash } })
   })
 
   // ── Config ─────────────────────────────────────────────────────────────────

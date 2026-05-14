@@ -179,9 +179,14 @@ function WithdrawModal({
       <Modal isOpen={isOpen} onClose={onClose} title={`Withdraw ${coin}`}>
         {success ? (
           <div className="text-center py-6 space-y-3">
-            <div className="w-12 h-12 bg-success/10 rounded-full flex items-center justify-center mx-auto text-success text-2xl">✓</div>
-            <p className="text-sm font-medium text-text-primary">Withdrawal requested!</p>
-            <p className="text-xs text-text-muted">Your withdrawal is being processed. Check your transaction history for updates.</p>
+            <div className="w-12 h-12 bg-warning/10 rounded-full flex items-center justify-center mx-auto text-warning text-2xl">⏳</div>
+            <p className="text-sm font-medium text-text-primary">Withdrawal request submitted</p>
+            <p className="text-xs text-text-muted">Your request is pending admin review. Funds have not been sent on-chain yet.</p>
+            <div className="bg-surface rounded-lg px-3 py-2 text-xs text-text-secondary space-y-1 text-left">
+              <p>• Funds are held securely while your request is reviewed.</p>
+              <p>• You will be notified once approved and sent.</p>
+              <p>• If rejected, your balance will be refunded automatically.</p>
+            </div>
             <Button fullWidth onClick={onClose}>Done</Button>
           </div>
         ) : (
