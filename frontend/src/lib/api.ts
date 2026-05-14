@@ -748,7 +748,7 @@ export const referralApi = {
 }
 
 export const leaderboardApi = {
-  getTop: (params?: { period?: 'daily' | 'weekly' | 'monthly' | 'all-time'; limit?: number }) => {
+  getTop: (params?: { period?: string; limit?: number }) => {
     const qs = params
       ? '?' + new URLSearchParams(
           Object.entries(params)
@@ -756,10 +756,22 @@ export const leaderboardApi = {
             .map(([k, v]) => [k, String(v)])
         ).toString()
       : ''
-    return apiRequest<{ entries: Array<{ rank: number; userId: string; username: string; volume: string; trades: number }> }>('/leaderboard' + qs)
+    return apiRequest<{
+      entries: Array<{
+        rank: number
+        userId: string
+        username: string
+        badge?: string | null
+        badgeLabel?: string | null
+        totalTrades?: number | null
+        completedTrades?: number | null
+        completionRate?: number | null
+        avgRating?: number | null
+        totalVolumePKR?: string | number | null
+        trustScore?: number | null
+      }>
+    }>('/leaderboard' + qs)
   },
-  getMyRank: () =>
-    apiRequest<{ rank: number; volume: string; trades: number }>('/leaderboard/me'),
 }
 
 export const usersApi = {

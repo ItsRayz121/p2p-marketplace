@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { fmtNumber, fmtPkr } from '@/lib/fmt'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,10 +14,14 @@ interface LeaderboardEntry {
   rank: number
   userId: string
   username: string
-  volume: string
-  trades: number
-  badge?: string
-  completionRate?: number
+  badge?: string | null
+  badgeLabel?: string | null
+  totalTrades?: number | null
+  completedTrades?: number | null
+  completionRate?: number | null
+  avgRating?: number | null
+  totalVolumePKR?: string | number | null
+  trustScore?: number | null
 }
 
 type Period = 'daily' | 'weekly' | 'monthly' | 'all-time'
@@ -27,6 +32,14 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'weekly', label: 'This Week' },
   { id: 'daily', label: 'Today' },
 ]
+
+// Map frontend period labels to backend query params
+const PERIOD_MAP: Record<Period, string> = {
+  'all-time': 'all',
+  monthly: 'month',
+  weekly: 'week',
+  daily: 'week', // backend has no daily; use week as closest fallback
+}
 
 function RankDisplay({ rank }: { rank: number }) {
   if (rank === 1) return <span className="text-lg">🥇</span>
@@ -41,7 +54,6 @@ export default function LeaderboardPage() {
   const { user } = useAuth()
   const [period, setPeriod] = useState<Period>('all-time')
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
-  const [myRank, setMyRank] = useState<{ rank: number; volume: string; trades: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -49,12 +61,8 @@ export default function LeaderboardPage() {
     setLoading(true)
     setError('')
     try {
-      const [leaderRes, rankRes] = await Promise.allSettled([
-        leaderboardApi.getTop({ period, limit: 50 }),
-        leaderboardApi.getMyRank(),
-      ])
-      if (leaderRes.status === 'fulfilled') setEntries(leaderRes.value.entries as LeaderboardEntry[])
-      if (rankRes.status === 'fulfilled') setMyRank(rankRes.value)
+      const res = await leaderboardApi.getTop({ period: PERIOD_MAP[period] as never, limit: 50 })
+      setEntries((res.entries ?? []) as LeaderboardEntry[])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load leaderboard')
     } finally {
@@ -85,25 +93,6 @@ export default function LeaderboardPage() {
           </button>
         ))}
       </div>
-
-      {/* My Rank */}
-      {myRank && user && (
-        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center">
-              #{myRank.rank}
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-text-primary">{user.username ?? 'You'}</p>
-              <p className="text-xs text-text-muted">Your ranking</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-sm font-bold text-text-primary">PKR {parseFloat(myRank.volume).toLocaleString()}</p>
-            <p className="text-xs text-text-muted">{myRank.trades} trades</p>
-          </div>
-        </div>
-      )}
 
       {/* Leaderboard Table */}
       {loading && <LoadingState message="Loading leaderboard..." />}
@@ -136,7 +125,7 @@ export default function LeaderboardPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <div className="w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center uppercase">
-                                {entry.username.slice(0, 2)}
+                                {(entry.username ?? '?').slice(0, 2)}
                               </div>
                               <span className="text-sm font-medium text-text-primary">
                                 {entry.username}
@@ -145,14 +134,16 @@ export default function LeaderboardPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            {entry.badge && <Badge variant="default" size="sm">{entry.badge}</Badge>}
+                            {entry.badge && <Badge variant="default" size="sm">{entry.badgeLabel ?? entry.badge}</Badge>}
                           </td>
-                          <td className="px-4 py-3 text-sm text-text-primary">{entry.trades.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-sm text-text-primary">
+                            {fmtNumber(entry.completedTrades)}
+                          </td>
                           <td className="px-4 py-3 text-sm font-semibold text-text-primary">
-                            {parseFloat(entry.volume).toLocaleString()}
+                            {fmtNumber(entry.totalVolumePKR)}
                           </td>
                           <td className="px-4 py-3 text-sm text-text-muted">
-                            {entry.completionRate != null ? `${entry.completionRate.toFixed(1)}%` : '—'}
+                            {entry.completionRate != null ? `${Number(entry.completionRate).toFixed(1)}%` : '—'}
                           </td>
                         </tr>
                       )
@@ -174,20 +165,20 @@ export default function LeaderboardPage() {
                         <RankDisplay rank={entry.rank} />
                       </div>
                       <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 uppercase">
-                        {entry.username.slice(0, 2)}
+                        {(entry.username ?? '?').slice(0, 2)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-text-primary truncate">
                           {entry.username}
                           {isMe && <span className="ml-1 text-primary text-xs">(you)</span>}
                         </p>
-                        <p className="text-xs text-text-muted">{entry.trades} trades</p>
+                        <p className="text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-sm font-bold text-text-primary">
-                          PKR {parseFloat(entry.volume).toLocaleString()}
+                          {fmtPkr(entry.totalVolumePKR)}
                         </p>
-                        {entry.badge && <Badge variant="default" size="sm">{entry.badge}</Badge>}
+                        {entry.badge && <Badge variant="default" size="sm">{entry.badgeLabel ?? entry.badge}</Badge>}
                       </div>
                     </div>
                   )
