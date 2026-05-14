@@ -922,15 +922,27 @@ export const adminApi = {
       todayRevenue: string | number
       pendingCount: number
       failedCount: number
+      refundPendingCount: number
       wallet: {
         chain: string
         address: string
         isActive: boolean
-        balanceTRX: number | null
+        balance: number | null
+        nativeSymbol: string
         status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
         alertThreshold: number
         pauseThreshold: number
       } | null
+      wallets: Array<{
+        chain: string
+        address: string
+        isActive: boolean
+        balance: number | null
+        nativeSymbol: string
+        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+        alertThreshold: number
+        pauseThreshold: number
+      }>
     }>('/admin/gas/stats'),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),

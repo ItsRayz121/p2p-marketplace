@@ -33,23 +33,35 @@ interface GasOrdersResponse {
   pagination: { total: number; page: number; limit: number; pages: number }
 }
 
+interface GasWallet {
+  chain: string
+  address: string
+  isActive: boolean
+  balance: number | null
+  nativeSymbol: string
+  status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+  alertThreshold: number
+  pauseThreshold: number
+}
+
 interface GasStats {
   todayOrders: number
   todayRevenue: string | number
   pendingCount: number
   failedCount: number
-  wallet: {
-    chain: string
-    address: string
-    isActive: boolean
-    balanceTRX: number | null
-    status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
-    alertThreshold: number
-    pauseThreshold: number
-  } | null
+  refundPendingCount: number
+  wallet: GasWallet | null
+  wallets: GasWallet[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const CHAIN_SYMBOL: Record<string, string> = { TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH', ETH: 'ETH' }
+
+function fmtNative(amount: string | number): string {
+  const n = parseFloat(String(amount))
+  return n >= 1 ? String(Math.round(n)) : n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+}
 
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
@@ -85,6 +97,64 @@ function walletStatusLabel(s: string): string {
     unconfigured:  'Not Configured',
   }
   return labels[s] ?? s
+}
+
+// ─── WalletCard ───────────────────────────────────────────────────────────────
+
+function WalletCard({
+  wallet, isSuperAdmin, toggling, onToggle,
+}: {
+  wallet: GasWallet
+  isSuperAdmin: boolean
+  toggling: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className={`bg-white border rounded-xl p-5 ${
+      wallet.status === 'critical' || wallet.status === 'paused' ? 'border-danger/40'
+      : wallet.status === 'warning' ? 'border-warning/40'
+      : 'border-border'
+    }`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <h2 className="text-sm font-semibold text-text-primary">{wallet.chain} Hot Wallet</h2>
+            <Badge variant={walletStatusVariant(wallet.status)} size="sm">
+              {walletStatusLabel(wallet.status)}
+            </Badge>
+            {!wallet.isActive && <Badge variant="danger" size="sm">Admin Paused</Badge>}
+          </div>
+          <p className="text-xs font-mono text-text-muted truncate mb-3">{wallet.address}</p>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div>
+              <span className="text-text-muted">Balance: </span>
+              <span className={`font-bold ${
+                wallet.balance === null ? 'text-text-muted'
+                : wallet.balance < wallet.pauseThreshold ? 'text-danger'
+                : wallet.balance < wallet.alertThreshold ? 'text-warning'
+                : 'text-success'
+              }`}>
+                {wallet.balance !== null ? `${fmtNative(wallet.balance)} ${wallet.nativeSymbol}` : 'Unknown'}
+              </span>
+            </div>
+            <div>
+              <span className="text-text-muted">Alert at: </span>
+              <span className="font-medium text-text-primary">{wallet.alertThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
+            </div>
+            <div>
+              <span className="text-text-muted">Pause at: </span>
+              <span className="font-medium text-text-primary">{wallet.pauseThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
+            </div>
+          </div>
+        </div>
+        {isSuperAdmin && (
+          <Button size="sm" variant={wallet.isActive ? 'secondary' : 'primary'} onClick={onToggle} disabled={toggling}>
+            {wallet.isActive ? 'Pause Chain' : 'Resume Chain'}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -244,67 +314,32 @@ export default function GasAdminPage() {
               {stats.failedCount}
             </p>
           </div>
+          {(stats.refundPendingCount ?? 0) > 0 && (
+            <div className="bg-white border border-warning/40 rounded-xl p-4 col-span-2 md:col-span-1">
+              <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
+              <p className="text-2xl font-bold mt-1 text-warning">{stats.refundPendingCount}</p>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── Hot Wallet Card ──────────────────────────────────────────────────── */}
+      {/* ── Primary (TRON) wallet card ─────────────────────────────────────── */}
       {stats?.wallet && (
-        <div className={`bg-white border rounded-xl p-5 ${
-          stats.wallet.status === 'critical' || stats.wallet.status === 'paused'
-            ? 'border-danger/40'
-            : stats.wallet.status === 'warning'
-            ? 'border-warning/40'
-            : 'border-border'
-        }`}>
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-2">
-                <h2 className="text-sm font-semibold text-text-primary">TRON Hot Wallet</h2>
-                <Badge variant={walletStatusVariant(stats.wallet.status)} size="sm">
-                  {walletStatusLabel(stats.wallet.status)}
-                </Badge>
-                {!stats.wallet.isActive && (
-                  <Badge variant="danger" size="sm">Admin Paused</Badge>
-                )}
-              </div>
-              <p className="text-xs font-mono text-text-muted truncate mb-3">{stats.wallet.address}</p>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <div>
-                  <span className="text-text-muted">Balance: </span>
-                  <span className={`font-bold ${
-                    stats.wallet.balanceTRX === null
-                      ? 'text-text-muted'
-                      : stats.wallet.balanceTRX < stats.wallet.pauseThreshold
-                      ? 'text-danger'
-                      : stats.wallet.balanceTRX < stats.wallet.alertThreshold
-                      ? 'text-warning'
-                      : 'text-success'
-                  }`}>
-                    {stats.wallet.balanceTRX !== null ? `${stats.wallet.balanceTRX.toFixed(2)} TRX` : 'Unknown'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-text-muted">Alert at: </span>
-                  <span className="font-medium text-text-primary">{stats.wallet.alertThreshold.toLocaleString()} TRX</span>
-                </div>
-                <div>
-                  <span className="text-text-muted">Pause at: </span>
-                  <span className="font-medium text-text-primary">{stats.wallet.pauseThreshold.toLocaleString()} TRX</span>
-                </div>
-              </div>
-            </div>
+        <WalletCard
+          wallet={stats.wallet}
+          isSuperAdmin={isSuperAdmin}
+          toggling={toggling}
+          onToggle={() => { setActionError(null); setConfirmToggle(true) }}
+        />
+      )}
 
-            {isSuperAdmin && (
-              <Button
-                size="sm"
-                variant={stats.wallet.isActive ? 'secondary' : 'primary'}
-                onClick={() => { setActionError(null); setConfirmToggle(true) }}
-                disabled={toggling}
-              >
-                {stats.wallet.isActive ? 'Pause Chain' : 'Resume Chain'}
-              </Button>
-            )}
-          </div>
+      {/* ── Additional chain wallet cards ────────────────────────────────── */}
+      {(stats?.wallets?.length ?? 0) > 1 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {stats!.wallets.filter((w) => w.chain !== 'TRON').map((w) => (
+            <WalletCard key={w.chain} wallet={w} isSuperAdmin={false} toggling={false} onToggle={() => {}} />
+          ))}
         </div>
       )}
 
@@ -361,7 +396,7 @@ export default function GasAdminPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-text-secondary">
-                      <span className="font-medium">{parseFloat(String(o.gasAmountNative)).toFixed(0)} TRX</span>
+                      <span className="font-medium">{fmtNative(o.gasAmountNative)} {CHAIN_SYMBOL[o.chain] ?? o.chain}</span>
                       <span className="text-text-muted text-xs ml-1">/ ${parseFloat(String(o.paymentAmount)).toFixed(2)}</span>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">
@@ -445,11 +480,11 @@ export default function GasAdminPage() {
           isOpen={confirmToggle}
           onClose={() => setConfirmToggle(false)}
           onConfirm={handleToggleChain}
-          title={stats.wallet.isActive ? 'Pause TRON Chain' : 'Resume TRON Chain'}
+          title={stats.wallet.isActive ? `Pause ${stats.wallet.chain} Chain` : `Resume ${stats.wallet.chain} Chain`}
           description={
             stats.wallet.isActive
-              ? 'Pausing TRON will prevent new gas orders from being created. Existing orders continue processing.'
-              : 'Resuming TRON will allow new gas orders again. Ensure the hot wallet has sufficient balance first.'
+              ? `Pausing ${stats.wallet.chain} will prevent new gas orders from being created. Existing orders continue processing.`
+              : `Resuming ${stats.wallet.chain} will allow new gas orders again. Ensure the hot wallet has sufficient balance first.`
           }
           confirmLabel={stats.wallet.isActive ? 'Pause Chain' : 'Resume Chain'}
           confirmVariant={stats.wallet.isActive ? 'danger' : 'primary'}
