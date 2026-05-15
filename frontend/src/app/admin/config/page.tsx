@@ -1,58 +1,96 @@
-﻿'use client'
+'use client'
 import { useState, useCallback, useEffect } from 'react'
 import { adminApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { useRouter } from 'next/navigation'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { fmtDateTime } from '@/lib/fmt'
+import { Badge } from '@/components/ui/Badge'
 
-type ConfigMap = Record<string, unknown>
+type ConfigRow = { id: string; key: string; value: string; updatedAt: string }
 
-interface GroupedConfig {
-  prefix: string
+// Known config keys with metadata
+interface KeyMeta {
   label: string
-  items: Array<{ key: string; value: string }>
+  description: string
+  category: string
+  sensitive?: boolean
+  placeholder?: string
 }
 
-const GROUP_PREFIXES: Array<{ prefix: string; label: string }> = [
-  { prefix: 'fee_', label: 'Fees' },
-  { prefix: 'rate_', label: 'Rates' },
-  { prefix: 'deposit_address_', label: 'Deposit Addresses' },
-  { prefix: 'kyc_', label: 'KYC Settings' },
-  { prefix: 'site_', label: 'Site Settings' },
-  { prefix: 'referral_', label: 'Referral Settings' },
-  { prefix: 'merchant_', label: 'Merchant Settings' },
-]
+const KEY_META: Record<string, KeyMeta> = {
+  // Payment Settings
+  'fee_platform_percent':        { label: 'Platform Fee %',           description: 'Percentage fee charged on each trade (e.g. 0.5 = 0.5%)', category: 'Payment', placeholder: '0.5' },
+  'fee_gas_markup_percent':      { label: 'Gas Fee Markup %',         description: 'Markup over actual gas cost charged to user (e.g. 50 = 50%)', category: 'Payment', placeholder: '50' },
+  'pkr_bank_account_title':      { label: 'Bank Account Title',       description: 'Account holder name for PKR bank transfers', category: 'Payment' },
+  'pkr_bank_account_number':     { label: 'Bank Account Number',      description: 'Account number for PKR bank transfers', category: 'Payment' },
+  'pkr_bank_name':               { label: 'Bank Name',                description: 'Name of the bank for PKR transfers', category: 'Payment' },
+  'pkr_easypaisa_number':        { label: 'Easypaisa Number',         description: 'Mobile account number for Easypaisa payments', category: 'Payment' },
+  'pkr_jazzcash_number':         { label: 'JazzCash Number',          description: 'Mobile account number for JazzCash payments', category: 'Payment' },
+  'payment_proof_expiry_hours':  { label: 'Proof Upload Expiry (hrs)', description: 'Hours before an unconfirmed payment proof expires', category: 'Payment', placeholder: '24' },
+  // Crypto Deposit Settings
+  'deposit_address_usdt_trc20':  { label: 'USDT TRC20 Deposit',       description: 'Platform TRON deposit address for USDT TRC20 payments', category: 'Crypto Deposit' },
+  'deposit_address_usdt_bep20':  { label: 'USDT BEP20 Deposit',       description: 'Platform BSC deposit address for USDT BEP20 payments', category: 'Crypto Deposit' },
+  'deposit_address_usdt_erc20':  { label: 'USDT ERC20 Deposit',       description: 'Platform Ethereum deposit address for USDT ERC20 payments', category: 'Crypto Deposit' },
+  // Gas System Settings
+  'gas_max_usd_limit':           { label: 'Gas Max USD Limit',        description: 'Maximum USD value of gas fee per single order', category: 'Gas System', placeholder: '50' },
+  'gas_expiry_minutes':          { label: 'Gas Order Expiry (min)',   description: 'Minutes before an unpaid gas order expires', category: 'Gas System', placeholder: '30' },
+  'gas_pkr_proof_expiry_hours':  { label: 'PKR Proof Expiry (hrs)',   description: 'Hours before a PKR payment proof for gas expires', category: 'Gas System', placeholder: '2' },
+  'gas_custom_daily_limit':      { label: 'Custom Request Daily Limit', description: 'Max custom gas requests per user per day', category: 'Gas System', placeholder: '3' },
+  // Notification Settings
+  'admin_email':                 { label: 'Admin Email',              description: 'Primary admin email for system notifications', category: 'Notifications' },
+  'alert_email':                 { label: 'Alert Email',              description: 'Email address for critical alerts', category: 'Notifications' },
+  // KYC Settings
+  'kyc_required':                { label: 'KYC Required',             description: 'Whether users must complete KYC to trade (true/false)', category: 'KYC' },
+  'kyc_auto_approve':            { label: 'KYC Auto-Approve',         description: 'Auto-approve KYC submissions without manual review (true/false)', category: 'KYC' },
+  // Merchant Settings
+  'merchant_fee_percent':        { label: 'Merchant Fee %',           description: 'Fee rate applied to merchant trades', category: 'Merchant', placeholder: '0.3' },
+  'merchant_min_volume':         { label: 'Merchant Min Volume',      description: 'Minimum trade volume (PKR) to maintain merchant status', category: 'Merchant' },
+  // Referral Settings
+  'referral_bonus_percent':      { label: 'Referral Bonus %',         description: 'Percentage bonus awarded to referrer on first trade', category: 'Referral' },
+  'referral_min_trade_pkr':      { label: 'Referral Min Trade (PKR)', description: 'Minimum PKR trade size for referral bonus to apply', category: 'Referral' },
+  // Site Settings
+  'site_maintenance':            { label: 'Maintenance Mode',         description: 'Set to "true" to enable site-wide maintenance mode', category: 'Site' },
+  'site_notice':                 { label: 'Site Notice',              description: 'Banner message shown to all users (leave empty to hide)', category: 'Site' },
+}
 
-function groupConfig(config: ConfigMap): GroupedConfig[] {
-  const grouped: GroupedConfig[] = GROUP_PREFIXES.map(({ prefix, label }) => ({
-    prefix,
-    label,
-    items: [],
-  }))
-  const other: GroupedConfig = { prefix: '', label: 'Other', items: [] }
+const CATEGORY_ORDER = ['Payment', 'Crypto Deposit', 'Gas System', 'KYC', 'Merchant', 'Referral', 'Notifications', 'Site', 'Other']
 
-  Object.entries(config).forEach(([key, value]) => {
-    const match = grouped.find((g) => key.startsWith(g.prefix))
-    const entry = { key, value: String(value) }
-    if (match) {
-      match.items.push(entry)
-    } else {
-      other.items.push(entry)
-    }
-  })
+const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
 
-  const result = grouped.filter((g) => g.items.length > 0)
-  if (other.items.length > 0) result.push(other)
-  return result
+function isSensitive(key: string): boolean {
+  const lower = key.toLowerCase()
+  return SENSITIVE_PATTERNS.some((p) => lower.includes(p))
+}
+
+function maskValue(value: string): string {
+  if (!value) return ''
+  if (value.length <= 6) return '••••••'
+  return value.slice(0, 3) + '•'.repeat(Math.min(value.length - 6, 20)) + value.slice(-3)
+}
+
+function getCategory(key: string): string {
+  const meta = KEY_META[key]
+  if (meta) return meta.category
+  if (key.startsWith('fee_')) return 'Payment'
+  if (key.startsWith('deposit_address_')) return 'Crypto Deposit'
+  if (key.startsWith('gas_')) return 'Gas System'
+  if (key.startsWith('kyc_')) return 'KYC'
+  if (key.startsWith('merchant_')) return 'Merchant'
+  if (key.startsWith('referral_')) return 'Referral'
+  if (key.startsWith('site_')) return 'Site'
+  if (key.startsWith('admin_') || key.startsWith('alert_')) return 'Notifications'
+  if (key.startsWith('pkr_') || key.startsWith('payment_')) return 'Payment'
+  if (key.startsWith('rate_')) return 'Rates'
+  return 'Other'
 }
 
 export default function ConfigPage() {
   const { user } = useAuthStore()
   const router = useRouter()
-  const [config, setConfig] = useState<ConfigMap | null>(null)
+  const [rows, setRows] = useState<ConfigRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editKey, setEditKey] = useState<string | null>(null)
@@ -60,17 +98,17 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [showSensitive, setShowSensitive] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    if (user && user.role !== 'super_admin') {
-      router.replace('/admin')
-    }
+    if (user && user.role !== 'super_admin') router.replace('/admin')
   }, [user, router])
 
   const fetchConfig = useCallback(async () => {
+    setLoading(true)
     try {
-      const data = await adminApi.getConfig() as ConfigMap
-      setConfig(data)
+      const data = await adminApi.getConfig()
+      setRows(Array.isArray(data) ? data : [])
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -79,24 +117,17 @@ export default function ConfigPage() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchConfig()
-  }, [fetchConfig])
-
-  function startEdit(key: string, currentValue: string) {
-    setEditKey(key)
-    setEditValue(currentValue)
-    setSaveError(null)
-    setSaveSuccess(null)
-  }
+  useEffect(() => { fetchConfig() }, [fetchConfig])
 
   async function saveEdit(key: string) {
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
     try {
-      await adminApi.updateConfig({ key, value: editValue })
-      setConfig((prev) => prev ? { ...prev, [key]: editValue } : prev)
+      const updated = await adminApi.updateConfig({ key, value: editValue })
+      setRows((prev) =>
+        prev.map((r) => (r.key === key ? { ...r, value: editValue, updatedAt: updated.updatedAt } : r))
+      )
       setSaveSuccess(`"${key}" updated successfully.`)
       setEditKey(null)
     } catch (err) {
@@ -108,17 +139,29 @@ export default function ConfigPage() {
 
   if (user?.role !== 'super_admin') return null
   if (loading) return <LoadingState message="Loading configuration..." />
-  if (error && !config) return <ErrorState title={error} onRetry={fetchConfig} />
-  if (!config || Object.keys(config).length === 0) return <EmptyState title="No configuration found" description="The platform configuration is empty." />
+  if (error && rows.length === 0) return <ErrorState title={error} onRetry={fetchConfig} />
 
-  const groups = groupConfig(config)
+  // Group rows by category
+  const grouped: Record<string, ConfigRow[]> = {}
+  for (const row of rows) {
+    const cat = getCategory(row.key)
+    if (!grouped[cat]) grouped[cat] = []
+    grouped[cat].push(row)
+  }
+  const categories = CATEGORY_ORDER.filter((c) => grouped[c])
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Platform Configuration</h1>
-        <p className="text-text-muted text-sm mt-0.5">Super admin only â€” edit platform settings</p>
+        <p className="text-text-muted text-sm mt-0.5">Super admin only — edit platform settings</p>
       </div>
+
+      {rows.length === 0 && (
+        <div className="bg-surface rounded-xl border border-border px-5 py-8 text-center text-text-muted text-sm">
+          No configuration entries found in the database. Settings that come from environment variables are managed in Railway.
+        </div>
+      )}
 
       {saveSuccess && (
         <div className="px-4 py-3 bg-success/10 border border-success/20 rounded-xl text-success text-sm">
@@ -126,58 +169,122 @@ export default function ConfigPage() {
         </div>
       )}
 
-      {groups.map((group) => (
-        <div key={group.prefix || 'other'} className="bg-white rounded-xl border border-border overflow-hidden">
+      {categories.map((category) => (
+        <div key={category} className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="px-5 py-3 bg-surface border-b border-border">
-            <h2 className="text-sm font-semibold text-text-primary">{group.label}</h2>
+            <h2 className="text-sm font-semibold text-text-primary">{category}</h2>
           </div>
-          <div className="divide-y divide-border">
-            {group.items.map(({ key, value }) => (
-              <div key={key} className="flex items-center gap-4 px-5 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-mono text-text-primary truncate">{key}</p>
-                </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-border bg-surface/40">
+                <tr>
+                  <th className="text-left px-5 py-2.5 font-medium text-text-muted w-48">Setting</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-text-muted">Description</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-text-muted w-56">Current Value</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-text-muted w-36">Last Updated</th>
+                  <th className="px-4 py-2.5 w-20" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {grouped[category]!.map((row) => {
+                  const meta = KEY_META[row.key]
+                  const sensitive = meta?.sensitive ?? isSensitive(row.key)
+                  const revealed = showSensitive[row.key]
+                  const displayValue = sensitive && !revealed
+                    ? maskValue(row.value)
+                    : (row.value || <span className="text-text-muted italic">empty</span>)
+                  const isEditing = editKey === row.key
 
-                {editKey === key ? (
-                  <div className="flex items-center gap-2 flex-1 max-w-sm">
-                    <input
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      className="flex-1 px-3 py-1.5 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') saveEdit(key)
-                        if (e.key === 'Escape') setEditKey(null)
-                      }}
-                    />
-                    <Button size="sm" loading={saving} onClick={() => saveEdit(key)}>Save</Button>
-                    <Button size="sm" variant="secondary" onClick={() => setEditKey(null)} disabled={saving}>
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3 flex-1 max-w-sm justify-end">
-                    <span className="text-sm text-text-secondary font-mono truncate max-w-xs">{value}</span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => startEdit(key, value)}
-                    >
-                      Edit
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
+                  return (
+                    <tr key={row.key} className="hover:bg-surface/30">
+                      <td className="px-5 py-3 align-top">
+                        <p className="font-medium text-text-primary text-xs">{meta?.label ?? row.key}</p>
+                        <p className="font-mono text-xs text-text-muted mt-0.5">{row.key}</p>
+                        {sensitive && (
+                          <Badge variant="outline" size="sm" className="mt-1">Sensitive</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <p className="text-xs text-text-secondary">{meta?.description ?? 'No description available.'}</p>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        {isEditing ? (
+                          <div className="space-y-1.5">
+                            <input
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              placeholder={meta?.placeholder}
+                              className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs font-mono text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveEdit(row.key)
+                                if (e.key === 'Escape') setEditKey(null)
+                              }}
+                            />
+                            {saveError && editKey === row.key && (
+                              <p className="text-danger text-xs">{saveError}</p>
+                            )}
+                            <div className="flex gap-1.5">
+                              <Button size="sm" loading={saving} onClick={() => saveEdit(row.key)}>Save</Button>
+                              <Button size="sm" variant="secondary" onClick={() => setEditKey(null)} disabled={saving}>Cancel</Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs text-text-secondary break-all">{displayValue}</span>
+                            {sensitive && (
+                              <button
+                                onClick={() => setShowSensitive((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                                className="text-xs text-text-muted hover:text-primary underline flex-shrink-0"
+                              >
+                                {revealed ? 'Hide' : 'Show'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top text-xs text-text-muted">
+                        {fmtDateTime(row.updatedAt)}
+                      </td>
+                      <td className="px-4 py-3 align-top text-right">
+                        {!isEditing && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditKey(row.key)
+                              setEditValue(row.value)
+                              setSaveError(null)
+                              setSaveSuccess(null)
+                            }}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-          {saveError && editKey && group.items.some((i) => i.key === editKey) && (
-            <div className="px-5 py-2 text-danger text-sm bg-danger/5 border-t border-danger/10">
-              {saveError}
-            </div>
-          )}
         </div>
       ))}
+
+      {/* Env-only settings notice */}
+      <div className="bg-surface rounded-xl border border-border px-5 py-4 text-xs text-text-muted space-y-1">
+        <p className="font-semibold text-text-secondary text-sm mb-2">Environment-only Settings</p>
+        <p>The following are set as Railway environment variables and cannot be edited here:</p>
+        <ul className="mt-2 space-y-0.5 list-disc list-inside">
+          <li><code>GAS_FEE_DEPOSIT_ADDRESS_TRC20</code> — TRON deposit address</li>
+          <li><code>GAS_WALLET_PRIVATE_KEY_TRON</code> — TRON hot wallet private key (never shown)</li>
+          <li><code>TRON_FULLNODE_URL</code> / <code>TRONGRID_API_KEY</code> — blockchain RPC</li>
+          <li><code>GAS_FEE_DEPOSIT_ADDRESS_BEP20</code> — BSC deposit address</li>
+          <li><code>GAS_WALLET_PRIVATE_KEY_BSC</code> / <code>GAS_WALLET_PRIVATE_KEY_ETH</code> — chain hot wallet keys</li>
+          <li><code>DATABASE_URL</code>, <code>JWT_SECRET</code>, <code>SMTP_*</code> — infrastructure secrets</li>
+        </ul>
+        <p className="mt-2">Manage these in the Railway dashboard under Variables.</p>
+      </div>
     </div>
   )
 }
-

@@ -1062,19 +1062,37 @@ export const adminApi = {
 
   // Config
   getConfig: () =>
-    apiRequest<Record<string, unknown>>('/admin/config'),
+    apiRequest<Array<{ id: string; key: string; value: string; updatedAt: string }>>('/admin/config'),
   updateConfig: (data: { key: string; value: string }) =>
-    apiRequest<void>('/admin/config', { method: 'PATCH', body: JSON.stringify(data) }),
+    apiRequest<{ id: string; key: string; value: string; updatedAt: string }>('/admin/config', { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Analytics
   getAnalytics: (params?: Record<string, string | number | undefined>) =>
     apiRequest<unknown>('/admin/analytics' + buildQs(params)),
 
   // Wallet
+  getWalletStatus: () =>
+    apiRequest<{
+      depositAddresses: Array<{
+        coin: string; network: string; chain: string
+        address: string | null; source: 'env' | 'db' | null
+        configured: boolean; updatedAt: string | null
+      }>
+      hotWallets: Array<{
+        chain: string; address: string; isActive: boolean
+        balance: number | null; nativeSymbol: string
+        alertThreshold: number; pauseThreshold: number
+        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+      }>
+      orderSummary: Record<string, number>
+      configWarnings: Array<{ key: string; label: string; required: boolean }>
+    }>('/admin/wallet/status'),
   getWalletAddresses: () =>
-    apiRequest<{ addresses: Array<{ coin: string; network: string; address: string; updatedAt?: string }> }>('/admin/wallet/addresses'),
+    apiRequest<Array<{ id: string; key: string; value: string; updatedAt: string }>>('/admin/wallet/addresses'),
   updateWalletAddress: (data: { coin: string; network: string; address: string }) =>
-    apiRequest<void>('/admin/wallet/addresses', { method: 'PUT', body: JSON.stringify(data) }),
+    apiRequest<{ id: string; key: string; value: string; updatedAt: string }>('/admin/wallet/addresses', { method: 'POST', body: JSON.stringify(data) }),
+  getPendingPayouts: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ withdrawals: Array<{ id: string; userId: string; user?: { email: string; username: string }; coin: string; amount: string; address: string; network: string; status: string; createdAt: string }>; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/wallet/pending-payouts' + buildQs(params)),
 
   // Gas Orders
   getGasOrders: (params?: Record<string, string | number | undefined>) =>
