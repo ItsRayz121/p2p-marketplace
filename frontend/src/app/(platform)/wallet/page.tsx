@@ -82,11 +82,12 @@ function timeAgo(dateStr: string): string {
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
 function WithdrawModal({
-  isOpen, onClose, coin,
+  isOpen, onClose, coin, twoFaEnabled,
 }: {
   isOpen: boolean
   onClose: () => void
   coin: string
+  twoFaEnabled: boolean
 }) {
   const [state, setState] = useState<WithdrawState>({
     address: '',
@@ -97,6 +98,7 @@ function WithdrawModal({
     loadingFee: false,
     feeError: null,
   })
+  const [totpCode, setTotpCode] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -112,6 +114,7 @@ function WithdrawModal({
     if (isOpen) {
       idempotencyKey.current = crypto.randomUUID()
       setState((s) => ({ ...s, address: '', amount: '', fee: '0', feePkr: '0' }))
+      setTotpCode('')
       setSuccess(false)
       setRequiresEmailConfirm(false)
       setPendingWithdrawalId(null)
@@ -163,6 +166,7 @@ function WithdrawModal({
         amount: state.amount,
         address: state.address,
         network: state.network,
+        ...(twoFaEnabled ? { totpCode } : {}),
       })
       setShowConfirm(false)
       if (result.status === 'email_pending') {
@@ -315,13 +319,29 @@ function WithdrawModal({
               </div>
             </div>
 
+            {twoFaEnabled && (
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">2FA Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono tracking-widest text-center"
+                />
+                <p className="text-xs text-text-muted mt-1">Enter the 6-digit code from your authenticator app.</p>
+              </div>
+            )}
+
             {submitError && (
               <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{submitError}</p>
             )}
 
             <Button
               fullWidth
-              disabled={!state.address || !state.amount || state.loadingFee || !!state.feeError}
+              disabled={!state.address || !state.amount || state.loadingFee || !!state.feeError || (twoFaEnabled && totpCode.length !== 6)}
               onClick={() => setShowConfirm(true)}
             >
               {state.loadingFee ? 'Loading fee…' : state.feeError ? 'Fee unavailable' : 'Continue'}
@@ -467,11 +487,12 @@ function DepositModal({
 
 // ─── TrustedAddressesSection ──────────────────────────────────────────────────
 
-function TrustedAddressesSection() {
+function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
   const [addresses, setAddresses] = useState<TrustedAddress[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ coin: 'USDT', network: 'TRC20', address: '', label: '' })
+  const [totpCode, setTotpCode] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
 
@@ -486,12 +507,14 @@ function TrustedAddressesSection() {
 
   const handleAdd = async () => {
     if (!form.address || !form.label) { setFormError('Address and label are required'); return }
+    if (twoFaEnabled && totpCode.length !== 6) { setFormError('Enter your 6-digit 2FA code'); return }
     setAdding(true)
     setFormError(null)
     try {
-      await walletApi.addTrustedAddress(form)
+      await walletApi.addTrustedAddress({ ...form, ...(twoFaEnabled ? { totpCode } : {}) })
       setShowForm(false)
       setForm({ coin: 'USDT', network: 'TRC20', address: '', label: '' })
+      setTotpCode('')
       await load()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to add address')
@@ -547,6 +570,20 @@ function TrustedAddressesSection() {
             <label className="block text-xs font-medium text-text-muted mb-1">Label</label>
             <input value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} placeholder="e.g. My Binance Wallet" className="w-full px-3 py-2 text-sm border border-border rounded-lg" />
           </div>
+          {twoFaEnabled && (
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">2FA Code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono tracking-widest text-center"
+              />
+            </div>
+          )}
           {formError && <p className="text-xs text-danger">{formError}</p>}
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
             This address will have a 24-hour activation delay before it can be used for withdrawals.
@@ -797,7 +834,7 @@ export default function WalletPage() {
       </section>
 
       {/* ── Trusted addresses ── */}
-      <TrustedAddressesSection />
+      <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
 
       {/* Deposit modal */}
       {depositCoin && (
@@ -814,6 +851,7 @@ export default function WalletPage() {
           isOpen={!!withdrawCoin}
           onClose={() => setWithdrawCoin(null)}
           coin={withdrawCoin}
+          twoFaEnabled={user?.twoFaEnabled ?? false}
         />
       )}
     </div>

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, requireTotpIfEnabled } from '../middleware/auth.middleware'
 import {
   getUserWallets,
   getDepositAddress,
@@ -260,7 +260,7 @@ export async function walletRoutes(app: FastifyInstance) {
   })
 
   // POST /api/wallet/withdraw
-  app.post('/wallet/withdraw', { preHandler: [authenticate] }, async (req, reply) => {
+  app.post('/wallet/withdraw', { preHandler: [authenticate, requireTotpIfEnabled] }, async (req, reply) => {
     const userId = req.user!.id
     const idempotencyKey = (req.headers['x-idempotency-key'] as string | undefined)?.trim()
     if (!idempotencyKey) {
@@ -376,7 +376,7 @@ export async function walletRoutes(app: FastifyInstance) {
   })
 
   // POST /api/wallet/trusted-addresses
-  app.post('/wallet/trusted-addresses', { preHandler: [authenticate] }, async (req, reply) => {
+  app.post('/wallet/trusted-addresses', { preHandler: [authenticate, requireTotpIfEnabled] }, async (req, reply) => {
     const userId = req.user!.id
     const parsed = trustedAddressSchema.safeParse(req.body)
     if (!parsed.success) {

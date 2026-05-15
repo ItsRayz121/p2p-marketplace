@@ -546,10 +546,13 @@ export const walletApi = {
       detectedAt: string
       creditedAt: string | null
     }> }>('/wallet/deposits'),
-  requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string }) =>
+  requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string; totpCode?: string }) =>
     apiRequest<{ id: string; status: WithdrawalStatus; orderRef: string }>('/wallet/withdraw', {
       method: 'POST',
-      headers: { 'X-Idempotency-Key': cryptoRandomId() },
+      headers: {
+        'X-Idempotency-Key': cryptoRandomId(),
+        ...(data.totpCode ? { 'X-TOTP-Code': data.totpCode } : {}),
+      },
       body: JSON.stringify({
         coin: data.coin,
         network: data.network,
@@ -574,10 +577,11 @@ export const walletApi = {
     ),
   getTrustedAddresses: () =>
     apiRequest<TrustedAddress[]>('/wallet/trusted-addresses'),
-  addTrustedAddress: (data: { coin: string; network: string; address: string; label: string }) =>
+  addTrustedAddress: (data: { coin: string; network: string; address: string; label: string; totpCode?: string }) =>
     apiRequest<TrustedAddress>('/wallet/trusted-addresses', {
       method: 'POST',
-      body: JSON.stringify(data),
+      headers: data.totpCode ? { 'X-TOTP-Code': data.totpCode } : {},
+      body: JSON.stringify({ coin: data.coin, network: data.network, address: data.address, label: data.label }),
     }),
   removeTrustedAddress: (id: string) =>
     apiRequest<void>(`/wallet/trusted-addresses/${id}`, { method: 'DELETE' }),

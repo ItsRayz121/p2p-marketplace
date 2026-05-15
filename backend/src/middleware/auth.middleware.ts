@@ -1,6 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
+import { verify as otpVerify } from 'otplib'
 import { verifyAccessToken } from '../lib/jwt'
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 
 // Augment FastifyRequest to include user
@@ -38,6 +40,40 @@ export function requireRole(...roles: string[]) {
       throw new AppError('FORBIDDEN', 'Insufficient permissions', 403)
     }
   }
+}
+
+// Require a valid TOTP code via X-TOTP-Code header for users who have 2FA enabled.
+// If the user has 2FA disabled, this middleware is a no-op (can't enforce what isn't set up).
+// Prevents replay attacks by storing used codes in Redis for 90 seconds (±30s TOTP window).
+export async function requireTotpIfEnabled(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
+  if (!req.user) throw new AppError('UNAUTHORIZED', 'Authentication required', 401)
+
+  const record = await db.user.findUnique({
+    where: { id: req.user.id },
+    select: { twoFaEnabled: true, twoFaSecret: true },
+  })
+  if (!record?.twoFaEnabled || !record.twoFaSecret) return
+
+  const code = (req.headers['x-totp-code'] as string | undefined)?.trim()
+  if (!code) {
+    throw new AppError('TOTP_REQUIRED', '2FA code required for this action — provide it in X-TOTP-Code header', 403)
+  }
+
+  // Replay guard — each 6-digit code is valid for one use within its 90-second window
+  const replayKey = `totp:used:${req.user.id}:${code}`
+  const alreadyUsed = await redis.get(replayKey)
+  if (alreadyUsed) {
+    throw new AppError('TOTP_REPLAY', '2FA code has already been used — wait for the next code', 403)
+  }
+
+  const result = await otpVerify({ token: code, secret: record.twoFaSecret })
+  const valid = (result as { valid: boolean }).valid
+  if (!valid) {
+    throw new AppError('TOTP_INVALID', 'Invalid 2FA code', 403)
+  }
+
+  // Mark code as used; TTL covers the full TOTP window (30s step × 3 = 90s)
+  await redis.set(replayKey, '1', 'EX', 90)
 }
 
 export async function optionalAuth(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
