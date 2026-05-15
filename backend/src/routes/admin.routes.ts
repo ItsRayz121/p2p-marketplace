@@ -2322,7 +2322,7 @@ export async function adminRoutes(app: FastifyInstance) {
         // Hot wallet must exist and be active in DB
         const dbChain = effectiveBackendId === 'ETHEREUM' ? 'ETH' : effectiveBackendId
         const hotWallet = await db.gasHotWallet.findFirst({
-          where: { chain: dbChain as 'TRON' | 'BSC' | 'ETH' | 'BASE' | 'ARB' | 'OP' | 'MATIC' | 'AVAX', isActive: true },
+          where: { chain: dbChain as 'TRON' | 'BSC' | 'ETH' | 'BASE' | 'ARB' | 'OP' | 'MATIC' | 'AVAX' | 'SOL' | 'TON' | 'SUI', isActive: true },
         })
         if (!hotWallet) failures.push(`No active GasHotWallet row for chain ${effectiveBackendId}`)
 

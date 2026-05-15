@@ -59,6 +59,7 @@ const ADDRESS_PATTERNS: Record<string, RegExp> = {
   EVM:   /^0x[0-9a-fA-F]{40}$/,
   SOL:   /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
   SUI:   /^0x[0-9a-fA-F]{64}$/,
+  TON:   /^0:[0-9a-f]{64}$|^[UE][Qq][A-Za-z0-9+/\-_]{46}$/,
 }
 
 function validateAddress(addr: string, addressType: string): boolean {
@@ -394,7 +395,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
 
     // Create order — use chain enum from backendChainId
-    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON'
+    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
     const orderRef  = generateOrderRef('GF')
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
 
@@ -724,7 +725,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       }
     }
 
-    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON'
+    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
     const orderRef   = generateOrderRef('GF')
     const expiresAt  = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
@@ -856,7 +857,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       if (destCount >= 2) throw new AppError('DEST_LIMIT_EXCEEDED', 'Maximum 2 gas orders to the same destination per day for guest users.', 400)
     }
 
-    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON'
+    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
     const orderRef   = generateOrderRef('GF')
     const expiresAt  = new Date(Date.now() + 15 * 60 * 1000)
 
