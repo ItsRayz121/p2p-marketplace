@@ -29,6 +29,14 @@ import { env } from '../env'
 /** Index 0 → hot wallet — signs outgoing delivery transactions */
 export const HOT_WALLET_INDEX = 0
 
+/**
+ * Index 100 → TRON treasury wallet (same mnemonic, never signs deliveries).
+ * Index 101 → EVM treasury wallet (same mnemonic, never signs deliveries).
+ * High indices ensure no accidental overlap with future hot wallet pool expansion.
+ */
+export const TREASURY_TRON_INDEX = 100
+export const TREASURY_EVM_INDEX  = 101
+
 // ── TRON address encoding ─────────────────────────────────────────────────────
 // TRON uses secp256k1 (same curve as EVM). The only difference is the address
 // format: Base58Check( 0x41 || last-20-bytes-of-keccak256(pubkey) ) instead of
@@ -189,6 +197,43 @@ export function getEvmHotWalletAddress(): string | null {
   }
 }
 
+// ── Treasury address getters ──────────────────────────────────────────────────
+
+let _tronTreasuryAddressCache: string | null = null
+let _evmTreasuryAddressCache:  string | null = null
+
+/**
+ * Return the derived TRON treasury wallet address (T...) at index 100.
+ * Cached after first call. Returns null when mnemonic system is not configured.
+ */
+export function getTronTreasuryAddress(): string | null {
+  if (!gasWalletIsConfigured()) return null
+  if (_tronTreasuryAddressCache) return _tronTreasuryAddressCache
+  const seed = decryptGasSeed()
+  try {
+    _tronTreasuryAddressCache = deriveTronAddress(seed, TREASURY_TRON_INDEX)
+    return _tronTreasuryAddressCache
+  } finally {
+    seed.fill(0)
+  }
+}
+
+/**
+ * Return the derived EVM treasury wallet address (0x...) at index 101.
+ * Cached after first call. Returns null when mnemonic system is not configured.
+ */
+export function getEvmTreasuryAddress(): string | null {
+  if (!gasWalletIsConfigured()) return null
+  if (_evmTreasuryAddressCache) return _evmTreasuryAddressCache
+  const seed = decryptGasSeed()
+  try {
+    _evmTreasuryAddressCache = deriveEvmAddress(seed, TREASURY_EVM_INDEX)
+    return _evmTreasuryAddressCache
+  } finally {
+    seed.fill(0)
+  }
+}
+
 // ── Startup validation ─────────────────────────────────────────────────────────
 
 /**
@@ -268,4 +313,44 @@ export function validateGasWalletAtStartup(): {
   } finally {
     seed.fill(0)
   }
+}
+
+// ── Effective deposit address ──────────────────────────────────────────────────
+// Returns the address users should send USDT to for a given chain.
+// Priority: (1) explicit env var, (2) mnemonic-derived hot wallet, (3) null.
+//
+// For EVM chains the hot wallet IS the deposit address — funds land there
+// and the same wallet signs outgoing delivery transactions.
+// For TRON the same principle applies (TronWeb uses the same derived key).
+
+export type DepositAddressSource = 'env_var' | 'mnemonic_derived' | 'unconfigured'
+
+export interface EffectiveDepositAddress {
+  address: string | null
+  source: DepositAddressSource
+  chain: string
+}
+
+export function getEffectiveDepositAddress(
+  chain: string,
+  envVarAddress: string | undefined,
+): EffectiveDepositAddress {
+  if (envVarAddress) {
+    return { address: envVarAddress, source: 'env_var', chain }
+  }
+
+  const upperChain = chain.toUpperCase()
+  if (upperChain === 'TRON') {
+    const addr = getTronHotWalletAddress()
+    return { address: addr, source: addr ? 'mnemonic_derived' : 'unconfigured', chain }
+  }
+
+  // All EVM chains share the same derived hot wallet address
+  const EVM_CHAINS = ['BSC', 'ETHEREUM', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX']
+  if (EVM_CHAINS.includes(upperChain)) {
+    const addr = getEvmHotWalletAddress()
+    return { address: addr, source: addr ? 'mnemonic_derived' : 'unconfigured', chain }
+  }
+
+  return { address: null, source: 'unconfigured', chain }
 }

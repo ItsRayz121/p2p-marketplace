@@ -59,7 +59,7 @@ const envSchema = z.object({
   // for production use.
   ETHEREUM_RPC_URL: z.string().url().default('https://eth.llamarpc.com'),
   BSC_RPC_URL: z.string().url().default('https://bsc-dataseed.binance.org'),
-  POLYGON_RPC_URL: z.string().url().default('https://polygon-rpc.com'),
+  POLYGON_RPC_URL: z.string().url().default('https://polygon-bor-rpc.publicnode.com'),
   ARBITRUM_RPC_URL: z.string().url().default('https://arb1.arbitrum.io/rpc'),
   OPTIMISM_RPC_URL: z.string().url().default('https://mainnet.optimism.io'),
   BASE_RPC_URL: z.string().url().default('https://mainnet.base.org'),

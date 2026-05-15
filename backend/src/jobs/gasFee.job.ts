@@ -5,6 +5,9 @@ import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import { queues } from '../queues/definitions'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
+import { appendLedgerEntry } from '../lib/gas/gas.ledger'
+import type { GasChainId } from '../lib/gas/gas.chains'
+import { fromDbChain } from '../lib/gas/gas.chains'
 
 export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   const { orderId } = job.data
@@ -47,6 +50,18 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
         deliveredAt: new Date(),
       },
     })
+
+    appendLedgerEntry({
+      entryType:      'gas_delivery',
+      chain:          fromDbChain(order.chain) as GasChainId,
+      nativeAmount:   -Number(order.gasAmountNative),
+      usdAmount:      Number(order.gasAmountUSD),
+      txHash:         deliveryTxHash,
+      toAddress:      order.toAddress,
+      relatedOrderId: orderId,
+      notes:          `Delivery for order ${order.orderRef}`,
+      ...(order.fromHotWallet ? { fromAddress: order.fromHotWallet } : {}),
+    }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write delivery ledger entry'))
 
     // Enqueue on-chain confirmation check 60s after send (10 retries × 60s = 10 min window)
     await queues.gasFee.add(

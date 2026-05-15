@@ -16,7 +16,13 @@ import { getRpcUrl } from '../lib/chains'
 import { getTransactionByHash, getTransactionReceipt, getBlockNumber } from '../lib/evmRpc'
 import { Prisma } from '@prisma/client'
 import { getWithdrawalTierConfig, upsertWithdrawalTierConfig } from '../services/withdrawal-risk.service'
-import { getNativeUsdPrice, testRpcHealth } from '../lib/gas/gas.balance'
+import { getNativeUsdPrice, testRpcHealth, getHotWalletBalance } from '../lib/gas/gas.balance'
+import { getAllTreasuryAddresses, getTreasuryBalance } from '../lib/gas/gas.treasury'
+import { getLedgerEntries, getLedgerSummary } from '../lib/gas/gas.ledger'
+import { getAllThresholds, getThreshold, upsertThreshold, setThresholdEnabled, validateThreshold } from '../lib/gas/gas.thresholds'
+import { approveRefill, cancelRefill, checkAndQueueRefills, processApprovedRefills } from '../lib/gas/gas.refill'
+import { getTronHotWalletAddress, getEvmHotWalletAddress, getTronTreasuryAddress, getEvmTreasuryAddress } from '../lib/gas/gasWalletService'
+import type { GasChainId } from '../lib/gas/gas.chains'
 type JsonValue = Prisma.InputJsonValue
 
 const adminOrSuper = requireRole('admin', 'super_admin')
@@ -2697,11 +2703,14 @@ export async function adminRoutes(app: FastifyInstance) {
     const { redis: redisClient } = await import('../lib/redis')
     const { GAS_CHAINS, fromDbChain, SUPPORTED_GAS_CHAINS } = await import('../lib/gas/gas.chains')
     const { testRpcHealth, getNativeUsdPrice } = await import('../lib/gas/gas.balance')
-    const { gasWalletIsConfigured, getTronHotWalletAddress, getEvmHotWalletAddress } = await import('../lib/gas/gasWalletService')
+    const { gasWalletIsConfigured, getTronHotWalletAddress, getEvmHotWalletAddress, getEffectiveDepositAddress } = await import('../lib/gas/gasWalletService')
     const { getSolanaHotWalletAddress } = await import('../lib/gas/solanaWalletService')
     const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
     const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
-    const { CHAIN_READINESS_MATRIX, UNSUPPORTED_FEATURES, getChainCapabilities } = await import('../lib/gas/chainMeta')
+    const { CHAIN_READINESS_MATRIX, UNSUPPORTED_FEATURES, getChainCapabilities, buildChainReadinessReport } = await import('../lib/gas/chainMeta')
+    const { getUsdtContractAddress }    = await import('../lib/gas/gas.refund')
+    const { getAllChainRpcFallbackStatus } = await import('../lib/gas/rpcFallback')
+    const { env: envVars }              = await import('../lib/env')
 
     // ── 1. Redis health ────────────────────────────────────────────────────────
     let redisOk = false
@@ -2864,16 +2873,70 @@ export async function adminRoutes(app: FastifyInstance) {
       rpc:           rpcMap[c.backendChainId === 'ETH' ? 'ETHEREUM' : (c.backendChainId ?? c.slug)] ?? null,
     }))
 
+    // ── 11. RPC fallback status (parallel probe of all EVM chain fallback lists) ─
+    const evmRpcUrls: Partial<Record<string, string>> = {
+      ETHEREUM: envVars.ETHEREUM_RPC_URL,
+      BSC:      envVars.BSC_RPC_URL,
+      BASE:     envVars.BASE_RPC_URL,
+      ARB:      envVars.ARBITRUM_RPC_URL,
+      OP:       envVars.OPTIMISM_RPC_URL,
+      MATIC:    envVars.POLYGON_RPC_URL,
+      AVAX:     envVars.AVALANCHE_RPC_URL,
+    }
+    const rpcFallbackStatus = await getAllChainRpcFallbackStatus(
+      evmRpcUrls as Parameters<typeof getAllChainRpcFallbackStatus>[0]
+    ).catch(() => [])
+
+    // ── 12. Per-chain deposit + refund + confirmation readiness ────────────────
+    // Covers all EVM chains + TRON. SOL/TON/SUI remain inactive.
+    const chainDepositRefundReadiness = (() => {
+      const evmDepositAddr = getEffectiveDepositAddress('EVM', envVars.GAS_FEE_DEPOSIT_ADDRESS_ERC20 ?? undefined)
+      const tronDepositAddr = getEffectiveDepositAddress('TRON', envVars.GAS_FEE_DEPOSIT_ADDRESS_TRC20 ?? undefined)
+
+      const chainEnvDepositMap: Record<string, string | undefined> = {
+        TRON:     envVars.GAS_FEE_DEPOSIT_ADDRESS_TRC20,
+        BSC:      envVars.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
+        ETHEREUM: envVars.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
+        BASE:     envVars.GAS_FEE_DEPOSIT_ADDRESS_BASE,
+        ARB:      envVars.GAS_FEE_DEPOSIT_ADDRESS_ARB,
+        OP:       envVars.GAS_FEE_DEPOSIT_ADDRESS_OP,
+        MATIC:    envVars.GAS_FEE_DEPOSIT_ADDRESS_MATIC,
+        AVAX:     envVars.GAS_FEE_DEPOSIT_ADDRESS_AVAX,
+      }
+
+      return Object.entries(chainEnvDepositMap).map(([chain, envAddr]) => {
+        const backendChainKey = chain === 'ETHEREUM' ? 'ETHEREUM' : chain
+        const rpcStatus = rpcMap[backendChainKey]
+        const depositAddr = envAddr ?? (chain === 'TRON' ? tronDepositAddr.address : evmDepositAddr.address)
+        const depositSource = envAddr
+          ? ('env_var' as const)
+          : (chain === 'TRON' ? tronDepositAddr.source : evmDepositAddr.source)
+
+        return buildChainReadinessReport(chain, {
+          depositAddress:     depositAddr ?? null,
+          depositSource,
+          usdtContract:       getUsdtContractAddress(chain as import('../lib/gas/gas.chains').GasChainId),
+          mnemonicConfigured,
+          rpcReachable:       rpcStatus?.reachable ?? false,
+        })
+      })
+    })()
+
     // ── Final assembly ────────────────────────────────────────────────────────
     const criticalIssues: string[] = []
     if (!redisOk) criticalIssues.push('Redis unreachable')
     if (globallyPaused) criticalIssues.push('Gas system globally paused')
-    if (!mnemonicConfigured) criticalIssues.push('Gas mnemonic not configured — delivery using legacy env vars')
+    if (!mnemonicConfigured) criticalIssues.push('Gas mnemonic not configured — delivery requires mnemonic')
     for (const w of walletHealth) {
       if (w.status === 'paused') criticalIssues.push(`${w.chain} wallet auto-paused (below pause threshold)`)
     }
     for (const [chainId, rpc] of Object.entries(rpcMap)) {
       if (!rpc.reachable) criticalIssues.push(`${chainId} RPC unreachable: ${rpc.error}`)
+    }
+    for (const report of chainDepositRefundReadiness) {
+      if (!report.depositReady) {
+        criticalIssues.push(`${report.chain} deposit address not configured`)
+      }
     }
 
     return reply.send({
@@ -2888,12 +2951,14 @@ export async function adminRoutes(app: FastifyInstance) {
           addresses:  mnemonicAddresses,
         },
         globallyPaused,
-        rpc:            rpcMap,
+        rpc:                rpcMap,
+        rpcFallbackStatus,
         walletHealth,
         staleRates,
         queueHealth,
         deliveryHealth,
         chainReadiness,
+        chainDepositRefundReadiness,
         readinessMatrix:    CHAIN_READINESS_MATRIX,
         unsupportedFeatures: UNSUPPORTED_FEATURES,
       },
@@ -2981,6 +3046,290 @@ export async function adminRoutes(app: FastifyInstance) {
         avgCompletionSec,
         chainStats,
       },
+    })
+  })
+
+  // ── Treasury Wallet ────────────────────────────────────────────────────────
+
+  // GET /admin/gas/treasury — list treasury wallets with live balances
+  app.get('/admin/gas/treasury', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const addrs = getAllTreasuryAddresses()
+
+    const [tronRow, evmRow] = await Promise.all([
+      db.gasTreasuryWallet.findUnique({ where: { chain: 'TRON' } }),
+      db.gasTreasuryWallet.findUnique({ where: { chain: 'ETH'  } }),
+    ])
+
+    const results = await Promise.allSettled([
+      addrs.tron ? getTreasuryBalance('TRON')     : Promise.resolve(null),
+      addrs.evm  ? getTreasuryBalance('ETHEREUM')  : Promise.resolve(null),
+    ])
+
+    return reply.send({
+      success: true,
+      data: {
+        tron: {
+          address:        addrs.tron,
+          derivationIndex: 100,
+          dbRow:           tronRow,
+          balance:         results[0].status === 'fulfilled' ? results[0].value : null,
+          balanceError:    results[0].status === 'rejected'  ? String(results[0].reason) : null,
+        },
+        evm: {
+          address:         addrs.evm,
+          derivationIndex: 101,
+          dbRow:           evmRow,
+          balance:         results[1].status === 'fulfilled' ? results[1].value : null,
+          balanceError:    results[1].status === 'rejected'  ? String(results[1].reason) : null,
+          note:            'One EVM address serves ETH, BSC, Base, ARB, OP, Polygon, Avalanche',
+        },
+      },
+    })
+  })
+
+  // POST /admin/gas/treasury/seed — create GasTreasuryWallet DB rows from derived addresses
+  app.post('/admin/gas/treasury/seed', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const tronAddr = getTronTreasuryAddress()
+    const evmAddr  = getEvmTreasuryAddress()
+
+    if (!tronAddr || !evmAddr) {
+      return reply.status(503).send({ success: false, error: 'Gas wallet mnemonic not configured' })
+    }
+
+    const [tronRow, evmRow] = await Promise.all([
+      db.gasTreasuryWallet.upsert({
+        where: { chain: 'TRON' },
+        create: { chain: 'TRON', chainFamily: 'TRON', address: tronAddr, derivationIndex: 100 },
+        update: { address: tronAddr, isActive: true },
+      }),
+      db.gasTreasuryWallet.upsert({
+        where: { chain: 'ETH' },
+        create: { chain: 'ETH', chainFamily: 'EVM', address: evmAddr, derivationIndex: 101 },
+        update: { address: evmAddr, isActive: true },
+      }),
+    ])
+
+    await createAuditLog(
+      (req.user as { id: string }).id,
+      'gas_treasury_seed',
+      'GasTreasuryWallet',
+      'all',
+      { tronAddress: tronAddr, evmAddress: evmAddr },
+    )
+
+    return reply.send({ success: true, data: { tron: tronRow, evm: evmRow } })
+  })
+
+  // ── Accounting Ledger ──────────────────────────────────────────────────────
+
+  // GET /admin/gas/ledger — paginated ledger entries
+  app.get('/admin/gas/ledger', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const q = req.query as Record<string, string>
+    const { page, limit } = paginationParams(q)
+
+    const result = await getLedgerEntries({
+      page,
+      limit,
+      ...(q.chain     ? { chain:          q.chain     as GasChainId }                          : {}),
+      ...(q.entryType ? { entryType:      q.entryType as import('@prisma/client').GasLedgerEntryType } : {}),
+      ...(q.orderId   ? { relatedOrderId: q.orderId }                                           : {}),
+      ...(q.from      ? { fromDate:       new Date(q.from) }                                    : {}),
+      ...(q.to        ? { toDate:         new Date(q.to)   }                                    : {}),
+    })
+
+    return reply.send({ success: true, data: result })
+  })
+
+  // GET /admin/gas/ledger/summary — aggregated P&L per chain
+  app.get('/admin/gas/ledger/summary', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.query as { chain?: string }
+    const summary = await getLedgerSummary(chain as GasChainId | undefined)
+    return reply.send({ success: true, data: summary })
+  })
+
+  // ── Refill Thresholds ──────────────────────────────────────────────────────
+
+  // GET /admin/gas/thresholds — list all per-chain refill thresholds
+  app.get('/admin/gas/thresholds', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const thresholds = await getAllThresholds()
+    return reply.send({ success: true, data: thresholds })
+  })
+
+  // GET /admin/gas/thresholds/:chain — single chain threshold
+  app.get('/admin/gas/thresholds/:chain', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const threshold = await getThreshold(chain as GasChainId)
+    if (!threshold) return reply.status(404).send({ success: false, error: 'Threshold not found' })
+    return reply.send({ success: true, data: threshold })
+  })
+
+  // PUT /admin/gas/thresholds/:chain — create or update threshold
+  app.put('/admin/gas/thresholds/:chain', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const body = req.body as {
+      triggerBelowNative: number
+      refillTargetNative: number
+      maxRefillNative: number
+      isEnabled?: boolean
+    }
+
+    const validationError = validateThreshold(body)
+    if (validationError) {
+      return reply.status(400).send({ success: false, error: validationError })
+    }
+
+    const threshold = await upsertThreshold(chain as GasChainId, body)
+
+    await createAuditLog(
+      (req.user as { id: string }).id,
+      'gas_threshold_update',
+      'GasRefillThreshold',
+      chain,
+      body as unknown as Record<string, unknown>,
+    )
+
+    return reply.send({ success: true, data: threshold })
+  })
+
+  // PATCH /admin/gas/thresholds/:chain/toggle — enable/disable
+  app.patch('/admin/gas/thresholds/:chain/toggle', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const { isEnabled } = req.body as { isEnabled: boolean }
+
+    if (typeof isEnabled !== 'boolean') {
+      return reply.status(400).send({ success: false, error: 'isEnabled must be a boolean' })
+    }
+
+    const threshold = await setThresholdEnabled(chain as GasChainId, isEnabled)
+    return reply.send({ success: true, data: threshold })
+  })
+
+  // ── Refill Requests ────────────────────────────────────────────────────────
+
+  // GET /admin/gas/refills — list refill requests with filters
+  app.get('/admin/gas/refills', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const q = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(q)
+
+    const where: Prisma.GasRefillRequestWhereInput = {}
+    if (q.chain)  where.chain  = q.chain  as import('@prisma/client').GasChain
+    if (q.status) where.status = q.status as import('@prisma/client').GasRefillRequestStatus
+
+    const [refills, total] = await Promise.all([
+      db.gasRefillRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: { fromWallet: true },
+      }),
+      db.gasRefillRequest.count({ where }),
+    ])
+
+    return reply.send({ success: true, data: { refills, total, page, limit } })
+  })
+
+  // GET /admin/gas/refills/:id — single refill request
+  app.get('/admin/gas/refills/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const refill = await db.gasRefillRequest.findUnique({
+      where: { id },
+      include: { fromWallet: true, ledgerEntries: true },
+    })
+    if (!refill) return reply.status(404).send({ success: false, error: 'Refill request not found' })
+    return reply.send({ success: true, data: refill })
+  })
+
+  // POST /admin/gas/refills/:id/approve — approve a pending refill
+  app.post('/admin/gas/refills/:id/approve', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const adminId = (req.user as { id: string }).id
+
+    try {
+      await approveRefill(id, adminId)
+      await createAuditLog(adminId, 'gas_refill_approved', 'GasRefillRequest', id, {})
+      return reply.send({ success: true, message: 'Refill approved — will execute on next refill job run' })
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // POST /admin/gas/refills/:id/cancel — cancel a pending or approved refill
+  app.post('/admin/gas/refills/:id/cancel', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const adminId = (req.user as { id: string }).id
+
+    try {
+      await cancelRefill(id, adminId)
+      await createAuditLog(adminId, 'gas_refill_cancelled', 'GasRefillRequest', id, {})
+      return reply.send({ success: true, message: 'Refill cancelled' })
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // POST /admin/gas/refills/trigger-check — manually trigger balance check + queue refills
+  app.post('/admin/gas/refills/trigger-check', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const result = await checkAndQueueRefills()
+    return reply.send({ success: true, data: result })
+  })
+
+  // POST /admin/gas/refills/process-approved — manually execute all approved refills
+  app.post('/admin/gas/refills/process-approved', { preHandler: [authenticate, superAdminOnly] }, async (_req, reply) => {
+    const result = await processApprovedRefills()
+    return reply.send({ success: true, data: result })
+  })
+
+  // GET /admin/gas/treasury/balances — hot vs treasury balance comparison per chain
+  app.get('/admin/gas/treasury/balances', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const hotTron = getTronHotWalletAddress()
+    const hotEvm  = getEvmHotWalletAddress()
+    const trsTron = getTronTreasuryAddress()
+    const trsEvm  = getEvmTreasuryAddress()
+
+    const chains: Array<{ chain: GasChainId; hotAddress: string | null; treasuryAddress: string | null }> = [
+      { chain: 'TRON',     hotAddress: hotTron, treasuryAddress: trsTron },
+      { chain: 'BSC',      hotAddress: hotEvm,  treasuryAddress: trsEvm  },
+      { chain: 'ETHEREUM', hotAddress: hotEvm,  treasuryAddress: trsEvm  },
+      { chain: 'BASE',     hotAddress: hotEvm,  treasuryAddress: trsEvm  },
+      { chain: 'ARB',      hotAddress: hotEvm,  treasuryAddress: trsEvm  },
+      { chain: 'OP',       hotAddress: hotEvm,  treasuryAddress: trsEvm  },
+      { chain: 'MATIC',    hotAddress: hotEvm,  treasuryAddress: trsEvm  },
+      { chain: 'AVAX',     hotAddress: hotEvm,  treasuryAddress: trsEvm  },
+    ]
+
+    const balances = await Promise.allSettled(
+      chains.map(async ({ chain, hotAddress, treasuryAddress }) => {
+        const [hotBal, trsBal, usdPrice] = await Promise.allSettled([
+          hotAddress      ? getHotWalletBalance(chain, hotAddress)     : Promise.resolve(null),
+          treasuryAddress ? getTreasuryBalance(chain)                   : Promise.resolve(null),
+          getNativeUsdPrice(chain),
+        ])
+
+        const hot   = hotBal.status === 'fulfilled' ? hotBal.value   : null
+        const trs   = trsBal.status === 'fulfilled' ? trsBal.value   : null
+        const price = usdPrice.status === 'fulfilled' ? usdPrice.value : 0
+
+        return {
+          chain,
+          hotAddress,
+          hotBalanceNative: hot,
+          hotBalanceUsd:    hot != null && price > 0 ? hot * price : null,
+          treasuryAddress,
+          treasuryBalanceNative: trs,
+          treasuryBalanceUsd:    trs != null && price > 0 ? trs * price : null,
+          usdPrice: price,
+        }
+      }),
+    )
+
+    return reply.send({
+      success: true,
+      data: balances.map((r, i) =>
+        r.status === 'fulfilled'
+          ? r.value
+          : { chain: chains[i]!.chain, error: String(r.reason) },
+      ),
     })
   })
 }

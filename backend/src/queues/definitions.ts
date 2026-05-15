@@ -26,7 +26,8 @@ export const QUEUE_NAMES = {
   DATABASE_BACKUP: 'database-backup',
   MORALIS_SUBSCRIBE: 'moralis-subscribe',
   DEPOSIT_RECONCILE: 'deposit-reconcile',
-  GAS_WEBHOOK: 'gas-webhook',
+  GAS_WEBHOOK:  'gas-webhook',
+  GAS_REFILL:   'gas-refill',
 } as const
 
 export const queues = {
@@ -54,6 +55,15 @@ export const queues = {
   // overlapping ticks than process the same candidate rows concurrently.
   // We achieve that via `jobId` on the repeatable job in workers.ts and by
   // capping attempts at 1 so retries don't double up.
+  gasRefill: new Queue(QUEUE_NAMES.GAS_REFILL, {
+    connection,
+    defaultJobOptions: {
+      ...defaultJobOptions,
+      attempts: 1,  // refill job is idempotent — don't auto-retry on failure
+      removeOnComplete: { count: 100 },
+      removeOnFail:     { count: 200 },
+    },
+  }),
   gasWebhook: new Queue(QUEUE_NAMES.GAS_WEBHOOK, {
     connection,
     defaultJobOptions: {

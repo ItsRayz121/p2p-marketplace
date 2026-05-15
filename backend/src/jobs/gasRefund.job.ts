@@ -5,6 +5,7 @@ import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
+import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 
 export async function processGasRefund(job: Job<{ orderId: string }>) {
   const { orderId } = job.data
@@ -79,6 +80,18 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
         refundedAt: new Date(),
       },
     })
+
+    appendLedgerEntry({
+      entryType:      'delivery_refund',
+      chain:          order.chain as GasChainId,
+      nativeAmount:   -Number(order.paymentAmount),
+      usdAmount:      Number(order.paymentAmount),
+      txHash:         refundTxHash,
+      toAddress:      senderAddress,
+      relatedOrderId: orderId,
+      notes:          `USDT refund for order ${order.orderRef}`,
+      ...(order.fromHotWallet ? { fromAddress: order.fromHotWallet } : {}),
+    }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write refund ledger entry'))
 
     logger.info(
       { orderId, refundTxHash, chain: order.chain, senderAddress, amount: order.paymentAmount },

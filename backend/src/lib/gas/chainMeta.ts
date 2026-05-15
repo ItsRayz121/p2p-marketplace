@@ -41,8 +41,12 @@ export interface ChainCapabilities {
   supportsAutoDelivery: boolean
   /** Platform accepts USDT/stablecoin as the payment token. */
   supportsStablecoins: boolean
-  /** Platform can refund payment if delivery fails. */
+  /** Platform can issue USDT refund if delivery fails. */
   supportsRefunds: boolean
+  /** Tx confirmation check is implemented (post-delivery). */
+  supportsConfirmation: boolean
+  /** Deposit address is derivable from mnemonic or set via env var. */
+  supportsDepositAddress: boolean
   /** Hot wallet balance is monitored and alerts/auto-pauses are active. */
   supportsMonitoring: boolean
   /** Admin RPC health check is implemented. */
@@ -57,115 +61,139 @@ export interface ChainCapabilities {
 
 export const CHAIN_CAPABILITIES: Record<string, ChainCapabilities> = {
   TRON: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   BSC: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   ETH: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   BASE: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   ARB: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   OP: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   MATIC: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   AVAX: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   true,
-    supportsStablecoins:    true,
-    supportsRefunds:        true,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         false,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          true,
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
   },
   SOL: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   false,  // delivery not yet implemented
-    supportsStablecoins:    false,  // USDT-on-SOL not yet wired
-    supportsRefunds:        false,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         true,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     false, // delivery not yet implemented
+    supportsStablecoins:      false, // USDT-on-SOL not yet wired
+    supportsRefunds:          false,
+    supportsConfirmation:     false,
+    supportsDepositAddress:   true,  // address derivable, but chain is inactive
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           true,
   },
   TON: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   false,  // requires @ton/core + V4R2 wallet
-    supportsStablecoins:    false,
-    supportsRefunds:        false,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         true,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     false, // requires @ton/core + V4R2 wallet
+    supportsStablecoins:      false,
+    supportsRefunds:          false,
+    supportsConfirmation:     false,
+    supportsDepositAddress:   false, // TON address is a sha256 placeholder — NOT real
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           true,
   },
   SUI: {
-    supportsMnemonic:       true,
-    supportsAutoDelivery:   false,  // requires @mysten/sui SDK for tx signing
-    supportsStablecoins:    false,
-    supportsRefunds:        false,
-    supportsMonitoring:     true,
-    supportsRpcHealthCheck: true,
-    supportsDryRun:         true,
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     false, // requires @mysten/sui SDK for tx signing
+    supportsStablecoins:      false,
+    supportsRefunds:          false,
+    supportsConfirmation:     false,
+    supportsDepositAddress:   true,  // address correct if blake2b-256 available
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           true,
   },
 }
 
 export function getChainCapabilities(chainSlug: string): ChainCapabilities {
   return CHAIN_CAPABILITIES[chainSlug.toUpperCase()] ?? {
-    supportsMnemonic:       false,
-    supportsAutoDelivery:   false,
-    supportsStablecoins:    false,
-    supportsRefunds:        false,
-    supportsMonitoring:     false,
-    supportsRpcHealthCheck: false,
-    supportsDryRun:         false,
+    supportsMnemonic:         false,
+    supportsAutoDelivery:     false,
+    supportsStablecoins:      false,
+    supportsRefunds:          false,
+    supportsConfirmation:     false,
+    supportsDepositAddress:   false,
+    supportsMonitoring:       false,
+    supportsRpcHealthCheck:   false,
+    supportsDryRun:           false,
   }
 }
 
@@ -314,3 +342,69 @@ export const UNSUPPORTED_FEATURES: UnsupportedFeatureEntry[] = [
     resolution: 'Verify Node 20 + OpenSSL 3 on production host; check startup log',
   },
 ]
+
+// ── Per-chain operational readiness ───────────────────────────────────────────
+// Used by system-health to show activation blockers per chain.
+
+export interface ChainReadinessReport {
+  chain: string
+  deliveryReady: boolean
+  refundReady: boolean
+  confirmationReady: boolean
+  depositReady: boolean
+  depositAddress: string | null
+  depositSource: 'env_var' | 'mnemonic_derived' | 'unconfigured'
+  usdtContract: string | null
+  blockers: string[]
+  warnings: string[]
+}
+
+export function buildChainReadinessReport(
+  chain: string,
+  opts: {
+    depositAddress: string | null
+    depositSource: 'env_var' | 'mnemonic_derived' | 'unconfigured'
+    usdtContract: string | null
+    mnemonicConfigured: boolean
+    rpcReachable: boolean
+  },
+): ChainReadinessReport {
+  const caps = getChainCapabilities(chain)
+  const blockers: string[] = []
+  const warnings: string[] = []
+
+  if (!opts.mnemonicConfigured) {
+    blockers.push('GAS_MASTER_KEY + GAS_SEED_CIPHERTEXT not configured — mnemonic required')
+  }
+  if (!opts.rpcReachable) {
+    blockers.push('RPC unreachable — check primary and fallback endpoints')
+  }
+  if (caps.supportsDepositAddress && !opts.depositAddress) {
+    blockers.push('No deposit address — set GAS_FEE_DEPOSIT_ADDRESS_* env var or configure mnemonic')
+  }
+  if (opts.depositSource === 'mnemonic_derived') {
+    warnings.push('Deposit address derived from mnemonic hot wallet (no dedicated env var set)')
+  }
+  if (!caps.supportsAutoDelivery) {
+    blockers.push('Delivery not implemented for this chain')
+  }
+  if (!caps.supportsRefunds) {
+    blockers.push('USDT refund not implemented for this chain')
+  }
+  if (!caps.supportsConfirmation) {
+    blockers.push('Tx confirmation check not implemented for this chain')
+  }
+
+  return {
+    chain,
+    deliveryReady:     caps.supportsAutoDelivery && opts.mnemonicConfigured && opts.rpcReachable,
+    refundReady:       caps.supportsRefunds && opts.mnemonicConfigured && opts.rpcReachable && !!opts.usdtContract,
+    confirmationReady: caps.supportsConfirmation && opts.rpcReachable,
+    depositReady:      !!opts.depositAddress,
+    depositAddress:    opts.depositAddress,
+    depositSource:     opts.depositSource,
+    usdtContract:      opts.usdtContract,
+    blockers,
+    warnings,
+  }
+}

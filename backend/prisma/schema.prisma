@@ -219,6 +219,24 @@ enum GasCustomRequestStatus {
   rejected
 }
 
+enum GasLedgerEntryType {
+  order_payment        // user USDT payment received into hot wallet
+  gas_delivery         // native gas sent to user
+  delivery_refund      // native gas refunded to user (failed delivery)
+  refill_hot_from_treasury  // treasury → hot wallet transfer
+  drain_hot_to_treasury     // hot wallet → treasury (emergency drain)
+  platform_fee         // platform fee collected (informational, USD only)
+}
+
+enum GasRefillRequestStatus {
+  pending_approval  // waiting for admin approval (when approval mode is on)
+  approved          // admin approved, waiting for execution
+  executing         // tx in-flight
+  completed         // tx confirmed
+  failed            // tx failed, see failureReason
+  cancelled         // cancelled by admin before execution
+}
+
 enum RateAlertDirection {
   above
   below
@@ -988,6 +1006,8 @@ model GasFeeOrder {
   deliveredAt         DateTime?
   refundedAt          DateTime?
 
+  ledgerEntries       GasLedgerEntry[]
+
   @@index([status, expiresAt])
   @@index([userId])
   @@index([orderRef])
@@ -1179,6 +1199,113 @@ model GasCustomRequest {
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
 
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TREASURY WALLET
+// ─────────────────────────────────────────────────────────────────────────────
+
+// One row per chain-family (TRON / EVM). Treasury lives at HD index 100/101 on
+// the same mnemonic as the hot wallet (index 0). Never signs delivery txns.
+model GasTreasuryWallet {
+  id                   String    @id @default(cuid())
+  chain                GasChain  @unique  // representative chain (TRON or ETH for EVM family)
+  chainFamily          String    // 'TRON' | 'EVM'
+  address              String    @unique
+  derivationIndex      Int                // 100 = TRON treasury, 101 = EVM treasury
+  isActive             Boolean   @default(true)
+  lastBalanceRefreshAt DateTime?
+  createdAt            DateTime  @default(now())
+
+  refillRequests       GasRefillRequest[]
+
+  @@index([chainFamily, isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INTERNAL ACCOUNTING LEDGER
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Append-only. Never update a row — write a new corrective entry instead.
+model GasLedgerEntry {
+  id             String               @id @default(cuid())
+  entryType      GasLedgerEntryType
+  chain          GasChain
+  // nativeAmount: positive = inflow to hot wallet; negative = outflow
+  nativeAmount   Decimal              @db.Decimal(28, 10)
+  nativeSymbol   String               // "TRX", "BNB", "ETH", etc.
+  usdAmount      Decimal              @db.Decimal(18, 6)
+  txHash         String?
+  fromAddress    String?
+  toAddress      String?
+  relatedOrderId String?
+  relatedOrder   GasFeeOrder?         @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull)
+  relatedRefillId String?
+  relatedRefill  GasRefillRequest?    @relation(fields: [relatedRefillId], references: [id], onDelete: SetNull)
+  notes          String?              @db.VarChar(500)
+  createdAt      DateTime             @default(now())
+
+  @@index([chain, entryType])
+  @@index([relatedOrderId])
+  @@index([relatedRefillId])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOT-WALLET REFILL SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Per-chain thresholds that drive auto-refill. One row per GasChain.
+model GasRefillThreshold {
+  id                  String    @id @default(cuid())
+  chain               GasChain  @unique
+  // Trigger a refill when hot wallet native balance falls below this amount
+  triggerBelowNative  Decimal   @db.Decimal(18, 8)
+  // After a refill, target this native balance (what to refill TO)
+  refillTargetNative  Decimal   @db.Decimal(18, 8)
+  // Max single-transfer size (safety cap on each refill tx)
+  maxRefillNative     Decimal   @db.Decimal(18, 8)
+  isEnabled           Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([isEnabled])
+}
+
+// Lifecycle: pending_approval → approved → executing → completed
+//                             ↘ cancelled
+//                                        ↘ failed (retriable)
+model GasRefillRequest {
+  id              String                  @id @default(cuid())
+  chain           GasChain
+  fromWalletId    String
+  fromWallet      GasTreasuryWallet       @relation(fields: [fromWalletId], references: [id], onDelete: Restrict)
+  fromAddress     String
+  toAddress       String                  // hot wallet address
+  nativeAmount    Decimal                 @db.Decimal(18, 8)
+  nativeSymbol    String
+  usdAmount       Decimal                 @db.Decimal(18, 6)
+  status          GasRefillRequestStatus  @default(pending_approval)
+  // Set when hot-wallet balance that triggered this refill was sampled
+  triggerBalance  Decimal?                @db.Decimal(18, 8)
+
+  approvedAt      DateTime?
+  approvedBy      String?                 // admin userId
+  cancelledAt     DateTime?
+  cancelledBy     String?
+  executedAt      DateTime?
+  completedAt     DateTime?
+  txHash          String?
+  failureReason   String?                 @db.VarChar(500)
+  retryCount      Int                     @default(0)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  ledgerEntries   GasLedgerEntry[]
+
+  @@index([chain, status])
   @@index([status])
   @@index([createdAt])
 }

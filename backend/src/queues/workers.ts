@@ -12,6 +12,7 @@ import { checkGasDelivery } from '../jobs/gasDeliveryCheck.job'
 import { runGasMonitorBalances } from '../jobs/gasMonitorBalances.job'
 import { processGasRefund } from '../jobs/gasRefund.job'
 import { fireGasWebhook } from '../jobs/gasWebhook.job'
+import { runRefillJob } from '../lib/gas/gas.refill'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
@@ -88,6 +89,15 @@ export function startWorkers() {
   queues.gasFee
     .add('monitor-balances', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'gas-monitor-balances-repeatable' })
     .catch((err) => logger.error({ err }, 'Failed to schedule gas balance monitor'))
+
+  // Hot-wallet refill check — every 15 minutes
+  queues.gasRefill
+    .add('refill-check', {}, { repeat: { every: 15 * 60 * 1000 }, jobId: 'gas-refill-check-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule gas refill check'))
+
+  createWorker(QUEUE_NAMES.GAS_REFILL, async () => {
+    await runRefillJob()
+  }, { max: 1, duration: 60_000 })
 
   // Gas fee dispatcher — routes to the correct handler by job name.
   // Rate-limited to 2 concurrent to avoid TRON RPC saturation.
