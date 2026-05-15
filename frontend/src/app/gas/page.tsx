@@ -45,6 +45,7 @@ const ADDRESS_PATTERNS: Record<string, RegExp> = {
   EVM:   /^0x[0-9a-fA-F]{40}$/,
   SOL:   /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
   SUI:   /^0x[0-9a-fA-F]{64}$/,
+  TON:   /^[UE][Qq][A-Za-z0-9+/\-_]{46}$/,
 }
 
 function validateAddress(addr: string, addressType: string): boolean {
@@ -58,6 +59,7 @@ function addressPlaceholder(addressType: string): string {
     case 'EVM':   return '0x... (42 characters)'
     case 'SOL':   return 'Base58 address (32–44 characters)'
     case 'SUI':   return '0x... (66 characters)'
+    case 'TON':   return 'UQ... or EQ... (48 characters)'
     default:      return 'Enter wallet address'
   }
 }
@@ -456,7 +458,8 @@ export default function GasPage() {
     try {
       const data = await gasApi.getChainTokens(chain.slug)
       setTokenData(data)
-      if (data.tokens.length === 1) setSelectedToken(data.tokens[0])
+      const activeTokens = data.tokens.filter((t) => t.isActive)
+      if (activeTokens.length === 1) setSelectedToken(activeTokens[0])
     } catch (e: unknown) { setTokensError(e instanceof Error ? e.message : 'Failed to load tokens') }
     finally { setTokensLoading(false) }
   }, [])
@@ -711,21 +714,44 @@ export default function GasPage() {
                     <div className="space-y-3">
                       {tokenData.tokens.map(t => {
                         const sel = selectedToken?.id === t.id
+                        const inactive = !t.isActive
+                        const displayPrice = t.priceUsd > 0 ? `$${(t.priceUsd * t.markup).toFixed(4)}` : t.rateStale ? 'Rate unavailable' : '—'
                         return (
-                          <button key={t.id} onClick={() => setSelectedToken(t)}
+                          <button
+                            key={t.id}
+                            onClick={() => { if (!inactive) setSelectedToken(t) }}
+                            disabled={inactive}
                             className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all duration-200 ${
-                              sel ? 'border-purple-400 bg-gradient-to-r from-purple-50 to-blue-50' : 'border-gray-100 bg-gray-50 hover:border-purple-200'
+                              inactive
+                                ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                                : sel
+                                  ? 'border-purple-400 bg-gradient-to-r from-purple-50 to-blue-50'
+                                  : 'border-gray-100 bg-gray-50 hover:border-purple-200'
                             }`}>
                             <TokenLogo token={t} cat={selectedChain.category} sizeCls="w-12 h-12" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold text-gray-900">{t.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-bold text-gray-900">{t.name}</p>
+                                {inactive && (
+                                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-gray-200 text-gray-500">Soon</span>
+                                )}
+                                {!inactive && t.rateStale && (
+                                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700">Rate stale</span>
+                                )}
+                              </div>
                               <p className="text-xs text-gray-400">{t.symbol} · {selectedChain.networkLabel}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-sm font-bold text-gray-900">${(t.priceUsd * t.markup).toFixed(4)}</p>
-                              <p className="text-xs text-gray-400">per {t.symbol}</p>
+                              {inactive ? (
+                                <p className="text-sm text-gray-400">Coming soon</p>
+                              ) : (
+                                <>
+                                  <p className={`text-sm font-bold ${t.rateStale ? 'text-yellow-600' : 'text-gray-900'}`}>{displayPrice}</p>
+                                  <p className="text-xs text-gray-400">per {t.symbol}</p>
+                                </>
+                              )}
                             </div>
-                            {sel && <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
+                            {!inactive && sel && <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
                           </button>
                         )
                       })}

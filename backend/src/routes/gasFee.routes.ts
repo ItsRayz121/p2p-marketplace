@@ -12,7 +12,12 @@ import { GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
 
 // ── Rate lookup helpers ───────────────────────────────────────────────────────
 
+// Stablecoins pegged 1:1 to USD — always return 1.0 without Redis lookup
+const STABLECOIN_SYMBOLS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP'])
+
 async function getNativeUsdRate(priceSymbol: string): Promise<number> {
+  if (STABLECOIN_SYMBOLS.has(priceSymbol.toUpperCase())) return 1.0
+
   const usdPkrStr = await redis.get('rate:USD_PKR')
   const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 0
 
@@ -132,8 +137,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' is not currently active`, 400)
 
     const tokens = await db.gasTokenConfig.findMany({
-      where: { chainConfigId: chainCfg.id, isActive: true },
-      orderBy: { displayOrder: 'asc' },
+      where: { chainConfigId: chainCfg.id },
+      orderBy: [{ isActive: 'desc' }, { displayOrder: 'asc' }],
     })
 
     const usdPkrRate = await getUsdPkrRate()
@@ -141,8 +146,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const tokensWithPricing = await Promise.all(
       tokens.map(async (t) => {
-        const nativeUsdRate = await getNativeUsdRate(t.priceSymbol)
-        const rateStale = !(nativeUsdRate > 0)
+        // Inactive tokens don't need live pricing
+        const nativeUsdRate = t.isActive ? await getNativeUsdRate(t.priceSymbol) : 0
+        const rateStale = t.isActive && !(nativeUsdRate > 0)
 
         return {
           id:             t.id,
@@ -157,6 +163,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           minAmount:      Number(t.minAmount),
           maxUsdValue:    Number(t.maxUsdValue),
           presetAmounts:  t.presetAmounts as number[],
+          isActive:       t.isActive,
           rateStale,
         }
       }),

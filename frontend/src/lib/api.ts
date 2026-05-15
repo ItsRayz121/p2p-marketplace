@@ -814,6 +814,7 @@ export interface GasToken {
   minAmount: number
   maxUsdValue: number
   presetAmounts: number[]
+  isActive: boolean
   rateStale: boolean
 }
 
