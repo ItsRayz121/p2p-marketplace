@@ -50,7 +50,10 @@ async function start() {
         logger.warn({ error: sui.error }, 'SUI startup derivation failed (chain inactive — non-fatal)')
       }
     } else {
-      logger.warn('Gas wallet mnemonic not configured — using legacy GAS_WALLET_PRIVATE_KEY_* env vars')
+      throw new Error(
+        'Gas wallet mnemonic not configured: GAS_MASTER_KEY and GAS_SEED_CIPHERTEXT must both be set. ' +
+        'Legacy GAS_WALLET_PRIVATE_KEY_* fallbacks were removed in Phase 8.',
+      )
     }
 
     // Verify the generated Prisma client has every model we rely on. Logs an

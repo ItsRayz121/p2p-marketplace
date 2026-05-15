@@ -91,23 +91,9 @@ async function checkEnvVars(): Promise<void> {
   if (hasKey && hasCt) {
     pass('GAS_MASTER_KEY + GAS_SEED_CIPHERTEXT', 'both set')
   } else if (!hasKey && !hasCt) {
-    warn('GAS mnemonic', 'not configured — delivery will use legacy GAS_WALLET_PRIVATE_KEY_* env vars')
+    fail('GAS mnemonic', 'not configured — GAS_MASTER_KEY and GAS_SEED_CIPHERTEXT are required (legacy key fallbacks removed in Phase 8)')
   } else {
     fail('GAS mnemonic', `half-configured — ${hasKey ? 'GAS_MASTER_KEY' : 'GAS_SEED_CIPHERTEXT'} is set but the other is missing`)
-  }
-
-  // Legacy key fallbacks
-  const legacyKeys = [
-    ['GAS_WALLET_PRIVATE_KEY_TRON', env.GAS_WALLET_PRIVATE_KEY_TRON],
-    ['GAS_WALLET_PRIVATE_KEY_BSC',  env.GAS_WALLET_PRIVATE_KEY_BSC],
-    ['GAS_WALLET_PRIVATE_KEY_ETH',  env.GAS_WALLET_PRIVATE_KEY_ETH],
-  ] as [string, string | undefined][]
-
-  if (!hasKey) {
-    for (const [key, val] of legacyKeys) {
-      if (val) pass(key, '[set as fallback]')
-      else warn(key, 'not set — this chain will not be able to deliver without mnemonic')
-    }
   }
 
   // RPC URLs

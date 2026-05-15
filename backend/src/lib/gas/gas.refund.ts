@@ -4,6 +4,12 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { bsc, mainnet } from 'viem/chains'
 import { env } from '../env'
 import type { GasChainId } from './gas.chains'
+import {
+  decryptGasSeed,
+  deriveTronPrivateKeyHex,
+  deriveEvmPrivateKeyHex,
+  HOT_WALLET_INDEX,
+} from './gasWalletService'
 
 // ERC20/BEP20 minimal ABI — only the transfer function we need
 const ERC20_TRANSFER_ABI = [
@@ -27,23 +33,27 @@ const USDT_ERC20    = '0xdAC17F958D2ee523a2206206994597C13D831ec7' as `0x${strin
 // ── TRON TRC20 USDT refund ────────────────────────────────────────────────────
 
 async function sendTrc20UsdtRefund(toAddress: string, amountUsdt: Decimal): Promise<string> {
-  const privateKey = env.GAS_WALLET_PRIVATE_KEY_TRON
-  if (!privateKey) throw new Error('GAS_WALLET_PRIVATE_KEY_TRON not configured')
+  const seed = decryptGasSeed()
+  try {
+    const privateKey = deriveTronPrivateKeyHex(seed, HOT_WALLET_INDEX)
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const TronWeb = require('tronweb')
-  const tronWeb = new TronWeb({
-    fullHost: env.TRON_FULLNODE_URL,
-    headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
-    privateKey,
-  })
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const TronWeb = require('tronweb')
+    const tronWeb = new TronWeb({
+      fullHost: env.TRON_FULLNODE_URL,
+      headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
+      privateKey,
+    })
 
-  // USDT TRC20 has 6 decimals
-  const sunAmount = Math.round(Number(amountUsdt) * 1_000_000)
-  const contract = await tronWeb.contract().at(USDT_TRC20)
-  const result = await contract.transfer(toAddress, sunAmount).send()
-  if (!result) throw new Error('TronWeb TRC20 transfer returned falsy result')
-  return result as string
+    // USDT TRC20 has 6 decimals
+    const sunAmount = Math.round(Number(amountUsdt) * 1_000_000)
+    const contract = await tronWeb.contract().at(USDT_TRC20)
+    const result = await contract.transfer(toAddress, sunAmount).send()
+    if (!result) throw new Error('TronWeb TRC20 transfer returned falsy result')
+    return result as string
+  } finally {
+    seed.fill(0)
+  }
 }
 
 // ── EVM USDT refund (BEP20 / ERC20) ──────────────────────────────────────────
@@ -81,14 +91,22 @@ export async function sendUsdtRefund(
     case 'TRON':
       return sendTrc20UsdtRefund(toAddress, amountUsdt)
     case 'BSC': {
-      const key = env.GAS_WALLET_PRIVATE_KEY_BSC
-      if (!key) throw new Error('GAS_WALLET_PRIVATE_KEY_BSC not configured')
-      return sendEvmUsdtRefund(bsc, env.BSC_RPC_URL, key, USDT_BEP20, 18, toAddress, amountUsdt)
+      const seed = decryptGasSeed()
+      try {
+        const key = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
+        return await sendEvmUsdtRefund(bsc, env.BSC_RPC_URL, key, USDT_BEP20, 18, toAddress, amountUsdt)
+      } finally {
+        seed.fill(0)
+      }
     }
     case 'ETHEREUM': {
-      const key = env.GAS_WALLET_PRIVATE_KEY_ETH
-      if (!key) throw new Error('GAS_WALLET_PRIVATE_KEY_ETH not configured')
-      return sendEvmUsdtRefund(mainnet, env.ETHEREUM_RPC_URL, key, USDT_ERC20, 6, toAddress, amountUsdt)
+      const seed = decryptGasSeed()
+      try {
+        const key = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
+        return await sendEvmUsdtRefund(mainnet, env.ETHEREUM_RPC_URL, key, USDT_ERC20, 6, toAddress, amountUsdt)
+      } finally {
+        seed.fill(0)
+      }
     }
     default:
       throw new Error(`sendUsdtRefund: unsupported chain ${chain}`)

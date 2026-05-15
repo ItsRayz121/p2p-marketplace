@@ -17,7 +17,6 @@ export interface GasChainConfig {
   validateAddress: (addr: string) => boolean
   getDepositAddress: () => string | undefined
   getMarkupMultiplier: () => number
-  getPrivateKey: () => string | undefined
   getRpcUrl: () => string
   /** Whether this chain has automated delivery implemented. */
   deliveryImplemented: boolean
@@ -40,7 +39,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => TRC20_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_TRC20,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_TRON,
-    getPrivateKey:       () => env.GAS_WALLET_PRIVATE_KEY_TRON,
     getRpcUrl:           () => env.TRON_FULLNODE_URL,
     deliveryImplemented: true,
   },
@@ -54,7 +52,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => EVM_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BSC,
-    getPrivateKey:       () => env.GAS_WALLET_PRIVATE_KEY_BSC,
     getRpcUrl:           () => env.BSC_RPC_URL,
     deliveryImplemented: true,
   },
@@ -68,7 +65,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => EVM_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_ETH,
-    getPrivateKey:       () => env.GAS_WALLET_PRIVATE_KEY_ETH,
     getRpcUrl:           () => env.ETHEREUM_RPC_URL,
     deliveryImplemented: true,
   },
@@ -82,7 +78,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => EVM_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_BASE,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BASE,
-    getPrivateKey:       () => undefined,
     getRpcUrl:           () => env.BASE_RPC_URL,
     deliveryImplemented: true,
   },
@@ -96,7 +91,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => EVM_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_ARB,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_ARB,
-    getPrivateKey:       () => undefined,
     getRpcUrl:           () => env.ARBITRUM_RPC_URL,
     deliveryImplemented: true,
   },
@@ -110,7 +104,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => EVM_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_OP,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_OP,
-    getPrivateKey:       () => undefined,
     getRpcUrl:           () => env.OPTIMISM_RPC_URL,
     deliveryImplemented: true,
   },
@@ -124,7 +117,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => EVM_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_MATIC,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_MATIC,
-    getPrivateKey:       () => undefined,
     getRpcUrl:           () => env.POLYGON_RPC_URL,
     deliveryImplemented: true,
   },
@@ -138,7 +130,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => EVM_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_AVAX,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_AVAX,
-    getPrivateKey:       () => undefined,
     getRpcUrl:           () => env.AVALANCHE_RPC_URL,
     deliveryImplemented: true,
   },
@@ -155,7 +146,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => SOL_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SOL,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_SOL,
-    getPrivateKey:       () => undefined,  // ed25519 — use solanaWalletService
     getRpcUrl:           () => env.SOL_RPC_URL,
     deliveryImplemented: false,
   },
@@ -169,7 +159,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => TON_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_TON,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_TON,
-    getPrivateKey:       () => undefined,  // ed25519 — use tonWalletService
     getRpcUrl:           () => env.TON_ENDPOINT_URL,
     deliveryImplemented: false,
   },
@@ -183,7 +172,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress:     (addr) => SUI_RE.test(addr),
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SUI,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_SUI,
-    getPrivateKey:       () => undefined,  // ed25519 — use suiWalletService
     getRpcUrl:           () => env.SUI_RPC_URL,
     deliveryImplemented: false,
   },

@@ -5,7 +5,6 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
 import { env } from '../env'
 import {
-  gasWalletIsConfigured,
   decryptGasSeed,
   deriveTronPrivateKeyHex,
   deriveEvmPrivateKeyHex,
@@ -15,21 +14,9 @@ import {
 // ── TRON delivery ─────────────────────────────────────────────────────────────
 
 async function deliverTron(order: GasFeeOrder): Promise<string> {
-  let seed: Buffer | null = null
+  const seed = decryptGasSeed()
   try {
-    let privateKey: string | undefined
-    if (gasWalletIsConfigured()) {
-      seed = decryptGasSeed()
-      privateKey = deriveTronPrivateKeyHex(seed, HOT_WALLET_INDEX)
-    } else {
-      privateKey = env.GAS_WALLET_PRIVATE_KEY_TRON
-    }
-
-    if (!privateKey) {
-      throw new Error(
-        'TRON hot wallet not configured: set GAS_SEED_CIPHERTEXT or GAS_WALLET_PRIVATE_KEY_TRON',
-      )
-    }
+    const privateKey = deriveTronPrivateKeyHex(seed, HOT_WALLET_INDEX)
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { TronWeb } = require('tronweb')
@@ -44,7 +31,7 @@ async function deliverTron(order: GasFeeOrder): Promise<string> {
     if (!result.result) throw new Error(`TronWeb sendTransaction failed: ${JSON.stringify(result)}`)
     return result.txid as string
   } finally {
-    if (seed) seed.fill(0)
+    seed.fill(0)
   }
 }
 
@@ -67,37 +54,11 @@ async function deliverEvm(
 }
 
 async function deliverBsc(order: GasFeeOrder): Promise<string> {
-  let seed: Buffer | null = null
-  try {
-    let privateKey: string | undefined
-    if (gasWalletIsConfigured()) {
-      seed = decryptGasSeed()
-      privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
-    } else {
-      privateKey = env.GAS_WALLET_PRIVATE_KEY_BSC
-    }
-    if (!privateKey) throw new Error('BSC hot wallet not configured: set GAS_SEED_CIPHERTEXT or GAS_WALLET_PRIVATE_KEY_BSC')
-    return await deliverEvm(order, bsc, env.BSC_RPC_URL, privateKey)
-  } finally {
-    if (seed) seed.fill(0)
-  }
+  return deliverEvmMnemonic(order, bsc, env.BSC_RPC_URL)
 }
 
 async function deliverEth(order: GasFeeOrder): Promise<string> {
-  let seed: Buffer | null = null
-  try {
-    let privateKey: string | undefined
-    if (gasWalletIsConfigured()) {
-      seed = decryptGasSeed()
-      privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
-    } else {
-      privateKey = env.GAS_WALLET_PRIVATE_KEY_ETH
-    }
-    if (!privateKey) throw new Error('ETH hot wallet not configured: set GAS_SEED_CIPHERTEXT or GAS_WALLET_PRIVATE_KEY_ETH')
-    return await deliverEvm(order, mainnet, env.ETHEREUM_RPC_URL, privateKey)
-  } finally {
-    if (seed) seed.fill(0)
-  }
+  return deliverEvmMnemonic(order, mainnet, env.ETHEREUM_RPC_URL)
 }
 
 // ── L2 + alt-EVM delivery ─────────────────────────────────────────────────────
@@ -113,27 +74,22 @@ async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: 
 }
 
 async function deliverBase(order: GasFeeOrder): Promise<string> {
-  if (!gasWalletIsConfigured()) throw new Error('Base delivery requires GAS_SEED_CIPHERTEXT')
   return deliverEvmMnemonic(order, base, env.BASE_RPC_URL)
 }
 
 async function deliverArb(order: GasFeeOrder): Promise<string> {
-  if (!gasWalletIsConfigured()) throw new Error('Arbitrum delivery requires GAS_SEED_CIPHERTEXT')
   return deliverEvmMnemonic(order, arbitrum, env.ARBITRUM_RPC_URL)
 }
 
 async function deliverOp(order: GasFeeOrder): Promise<string> {
-  if (!gasWalletIsConfigured()) throw new Error('Optimism delivery requires GAS_SEED_CIPHERTEXT')
   return deliverEvmMnemonic(order, optimism, env.OPTIMISM_RPC_URL)
 }
 
 async function deliverMatic(order: GasFeeOrder): Promise<string> {
-  if (!gasWalletIsConfigured()) throw new Error('Polygon delivery requires GAS_SEED_CIPHERTEXT')
   return deliverEvmMnemonic(order, polygon, env.POLYGON_RPC_URL)
 }
 
 async function deliverAvax(order: GasFeeOrder): Promise<string> {
-  if (!gasWalletIsConfigured()) throw new Error('Avalanche delivery requires GAS_SEED_CIPHERTEXT')
   return deliverEvmMnemonic(order, avalanche, env.AVALANCHE_RPC_URL)
 }
 

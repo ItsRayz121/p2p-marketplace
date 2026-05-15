@@ -92,18 +92,14 @@ const envSchema = z.object({
 
   // Gas Fee System — TRON
   GAS_FEE_DEPOSIT_ADDRESS_TRC20: z.string().optional(),
-  GAS_WALLET_PRIVATE_KEY_TRON: z.string().optional(),
-  GAS_WALLET_SECRET_ARN_TRON: z.string().optional(),
   GAS_MARKUP_MULTIPLIER_TRON: z.coerce.number().default(1.5),
 
   // Gas Fee System — BSC
   GAS_FEE_DEPOSIT_ADDRESS_BEP20: z.string().optional(),
-  GAS_WALLET_PRIVATE_KEY_BSC: z.string().optional(),
   GAS_MARKUP_MULTIPLIER_BSC: z.coerce.number().default(1.5),
 
   // Gas Fee System — Ethereum
   GAS_FEE_DEPOSIT_ADDRESS_ERC20: z.string().optional(),
-  GAS_WALLET_PRIVATE_KEY_ETH: z.string().optional(),
   GAS_MARKUP_MULTIPLIER_ETH: z.coerce.number().default(1.5),
 
   // Gas Fee System — Base

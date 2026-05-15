@@ -1850,24 +1850,18 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     const orderSummary = Object.fromEntries(statusGroups.map((g) => [g.status, g._count.status])) as Record<string, number>
 
-    // Config warnings: flag missing env vars.
-    // When the mnemonic system is active it covers all GAS_WALLET_PRIVATE_KEY_* vars
-    // and the BSC/ETH deposit addresses — suppress those warnings.
-    const requiredEnvChecks: Array<{ key: string; label: string; required: boolean; suppressWhenMnemonic?: boolean }> = [
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', label: 'TRON deposit address',        required: true  },
-      { key: 'GAS_WALLET_PRIVATE_KEY_TRON',   label: 'TRON hot wallet private key', required: true,  suppressWhenMnemonic: true },
-      { key: 'TRON_FULLNODE_URL',              label: 'TRON full node URL',          required: true  },
-      { key: 'TRONGRID_API_KEY',               label: 'TronGrid API key',            required: false },
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20',  label: 'BSC deposit address',         required: false, suppressWhenMnemonic: true },
-      { key: 'GAS_WALLET_PRIVATE_KEY_BSC',     label: 'BSC hot wallet private key',  required: false, suppressWhenMnemonic: true },
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20',  label: 'ETH deposit address',         required: false, suppressWhenMnemonic: true },
-      { key: 'GAS_WALLET_PRIVATE_KEY_ETH',     label: 'ETH hot wallet private key',  required: false, suppressWhenMnemonic: true },
+    // Config warnings: flag missing env vars. Mnemonic system is now required.
+    const requiredEnvChecks: Array<{ key: string; label: string; required: boolean }> = [
+      { key: 'GAS_MASTER_KEY',                 label: 'Gas wallet master key (mnemonic)', required: true  },
+      { key: 'GAS_SEED_CIPHERTEXT',            label: 'Gas wallet seed ciphertext',       required: true  },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20',  label: 'TRON deposit address',             required: true  },
+      { key: 'TRON_FULLNODE_URL',              label: 'TRON full node URL',               required: true  },
+      { key: 'TRONGRID_API_KEY',               label: 'TronGrid API key',                 required: false },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20',  label: 'BSC deposit address',              required: false },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20',  label: 'ETH deposit address',              required: false },
     ]
     const configWarnings = requiredEnvChecks
-      .filter(({ key, suppressWhenMnemonic }) => {
-        if (mnemonicConfigured && suppressWhenMnemonic) return false
-        return !(env as unknown as Record<string, string | undefined>)[key]
-      })
+      .filter(({ key }) => !(env as unknown as Record<string, string | undefined>)[key])
       .map(({ key, label, required }) => ({ key, label, required }))
 
     return reply.send({
@@ -2577,7 +2571,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/gas/wallets/:chain/test-rpc', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { chain } = req.params as { chain: string }
     const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
-    const { gasWalletIsConfigured, getEvmHotWalletAddress, getTronHotWalletAddress } = await import('../lib/gas/gasWalletService')
+    const { getEvmHotWalletAddress, getTronHotWalletAddress } = await import('../lib/gas/gasWalletService')
     const { getSolanaHotWalletAddress } = await import('../lib/gas/solanaWalletService')
     const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
     const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
@@ -2599,26 +2593,20 @@ export async function adminRoutes(app: FastifyInstance) {
     let derivedAddress: string | null = null
     let signerError: string | undefined
     try {
-      if (gasWalletIsConfigured()) {
-        // Route to the correct hot wallet getter by chain family
-        if (chain === 'TRON') {
-          derivedAddress = getTronHotWalletAddress()
-        } else if (chain === 'SOL') {
-          derivedAddress = getSolanaHotWalletAddress()
-        } else if (chain === 'TON') {
-          derivedAddress = getTonHotWalletAddress()
-        } else if (chain === 'SUI') {
-          derivedAddress = getSuiHotWalletAddress()
-        } else {
-          // All EVM chains share the same hot wallet address
-          derivedAddress = getEvmHotWalletAddress()
-        }
-        signerOk = !!derivedAddress
+      if (chain === 'TRON') {
+        derivedAddress = getTronHotWalletAddress()
+      } else if (chain === 'SOL') {
+        derivedAddress = getSolanaHotWalletAddress()
+      } else if (chain === 'TON') {
+        derivedAddress = getTonHotWalletAddress()
+      } else if (chain === 'SUI') {
+        derivedAddress = getSuiHotWalletAddress()
       } else {
-        const legacyKey = chainConfig.getPrivateKey()
-        signerOk = !!legacyKey
-        signerError = legacyKey ? undefined : 'No private key available (neither mnemonic nor legacy env var)'
+        // All EVM chains share the same hot wallet address
+        derivedAddress = getEvmHotWalletAddress()
       }
+      signerOk = !!derivedAddress
+      if (!signerOk) signerError = 'Mnemonic system not configured (GAS_MASTER_KEY / GAS_SEED_CIPHERTEXT missing)'
     } catch (err) {
       signerError = err instanceof Error ? err.message : String(err)
     }
