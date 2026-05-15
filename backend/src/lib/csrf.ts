@@ -28,21 +28,28 @@ function sign(payload: string): string {
   return createHmac('sha256', env.CSRF_SECRET).update(payload).digest('hex')
 }
 
-export function generateCsrfToken(): string {
+// Generate a CSRF token optionally bound to a userId.
+// When userId is provided the token is tied to that user — another user's
+// valid token will not pass validation for a different userId.
+export function generateCsrfToken(userId?: string): string {
   const nonce = randomBytes(16).toString('hex')
   const expires = Date.now() + CSRF_TOKEN_TTL_MS
-  const payload = `${nonce}:${expires}`
+  const uid = userId ?? 'guest'
+  const payload = `${nonce}:${expires}:${uid}`
   const sig = sign(payload)
   return `${payload}:${sig}`
 }
 
-export function validateCsrfToken(token: string): boolean {
+export function validateCsrfToken(token: string, userId?: string): boolean {
   const parts = token.split(':')
-  if (parts.length !== 3) return false
-  const [nonce, expiresStr, sig] = parts
+  if (parts.length !== 4) return false
+  const [nonce, expiresStr, uid, sig] = parts
   const expires = parseInt(expiresStr ?? '0', 10)
   if (isNaN(expires) || Date.now() > expires) return false
-  const payload = `${nonce}:${expires}`
+  // If a userId is provided, it must match the one embedded in the token.
+  const expectedUid = userId ?? 'guest'
+  if (uid !== expectedUid) return false
+  const payload = `${nonce}:${expires}:${uid}`
   const expected = sign(payload)
   try {
     return timingSafeEqual(Buffer.from(sig ?? ''), Buffer.from(expected))
@@ -56,7 +63,10 @@ export async function csrfHook(req: FastifyRequest, reply: FastifyReply): Promis
   if (CSRF_EXEMPT.has(req.url)) return
 
   const token = req.headers['x-csrf-token']
-  if (typeof token !== 'string' || !validateCsrfToken(token)) {
+  // req.user is populated by authenticate preHandler on protected routes;
+  // on public (non-exempt) routes it will be undefined → guest validation.
+  const userId = req.user?.id
+  if (typeof token !== 'string' || !validateCsrfToken(token, userId)) {
     return reply.status(403).send({
       success: false,
       error: 'INVALID_CSRF_TOKEN',

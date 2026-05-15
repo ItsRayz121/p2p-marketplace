@@ -21,7 +21,10 @@ const envSchema = z.object({
   CNIC_HASH_SECRET: z.string().min(32, 'CNIC_HASH_SECRET is required and must be at least 32 characters'),
 
   // Frontend
-  FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+  FRONTEND_URL: z.string().url().default('http://localhost:3000').refine(
+    (url) => process.env.NODE_ENV !== 'production' || url.startsWith('https://'),
+    { message: 'FRONTEND_URL must use HTTPS in production' },
+  ),
 
   // Cloudinary (file storage — KYC docs, payment proof screenshots)
   CLOUDINARY_CLOUD_NAME: z.string().optional(),

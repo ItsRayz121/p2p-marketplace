@@ -327,6 +327,29 @@ export default function KycPage() {
       {/* ── Tier selector ── */}
       {uiState === 'none' && (
         <div className="space-y-4">
+          {/* L-9: What you need — shown before user picks a tier */}
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-text-primary">What you will need</h3>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm text-text-secondary">
+              <div className="space-y-2">
+                <p className="font-medium text-text-primary">Basic KYC (Level 1)</p>
+                <ul className="space-y-1">
+                  <li className="flex gap-2"><span className="text-primary">1.</span> CNIC front photo (clear, unobstructed)</li>
+                  <li className="flex gap-2"><span className="text-primary">2.</span> CNIC back photo</li>
+                  <li className="flex gap-2"><span className="text-primary">3.</span> Selfie holding your CNIC</li>
+                </ul>
+              </div>
+              <div className="space-y-2">
+                <p className="font-medium text-text-primary">Enhanced KYC (Level 2)</p>
+                <ul className="space-y-1">
+                  <li className="flex gap-2"><span className="text-primary">+</span> Everything in Basic</li>
+                  <li className="flex gap-2"><span className="text-primary">+</span> 2 or more social media profile links</li>
+                </ul>
+              </div>
+            </div>
+            <p className="text-xs text-text-muted">Review typically takes 1–2 business days. Ensure photos are well-lit and all text is readable.</p>
+          </div>
+
           <h2 className="text-base font-semibold text-text-primary">Choose Verification Level</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <TierCard tier="basic" onSelect={() => handleSelectTier('basic')} />

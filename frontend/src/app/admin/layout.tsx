@@ -227,6 +227,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     user ? item.roles.includes(user.role as AdminRole) : false,
   )
 
+  // H-10: per-route role guard — block direct URL navigation to pages the
+  // user's role doesn't permit. The layout nav hides the links, but nothing
+  // prevented typing the URL directly. We match the current pathname against
+  // the nav role map and redirect to /admin if access is not allowed.
+  const currentNavItem = nav.find((item) =>
+    item.href === '/admin' ? pathname === '/admin' : pathname.startsWith(item.href),
+  )
+  if (currentNavItem && !currentNavItem.roles.includes(user.role as AdminRole)) {
+    router.replace('/admin')
+    return (
+      <div className="flex h-screen items-center justify-center bg-surface">
+        <div className="flex items-center gap-3 text-text-muted">
+          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Redirecting…</span>
+        </div>
+      </div>
+    )
+  }
+
+  // L-10: warn admins who have not enabled 2FA — shown as a dismissible banner.
+  const adminNeedsTwoFa =
+    (user.role === 'admin' || user.role === 'super_admin') &&
+    !user.twoFaEnabled
+
   async function handleLogout() {
     setLoggingOut(true)
     try {
@@ -326,6 +350,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="text-text-primary font-semibold text-base flex-1">Admin Panel</span>
           <span className="hidden sm:block text-text-muted text-sm">{user?.username || user?.email}</span>
         </header>
+
+        {/* L-10: 2FA warning banner for admin/super_admin accounts without 2FA */}
+        {adminNeedsTwoFa && (
+          <div className="flex-shrink-0 bg-warning/10 border-b border-warning/30 px-4 py-2 flex items-center gap-3 text-sm text-warning">
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>Your admin account does not have 2FA enabled. Enable it in{' '}
+              <a href="/settings" className="underline font-medium">Settings → Security</a>{' '}
+              to protect against account compromise.
+            </span>
+          </div>
+        )}
 
         {/* Page content — do NOT render until auth hydration completes.
             Without this gate, page components mount and start polling before

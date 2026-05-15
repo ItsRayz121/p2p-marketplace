@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   {
-    href: '/',
+    href: '/dashboard',
     label: 'Home',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -27,12 +27,12 @@ const navItems = [
     ),
   },
   {
-    href: '/trade/new',
-    label: 'Trade',
+    href: '/gas',
+    label: 'Gas',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M12 4v16m8-8H4"
+          d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"
         />
       </svg>
     ),
@@ -50,12 +50,12 @@ const navItems = [
     ),
   },
   {
-    href: '/settings',
-    label: 'More',
+    href: '/orders',
+    label: 'Orders',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M4 6h16M4 12h16M4 18h16"
+          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
         />
       </svg>
     ),

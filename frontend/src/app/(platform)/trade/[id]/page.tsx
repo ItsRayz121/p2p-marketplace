@@ -6,6 +6,7 @@ import type { Trade } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { useOfflineDetection } from '@/hooks/useOfflineDetection'
 import { CountdownTimer } from '@/components/ui/CountdownTimer'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -156,6 +157,7 @@ function RatingModal({
 export default function TradePage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
+  const { isOffline } = useOfflineDetection()
 
   const [trade, setTrade] = useState<ExtendedTrade | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -337,6 +339,16 @@ export default function TradePage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6">
+      {/* L-6: Offline banner — warn user that actions won't go through */}
+      {isOffline && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg bg-danger/10 border border-danger/30 px-4 py-3 text-sm text-danger">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 01-.001-7.072M5.636 18.364a9 9 0 010-12.728" />
+          </svg>
+          <span>You are offline. Trade actions will not go through until your connection is restored.</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>

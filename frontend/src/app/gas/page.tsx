@@ -650,7 +650,17 @@ export default function GasPage() {
             {chainsLoading && <ChainSkeleton />}
             {chainsError   && <ErrorState title={chainsError} onRetry={() => { setChainsError(''); setChainsLoading(true); gasApi.getChains().then(({ chains: c }) => setChains(c)).catch((e: Error) => setChainsError(e.message)).finally(() => setChainsLoading(false)) }} />}
 
-            {!chainsLoading && !chainsError && (
+            {!chainsLoading && !chainsError && chains.length === 0 && (
+              <div className="text-center py-16 px-4">
+                <div className="text-5xl mb-4">⛽</div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Gas Fee Service Unavailable</h3>
+                <p className="text-sm text-gray-500 max-w-sm mx-auto">
+                  No blockchain networks are currently active. Check back soon — we&apos;re working on expanding coverage.
+                </p>
+              </div>
+            )}
+
+            {!chainsLoading && !chainsError && chains.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                 {chains.map(chain => {
                   const inactive = !chain.isActive || !chain.orderable

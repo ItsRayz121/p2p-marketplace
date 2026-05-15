@@ -77,9 +77,22 @@ const verify2FaSchema = z.object({
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export async function authRoutes(app: FastifyInstance) {
-  // GET /csrf — fetch CSRF token (no auth required)
-  app.get('/csrf', async (_req, reply) => {
-    return reply.send({ success: true, data: { token: generateCsrfToken() } })
+  // GET /csrf — fetch CSRF token bound to the requesting user when authenticated.
+  // Guests (no auth header) receive a guest-scoped token. Authenticated users
+  // should re-fetch this after login so the token is bound to their userId.
+  app.get('/csrf', { preHandler: [async (req) => {
+    // Best-effort auth: populate req.user if a valid token is present.
+    // Errors are silently swallowed so guests can still get a token.
+    try {
+      const authHeader = req.headers.authorization
+      if (authHeader?.startsWith('Bearer ')) {
+        const { verifyAccessToken } = await import('../lib/jwt')
+        const payload = verifyAccessToken(authHeader.slice(7))
+        if (payload) req.user = { id: payload.userId, email: '', role: '' }
+      }
+    } catch { /* guest */ }
+  }] }, async (req, reply) => {
+    return reply.send({ success: true, data: { token: generateCsrfToken(req.user?.id) } })
   })
 
   // POST /register
