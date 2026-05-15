@@ -45,6 +45,7 @@ interface GasWallet {
   status: 'healthy' | 'low' | 'paused' | 'unavailable'
   alertThresholdUsd: number | null
   pauseThresholdUsd: number | null
+  lastBalanceRefreshAt: string | null
 }
 
 interface GasStats {
@@ -58,6 +59,21 @@ interface GasStats {
   wallets: GasWallet[]
 }
 
+interface RpcTestResult {
+  chain: string
+  rpc: { reachable: boolean; blockNumber: number | null; latencyMs: number; isStale: boolean; error: string | null }
+  signer: { ok: boolean; derivedAddress: string | null; walletAddress: string; addressMatch: boolean | null; error: string | null }
+  allClear: boolean
+}
+
+interface GasAnalytics {
+  period: string
+  successCount: number
+  failedCount: number
+  avgCompletionSec: number | null
+  chainStats: Array<{ chain: string; delivered: number; failed: number; total: number; successRate: number | null }>
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const CHAIN_SYMBOL: Record<string, string> = { TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH', ETH: 'ETH' }
@@ -65,6 +81,21 @@ const CHAIN_SYMBOL: Record<string, string> = { TRON: 'TRX', BSC: 'BNB', ETHEREUM
 function fmtNative(amount: string | number): string {
   const n = parseFloat(String(amount))
   return n >= 1 ? String(Math.round(n)) : n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function fmtSeconds(secs: number): string {
+  if (secs < 60) return `${secs}s`
+  if (secs < 3600) return `${Math.round(secs / 60)}m`
+  return `${(secs / 3600).toFixed(1)}h`
+}
+
+function fmtRelativeTime(iso: string | null): string {
+  if (!iso) return 'Never'
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return fmtDate(iso)
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -104,10 +135,65 @@ function walletStatusLabel(s: string): string {
   return labels[s] ?? s
 }
 
+function walletHealthDot(s: string): string {
+  if (s === 'healthy') return 'bg-green-500'
+  if (s === 'low') return 'bg-yellow-400'
+  if (s === 'paused') return 'bg-red-500'
+  return 'bg-gray-400'
+}
+
+function estimatedDeliveries(wallet: GasWallet): number | null {
+  if (wallet.balanceUsd === null || wallet.balanceUsd <= 0) return null
+  // Heuristic average gas cost per delivery: $0.15 (covers all chains)
+  // This is a rough estimate — replace with chain-specific actuals once tracked
+  const AVG_GAS_COST_USD = 0.15
+  return Math.floor(wallet.balanceUsd / AVG_GAS_COST_USD)
+}
+
+// ─── RPC Test Modal ───────────────────────────────────────────────────────────
+
+function RpcTestModal({ result, onClose }: { result: RpcTestResult; onClose: () => void }) {
+  const row = (label: string, ok: boolean | null, value: string) => (
+    <div className="flex items-start gap-3 py-2 border-b border-border last:border-0">
+      <span className={`mt-0.5 w-4 h-4 rounded-full flex-shrink-0 ${ok === true ? 'bg-success' : ok === false ? 'bg-danger' : 'bg-text-muted'}`} />
+      <div>
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        <p className="text-xs text-text-muted">{value}</p>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className={`px-5 py-4 border-b rounded-t-2xl ${result.allClear ? 'bg-success/10' : 'bg-danger/10'}`}>
+          <div className="flex items-center gap-2">
+            <span className={`w-3 h-3 rounded-full ${result.allClear ? 'bg-success' : 'bg-danger'}`} />
+            <h2 className="font-semibold text-text-primary">RPC Health: {result.chain}</h2>
+            <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${result.allClear ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
+              {result.allClear ? 'All Clear' : 'Issues Found'}
+            </span>
+          </div>
+        </div>
+        <div className="p-5 space-y-1">
+          {row('RPC Reachable', result.rpc.reachable, result.rpc.reachable ? `Block #${result.rpc.blockNumber?.toLocaleString()} · ${result.rpc.latencyMs}ms` : (result.rpc.error ?? 'Unreachable'))}
+          {result.rpc.isStale && row('Stale Node', false, 'Block number has not advanced in 5+ minutes')}
+          {row('Signer Available', result.signer.ok, result.signer.ok ? 'Private key or mnemonic is accessible' : (result.signer.error ?? 'No key found'))}
+          {row('Address Derivation', result.signer.addressMatch, result.signer.derivedAddress ? `Derived: ${result.signer.derivedAddress.slice(0, 10)}… matches DB` : 'Legacy key — no derivation check')}
+          {row('Latest Block Reachable', result.rpc.reachable && result.rpc.blockNumber !== null, result.rpc.blockNumber !== null ? `Block #${result.rpc.blockNumber.toLocaleString()}` : 'N/A')}
+        </div>
+        <div className="px-5 pb-5">
+          <Button variant="secondary" onClick={onClose} className="w-full">Close</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── WalletCard ───────────────────────────────────────────────────────────────
 
 function WalletCard({
-  wallet, isSuperAdmin, toggling, onToggle, onRefresh, refreshing,
+  wallet, isSuperAdmin, toggling, onToggle, onRefresh, refreshing, onTestRpc, testingRpc,
 }: {
   wallet: GasWallet
   isSuperAdmin: boolean
@@ -115,24 +201,34 @@ function WalletCard({
   onToggle: () => void
   onRefresh: () => void
   refreshing: boolean
+  onTestRpc: () => void
+  testingRpc: boolean
 }) {
+  const estDeliveries = estimatedDeliveries(wallet)
+
   return (
     <div className={`bg-white border rounded-xl p-5 ${
-      wallet.status === 'paused' ? 'border-danger/40'
-      : wallet.status === 'low' ? 'border-warning/40'
+      wallet.status === 'paused' ? 'border-danger/40 bg-red-50/30'
+      : wallet.status === 'low' ? 'border-warning/40 bg-yellow-50/30'
       : 'border-border'
     }`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
+          {/* Title row */}
           <div className="flex items-center gap-2 mb-2">
+            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${walletHealthDot(wallet.status)}`} />
             <h2 className="text-sm font-semibold text-text-primary">{wallet.chain} Hot Wallet</h2>
             <Badge variant={walletStatusVariant(wallet.status)} size="sm">
               {walletStatusLabel(wallet.status)}
             </Badge>
             {!wallet.isActive && <Badge variant="danger" size="sm">Admin Paused</Badge>}
           </div>
+
+          {/* Address */}
           <p className="text-xs font-mono text-text-muted truncate mb-3">{wallet.address}</p>
-          <div className="flex flex-wrap gap-4 text-sm">
+
+          {/* Metrics */}
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
             <div>
               <span className="text-text-muted">Balance: </span>
               <span className={`font-bold ${
@@ -141,10 +237,24 @@ function WalletCard({
                 : wallet.status === 'low' ? 'text-warning'
                 : 'text-success'
               }`}>
-                {wallet.balance !== null ? `${fmtNative(wallet.balance)} ${wallet.nativeSymbol}` : 'Unknown'}
-                {wallet.balanceUsd != null && <span className="ml-1 font-normal text-text-muted">(${wallet.balanceUsd.toFixed(2)})</span>}
+                {wallet.balance !== null
+                  ? `${fmtNative(wallet.balance)} ${wallet.nativeSymbol}`
+                  : 'Unknown'}
+                {wallet.balanceUsd != null &&
+                  <span className="ml-1 font-normal text-text-muted">(~${wallet.balanceUsd.toFixed(2)})</span>
+                }
               </span>
             </div>
+
+            {estDeliveries !== null && (
+              <div>
+                <span className="text-text-muted">Est. deliveries: </span>
+                <span className={`font-medium ${estDeliveries < 20 ? 'text-warning' : 'text-text-primary'}`}>
+                  ~{estDeliveries.toLocaleString()}
+                </span>
+              </div>
+            )}
+
             {wallet.alertThresholdUsd != null && (
               <div>
                 <span className="text-text-muted">Alert at: </span>
@@ -157,11 +267,21 @@ function WalletCard({
                 <span className="font-medium text-text-primary">${wallet.pauseThresholdUsd}</span>
               </div>
             )}
+
+            <div>
+              <span className="text-text-muted">Refreshed: </span>
+              <span className="text-text-secondary">{fmtRelativeTime(wallet.lastBalanceRefreshAt)}</span>
+            </div>
           </div>
         </div>
-        <div className="flex flex-col gap-2 shrink-0">
+
+        {/* Actions */}
+        <div className="flex flex-col gap-1.5 shrink-0">
           <Button size="sm" variant="ghost" onClick={onRefresh} disabled={refreshing}>
-            {refreshing ? 'Refreshing...' : 'Refresh Balance'}
+            {refreshing ? 'Refreshing…' : 'Refresh Balance'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onTestRpc} disabled={testingRpc}>
+            {testingRpc ? 'Testing…' : 'Test RPC'}
           </Button>
           {isSuperAdmin && (
             <Button size="sm" variant={wallet.isActive ? 'secondary' : 'primary'} onClick={onToggle} disabled={toggling}>
@@ -170,6 +290,83 @@ function WalletCard({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Analytics Panel ──────────────────────────────────────────────────────────
+
+function AnalyticsPanel({ analytics }: { analytics: GasAnalytics }) {
+  return (
+    <div className="bg-white border border-border rounded-xl p-5">
+      <h2 className="text-sm font-semibold text-text-primary mb-4">
+        Delivery Analytics
+        <span className="ml-2 text-xs font-normal text-text-muted">({analytics.period})</span>
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <div className="bg-surface rounded-lg p-3">
+          <p className="text-xs text-text-muted">Successful</p>
+          <p className="text-xl font-bold text-success mt-1">{analytics.successCount.toLocaleString()}</p>
+        </div>
+        <div className="bg-surface rounded-lg p-3">
+          <p className="text-xs text-text-muted">Failed</p>
+          <p className={`text-xl font-bold mt-1 ${analytics.failedCount > 0 ? 'text-danger' : 'text-text-primary'}`}>
+            {analytics.failedCount.toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-surface rounded-lg p-3">
+          <p className="text-xs text-text-muted">Avg. Completion</p>
+          <p className="text-xl font-bold text-text-primary mt-1">
+            {analytics.avgCompletionSec !== null ? fmtSeconds(analytics.avgCompletionSec) : '—'}
+          </p>
+        </div>
+        <div className="bg-surface rounded-lg p-3">
+          <p className="text-xs text-text-muted">Overall Rate</p>
+          <p className="text-xl font-bold text-text-primary mt-1">
+            {analytics.successCount + analytics.failedCount > 0
+              ? `${Math.round(analytics.successCount / (analytics.successCount + analytics.failedCount) * 100)}%`
+              : '—'}
+          </p>
+        </div>
+      </div>
+
+      {analytics.chainStats.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-text-muted">
+                <th className="text-left pb-2 font-medium">Chain</th>
+                <th className="text-right pb-2 font-medium">Delivered</th>
+                <th className="text-right pb-2 font-medium">Failed</th>
+                <th className="text-right pb-2 font-medium">Success Rate</th>
+                <th className="text-right pb-2 font-medium">Rate Bar</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {analytics.chainStats.sort((a, b) => b.total - a.total).map((c) => (
+                <tr key={c.chain} className="py-1.5">
+                  <td className="py-1.5 font-medium text-text-primary">{c.chain}</td>
+                  <td className="py-1.5 text-right text-success">{c.delivered}</td>
+                  <td className="py-1.5 text-right text-danger">{c.failed}</td>
+                  <td className="py-1.5 text-right font-medium">
+                    {c.successRate !== null ? `${c.successRate}%` : '—'}
+                  </td>
+                  <td className="py-1.5 text-right">
+                    {c.successRate !== null && (
+                      <div className="w-16 h-1.5 bg-border rounded-full ml-auto">
+                        <div
+                          className={`h-1.5 rounded-full ${c.successRate >= 90 ? 'bg-success' : c.successRate >= 70 ? 'bg-warning' : 'bg-danger'}`}
+                          style={{ width: `${c.successRate}%` }}
+                        />
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -192,17 +389,33 @@ export default function GasAdminPage() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('all')
 
+  // Analytics state
+  const [analytics, setAnalytics] = useState<GasAnalytics | null>(null)
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<'24h' | '7d' | '30d' | 'all'>('7d')
+  const [showAnalytics, setShowAnalytics] = useState(false)
+
+  // Global pause state
+  const [globalPaused, setGlobalPaused] = useState(false)
+  const [globalPauseReason, setGlobalPauseReason] = useState<string | null>(null)
+  const [confirmGlobalPause, setConfirmGlobalPause] = useState<boolean | null>(null) // true=pause, false=resume
+  const [globalPauseReasonInput, setGlobalPauseReasonInput] = useState('')
+  const [togglingGlobalPause, setTogglingGlobalPause] = useState(false)
+
+  // RPC test state
+  const [rpcTestResult, setRpcTestResult] = useState<RpcTestResult | null>(null)
+  const [testingRpc, setTestingRpc] = useState<string | null>(null)
+
   // Action state
   const [confirmRetry, setConfirmRetry] = useState(false)
   const [confirmRefund, setConfirmRefund] = useState(false)
-  const [confirmToggle, setConfirmToggle] = useState<string | null>(null) // chain name or null
+  const [confirmToggle, setConfirmToggle] = useState<string | null>(null)
   const [confirmApprovePkr, setConfirmApprovePkr] = useState(false)
   const [confirmRejectPkr, setConfirmRejectPkr] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
-  const [toggling, setToggling] = useState<string | null>(null) // chain being toggled
-  const [refreshing, setRefreshing] = useState<string | null>(null) // chain being refreshed
+  const [toggling, setToggling] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState<string | null>(null)
 
   const limit = 20
 
@@ -231,11 +444,41 @@ export default function GasAdminPage() {
     }
   }, [page, statusFilter])
 
+  const fetchGlobalPause = useCallback(async () => {
+    try {
+      const data = await adminApi.getGasGlobalPause()
+      setGlobalPaused(data.paused)
+      setGlobalPauseReason(data.reason)
+    } catch { /* non-critical */ }
+  }, [])
+
+  const fetchAnalytics = useCallback(async () => {
+    try {
+      const data = await adminApi.getGasAnalytics(analyticsPeriod)
+      setAnalytics(data)
+    } catch { /* non-critical */ }
+  }, [analyticsPeriod])
+
   const refresh = useCallback(async () => {
-    await Promise.all([fetchStats(), fetchOrders()])
-  }, [fetchStats, fetchOrders])
+    await Promise.all([fetchStats(), fetchOrders(), fetchGlobalPause()])
+  }, [fetchStats, fetchOrders, fetchGlobalPause])
 
   usePolling(refresh, 30_000)
+
+  // Fetch analytics on demand
+  const handleShowAnalytics = useCallback(async () => {
+    setShowAnalytics(true)
+    await fetchAnalytics()
+  }, [fetchAnalytics])
+
+  // Re-fetch analytics when period changes
+  const handleAnalyticsPeriod = useCallback(async (p: '24h' | '7d' | '30d' | 'all') => {
+    setAnalyticsPeriod(p)
+    try {
+      const data = await adminApi.getGasAnalytics(p)
+      setAnalytics(data)
+    } catch { /* non-critical */ }
+  }, [])
 
   async function handleRetry() {
     if (!selectedId) return
@@ -309,12 +552,44 @@ export default function GasAdminPage() {
     setActionError(null)
     try {
       const res = await adminApi.refreshGasWalletBalance(chain)
-      setActionSuccess(`${chain} balance refreshed: ${res.balance.toFixed(6)} ${res.nativeSymbol}`)
+      setActionSuccess(`${chain} balance refreshed: ${res.balance.toFixed(6)} ${res.nativeSymbol}${res.balanceUsd !== null ? ` (~$${res.balanceUsd.toFixed(2)})` : ''}`)
       void fetchStats()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : `Failed to refresh ${chain} balance`)
     } finally {
       setRefreshing(null)
+    }
+  }
+
+  async function handleTestRpc(chain: string) {
+    setTestingRpc(chain)
+    setActionError(null)
+    try {
+      const res = await adminApi.testRpcHealth(chain)
+      setRpcTestResult(res)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : `Failed to test ${chain} RPC`)
+    } finally {
+      setTestingRpc(null)
+    }
+  }
+
+  async function handleGlobalPauseToggle() {
+    if (confirmGlobalPause === null) return
+    setTogglingGlobalPause(true)
+    setActionError(null)
+    try {
+      const reason = confirmGlobalPause ? globalPauseReasonInput || undefined : undefined
+      await adminApi.setGasGlobalPause(confirmGlobalPause, reason)
+      setGlobalPaused(confirmGlobalPause)
+      setGlobalPauseReason(confirmGlobalPause ? (reason ?? null) : null)
+      setConfirmGlobalPause(null)
+      setGlobalPauseReasonInput('')
+      setActionSuccess(confirmGlobalPause ? 'Gas delivery globally paused.' : 'Global pause lifted — delivery resumed.')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to change global pause state')
+    } finally {
+      setTogglingGlobalPause(false)
     }
   }
 
@@ -325,13 +600,44 @@ export default function GasAdminPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
+      {/* ── Global Pause Banner ──────────────────────────────────────────────── */}
+      {globalPaused && (
+        <div className="flex items-center gap-3 px-5 py-4 bg-red-600 text-white rounded-xl shadow-md">
+          <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="flex-1">
+            <p className="font-bold">GLOBAL GAS PAUSE ACTIVE — All deliveries are halted.</p>
+            {globalPauseReason && <p className="text-sm opacity-90 mt-0.5">Reason: {globalPauseReason}</p>}
+          </div>
+          {isSuperAdmin && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setConfirmGlobalPause(false)}
+              className="bg-white text-red-700 hover:bg-red-50 border-white font-semibold flex-shrink-0"
+            >
+              Resume Delivery
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* ── Header ───────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Gas Fee Operations</h1>
           <p className="text-text-muted text-sm mt-0.5">{total} total orders</p>
         </div>
         <div className="flex items-center gap-2">
+          {isSuperAdmin && !globalPaused && (
+            <Button size="sm" variant="danger" onClick={() => setConfirmGlobalPause(true)}>
+              Emergency Pause
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={showAnalytics ? () => setShowAnalytics(false) : handleShowAnalytics}>
+            {showAnalytics ? 'Hide Analytics' : 'Analytics'}
+          </Button>
           <Link href="/admin/gas/requests">
             <Button size="sm" variant="ghost">Custom Requests</Button>
           </Link>
@@ -341,7 +647,7 @@ export default function GasAdminPage() {
         </div>
       </div>
 
-      {/* Alerts */}
+      {/* ── Alerts ───────────────────────────────────────────────────────────── */}
       {actionSuccess && (
         <div className="px-4 py-3 bg-success/10 border border-success/20 rounded-xl text-success text-sm">
           {actionSuccess}
@@ -386,6 +692,28 @@ export default function GasAdminPage() {
               <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
               <p className="text-2xl font-bold mt-1 text-warning">{stats.refundPendingCount}</p>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Analytics Panel ──────────────────────────────────────────────────── */}
+      {showAnalytics && (
+        <div>
+          <div className="flex gap-2 mb-3">
+            {(['24h', '7d', '30d', 'all'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => handleAnalyticsPeriod(p)}
+                className={`px-3 py-1 text-xs rounded-lg border font-medium transition-colors ${
+                  analyticsPeriod === p ? 'bg-primary text-white border-primary' : 'bg-white text-text-secondary border-border hover:bg-surface'
+                }`}
+              >
+                {p === 'all' ? 'All Time' : p}
+              </button>
+            ))}
+          </div>
+          {analytics ? <AnalyticsPanel analytics={analytics} /> : (
+            <div className="bg-white border border-border rounded-xl p-8 text-center text-text-muted text-sm">Loading analytics…</div>
           )}
         </div>
       )}
@@ -436,6 +764,8 @@ export default function GasAdminPage() {
               onToggle={() => { setActionError(null); setConfirmToggle(w.chain) }}
               onRefresh={() => handleRefreshBalance(w.chain)}
               refreshing={refreshing === w.chain}
+              onTestRpc={() => handleTestRpc(w.chain)}
+              testingRpc={testingRpc === w.chain}
             />
           ))}
         </div>
@@ -596,7 +926,7 @@ export default function GasAdminPage() {
         onClose={() => setConfirmRetry(false)}
         onConfirm={handleRetry}
         title="Retry Gas Order"
-        description="Re-queue this failed gas order for processing? It will attempt to send TRX again."
+        description="Re-queue this failed gas order for processing? It will attempt to send gas again."
         confirmLabel="Retry"
         confirmVariant="primary"
       />
@@ -630,6 +960,50 @@ export default function GasAdminPage() {
           />
         )
       })()}
+
+      {/* Global pause confirm modal */}
+      {confirmGlobalPause !== null && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-bold text-text-primary">
+              {confirmGlobalPause ? 'Emergency Global Pause' : 'Resume Gas Delivery'}
+            </h2>
+            <p className="text-sm text-text-secondary">
+              {confirmGlobalPause
+                ? 'This will immediately halt ALL gas deliveries across all chains. Queued jobs will retry when the pause is lifted.'
+                : 'Gas delivery will resume across all chains. Queued orders will begin processing immediately.'}
+            </p>
+            {confirmGlobalPause && (
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Reason (optional)</label>
+                <input
+                  type="text"
+                  value={globalPauseReasonInput}
+                  onChange={(e) => setGlobalPauseReasonInput(e.target.value)}
+                  placeholder="e.g. Hot wallet drained — investigating"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-danger/40"
+                />
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <Button variant="secondary" onClick={() => { setConfirmGlobalPause(null); setGlobalPauseReasonInput('') }} className="flex-1">
+                Cancel
+              </Button>
+              <Button
+                variant={confirmGlobalPause ? 'danger' : 'primary'}
+                onClick={handleGlobalPauseToggle}
+                disabled={togglingGlobalPause}
+                className="flex-1"
+              >
+                {togglingGlobalPause ? 'Saving…' : confirmGlobalPause ? 'Pause All' : 'Resume All'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RPC test result modal */}
+      {rpcTestResult && <RpcTestModal result={rpcTestResult} onClose={() => setRpcTestResult(null)} />}
     </div>
   )
 }

@@ -10,27 +10,56 @@ import type { GasChainId } from '../lib/gas/gas.chains'
 // either extend or clear it — 6 min gives a comfortable margin.
 const PAUSED_TTL_S = 360
 
+// Retry config: 3 attempts with 2 s back-off between each.
+const MAX_ATTEMPTS = 3
+const RETRY_DELAY_MS = 2_000
+
 interface ChainThresholds {
   alertThresholdUsd: number | null
   pauseThresholdUsd: number | null
 }
 
+async function fetchBalanceWithRetry(
+  chain: GasChainId,
+  address: string,
+): Promise<{ balance: number; attempts: number }> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const balance = await getHotWalletBalance(chain, address)
+      return { balance, attempts: attempt }
+    } catch (err) {
+      lastErr = err
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+      }
+    }
+  }
+  throw lastErr
+}
+
 async function monitorChain(
   chain: GasChainId,
+  walletId: string,
   address: string,
   thresholds: ChainThresholds,
 ): Promise<void> {
   const dbChain = chain === 'ETHEREUM' ? 'ETH' : chain
-  const balanceKey   = `gas_wallet_balance:${dbChain}`
+  const balanceKey    = `gas_wallet_balance:${dbChain}`
   const balanceUsdKey = `gas_wallet_balance_usd:${dbChain}`
-  const pausedKey    = `gas_wallet_paused:${dbChain}`
+  const pausedKey     = `gas_wallet_paused:${dbChain}`
 
   let balance: number
+  let attempts: number
   try {
-    balance = await getHotWalletBalance(chain, address)
+    ;({ balance, attempts } = await fetchBalanceWithRetry(chain, address))
   } catch (err) {
-    logger.error({ err, chain }, 'Failed to fetch gas hot wallet balance')
+    logger.error({ err, chain }, 'Gas hot wallet balance fetch failed after all retries')
     return
+  }
+
+  if (attempts > 1) {
+    logger.warn({ chain, attempts }, 'Gas hot wallet balance fetch succeeded after retry')
   }
 
   const usdPrice = await getNativeUsdPrice(chain)
@@ -41,6 +70,12 @@ async function monitorChain(
   if (balanceUsd !== null) {
     await redis.set(balanceUsdKey, String(balanceUsd.toFixed(4)), 'EX', 1800)
   }
+
+  // Stamp the DB row with the successful refresh time
+  await db.gasHotWallet.update({
+    where: { id: walletId },
+    data: { lastBalanceRefreshAt: new Date() },
+  })
 
   logger.info({ balance, balanceUsd, address, chain }, 'Gas hot wallet balance refreshed')
 
@@ -108,7 +143,7 @@ export async function runGasMonitorBalances(): Promise<void> {
       const chain = fromDbChain(w.chain)
       const dbChain = w.chain as string
       const thresholds: ChainThresholds = thresholdMap[dbChain] ?? { alertThresholdUsd: null, pauseThresholdUsd: null }
-      return monitorChain(chain, w.address, thresholds)
+      return monitorChain(chain, w.id, w.address, thresholds)
     }),
   )
 }

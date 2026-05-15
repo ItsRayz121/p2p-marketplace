@@ -16,7 +16,7 @@ import { getRpcUrl } from '../lib/chains'
 import { getTransactionByHash, getTransactionReceipt, getBlockNumber } from '../lib/evmRpc'
 import { Prisma } from '@prisma/client'
 import { getWithdrawalTierConfig, upsertWithdrawalTierConfig } from '../services/withdrawal-risk.service'
-import { getNativeUsdPrice } from '../lib/gas/gas.balance'
+import { getNativeUsdPrice, testRpcHealth } from '../lib/gas/gas.balance'
 type JsonValue = Prisma.InputJsonValue
 
 const adminOrSuper = requireRole('admin', 'super_admin')
@@ -1829,15 +1829,16 @@ export async function adminRoutes(app: FastifyInstance) {
         else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
         else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
         return {
-          chain: w.chain,
-          address: w.address,
-          isActive: w.isActive,
+          chain:                w.chain,
+          address:              w.address,
+          isActive:             w.isActive,
           balance,
           balanceUsd,
-          nativeSymbol: chainConfig?.nativeSymbol ?? w.chain,
+          nativeSymbol:         chainConfig?.nativeSymbol ?? w.chain,
           alertThresholdUsd,
           pauseThresholdUsd,
           status,
+          lastBalanceRefreshAt: w.lastBalanceRefreshAt ?? null,
         }
       }),
     )
@@ -2044,15 +2045,16 @@ export async function adminRoutes(app: FastifyInstance) {
         else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
         else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
         return {
-          chain:           w.chain,
-          address:         w.address,
-          isActive:        w.isActive,
+          chain:                w.chain,
+          address:              w.address,
+          isActive:             w.isActive,
           balance,
           balanceUsd,
-          nativeSymbol:    chainConfig?.nativeSymbol ?? w.chain,
+          nativeSymbol:         chainConfig?.nativeSymbol ?? w.chain,
           status,
           alertThresholdUsd,
           pauseThresholdUsd,
+          lastBalanceRefreshAt: w.lastBalanceRefreshAt ?? null,
         }
       }),
     )
@@ -2131,7 +2133,10 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await redisClient.set(`gas_wallet_balance:${chain}`, String(balance), 'EX', 1800)
-    await createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_REFRESHED', 'GasHotWallet', wallet.id, { chain, balance })
+    await Promise.all([
+      createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_REFRESHED', 'GasHotWallet', wallet.id, { chain, balance }),
+      db.gasHotWallet.update({ where: { id: wallet.id }, data: { lastBalanceRefreshAt: new Date() } }),
+    ])
 
     const isPaused = await redisClient.get(`gas_wallet_paused:${chain}`)
     const dbThreshold = await db.gasChainConfig.findFirst({
@@ -2276,7 +2281,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // PATCH /admin/gas/chains/:id — update chain
   app.patch('/admin/gas/chains/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const chain = await db.gasChainConfig.findUnique({ where: { id } })
+    const chain = await db.gasChainConfig.findUnique({ where: { id }, include: { _count: { select: { tokens: true } } } })
     if (!chain) throw Errors.NOT_FOUND('Gas chain config')
 
     const body = req.body as Record<string, unknown>
@@ -2296,7 +2301,66 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
 
+    // ── Activation guardrails: refuse to enable a chain that isn't operationally ready ──
+    const activating = updateData.isActive === true && chain.isActive === false
+    if (activating) {
+      const effectiveBackendId = (updateData.backendChainId as string | null | undefined) ?? chain.backendChainId
+      const effectiveExplorer  = (updateData.explorerBase  as string | null | undefined) ?? chain.explorerBase
+
+      const failures: string[] = []
+
+      if (!effectiveBackendId) {
+        failures.push('backendChainId is not set — delivery is not wired for this chain')
+      } else {
+        // Hot wallet must exist and be active in DB
+        const dbChain = effectiveBackendId === 'ETHEREUM' ? 'ETH' : effectiveBackendId
+        const hotWallet = await db.gasHotWallet.findFirst({
+          where: { chain: dbChain as 'TRON' | 'BSC' | 'ETH' | 'BASE' | 'ARB' | 'OP' | 'MATIC' | 'AVAX', isActive: true },
+        })
+        if (!hotWallet) failures.push(`No active GasHotWallet row for chain ${effectiveBackendId}`)
+
+        // Live balance fetch must succeed
+        if (hotWallet) {
+          const { fromDbChain: fdc, GAS_CHAINS } = await import('../lib/gas/gas.chains')
+          const { getHotWalletBalance } = await import('../lib/gas/gas.balance')
+          try {
+            const chainId = fdc(dbChain)
+            if (GAS_CHAINS[chainId]) await getHotWalletBalance(chainId, hotWallet.address)
+          } catch {
+            failures.push(`Balance fetch failed for ${effectiveBackendId} — RPC may be unreachable`)
+          }
+        }
+      }
+
+      if (!effectiveExplorer) failures.push('explorerBase is not configured')
+      if (chain._count.tokens === 0) failures.push('No token configs exist for this chain')
+
+      if (failures.length > 0) {
+        throw new AppError(
+          'CHAIN_NOT_READY',
+          `Cannot activate chain — ${failures.length} prerequisite(s) not met:\n• ${failures.join('\n• ')}`,
+          422,
+        )
+      }
+    }
+
     const updated = await db.gasChainConfig.update({ where: { id }, data: updateData })
+
+    // Fine-grained audit: log threshold changes and activation separately
+    if ('alertThresholdUsd' in updateData || 'pauseThresholdUsd' in updateData) {
+      await createAuditLog(req.user!.id, 'GAS_CHAIN_THRESHOLD_EDITED', 'GasChainConfig', id, {
+        slug: chain.slug,
+        alertThresholdUsd: updateData.alertThresholdUsd ?? chain.alertThresholdUsd,
+        pauseThresholdUsd: updateData.pauseThresholdUsd ?? chain.pauseThresholdUsd,
+        prev_alertThresholdUsd: chain.alertThresholdUsd,
+        prev_pauseThresholdUsd: chain.pauseThresholdUsd,
+      })
+    }
+    if ('isActive' in updateData) {
+      await createAuditLog(req.user!.id, activating ? 'GAS_CHAIN_ACTIVATED' : 'GAS_CHAIN_DEACTIVATED', 'GasChainConfig', id, {
+        slug: chain.slug, isActive: updateData.isActive,
+      })
+    }
     await createAuditLog(req.user!.id, 'GAS_CHAIN_UPDATED', 'GasChainConfig', id, updateData)
     return reply.send({ success: true, data: updated })
   })
@@ -2499,5 +2563,178 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     await createAuditLog(req.user!.id, 'GAS_CUSTOM_REQUEST_UPDATED', 'GasCustomRequest', id, body)
     return reply.send({ success: true, data: updated })
+  })
+
+  // ── POST /admin/gas/wallets/:chain/test-rpc — validate RPC + signer + address ──
+
+  app.post('/admin/gas/wallets/:chain/test-rpc', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
+    const { gasWalletIsConfigured, getEvmHotWalletAddress, getTronHotWalletAddress } = await import('../lib/gas/gasWalletService')
+
+    const wallet = await db.gasHotWallet.findUnique({
+      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' },
+    })
+    if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
+
+    const chainId = fromDbChain(chain)
+    const chainConfig = GAS_CHAINS[chainId]
+    if (!chainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `RPC test not supported for ${chain}`, 400)
+
+    // 1. RPC reachability + latest block
+    const rpcResult = await testRpcHealth(chainId)
+
+    // 2. Signer / address derivation check
+    let signerOk = false
+    let derivedAddress: string | null = null
+    let signerError: string | undefined
+    try {
+      if (gasWalletIsConfigured()) {
+        derivedAddress = chain === 'TRON' ? getTronHotWalletAddress() : getEvmHotWalletAddress()
+        signerOk = !!derivedAddress
+      } else {
+        const legacyKey = chainConfig.getPrivateKey()
+        signerOk = !!legacyKey
+        signerError = legacyKey ? undefined : 'No private key available (neither mnemonic nor legacy env var)'
+      }
+    } catch (err) {
+      signerError = err instanceof Error ? err.message : String(err)
+    }
+
+    // 3. Address match check (derived vs DB)
+    const addressMatch = derivedAddress
+      ? derivedAddress.toLowerCase() === wallet.address.toLowerCase()
+      : null
+
+    await createAuditLog(req.user!.id, 'GAS_RPC_TESTED', 'GasHotWallet', wallet.id, {
+      chain, rpcOk: rpcResult.reachable, signerOk, addressMatch,
+    })
+
+    return reply.send({
+      success: true,
+      data: {
+        chain,
+        rpc: {
+          reachable:   rpcResult.reachable,
+          blockNumber: rpcResult.blockNumber ?? null,
+          latencyMs:   rpcResult.latencyMs,
+          isStale:     rpcResult.isStale ?? false,
+          error:       rpcResult.error ?? null,
+        },
+        signer: {
+          ok:           signerOk,
+          derivedAddress,
+          walletAddress: wallet.address,
+          addressMatch,
+          error:        signerError ?? null,
+        },
+        allClear: rpcResult.reachable && signerOk && addressMatch !== false,
+      },
+    })
+  })
+
+  // ── GET /admin/gas/global-pause — read the global pause switch ────────────────
+
+  app.get('/admin/gas/global-pause', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const row = await db.platformConfig.findUnique({ where: { key: 'gas_global_pause' } })
+    const paused = row?.value === '1'
+    const reason = paused ? (await db.platformConfig.findUnique({ where: { key: 'gas_global_pause_reason' } }))?.value ?? null : null
+    return reply.send({ success: true, data: { paused, reason } })
+  })
+
+  // ── POST /admin/gas/global-pause — set or clear the global pause (super_admin) ─
+
+  app.post('/admin/gas/global-pause', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { paused, reason } = req.body as { paused: boolean; reason?: string }
+    if (typeof paused !== 'boolean') throw new AppError('VALIDATION_ERROR', 'paused must be a boolean', 400)
+
+    await db.platformConfig.upsert({
+      where:  { key: 'gas_global_pause' },
+      create: { key: 'gas_global_pause', value: paused ? '1' : '0' },
+      update: { value: paused ? '1' : '0' },
+    })
+    if (paused && reason) {
+      await db.platformConfig.upsert({
+        where:  { key: 'gas_global_pause_reason' },
+        create: { key: 'gas_global_pause_reason', value: reason },
+        update: { value: reason },
+      })
+    } else if (!paused) {
+      await db.platformConfig.deleteMany({ where: { key: 'gas_global_pause_reason' } })
+    }
+
+    await createAuditLog(req.user!.id, paused ? 'GAS_GLOBAL_PAUSED' : 'GAS_GLOBAL_RESUMED', 'PlatformConfig', 'gas_global_pause', {
+      paused, reason: reason ?? null,
+    })
+
+    return reply.send({ success: true, data: { paused, reason: reason ?? null } })
+  })
+
+  // ── GET /admin/gas/analytics — delivery analytics ─────────────────────────────
+
+  app.get('/admin/gas/analytics', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { period = '7d' } = req.query as { period?: '24h' | '7d' | '30d' | 'all' }
+
+    const since = period === 'all' ? undefined
+      : new Date(Date.now() - (
+          period === '24h' ? 86_400_000
+          : period === '7d' ? 7 * 86_400_000
+          : 30 * 86_400_000
+        ))
+
+    const where = since ? { createdAt: { gte: since } } : {}
+
+    const [deliveredOrders, failedCount, chainGroups] = await Promise.all([
+      db.gasFeeOrder.findMany({
+        where:  { ...where, status: 'delivered', deliveredAt: { not: null } },
+        select: { chain: true, createdAt: true, deliveredAt: true },
+      }),
+      db.gasFeeOrder.count({ where: { ...where, status: 'failed' } }),
+      db.gasFeeOrder.groupBy({
+        by: ['chain', 'status'],
+        where,
+        _count: { status: true },
+      }),
+    ])
+
+    const successCount = deliveredOrders.length
+
+    // Average completion time (ms → seconds)
+    let avgCompletionSec: number | null = null
+    if (successCount > 0) {
+      const totalMs = deliveredOrders.reduce((sum, o) => {
+        return sum + (o.deliveredAt!.getTime() - o.createdAt.getTime())
+      }, 0)
+      avgCompletionSec = Math.round(totalMs / successCount / 1000)
+    }
+
+    // Per-chain success rates
+    const chainMap: Record<string, { delivered: number; failed: number }> = {}
+    for (const g of chainGroups) {
+      const c = g.chain as string
+      if (!chainMap[c]) chainMap[c] = { delivered: 0, failed: 0 }
+      if (g.status === 'delivered') chainMap[c]!.delivered += g._count.status
+      if (g.status === 'failed')    chainMap[c]!.failed    += g._count.status
+    }
+    const chainStats = Object.entries(chainMap).map(([chain, s]) => ({
+      chain,
+      delivered: s.delivered,
+      failed:    s.failed,
+      total:     s.delivered + s.failed,
+      successRate: s.delivered + s.failed > 0
+        ? Math.round((s.delivered / (s.delivered + s.failed)) * 100)
+        : null,
+    }))
+
+    return reply.send({
+      success: true,
+      data: {
+        period,
+        successCount,
+        failedCount,
+        avgCompletionSec,
+        chainStats,
+      },
+    })
   })
 }

@@ -9,6 +9,13 @@ import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   const { orderId } = job.data
 
+  // Respect the global pause switch — requeue with backoff if paused.
+  const globalPause = await db.platformConfig.findUnique({ where: { key: 'gas_global_pause' } })
+  if (globalPause?.value === '1') {
+    logger.warn({ orderId }, 'Gas delivery skipped — global pause is active')
+    throw new Error('Gas delivery globally paused — will retry')
+  }
+
   // DB-level CAS: atomically claim the order by transitioning payment_detected → sending.
   // If another worker process already claimed it, updateMany returns count=0 and we exit
   // immediately — no double-send is possible even under concurrent retries.

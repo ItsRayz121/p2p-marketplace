@@ -1138,6 +1138,7 @@ export const adminApi = {
         status: 'healthy' | 'low' | 'paused' | 'unavailable'
         alertThresholdUsd: number | null
         pauseThresholdUsd: number | null
+        lastBalanceRefreshAt: string | null
       } | null
       wallets: Array<{
         chain: string
@@ -1149,6 +1150,7 @@ export const adminApi = {
         status: 'healthy' | 'low' | 'paused' | 'unavailable'
         alertThresholdUsd: number | null
         pauseThresholdUsd: number | null
+        lastBalanceRefreshAt: string | null
       }>
     }>('/admin/gas/stats'),
   getGasWallets: () =>
@@ -1159,6 +1161,25 @@ export const adminApi = {
     apiRequest<{ chain: string; balance: number; balanceUsd: number | null; nativeSymbol: string; status: string; alertThresholdUsd: number | null; pauseThresholdUsd: number | null }>(`/admin/gas/wallets/${chain}/refresh-balance`, { method: 'POST' }),
   toggleGasChain: (chain: string) =>
     apiRequest<{ chain: string; isActive: boolean }>(`/admin/gas/chains/${chain}/toggle`, { method: 'POST' }),
+  testRpcHealth: (chain: string) =>
+    apiRequest<{
+      chain: string
+      rpc: { reachable: boolean; blockNumber: number | null; latencyMs: number; isStale: boolean; error: string | null }
+      signer: { ok: boolean; derivedAddress: string | null; walletAddress: string; addressMatch: boolean | null; error: string | null }
+      allClear: boolean
+    }>(`/admin/gas/wallets/${chain}/test-rpc`, { method: 'POST' }),
+  getGasGlobalPause: () =>
+    apiRequest<{ paused: boolean; reason: string | null }>('/admin/gas/global-pause'),
+  setGasGlobalPause: (paused: boolean, reason?: string) =>
+    apiRequest<{ paused: boolean; reason: string | null }>('/admin/gas/global-pause', { method: 'POST', body: JSON.stringify({ paused, reason }) }),
+  getGasAnalytics: (period?: '24h' | '7d' | '30d' | 'all') =>
+    apiRequest<{
+      period: string
+      successCount: number
+      failedCount: number
+      avgCompletionSec: number | null
+      chainStats: Array<{ chain: string; delivered: number; failed: number; total: number; successRate: number | null }>
+    }>('/admin/gas/analytics' + (period ? `?period=${period}` : '')),
 
   // Gas Unattributed Payments
   getGasUnattributed: () =>

@@ -994,11 +994,12 @@ model GasFeeOrder {
 }
 
 model GasHotWallet {
-  id        String   @id @default(cuid())
-  chain     GasChain @unique
-  address   String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id                   String    @id @default(cuid())
+  chain                GasChain  @unique
+  address              String
+  isActive             Boolean   @default(true)
+  lastBalanceRefreshAt DateTime?
+  createdAt            DateTime  @default(now())
 
   @@index([chain, isActive])
 }
