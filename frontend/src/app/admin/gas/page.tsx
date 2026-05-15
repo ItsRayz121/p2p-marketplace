@@ -21,8 +21,10 @@ interface GasOrder {
   chain: string
   gasAmountNative: string
   paymentAmount: string
+  paymentCoin?: string | null
+  pkrAmount?: string | null
   toAddress: string
-  status: 'payment_pending' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded'
   deliveryTxHash?: string
   failureReason?: string
   createdAt: string
@@ -50,6 +52,7 @@ interface GasStats {
   pendingCount: number
   failedCount: number
   refundPendingCount: number
+  pendingCustomRequests: number
   wallet: GasWallet | null
   wallets: GasWallet[]
 }
@@ -65,7 +68,8 @@ function fmtNative(amount: string | number): string {
 
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
-  payment_detected: 'Payment Detected',
+  payment_uploaded: 'Proof Submitted',
+  payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Delivered',
   expired:          'Expired',
@@ -77,6 +81,7 @@ function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' 
   if (s === 'delivered') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
   if (s === 'refunded') return 'warning'
+  if (s === 'payment_uploaded') return 'warning'
   if (s === 'payment_detected' || s === 'sending') return 'default'
   return 'outline'
 }
@@ -179,6 +184,8 @@ export default function GasAdminPage() {
   const [confirmRetry, setConfirmRetry] = useState(false)
   const [confirmRefund, setConfirmRefund] = useState(false)
   const [confirmToggle, setConfirmToggle] = useState(false)
+  const [confirmApprovePkr, setConfirmApprovePkr] = useState(false)
+  const [confirmRejectPkr, setConfirmRejectPkr] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
@@ -243,6 +250,32 @@ export default function GasAdminPage() {
     }
   }
 
+  async function handleApprovePkr() {
+    if (!selectedId) return
+    setActionError(null)
+    try {
+      await adminApi.approvePkrOrder(selectedId)
+      setConfirmApprovePkr(false)
+      setActionSuccess('PKR payment approved — gas delivery queued.')
+      void refresh()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to approve PKR order')
+    }
+  }
+
+  async function handleRejectPkr() {
+    if (!selectedId) return
+    setActionError(null)
+    try {
+      await adminApi.rejectPkrOrder(selectedId)
+      setConfirmRejectPkr(false)
+      setActionSuccess('PKR payment rejected.')
+      void refresh()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to reject PKR order')
+    }
+  }
+
   async function handleToggleChain() {
     if (!stats?.wallet) return
     setToggling(true)
@@ -272,9 +305,14 @@ export default function GasAdminPage() {
           <h1 className="text-2xl font-bold text-text-primary">Gas Fee Operations</h1>
           <p className="text-text-muted text-sm mt-0.5">{total} total orders</p>
         </div>
-        <Link href="/admin/gas/chains">
-          <Button size="sm" variant="secondary">Chain & Token Config</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/gas/requests">
+            <Button size="sm" variant="ghost">Custom Requests</Button>
+          </Link>
+          <Link href="/admin/gas/chains">
+            <Button size="sm" variant="secondary">Chain & Token Config</Button>
+          </Link>
+        </div>
       </div>
 
       {/* Alerts */}
@@ -326,6 +364,40 @@ export default function GasAdminPage() {
         </div>
       )}
 
+      {/* ── PKR Proof Review Alert ───────────────────────────────────────────── */}
+      {orders.some(o => o.status === 'payment_uploaded') && statusFilter === 'all' && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span><strong>PKR payments pending review.</strong> Orders with &ldquo;Proof Submitted&rdquo; status need approval before gas is released.</span>
+          <button onClick={() => setStatusFilter('payment_uploaded')} className="ml-auto text-xs font-bold border border-amber-400 rounded-lg px-2.5 py-1 hover:bg-amber-100">
+            View All →
+          </button>
+        </div>
+      )}
+
+      {/* ── Custom Gas Requests Alert ────────────────────────────────────────── */}
+      {(stats?.pendingCustomRequests ?? 0) > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
+          <svg className="w-5 h-5 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
+          <span><strong>{stats!.pendingCustomRequests} custom gas request{stats!.pendingCustomRequests > 1 ? 's' : ''} pending review.</strong> Users have submitted unsupported chain requests.</span>
+          <Link href="/admin/gas/requests" className="ml-auto text-xs font-bold border border-blue-400 rounded-lg px-2.5 py-1 hover:bg-blue-100">
+            Review →
+          </Link>
+        </div>
+      )}
+
+      {/* ── Critical Wallet Alert ────────────────────────────────────────────── */}
+      {stats?.wallets?.some(w => w.status === 'critical' || w.status === 'paused') && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
+          <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span>
+            <strong>Hot wallet critical:</strong>{' '}
+            {stats.wallets.filter(w => w.status === 'critical' || w.status === 'paused').map(w => `${w.chain} (${w.status})`).join(', ')}.
+            {' '}New orders are paused on these chains.
+          </span>
+        </div>
+      )}
+
       {/* ── Hot Wallet Card ──────────────────────────────────────────────────── */}
       {/* ── Primary (TRON) wallet card ─────────────────────────────────────── */}
       {stats?.wallet && (
@@ -348,7 +420,7 @@ export default function GasAdminPage() {
 
       {/* ── Status Filters ───────────────────────────────────────────────────── */}
       <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-2">
-        {['all', 'payment_pending', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
+        {['all', 'payment_pending', 'payment_uploaded', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
           <button
             key={s}
             onClick={() => { setStatusFilter(s); setPage(1) }}
@@ -419,6 +491,24 @@ export default function GasAdminPage() {
                         <Link href={`/admin/gas/orders/${o.orderRef}`}>
                           <Button size="sm" variant="ghost">View</Button>
                         </Link>
+                        {o.status === 'payment_uploaded' && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmApprovePkr(true) }}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRejectPkr(true) }}
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        )}
                         {o.status === 'failed' && (
                           <>
                             <Button
@@ -458,6 +548,26 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Modals ───────────────────────────────────────────────────────────── */}
+      <ConfirmModal
+        isOpen={confirmApprovePkr}
+        onClose={() => setConfirmApprovePkr(false)}
+        onConfirm={handleApprovePkr}
+        title="Approve PKR Payment"
+        description="Confirm you have received the PKR payment and approve this order. Gas delivery will be queued immediately."
+        confirmLabel="Approve & Release Gas"
+        confirmVariant="primary"
+      />
+
+      <ConfirmModal
+        isOpen={confirmRejectPkr}
+        onClose={() => setConfirmRejectPkr(false)}
+        onConfirm={handleRejectPkr}
+        title="Reject PKR Payment"
+        description="Reject this PKR payment proof. The order will be marked as failed. Inform the user if a refund is required."
+        confirmLabel="Reject Payment"
+        confirmVariant="danger"
+      />
+
       <ConfirmModal
         isOpen={confirmRetry}
         onClose={() => setConfirmRetry(false)}

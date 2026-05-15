@@ -21,8 +21,12 @@ interface GasOrderDetail {
   gasAmountNative: string
   priceAtOrder: string | null
   paymentAmount: string
+  paymentCoin: string | null
   paymentNetwork: string | null
   paymentTxHash: string | null
+  pkrAmount: string | null
+  pkrPaymentMethod: string | null
+  paymentProofUrl: string | null
   toAddress: string
   fromHotWallet: string | null
   deliveryTxHash: string | null
@@ -40,7 +44,8 @@ interface GasOrderDetail {
 
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
-  payment_detected: 'Payment Detected',
+  payment_uploaded: 'Proof Submitted',
+  payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Delivered',
   expired:          'Expired',
@@ -52,6 +57,7 @@ function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' 
   if (s === 'delivered') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
   if (s === 'refunded') return 'warning'
+  if (s === 'payment_uploaded') return 'warning'
   if (s === 'payment_detected' || s === 'sending') return 'default'
   return 'outline'
 }
@@ -109,7 +115,10 @@ export default function GasOrderDetailPage() {
 
   const [retryOpen, setRetryOpen] = useState(false)
   const [refundOpen, setRefundOpen] = useState(false)
+  const [approvePkrOpen, setApprovePkrOpen] = useState(false)
+  const [rejectPkrOpen, setRejectPkrOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -124,6 +133,34 @@ export default function GasOrderDetailPage() {
   }, [orderRef])
 
   useEffect(() => { fetchOrder() }, [fetchOrder])
+
+  async function handleApprovePkr() {
+    if (!order) return
+    setActionError(null)
+    try {
+      await adminApi.approvePkrOrder(order.id)
+      setApprovePkrOpen(false)
+      setActionSuccess('PKR payment approved — gas delivery queued.')
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Approval failed')
+      setApprovePkrOpen(false)
+    }
+  }
+
+  async function handleRejectPkr() {
+    if (!order) return
+    setActionError(null)
+    try {
+      await adminApi.rejectPkrOrder(order.id)
+      setRejectPkrOpen(false)
+      setActionSuccess('PKR payment rejected.')
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Rejection failed')
+      setRejectPkrOpen(false)
+    }
+  }
 
   async function handleRetry() {
     if (!order) return
@@ -160,6 +197,8 @@ export default function GasOrderDetailPage() {
   )
 
   const isFailed = order.status === 'failed'
+  const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
+  const isOrderExpired = order.expiresAt ? new Date(order.expiresAt) < new Date() : false
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
@@ -185,11 +224,40 @@ export default function GasOrderDetailPage() {
         </Badge>
       </div>
 
+      {actionSuccess && (
+        <div className="mb-4 p-3 rounded-lg bg-success/10 text-success text-sm">{actionSuccess}</div>
+      )}
       {actionError && (
         <div className="mb-4 p-3 rounded-lg bg-danger/10 text-danger text-sm">{actionError}</div>
       )}
 
-      {/* Actions (failed only) */}
+      {/* Actions — PKR proof review */}
+      {isPkrProof && (
+        <div className={`mb-6 p-4 rounded-xl border ${isOrderExpired ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+          {isOrderExpired && (
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-red-100 border border-red-200">
+              <svg className="w-4 h-4 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="text-xs font-semibold text-red-700">
+                This order is expired. Approving it would queue gas delivery for an expired order. Reject it so the user can create a new order.
+              </p>
+            </div>
+          )}
+          <div className="flex gap-3 items-start">
+            <div className="flex-1">
+              <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-red-900' : 'text-amber-900'}`}>PKR Payment Proof Submitted</p>
+              <p className={`text-xs ${isOrderExpired ? 'text-red-700' : 'text-amber-700'}`}>
+                {isOrderExpired ? 'Order expired — cannot approve. Reject to close this order.' : 'Verify the screenshot below, then approve or reject.'}
+              </p>
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setApprovePkrOpen(true)} disabled={isOrderExpired}>Approve</Button>
+            <Button variant="danger" size="sm" onClick={() => setRejectPkrOpen(true)}>Reject</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Actions — failed order */}
       {isFailed && (
         <div className="flex gap-3 mb-6">
           <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>
@@ -216,11 +284,25 @@ export default function GasOrderDetailPage() {
 
         <SectionHeading>Payment</SectionHeading>
         <div>
-          <InfoRow label="Amount">{parseFloat(order.paymentAmount).toFixed(2)} USDT</InfoRow>
+          <InfoRow label="Method">{order.paymentCoin ?? 'USDT'}</InfoRow>
+          <InfoRow label="Amount">{parseFloat(order.paymentAmount).toFixed(2)} {order.paymentCoin ?? 'USDT'}</InfoRow>
+          {order.paymentCoin === 'PKR' && (
+            <>
+              <InfoRow label="PKR Amount">PKR {order.pkrAmount ? parseFloat(order.pkrAmount).toFixed(0) : '—'}</InfoRow>
+              <InfoRow label="PKR Method">{order.pkrPaymentMethod?.replace('_', ' ') ?? '—'}</InfoRow>
+            </>
+          )}
           <InfoRow label="Network">{order.paymentNetwork ?? 'TRC20'}</InfoRow>
           <InfoRow label="Payment Tx">
             {order.paymentTxHash ? <TxLink hash={order.paymentTxHash} /> : '—'}
           </InfoRow>
+          {order.paymentProofUrl && (
+            <InfoRow label="Payment Proof">
+              <a href={order.paymentProofUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs">
+                View Screenshot ↗
+              </a>
+            </InfoRow>
+          )}
         </div>
 
         <SectionHeading>Delivery</SectionHeading>
@@ -280,6 +362,24 @@ export default function GasOrderDetailPage() {
       </div>
 
       {/* Confirm modals */}
+      <ConfirmModal
+        isOpen={approvePkrOpen}
+        onClose={() => setApprovePkrOpen(false)}
+        onConfirm={handleApprovePkr}
+        title="Approve PKR Payment"
+        description={`Confirm you have received PKR ${order.pkrAmount ? parseFloat(order.pkrAmount).toFixed(0) : ''} for order ${order.orderRef}. Gas delivery will be queued immediately.`}
+        confirmLabel="Approve & Release Gas"
+        confirmVariant="primary"
+      />
+      <ConfirmModal
+        isOpen={rejectPkrOpen}
+        onClose={() => setRejectPkrOpen(false)}
+        onConfirm={handleRejectPkr}
+        title="Reject PKR Payment"
+        description={`Reject the PKR payment proof for order ${order.orderRef}. The order will be marked as failed.`}
+        confirmLabel="Reject Payment"
+        confirmVariant="danger"
+      />
       <ConfirmModal
         isOpen={retryOpen}
         onClose={() => setRetryOpen(false)}

@@ -1,7 +1,11 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { gasApi, type GasChain, type GasToken, type GasTokensResponse, type GasOrder } from '@/lib/api'
+import {
+  gasApi,
+  type GasChain, type GasToken, type GasTokensResponse, type GasOrder,
+  type GasPkrMethods, type GasCryptoMethods,
+} from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -10,11 +14,31 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
 import { CountdownTimer } from '@/components/ui/CountdownTimer'
 import { CopyButton } from '@/components/ui/CopyButton'
-import { StalenessBadge } from '@/components/ui/StalenessBadge'
 import { Spinner } from '@/components/ui/Spinner'
 import { usePolling } from '@/hooks/usePolling'
+import { useFileUpload } from '@/hooks/useFileUpload'
 
-// ─── Address validation by addressType ────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const PHASE = {
+  CHAINS:         0,
+  TOKEN:          1,
+  AMOUNT:         2,
+  ADDRESS:        3,
+  PAY_METHOD:     4,
+  PKR_METHOD:     5,
+  PKR_DETAILS:    6,
+  PKR_PROOF:      7,
+  PKR_REVIEW:     8,
+  CRYPTO_NETWORK: 9,
+  CRYPTO_QR:      10,
+  PROCESSING:     11,
+  COMPLETE:       12,
+} as const
+
+type Phase = typeof PHASE[keyof typeof PHASE]
+
+// ─── Address validation ───────────────────────────────────────────────────────
 
 const ADDRESS_PATTERNS: Record<string, RegExp> = {
   TRC20: /^T[A-Za-z1-9]{33}$/,
@@ -24,8 +48,8 @@ const ADDRESS_PATTERNS: Record<string, RegExp> = {
 }
 
 function validateAddress(addr: string, addressType: string): boolean {
-  const pattern = ADDRESS_PATTERNS[addressType]
-  return pattern ? pattern.test(addr) : addr.length > 5
+  const p = ADDRESS_PATTERNS[addressType]
+  return p ? p.test(addr) : addr.length > 5
 }
 
 function addressPlaceholder(addressType: string): string {
@@ -40,24 +64,17 @@ function addressPlaceholder(addressType: string): string {
 
 // ─── Explorer URL helper ───────────────────────────────────────────────────────
 
-function explorerTxUrl(chain: string, explorerBase: string | null, txHash: string): string {
+function explorerUrl(chain: string, explorerBase: string | null, txHash: string): string {
   if (!explorerBase) return '#'
-  if (chain === 'TRON') return `${explorerBase}/transaction/${txHash}`
-  return `${explorerBase}/tx/${txHash}`
+  return chain === 'TRON' ? `${explorerBase}/transaction/${txHash}` : `${explorerBase}/tx/${txHash}`
 }
 
-// ─── Status helpers ────────────────────────────────────────────────────────────
-
-function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' {
-  if (s === 'delivered' || s === 'refunded') return 'success'
-  if (s === 'failed' || s === 'expired') return 'danger'
-  if (s === 'payment_detected' || s === 'sending' || s === 'refund_pending') return 'warning'
-  return 'default'
-}
+// ─── Status labels ────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
-  payment_detected: 'Payment Detected',
+  payment_uploaded: 'Proof Submitted',
+  payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Completed',
   failed:           'Failed',
@@ -66,672 +83,1306 @@ const STATUS_LABELS: Record<string, string> = {
   refunded:         'Refunded',
 }
 
-// ─── Category color map ────────────────────────────────────────────────────────
-
-const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  tron:     { bg: 'bg-red-100',    text: 'text-red-600' },
-  bnb:      { bg: 'bg-yellow-100', text: 'text-yellow-600' },
-  ethereum: { bg: 'bg-blue-100',   text: 'text-blue-600' },
-  solana:   { bg: 'bg-purple-100', text: 'text-purple-600' },
-  sui:      { bg: 'bg-cyan-100',   text: 'text-cyan-600' },
+function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' {
+  if (s === 'delivered' || s === 'refunded') return 'success'
+  if (s === 'failed' || s === 'expired') return 'danger'
+  if (['payment_detected', 'sending', 'refund_pending', 'payment_uploaded'].includes(s)) return 'warning'
+  return 'default'
 }
 
-function chainColor(category: string) {
-  return CATEGORY_COLORS[category] ?? { bg: 'bg-surface', text: 'text-text-secondary' }
+// ─── Chain category colours ───────────────────────────────────────────────────
+
+const CAT_COLORS: Record<string, { gradient: string }> = {
+  tron:     { gradient: 'from-red-400 to-red-600' },
+  bnb:      { gradient: 'from-yellow-400 to-yellow-600' },
+  ethereum: { gradient: 'from-blue-400 to-blue-600' },
+  solana:   { gradient: 'from-purple-400 to-purple-600' },
+  sui:      { gradient: 'from-cyan-400 to-cyan-600' },
+  ton:      { gradient: 'from-sky-400 to-sky-600' },
+  avalanche:{ gradient: 'from-red-400 to-red-600' },
+  polygon:  { gradient: 'from-violet-400 to-violet-600' },
 }
 
-// ─── Step Indicator ───────────────────────────────────────────────────────────
+const CAT_LABELS: Record<string, string> = {
+  tron: 'TRON', bnb: 'BNB Chain', ethereum: 'Ethereum Ecosystem',
+  solana: 'Solana', sui: 'SUI', ton: 'TON', avalanche: 'Avalanche', polygon: 'Polygon',
+}
 
-function StepIndicator({ current, total }: { current: number; total: number }) {
+function catGradient(cat: string) {
+  return CAT_COLORS[cat]?.gradient ?? 'from-gray-400 to-gray-600'
+}
+
+// ─── Processing steps ──────────────────────────────────────────────────────────
+
+const STEPS_CRYPTO = ['Payment Received', 'Verifying Payment', 'Processing Order', 'Releasing Gas Fee', 'Completed']
+const STEPS_PKR    = ['Order Created', 'Proof Submitted', 'Payment Verified', 'Releasing Gas Fee', 'Completed']
+
+function getActiveStep(status: string): number {
+  if (status === 'payment_pending')  return 0
+  if (status === 'payment_uploaded') return 1
+  if (status === 'payment_detected') return 2
+  if (status === 'sending')          return 3
+  if (status === 'delivered')        return 4
+  return 0
+}
+
+// ─── Chain Logo ───────────────────────────────────────────────────────────────
+
+function ChainLogo({ chain, sizeCls = 'w-11 h-11' }: { chain: GasChain; sizeCls?: string }) {
+  if (chain.logoUrl) {
+    return <img src={chain.logoUrl} alt={chain.symbol} className={`${sizeCls} rounded-full object-contain`} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+  }
   return (
-    <div className="flex items-center justify-center gap-2 mb-6">
-      {Array.from({ length: total }).map((_, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-            i < current
-              ? 'bg-primary text-white'
-              : i === current
-              ? 'bg-primary text-white ring-2 ring-primary/30'
-              : 'bg-surface text-text-muted border border-border'
-          }`}>
-            {i < current ? (
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (i + 1)}
+    <div className={`${sizeCls} rounded-full bg-gradient-to-br ${catGradient(chain.category)} text-white font-bold text-xs flex items-center justify-center flex-shrink-0`}>
+      {chain.symbol.slice(0, 3)}
+    </div>
+  )
+}
+
+function TokenLogo({ token, cat, sizeCls = 'w-10 h-10' }: { token: GasToken; cat: string; sizeCls?: string }) {
+  if (token.logoUrl) {
+    return <img src={token.logoUrl} alt={token.symbol} className={`${sizeCls} rounded-full object-contain`} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+  }
+  return (
+    <div className={`${sizeCls} rounded-full bg-gradient-to-br ${catGradient(cat)} text-white font-bold text-xs flex items-center justify-center flex-shrink-0`}>
+      {token.symbol.slice(0, 3)}
+    </div>
+  )
+}
+
+// ─── Step indicator ───────────────────────────────────────────────────────────
+
+const STEP_NAMES = ['Chain', 'Token', 'Amount', 'Address', 'Payment']
+
+function StepIndicator({ phase }: { phase: Phase }) {
+  const idx = Math.min(Math.max(phase - 1, 0), 4)
+  return (
+    <div className="flex items-center justify-center gap-1 mb-5">
+      {STEP_NAMES.map((name, i) => (
+        <div key={name} className="flex items-center gap-1">
+          <div className={`flex items-center gap-1.5 transition-opacity ${i <= idx ? 'opacity-100' : 'opacity-35'}`}>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+              i < idx ? 'bg-purple-600 text-white' : i === idx ? 'bg-purple-600 text-white ring-4 ring-purple-100' : 'bg-gray-100 text-gray-400'
+            }`}>
+              {i < idx ? <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> : i + 1}
+            </div>
+            <span className={`hidden sm:block text-xs font-medium ${i === idx ? 'text-purple-600' : 'text-gray-400'}`}>{name}</span>
           </div>
-          {i < total - 1 && <div className={`w-8 h-0.5 ${i < current ? 'bg-primary' : 'bg-border'}`} />}
+          {i < STEP_NAMES.length - 1 && <div className={`w-5 h-px mx-1 ${i < idx ? 'bg-purple-500' : 'bg-gray-200'}`} />}
         </div>
       ))}
     </div>
   )
 }
 
-// ─── Chain Logo ───────────────────────────────────────────────────────────────
+// ─── Chain grid skeleton ──────────────────────────────────────────────────────
 
-function ChainLogo({ chain }: { chain: GasChain }) {
-  const { bg, text } = chainColor(chain.category)
-  if (chain.logoUrl) {
-    return (
-      <img
-        src={chain.logoUrl}
-        alt={chain.symbol}
-        className="w-10 h-10 rounded-full object-contain"
-        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-      />
-    )
-  }
+function ChainSkeleton() {
   return (
-    <div className={`w-10 h-10 rounded-full ${bg} ${text} font-bold text-xs flex items-center justify-center flex-shrink-0`}>
-      {chain.symbol.slice(0, 3)}
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+      {Array.from({ length: 10 }).map((_, i) => <div key={i} className="animate-pulse bg-gray-100 rounded-2xl h-28" />)}
     </div>
   )
 }
 
-// ─── Token Logo ───────────────────────────────────────────────────────────────
+// ─── Back button ──────────────────────────────────────────────────────────────
 
-function TokenLogo({ token, chainCategory }: { token: GasToken; chainCategory: string }) {
-  const { bg, text } = chainColor(chainCategory)
-  if (token.logoUrl) {
-    return (
-      <img
-        src={token.logoUrl}
-        alt={token.symbol}
-        className="w-9 h-9 rounded-full object-contain"
-        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-      />
-    )
-  }
+function BackBtn({ onClick }: { onClick: () => void }) {
   return (
-    <div className={`w-9 h-9 rounded-full ${bg} ${text} font-bold text-xs flex items-center justify-center flex-shrink-0`}>
-      {token.symbol.slice(0, 3)}
+    <button onClick={onClick} className="text-gray-400 hover:text-gray-600 transition-colors">
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+      </svg>
+    </button>
+  )
+}
+
+// ─── Card step header ─────────────────────────────────────────────────────────
+
+function CardHeader({ onBack, title, sub }: { onBack?: () => void; title: string; sub?: string }) {
+  return (
+    <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
+      {onBack && <BackBtn onClick={onBack} />}
+      <div>
+        <p className="text-sm font-bold text-gray-900">{title}</p>
+        {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+      </div>
     </div>
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Processing timeline ───────────────────────────────────────────────────────
+
+function ProcessingTimeline({ status, isPkr }: { status: string; isPkr: boolean }) {
+  const steps = isPkr ? STEPS_PKR : STEPS_CRYPTO
+  const active = getActiveStep(status)
+  return (
+    <div className="space-y-3">
+      {steps.map((label, i) => {
+        const done = i < active, cur = i === active
+        return (
+          <div key={label} className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+              done ? 'bg-green-500 text-white' : cur ? 'bg-purple-600 text-white ring-4 ring-purple-100' : 'bg-gray-100 text-gray-300'
+            }`}>
+              {done
+                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                : cur
+                ? <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
+                : <div className="w-2 h-2 rounded-full bg-gray-300" />
+              }
+            </div>
+            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600' : cur ? 'text-purple-700' : 'text-gray-400'}`}>{label}</p>
+            {cur && <Spinner size="sm" />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Custom Gas Fee Request ───────────────────────────────────────────────────
+
+function CustomGasRequest() {
+  const [open, setOpen]     = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]   = useState('')
+  const [form, setForm]     = useState({ blockchainName: '', token: '', amount: '', purpose: '', urgency: 'normal', details: '', contactEmail: '' })
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.blockchainName || !form.token || !form.purpose) return
+    setSubmitting(true); setError('')
+    try {
+      await gasApi.submitCustomRequest({ blockchainName: form.blockchainName, token: form.token, amount: form.amount || undefined, purpose: form.purpose, urgency: form.urgency, details: form.details || undefined, contactEmail: form.contactEmail || undefined })
+      setSubmitted(true)
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to submit') }
+    finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="mt-6">
+      {!open && (
+        <div className="border border-dashed border-purple-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-purple-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 flex-shrink-0 text-xl">+</div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Can't find your blockchain?</p>
+              <p className="text-xs text-gray-500">Request custom gas fee for any blockchain</p>
+            </div>
+          </div>
+          <button onClick={() => setOpen(true)} className="px-4 py-2 rounded-xl border border-purple-300 text-purple-700 text-sm font-semibold hover:bg-purple-100 transition-colors flex-shrink-0">
+            Request Custom Gas Fee
+          </button>
+        </div>
+      )}
+
+      {open && (
+        <div className="border border-purple-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+          <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-purple-100">
+            <p className="text-sm font-bold text-gray-900">Custom Gas Fee Request</p>
+            <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+          {submitted ? (
+            <div className="p-8 text-center">
+              <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+                <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              </div>
+              <p className="text-base font-bold text-gray-900 mb-1">Request Submitted!</p>
+              <p className="text-sm text-gray-500">Our team will review and contact you within 24 hours.</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                { label: 'Blockchain Name *', key: 'blockchainName', placeholder: 'e.g., zkSync, TON, Scroll' },
+                { label: 'Token Needed *',    key: 'token',           placeholder: 'e.g., USDT, USDC, ETH' },
+                { label: 'Amount Needed',     key: 'amount',          placeholder: 'e.g., 10 USDT' },
+                { label: 'Contact Email',     key: 'contactEmail',    placeholder: 'your@email.com' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{f.label}</label>
+                  <input type={f.key === 'contactEmail' ? 'email' : 'text'} placeholder={f.placeholder} value={(form as Record<string,string>)[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" required={f.key === 'blockchainName' || f.key === 'token'} />
+                </div>
+              ))}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Purpose *</label>
+                <select value={form.purpose} onChange={e => setForm(p => ({ ...p, purpose: e.target.value }))} required
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white">
+                  <option value="">Select purpose</option>
+                  <option value="wallet_activation">Wallet Activation</option>
+                  <option value="airdrop_gas">Airdrop Gas Refill</option>
+                  <option value="token_transfer">Token Transfer</option>
+                  <option value="bridge">Bridge Transaction</option>
+                  <option value="nft_mint">NFT Mint</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Urgency</label>
+                <select value={form.urgency} onChange={e => setForm(p => ({ ...p, urgency: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white">
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Additional Details</label>
+                <textarea rows={3} maxLength={500} placeholder="Describe your requirements..." value={form.details} onChange={e => setForm(p => ({ ...p, details: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none" />
+                <p className="text-right text-xs text-gray-400">{form.details.length}/500</p>
+              </div>
+              {error && <p className="sm:col-span-2 text-sm text-red-500">{error}</p>}
+              <div className="sm:col-span-2 flex gap-3">
+                <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={submitting || !form.blockchainName || !form.token || !form.purpose}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {submitting ? <Spinner size="sm" /> : 'Submit Request'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── PKR payment method details ───────────────────────────────────────────────
+
+const PKR_METHOD_META = {
+  bank_transfer: { icon: '🏦', label: 'Bank Transfer',  color: 'blue',   desc: 'Direct bank account transfer' },
+  easypaisa:     { icon: '📱', label: 'Easypaisa',      color: 'green',  desc: 'Pay via Easypaisa mobile wallet' },
+  jazzcash:      { icon: '📲', label: 'JazzCash',       color: 'red',    desc: 'Pay via JazzCash mobile wallet' },
+} as const
+
+type PkrMethodKey = keyof typeof PKR_METHOD_META
+
+// ─── Main Page Component ──────────────────────────────────────────────────────
 
 export default function GasPage() {
-  const { user } = useAuth()
+  const { user }  = useAuth()
 
-  // Step: 0=chain select, 1=token+amount, 2=address, 3=payment
-  const [step, setStep] = useState(0)
+  // ── Navigation phase ────────────────────────────────────────────────────────
+  const [phase, setPhase] = useState<Phase>(PHASE.CHAINS)
 
-  // Step 0 — chains
-  const [chains, setChains] = useState<GasChain[]>([])
+  // ── Step 0: Chains ──────────────────────────────────────────────────────────
+  const [chains, setChains]         = useState<GasChain[]>([])
   const [chainsLoading, setChainsLoading] = useState(true)
-  const [chainsError, setChainsError] = useState('')
+  const [chainsError, setChainsError]     = useState('')
   const [selectedChain, setSelectedChain] = useState<GasChain | null>(null)
 
-  // Step 1 — tokens + amount
-  const [tokenData, setTokenData] = useState<GasTokensResponse | null>(null)
+  // ── Step 1: Tokens ──────────────────────────────────────────────────────────
+  const [tokenData, setTokenData]         = useState<GasTokensResponse | null>(null)
   const [tokensLoading, setTokensLoading] = useState(false)
-  const [tokensError, setTokensError] = useState('')
+  const [tokensError, setTokensError]     = useState('')
   const [selectedToken, setSelectedToken] = useState<GasToken | null>(null)
-  const [amount, setAmount] = useState('')
+
+  // ── Step 2: Amount ──────────────────────────────────────────────────────────
+  const [amount, setAmount]       = useState('')
   const [amountError, setAmountError] = useState('')
 
-  // Step 2 — address
-  const [address, setAddress] = useState('')
+  // ── Step 3: Address ─────────────────────────────────────────────────────────
+  const [address, setAddress]         = useState('')
   const [addressError, setAddressError] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState('')
 
-  // Step 3 — order tracking
-  const [order, setOrder] = useState<GasOrder | null>(null)
-  const [pollErrorCount, setPollErrorCount] = useState(0)
+  // ── Step 4: Payment method ──────────────────────────────────────────────────
+  const [pkrMethods, setPkrMethods]       = useState<GasPkrMethods | null>(null)
+  const [cryptoMethods, setCryptoMethods] = useState<GasCryptoMethods | null>(null)
+  const [methodsLoading, setMethodsLoading] = useState(false)
+
+  // ── PKR sub-flow ────────────────────────────────────────────────────────────
+  const [selectedPkrMethod, setSelectedPkrMethod] = useState<PkrMethodKey | null>(null)
+  const [creatingPkr, setCreatingPkr]   = useState(false)
+  const [pkrError, setPkrError]         = useState('')
+
+  // ── Proof upload ────────────────────────────────────────────────────────────
+  const { upload, uploading, error: uploadError } = useFileUpload('payment-proof')
+  const [proofUrl, setProofUrl]       = useState('')
+  const [submittingProof, setSubmittingProof] = useState(false)
+  const [proofError, setProofError]   = useState('')
+
+  // ── Crypto sub-flow ─────────────────────────────────────────────────────────
+  const [selectedCryptoNetwork, setSelectedCryptoNetwork] = useState<'BEP20' | 'APTOS' | null>(null)
+  const [creatingCrypto, setCreatingCrypto] = useState(false)
+  const [cryptoError, setCryptoError]       = useState('')
+  const [qrFailed, setQrFailed]             = useState(false)
+
+  // ── Order tracking ──────────────────────────────────────────────────────────
+  const [order, setOrder]               = useState<GasOrder | null>(null)
+  const [pollErrCount, setPollErrCount] = useState(0)
   const idempKeyRef = useRef(`gas_${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
-  // Computed values
-  const currentToken = selectedToken
-  const priceUsd = currentToken?.priceUsd ?? 0
-  const markup = currentToken?.markup ?? 1.5
+  // ── Computed ────────────────────────────────────────────────────────────────
+  const priceUsd  = selectedToken?.priceUsd  ?? 0
+  const pricePkr  = selectedToken?.pricePkr  ?? 0
+  const markup    = selectedToken?.markup    ?? 1.5
   const amountNum = parseFloat(amount) || 0
   const computedUsd = amountNum * priceUsd * markup
-  const maxUsd = currentToken?.maxUsdValue ?? 10
-  const minAmount = currentToken?.minAmount ?? 0.1
+  const computedPkr = amountNum * pricePkr * markup
+  const maxUsd      = selectedToken?.maxUsdValue ?? 10
+  const minAmount   = selectedToken?.minAmount   ?? 0.1
   const usdExceeded = computedUsd > maxUsd && amountNum > 0
+
+  const isPkrOrder  = order?.paymentCoin === 'PKR'
+  const explorerBase = tokenData?.chain?.explorerBase ?? null
 
   // Load chains on mount
   useEffect(() => {
-    setChainsLoading(true)
     gasApi.getChains()
       .then(({ chains: c }) => setChains(c))
       .catch((e: Error) => setChainsError(e.message || 'Failed to load chains'))
       .finally(() => setChainsLoading(false))
   }, [])
 
-  // Load tokens when chain selected
+  // Load PKR + crypto methods when reaching payment method step
+  useEffect(() => {
+    if (phase !== PHASE.PAY_METHOD || pkrMethods || cryptoMethods) return
+    setMethodsLoading(true)
+    Promise.allSettled([gasApi.getPkrMethods(), gasApi.getCryptoMethods()])
+      .then(([pkr, crypto]) => {
+        if (pkr.status === 'fulfilled')    setPkrMethods(pkr.value)
+        if (crypto.status === 'fulfilled') setCryptoMethods(crypto.value)
+      })
+      .finally(() => setMethodsLoading(false))
+  }, [phase, pkrMethods, cryptoMethods])
+
   const fetchTokens = useCallback(async (chain: GasChain) => {
-    setTokensLoading(true)
-    setTokensError('')
-    setTokenData(null)
-    setSelectedToken(null)
-    setAmount('')
-    setAmountError('')
+    setTokensLoading(true); setTokensError(''); setTokenData(null); setSelectedToken(null)
     try {
       const data = await gasApi.getChainTokens(chain.slug)
       setTokenData(data)
       if (data.tokens.length === 1) setSelectedToken(data.tokens[0])
-    } catch (e: unknown) {
-      setTokensError(e instanceof Error ? e.message : 'Failed to load tokens')
-    } finally {
-      setTokensLoading(false)
-    }
+    } catch (e: unknown) { setTokensError(e instanceof Error ? e.message : 'Failed to load tokens') }
+    finally { setTokensLoading(false) }
   }, [])
 
   function handleSelectChain(chain: GasChain) {
-    if (!chain.isAvailable && !chain.isActive) return
+    if (!chain.isActive) return
     setSelectedChain(chain)
     fetchTokens(chain)
-    setStep(1)
+    setPhase(PHASE.TOKEN)
   }
 
-  function validateAmount(val: string): boolean {
+  function validateAmountField(val: string): boolean {
     const n = parseFloat(val)
-    if (!val || isNaN(n) || n <= 0) {
-      setAmountError('Enter a valid amount')
-      return false
-    }
-    if (n < minAmount) {
-      setAmountError(`Minimum is ${minAmount} ${currentToken?.symbol ?? ''}`)
-      return false
-    }
-    const usdVal = n * priceUsd * markup
-    if (usdVal > maxUsd) {
-      setAmountError(`Exceeds $${maxUsd} USD limit. Reduce amount.`)
-      return false
-    }
-    setAmountError('')
-    return true
-  }
-
-  function handlePreset(preset: number) {
-    setAmount(String(preset))
-    const usdVal = preset * priceUsd * markup
-    if (usdVal > maxUsd) {
-      setAmountError(`Exceeds $${maxUsd} USD limit.`)
-    } else {
-      setAmountError('')
-    }
-  }
-
-  function handleAddressChange(val: string) {
-    setAddress(val)
-    if (addressError && selectedChain) validateAddressField(val)
+    if (!val || isNaN(n) || n <= 0) { setAmountError('Enter a valid amount'); return false }
+    if (n < minAmount) { setAmountError(`Minimum is ${minAmount} ${selectedToken?.symbol ?? ''}`); return false }
+    if (n * priceUsd * markup > maxUsd) { setAmountError(`Exceeds $${maxUsd} USD limit`); return false }
+    setAmountError(''); return true
   }
 
   function validateAddressField(val: string): boolean {
     if (!val) { setAddressError('Address is required'); return false }
-    if (!selectedChain) return false
-    if (!validateAddress(val, selectedChain.addressType)) {
-      setAddressError(`Invalid ${selectedChain.networkLabel} address format`)
+    if (!selectedChain || !validateAddress(val, selectedChain.addressType)) {
+      setAddressError(`Invalid ${selectedChain?.networkLabel ?? ''} address format`)
       return false
     }
-    setAddressError('')
-    return true
+    setAddressError(''); return true
   }
 
-  async function handleCreateOrder() {
-    if (!currentToken || !selectedChain) return
-    if (!validateAddressField(address)) return
-    if (!validateAmount(amount)) return
+  // ── Create PKR order ────────────────────────────────────────────────────────
 
-    setCreating(true)
-    setCreateError('')
+  async function handleCreatePkrOrder() {
+    if (!selectedToken || !selectedChain || !selectedPkrMethod) return
+    setCreatingPkr(true); setPkrError('')
     try {
-      const o = await gasApi.createOrder({
-        tokenConfigId: currentToken.id,
-        amount: parseFloat(amount),
-        toAddress: address,
-        idempotencyKey: idempKeyRef.current,
+      const o = await gasApi.createPkrOrder({
+        tokenConfigId:    selectedToken.id,
+        amount:           parseFloat(amount),
+        toAddress:        address,
+        pkrPaymentMethod: selectedPkrMethod,
+        idempotencyKey:   `${idempKeyRef.current}_pkr`,
       })
       setOrder(o)
-      setPollErrorCount(0)
-      setStep(3)
-    } catch (e: unknown) {
-      setCreateError(e instanceof Error ? e.message : 'Failed to create order')
-    } finally {
-      setCreating(false)
-    }
+      setPollErrCount(0)
+      setPhase(PHASE.PKR_PROOF)
+    } catch (e: unknown) { setPkrError(e instanceof Error ? e.message : 'Failed to create order') }
+    finally { setCreatingPkr(false) }
   }
+
+  // ── Submit PKR proof ────────────────────────────────────────────────────────
+
+  async function handleUploadFile(file: File) {
+    setProofError('')
+    try {
+      const url = await upload(file)
+      setProofUrl(url)
+    } catch { /* error already in uploadError */ }
+  }
+
+  async function handleSubmitProof() {
+    if (!order || !proofUrl) return
+    setSubmittingProof(true); setProofError('')
+    try {
+      await gasApi.submitProof(order.orderRef, proofUrl)
+      setOrder(o => o ? { ...o, status: 'payment_uploaded' } : o)
+      setPhase(PHASE.PKR_REVIEW)
+    } catch (e: unknown) { setProofError(e instanceof Error ? e.message : 'Failed to submit proof') }
+    finally { setSubmittingProof(false) }
+  }
+
+  // ── Create Crypto order ─────────────────────────────────────────────────────
+
+  async function handleCreateCryptoOrder() {
+    if (!selectedToken || !selectedCryptoNetwork) return
+    setCreatingCrypto(true); setCryptoError('')
+    try {
+      const o = await gasApi.createCryptoOrder({
+        tokenConfigId:  selectedToken.id,
+        amount:         parseFloat(amount),
+        toAddress:      address,
+        paymentNetwork: selectedCryptoNetwork,
+        idempotencyKey: `${idempKeyRef.current}_crypto`,
+      })
+      setOrder(o)
+      setPollErrCount(0)
+      setQrFailed(false)
+      setPhase(PHASE.CRYPTO_QR)
+    } catch (e: unknown) { setCryptoError(e instanceof Error ? e.message : 'Failed to create order') }
+    finally { setCreatingCrypto(false) }
+  }
+
+  // ── Order polling ───────────────────────────────────────────────────────────
 
   const pollOrder = useCallback(async () => {
     if (!order?.orderRef) return
     try {
       const o = await gasApi.getOrder(order.orderRef)
       setOrder(o)
-      setPollErrorCount(0)
-    } catch {
-      setPollErrorCount((c) => c + 1)
-    }
+      setPollErrCount(0)
+      if (o.status === 'delivered')        setPhase(PHASE.COMPLETE)
+      else if (o.status === 'payment_detected' || o.status === 'sending') setPhase(PHASE.PROCESSING)
+    } catch { setPollErrCount(c => c + 1) }
   }, [order?.orderRef])
 
-  const isDone = order?.status === 'delivered' || order?.status === 'failed' || order?.status === 'expired' || order?.status === 'refund_pending' || order?.status === 'refunded'
+  const isTerminal = order && ['delivered', 'failed', 'expired', 'refunded'].includes(order.status)
+  usePolling(pollOrder, 8_000, !!(order?.orderRef) && !isTerminal && ([PHASE.CRYPTO_QR, PHASE.PKR_REVIEW, PHASE.PROCESSING] as Phase[]).includes(phase))
 
-  usePolling(pollOrder, 10_000, step === 3 && !isDone)
+  // ── Reset ───────────────────────────────────────────────────────────────────
 
   function resetFlow() {
-    setStep(0)
-    setSelectedChain(null)
-    setSelectedToken(null)
-    setTokenData(null)
-    setAmount('')
-    setAmountError('')
-    setAddress('')
-    setAddressError('')
-    setOrder(null)
-    setPollErrorCount(0)
-    setCreateError('')
+    setPhase(PHASE.CHAINS)
+    setSelectedChain(null); setSelectedToken(null); setTokenData(null)
+    setAmount(''); setAmountError(''); setAddress(''); setAddressError('')
+    setSelectedPkrMethod(null); setSelectedCryptoNetwork(null)
+    setOrder(null); setPollErrCount(0)
+    setPkrError(''); setCryptoError(''); setProofUrl(''); setProofError('')
     idempKeyRef.current = `gas_${Date.now()}_${Math.random().toString(36).slice(2)}`
   }
 
-  // Group chains by category for display
+  // Group chains by category
   const chainGroups: Record<string, GasChain[]> = {}
-  chains.forEach((c) => {
-    if (!chainGroups[c.category]) chainGroups[c.category] = []
-    chainGroups[c.category].push(c)
-  })
+  chains.forEach(c => { if (!chainGroups[c.category]) chainGroups[c.category] = []; chainGroups[c.category].push(c) })
 
-  const categoryLabels: Record<string, string> = {
-    tron: 'TRON',
-    bnb: 'BNB Chain',
-    ethereum: 'Ethereum Ecosystem',
-    solana: 'Solana',
-    sui: 'SUI',
+  // ── PKR account details helper ───────────────────────────────────────────────
+
+  function getPkrDetails() {
+    if (!pkrMethods || !selectedPkrMethod) return null
+    if (selectedPkrMethod === 'bank_transfer') {
+      const b = pkrMethods.bank
+      return [
+        { label: 'Bank Name',       value: b.bankName },
+        { label: 'Account Name',    value: b.accountName },
+        { label: 'IBAN',            value: b.iban },
+        { label: 'Account Number',  value: b.accountNumber },
+      ].filter(r => r.value)
+    }
+    if (selectedPkrMethod === 'easypaisa') {
+      const e = pkrMethods.easypaisa
+      return [
+        { label: 'Account Name',   value: e.name },
+        { label: 'Mobile Number',  value: e.number },
+      ].filter(r => r.value)
+    }
+    const j = pkrMethods.jazzcash
+    return [
+      { label: 'Account Name',   value: j.name },
+      { label: 'Mobile Number',  value: j.number },
+    ].filter(r => r.value)
   }
 
-  const explorerBase = tokenData?.chain?.explorerBase ?? null
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-surface">
-      <div className="max-w-lg mx-auto px-4 py-8 pb-12 space-y-6">
+    <div className="min-h-screen bg-gray-50">
 
-        {/* Header */}
-        <div className="text-center">
-          <div className="w-14 h-14 rounded-full bg-warning/10 text-warning text-2xl flex items-center justify-center mx-auto mb-3">
-            ⚡
+      {/* ── Sticky header ──────────────────────────────────────────────────── */}
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">⚡</div>
+            <div>
+              <h1 className="text-base font-bold text-gray-900 leading-tight">Buy Gas Instantly</h1>
+              <p className="text-xs text-gray-500">Pay with PKR or USDT</p>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">Buy Gas Instantly</h1>
-          <p className="text-sm text-text-muted mt-1">
-            Get native blockchain gas tokens — pay with USDT
-          </p>
           {user && (
-            <Link href="/gas/orders" className="inline-block mt-2 text-xs text-primary hover:underline">
-              View order history →
+            <Link href="/gas/orders" className="flex items-center gap-1.5 text-xs text-purple-600 font-semibold border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+              My Orders
             </Link>
           )}
         </div>
+      </div>
 
-        <StepIndicator current={step} total={4} />
+      <div className={`mx-auto px-4 py-6 pb-16 ${phase === PHASE.CHAINS ? 'max-w-5xl' : 'max-w-xl'}`}>
 
-        {/* ── Step 0: Chain Selection ─────────────────────────────────────────── */}
-        {step === 0 && (
-          <div className="space-y-5">
-            <h2 className="text-base font-semibold text-text-primary text-center">Select Blockchain</h2>
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {/* PHASE 0 — Blockchain Grid                                         */}
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {phase === PHASE.CHAINS && (
+          <div>
+            <div className="text-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Select Blockchain</h2>
+              <p className="text-sm text-gray-500 mt-1">Choose a blockchain to view gas fee and create gas orders</p>
+            </div>
 
-            {chainsLoading && <LoadingState message="Loading networks..." />}
-            {chainsError && <ErrorState title={chainsError} onRetry={() => { setChainsError(''); setChainsLoading(true); gasApi.getChains().then(({ chains: c }) => setChains(c)).catch((e: Error) => setChainsError(e.message)).finally(() => setChainsLoading(false)) }} />}
+            {chainsLoading && <ChainSkeleton />}
+            {chainsError   && <ErrorState title={chainsError} onRetry={() => { setChainsError(''); setChainsLoading(true); gasApi.getChains().then(({ chains: c }) => setChains(c)).catch((e: Error) => setChainsError(e.message)).finally(() => setChainsLoading(false)) }} />}
 
-            {!chainsLoading && !chainsError && Object.entries(chainGroups).map(([cat, catChains]) => (
-              <div key={cat} className="space-y-2">
-                <p className="text-xs font-semibold text-text-muted uppercase tracking-wide px-1">
-                  {categoryLabels[cat] ?? cat}
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {catChains.map((chain) => {
-                    const { bg, text } = chainColor(chain.category)
-                    const available = chain.isAvailable
-                    const inactive = !chain.isActive
-                    return (
-                      <button
-                        key={chain.id}
-                        onClick={() => handleSelectChain(chain)}
-                        disabled={inactive}
-                        className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all text-center
-                          ${inactive
-                            ? 'opacity-40 cursor-not-allowed border-border bg-white'
-                            : selectedChain?.id === chain.id
-                            ? 'border-primary bg-primary/5 shadow-sm'
-                            : 'border-border bg-white hover:border-primary/60 hover:shadow-sm'
-                          }`}
-                      >
-                        <div className={`w-10 h-10 rounded-full ${bg} ${text} font-bold text-xs flex items-center justify-center flex-shrink-0`}>
-                          {chain.logoUrl
-                            ? <img src={chain.logoUrl} alt={chain.symbol} className="w-10 h-10 rounded-full object-contain" />
-                            : chain.symbol.slice(0, 3)}
-                        </div>
-                        <span className="text-xs font-semibold text-text-primary leading-tight">{chain.name}</span>
-                        {inactive
-                          ? <Badge variant="default" size="sm">Soon</Badge>
-                          : available
-                          ? <Badge variant="success" size="sm">Active</Badge>
-                          : <Badge variant="warning" size="sm">Setup</Badge>
-                        }
-                      </button>
-                    )
-                  })}
-                </div>
+            {!chainsLoading && !chainsError && (
+              <div className="space-y-5">
+                {Object.entries(chainGroups).map(([cat, catChains]) => (
+                  <div key={cat}>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">{CAT_LABELS[cat] ?? cat}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                      {catChains.map(chain => {
+                        const inactive = !chain.isActive
+                        const available = chain.isAvailable
+                        return (
+                          <button
+                            key={chain.id}
+                            onClick={() => handleSelectChain(chain)}
+                            disabled={inactive}
+                            className={`group flex flex-col items-center gap-2.5 p-4 rounded-2xl border-2 text-center transition-all duration-200 ${
+                              inactive
+                                ? 'opacity-50 cursor-not-allowed border-gray-100 bg-white'
+                                : selectedChain?.id === chain.id
+                                ? 'border-purple-400 bg-purple-50 shadow-md shadow-purple-100'
+                                : 'border-gray-100 bg-white hover:border-purple-300 hover:shadow-md hover:scale-[1.03]'
+                            }`}
+                          >
+                            <div className={!inactive ? 'group-hover:scale-110 transition-transform' : ''}>
+                              <ChainLogo chain={chain} />
+                            </div>
+                            <div className="min-w-0 w-full">
+                              <p className="text-xs font-bold text-gray-800 truncate">{chain.name}</p>
+                              <p className="text-xs text-gray-400 font-medium">{chain.symbol}</p>
+                            </div>
+                            {inactive   ? <Badge variant="default" size="sm">Soon</Badge>
+                            : available ? <Badge variant="success" size="sm">Active</Badge>
+                            :             <Badge variant="warning" size="sm">Setup</Badge>
+                            }
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+
+            <CustomGasRequest />
           </div>
         )}
 
-        {/* ── Step 1: Token + Amount ──────────────────────────────────────────── */}
-        {step === 1 && selectedChain && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-text-primary">Choose Amount</h2>
-              {tokenData && <StalenessBadge updatedAt={tokenData.updatedAt} />}
-            </div>
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {/* PHASES 1–12 — Order flow card                                     */}
+        {/* ═══════════════════════════════════════════════════════════════════ */}
+        {phase > PHASE.CHAINS && (
+          <div>
+            <StepIndicator phase={phase} />
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
-            {tokensLoading && <LoadingState message="Loading tokens..." />}
-            {tokensError && <ErrorState title={tokensError} onRetry={() => fetchTokens(selectedChain)} />}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 1 — Token Selection                                   */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.TOKEN && selectedChain && (
+                <div className="p-5 space-y-4">
+                  <CardHeader onBack={resetFlow} title="Select Token" sub={`${selectedChain.name} · ${selectedChain.networkLabel}`} />
 
-            {!tokensLoading && !tokensError && tokenData && (
-              <>
-                {/* Token selector (only if multiple tokens) */}
-                {tokenData.tokens.length > 1 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {tokenData.tokens.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => { setSelectedToken(t); setAmount(''); setAmountError('') }}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
-                          selectedToken?.id === t.id
-                            ? 'border-primary bg-primary/5 text-primary'
-                            : 'border-border bg-white text-text-secondary hover:border-primary/50'
-                        }`}
-                      >
-                        <TokenLogo token={t} chainCategory={selectedChain.category} />
-                        {t.symbol}
-                      </button>
-                    ))}
+                  {tokensLoading && <LoadingState message="Loading tokens..." />}
+                  {tokensError   && <ErrorState title={tokensError} onRetry={() => fetchTokens(selectedChain)} />}
+
+                  {!tokensLoading && !tokensError && tokenData && (
+                    <div className="space-y-3">
+                      {tokenData.tokens.map(t => {
+                        const sel = selectedToken?.id === t.id
+                        return (
+                          <button key={t.id} onClick={() => setSelectedToken(t)}
+                            className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all duration-200 ${
+                              sel ? 'border-purple-400 bg-gradient-to-r from-purple-50 to-blue-50' : 'border-gray-100 bg-gray-50 hover:border-purple-200'
+                            }`}>
+                            <TokenLogo token={t} cat={selectedChain.category} sizeCls="w-12 h-12" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-gray-900">{t.name}</p>
+                              <p className="text-xs text-gray-400">{t.symbol} · {selectedChain.networkLabel}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-gray-900">${(t.priceUsd * t.markup).toFixed(4)}</p>
+                              <p className="text-xs text-gray-400">per {t.symbol}</p>
+                            </div>
+                            {sel && <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <Button className="w-full" disabled={!selectedToken} onClick={() => setPhase(PHASE.AMOUNT)}>
+                    Next <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </Button>
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 2 — Amount                                            */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.AMOUNT && selectedChain && selectedToken && (
+                <div className="p-5 space-y-4">
+                  <CardHeader onBack={() => setPhase(PHASE.TOKEN)} title="Choose Amount" />
+
+                  <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3 text-sm">
+                    <span className="text-gray-500">1 {selectedToken.symbol}</span>
+                    <div className="text-right">
+                      <p className="font-bold text-gray-900">${(priceUsd * markup).toFixed(4)} USDT</p>
+                      <p className="text-xs text-gray-400">≈ PKR {(pricePkr * markup).toFixed(0)}</p>
+                    </div>
                   </div>
-                )}
 
-                {currentToken && (
-                  <>
-                    {/* Price info */}
-                    <div className="bg-surface border border-border rounded-lg px-3 py-2 flex items-center justify-between text-sm">
-                      <span className="text-text-muted">1 {currentToken.symbol}</span>
-                      <span className="font-semibold text-text-primary">
-                        ≈ ${(priceUsd * markup).toFixed(4)} USDT
-                        {currentToken.rateStale && <span className="text-warning ml-1 text-xs">(rate stale)</span>}
-                      </span>
+                  {/* Preset chips */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Quick Select</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedToken.presetAmounts.map(preset => {
+                        const usdVal = preset * priceUsd * markup
+                        const tooHigh = usdVal > maxUsd
+                        const active  = amount === String(preset) && !tooHigh
+                        return (
+                          <button key={preset} onClick={() => { if (!tooHigh) { setAmount(String(preset)); if (usdVal > maxUsd) setAmountError(`Exceeds $${maxUsd} limit`); else setAmountError('') } }} disabled={tooHigh}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all ${
+                              active    ? 'border-purple-500 bg-purple-600 text-white shadow-sm'
+                              : tooHigh ? 'border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed'
+                              :           'border-gray-200 bg-white text-gray-700 hover:border-purple-300'
+                            }`}>
+                            {preset} {selectedToken.symbol}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Custom input */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Custom Amount ({selectedToken.symbol})</label>
+                    <Input type="number" placeholder={`Min ${minAmount}`} value={amount}
+                      onChange={e => { const v = e.target.value; setAmount(v); if (v) validateAmountField(v); else setAmountError('') }}
+                      onBlur={() => { if (amount) validateAmountField(amount) }} min={minAmount} step="any" />
+                    {amountError && <p className="text-xs text-red-500 mt-1">{amountError}</p>}
+                    {amountNum > 0 && !amountError && (
+                      <div className={`text-xs mt-1 flex gap-3 ${usdExceeded ? 'text-red-500' : 'text-gray-500'}`}>
+                        <span>≈ ${computedUsd.toFixed(2)} USDT</span>
+                        <span>≈ PKR {computedPkr.toFixed(0)}</span>
+                        {usdExceeded && <span className="font-semibold">— exceeds ${maxUsd} limit</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-blue-50 rounded-xl px-3 py-2.5 text-xs text-blue-600">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Max order value: <span className="font-bold ml-1">${maxUsd} USDT</span> per transaction
+                  </div>
+
+                  <Button className="w-full" disabled={!amount || !!amountError || usdExceeded}
+                    onClick={() => { if (validateAmountField(amount)) setPhase(PHASE.ADDRESS) }}>
+                    Continue <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </Button>
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 3 — Address                                           */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.ADDRESS && selectedChain && selectedToken && (
+                <div className="p-5 space-y-4">
+                  <CardHeader onBack={() => setPhase(PHASE.AMOUNT)} title={`Enter ${selectedChain.networkLabel} Address`} />
+
+                  <p className="text-xs text-gray-500">The wallet address that needs {selectedToken.symbol} for gas.</p>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">{selectedChain.name} Wallet Address</label>
+                    <Input placeholder={addressPlaceholder(selectedChain.addressType)} value={address}
+                      onChange={e => { setAddress(e.target.value); if (addressError) validateAddressField(e.target.value) }}
+                      onBlur={() => validateAddressField(address)} />
+                    {addressError && <p className="text-xs text-red-500 mt-1">{addressError}</p>}
+                    {address && !addressError && validateAddress(address, selectedChain.addressType) && (
+                      <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        Valid {selectedChain.networkLabel} address
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Summary */}
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-xs">
+                    <p className="font-bold text-gray-400 uppercase tracking-wide mb-1">Order Summary</p>
+                    {[['Network', selectedChain.name], ['Token', selectedToken.symbol], ['Amount', `${amount} ${selectedToken.symbol}`]].map(([l, v]) => (
+                      <div key={l} className="flex justify-between"><span className="text-gray-500">{l}</span><span className="font-semibold text-gray-800">{v}</span></div>
+                    ))}
+                    <div className="flex justify-between pt-2 border-t border-gray-200">
+                      <span className="text-gray-700 font-semibold">You Pay</span>
+                      <div className="text-right">
+                        <p className="font-bold text-purple-700">${computedUsd.toFixed(2)} USDT</p>
+                        <p className="text-gray-400">≈ PKR {computedPkr.toFixed(0)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button className="w-full" disabled={!validateAddress(address, selectedChain.addressType)}
+                    onClick={() => { if (validateAddressField(address)) setPhase(PHASE.PAY_METHOD) }}>
+                    Proceed to Payment <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </Button>
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 4 — Payment Method Choice                             */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.PAY_METHOD && selectedChain && selectedToken && (
+                <div className="p-5 space-y-4">
+                  <CardHeader onBack={() => setPhase(PHASE.ADDRESS)} title="Choose How You Want to Pay" sub="Select your preferred payment method" />
+
+                  {/* Context pills */}
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="flex items-center gap-1.5 bg-gray-100 rounded-full px-3 py-1">
+                      <ChainLogo chain={selectedChain} sizeCls="w-4 h-4" />
+                      {selectedToken.symbol} · {selectedChain.networkLabel}
+                    </span>
+                    <span className="bg-purple-100 text-purple-700 rounded-full px-3 py-1 font-bold">${computedUsd.toFixed(2)} USDT</span>
+                    <span className="bg-green-100 text-green-700 rounded-full px-3 py-1 font-bold">≈ PKR {computedPkr.toFixed(0)}</span>
+                  </div>
+
+                  {methodsLoading && <LoadingState message="Loading payment options..." />}
+
+                  {!methodsLoading && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                      {/* ── Pay with PKR ──────────────────────────────────── */}
+                      <button onClick={() => setPhase(PHASE.PKR_METHOD)}
+                        className="flex flex-col gap-3 p-5 rounded-2xl border-2 border-gray-200 bg-white hover:border-green-400 hover:shadow-sm transition-all text-left group">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-xl shadow-sm">₨</div>
+                          <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">Easy & Fast</span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 mb-0.5">Pay with PKR</p>
+                          <p className="text-xs text-gray-500">Bank Transfer · Easypaisa · JazzCash</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                          <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          No crypto needed
+                        </div>
+                      </button>
+
+                      {/* ── Pay with Crypto ───────────────────────────────── */}
+                      <button onClick={() => setPhase(PHASE.CRYPTO_NETWORK)}
+                        className="flex flex-col gap-3 p-5 rounded-2xl border-2 border-gray-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all text-left group">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-sm">₮</div>
+                          <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2.5 py-1 rounded-full">Low Fees</span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 mb-0.5">Pay with Crypto</p>
+                          <p className="text-xs text-gray-500">USDT BEP20 · USDT Aptos</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                          <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          Instant payment detection
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 5 — PKR Method Selection + Breakdown                  */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.PKR_METHOD && selectedToken && (
+                <div className="p-5 space-y-4">
+                  <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Pay with PKR" sub="Select your payment method" />
+
+                  {/* PKR method cards */}
+                  <div className="space-y-2">
+                    {(Object.keys(PKR_METHOD_META) as PkrMethodKey[]).map(key => {
+                      const meta = PKR_METHOD_META[key]
+                      const sel  = selectedPkrMethod === key
+                      // Check if method is configured
+                      const configured = pkrMethods ? (
+                        key === 'bank_transfer'
+                          ? !!(pkrMethods.bank.bankName || pkrMethods.bank.iban)
+                          : key === 'easypaisa'
+                          ? !!pkrMethods.easypaisa.number
+                          : !!pkrMethods.jazzcash.number
+                      ) : true
+                      return (
+                        <button key={key} onClick={() => configured && setSelectedPkrMethod(key)} disabled={!configured}
+                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                            !configured ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                            : sel ? 'border-purple-400 bg-purple-50'
+                            : 'border-gray-100 bg-white hover:border-purple-200'
+                          }`}>
+                          <span className="text-2xl">{meta.icon}</span>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-gray-900">{meta.label}</p>
+                            <p className="text-xs text-gray-400">{configured ? meta.desc : 'Currently unavailable'}</p>
+                          </div>
+                          {sel && <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* PKR Breakdown */}
+                  {selectedPkrMethod && (
+                    <div className="bg-gray-50 rounded-xl p-4 space-y-2.5 text-sm">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Payment Breakdown</p>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Order Amount (You receive)</span>
+                          <span className="font-semibold">{amount} {selectedToken.symbol}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Network Gas Fee</span>
+                          <span className="font-semibold">{(amountNum * priceUsd).toFixed(2)} USDT</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Platform Service Fee</span>
+                          <span className="font-semibold">{(computedUsd - amountNum * priceUsd).toFixed(2)} USDT</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Exchange Rate</span>
+                          <span className="font-semibold">1 USDT ≈ PKR {(pricePkr / priceUsd).toFixed(0)}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-gray-200">
+                          <span className="font-bold text-gray-800">Total Payable in PKR</span>
+                          <span className="font-bold text-green-700 text-base">PKR {computedPkr.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {pkrError && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2">{pkrError}</p>}
+
+                  {!user && selectedPkrMethod && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                      You must be logged in to pay with PKR.{' '}
+                      <Link href="/login" className="font-bold underline">Log in →</Link>
+                    </div>
+                  )}
+
+                  <Button className="w-full" disabled={!selectedPkrMethod || !user || creatingPkr} loading={creatingPkr}
+                    onClick={handleCreatePkrOrder}>
+                    {creatingPkr ? 'Creating Order...' : `Pay PKR ${computedPkr.toFixed(0)}`}
+                  </Button>
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 7 — PKR Proof Upload (payment instructions + upload)  */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.PKR_PROOF && order && selectedPkrMethod && (
+                <div className="p-5 space-y-4">
+                  <CardHeader title="Make Payment" sub={`Order #${order.orderRef}`} />
+
+                  {/* How to pay */}
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{PKR_METHOD_META[selectedPkrMethod].icon}</span>
+                      <p className="text-sm font-bold text-gray-900">Send via {PKR_METHOD_META[selectedPkrMethod].label}</p>
                     </div>
 
-                    {/* Preset quick-select amounts */}
-                    <div>
-                      <p className="text-xs font-medium text-text-muted mb-2">Quick Select</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {currentToken.presetAmounts.map((preset) => {
-                          const presetUsd = preset * priceUsd * markup
-                          const tooHigh = presetUsd > maxUsd
-                          return (
-                            <button
-                              key={preset}
-                              onClick={() => !tooHigh && handlePreset(preset)}
-                              disabled={tooHigh}
-                              className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-all ${
-                                amount === String(preset) && !tooHigh
-                                  ? 'border-primary bg-primary text-white'
-                                  : tooHigh
-                                  ? 'border-border text-text-muted opacity-40 cursor-not-allowed bg-white'
-                                  : 'border-border bg-white text-text-primary hover:border-primary/60'
-                              }`}
-                            >
-                              {preset} {currentToken.symbol}
-                            </button>
-                          )
-                        })}
+                    {/* Amount to send */}
+                    <div className="bg-white rounded-xl p-3 flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Amount to Send</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-bold text-green-700">PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</span>
+                        <CopyButton text={String(order.pkrAmount ?? computedPkr.toFixed(0))} />
                       </div>
                     </div>
 
-                    {/* Custom amount input */}
-                    <div>
-                      <label className="text-sm font-medium text-text-primary block mb-1.5">
-                        Custom Amount ({currentToken.symbol})
-                      </label>
-                      <Input
-                        type="number"
-                        placeholder={`Min ${minAmount}`}
-                        value={amount}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setAmount(v)
-                          if (v) validateAmount(v)
-                          else setAmountError('')
-                        }}
-                        onBlur={() => { if (amount) validateAmount(amount) }}
-                        min={minAmount}
-                        step="any"
-                      />
-                      {amountError && <p className="text-sm text-danger mt-1">{amountError}</p>}
-                      {amountNum > 0 && !amountError && (
-                        <p className={`text-sm mt-1 ${usdExceeded ? 'text-danger' : 'text-text-muted'}`}>
-                          ≈ ${computedUsd.toFixed(2)} USDT
-                          {usdExceeded && ` — exceeds $${maxUsd} limit`}
+                    {/* Payment details */}
+                    {(() => {
+                      const details = getPkrDetails()
+                      if (!details || details.length === 0) return (
+                        <p className="text-xs text-amber-600">Payment account details not configured yet. Please contact support.</p>
+                      )
+                      return (
+                        <div className="space-y-2">
+                          {details.map(({ label, value }) => value && (
+                            <div key={label} className="bg-white rounded-xl px-3 py-2.5 flex items-center justify-between">
+                              <span className="text-xs text-gray-500">{label}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-gray-900 font-mono">{value}</span>
+                                <CopyButton text={value} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
+
+                  {/* Warning */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                    <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    <p className="text-xs text-amber-700 font-medium">Send <strong>exactly PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</strong> and upload your payment screenshot below.</p>
+                  </div>
+
+                  {/* Proof upload */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700 mb-2">Upload Payment Screenshot</p>
+                    <label className={`flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${proofUrl ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-purple-300 bg-gray-50'}`}>
+                      <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadFile(f) }} />
+                      {uploading
+                        ? <><Spinner size="md" /><p className="text-xs text-gray-500">Uploading...</p></>
+                        : proofUrl
+                        ? <><svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><p className="text-xs text-green-600 font-semibold">Screenshot uploaded</p><p className="text-xs text-gray-400">Click to replace</p></>
+                        : <><svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><p className="text-xs text-gray-500">Click to upload screenshot</p><p className="text-xs text-gray-400">JPEG, PNG, WebP · Max 10MB</p></>
+                      }
+                    </label>
+                    {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
+                  </div>
+
+                  {proofError && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2">{proofError}</p>}
+
+                  <Button className="w-full" disabled={!proofUrl || submittingProof} loading={submittingProof}
+                    onClick={handleSubmitProof}>
+                    {submittingProof ? 'Submitting...' : 'Submit Payment Proof'}
+                  </Button>
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 8 — PKR Review (proof submitted, waiting admin)       */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.PKR_REVIEW && order && (
+                <div className="p-5 space-y-4">
+                  <CardHeader title="Payment Under Review" sub={`Order #${order.orderRef}`} />
+
+                  <div className="text-center py-4">
+                    <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+                      <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-base font-bold text-gray-900 mb-1">Proof Submitted!</p>
+                    <p className="text-sm text-gray-500">Our team is reviewing your payment. Gas will be released after verification (usually within 30–60 minutes during business hours).</p>
+                  </div>
+
+                  {/* Status tracker */}
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Order Status</p>
+                    <ProcessingTimeline status={order.status} isPkr />
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-3 space-y-2 text-xs">
+                    <div className="flex justify-between"><span className="text-gray-500">Order ID</span><span className="font-mono text-gray-700">{order.orderRef}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Amount Ordered</span><span className="font-semibold">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">PKR Paid</span><span className="font-semibold text-green-700">PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</span></div>
+                  </div>
+
+                  {order.status === 'delivered' && (
+                    <Button className="w-full" onClick={() => setPhase(PHASE.COMPLETE)}>View Completion Screen</Button>
+                  )}
+                  {['failed', 'expired'].includes(order.status) && (
+                    <div className="text-center">
+                      <p className="text-sm text-red-600 font-semibold mb-3">Order failed. Please try again.</p>
+                      <Button onClick={resetFlow}>Try Again</Button>
+                    </div>
+                  )}
+
+                  {pollErrCount >= 3 && (
+                    <p className="text-xs text-amber-600 text-center">
+                      Connection issue.{' '}
+                      <button className="underline font-semibold" onClick={() => { setPollErrCount(0); pollOrder() }}>Refresh</button>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 9 — Crypto Network Selection                          */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.CRYPTO_NETWORK && (
+                <div className="p-5 space-y-4">
+                  <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Select Payment Network" sub="Choose a network to send your payment" />
+
+                  <div className="space-y-3">
+                    {/* BEP20 card */}
+                    <button onClick={() => setSelectedCryptoNetwork('BEP20')}
+                      className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                        selectedCryptoNetwork === 'BEP20' ? 'border-purple-400 bg-purple-50' : 'border-gray-100 bg-white hover:border-purple-200'
+                      }`}>
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">BNB</div>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-gray-900">USDT BEP20</p>
+                        <p className="text-xs text-gray-400">BNB Smart Chain · ~$0.29 fee</p>
+                      </div>
+                      {selectedCryptoNetwork === 'BEP20'
+                        ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                        : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
+                      }
+                    </button>
+
+                    {/* Aptos card — disabled until address is configured */}
+                    {(() => {
+                      const aptosConfigured = !!cryptoMethods?.aptos?.address
+                      return (
+                        <button
+                          onClick={() => aptosConfigured && setSelectedCryptoNetwork('APTOS')}
+                          disabled={!aptosConfigured}
+                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                            !aptosConfigured
+                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
+                              : selectedCryptoNetwork === 'APTOS'
+                              ? 'border-purple-400 bg-purple-50'
+                              : 'border-gray-100 bg-white hover:border-purple-200'
+                          }`}
+                        >
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">APT</div>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-gray-900">USDT Aptos</p>
+                            <p className="text-xs text-gray-400">
+                              {aptosConfigured ? 'Aptos Network · ~$0.01 fee' : 'Coming soon — not yet configured'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {aptosConfigured
+                              ? <>
+                                  <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Lowest Fee</span>
+                                  {selectedCryptoNetwork === 'APTOS'
+                                    ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                                    : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
+                                  }
+                                </>
+                              : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full">Soon</span>
+                            }
+                          </div>
+                        </button>
+                      )
+                    })()}
+                  </div>
+
+                  {/* Amount to pay */}
+                  {selectedCryptoNetwork && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5">
+                      <div className="flex justify-between"><span className="text-gray-500">Gas Ordered</span><span className="font-semibold">{amount} {selectedToken?.symbol}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">Network</span><span className="font-semibold">{selectedCryptoNetwork}</span></div>
+                      <div className="flex justify-between pt-1.5 border-t border-gray-200">
+                        <span className="font-bold text-gray-800">You Pay</span>
+                        <span className="font-bold text-purple-700">${computedUsd.toFixed(2)} USDT</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {cryptoError && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2">{cryptoError}</p>}
+
+                  <Button className="w-full" disabled={!selectedCryptoNetwork || creatingCrypto} loading={creatingCrypto}
+                    onClick={handleCreateCryptoOrder}>
+                    {creatingCrypto ? 'Creating Order...' : 'Continue'}
+                    {!creatingCrypto && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>}
+                  </Button>
+                </div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 10 — Crypto QR Payment Screen                         */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.CRYPTO_QR && order && (
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                    <p className="text-sm font-bold text-gray-900">Make Payment</p>
+                    <Badge variant={statusVariant(order.status)} size="sm">{STATUS_LABELS[order.status] ?? order.status}</Badge>
+                  </div>
+
+                  {order.status === 'payment_pending' && (
+                    <>
+                      {/* Countdown */}
+                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                        <div className="flex items-center gap-2 text-amber-700 text-xs font-semibold">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          Payment window
+                        </div>
+                        <CountdownTimer expiresAt={order.expiresAt} showLabel={false} onExpire={() => setOrder(o => o ? { ...o, status: 'expired' } : o)} />
+                      </div>
+
+                      {/* QR */}
+                      <div className="flex flex-col items-center gap-2 py-2">
+                        {qrFailed ? (
+                          <div className="w-48 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+                            <p className="text-xs text-amber-700 font-semibold mb-1">QR code unavailable</p>
+                            <p className="text-xs text-amber-600">Copy the address below to pay.</p>
+                          </div>
+                        ) : (
+                          <div className="w-48 h-48 rounded-2xl overflow-hidden border-4 border-white shadow-lg">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(order.paymentAddress)}`}
+                              alt="Payment QR Code"
+                              className="w-full h-full"
+                              onError={() => setQrFailed(true)}
+                            />
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400">{qrFailed ? 'Use the address and amount below' : 'Scan to get the address'}</p>
+                      </div>
+
+                      {/* Address */}
+                      <div>
+                        <p className="text-xs text-gray-500 font-semibold mb-1.5">Send to Address</p>
+                        <div className="bg-gray-50 rounded-xl p-3 flex items-start gap-2 border border-gray-100">
+                          <p className="text-xs font-mono text-gray-800 break-all flex-1">{order.paymentAddress}</p>
+                          <CopyButton text={order.paymentAddress} />
+                        </div>
+                      </div>
+
+                      {/* Amount */}
+                      <div>
+                        <p className="text-xs text-gray-500 font-semibold mb-1.5">Exact Amount</p>
+                        <div className="bg-gray-50 rounded-xl p-3 flex items-center justify-between border border-gray-100">
+                          <span className="text-lg font-bold text-gray-900">{order.paymentAmount} USDT</span>
+                          <CopyButton text={order.paymentAmount} />
+                        </div>
+                      </div>
+
+                      {/* Details row */}
+                      <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5 border border-gray-100">
+                        <div className="flex justify-between"><span className="text-gray-500">Network</span><span className="font-bold text-gray-800">{order.paymentNetwork}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Order ID</span><span className="font-mono text-gray-700">{order.orderRef}</span></div>
+                      </div>
+
+                      {/* Warning */}
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+                        <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        <p className="text-xs text-red-700 font-medium">
+                          Send ONLY USDT on <strong>{order.paymentNetwork}</strong> network. Wrong network = permanent loss.
+                        </p>
+                      </div>
+
+                      {pollErrCount >= 3 && (
+                        <p className="text-xs text-amber-600 text-center">
+                          Connection issue. <button className="underline font-semibold" onClick={() => { setPollErrCount(0); pollOrder() }}>Refresh</button>
                         </p>
                       )}
+                    </>
+                  )}
+
+                  {/* Payment detected / sending → move to processing */}
+                  {(order.status === 'payment_detected' || order.status === 'sending') && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4">Processing</p>
+                      <ProcessingTimeline status={order.status} isPkr={false} />
                     </div>
+                  )}
 
-                    {/* Max cap info */}
-                    <div className="bg-surface border border-border rounded-lg px-3 py-2 text-xs text-text-muted">
-                      Max order value: <span className="font-semibold text-text-primary">${maxUsd} USDT</span> per transaction
+                  {/* Expired / Failed */}
+                  {(order.status === 'expired' || order.status === 'failed') && (
+                    <div className="text-center py-4">
+                      <p className="text-base font-bold text-red-600 mb-2">{order.status === 'expired' ? 'Order Expired' : 'Order Failed'}</p>
+                      <p className="text-sm text-gray-500 mb-4">{order.status === 'expired' ? 'Payment not received in time.' : 'Something went wrong.'}</p>
+                      <Button onClick={resetFlow}>Try Again</Button>
                     </div>
-                  </>
-                )}
-              </>
-            )}
+                  )}
 
-            <div className="flex gap-3 pt-1">
-              <Button variant="secondary" className="flex-1" onClick={() => { setStep(0); setSelectedChain(null) }}>Back</Button>
-              <Button
-                className="flex-1"
-                disabled={!currentToken || !amount || !!amountError || usdExceeded || tokensLoading}
-                onClick={() => {
-                  if (validateAmount(amount)) setStep(2)
-                }}
-              >
-                Continue
-              </Button>
-            </div>
-          </div>
-        )}
+                  {/* Refund */}
+                  {(order.status === 'refund_pending' || order.status === 'refunded') && (
+                    <div className="text-center py-4">
+                      <p className="text-base font-bold text-amber-600 mb-1">{order.status === 'refund_pending' ? 'Refund Processing' : 'Refunded'}</p>
+                      <p className="text-sm text-gray-500">{order.status === 'refund_pending' ? 'Your USDT refund is being processed.' : 'Your USDT has been refunded.'}</p>
+                    </div>
+                  )}
 
-        {/* ── Step 2: Enter Address ───────────────────────────────────────────── */}
-        {step === 2 && selectedChain && currentToken && (
-          <div className="space-y-5">
-            <h2 className="text-base font-semibold text-text-primary">
-              Enter {selectedChain.networkLabel} Address
-            </h2>
-            <p className="text-sm text-text-muted">
-              Enter the {selectedChain.name} wallet address that needs {currentToken.symbol} for gas.
-            </p>
-
-            <div>
-              <label className="text-sm font-medium text-text-primary block mb-1.5">
-                {selectedChain.name} Wallet Address
-              </label>
-              <Input
-                placeholder={addressPlaceholder(selectedChain.addressType)}
-                value={address}
-                onChange={(e) => handleAddressChange(e.target.value)}
-                onBlur={() => validateAddressField(address)}
-              />
-              {addressError && <p className="text-sm text-danger mt-1.5">{addressError}</p>}
-              {address && !addressError && validateAddress(address, selectedChain.addressType) && (
-                <p className="text-sm text-success mt-1.5">Valid {selectedChain.networkLabel} address</p>
+                  {order.status === 'delivered' && (
+                    <Button className="w-full" onClick={() => setPhase(PHASE.COMPLETE)}>View Completion</Button>
+                  )}
+                </div>
               )}
-            </div>
 
-            {/* Order summary */}
-            <div className="bg-surface border border-border rounded-lg p-3 text-sm space-y-1">
-              <p className="font-semibold text-text-primary mb-2">Order Summary</p>
-              <div className="flex justify-between text-text-muted">
-                <span>Network</span><span className="text-text-primary font-medium">{selectedChain.name}</span>
-              </div>
-              <div className="flex justify-between text-text-muted">
-                <span>Token</span><span className="text-text-primary font-medium">{currentToken.symbol}</span>
-              </div>
-              <div className="flex justify-between text-text-muted">
-                <span>Amount</span><span className="text-text-primary font-medium">{amount} {currentToken.symbol}</span>
-              </div>
-              <div className="flex justify-between text-text-muted border-t border-border pt-1 mt-1">
-                <span>You Pay</span>
-                <span className="text-text-primary font-bold">{computedUsd.toFixed(2)} USDT</span>
-              </div>
-            </div>
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 11 — Processing (generic timeline)                    */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.PROCESSING && order && (
+                <div className="p-5 space-y-4">
+                  <div className="pb-3 border-b border-gray-100">
+                    <p className="text-sm font-bold text-gray-900">Processing Your Order</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Order #{order.orderRef}</p>
+                  </div>
+                  <ProcessingTimeline status={order.status} isPkr={isPkrOrder} />
+                  {order.status === 'delivered' && <Button className="w-full" onClick={() => setPhase(PHASE.COMPLETE)}>View Order Completion</Button>}
+                  {['failed', 'expired'].includes(order.status) && (
+                    <div className="text-center">
+                      <p className="text-sm text-red-600 font-semibold mb-3">Order failed. Please try again.</p>
+                      <Button onClick={resetFlow}>Try Again</Button>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {createError && <p className="text-sm text-danger">{createError}</p>}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {/* PHASE 12 — Complete                                         */}
+              {/* ─────────────────────────────────────────────────────────── */}
+              {phase === PHASE.COMPLETE && order && (
+                <div className="p-5 space-y-4 text-center">
+                  <div className="py-4">
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-200">
+                      <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <p className="text-xl font-bold text-gray-900">Order Completed!</p>
+                    <p className="text-sm text-gray-500 mt-1">Your gas fee order has been processed successfully.</p>
+                  </div>
 
-            <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setStep(1)} disabled={creating}>Back</Button>
-              <Button
-                className="flex-1"
-                disabled={!validateAddress(address, selectedChain.addressType) || creating}
-                onClick={handleCreateOrder}
-              >
-                {creating ? <Spinner size="sm" /> : 'Proceed to Payment'}
-              </Button>
-            </div>
-          </div>
-        )}
+                  <div className="bg-gray-50 rounded-xl p-4 text-left space-y-2.5 text-xs">
+                    <div className="flex justify-between"><span className="text-gray-500">Amount Received</span><span className="font-bold text-gray-900">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Destination</span><span className="font-mono text-gray-700">{order.toAddress.slice(0, 14)}...{order.toAddress.slice(-6)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Payment Method</span><span className="font-semibold capitalize">{isPkrOrder ? `PKR · ${order.pkrPaymentMethod?.replace('_', ' ') ?? ''}` : `USDT · ${order.paymentNetwork}`}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Order ID</span><span className="font-mono text-gray-700">{order.orderRef}</span></div>
+                    {order.deliveryTxHash && selectedChain && (
+                      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                        <span className="text-gray-500">Transaction</span>
+                        <a href={explorerUrl(selectedChain.slug, explorerBase, order.deliveryTxHash)} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-purple-600 font-semibold hover:underline flex items-center gap-1">
+                          {order.deliveryTxHash.slice(0, 12)}...
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                        </a>
+                      </div>
+                    )}
+                  </div>
 
-        {/* ── Step 3: Payment & Status ────────────────────────────────────────── */}
-        {step === 3 && order && (
-          <div className="space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-text-primary">Complete Payment</h2>
-              <Badge variant={statusVariant(order.status)} size="sm">
-                {STATUS_LABELS[order.status] ?? order.status}
-              </Badge>
-            </div>
-
-            {order.status === 'payment_pending' && (
-              <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-warning">Pay within</span>
-                <CountdownTimer
-                  expiresAt={order.expiresAt}
-                  showLabel={false}
-                  onExpire={() => setOrder((o) => o ? { ...o, status: 'expired' } : o)}
-                />
-              </div>
-            )}
-
-            {pollErrorCount >= 3 && !isDone && (
-              <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 text-sm text-warning">
-                Having trouble connecting. Your order is safe —{' '}
-                <button className="underline font-medium" onClick={() => { setPollErrorCount(0); pollOrder() }}>
-                  tap to refresh
-                </button>
-              </div>
-            )}
-
-            {/* Payment details */}
-            {order.status === 'payment_pending' && (
-              <div className="bg-white border border-border rounded-xl p-5 space-y-4">
-                <p className="text-sm font-semibold text-text-primary">
-                  Send USDT ({order.paymentNetwork}) to this address:
-                </p>
-
-                <div>
-                  <p className="text-xs text-text-muted mb-1.5">Payment Address</p>
-                  <div className="bg-surface rounded-lg p-3 flex items-start gap-2">
-                    <p className="text-sm font-mono text-text-primary break-all flex-1">{order.paymentAddress}</p>
-                    <CopyButton text={order.paymentAddress} />
+                  <div className="space-y-2">
+                    {user && (
+                      <Link href="/gas/orders">
+                        <Button className="w-full">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                          View Order Details
+                        </Button>
+                      </Link>
+                    )}
+                    <Button variant="secondary" className="w-full" onClick={resetFlow}>Buy More Gas</Button>
                   </div>
                 </div>
+              )}
 
-                <div className="bg-surface rounded-lg p-3">
-                  <p className="text-xs text-text-muted mb-1">Exact Amount</p>
-                  <div className="flex items-center justify-between">
-                    <p className="text-lg font-bold text-text-primary">{order.paymentAmount} USDT</p>
-                    <CopyButton text={order.paymentAmount} />
-                  </div>
-                </div>
-
-                <div className="bg-danger/10 border border-danger/20 rounded-lg p-3">
-                  <p className="text-xs text-danger font-semibold">
-                    Send ONLY USDT on {order.paymentNetwork} network. Sending other tokens or wrong network = permanent loss.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Processing */}
-            {(order.status === 'payment_detected' || order.status === 'sending') && (
-              <div className="bg-warning/10 border border-warning/30 rounded-xl p-5 text-center">
-                <Spinner size="md" />
-                <p className="text-base font-bold text-text-primary mt-3 mb-1">
-                  {order.status === 'payment_detected' ? 'Payment Detected!' : `Delivering ${currentToken?.symbol ?? ''}...`}
-                </p>
-                <p className="text-sm text-text-muted">
-                  {order.status === 'payment_detected'
-                    ? `Preparing your ${currentToken?.symbol ?? 'gas'}...`
-                    : `Sending ${amount} ${currentToken?.symbol ?? ''} to your wallet.`}
-                </p>
-              </div>
-            )}
-
-            {/* Success */}
-            {order.status === 'delivered' && (
-              <div className="bg-success/10 border border-success/30 rounded-xl p-5 space-y-3">
-                <div className="text-center">
-                  <svg className="w-12 h-12 mx-auto text-success mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p className="text-lg font-bold text-success">{currentToken?.symbol ?? 'Gas'} Delivered!</p>
-                  <p className="text-sm text-text-muted mt-1">
-                    {amount} {currentToken?.symbol} sent to {order.toAddress.slice(0, 10)}...
-                  </p>
-                </div>
-                {order.deliveryTxHash && selectedChain && (
-                  <a
-                    href={explorerTxUrl(selectedChain.slug, explorerBase, order.deliveryTxHash)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 text-primary text-sm underline"
-                  >
-                    View Transaction
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
-                )}
-                <Button className="w-full" variant="secondary" onClick={resetFlow}>Buy More Gas</Button>
-              </div>
-            )}
-
-            {/* Refund */}
-            {(order.status === 'refund_pending' || order.status === 'refunded') && (
-              <div className="bg-warning/10 border border-warning/30 rounded-xl p-5 text-center space-y-2">
-                <p className="text-base font-bold text-warning">
-                  {order.status === 'refund_pending' ? 'Refund Processing' : 'Refunded'}
-                </p>
-                <p className="text-sm text-text-muted">
-                  {order.status === 'refund_pending'
-                    ? 'Your USDT refund is being processed. It will arrive shortly.'
-                    : 'Your USDT has been refunded to your payment address.'}
-                </p>
-              </div>
-            )}
-
-            {/* Expired or Failed */}
-            {(order.status === 'expired' || order.status === 'failed') && (
-              <div className="bg-danger/10 border border-danger/30 rounded-xl p-5 text-center">
-                <p className="text-base font-bold text-danger">
-                  {order.status === 'expired' ? 'Order Expired' : 'Order Failed'}
-                </p>
-                <p className="text-sm text-text-muted mt-1 mb-4">
-                  {order.status === 'expired'
-                    ? 'Payment was not received in time. Please try again.'
-                    : 'Something went wrong. Please contact support.'}
-                </p>
-                <Button onClick={resetFlow}>Try Again</Button>
-              </div>
-            )}
+            </div>
           </div>
         )}
       </div>

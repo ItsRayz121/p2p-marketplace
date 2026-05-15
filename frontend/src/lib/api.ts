@@ -834,19 +834,50 @@ export interface GasTokensResponse {
 export interface GasOrder {
   id?: string
   orderRef: string
-  status: 'payment_pending' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
   toAddress: string
   tier?: string | null
   chain: string
   paymentAddress: string
   paymentAmount: string
+  paymentCoin?: string
   paymentNetwork: string
+  pkrAmount?: string | null
+  pkrPaymentMethod?: string | null
+  paymentProofUrl?: string | null
   gasAmountNative: string
   nativeSymbol?: string
   deliveryTxHash?: string
   expiresAt: string
   createdAt?: string
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null
+}
+
+export interface GasPkrMethods {
+  bank: { bankName: string | null; accountName: string | null; iban: string | null; accountNumber: string | null }
+  easypaisa: { number: string | null; name: string | null }
+  jazzcash: { number: string | null; name: string | null }
+}
+
+export interface GasCryptoMethods {
+  bep20: { address: string | null; network: string; fee: string }
+  aptos: { address: string | null; network: string; fee: string }
+}
+
+export interface GasCustomRequest {
+  id: string
+  blockchainName: string
+  token: string
+  amount: string | null
+  purpose: string
+  urgency: string
+  details: string | null
+  contactEmail: string | null
+  ipAddress: string | null
+  status: 'pending' | 'reviewing' | 'completed' | 'rejected'
+  adminNotes: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export const gasApi = {
@@ -859,8 +890,26 @@ export const gasApi = {
   createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders', { method: 'POST', body: JSON.stringify(data) }),
 
+  createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash'; idempotencyKey?: string }) =>
+    apiRequest<GasOrder>('/gas-fee/orders/pkr', { method: 'POST', body: JSON.stringify(data) }),
+
+  createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'BEP20' | 'APTOS'; idempotencyKey?: string }) =>
+    apiRequest<GasOrder>('/gas-fee/orders/crypto', { method: 'POST', body: JSON.stringify(data) }),
+
+  submitProof: (orderRef: string, proofUrl: string) =>
+    apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/proof`, { method: 'POST', body: JSON.stringify({ proofUrl }) }),
+
   getOrder: (orderRef: string) =>
     apiRequest<GasOrder>(`/gas-fee/orders/${orderRef}`),
+
+  getPkrMethods: () =>
+    apiRequest<GasPkrMethods>('/gas-fee/pkr-methods'),
+
+  getCryptoMethods: () =>
+    apiRequest<GasCryptoMethods>('/gas-fee/crypto-methods'),
+
+  submitCustomRequest: (data: { blockchainName: string; token: string; amount?: string; purpose: string; urgency: string; details?: string; contactEmail?: string }) =>
+    apiRequest<{ message: string }>('/gas-fee/custom-request', { method: 'POST', body: JSON.stringify(data) }),
 
   getOrderHistory: (params?: { page?: number; limit?: number }) =>
     apiRequest<{ orders: GasOrder[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/gas-fee/orders/history' + (params ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : '')),
@@ -1035,6 +1084,16 @@ export const adminApi = {
     apiRequest<void>(`/admin/gas/orders/${id}/retry`, { method: 'POST' }),
   refundGasOrder: (id: string) =>
     apiRequest<void>(`/admin/gas/orders/${id}/refund`, { method: 'POST' }),
+  approvePkrOrder: (id: string) =>
+    apiRequest<{ status: string }>(`/admin/gas/orders/${id}/approve-pkr`, { method: 'POST' }),
+  rejectPkrOrder: (id: string, reason?: string) =>
+    apiRequest<{ status: string }>(`/admin/gas/orders/${id}/reject-pkr`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+  // Gas Custom Requests
+  getGasCustomRequests: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ requests: GasCustomRequest[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/admin/gas/custom-requests' + buildQs(params)),
+  updateGasCustomRequest: (id: string, data: { status?: GasCustomRequest['status']; adminNotes?: string }) =>
+    apiRequest<GasCustomRequest>(`/admin/gas/custom-requests/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Gas Stats & Wallet
   getGasStats: () =>
@@ -1044,6 +1103,7 @@ export const adminApi = {
       pendingCount: number
       failedCount: number
       refundPendingCount: number
+      pendingCustomRequests: number
       wallet: {
         chain: string
         address: string
