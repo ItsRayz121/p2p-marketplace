@@ -1,9 +1,9 @@
 import type { GasFeeOrder } from '@prisma/client'
+import type { Chain } from 'viem'
 import { createWalletClient, http, parseEther } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { bsc, mainnet } from 'viem/chains'
+import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
 import { env } from '../env'
-import type { GasChainId } from './gas.chains'
 import {
   gasWalletIsConfigured,
   decryptGasSeed,
@@ -55,7 +55,7 @@ async function deliverTron(order: GasFeeOrder): Promise<string> {
 
 async function deliverEvm(
   order: GasFeeOrder,
-  viemChain: typeof bsc | typeof mainnet,
+  viemChain: Chain,
   rpcUrl: string,
   privateKey: string,
 ): Promise<string> {
@@ -115,13 +115,57 @@ async function deliverEth(order: GasFeeOrder): Promise<string> {
   }
 }
 
+// ── L2 + alt-EVM delivery (Base, Arbitrum, Optimism, Polygon, Avalanche) ─────
+
+async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: string): Promise<string> {
+  const seed = decryptGasSeed()
+  try {
+    const privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
+    if (!privateKey) throw new Error('EVM hot wallet key derivation failed')
+    return await deliverEvm(order, viemChain, rpcUrl, privateKey)
+  } finally {
+    seed.fill(0)
+  }
+}
+
+async function deliverBase(order: GasFeeOrder): Promise<string> {
+  if (!gasWalletIsConfigured()) throw new Error('Base delivery requires GAS_SEED_CIPHERTEXT')
+  return deliverEvmMnemonic(order, base, env.BASE_RPC_URL)
+}
+
+async function deliverArb(order: GasFeeOrder): Promise<string> {
+  if (!gasWalletIsConfigured()) throw new Error('Arbitrum delivery requires GAS_SEED_CIPHERTEXT')
+  return deliverEvmMnemonic(order, arbitrum, env.ARBITRUM_RPC_URL)
+}
+
+async function deliverOp(order: GasFeeOrder): Promise<string> {
+  if (!gasWalletIsConfigured()) throw new Error('Optimism delivery requires GAS_SEED_CIPHERTEXT')
+  return deliverEvmMnemonic(order, optimism, env.OPTIMISM_RPC_URL)
+}
+
+async function deliverMatic(order: GasFeeOrder): Promise<string> {
+  if (!gasWalletIsConfigured()) throw new Error('Polygon delivery requires GAS_SEED_CIPHERTEXT')
+  return deliverEvmMnemonic(order, polygon, env.POLYGON_RPC_URL)
+}
+
+async function deliverAvax(order: GasFeeOrder): Promise<string> {
+  if (!gasWalletIsConfigured()) throw new Error('Avalanche delivery requires GAS_SEED_CIPHERTEXT')
+  return deliverEvmMnemonic(order, avalanche, env.AVALANCHE_RPC_URL)
+}
+
 // ── Public dispatch ───────────────────────────────────────────────────────────
 
 export async function deliverGas(order: GasFeeOrder): Promise<string> {
-  switch (order.chain as GasChainId) {
-    case 'TRON':     return deliverTron(order)
-    case 'BSC':      return deliverBsc(order)
-    case 'ETHEREUM': return deliverEth(order)
+  // order.chain is the DB enum value (e.g. 'ETH', not 'ETHEREUM')
+  switch (order.chain) {
+    case 'TRON':  return deliverTron(order)
+    case 'BSC':   return deliverBsc(order)
+    case 'ETH':   return deliverEth(order)
+    case 'BASE':  return deliverBase(order)
+    case 'ARB':   return deliverArb(order)
+    case 'OP':    return deliverOp(order)
+    case 'MATIC': return deliverMatic(order)
+    case 'AVAX':  return deliverAvax(order)
     default: throw new Error(`deliverGas: unsupported chain ${order.chain}`)
   }
 }

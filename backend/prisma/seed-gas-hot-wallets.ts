@@ -30,6 +30,11 @@ async function main() {
     { chain: 'TRON' as const, address: tronHotWallet },
     { chain: 'BSC'  as const, address: evmHotWallet  },
     { chain: 'ETH'  as const, address: evmHotWallet  },
+    { chain: 'BASE' as const, address: evmHotWallet  },
+    { chain: 'ARB'  as const, address: evmHotWallet  },
+    { chain: 'OP'   as const, address: evmHotWallet  },
+    { chain: 'MATIC' as const, address: evmHotWallet },
+    { chain: 'AVAX' as const, address: evmHotWallet  },
   ]
 
   for (const { chain, address } of rows) {

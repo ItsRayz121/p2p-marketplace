@@ -1,6 +1,6 @@
 import { env } from '../env'
 
-export type GasChainId = 'TRON' | 'BSC' | 'ETHEREUM'
+export type GasChainId = 'TRON' | 'BSC' | 'ETHEREUM' | 'BASE' | 'ARB' | 'OP' | 'MATIC' | 'AVAX'
 
 export interface GasChainConfig {
   id: GasChainId
@@ -68,6 +68,81 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     getPrivateKey:      () => env.GAS_WALLET_PRIVATE_KEY_ETH,
     getRpcUrl:          () => env.ETHEREUM_RPC_URL,
   },
+  BASE: {
+    id: 'BASE',
+    name: 'Base',
+    nativeSymbol: 'ETH',
+    networkLabel: 'Base',
+    explorerBase: 'https://basescan.org',
+    nativeTierAmounts: { SMALL: 0.0005, MEDIUM: 0.001, LARGE: 0.003, XLARGE: 0.005, JUMBO: 0.01 },
+    validateAddress: (addr) => EVM_RE.test(addr),
+    getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_BASE,
+    getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BASE,
+    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_BASE,
+    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_BASE,
+    getPrivateKey:      () => undefined,
+    getRpcUrl:          () => env.BASE_RPC_URL,
+  },
+  ARB: {
+    id: 'ARB',
+    name: 'Arbitrum',
+    nativeSymbol: 'ETH',
+    networkLabel: 'Arbitrum',
+    explorerBase: 'https://arbiscan.io',
+    nativeTierAmounts: { SMALL: 0.0005, MEDIUM: 0.001, LARGE: 0.003, XLARGE: 0.005, JUMBO: 0.01 },
+    validateAddress: (addr) => EVM_RE.test(addr),
+    getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_ARB,
+    getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_ARB,
+    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_ARB,
+    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_ARB,
+    getPrivateKey:      () => undefined,
+    getRpcUrl:          () => env.ARBITRUM_RPC_URL,
+  },
+  OP: {
+    id: 'OP',
+    name: 'Optimism',
+    nativeSymbol: 'ETH',
+    networkLabel: 'Optimism',
+    explorerBase: 'https://optimistic.etherscan.io',
+    nativeTierAmounts: { SMALL: 0.0005, MEDIUM: 0.001, LARGE: 0.003, XLARGE: 0.005, JUMBO: 0.01 },
+    validateAddress: (addr) => EVM_RE.test(addr),
+    getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_OP,
+    getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_OP,
+    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_OP,
+    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_OP,
+    getPrivateKey:      () => undefined,
+    getRpcUrl:          () => env.OPTIMISM_RPC_URL,
+  },
+  MATIC: {
+    id: 'MATIC',
+    name: 'Polygon',
+    nativeSymbol: 'POL',
+    networkLabel: 'Polygon',
+    explorerBase: 'https://polygonscan.com',
+    nativeTierAmounts: { SMALL: 0.5, MEDIUM: 2, LARGE: 5, XLARGE: 10, JUMBO: 25 },
+    validateAddress: (addr) => EVM_RE.test(addr),
+    getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_MATIC,
+    getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_MATIC,
+    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_MATIC,
+    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_MATIC,
+    getPrivateKey:      () => undefined,
+    getRpcUrl:          () => env.POLYGON_RPC_URL,
+  },
+  AVAX: {
+    id: 'AVAX',
+    name: 'Avalanche',
+    nativeSymbol: 'AVAX',
+    networkLabel: 'Avalanche C-Chain',
+    explorerBase: 'https://snowtrace.io',
+    nativeTierAmounts: { SMALL: 0.05, MEDIUM: 0.1, LARGE: 0.25, XLARGE: 0.5, JUMBO: 1 },
+    validateAddress: (addr) => EVM_RE.test(addr),
+    getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_AVAX,
+    getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_AVAX,
+    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_AVAX,
+    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_AVAX,
+    getPrivateKey:      () => undefined,
+    getRpcUrl:          () => env.AVALANCHE_RPC_URL,
+  },
 }
 
 export function getGasChain(chainId: string): GasChainConfig {
@@ -86,7 +161,7 @@ export function explorerTxUrl(chainId: GasChainId, txHash: string): string {
 export const SUPPORTED_GAS_CHAINS = Object.keys(GAS_CHAINS) as GasChainId[]
 
 // DB boundary mappers — GasChain enum uses 'ETH', GasChainId uses 'ETHEREUM'
-export function toDbChain(chain: GasChainId): 'TRON' | 'BSC' | 'ETH' {
+export function toDbChain(chain: GasChainId): 'TRON' | 'BSC' | 'ETH' | 'BASE' | 'ARB' | 'OP' | 'MATIC' | 'AVAX' {
   if (chain === 'ETHEREUM') return 'ETH'
   return chain
 }

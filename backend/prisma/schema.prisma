@@ -185,6 +185,8 @@ enum GasChain {
   MATIC
   ARB
   BASE
+  OP
+  AVAX
   TON
 }
 

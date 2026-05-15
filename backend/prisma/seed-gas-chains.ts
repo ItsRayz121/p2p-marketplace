@@ -209,7 +209,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'Base',
     addressType: 'EVM',
     explorerBase: 'https://basescan.org',
-    backendChainId: null,
+    backendChainId: 'BASE',
     isActive: false,
     displayOrder: 4,
     tokens: [
@@ -262,7 +262,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'Arbitrum',
     addressType: 'EVM',
     explorerBase: 'https://arbiscan.io',
-    backendChainId: null,
+    backendChainId: 'ARB',
     isActive: false,
     displayOrder: 5,
     tokens: [
@@ -315,7 +315,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'Optimism',
     addressType: 'EVM',
     explorerBase: 'https://optimistic.etherscan.io',
-    backendChainId: null,
+    backendChainId: 'OP',
     isActive: false,
     displayOrder: 6,
     tokens: [
@@ -368,7 +368,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'Polygon',
     addressType: 'EVM',
     explorerBase: 'https://polygonscan.com',
-    backendChainId: null,
+    backendChainId: 'MATIC',
     isActive: false,
     displayOrder: 7,
     tokens: [
@@ -525,7 +525,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'Avalanche C-Chain',
     addressType: 'EVM',
     explorerBase: 'https://snowtrace.io',
-    backendChainId: null,
+    backendChainId: 'AVAX',
     isActive: false,
     displayOrder: 10,
     tokens: [

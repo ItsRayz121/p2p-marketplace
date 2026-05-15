@@ -1,5 +1,6 @@
+import type { Chain } from 'viem'
 import { createPublicClient, http, formatEther } from 'viem'
-import { bsc, mainnet } from 'viem/chains'
+import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
 import { env } from '../env'
 import type { GasChainId } from './gas.chains'
 
@@ -21,7 +22,7 @@ async function getTronBalanceTRX(address: string): Promise<number> {
 // ── EVM native balance via viem ───────────────────────────────────────────────
 
 async function getEvmNativeBalance(
-  viemChain: typeof bsc | typeof mainnet,
+  viemChain: Chain,
   rpcUrl: string,
   address: string,
 ): Promise<number> {
@@ -35,8 +36,13 @@ async function getEvmNativeBalance(
 export async function getHotWalletBalance(chain: GasChainId, address: string): Promise<number> {
   switch (chain) {
     case 'TRON':     return getTronBalanceTRX(address)
-    case 'BSC':      return getEvmNativeBalance(bsc, env.BSC_RPC_URL, address)
-    case 'ETHEREUM': return getEvmNativeBalance(mainnet, env.ETHEREUM_RPC_URL, address)
+    case 'BSC':      return getEvmNativeBalance(bsc,       env.BSC_RPC_URL,       address)
+    case 'ETHEREUM': return getEvmNativeBalance(mainnet,   env.ETHEREUM_RPC_URL,  address)
+    case 'BASE':     return getEvmNativeBalance(base,      env.BASE_RPC_URL,      address)
+    case 'ARB':      return getEvmNativeBalance(arbitrum,  env.ARBITRUM_RPC_URL,  address)
+    case 'OP':       return getEvmNativeBalance(optimism,  env.OPTIMISM_RPC_URL,  address)
+    case 'MATIC':    return getEvmNativeBalance(polygon,   env.POLYGON_RPC_URL,   address)
+    case 'AVAX':     return getEvmNativeBalance(avalanche, env.AVALANCHE_RPC_URL, address)
     default: throw new Error(`getHotWalletBalance: unsupported chain ${chain}`)
   }
 }

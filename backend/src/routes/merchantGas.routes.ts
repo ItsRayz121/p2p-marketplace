@@ -15,7 +15,10 @@ import { logger } from '../lib/logger'
 
 // ── Shared rate helper (same as gasFee.routes.ts) ────────────────────────────
 
-const RATE_COIN: Record<GasChainId, string> = { TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH' }
+const RATE_COIN: Record<GasChainId, string> = {
+  TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH',
+  BASE: 'ETH', ARB: 'ETH', OP: 'ETH', MATIC: 'MATIC', AVAX: 'AVAX',
+}
 
 // ── DB-driven markup: reads platformFeePercent from GasChainConfig ────────────
 // Falls back to env-based multiplier only when no DB record exists for the chain.

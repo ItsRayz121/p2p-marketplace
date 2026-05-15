@@ -63,6 +63,7 @@ const envSchema = z.object({
   ARBITRUM_RPC_URL: z.string().url().default('https://arb1.arbitrum.io/rpc'),
   OPTIMISM_RPC_URL: z.string().url().default('https://mainnet.optimism.io'),
   BASE_RPC_URL: z.string().url().default('https://mainnet.base.org'),
+  AVALANCHE_RPC_URL: z.string().url().default('https://api.avax.network/ext/bc/C/rpc'),
   // Reconciler tuning. The reconciler scans detected deposits older than
   // `DEPOSIT_RECONCILE_MIN_AGE_SECONDS` every `DEPOSIT_RECONCILE_INTERVAL_SECONDS`.
   DEPOSIT_RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
@@ -100,6 +101,36 @@ const envSchema = z.object({
   GAS_WALLET_ALERT_THRESHOLD_ETH: z.coerce.number().default(0.5),
   GAS_WALLET_PAUSE_THRESHOLD_ETH: z.coerce.number().default(0.1),
   GAS_MARKUP_MULTIPLIER_ETH: z.coerce.number().default(1.5),
+
+  // Gas Fee System — Base
+  GAS_FEE_DEPOSIT_ADDRESS_BASE: z.string().optional(),
+  GAS_WALLET_ALERT_THRESHOLD_BASE: z.coerce.number().default(0.05),
+  GAS_WALLET_PAUSE_THRESHOLD_BASE: z.coerce.number().default(0.01),
+  GAS_MARKUP_MULTIPLIER_BASE: z.coerce.number().default(1.5),
+
+  // Gas Fee System — Arbitrum
+  GAS_FEE_DEPOSIT_ADDRESS_ARB: z.string().optional(),
+  GAS_WALLET_ALERT_THRESHOLD_ARB: z.coerce.number().default(0.05),
+  GAS_WALLET_PAUSE_THRESHOLD_ARB: z.coerce.number().default(0.01),
+  GAS_MARKUP_MULTIPLIER_ARB: z.coerce.number().default(1.5),
+
+  // Gas Fee System — Optimism
+  GAS_FEE_DEPOSIT_ADDRESS_OP: z.string().optional(),
+  GAS_WALLET_ALERT_THRESHOLD_OP: z.coerce.number().default(0.05),
+  GAS_WALLET_PAUSE_THRESHOLD_OP: z.coerce.number().default(0.01),
+  GAS_MARKUP_MULTIPLIER_OP: z.coerce.number().default(1.5),
+
+  // Gas Fee System — Polygon
+  GAS_FEE_DEPOSIT_ADDRESS_MATIC: z.string().optional(),
+  GAS_WALLET_ALERT_THRESHOLD_MATIC: z.coerce.number().default(50),
+  GAS_WALLET_PAUSE_THRESHOLD_MATIC: z.coerce.number().default(10),
+  GAS_MARKUP_MULTIPLIER_MATIC: z.coerce.number().default(1.5),
+
+  // Gas Fee System — Avalanche
+  GAS_FEE_DEPOSIT_ADDRESS_AVAX: z.string().optional(),
+  GAS_WALLET_ALERT_THRESHOLD_AVAX: z.coerce.number().default(1),
+  GAS_WALLET_PAUSE_THRESHOLD_AVAX: z.coerce.number().default(0.2),
+  GAS_MARKUP_MULTIPLIER_AVAX: z.coerce.number().default(1.5),
 
   // Gas Fee System — shared
   GAS_GUEST_DAILY_LIMIT_USD: z.coerce.number().default(10),
