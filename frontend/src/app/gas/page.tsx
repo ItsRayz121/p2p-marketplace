@@ -648,44 +648,40 @@ export default function GasPage() {
             {chainsError   && <ErrorState title={chainsError} onRetry={() => { setChainsError(''); setChainsLoading(true); gasApi.getChains().then(({ chains: c }) => setChains(c)).catch((e: Error) => setChainsError(e.message)).finally(() => setChainsLoading(false)) }} />}
 
             {!chainsLoading && !chainsError && (
-              <div className="space-y-5">
-                {Object.entries(chainGroups).map(([cat, catChains]) => (
-                  <div key={cat}>
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">{CAT_LABELS[cat] ?? cat}</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                      {catChains.map(chain => {
-                        const inactive = !chain.isActive
-                        const available = chain.isAvailable
-                        return (
-                          <button
-                            key={chain.id}
-                            onClick={() => handleSelectChain(chain)}
-                            disabled={inactive}
-                            className={`group flex flex-col items-center gap-2.5 p-4 rounded-2xl border-2 text-center transition-all duration-200 ${
-                              inactive
-                                ? 'opacity-50 cursor-not-allowed border-gray-100 bg-white'
-                                : selectedChain?.id === chain.id
-                                ? 'border-purple-400 bg-purple-50 shadow-md shadow-purple-100'
-                                : 'border-gray-100 bg-white hover:border-purple-300 hover:shadow-md hover:scale-[1.03]'
-                            }`}
-                          >
-                            <div className={!inactive ? 'group-hover:scale-110 transition-transform' : ''}>
-                              <ChainLogo chain={chain} />
-                            </div>
-                            <div className="min-w-0 w-full">
-                              <p className="text-xs font-bold text-gray-800 truncate">{chain.name}</p>
-                              <p className="text-xs text-gray-400 font-medium">{chain.symbol}</p>
-                            </div>
-                            {inactive   ? <Badge variant="default" size="sm">Soon</Badge>
-                            : available ? <Badge variant="success" size="sm">Active</Badge>
-                            :             <Badge variant="warning" size="sm">Setup</Badge>
-                            }
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                {chains.map(chain => {
+                  const inactive = !chain.isActive
+                  const available = chain.isAvailable
+                  return (
+                    <button
+                      key={chain.id}
+                      onClick={() => handleSelectChain(chain)}
+                      disabled={inactive}
+                      className={`group flex flex-col items-center justify-center gap-2.5 p-4 rounded-2xl border-2 text-center transition-all duration-200 h-full min-h-[150px] ${
+                        inactive
+                          ? 'opacity-50 cursor-not-allowed border-gray-100 bg-white'
+                          : selectedChain?.id === chain.id
+                          ? 'border-purple-400 bg-purple-50 shadow-md shadow-purple-100'
+                          : 'border-gray-100 bg-white hover:border-purple-300 hover:shadow-md hover:scale-[1.03]'
+                      }`}
+                    >
+                      <div className={!inactive ? 'group-hover:scale-110 transition-transform' : ''}>
+                        <ChainLogo chain={chain} />
+                      </div>
+                      <div className="min-w-0 w-full">
+                        <p className="text-xs font-bold text-gray-800 truncate">{chain.name}</p>
+                        <p className="text-xs text-gray-400 font-medium">{chain.symbol}</p>
+                      </div>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gradient-to-r ${catGradient(chain.category)} text-white`}>
+                        {CAT_LABELS[chain.category] ?? chain.category}
+                      </span>
+                      {inactive   ? <Badge variant="default" size="sm">Soon</Badge>
+                      : available ? <Badge variant="success" size="sm">Active</Badge>
+                      :             <Badge variant="warning" size="sm">Setup</Badge>
+                      }
+                    </button>
+                  )
+                })}
               </div>
             )}
 
