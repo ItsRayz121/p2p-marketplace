@@ -8,8 +8,52 @@ import {
   decryptGasSeed,
   deriveTronPrivateKeyHex,
   deriveEvmPrivateKeyHex,
+  getTronHotWalletAddress,
+  getEvmHotWalletAddress,
   HOT_WALLET_INDEX,
 } from './gasWalletService'
+import { getHotWalletBalance } from './gas.balance'
+import type { GasChainId } from './gas.chains'
+
+// Map GasFeeOrder.chain (GasChain enum) to GasChainId used by balance helpers.
+const CHAIN_TO_BALANCE_ID: Partial<Record<string, GasChainId>> = {
+  TRON: 'TRON', BSC: 'BSC', ETH: 'ETHEREUM', BASE: 'BASE',
+  ARB: 'ARB', OP: 'OP', MATIC: 'MATIC', AVAX: 'AVAX',
+}
+
+/**
+ * Verify the hot wallet has enough native balance to cover the delivery amount.
+ * Throws an AppError-like Error with code INSUFFICIENT_HOT_WALLET_BALANCE so the
+ * job can mark the order as paused and enqueue a refill instead of retrying blindly.
+ */
+async function assertHotWalletSufficient(order: GasFeeOrder): Promise<void> {
+  const balanceChain = CHAIN_TO_BALANCE_ID[order.chain]
+  if (!balanceChain) return // non-EVM/TRON stubs — they throw on their own
+
+  const isTron = order.chain === 'TRON'
+  const hotAddr = isTron ? getTronHotWalletAddress() : getEvmHotWalletAddress()
+  if (!hotAddr) return // wallet not configured — delivery will fail anyway
+
+  let balance: number
+  try {
+    balance = await getHotWalletBalance(balanceChain, hotAddr)
+  } catch {
+    // If balance check fails (RPC down), skip the guard — let delivery attempt proceed.
+    return
+  }
+
+  const required = Number(order.gasAmountNative)
+  // Allow a small buffer for tx fees (0.5% on top, minimum absolute values are tiny)
+  const needed = required * 1.005
+  if (balance < needed) {
+    throw Object.assign(
+      new Error(
+        `Insufficient hot wallet balance on ${order.chain}: have ${balance}, need ${needed} (order ${order.id})`,
+      ),
+      { code: 'INSUFFICIENT_HOT_WALLET_BALANCE', orderId: order.id, chain: order.chain, balance, needed },
+    )
+  }
+}
 
 // ── TRON delivery ─────────────────────────────────────────────────────────────
 
@@ -249,6 +293,9 @@ export async function dryRunDelivery(
 // ── Public dispatch ───────────────────────────────────────────────────────────
 
 export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  // Pre-flight: confirm hot wallet has enough balance before sending.
+  await assertHotWalletSufficient(order)
+
   switch (order.chain) {
     case 'TRON':  return deliverTron(order, hdIndex)
     case 'BSC':   return deliverBsc(order, hdIndex)

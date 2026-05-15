@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc --project tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "prisma migrate deploy && node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "db:migrate": "prisma migrate resolve --rolled-back 20260515190000_gas_treasury_ledger_refill 2>/dev/null || true && prisma migrate deploy",
@@ -26,6 +26,7 @@
     "@fastify/helmet": "^11.1.1",
     "@fastify/rate-limit": "^9.1.0",
     "@prisma/client": "^5.16.0",
+    "@sentry/node": "^10.53.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.11",
     "@types/qrcode": "^1.5.6",

@@ -174,9 +174,18 @@ const envSchema = z.object({
 })
 
 // Production-only required vars: fail fast if missing in prod.
-// AWS and SMTP are intentionally excluded here — the server starts without them,
-// but KYC uploads and email sending will be unavailable until they are configured.
-const productionRequired: string[] = []
+// The server refuses to start if any of these are absent in production,
+// preventing silent partial failures (gas not delivered, emails not sent, etc.).
+const productionRequired: string[] = [
+  'GAS_MASTER_KEY',
+  'GAS_SEED_CIPHERTEXT',
+  'MORALIS_WEBHOOK_SECRET',
+  'CLOUDINARY_CLOUD_NAME',
+  'CLOUDINARY_API_KEY',
+  'CLOUDINARY_API_SECRET',
+  'RESEND_API_KEY',
+  'EMAIL_FROM',
+]
 
 const parsed = envSchema.safeParse(process.env)
 

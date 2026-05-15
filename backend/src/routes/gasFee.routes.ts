@@ -36,7 +36,7 @@ async function getNativeUsdRate(priceSymbol: string): Promise<number> {
 
 async function getUsdPkrRate(): Promise<number> {
   const v = await redis.get('rate:USD_PKR')
-  return v ? parseFloat(v) : 280
+  return v ? parseFloat(v) : 0
 }
 
 // ── Markup helper — DB-driven per-chain platform fee ─────────────────────────
@@ -714,6 +714,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
 
     const usdPkrRate = await getUsdPkrRate()
+    if (!(usdPkrRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'PKR exchange rate is temporarily unavailable. Please try again in a moment.', 503)
     const markup = chainMarkup(chainCfg.platformFeePercent)
     const gasAmountUSD  = amount * nativeUsdRate
     const maxUsdValue   = Number(tokenCfg.maxUsdValue)

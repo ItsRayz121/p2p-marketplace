@@ -209,6 +209,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }, [user, isLoading, router])
 
+  // Hard gate: render nothing until auth is confirmed AND role is verified.
+  // This prevents admin page components from mounting, firing API calls,
+  // or rendering any structure before we know the user is actually an admin.
+  if (isLoading || !user || !ALLOWED_ROLES.includes(user.role as AdminRole)) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-surface">
+        <div className="flex items-center gap-3 text-text-muted">
+          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading…</span>
+        </div>
+      </div>
+    )
+  }
+
   const visibleNav = nav.filter((item) =>
     user ? item.roles.includes(user.role as AdminRole) : false,
   )

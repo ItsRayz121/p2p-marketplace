@@ -137,7 +137,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   // POST /verify-email — verifies OTP and auto-creates a session so the
   // frontend can proceed without a separate login step.
-  app.post('/verify-email', async (req, reply) => {
+  app.post('/verify-email', { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } }, async (req, reply) => {
     const { email, code } = verifyEmailSchema.parse(req.body)
     const user = await db.user.findUnique({ where: { email }, select: { id: true } })
     if (!user) throw new AppError('NOT_FOUND', 'User not found', 404)
@@ -191,7 +191,7 @@ export async function authRoutes(app: FastifyInstance) {
   )
 
   // POST /reset-password
-  app.post('/reset-password', async (req, reply) => {
+  app.post('/reset-password', { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } }, async (req, reply) => {
     const body = resetPasswordSchema.parse(req.body)
     await resetPassword(body.email, body.code, body.newPassword)
     return reply.send({ success: true, data: { message: 'Password reset successfully.' } })
@@ -350,6 +350,7 @@ export async function authRoutes(app: FastifyInstance) {
         ip: s.ip ?? '',
         createdAt: s.createdAt,
         lastActiveAt: s.createdAt,
+        // Compare stored hash to hash of the current cookie — never expose the hash itself.
         isCurrent: currentToken ? s.token === hashToken(currentToken) : false,
       })),
     })

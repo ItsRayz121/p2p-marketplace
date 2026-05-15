@@ -734,6 +734,16 @@ export const instantBuyApi = {
     apiRequest<{ orderId: string; status: string; paymentInstructions: Record<string, string> }>('/instant-buy/orders', { method: 'POST', body: JSON.stringify(data) }),
   getOrder: (id: string) =>
     apiRequest<{ id: string; status: string; coin: string; amount: string; amountPkr: string; createdAt: string }>(`/instant-buy/orders/${id}`),
+  getMyOrders: (params?: { limit?: number; status?: string }) => {
+    const qs = params
+      ? '?' + new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : ''
+    return apiRequest<{ orders: Array<{ id: string; status: string; coin: string; amount: string; amountPkr: string; createdAt: string }>; total: number }>('/instant-buy/orders' + qs)
+  },
 }
 
 export const referralApi = {

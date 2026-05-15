@@ -27,6 +27,7 @@ export async function authenticate(req: FastifyRequest, _reply: FastifyReply): P
   })
   if (!user) throw new AppError('UNAUTHORIZED', 'User not found', 401)
   if (user.isBanned) throw new AppError('ACCOUNT_BANNED', 'Your account has been banned', 403)
+  if (user.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Your account has been temporarily suspended', 403)
   req.user = { id: user.id, email: user.email, role: user.role }
 }
 
@@ -47,9 +48,9 @@ export async function optionalAuth(req: FastifyRequest, _reply: FastifyReply): P
   if (!payload) return
   const user = await db.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, email: true, role: true, isBanned: true },
+    select: { id: true, email: true, role: true, isBanned: true, isSuspended: true },
   })
-  if (user && !user.isBanned) {
+  if (user && !user.isBanned && !user.isSuspended) {
     req.user = { id: user.id, email: user.email, role: user.role }
   }
 }

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { dashboardApi, tradesApi, notificationsApi, marketplaceApi } from '@/lib/api'
+import { dashboardApi, tradesApi, notificationsApi, marketplaceApi, instantBuyApi } from '@/lib/api'
 import type { WalletBalance, Trade, Notification } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
@@ -52,10 +52,15 @@ function timeAgo(dateStr: string): string {
 }
 
 function tradeStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (status === 'released') return 'success'
+  if (status === 'crypto_released') return 'success'
   if (status === 'disputed') return 'danger'
-  if (status === 'cancelled' || status === 'expired') return 'danger'
-  if (status === 'pending' || status === 'paid') return 'warning'
+  if (status === 'cancelled') return 'danger'
+  if (
+    status === 'payment_pending' ||
+    status === 'payment_uploaded' ||
+    status === 'payment_confirmed' ||
+    status === 'crypto_sent'
+  ) return 'warning'
   return 'default'
 }
 
@@ -81,15 +86,17 @@ export default function DashboardPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [summaryRes, tradesRes, notifRes] = await Promise.allSettled([
+      const [summaryRes, tradesRes, notifRes, instantRes] = await Promise.allSettled([
         dashboardApi.getSummary(),
         tradesApi.getMyTrades({ limit: 5 }),
         notificationsApi.getAll({ limit: 5, unreadOnly: true }),
+        instantBuyApi.getMyOrders({ limit: 3 }),
       ])
 
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value)
       if (tradesRes.status === 'fulfilled') setTrades(tradesRes.value.trades ?? [])
       if (notifRes.status === 'fulfilled') setNotifications(notifRes.value.notifications ?? [])
+      if (instantRes.status === 'fulfilled') setInstantOrders(instantRes.value.orders ?? [])
 
       // USDT rate for PKR equivalent — optional, never block dashboard render.
       // Use the API client so requests resolve to the configured backend origin
@@ -223,7 +230,7 @@ export default function DashboardPage() {
           {[
             { href: '/instant-buy', label: 'Buy Crypto', icon: '⚡' },
             { href: '/marketplace', label: 'Marketplace', icon: '🏪' },
-            { href: '/ads', label: 'My Ads', icon: '📢' },
+            { href: '/my-ads', label: 'My Ads', icon: '📢' },
             { href: '/referral', label: 'Referral', icon: '🎁' },
           ].map((item) => (
             <Link
@@ -275,6 +282,7 @@ export default function DashboardPage() {
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold text-text-primary">Recent Instant Buy</h2>
+            <Link href="/instant-buy" className="text-xs text-primary hover:underline">Buy again</Link>
           </div>
           <div className="bg-white rounded-xl border border-border divide-y divide-border">
             {(instantOrders ?? []).slice(0, 3).map((o) => (
@@ -283,7 +291,7 @@ export default function DashboardPage() {
                   <Badge variant={o.status === 'completed' ? 'success' : 'warning'} size="sm">{o.status}</Badge>
                   <span className="text-sm text-text-primary">{parseFloat(o.amount).toFixed(4)} {o.coin}</span>
                 </div>
-                <Button size="sm" variant="secondary" onClick={() => {}}>Repeat</Button>
+                <span className="text-xs text-text-muted">{timeAgo(o.createdAt)}</span>
               </div>
             ))}
           </div>
@@ -296,19 +304,13 @@ export default function DashboardPage() {
           <h2 className="text-base font-semibold text-text-primary mb-3">Trader Badge</h2>
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-gold/10 text-gold text-lg font-bold flex items-center justify-center border-2 border-gold/30">
-              {(summary?.tradeStats?.completedTrades ?? 0) >= 100 ? '💎' : (summary?.tradeStats?.completedTrades ?? 0) >= 50 ? '🥇' : (summary?.tradeStats?.completedTrades ?? 0) >= 10 ? '🥈' : '🥉'}
+              {summary?.tradeStats?.badge === 'elite' ? '💎' : summary?.tradeStats?.badge === 'top' ? '🥇' : summary?.tradeStats?.badge === 'trusted' ? '🥈' : '🥉'}
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-text-primary">
-                {(summary?.tradeStats?.completedTrades ?? 0) >= 100 ? 'Diamond' : (summary?.tradeStats?.completedTrades ?? 0) >= 50 ? 'Gold' : (summary?.tradeStats?.completedTrades ?? 0) >= 10 ? 'Silver' : 'Bronze'} Trader
+                {summary?.tradeStats?.badgeLabel ?? 'Bronze'} Trader
               </p>
               <p className="text-xs text-text-muted">{summary?.tradeStats?.completedTrades ?? 0} completed trades</p>
-              <div className="h-2 bg-surface rounded-full overflow-hidden mt-2">
-                <div
-                  className="h-full bg-gold rounded-full transition-all"
-                  style={{ width: `${Math.min(((summary?.tradeStats?.completedTrades ?? 0) % 50) * 2, 100)}%` }}
-                />
-              </div>
             </div>
           </div>
         </div>

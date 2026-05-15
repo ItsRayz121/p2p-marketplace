@@ -294,7 +294,16 @@ export async function walletRoutes(app: FastifyInstance) {
   app.post(
     '/wallet/withdraw/confirm',
     {
-      config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '15 minutes',
+          keyGenerator: (req) => {
+            const body = req.body as { wid?: string }
+            return body?.wid ? `wd-confirm:${body.wid}` : req.ip
+          },
+        },
+      },
     },
     async (req, reply) => {
       const body = (req.body ?? {}) as Record<string, string>
@@ -318,7 +327,16 @@ export async function walletRoutes(app: FastifyInstance) {
   app.post(
     '/wallet/withdraw/cancel',
     {
-      config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '15 minutes',
+          keyGenerator: (req) => {
+            const body = req.body as { wid?: string }
+            return body?.wid ? `wd-cancel:${body.wid}` : req.ip
+          },
+        },
+      },
     },
     async (req, reply) => {
       const body = (req.body ?? {}) as Record<string, string>

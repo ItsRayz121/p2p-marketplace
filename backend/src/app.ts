@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import cookie from '@fastify/cookie'
 import { Prisma } from '@prisma/client'
+import * as Sentry from '@sentry/node'
 import { env } from './lib/env'
 import { logger } from './lib/logger'
 import { rateLimitRedis } from './lib/redis'
@@ -145,6 +146,7 @@ export async function buildApp() {
     }
 
     logger.error({ err: error, message: error.message, stack: error.stack }, 'Unhandled error')
+    Sentry.captureException(error)
 
     return reply.status(500).send({
       success: false,

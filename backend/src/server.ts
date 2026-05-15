@@ -1,5 +1,15 @@
 import 'dotenv/config'
 import './lib/env'
+import * as Sentry from '@sentry/node'
+
+// Initialize Sentry before anything else so it can capture startup errors.
+// No-ops when SENTRY_DSN is not set.
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV ?? 'development',
+  enabled: !!process.env.SENTRY_DSN,
+})
+
 import { buildApp } from './app'
 import { connectRedis, disconnectRedis } from './lib/redis'
 import { db } from './lib/prisma'

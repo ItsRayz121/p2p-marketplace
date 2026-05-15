@@ -302,6 +302,8 @@ export async function webhookRoutes(app: FastifyInstance) {
 
         const lo = (incoming * 0.99).toFixed(4)
         const hi = (incoming * 1.01).toFixed(4)
+
+        // Candidate matching: find the oldest pending order in the right amount range.
         const gasOrder = await db.gasFeeOrder.findFirst({
           where: {
             status: 'payment_pending',
@@ -313,10 +315,17 @@ export async function webhookRoutes(app: FastifyInstance) {
         })
 
         if (gasOrder) {
-          await db.gasFeeOrder.update({
-            where: { id: gasOrder.id },
+          // Atomic claim: updateMany with status guard prevents two concurrent
+          // webhook calls from both crediting the same order (optimistic lock).
+          const claimed = await db.gasFeeOrder.updateMany({
+            where: { id: gasOrder.id, status: 'payment_pending' },
             data: { status: 'payment_detected', paymentTxHash: txHash },
           })
+          if (claimed.count === 0) {
+            // Another concurrent webhook call already claimed this order.
+            logger.warn({ txHash, orderId: gasOrder.id }, 'Gas order already claimed by concurrent webhook — skipping')
+            return reply.send({ success: true })
+          }
           await queues.gasFee.add('deliver', { orderId: gasOrder.id }, { priority: 1 })
           logger.info({ txHash, orderId: gasOrder.id, chain: matchedDeposit.chain }, 'Payment detected for gas fee order')
         } else {

@@ -90,8 +90,24 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     const attemptNumber = job.attemptsMade + 1
     const maxAttempts = job.opts.attempts ?? 3
     const errMsg = err instanceof Error ? err.message : String(err)
+    const errCode = (err as { code?: string }).code
 
     logger.error({ orderId, attempt: attemptNumber, err: errMsg, chain: order.chain }, 'Gas fee delivery failed')
+
+    // Insufficient hot wallet balance — don't burn retries on a tx that can't succeed.
+    // Reset to payment_detected, alert admin, and let the refill job replenish the wallet
+    // before the next delivery attempt is scheduled via the balance monitor.
+    if (errCode === 'INSUFFICIENT_HOT_WALLET_BALANCE') {
+      await db.gasFeeOrder.update({
+        where: { id: orderId },
+        data: { status: 'payment_detected', failureReason: errMsg },
+      })
+      await sendAdminAlertEmail(
+        `Gas Delivery Paused — Insufficient Hot Wallet Balance`,
+        `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\n\nThe hot wallet does not have enough native balance to deliver this order. A refill request should be raised. Delivery will resume once the balance is restored.\n\nError: ${errMsg}`,
+      ).catch(() => {})
+      return
+    }
 
     if (attemptNumber >= maxAttempts) {
       // Final failure: if payment was received, move to refund_pending so the automated
