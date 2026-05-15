@@ -787,6 +787,21 @@ export const usersApi = {
 
 // ─── Gas types ────────────────────────────────────────────────────────────────
 
+export interface GasChainBadge {
+  label: string
+  color: string
+}
+
+export interface GasChainCapabilities {
+  supportsMnemonic: boolean
+  supportsAutoDelivery: boolean
+  supportsStablecoins: boolean
+  supportsRefunds: boolean
+  supportsMonitoring: boolean
+  supportsRpcHealthCheck: boolean
+  supportsDryRun: boolean
+}
+
 export interface GasChain {
   id: string
   slug: string
@@ -799,6 +814,11 @@ export interface GasChain {
   isActive: boolean
   isAvailable: boolean
   tokenCount: number
+  readinessState: string
+  badge: GasChainBadge
+  publiclyVisible: boolean
+  orderable: boolean
+  capabilities: GasChainCapabilities
 }
 
 export interface GasToken {
@@ -951,6 +971,7 @@ export interface AdminGasChain {
   alertThresholdUsd: number | null
   pauseThresholdUsd: number | null
   isActive: boolean
+  readinessState: string
   displayOrder: number
   createdAt: string
   updatedAt: string

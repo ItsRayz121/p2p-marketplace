@@ -31,13 +31,14 @@ interface ChainFormState {
   pauseThresholdUsd: string
   displayOrder: string
   isActive: boolean
+  readinessState: string
 }
 
 const BLANK_CHAIN: ChainFormState = {
   name: '', slug: '', symbol: '', category: '', networkLabel: '',
   addressType: 'EVM', logoUrl: '', explorerBase: '', backendChainId: '',
   platformFeePercent: '10', alertThresholdUsd: '', pauseThresholdUsd: '',
-  displayOrder: '0', isActive: true,
+  displayOrder: '0', isActive: false, readinessState: 'inactive',
 }
 
 // ─── Token Form ───────────────────────────────────────────────────────────────
@@ -215,6 +216,20 @@ function ChainModal({
                 className="w-4 h-4 accent-primary"
               />
               <label htmlFor="chain-active" className="text-sm font-medium text-text-primary">Active</label>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-text-muted block mb-1">Readiness State</label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                value={form.readinessState}
+                onChange={field('readinessState')}
+              >
+                <option value="inactive">Inactive — hidden from public, not orderable</option>
+                <option value="testing">Testing — hidden from public, internal only</option>
+                <option value="beta">Beta — visible with Beta badge, orderable</option>
+                <option value="stable">Stable — visible with Stable badge, orderable</option>
+              </select>
+              <p className="text-xs text-text-muted mt-0.5">Controls frontend badge and whether chain appears on the public gas page.</p>
             </div>
           </div>
 
@@ -447,6 +462,7 @@ export default function GasChainsAdminPage() {
       pauseThresholdUsd: c.pauseThresholdUsd != null ? String(c.pauseThresholdUsd) : '',
       displayOrder: String(c.displayOrder),
       isActive: c.isActive,
+      readinessState: c.readinessState ?? 'inactive',
     })
     setChainFormError('')
     setShowChainModal(true)
@@ -471,6 +487,7 @@ export default function GasChainsAdminPage() {
         pauseThresholdUsd: chainForm.pauseThresholdUsd ? parseFloat(chainForm.pauseThresholdUsd) : null,
         displayOrder: parseInt(chainForm.displayOrder) || 0,
         isActive: chainForm.isActive,
+        readinessState: chainForm.readinessState,
       }
       if (editingChain) {
         await adminApi.updateGasChain(editingChain.id, payload)
@@ -647,6 +664,7 @@ export default function GasChainsAdminPage() {
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Fee %</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Tokens</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
+                      <th className="text-left px-4 py-3 font-medium text-text-muted">Readiness</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Order</th>
                       <th className="px-4 py-3 text-right font-medium text-text-muted">Actions</th>
                     </tr>
@@ -681,6 +699,16 @@ export default function GasChainsAdminPage() {
                           <Badge variant={c.isActive ? 'success' : 'default'} size="sm">
                             {c.isActive ? 'Active' : 'Inactive'}
                           </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          {c.readinessState === 'stable'
+                            ? <Badge variant="success" size="sm">Stable</Badge>
+                            : c.readinessState === 'beta'
+                            ? <Badge variant="warning" size="sm">Beta</Badge>
+                            : c.readinessState === 'testing'
+                            ? <Badge variant="warning" size="sm">Testing</Badge>
+                            : <Badge variant="default" size="sm">Inactive</Badge>
+                          }
                         </td>
                         <td className="px-4 py-3 text-text-muted">{c.displayOrder}</td>
                         <td className="px-4 py-3 text-right">

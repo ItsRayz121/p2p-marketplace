@@ -653,8 +653,7 @@ export default function GasPage() {
             {!chainsLoading && !chainsError && (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                 {chains.map(chain => {
-                  const inactive = !chain.isActive
-                  const available = chain.isAvailable
+                  const inactive = !chain.isActive || !chain.orderable
                   return (
                     <button
                       key={chain.id}
@@ -678,9 +677,15 @@ export default function GasPage() {
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gradient-to-r ${catGradient(chain.category)} text-white`}>
                         {CAT_LABELS[chain.category] ?? chain.category}
                       </span>
-                      {inactive   ? <Badge variant="default" size="sm">Soon</Badge>
-                      : available ? <Badge variant="success" size="sm">Active</Badge>
-                      :             <Badge variant="warning" size="sm">Setup</Badge>
+                      {chain.badge?.color === 'green'
+                        ? <Badge variant="success" size="sm">{chain.badge.label}</Badge>
+                        : chain.badge?.color === 'yellow'
+                        ? <Badge variant="warning" size="sm">{chain.badge.label}</Badge>
+                        : chain.badge
+                        ? <Badge variant="default" size="sm">{chain.badge.label}</Badge>
+                        : chain.isAvailable
+                        ? <Badge variant="success" size="sm">Active</Badge>
+                        : <Badge variant="default" size="sm">Setup</Badge>
                       }
                     </button>
                   )
