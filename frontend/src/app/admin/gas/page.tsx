@@ -272,6 +272,9 @@ export default function GasAdminPage() {
           <h1 className="text-2xl font-bold text-text-primary">Gas Fee Operations</h1>
           <p className="text-text-muted text-sm mt-0.5">{total} total orders</p>
         </div>
+        <Link href="/admin/gas/chains">
+          <Button size="sm" variant="secondary">Chain & Token Config</Button>
+        </Link>
       </div>
 
       {/* Alerts */}

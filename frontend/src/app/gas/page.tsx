@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { apiRequest } from '@/lib/api'
+import { gasApi, type GasChain, type GasToken, type GasTokensResponse, type GasOrder } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -14,98 +14,39 @@ import { StalenessBadge } from '@/components/ui/StalenessBadge'
 import { Spinner } from '@/components/ui/Spinner'
 import { usePolling } from '@/hooks/usePolling'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Address validation by addressType ────────────────────────────────────────
 
-type ChainId = 'TRON' | 'BSC' | 'ETHEREUM'
-
-interface Tier {
-  id: string
-  name: 'SMALL' | 'MEDIUM' | 'LARGE' | 'XLARGE' | 'JUMBO'
-  nativeAmount: number
-  nativeSymbol: string
-  usdtPrice: string
-  pkrPrice: string
+const ADDRESS_PATTERNS: Record<string, RegExp> = {
+  TRC20: /^T[A-Za-z1-9]{33}$/,
+  EVM:   /^0x[0-9a-fA-F]{40}$/,
+  SOL:   /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+  SUI:   /^0x[0-9a-fA-F]{64}$/,
 }
 
-interface GasOrder {
-  id: string
-  orderRef: string
-  status: 'payment_pending' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
-  toAddress: string
-  tier: string
-  chain: string
-  paymentAddress: string
-  paymentAmount: string
-  deliveryTxHash?: string
-  expiresAt: string
-  createdAt: string
+function validateAddress(addr: string, addressType: string): boolean {
+  const pattern = ADDRESS_PATTERNS[addressType]
+  return pattern ? pattern.test(addr) : addr.length > 5
 }
 
-interface PricesResponse {
-  chain: string
-  tiers: Tier[]
-  updatedAt: string
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const TRC20_REGEX = /^T[A-Za-z1-9]{33}$/
-const EVM_REGEX   = /^0x[0-9a-fA-F]{40}$/
-
-const TIER_ICONS: Record<string, string> = { SMALL: 'S', MEDIUM: 'M', LARGE: 'L', XLARGE: 'XL', JUMBO: 'J' }
-
-const CHAIN_INFO: Record<ChainId, { symbol: string; name: string; paymentNet: string; placeholder: string }> = {
-  TRON:     { symbol: 'TRX', name: 'TRON',     paymentNet: 'TRC20', placeholder: 'T... (34 characters)' },
-  BSC:      { symbol: 'BNB', name: 'BSC',      paymentNet: 'BEP20', placeholder: '0x... (42 characters)' },
-  ETHEREUM: { symbol: 'ETH', name: 'Ethereum', paymentNet: 'ERC20', placeholder: '0x... (42 characters)' },
-}
-
-const FALLBACK_TIERS: Record<ChainId, Tier[]> = {
-  TRON: [
-    { id: 'small',  name: 'SMALL',  nativeAmount: 10,  nativeSymbol: 'TRX', usdtPrice: '1.00',   pkrPrice: '280' },
-    { id: 'medium', name: 'MEDIUM', nativeAmount: 50,  nativeSymbol: 'TRX', usdtPrice: '4.50',   pkrPrice: '1260' },
-    { id: 'large',  name: 'LARGE',  nativeAmount: 100, nativeSymbol: 'TRX', usdtPrice: '8.50',   pkrPrice: '2380' },
-    { id: 'xlarge', name: 'XLARGE', nativeAmount: 200, nativeSymbol: 'TRX', usdtPrice: '17.00',  pkrPrice: '4760' },
-    { id: 'jumbo',  name: 'JUMBO',  nativeAmount: 500, nativeSymbol: 'TRX', usdtPrice: '42.50',  pkrPrice: '11900' },
-  ],
-  BSC: [
-    { id: 'small',  name: 'SMALL',  nativeAmount: 0.005, nativeSymbol: 'BNB', usdtPrice: '1.50',  pkrPrice: '420' },
-    { id: 'medium', name: 'MEDIUM', nativeAmount: 0.02,  nativeSymbol: 'BNB', usdtPrice: '6.00',  pkrPrice: '1680' },
-    { id: 'large',  name: 'LARGE',  nativeAmount: 0.05,  nativeSymbol: 'BNB', usdtPrice: '15.00', pkrPrice: '4200' },
-    { id: 'xlarge', name: 'XLARGE', nativeAmount: 0.1,   nativeSymbol: 'BNB', usdtPrice: '30.00', pkrPrice: '8400' },
-    { id: 'jumbo',  name: 'JUMBO',  nativeAmount: 0.3,   nativeSymbol: 'BNB', usdtPrice: '90.00', pkrPrice: '25200' },
-  ],
-  ETHEREUM: [
-    { id: 'small',  name: 'SMALL',  nativeAmount: 0.002, nativeSymbol: 'ETH', usdtPrice: '4.00',   pkrPrice: '1120' },
-    { id: 'medium', name: 'MEDIUM', nativeAmount: 0.005, nativeSymbol: 'ETH', usdtPrice: '10.00',  pkrPrice: '2800' },
-    { id: 'large',  name: 'LARGE',  nativeAmount: 0.01,  nativeSymbol: 'ETH', usdtPrice: '20.00',  pkrPrice: '5600' },
-    { id: 'xlarge', name: 'XLARGE', nativeAmount: 0.02,  nativeSymbol: 'ETH', usdtPrice: '40.00',  pkrPrice: '11200' },
-    { id: 'jumbo',  name: 'JUMBO',  nativeAmount: 0.05,  nativeSymbol: 'ETH', usdtPrice: '100.00', pkrPrice: '28000' },
-  ],
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function explorerTxUrl(chain: string, txHash: string): string {
-  switch (chain) {
-    case 'TRON':     return `https://tronscan.org/#/transaction/${txHash}`
-    case 'BSC':      return `https://bscscan.com/tx/${txHash}`
-    case 'ETHEREUM': return `https://etherscan.io/tx/${txHash}`
-    default: return '#'
+function addressPlaceholder(addressType: string): string {
+  switch (addressType) {
+    case 'TRC20': return 'T... (34 characters)'
+    case 'EVM':   return '0x... (42 characters)'
+    case 'SOL':   return 'Base58 address (32–44 characters)'
+    case 'SUI':   return '0x... (66 characters)'
+    default:      return 'Enter wallet address'
   }
 }
 
-function explorerLabel(chain: string): string {
-  if (chain === 'TRON') return 'TronScan'
-  if (chain === 'BSC') return 'BscScan'
-  return 'Etherscan'
+// ─── Explorer URL helper ───────────────────────────────────────────────────────
+
+function explorerTxUrl(chain: string, explorerBase: string | null, txHash: string): string {
+  if (!explorerBase) return '#'
+  if (chain === 'TRON') return `${explorerBase}/transaction/${txHash}`
+  return `${explorerBase}/tx/${txHash}`
 }
 
-function addressRegex(chain: ChainId) {
-  return chain === 'TRON' ? TRC20_REGEX : EVM_REGEX
-}
-
-// ─── Status helpers ───────────────────────────────────────────────────────────
+// ─── Status helpers ────────────────────────────────────────────────────────────
 
 function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' {
   if (s === 'delivered' || s === 'refunded') return 'success'
@@ -125,6 +66,20 @@ const STATUS_LABELS: Record<string, string> = {
   refunded:         'Refunded',
 }
 
+// ─── Category color map ────────────────────────────────────────────────────────
+
+const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
+  tron:     { bg: 'bg-red-100',    text: 'text-red-600' },
+  bnb:      { bg: 'bg-yellow-100', text: 'text-yellow-600' },
+  ethereum: { bg: 'bg-blue-100',   text: 'text-blue-600' },
+  solana:   { bg: 'bg-purple-100', text: 'text-purple-600' },
+  sui:      { bg: 'bg-cyan-100',   text: 'text-cyan-600' },
+}
+
+function chainColor(category: string) {
+  return CATEGORY_COLORS[category] ?? { bg: 'bg-surface', text: 'text-text-secondary' }
+}
+
 // ─── Step Indicator ───────────────────────────────────────────────────────────
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
@@ -132,28 +87,64 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
     <div className="flex items-center justify-center gap-2 mb-6">
       {Array.from({ length: total }).map((_, i) => (
         <div key={i} className="flex items-center gap-2">
-          <div
-            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-              i < current
-                ? 'bg-primary text-white'
-                : i === current
-                ? 'bg-primary text-white ring-2 ring-primary/30'
-                : 'bg-surface text-text-muted border border-border'
-            }`}
-          >
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+            i < current
+              ? 'bg-primary text-white'
+              : i === current
+              ? 'bg-primary text-white ring-2 ring-primary/30'
+              : 'bg-surface text-text-muted border border-border'
+          }`}>
             {i < current ? (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
-            ) : (
-              i + 1
-            )}
+            ) : (i + 1)}
           </div>
-          {i < total - 1 && (
-            <div className={`w-8 h-0.5 ${i < current ? 'bg-primary' : 'bg-border'}`} />
-          )}
+          {i < total - 1 && <div className={`w-8 h-0.5 ${i < current ? 'bg-primary' : 'bg-border'}`} />}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─── Chain Logo ───────────────────────────────────────────────────────────────
+
+function ChainLogo({ chain }: { chain: GasChain }) {
+  const { bg, text } = chainColor(chain.category)
+  if (chain.logoUrl) {
+    return (
+      <img
+        src={chain.logoUrl}
+        alt={chain.symbol}
+        className="w-10 h-10 rounded-full object-contain"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+      />
+    )
+  }
+  return (
+    <div className={`w-10 h-10 rounded-full ${bg} ${text} font-bold text-xs flex items-center justify-center flex-shrink-0`}>
+      {chain.symbol.slice(0, 3)}
+    </div>
+  )
+}
+
+// ─── Token Logo ───────────────────────────────────────────────────────────────
+
+function TokenLogo({ token, chainCategory }: { token: GasToken; chainCategory: string }) {
+  const { bg, text } = chainColor(chainCategory)
+  if (token.logoUrl) {
+    return (
+      <img
+        src={token.logoUrl}
+        alt={token.symbol}
+        className="w-9 h-9 rounded-full object-contain"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+      />
+    )
+  }
+  return (
+    <div className={`w-9 h-9 rounded-full ${bg} ${text} font-bold text-xs flex items-center justify-center flex-shrink-0`}>
+      {token.symbol.slice(0, 3)}
     </div>
   )
 }
@@ -162,82 +153,144 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
 
 export default function GasPage() {
   const { user } = useAuth()
+
+  // Step: 0=chain select, 1=token+amount, 2=address, 3=payment
   const [step, setStep] = useState(0)
-  const [tiers, setTiers] = useState<Tier[]>([])
-  const [tiersUpdatedAt, setTiersUpdatedAt] = useState('')
-  const [tiersLoading, setTiersLoading] = useState(false)
-  const [tiersError, setTiersError] = useState('')
 
-  // Step 0 — chain selection
-  const [selectedChain, setSelectedChain] = useState<ChainId>('TRON')
+  // Step 0 — chains
+  const [chains, setChains] = useState<GasChain[]>([])
+  const [chainsLoading, setChainsLoading] = useState(true)
+  const [chainsError, setChainsError] = useState('')
+  const [selectedChain, setSelectedChain] = useState<GasChain | null>(null)
 
-  // Step 1
-  const [selectedTier, setSelectedTier] = useState<Tier | null>(null)
+  // Step 1 — tokens + amount
+  const [tokenData, setTokenData] = useState<GasTokensResponse | null>(null)
+  const [tokensLoading, setTokensLoading] = useState(false)
+  const [tokensError, setTokensError] = useState('')
+  const [selectedToken, setSelectedToken] = useState<GasToken | null>(null)
+  const [amount, setAmount] = useState('')
+  const [amountError, setAmountError] = useState('')
 
-  // Step 2
+  // Step 2 — address
   const [address, setAddress] = useState('')
   const [addressError, setAddressError] = useState('')
-
-  // Step 3
-  const [order, setOrder] = useState<GasOrder | null>(null)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
+
+  // Step 3 — order tracking
+  const [order, setOrder] = useState<GasOrder | null>(null)
   const [pollErrorCount, setPollErrorCount] = useState(0)
+  const idempKeyRef = useRef(`gas_${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
-  const chainInfo = CHAIN_INFO[selectedChain]
+  // Computed values
+  const currentToken = selectedToken
+  const priceUsd = currentToken?.priceUsd ?? 0
+  const markup = currentToken?.markup ?? 1.5
+  const amountNum = parseFloat(amount) || 0
+  const computedUsd = amountNum * priceUsd * markup
+  const maxUsd = currentToken?.maxUsdValue ?? 10
+  const minAmount = currentToken?.minAmount ?? 0.1
+  const usdExceeded = computedUsd > maxUsd && amountNum > 0
 
-  const fetchTiers = useCallback(async () => {
-    setTiersLoading(true)
-    setTiersError('')
-    try {
-      const res = await apiRequest<PricesResponse>(`/gas-fee/prices?chain=${selectedChain}`)
-      setTiers(res.tiers)
-      setTiersUpdatedAt(res.updatedAt)
-    } catch (err) {
-      setTiersError(err instanceof Error ? err.message : 'Failed to load prices')
-    } finally {
-      setTiersLoading(false)
-    }
-  }, [selectedChain])
-
+  // Load chains on mount
   useEffect(() => {
-    if (step === 1) fetchTiers()
-  }, [step, fetchTiers])
+    setChainsLoading(true)
+    gasApi.getChains()
+      .then(({ chains: c }) => setChains(c))
+      .catch((e: Error) => setChainsError(e.message || 'Failed to load chains'))
+      .finally(() => setChainsLoading(false))
+  }, [])
 
-  const validateAddress = (val: string) => {
+  // Load tokens when chain selected
+  const fetchTokens = useCallback(async (chain: GasChain) => {
+    setTokensLoading(true)
+    setTokensError('')
+    setTokenData(null)
+    setSelectedToken(null)
+    setAmount('')
+    setAmountError('')
+    try {
+      const data = await gasApi.getChainTokens(chain.slug)
+      setTokenData(data)
+      if (data.tokens.length === 1) setSelectedToken(data.tokens[0])
+    } catch (e: unknown) {
+      setTokensError(e instanceof Error ? e.message : 'Failed to load tokens')
+    } finally {
+      setTokensLoading(false)
+    }
+  }, [])
+
+  function handleSelectChain(chain: GasChain) {
+    if (!chain.isAvailable && !chain.isActive) return
+    setSelectedChain(chain)
+    fetchTokens(chain)
+    setStep(1)
+  }
+
+  function validateAmount(val: string): boolean {
+    const n = parseFloat(val)
+    if (!val || isNaN(n) || n <= 0) {
+      setAmountError('Enter a valid amount')
+      return false
+    }
+    if (n < minAmount) {
+      setAmountError(`Minimum is ${minAmount} ${currentToken?.symbol ?? ''}`)
+      return false
+    }
+    const usdVal = n * priceUsd * markup
+    if (usdVal > maxUsd) {
+      setAmountError(`Exceeds $${maxUsd} USD limit. Reduce amount.`)
+      return false
+    }
+    setAmountError('')
+    return true
+  }
+
+  function handlePreset(preset: number) {
+    setAmount(String(preset))
+    const usdVal = preset * priceUsd * markup
+    if (usdVal > maxUsd) {
+      setAmountError(`Exceeds $${maxUsd} USD limit.`)
+    } else {
+      setAmountError('')
+    }
+  }
+
+  function handleAddressChange(val: string) {
+    setAddress(val)
+    if (addressError && selectedChain) validateAddressField(val)
+  }
+
+  function validateAddressField(val: string): boolean {
     if (!val) { setAddressError('Address is required'); return false }
-    if (!addressRegex(selectedChain).test(val)) {
-      const msg = selectedChain === 'TRON'
-        ? 'Invalid TRC20 address (must start with T, 34 characters)'
-        : `Invalid ${chainInfo.paymentNet} address (must start with 0x, 42 characters)`
-      setAddressError(msg)
+    if (!selectedChain) return false
+    if (!validateAddress(val, selectedChain.addressType)) {
+      setAddressError(`Invalid ${selectedChain.networkLabel} address format`)
       return false
     }
     setAddressError('')
     return true
   }
 
-  const handleSelectChain = (chain: ChainId) => {
-    setSelectedChain(chain)
-    setSelectedTier(null)
-    setTiers([])
-    setStep(1)
-  }
+  async function handleCreateOrder() {
+    if (!currentToken || !selectedChain) return
+    if (!validateAddressField(address)) return
+    if (!validateAmount(amount)) return
 
-  const handleCreateOrder = async () => {
-    if (!selectedTier) return
     setCreating(true)
     setCreateError('')
     try {
-      const o = await apiRequest<GasOrder>('/gas-fee/orders', {
-        method: 'POST',
-        body: JSON.stringify({ toAddress: address, tier: selectedTier.id.toUpperCase(), chain: selectedChain }),
+      const o = await gasApi.createOrder({
+        tokenConfigId: currentToken.id,
+        amount: parseFloat(amount),
+        toAddress: address,
+        idempotencyKey: idempKeyRef.current,
       })
       setOrder(o)
       setPollErrorCount(0)
       setStep(3)
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create order')
+    } catch (e: unknown) {
+      setCreateError(e instanceof Error ? e.message : 'Failed to create order')
     } finally {
       setCreating(false)
     }
@@ -246,37 +299,62 @@ export default function GasPage() {
   const pollOrder = useCallback(async () => {
     if (!order?.orderRef) return
     try {
-      const o = await apiRequest<GasOrder>(`/gas-fee/orders/${order.orderRef}`)
+      const o = await gasApi.getOrder(order.orderRef)
       setOrder(o)
       setPollErrorCount(0)
     } catch {
-      setPollErrorCount(c => c + 1)
+      setPollErrorCount((c) => c + 1)
     }
   }, [order?.orderRef])
 
-  const isDone =
-    order?.status === 'delivered' ||
-    order?.status === 'failed' ||
-    order?.status === 'expired' ||
-    order?.status === 'refund_pending' ||
-    order?.status === 'refunded'
+  const isDone = order?.status === 'delivered' || order?.status === 'failed' || order?.status === 'expired' || order?.status === 'refund_pending' || order?.status === 'refunded'
 
   usePolling(pollOrder, 10_000, step === 3 && !isDone)
 
-  const displayTiers = tiers.length > 0 ? tiers : FALLBACK_TIERS[selectedChain]
-  const orderChain = (order?.chain as ChainId | undefined) ?? selectedChain
+  function resetFlow() {
+    setStep(0)
+    setSelectedChain(null)
+    setSelectedToken(null)
+    setTokenData(null)
+    setAmount('')
+    setAmountError('')
+    setAddress('')
+    setAddressError('')
+    setOrder(null)
+    setPollErrorCount(0)
+    setCreateError('')
+    idempKeyRef.current = `gas_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  }
+
+  // Group chains by category for display
+  const chainGroups: Record<string, GasChain[]> = {}
+  chains.forEach((c) => {
+    if (!chainGroups[c.category]) chainGroups[c.category] = []
+    chainGroups[c.category].push(c)
+  })
+
+  const categoryLabels: Record<string, string> = {
+    tron: 'TRON',
+    bnb: 'BNB Chain',
+    ethereum: 'Ethereum Ecosystem',
+    solana: 'Solana',
+    sui: 'SUI',
+  }
+
+  const explorerBase = tokenData?.chain?.explorerBase ?? null
 
   return (
     <div className="min-h-screen bg-surface">
       <div className="max-w-lg mx-auto px-4 py-8 pb-12 space-y-6">
+
         {/* Header */}
         <div className="text-center">
           <div className="w-14 h-14 rounded-full bg-warning/10 text-warning text-2xl flex items-center justify-center mx-auto mb-3">
             ⚡
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">{chainInfo.symbol} Gas Refill</h1>
+          <h1 className="text-2xl font-bold text-text-primary">Buy Gas Instantly</h1>
           <p className="text-sm text-text-muted mt-1">
-            Get {chainInfo.symbol} for {chainInfo.name} network fees — pay with USDT
+            Get native blockchain gas tokens — pay with USDT
           </p>
           {user && (
             <Link href="/gas/orders" className="inline-block mt-2 text-xs text-primary hover:underline">
@@ -287,131 +365,223 @@ export default function GasPage() {
 
         <StepIndicator current={step} total={4} />
 
-        {/* ── Step 0: Chain Selector ── */}
+        {/* ── Step 0: Chain Selection ─────────────────────────────────────────── */}
         {step === 0 && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <h2 className="text-base font-semibold text-text-primary text-center">Select Blockchain</h2>
-            <div className="grid grid-cols-3 gap-3">
-              {/* TRON */}
-              <button
-                onClick={() => handleSelectChain('TRON')}
-                className="flex flex-col items-center gap-2 p-4 bg-white border-2 border-primary rounded-xl hover:shadow-sm transition-all"
-              >
-                <div className="w-10 h-10 rounded-full bg-warning/10 text-warning font-bold text-sm flex items-center justify-center">TRX</div>
-                <span className="text-sm font-semibold text-text-primary">TRON</span>
-                <Badge variant="success" size="sm">Active</Badge>
-              </button>
-              {/* BSC */}
-              <button
-                onClick={() => handleSelectChain('BSC')}
-                className="flex flex-col items-center gap-2 p-4 bg-white border-2 border-border rounded-xl hover:border-primary hover:shadow-sm transition-all"
-              >
-                <div className="w-10 h-10 rounded-full bg-warning/10 text-warning font-bold text-sm flex items-center justify-center">BNB</div>
-                <span className="text-sm font-semibold text-text-primary">BSC</span>
-                <Badge variant="warning" size="sm">New</Badge>
-              </button>
-              {/* ETH */}
-              <button
-                onClick={() => handleSelectChain('ETHEREUM')}
-                className="flex flex-col items-center gap-2 p-4 bg-white border-2 border-border rounded-xl hover:border-primary hover:shadow-sm transition-all"
-              >
-                <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold text-sm flex items-center justify-center">ETH</div>
-                <span className="text-sm font-semibold text-text-primary">Ethereum</span>
-                <Badge variant="warning" size="sm">New</Badge>
-              </button>
-            </div>
+
+            {chainsLoading && <LoadingState message="Loading networks..." />}
+            {chainsError && <ErrorState title={chainsError} onRetry={() => { setChainsError(''); setChainsLoading(true); gasApi.getChains().then(({ chains: c }) => setChains(c)).catch((e: Error) => setChainsError(e.message)).finally(() => setChainsLoading(false)) }} />}
+
+            {!chainsLoading && !chainsError && Object.entries(chainGroups).map(([cat, catChains]) => (
+              <div key={cat} className="space-y-2">
+                <p className="text-xs font-semibold text-text-muted uppercase tracking-wide px-1">
+                  {categoryLabels[cat] ?? cat}
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {catChains.map((chain) => {
+                    const { bg, text } = chainColor(chain.category)
+                    const available = chain.isAvailable
+                    const inactive = !chain.isActive
+                    return (
+                      <button
+                        key={chain.id}
+                        onClick={() => handleSelectChain(chain)}
+                        disabled={inactive}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all text-center
+                          ${inactive
+                            ? 'opacity-40 cursor-not-allowed border-border bg-white'
+                            : selectedChain?.id === chain.id
+                            ? 'border-primary bg-primary/5 shadow-sm'
+                            : 'border-border bg-white hover:border-primary/60 hover:shadow-sm'
+                          }`}
+                      >
+                        <div className={`w-10 h-10 rounded-full ${bg} ${text} font-bold text-xs flex items-center justify-center flex-shrink-0`}>
+                          {chain.logoUrl
+                            ? <img src={chain.logoUrl} alt={chain.symbol} className="w-10 h-10 rounded-full object-contain" />
+                            : chain.symbol.slice(0, 3)}
+                        </div>
+                        <span className="text-xs font-semibold text-text-primary leading-tight">{chain.name}</span>
+                        {inactive
+                          ? <Badge variant="default" size="sm">Soon</Badge>
+                          : available
+                          ? <Badge variant="success" size="sm">Active</Badge>
+                          : <Badge variant="warning" size="sm">Setup</Badge>
+                        }
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* ── Step 1: Tier Selector ── */}
-        {step === 1 && (
+        {/* ── Step 1: Token + Amount ──────────────────────────────────────────── */}
+        {step === 1 && selectedChain && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-text-primary">Choose Amount</h2>
-              {tiersUpdatedAt && <StalenessBadge updatedAt={tiersUpdatedAt} />}
+              {tokenData && <StalenessBadge updatedAt={tokenData.updatedAt} />}
             </div>
 
-            {tiersLoading && <LoadingState message="Loading prices..." />}
-            {tiersError && <ErrorState title={tiersError} onRetry={fetchTiers} />}
+            {tokensLoading && <LoadingState message="Loading tokens..." />}
+            {tokensError && <ErrorState title={tokensError} onRetry={() => fetchTokens(selectedChain)} />}
 
-            {!tiersLoading && !tiersError && (
-              <div className="grid grid-cols-1 gap-3">
-                {displayTiers.map((tier) => (
-                  <button
-                    key={tier.id}
-                    onClick={() => setSelectedTier(tier)}
-                    className={`flex items-center gap-4 p-4 bg-white border-2 rounded-xl text-left hover:shadow-sm transition-all ${
-                      selectedTier?.id === tier.id ? 'border-primary' : 'border-border hover:border-primary/50'
-                    }`}
-                  >
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${
-                      tier.name === 'SMALL'  ? 'bg-success/10 text-success' :
-                      tier.name === 'MEDIUM' ? 'bg-warning/10 text-warning' :
-                      tier.name === 'LARGE'  ? 'bg-primary/10 text-primary' :
-                      tier.name === 'XLARGE' ? 'bg-purple-100 text-purple-600' :
-                      'bg-red-50 text-red-500'
-                    }`}>
-                      {TIER_ICONS[tier.name] ?? tier.name[0]}
+            {!tokensLoading && !tokensError && tokenData && (
+              <>
+                {/* Token selector (only if multiple tokens) */}
+                {tokenData.tokens.length > 1 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {tokenData.tokens.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => { setSelectedToken(t); setAmount(''); setAmountError('') }}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
+                          selectedToken?.id === t.id
+                            ? 'border-primary bg-primary/5 text-primary'
+                            : 'border-border bg-white text-text-secondary hover:border-primary/50'
+                        }`}
+                      >
+                        <TokenLogo token={t} chainCategory={selectedChain.category} />
+                        {t.symbol}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {currentToken && (
+                  <>
+                    {/* Price info */}
+                    <div className="bg-surface border border-border rounded-lg px-3 py-2 flex items-center justify-between text-sm">
+                      <span className="text-text-muted">1 {currentToken.symbol}</span>
+                      <span className="font-semibold text-text-primary">
+                        ≈ ${(priceUsd * markup).toFixed(4)} USDT
+                        {currentToken.rateStale && <span className="text-warning ml-1 text-xs">(rate stale)</span>}
+                      </span>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-text-primary">{tier.nativeAmount} {tier.nativeSymbol}</span>
-                        <Badge variant="default" size="sm">{tier.name}</Badge>
+
+                    {/* Preset quick-select amounts */}
+                    <div>
+                      <p className="text-xs font-medium text-text-muted mb-2">Quick Select</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {currentToken.presetAmounts.map((preset) => {
+                          const presetUsd = preset * priceUsd * markup
+                          const tooHigh = presetUsd > maxUsd
+                          return (
+                            <button
+                              key={preset}
+                              onClick={() => !tooHigh && handlePreset(preset)}
+                              disabled={tooHigh}
+                              className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-all ${
+                                amount === String(preset) && !tooHigh
+                                  ? 'border-primary bg-primary text-white'
+                                  : tooHigh
+                                  ? 'border-border text-text-muted opacity-40 cursor-not-allowed bg-white'
+                                  : 'border-border bg-white text-text-primary hover:border-primary/60'
+                              }`}
+                            >
+                              {preset} {currentToken.symbol}
+                            </button>
+                          )
+                        })}
                       </div>
-                      <p className="text-sm text-text-muted mt-0.5">
-                        {tier.usdtPrice} USDT ≈ PKR {parseFloat(tier.pkrPrice).toLocaleString()}
-                      </p>
                     </div>
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                      selectedTier?.id === tier.id ? 'border-primary bg-primary' : 'border-border'
-                    }`}>
-                      {selectedTier?.id === tier.id && (
-                        <div className="w-2 h-2 rounded-full bg-white" />
+
+                    {/* Custom amount input */}
+                    <div>
+                      <label className="text-sm font-medium text-text-primary block mb-1.5">
+                        Custom Amount ({currentToken.symbol})
+                      </label>
+                      <Input
+                        type="number"
+                        placeholder={`Min ${minAmount}`}
+                        value={amount}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setAmount(v)
+                          if (v) validateAmount(v)
+                          else setAmountError('')
+                        }}
+                        onBlur={() => { if (amount) validateAmount(amount) }}
+                        min={minAmount}
+                        step="any"
+                      />
+                      {amountError && <p className="text-sm text-danger mt-1">{amountError}</p>}
+                      {amountNum > 0 && !amountError && (
+                        <p className={`text-sm mt-1 ${usdExceeded ? 'text-danger' : 'text-text-muted'}`}>
+                          ≈ ${computedUsd.toFixed(2)} USDT
+                          {usdExceeded && ` — exceeds $${maxUsd} limit`}
+                        </p>
                       )}
                     </div>
-                  </button>
-                ))}
-              </div>
+
+                    {/* Max cap info */}
+                    <div className="bg-surface border border-border rounded-lg px-3 py-2 text-xs text-text-muted">
+                      Max order value: <span className="font-semibold text-text-primary">${maxUsd} USDT</span> per transaction
+                    </div>
+                  </>
+                )}
+              </>
             )}
 
-            <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setStep(0)}>Back</Button>
-              <Button className="flex-1" disabled={!selectedTier} onClick={() => setStep(2)}>Continue</Button>
+            <div className="flex gap-3 pt-1">
+              <Button variant="secondary" className="flex-1" onClick={() => { setStep(0); setSelectedChain(null) }}>Back</Button>
+              <Button
+                className="flex-1"
+                disabled={!currentToken || !amount || !!amountError || usdExceeded || tokensLoading}
+                onClick={() => {
+                  if (validateAmount(amount)) setStep(2)
+                }}
+              >
+                Continue
+              </Button>
             </div>
           </div>
         )}
 
-        {/* ── Step 2: Enter Address ── */}
-        {step === 2 && (
+        {/* ── Step 2: Enter Address ───────────────────────────────────────────── */}
+        {step === 2 && selectedChain && currentToken && (
           <div className="space-y-5">
             <h2 className="text-base font-semibold text-text-primary">
-              Enter {chainInfo.paymentNet} Address
+              Enter {selectedChain.networkLabel} Address
             </h2>
             <p className="text-sm text-text-muted">
-              Enter the {chainInfo.name} wallet address that needs {chainInfo.symbol} for gas fees.
+              Enter the {selectedChain.name} wallet address that needs {currentToken.symbol} for gas.
             </p>
 
             <div>
               <label className="text-sm font-medium text-text-primary block mb-1.5">
-                {chainInfo.name} Wallet Address ({chainInfo.paymentNet})
+                {selectedChain.name} Wallet Address
               </label>
               <Input
-                placeholder={chainInfo.placeholder}
+                placeholder={addressPlaceholder(selectedChain.addressType)}
                 value={address}
-                onChange={(e) => { setAddress(e.target.value); if (addressError) validateAddress(e.target.value) }}
-                onBlur={() => validateAddress(address)}
+                onChange={(e) => handleAddressChange(e.target.value)}
+                onBlur={() => validateAddressField(address)}
               />
               {addressError && <p className="text-sm text-danger mt-1.5">{addressError}</p>}
-              {address && !addressError && addressRegex(selectedChain).test(address) && (
-                <p className="text-sm text-success mt-1.5">Valid {chainInfo.paymentNet} address</p>
+              {address && !addressError && validateAddress(address, selectedChain.addressType) && (
+                <p className="text-sm text-success mt-1.5">Valid {selectedChain.networkLabel} address</p>
               )}
             </div>
 
-            <div className="bg-surface border border-border rounded-lg p-3 text-sm text-text-muted">
-              <p className="font-medium text-text-primary mb-1">Order Summary</p>
-              <p>Chain: {chainInfo.name}</p>
-              <p>Amount: {selectedTier?.nativeAmount} {selectedTier?.nativeSymbol}</p>
-              <p>Price: {selectedTier?.usdtPrice} USDT ≈ PKR {selectedTier ? parseFloat(selectedTier.pkrPrice).toLocaleString() : 0}</p>
+            {/* Order summary */}
+            <div className="bg-surface border border-border rounded-lg p-3 text-sm space-y-1">
+              <p className="font-semibold text-text-primary mb-2">Order Summary</p>
+              <div className="flex justify-between text-text-muted">
+                <span>Network</span><span className="text-text-primary font-medium">{selectedChain.name}</span>
+              </div>
+              <div className="flex justify-between text-text-muted">
+                <span>Token</span><span className="text-text-primary font-medium">{currentToken.symbol}</span>
+              </div>
+              <div className="flex justify-between text-text-muted">
+                <span>Amount</span><span className="text-text-primary font-medium">{amount} {currentToken.symbol}</span>
+              </div>
+              <div className="flex justify-between text-text-muted border-t border-border pt-1 mt-1">
+                <span>You Pay</span>
+                <span className="text-text-primary font-bold">{computedUsd.toFixed(2)} USDT</span>
+              </div>
             </div>
 
             {createError && <p className="text-sm text-danger">{createError}</p>}
@@ -420,7 +590,7 @@ export default function GasPage() {
               <Button variant="secondary" className="flex-1" onClick={() => setStep(1)} disabled={creating}>Back</Button>
               <Button
                 className="flex-1"
-                disabled={!addressRegex(selectedChain).test(address) || creating}
+                disabled={!validateAddress(address, selectedChain.addressType) || creating}
                 onClick={handleCreateOrder}
               >
                 {creating ? <Spinner size="sm" /> : 'Proceed to Payment'}
@@ -429,7 +599,7 @@ export default function GasPage() {
           </div>
         )}
 
-        {/* ── Step 3: Payment & Status ── */}
+        {/* ── Step 3: Payment & Status ────────────────────────────────────────── */}
         {step === 3 && order && (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
@@ -459,11 +629,11 @@ export default function GasPage() {
               </div>
             )}
 
-            {/* Payment Details */}
+            {/* Payment details */}
             {order.status === 'payment_pending' && (
               <div className="bg-white border border-border rounded-xl p-5 space-y-4">
                 <p className="text-sm font-semibold text-text-primary">
-                  Send USDT ({CHAIN_INFO[orderChain]?.paymentNet ?? 'USDT'}) to this address:
+                  Send USDT ({order.paymentNetwork}) to this address:
                 </p>
 
                 <div>
@@ -484,7 +654,7 @@ export default function GasPage() {
 
                 <div className="bg-danger/10 border border-danger/20 rounded-lg p-3">
                   <p className="text-xs text-danger font-semibold">
-                    Send ONLY USDT on {CHAIN_INFO[orderChain]?.paymentNet ?? chainInfo.paymentNet} network. Sending other tokens or on different networks will result in permanent loss.
+                    Send ONLY USDT on {order.paymentNetwork} network. Sending other tokens or wrong network = permanent loss.
                   </p>
                 </div>
               </div>
@@ -495,12 +665,12 @@ export default function GasPage() {
               <div className="bg-warning/10 border border-warning/30 rounded-xl p-5 text-center">
                 <Spinner size="md" />
                 <p className="text-base font-bold text-text-primary mt-3 mb-1">
-                  {order.status === 'payment_detected' ? 'Payment Detected!' : `Delivering ${CHAIN_INFO[orderChain]?.symbol ?? chainInfo.symbol}...`}
+                  {order.status === 'payment_detected' ? 'Payment Detected!' : `Delivering ${currentToken?.symbol ?? ''}...`}
                 </p>
                 <p className="text-sm text-text-muted">
                   {order.status === 'payment_detected'
-                    ? `Preparing your ${CHAIN_INFO[orderChain]?.symbol ?? chainInfo.symbol}...`
-                    : `Sending ${selectedTier?.nativeAmount} ${selectedTier?.nativeSymbol ?? chainInfo.symbol} to your wallet.`}
+                    ? `Preparing your ${currentToken?.symbol ?? 'gas'}...`
+                    : `Sending ${amount} ${currentToken?.symbol ?? ''} to your wallet.`}
                 </p>
               </div>
             )}
@@ -512,28 +682,29 @@ export default function GasPage() {
                   <svg className="w-12 h-12 mx-auto text-success mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <p className="text-lg font-bold text-success">{CHAIN_INFO[orderChain]?.symbol ?? chainInfo.symbol} Delivered!</p>
+                  <p className="text-lg font-bold text-success">{currentToken?.symbol ?? 'Gas'} Delivered!</p>
                   <p className="text-sm text-text-muted mt-1">
-                    {selectedTier?.nativeAmount} {selectedTier?.nativeSymbol ?? chainInfo.symbol} has been sent to {order.toAddress.slice(0, 10)}...
+                    {amount} {currentToken?.symbol} sent to {order.toAddress.slice(0, 10)}...
                   </p>
                 </div>
-                {order.deliveryTxHash && (
+                {order.deliveryTxHash && selectedChain && (
                   <a
-                    href={explorerTxUrl(orderChain, order.deliveryTxHash)}
+                    href={explorerTxUrl(selectedChain.slug, explorerBase, order.deliveryTxHash)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-1.5 text-primary text-sm underline"
                   >
-                    View on {explorerLabel(orderChain)}
+                    View Transaction
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
                   </a>
                 )}
+                <Button className="w-full" variant="secondary" onClick={resetFlow}>Buy More Gas</Button>
               </div>
             )}
 
-            {/* Refund pending / refunded */}
+            {/* Refund */}
             {(order.status === 'refund_pending' || order.status === 'refunded') && (
               <div className="bg-warning/10 border border-warning/30 rounded-xl p-5 text-center space-y-2">
                 <p className="text-base font-bold text-warning">
@@ -555,12 +726,10 @@ export default function GasPage() {
                 </p>
                 <p className="text-sm text-text-muted mt-1 mb-4">
                   {order.status === 'expired'
-                    ? 'Payment was not received in time.'
+                    ? 'Payment was not received in time. Please try again.'
                     : 'Something went wrong. Please contact support.'}
                 </p>
-                <Button onClick={() => { setOrder(null); setAddress(''); setSelectedTier(null); setPollErrorCount(0); setStep(0) }}>
-                  Try Again
-                </Button>
+                <Button onClick={resetFlow}>Try Again</Button>
               </div>
             )}
           </div>

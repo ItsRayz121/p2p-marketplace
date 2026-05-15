@@ -943,7 +943,9 @@ model GasFeeOrder {
   ipAddress           String?
 
   chain               GasChain
-  tier                GasFeeTier
+  tier                GasFeeTier?       // nullable: new custom-amount orders skip fixed tiers
+  gasTokenConfigId    String?
+  gasTokenConfig      GasTokenConfig?   @relation(fields: [gasTokenConfigId], references: [id], onDelete: SetNull)
   gasAmountNative     Decimal           @db.Decimal(18, 8)
   gasAmountUSD        Decimal           @db.Decimal(10, 4)
   priceAtOrder        Decimal           @db.Decimal(18, 8)
@@ -986,6 +988,50 @@ model GasHotWallet {
   createdAt DateTime @default(now())
 
   @@index([chain, isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAS CHAIN & TOKEN CONFIGURATION (admin-controlled, no code change to add chains)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GasChainConfig {
+  id             String           @id @default(cuid())
+  name           String           // "TRON", "BNB Smart Chain", "Ethereum"
+  slug           String           @unique // "TRON", "BSC", "ETH", "BASE", "ARB", "MATIC", "OP", "SOL", "SUI"
+  symbol         String           // "TRX", "BNB", "ETH"
+  logoUrl        String?
+  category       String           // "tron" | "bnb" | "ethereum" | "solana" | "sui"
+  networkLabel   String           // "TRC20", "BEP20", "ERC20"
+  addressType    String           // "TRC20" | "EVM" | "SOL" | "SUI" — maps to frontend regex
+  explorerBase   String?
+  backendChainId String?          // Maps to GasChain enum value. Null = not yet deliverable.
+  isActive       Boolean          @default(true)
+  displayOrder   Int              @default(0)
+  tokens         GasTokenConfig[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model GasTokenConfig {
+  id              String         @id @default(cuid())
+  chainConfigId   String
+  chain           GasChainConfig @relation(fields: [chainConfigId], references: [id], onDelete: Cascade)
+  name            String         // "TRX", "BNB", "USDT (TRC20)"
+  symbol          String         // "TRX", "BNB", "USDT"
+  tokenType       String         // "native" | "token"
+  contractAddress String?
+  logoUrl         String?
+  priceSymbol     String         // "TRX", "BNB", "ETH" — Redis rate key for pricing
+  minAmount       Decimal        @db.Decimal(18, 8) @default(0.1)
+  maxUsdValue     Decimal        @db.Decimal(10, 4) @default(10)
+  presetAmounts   Json           // number[] e.g. [10, 50, 100, 200]
+  isActive        Boolean        @default(true)
+  displayOrder    Int            @default(0)
+  orders          GasFeeOrder[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([chainConfigId, isActive])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

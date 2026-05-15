@@ -785,6 +785,87 @@ export const usersApi = {
     apiRequest<{ users: Array<Partial<AuthUser>> }>(`/users/search?q=${encodeURIComponent(query)}`),
 }
 
+// ─── Gas types ────────────────────────────────────────────────────────────────
+
+export interface GasChain {
+  id: string
+  slug: string
+  name: string
+  symbol: string
+  logoUrl: string | null
+  category: string
+  networkLabel: string
+  addressType: string
+  isActive: boolean
+  isAvailable: boolean
+  tokenCount: number
+}
+
+export interface GasToken {
+  id: string
+  name: string
+  symbol: string
+  tokenType: string
+  logoUrl: string | null
+  priceSymbol: string
+  priceUsd: number
+  pricePkr: number
+  markup: number
+  minAmount: number
+  maxUsdValue: number
+  presetAmounts: number[]
+  rateStale: boolean
+}
+
+export interface GasTokensResponse {
+  chain: {
+    id: string
+    slug: string
+    name: string
+    symbol: string
+    networkLabel: string
+    addressType: string
+    explorerBase: string | null
+  }
+  tokens: GasToken[]
+  updatedAt: string
+}
+
+export interface GasOrder {
+  id?: string
+  orderRef: string
+  status: 'payment_pending' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
+  toAddress: string
+  tier?: string | null
+  chain: string
+  paymentAddress: string
+  paymentAmount: string
+  paymentNetwork: string
+  gasAmountNative: string
+  nativeSymbol?: string
+  deliveryTxHash?: string
+  expiresAt: string
+  createdAt?: string
+  gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null
+}
+
+export const gasApi = {
+  getChains: () =>
+    apiRequest<{ chains: GasChain[] }>('/gas-fee/chains'),
+
+  getChainTokens: (chainSlug: string) =>
+    apiRequest<GasTokensResponse>(`/gas-fee/chains/${chainSlug}/tokens`),
+
+  createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string }) =>
+    apiRequest<GasOrder>('/gas-fee/orders', { method: 'POST', body: JSON.stringify(data) }),
+
+  getOrder: (orderRef: string) =>
+    apiRequest<GasOrder>(`/gas-fee/orders/${orderRef}`),
+
+  getOrderHistory: (params?: { page?: number; limit?: number }) =>
+    apiRequest<{ orders: GasOrder[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/gas-fee/orders/history' + (params ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : '')),
+}
+
 export const gasFeeApi = {
   estimate: (data: { coin: string; network: string }) =>
     apiRequest<{ fee: string; feePkr: string; estimatedTime: string }>('/gas-fee/estimate', { method: 'POST', body: JSON.stringify(data) }),
@@ -801,6 +882,46 @@ function buildQs(params?: Record<string, string | number | undefined>): string {
   if (!params) return ''
   const entries = Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])
   return entries.length ? '?' + new URLSearchParams(entries).toString() : ''
+}
+
+// ─── Admin gas config types ───────────────────────────────────────────────────
+
+export interface AdminGasChain {
+  id: string
+  name: string
+  slug: string
+  symbol: string
+  logoUrl: string | null
+  category: string
+  networkLabel: string
+  addressType: string
+  explorerBase: string | null
+  backendChainId: string | null
+  isActive: boolean
+  displayOrder: number
+  createdAt: string
+  updatedAt: string
+  tokens?: AdminGasToken[]
+  _count?: { tokens: number }
+}
+
+export interface AdminGasToken {
+  id: string
+  chainConfigId: string
+  name: string
+  symbol: string
+  tokenType: string
+  contractAddress: string | null
+  logoUrl: string | null
+  priceSymbol: string
+  minAmount: string | number
+  maxUsdValue: string | number
+  presetAmounts: number[]
+  isActive: boolean
+  displayOrder: number
+  createdAt: string
+  updatedAt: string
+  chain?: { name: string; slug: string }
 }
 
 export const adminApi = {
@@ -956,6 +1077,26 @@ export const adminApi = {
     apiRequest<{ payments: unknown[]; total: number }>('/admin/gas/unattributed'),
   attributeGasPayment: (txHash: string, orderId: string) =>
     apiRequest<void>(`/admin/gas/unattributed/${encodeURIComponent(txHash)}/attribute`, { method: 'POST', body: JSON.stringify({ orderId }) }),
+
+  // Gas Chain Config CRUD
+  getGasChains: () =>
+    apiRequest<{ chains: AdminGasChain[] }>('/admin/gas/chains'),
+  createGasChain: (data: Partial<AdminGasChain>) =>
+    apiRequest<AdminGasChain>('/admin/gas/chains', { method: 'POST', body: JSON.stringify(data) }),
+  updateGasChain: (id: string, data: Partial<AdminGasChain>) =>
+    apiRequest<AdminGasChain>(`/admin/gas/chains/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteGasChain: (id: string) =>
+    apiRequest<void>(`/admin/gas/chains/${id}`, { method: 'DELETE' }),
+
+  // Gas Token Config CRUD
+  getGasTokens: (chainId?: string) =>
+    apiRequest<{ tokens: AdminGasToken[] }>('/admin/gas/tokens' + (chainId ? `?chainId=${chainId}` : '')),
+  createGasToken: (data: Partial<AdminGasToken>) =>
+    apiRequest<AdminGasToken>('/admin/gas/tokens', { method: 'POST', body: JSON.stringify(data) }),
+  updateGasToken: (id: string, data: Partial<AdminGasToken>) =>
+    apiRequest<AdminGasToken>(`/admin/gas/tokens/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteGasToken: (id: string) =>
+    apiRequest<void>(`/admin/gas/tokens/${id}`, { method: 'DELETE' }),
 
   // Audit Log
   getAuditLog: (params?: Record<string, string | number | undefined>) =>

@@ -2033,4 +2033,182 @@ export async function adminRoutes(app: FastifyInstance) {
 
     return reply.send({ success: true })
   })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GAS CHAIN CONFIG CRUD
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /admin/gas/chains — list all chains (including inactive)
+  app.get('/admin/gas/chains', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const chains = await db.gasChainConfig.findMany({
+      orderBy: { displayOrder: 'asc' },
+      include: {
+        _count: { select: { tokens: true } },
+        tokens: { orderBy: { displayOrder: 'asc' } },
+      },
+    })
+    return reply.send({ success: true, data: { chains } })
+  })
+
+  // POST /admin/gas/chains — create a new chain
+  app.post('/admin/gas/chains', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { z } = await import('zod')
+    const schema = z.object({
+      name:           z.string().min(1),
+      slug:           z.string().min(1),
+      symbol:         z.string().min(1),
+      category:       z.string().min(1),
+      networkLabel:   z.string().min(1),
+      addressType:    z.enum(['TRC20', 'EVM', 'SOL', 'SUI']),
+      logoUrl:        z.string().url().nullable().default(null),
+      explorerBase:   z.string().url().nullable().default(null),
+      backendChainId: z.string().nullable().default(null),
+      isActive:       z.boolean().default(true),
+      displayOrder:   z.number().int().default(0),
+    })
+    const d = schema.parse(req.body)
+    const chain = await db.gasChainConfig.create({
+      data: {
+        name: d.name, slug: d.slug.toUpperCase(), symbol: d.symbol,
+        category: d.category, networkLabel: d.networkLabel, addressType: d.addressType,
+        logoUrl: d.logoUrl, explorerBase: d.explorerBase,
+        backendChainId: d.backendChainId, isActive: d.isActive, displayOrder: d.displayOrder,
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_CHAIN_CREATED', 'GasChainConfig', chain.id, { slug: chain.slug })
+    return reply.code(201).send({ success: true, data: chain })
+  })
+
+  // PATCH /admin/gas/chains/:id — update chain
+  app.patch('/admin/gas/chains/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const chain = await db.gasChainConfig.findUnique({ where: { id } })
+    if (!chain) throw Errors.NOT_FOUND('Gas chain config')
+
+    const body = req.body as Record<string, unknown>
+    // Build update data only with keys present in body, converting undefined nullable → null
+    const updateData: Record<string, unknown> = {}
+    if ('name' in body) updateData.name = body.name
+    if ('symbol' in body) updateData.symbol = body.symbol
+    if ('category' in body) updateData.category = body.category
+    if ('networkLabel' in body) updateData.networkLabel = body.networkLabel
+    if ('addressType' in body) updateData.addressType = body.addressType
+    if ('logoUrl' in body) updateData.logoUrl = body.logoUrl ?? null
+    if ('explorerBase' in body) updateData.explorerBase = body.explorerBase ?? null
+    if ('backendChainId' in body) updateData.backendChainId = body.backendChainId ?? null
+    if ('isActive' in body) updateData.isActive = body.isActive
+    if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
+
+    const updated = await db.gasChainConfig.update({ where: { id }, data: updateData })
+    await createAuditLog(req.user!.id, 'GAS_CHAIN_UPDATED', 'GasChainConfig', id, updateData)
+    return reply.send({ success: true, data: updated })
+  })
+
+  // DELETE /admin/gas/chains/:id — delete chain (only if no orders reference its tokens)
+  app.delete('/admin/gas/chains/:id', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const chain = await db.gasChainConfig.findUnique({ where: { id }, include: { tokens: { select: { id: true } } } })
+    if (!chain) throw Errors.NOT_FOUND('Gas chain config')
+
+    const tokenIds = chain.tokens.map((t) => t.id)
+    if (tokenIds.length > 0) {
+      const orderCount = await db.gasFeeOrder.count({ where: { gasTokenConfigId: { in: tokenIds } } })
+      if (orderCount > 0) {
+        throw new AppError('CONFLICT', `Cannot delete chain — ${orderCount} orders reference its tokens`, 409)
+      }
+    }
+
+    await db.gasChainConfig.delete({ where: { id } })
+    await createAuditLog(req.user!.id, 'GAS_CHAIN_DELETED', 'GasChainConfig', id, { slug: chain.slug })
+    return reply.send({ success: true })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GAS TOKEN CONFIG CRUD
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // GET /admin/gas/tokens — list all tokens, optionally filtered by chainId
+  app.get('/admin/gas/tokens', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chainId } = req.query as { chainId?: string }
+    const tokens = await db.gasTokenConfig.findMany({
+      where: chainId ? { chainConfigId: chainId } : {},
+      orderBy: [{ chain: { displayOrder: 'asc' } }, { displayOrder: 'asc' }],
+      include: { chain: { select: { name: true, slug: true } } },
+    })
+    return reply.send({ success: true, data: { tokens } })
+  })
+
+  // POST /admin/gas/tokens — create token
+  app.post('/admin/gas/tokens', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { z } = await import('zod')
+    const schema = z.object({
+      chainConfigId:   z.string().min(1),
+      name:            z.string().min(1),
+      symbol:          z.string().min(1),
+      tokenType:       z.enum(['native', 'token']),
+      contractAddress: z.string().nullable().default(null),
+      logoUrl:         z.string().url().nullable().default(null),
+      priceSymbol:     z.string().min(1),
+      minAmount:       z.number().positive().default(0.1),
+      maxUsdValue:     z.number().positive().default(10),
+      presetAmounts:   z.array(z.number().positive()).min(1),
+      isActive:        z.boolean().default(true),
+      displayOrder:    z.number().int().default(0),
+    })
+    const d = schema.parse(req.body)
+    const chain = await db.gasChainConfig.findUnique({ where: { id: d.chainConfigId } })
+    if (!chain) throw Errors.NOT_FOUND('Gas chain config')
+
+    const token = await db.gasTokenConfig.create({
+      data: {
+        chainConfigId: d.chainConfigId, name: d.name, symbol: d.symbol,
+        tokenType: d.tokenType, contractAddress: d.contractAddress, logoUrl: d.logoUrl,
+        priceSymbol: d.priceSymbol, minAmount: d.minAmount, maxUsdValue: d.maxUsdValue,
+        presetAmounts: d.presetAmounts, isActive: d.isActive, displayOrder: d.displayOrder,
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_TOKEN_CREATED', 'GasTokenConfig', token.id, { symbol: token.symbol, chain: chain.slug })
+    return reply.code(201).send({ success: true, data: token })
+  })
+
+  // PATCH /admin/gas/tokens/:id — update token
+  app.patch('/admin/gas/tokens/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const token = await db.gasTokenConfig.findUnique({ where: { id } })
+    if (!token) throw Errors.NOT_FOUND('Gas token config')
+
+    const body = req.body as Record<string, unknown>
+    const updateData: Record<string, unknown> = {}
+    if ('name' in body) updateData.name = body.name
+    if ('symbol' in body) updateData.symbol = body.symbol
+    if ('tokenType' in body) updateData.tokenType = body.tokenType
+    if ('contractAddress' in body) updateData.contractAddress = body.contractAddress ?? null
+    if ('logoUrl' in body) updateData.logoUrl = body.logoUrl ?? null
+    if ('priceSymbol' in body) updateData.priceSymbol = body.priceSymbol
+    if ('minAmount' in body) updateData.minAmount = Number(body.minAmount)
+    if ('maxUsdValue' in body) updateData.maxUsdValue = Number(body.maxUsdValue)
+    if ('presetAmounts' in body) updateData.presetAmounts = body.presetAmounts
+    if ('isActive' in body) updateData.isActive = body.isActive
+    if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
+
+    const updated = await db.gasTokenConfig.update({ where: { id }, data: updateData })
+    await createAuditLog(req.user!.id, 'GAS_TOKEN_UPDATED', 'GasTokenConfig', id, updateData)
+    return reply.send({ success: true, data: updated })
+  })
+
+  // DELETE /admin/gas/tokens/:id — delete token (only if no orders reference it)
+  app.delete('/admin/gas/tokens/:id', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const token = await db.gasTokenConfig.findUnique({ where: { id } })
+    if (!token) throw Errors.NOT_FOUND('Gas token config')
+
+    const orderCount = await db.gasFeeOrder.count({ where: { gasTokenConfigId: id } })
+    if (orderCount > 0) {
+      throw new AppError('CONFLICT', `Cannot delete token — ${orderCount} orders reference it`, 409)
+    }
+
+    await db.gasTokenConfig.delete({ where: { id } })
+    await createAuditLog(req.user!.id, 'GAS_TOKEN_DELETED', 'GasTokenConfig', id, { symbol: token.symbol })
+    return reply.send({ success: true })
+  })
 }
