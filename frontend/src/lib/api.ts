@@ -1083,7 +1083,7 @@ export const adminApi = {
         chain: string; address: string; isActive: boolean
         balance: number | null; nativeSymbol: string
         alertThreshold: number; pauseThreshold: number
-        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
       }>
       orderSummary: Record<string, number>
       configWarnings: Array<{ key: string; label: string; required: boolean }>
@@ -1132,7 +1132,7 @@ export const adminApi = {
         isActive: boolean
         balance: number | null
         nativeSymbol: string
-        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
         alertThreshold: number
         pauseThreshold: number
       } | null
@@ -1142,7 +1142,7 @@ export const adminApi = {
         isActive: boolean
         balance: number | null
         nativeSymbol: string
-        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
         alertThreshold: number
         pauseThreshold: number
       }>
@@ -1151,6 +1151,8 @@ export const adminApi = {
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>
     apiRequest<void>(`/admin/gas/wallets/${chain}/balance`, { method: 'POST', body: JSON.stringify({ balanceTRX }) }),
+  refreshGasWalletBalance: (chain: string) =>
+    apiRequest<{ chain: string; balance: number; nativeSymbol: string; status: string; alertThreshold: number; pauseThreshold: number }>(`/admin/gas/wallets/${chain}/refresh-balance`, { method: 'POST' }),
   toggleGasChain: (chain: string) =>
     apiRequest<{ chain: string; isActive: boolean }>(`/admin/gas/chains/${chain}/toggle`, { method: 'POST' }),
 

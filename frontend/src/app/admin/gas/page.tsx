@@ -41,7 +41,7 @@ interface GasWallet {
   isActive: boolean
   balance: number | null
   nativeSymbol: string
-  status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured'
+  status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
   alertThreshold: number
   pauseThreshold: number
 }
@@ -95,11 +95,11 @@ function walletStatusVariant(s: string): 'success' | 'warning' | 'danger' | 'def
 
 function walletStatusLabel(s: string): string {
   const labels: Record<string, string> = {
-    healthy:       'Healthy',
-    warning:       'Low Balance',
-    critical:      'Critical',
-    paused:        'Paused',
-    unconfigured:  'Not Configured',
+    healthy:     'Healthy',
+    warning:     'Low Balance',
+    critical:    'Critical',
+    paused:      'Paused',
+    unavailable: 'Balance Unknown',
   }
   return labels[s] ?? s
 }
@@ -107,12 +107,14 @@ function walletStatusLabel(s: string): string {
 // ─── WalletCard ───────────────────────────────────────────────────────────────
 
 function WalletCard({
-  wallet, isSuperAdmin, toggling, onToggle,
+  wallet, isSuperAdmin, toggling, onToggle, onRefresh, refreshing,
 }: {
   wallet: GasWallet
   isSuperAdmin: boolean
   toggling: boolean
   onToggle: () => void
+  onRefresh: () => void
+  refreshing: boolean
 }) {
   return (
     <div className={`bg-white border rounded-xl p-5 ${
@@ -142,21 +144,30 @@ function WalletCard({
                 {wallet.balance !== null ? `${fmtNative(wallet.balance)} ${wallet.nativeSymbol}` : 'Unknown'}
               </span>
             </div>
-            <div>
-              <span className="text-text-muted">Alert at: </span>
-              <span className="font-medium text-text-primary">{wallet.alertThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
-            </div>
-            <div>
-              <span className="text-text-muted">Pause at: </span>
-              <span className="font-medium text-text-primary">{wallet.pauseThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
-            </div>
+            {wallet.alertThreshold > 0 && (
+              <div>
+                <span className="text-text-muted">Alert at: </span>
+                <span className="font-medium text-text-primary">{wallet.alertThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
+              </div>
+            )}
+            {wallet.pauseThreshold > 0 && (
+              <div>
+                <span className="text-text-muted">Pause at: </span>
+                <span className="font-medium text-text-primary">{wallet.pauseThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
+              </div>
+            )}
           </div>
         </div>
-        {isSuperAdmin && (
-          <Button size="sm" variant={wallet.isActive ? 'secondary' : 'primary'} onClick={onToggle} disabled={toggling}>
-            {wallet.isActive ? 'Pause Chain' : 'Resume Chain'}
+        <div className="flex flex-col gap-2 shrink-0">
+          <Button size="sm" variant="ghost" onClick={onRefresh} disabled={refreshing}>
+            {refreshing ? 'Refreshing...' : 'Refresh Balance'}
           </Button>
-        )}
+          {isSuperAdmin && (
+            <Button size="sm" variant={wallet.isActive ? 'secondary' : 'primary'} onClick={onToggle} disabled={toggling}>
+              {wallet.isActive ? 'Pause Chain' : 'Resume Chain'}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -183,13 +194,14 @@ export default function GasAdminPage() {
   // Action state
   const [confirmRetry, setConfirmRetry] = useState(false)
   const [confirmRefund, setConfirmRefund] = useState(false)
-  const [confirmToggle, setConfirmToggle] = useState(false)
+  const [confirmToggle, setConfirmToggle] = useState<string | null>(null) // chain name or null
   const [confirmApprovePkr, setConfirmApprovePkr] = useState(false)
   const [confirmRejectPkr, setConfirmRejectPkr] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
-  const [toggling, setToggling] = useState(false)
+  const [toggling, setToggling] = useState<string | null>(null) // chain being toggled
+  const [refreshing, setRefreshing] = useState<string | null>(null) // chain being refreshed
 
   const limit = 20
 
@@ -276,19 +288,32 @@ export default function GasAdminPage() {
     }
   }
 
-  async function handleToggleChain() {
-    if (!stats?.wallet) return
-    setToggling(true)
+  async function handleToggleChain(chain: string) {
+    setToggling(chain)
     setActionError(null)
     try {
-      const res = await adminApi.toggleGasChain(stats.wallet.chain)
-      setConfirmToggle(false)
-      setActionSuccess(`TRON chain is now ${res.isActive ? 'active' : 'paused'}.`)
+      const res = await adminApi.toggleGasChain(chain)
+      setConfirmToggle(null)
+      setActionSuccess(`${chain} chain is now ${res.isActive ? 'active' : 'paused'}.`)
       void fetchStats()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to toggle chain')
     } finally {
-      setToggling(false)
+      setToggling(null)
+    }
+  }
+
+  async function handleRefreshBalance(chain: string) {
+    setRefreshing(chain)
+    setActionError(null)
+    try {
+      const res = await adminApi.refreshGasWalletBalance(chain)
+      setActionSuccess(`${chain} balance refreshed: ${res.balance.toFixed(6)} ${res.nativeSymbol}`)
+      void fetchStats()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : `Failed to refresh ${chain} balance`)
+    } finally {
+      setRefreshing(null)
     }
   }
 
@@ -398,22 +423,19 @@ export default function GasAdminPage() {
         </div>
       )}
 
-      {/* ── Hot Wallet Card ──────────────────────────────────────────────────── */}
-      {/* ── Primary (TRON) wallet card ─────────────────────────────────────── */}
-      {stats?.wallet && (
-        <WalletCard
-          wallet={stats.wallet}
-          isSuperAdmin={isSuperAdmin}
-          toggling={toggling}
-          onToggle={() => { setActionError(null); setConfirmToggle(true) }}
-        />
-      )}
-
-      {/* ── Additional chain wallet cards ────────────────────────────────── */}
-      {(stats?.wallets?.length ?? 0) > 1 && (
+      {/* ── Hot Wallet Cards ─────────────────────────────────────────────────── */}
+      {(stats?.wallets?.length ?? 0) > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {stats!.wallets.filter((w) => w.chain !== 'TRON').map((w) => (
-            <WalletCard key={w.chain} wallet={w} isSuperAdmin={false} toggling={false} onToggle={() => {}} />
+          {stats!.wallets.map((w) => (
+            <WalletCard
+              key={w.chain}
+              wallet={w}
+              isSuperAdmin={isSuperAdmin}
+              toggling={toggling === w.chain}
+              onToggle={() => { setActionError(null); setConfirmToggle(w.chain) }}
+              onRefresh={() => handleRefreshBalance(w.chain)}
+              refreshing={refreshing === w.chain}
+            />
           ))}
         </div>
       )}
@@ -588,21 +610,25 @@ export default function GasAdminPage() {
         confirmVariant="danger"
       />
 
-      {stats?.wallet && (
-        <ConfirmModal
-          isOpen={confirmToggle}
-          onClose={() => setConfirmToggle(false)}
-          onConfirm={handleToggleChain}
-          title={stats.wallet.isActive ? `Pause ${stats.wallet.chain} Chain` : `Resume ${stats.wallet.chain} Chain`}
-          description={
-            stats.wallet.isActive
-              ? `Pausing ${stats.wallet.chain} will prevent new gas orders from being created. Existing orders continue processing.`
-              : `Resuming ${stats.wallet.chain} will allow new gas orders again. Ensure the hot wallet has sufficient balance first.`
-          }
-          confirmLabel={stats.wallet.isActive ? 'Pause Chain' : 'Resume Chain'}
-          confirmVariant={stats.wallet.isActive ? 'danger' : 'primary'}
-        />
-      )}
+      {confirmToggle && (() => {
+        const toggleWallet = stats?.wallets?.find((w) => w.chain === confirmToggle)
+        if (!toggleWallet) return null
+        return (
+          <ConfirmModal
+            isOpen={true}
+            onClose={() => setConfirmToggle(null)}
+            onConfirm={() => handleToggleChain(confirmToggle)}
+            title={toggleWallet.isActive ? `Pause ${toggleWallet.chain} Chain` : `Resume ${toggleWallet.chain} Chain`}
+            description={
+              toggleWallet.isActive
+                ? `Pausing ${toggleWallet.chain} will prevent new gas orders from being created. Existing orders continue processing.`
+                : `Resuming ${toggleWallet.chain} will allow new gas orders again. Ensure the hot wallet has sufficient balance first.`
+            }
+            confirmLabel={toggleWallet.isActive ? 'Pause Chain' : 'Resume Chain'}
+            confirmVariant={toggleWallet.isActive ? 'danger' : 'primary'}
+          />
+        )
+      })()}
     </div>
   )
 }

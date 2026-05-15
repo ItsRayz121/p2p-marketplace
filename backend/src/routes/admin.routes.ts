@@ -1761,7 +1761,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // GET /admin/wallet/status — aggregated platform wallet status for admin UI
   app.get('/admin/wallet/status', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { redis: redisClient } = await import('../lib/redis')
-    const { GAS_CHAINS } = await import('../lib/gas/gas.chains')
+    const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
     const { gasWalletIsConfigured, getEvmHotWalletAddress } = await import('../lib/gas/gasWalletService')
 
     const mnemonicConfigured = gasWalletIsConfigured()
@@ -1802,16 +1802,17 @@ export async function adminRoutes(app: FastifyInstance) {
     const allWallets = await db.gasHotWallet.findMany()
     const hotWallets = await Promise.all(
       allWallets.map(async (w) => {
-        const chainConfig = GAS_CHAINS[w.chain as keyof typeof GAS_CHAINS]
+        const chainConfig = GAS_CHAINS[fromDbChain(w.chain)]
         const balanceCached = await redisClient.get(`gas_wallet_balance:${w.chain}`)
         const isPaused = await redisClient.get(`gas_wallet_paused:${w.chain}`)
         const balance = balanceCached ? parseFloat(balanceCached) : null
         const alertThreshold = chainConfig?.getAlertThreshold() ?? 0
         const pauseThreshold = chainConfig?.getPauseThreshold() ?? 0
-        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured' = 'healthy'
+        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable' = 'healthy'
         if (!w.isActive || isPaused) status = 'paused'
-        else if (balance !== null && balance < pauseThreshold) status = 'critical'
-        else if (balance !== null && balance < alertThreshold) status = 'warning'
+        else if (balance === null) status = 'unavailable'
+        else if (balance < pauseThreshold) status = 'critical'
+        else if (balance < alertThreshold) status = 'warning'
         return {
           chain: w.chain,
           address: w.address,
@@ -1981,7 +1982,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // GET /admin/gas/stats — today's metrics + all hot wallet statuses
   app.get('/admin/gas/stats', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { redis: redisClient } = await import('../lib/redis')
-    const { GAS_CHAINS } = await import('../lib/gas/gas.chains')
+    const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -2001,17 +2002,18 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const wallets = await Promise.all(
       allWallets.map(async (w) => {
-        const chainConfig = GAS_CHAINS[w.chain as keyof typeof GAS_CHAINS]
+        const chainConfig = GAS_CHAINS[fromDbChain(w.chain)]
         const balanceCached = await redisClient.get(`gas_wallet_balance:${w.chain}`)
         const isPaused = await redisClient.get(`gas_wallet_paused:${w.chain}`)
         const balance = balanceCached ? parseFloat(balanceCached) : null
         const alertThreshold = chainConfig?.getAlertThreshold() ?? 0
         const pauseThreshold = chainConfig?.getPauseThreshold() ?? 0
 
-        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured' = 'healthy'
+        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable' = 'healthy'
         if (!w.isActive || isPaused) status = 'paused'
-        else if (balance !== null && balance < pauseThreshold) status = 'critical'
-        else if (balance !== null && balance < alertThreshold) status = 'warning'
+        else if (balance === null) status = 'unavailable'
+        else if (balance < pauseThreshold) status = 'critical'
+        else if (balance < alertThreshold) status = 'warning'
 
         return {
           chain:           w.chain,
@@ -2076,6 +2078,44 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_OVERRIDE', 'GasHotWallet', chain, { balanceTRX })
 
     return reply.send({ success: true })
+  })
+
+  // POST /admin/gas/wallets/:chain/refresh-balance — fetch live balance and update Redis cache (admin)
+  app.post('/admin/gas/wallets/:chain/refresh-balance', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const { redis: redisClient } = await import('../lib/redis')
+    const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
+    const { getHotWalletBalance } = await import('../lib/gas/gas.balance')
+
+    const wallet = await db.gasHotWallet.findUnique({ where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' } })
+    if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
+
+    const chainId = fromDbChain(chain)
+    const chainConfig = GAS_CHAINS[chainId]
+    if (!chainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `Balance fetch not supported for ${chain}`, 400)
+
+    let balance: number
+    try {
+      balance = await getHotWalletBalance(chainId, wallet.address)
+    } catch (err) {
+      throw new AppError('BALANCE_FETCH_FAILED', `Failed to fetch ${chain} balance: ${err instanceof Error ? err.message : String(err)}`, 502)
+    }
+
+    await redisClient.set(`gas_wallet_balance:${chain}`, String(balance), 'EX', 1800)
+    await createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_REFRESHED', 'GasHotWallet', wallet.id, { chain, balance })
+
+    const isPaused = await redisClient.get(`gas_wallet_paused:${chain}`)
+    const alertThreshold = chainConfig.getAlertThreshold()
+    const pauseThreshold = chainConfig.getPauseThreshold()
+    let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable' = 'healthy'
+    if (!wallet.isActive || isPaused) status = 'paused'
+    else if (balance < pauseThreshold) status = 'critical'
+    else if (balance < alertThreshold) status = 'warning'
+
+    return reply.send({
+      success: true,
+      data: { chain, balance, nativeSymbol: chainConfig.nativeSymbol, status, alertThreshold, pauseThreshold },
+    })
   })
 
   // POST /admin/gas/chains/:chain/toggle — pause/resume a chain (super_admin)
