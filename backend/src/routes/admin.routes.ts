@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
+import { env } from '../lib/env'
 import { AppError, Errors } from '../lib/errors'
 import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
@@ -1754,6 +1755,94 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       data: { withdrawals, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
+
+  // GET /admin/wallet/status — aggregated platform wallet status for admin UI
+  app.get('/admin/wallet/status', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { redis: redisClient } = await import('../lib/redis')
+    const { GAS_CHAINS } = await import('../lib/gas/gas.chains')
+
+    // Deposit addresses: ENV-sourced first, then DB overrides
+    const envDepositMap: Array<{ coin: string; network: string; envVar: string; chain: string }> = [
+      { coin: 'USDT', network: 'TRC20',    envVar: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', chain: 'TRON' },
+      { coin: 'USDT', network: 'BEP20',    envVar: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20', chain: 'BSC' },
+      { coin: 'USDT', network: 'ERC20',    envVar: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20', chain: 'ETH' },
+    ]
+
+    const dbAddresses = await db.platformConfig.findMany({
+      where: { key: { startsWith: 'deposit_address_' } },
+    })
+    const dbMap = Object.fromEntries(dbAddresses.map((r) => [r.key, r]))
+
+    const depositAddresses = envDepositMap.map(({ coin, network, envVar, chain }) => {
+      const dbKey = `deposit_address_${coin.toLowerCase()}_${network.toLowerCase()}`
+      const dbEntry = dbMap[dbKey]
+      const envValue = (env as unknown as Record<string, string | undefined>)[envVar]
+      const address = dbEntry?.value ?? envValue ?? null
+      return {
+        coin,
+        network,
+        chain,
+        address,
+        source: dbEntry ? 'db' : envValue ? 'env' : null,
+        configured: !!address,
+        updatedAt: dbEntry?.updatedAt ?? null,
+      }
+    })
+
+    // Hot wallets with balances from cache
+    const allWallets = await db.gasHotWallet.findMany()
+    const hotWallets = await Promise.all(
+      allWallets.map(async (w) => {
+        const chainConfig = GAS_CHAINS[w.chain as keyof typeof GAS_CHAINS]
+        const balanceCached = await redisClient.get(`gas_wallet_balance:${w.chain}`)
+        const isPaused = await redisClient.get(`gas_wallet_paused:${w.chain}`)
+        const balance = balanceCached ? parseFloat(balanceCached) : null
+        const alertThreshold = chainConfig?.getAlertThreshold() ?? 0
+        const pauseThreshold = chainConfig?.getPauseThreshold() ?? 0
+        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unconfigured' = 'healthy'
+        if (!w.isActive || isPaused) status = 'paused'
+        else if (balance !== null && balance < pauseThreshold) status = 'critical'
+        else if (balance !== null && balance < alertThreshold) status = 'warning'
+        return {
+          chain: w.chain,
+          address: w.address,
+          isActive: w.isActive,
+          balance,
+          nativeSymbol: chainConfig?.nativeSymbol ?? w.chain,
+          alertThreshold,
+          pauseThreshold,
+          status,
+        }
+      }),
+    )
+
+    // Gas order summary by status
+    const statusGroups = await db.gasFeeOrder.groupBy({
+      by: ['status'],
+      _count: { status: true },
+    })
+    const orderSummary = Object.fromEntries(statusGroups.map((g) => [g.status, g._count.status])) as Record<string, number>
+
+    // Config warnings: required env vars
+    const requiredEnvChecks: Array<{ key: string; label: string; required: boolean }> = [
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', label: 'TRON deposit address',        required: true },
+      { key: 'GAS_WALLET_PRIVATE_KEY_TRON',   label: 'TRON hot wallet private key', required: true },
+      { key: 'TRON_FULLNODE_URL',              label: 'TRON full node URL',          required: true },
+      { key: 'TRONGRID_API_KEY',               label: 'TronGrid API key',            required: false },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20',  label: 'BSC deposit address',         required: false },
+      { key: 'GAS_WALLET_PRIVATE_KEY_BSC',     label: 'BSC hot wallet private key',  required: false },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20',  label: 'ETH deposit address',         required: false },
+      { key: 'GAS_WALLET_PRIVATE_KEY_ETH',     label: 'ETH hot wallet private key',  required: false },
+    ]
+    const configWarnings = requiredEnvChecks
+      .filter(({ key }) => !(env as unknown as Record<string, string | undefined>)[key])
+      .map(({ key, label, required }) => ({ key, label, required }))
+
+    return reply.send({
+      success: true,
+      data: { depositAddresses, hotWallets, orderSummary, configWarnings },
     })
   })
 
