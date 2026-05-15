@@ -32,8 +32,13 @@ async function getUsdPkrRate(): Promise<number> {
   return v ? parseFloat(v) : 280
 }
 
-// ── Markup helper (falls back to TRON config default = 1.5) ──────────────────
+// ── Markup helper — DB-driven per-chain platform fee ─────────────────────────
 
+function chainMarkup(platformFeePercent: number): number {
+  return 1 + platformFeePercent / 100
+}
+
+// Legacy fallback: used only for the old tier-based order flow
 function getMarkupForChain(backendChainId: string | null): number {
   if (!backendChainId) return 1.5
   const legacyId = backendChainId === 'ETH' ? 'ETHEREUM' : backendChainId
@@ -132,7 +137,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
 
     const usdPkrRate = await getUsdPkrRate()
-    const markup = getMarkupForChain(chainCfg.backendChainId)
+    const markup = chainMarkup(chainCfg.platformFeePercent)
 
     const tokensWithPricing = await Promise.all(
       tokens.map(async (t) => {
@@ -308,7 +313,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again in a moment.', 503)
     }
 
-    const markup = getMarkupForChain(chainCfg.backendChainId)
+    const markup = chainMarkup(chainCfg.platformFeePercent)
     const gasAmountUSD  = amount * nativeUsdRate
     const paymentAmount = gasAmountUSD * markup
 
@@ -679,7 +684,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
 
     const usdPkrRate = await getUsdPkrRate()
-    const markup = getMarkupForChain(chainCfg.backendChainId)
+    const markup = chainMarkup(chainCfg.platformFeePercent)
     const gasAmountUSD  = amount * nativeUsdRate
     const maxUsdValue   = Number(tokenCfg.maxUsdValue)
     if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
@@ -792,7 +797,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
 
-    const markup = getMarkupForChain(chainCfg.backendChainId)
+    const markup = chainMarkup(chainCfg.platformFeePercent)
     const gasAmountUSD  = amount * nativeUsdRate
     const maxUsdValue   = Number(tokenCfg.maxUsdValue)
     if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)

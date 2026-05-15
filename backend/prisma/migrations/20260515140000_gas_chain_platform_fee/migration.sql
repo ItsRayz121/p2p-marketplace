@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "GasChainConfig" ADD COLUMN "platformFeePercent" DOUBLE PRECISION NOT NULL DEFAULT 10;

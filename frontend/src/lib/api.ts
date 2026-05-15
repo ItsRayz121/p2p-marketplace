@@ -946,6 +946,7 @@ export interface AdminGasChain {
   addressType: string
   explorerBase: string | null
   backendChainId: string | null
+  platformFeePercent: number
   isActive: boolean
   displayOrder: number
   createdAt: string

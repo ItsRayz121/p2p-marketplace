@@ -26,6 +26,7 @@ interface ChainFormState {
   logoUrl: string
   explorerBase: string
   backendChainId: string
+  platformFeePercent: string
   displayOrder: string
   isActive: boolean
 }
@@ -33,7 +34,7 @@ interface ChainFormState {
 const BLANK_CHAIN: ChainFormState = {
   name: '', slug: '', symbol: '', category: '', networkLabel: '',
   addressType: 'EVM', logoUrl: '', explorerBase: '', backendChainId: '',
-  displayOrder: '0', isActive: true,
+  platformFeePercent: '10', displayOrder: '0', isActive: true,
 }
 
 // ─── Token Form ───────────────────────────────────────────────────────────────
@@ -146,6 +147,19 @@ function ChainModal({
                 <option value="BSC">BSC</option>
                 <option value="ETH">ETH</option>
               </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Platform Fee %</label>
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                placeholder="e.g. 10"
+                value={form.platformFeePercent}
+                onChange={field('platformFeePercent')}
+              />
+              <p className="text-xs text-text-muted mt-0.5">Markup added on top of spot price (e.g. 10 = 10%)</p>
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Logo URL</label>
@@ -395,6 +409,7 @@ export default function GasChainsAdminPage() {
       logoUrl: c.logoUrl ?? '',
       explorerBase: c.explorerBase ?? '',
       backendChainId: c.backendChainId ?? '',
+      platformFeePercent: String(c.platformFeePercent ?? 10),
       displayOrder: String(c.displayOrder),
       isActive: c.isActive,
     })
@@ -416,6 +431,7 @@ export default function GasChainsAdminPage() {
         logoUrl: chainForm.logoUrl || null,
         explorerBase: chainForm.explorerBase || null,
         backendChainId: chainForm.backendChainId || null,
+        platformFeePercent: parseFloat(chainForm.platformFeePercent) || 10,
         displayOrder: parseInt(chainForm.displayOrder) || 0,
         isActive: chainForm.isActive,
       }
@@ -591,6 +607,7 @@ export default function GasChainsAdminPage() {
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Slug</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Category</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Backend</th>
+                      <th className="text-left px-4 py-3 font-medium text-text-muted">Fee %</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Tokens</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Order</th>
@@ -615,6 +632,9 @@ export default function GasChainsAdminPage() {
                           {c.backendChainId
                             ? <Badge variant="success" size="sm">{c.backendChainId}</Badge>
                             : <Badge variant="default" size="sm">Not Set</Badge>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-sm font-semibold text-text-primary">{c.platformFeePercent ?? 10}%</span>
                         </td>
                         <td className="px-4 py-3 text-text-muted">{c._count?.tokens ?? c.tokens?.length ?? 0}</td>
                         <td className="px-4 py-3">

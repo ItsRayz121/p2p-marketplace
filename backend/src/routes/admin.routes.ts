@@ -2056,17 +2056,18 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/gas/chains', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
     const { z } = await import('zod')
     const schema = z.object({
-      name:           z.string().min(1),
-      slug:           z.string().min(1),
-      symbol:         z.string().min(1),
-      category:       z.string().min(1),
-      networkLabel:   z.string().min(1),
-      addressType:    z.enum(['TRC20', 'EVM', 'SOL', 'SUI']),
-      logoUrl:        z.string().url().nullable().default(null),
-      explorerBase:   z.string().url().nullable().default(null),
-      backendChainId: z.string().nullable().default(null),
-      isActive:       z.boolean().default(true),
-      displayOrder:   z.number().int().default(0),
+      name:               z.string().min(1),
+      slug:               z.string().min(1),
+      symbol:             z.string().min(1),
+      category:           z.string().min(1),
+      networkLabel:       z.string().min(1),
+      addressType:        z.enum(['TRC20', 'EVM', 'SOL', 'SUI']),
+      logoUrl:            z.string().url().nullable().default(null),
+      explorerBase:       z.string().url().nullable().default(null),
+      backendChainId:     z.string().nullable().default(null),
+      platformFeePercent: z.number().min(0).max(100).default(10),
+      isActive:           z.boolean().default(true),
+      displayOrder:       z.number().int().default(0),
     })
     const d = schema.parse(req.body)
     const chain = await db.gasChainConfig.create({
@@ -2074,7 +2075,8 @@ export async function adminRoutes(app: FastifyInstance) {
         name: d.name, slug: d.slug.toUpperCase(), symbol: d.symbol,
         category: d.category, networkLabel: d.networkLabel, addressType: d.addressType,
         logoUrl: d.logoUrl, explorerBase: d.explorerBase,
-        backendChainId: d.backendChainId, isActive: d.isActive, displayOrder: d.displayOrder,
+        backendChainId: d.backendChainId, platformFeePercent: d.platformFeePercent,
+        isActive: d.isActive, displayOrder: d.displayOrder,
       },
     })
     await createAuditLog(req.user!.id, 'GAS_CHAIN_CREATED', 'GasChainConfig', chain.id, { slug: chain.slug })
@@ -2098,6 +2100,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('logoUrl' in body) updateData.logoUrl = body.logoUrl ?? null
     if ('explorerBase' in body) updateData.explorerBase = body.explorerBase ?? null
     if ('backendChainId' in body) updateData.backendChainId = body.backendChainId ?? null
+    if ('platformFeePercent' in body) updateData.platformFeePercent = Math.min(100, Math.max(0, Number(body.platformFeePercent) || 10))
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
 

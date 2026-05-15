@@ -1016,6 +1016,7 @@ model GasChainConfig {
   addressType    String           // "TRC20" | "EVM" | "SOL" | "SUI" — maps to frontend regex
   explorerBase   String?
   backendChainId String?          // Maps to GasChain enum value. Null = not yet deliverable.
+  platformFeePercent Float            @default(10)
   isActive       Boolean          @default(true)
   displayOrder   Int              @default(0)
   tokens         GasTokenConfig[]
