@@ -1017,9 +1017,11 @@ model GasChainConfig {
   networkLabel   String           // "TRC20", "BEP20", "ERC20"
   addressType    String           // "TRC20" | "EVM" | "SOL" | "SUI" — maps to frontend regex
   explorerBase   String?
-  backendChainId String?          // Maps to GasChain enum value. Null = not yet deliverable.
-  platformFeePercent Float            @default(10)
-  isActive       Boolean          @default(true)
+  backendChainId    String?          // Maps to GasChain enum value. Null = not yet deliverable.
+  platformFeePercent Float           @default(10)
+  alertThresholdUsd Float?           // Auto-alert below this USD wallet balance; null = no alert
+  pauseThresholdUsd Float?           // Auto-pause new orders below this USD balance; null = no pause
+  isActive          Boolean          @default(true)
   displayOrder   Int              @default(0)
   tokens         GasTokenConfig[]
   createdAt      DateTime         @default(now())

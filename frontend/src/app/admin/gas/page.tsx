@@ -40,10 +40,11 @@ interface GasWallet {
   address: string
   isActive: boolean
   balance: number | null
+  balanceUsd: number | null
   nativeSymbol: string
-  status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
-  alertThreshold: number
-  pauseThreshold: number
+  status: 'healthy' | 'low' | 'paused' | 'unavailable'
+  alertThresholdUsd: number | null
+  pauseThresholdUsd: number | null
 }
 
 interface GasStats {
@@ -88,16 +89,15 @@ function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' 
 
 function walletStatusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
   if (s === 'healthy') return 'success'
-  if (s === 'warning') return 'warning'
-  if (s === 'critical' || s === 'paused') return 'danger'
+  if (s === 'low') return 'warning'
+  if (s === 'paused') return 'danger'
   return 'default'
 }
 
 function walletStatusLabel(s: string): string {
   const labels: Record<string, string> = {
     healthy:     'Healthy',
-    warning:     'Low Balance',
-    critical:    'Critical',
+    low:         'Low Balance',
     paused:      'Paused',
     unavailable: 'Balance Unknown',
   }
@@ -118,8 +118,8 @@ function WalletCard({
 }) {
   return (
     <div className={`bg-white border rounded-xl p-5 ${
-      wallet.status === 'critical' || wallet.status === 'paused' ? 'border-danger/40'
-      : wallet.status === 'warning' ? 'border-warning/40'
+      wallet.status === 'paused' ? 'border-danger/40'
+      : wallet.status === 'low' ? 'border-warning/40'
       : 'border-border'
     }`}>
       <div className="flex items-start justify-between gap-4">
@@ -137,23 +137,24 @@ function WalletCard({
               <span className="text-text-muted">Balance: </span>
               <span className={`font-bold ${
                 wallet.balance === null ? 'text-text-muted'
-                : wallet.balance < wallet.pauseThreshold ? 'text-danger'
-                : wallet.balance < wallet.alertThreshold ? 'text-warning'
+                : wallet.status === 'paused' ? 'text-danger'
+                : wallet.status === 'low' ? 'text-warning'
                 : 'text-success'
               }`}>
                 {wallet.balance !== null ? `${fmtNative(wallet.balance)} ${wallet.nativeSymbol}` : 'Unknown'}
+                {wallet.balanceUsd != null && <span className="ml-1 font-normal text-text-muted">(${wallet.balanceUsd.toFixed(2)})</span>}
               </span>
             </div>
-            {wallet.alertThreshold > 0 && (
+            {wallet.alertThresholdUsd != null && (
               <div>
                 <span className="text-text-muted">Alert at: </span>
-                <span className="font-medium text-text-primary">{wallet.alertThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
+                <span className="font-medium text-text-primary">${wallet.alertThresholdUsd}</span>
               </div>
             )}
-            {wallet.pauseThreshold > 0 && (
+            {wallet.pauseThresholdUsd != null && (
               <div>
                 <span className="text-text-muted">Pause at: </span>
-                <span className="font-medium text-text-primary">{wallet.pauseThreshold.toLocaleString()} {wallet.nativeSymbol}</span>
+                <span className="font-medium text-text-primary">${wallet.pauseThresholdUsd}</span>
               </div>
             )}
           </div>
@@ -412,12 +413,12 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Critical Wallet Alert ────────────────────────────────────────────── */}
-      {stats?.wallets?.some(w => w.status === 'critical' || w.status === 'paused') && (
+      {stats?.wallets?.some(w => w.status === 'paused') && (
         <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
           <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>
-            <strong>Hot wallet critical:</strong>{' '}
-            {stats.wallets.filter(w => w.status === 'critical' || w.status === 'paused').map(w => `${w.chain} (${w.status})`).join(', ')}.
+            <strong>Hot wallet paused:</strong>{' '}
+            {stats.wallets.filter(w => w.status === 'paused').map(w => w.chain).join(', ')}.
             {' '}New orders are paused on these chains.
           </span>
         </div>

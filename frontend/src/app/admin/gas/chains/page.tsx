@@ -27,6 +27,8 @@ interface ChainFormState {
   explorerBase: string
   backendChainId: string
   platformFeePercent: string
+  alertThresholdUsd: string
+  pauseThresholdUsd: string
   displayOrder: string
   isActive: boolean
 }
@@ -34,7 +36,8 @@ interface ChainFormState {
 const BLANK_CHAIN: ChainFormState = {
   name: '', slug: '', symbol: '', category: '', networkLabel: '',
   addressType: 'EVM', logoUrl: '', explorerBase: '', backendChainId: '',
-  platformFeePercent: '10', displayOrder: '0', isActive: true,
+  platformFeePercent: '10', alertThresholdUsd: '', pauseThresholdUsd: '',
+  displayOrder: '0', isActive: true,
 }
 
 // ─── Token Form ───────────────────────────────────────────────────────────────
@@ -147,6 +150,11 @@ function ChainModal({
                 <option value="TRON">TRON</option>
                 <option value="BSC">BSC</option>
                 <option value="ETH">ETH</option>
+                <option value="BASE">BASE</option>
+                <option value="ARB">ARB</option>
+                <option value="OP">OP</option>
+                <option value="MATIC">MATIC</option>
+                <option value="AVAX">AVAX</option>
               </select>
             </div>
             <div>
@@ -161,6 +169,30 @@ function ChainModal({
                 onChange={field('platformFeePercent')}
               />
               <p className="text-xs text-text-muted mt-0.5">Markup added on top of spot price (e.g. 10 = 10%)</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Alert Threshold (USD)</label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="e.g. 50"
+                value={form.alertThresholdUsd}
+                onChange={field('alertThresholdUsd')}
+              />
+              <p className="text-xs text-text-muted mt-0.5">Send alert email below this USD balance</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Pause Threshold (USD)</label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="e.g. 10"
+                value={form.pauseThresholdUsd}
+                onChange={field('pauseThresholdUsd')}
+              />
+              <p className="text-xs text-text-muted mt-0.5">Wallet auto-pauses below this USD balance.</p>
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Logo URL</label>
@@ -411,6 +443,8 @@ export default function GasChainsAdminPage() {
       explorerBase: c.explorerBase ?? '',
       backendChainId: c.backendChainId ?? '',
       platformFeePercent: String(c.platformFeePercent ?? 10),
+      alertThresholdUsd: c.alertThresholdUsd != null ? String(c.alertThresholdUsd) : '',
+      pauseThresholdUsd: c.pauseThresholdUsd != null ? String(c.pauseThresholdUsd) : '',
       displayOrder: String(c.displayOrder),
       isActive: c.isActive,
     })
@@ -433,6 +467,8 @@ export default function GasChainsAdminPage() {
         explorerBase: chainForm.explorerBase || null,
         backendChainId: chainForm.backendChainId || null,
         platformFeePercent: parseFloat(chainForm.platformFeePercent) || 10,
+        alertThresholdUsd: chainForm.alertThresholdUsd ? parseFloat(chainForm.alertThresholdUsd) : null,
+        pauseThresholdUsd: chainForm.pauseThresholdUsd ? parseFloat(chainForm.pauseThresholdUsd) : null,
         displayOrder: parseInt(chainForm.displayOrder) || 0,
         isActive: chainForm.isActive,
       }
@@ -635,7 +671,10 @@ export default function GasChainsAdminPage() {
                             : <Badge variant="default" size="sm">Not Set</Badge>}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-sm font-semibold text-text-primary">{c.platformFeePercent ?? 10}%</span>
+                          <div className="text-sm font-semibold text-text-primary">{c.platformFeePercent ?? 10}%</div>
+                          {c.alertThresholdUsd != null && (
+                            <div className="text-xs text-text-muted">Alert ${ c.alertThresholdUsd} / Pause ${c.pauseThresholdUsd ?? '—'}</div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-text-muted">{c._count?.tokens ?? c.tokens?.length ?? 0}</td>
                         <td className="px-4 py-3">

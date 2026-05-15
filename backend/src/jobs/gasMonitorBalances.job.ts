@@ -1,19 +1,29 @@
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
-import { getHotWalletBalance } from '../lib/gas/gas.balance'
-import { getGasChain, fromDbChain } from '../lib/gas/gas.chains'
+import { getHotWalletBalance, getNativeUsdPrice } from '../lib/gas/gas.balance'
+import { fromDbChain } from '../lib/gas/gas.chains'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 
 // TTL for the auto-pause flag: next monitor run (5 min) will re-evaluate and
-// either extend or clear it — so 6 min gives a comfortable margin.
+// either extend or clear it — 6 min gives a comfortable margin.
 const PAUSED_TTL_S = 360
 
-async function monitorChain(chain: GasChainId, address: string): Promise<void> {
-  const chainConfig = getGasChain(chain)
-  const balanceKey = `gas_wallet_balance:${chain}`
-  const pausedKey  = `gas_wallet_paused:${chain}`
+interface ChainThresholds {
+  alertThresholdUsd: number | null
+  pauseThresholdUsd: number | null
+}
+
+async function monitorChain(
+  chain: GasChainId,
+  address: string,
+  thresholds: ChainThresholds,
+): Promise<void> {
+  const dbChain = chain === 'ETHEREUM' ? 'ETH' : chain
+  const balanceKey   = `gas_wallet_balance:${dbChain}`
+  const balanceUsdKey = `gas_wallet_balance_usd:${dbChain}`
+  const pausedKey    = `gas_wallet_paused:${dbChain}`
 
   let balance: number
   try {
@@ -23,31 +33,50 @@ async function monitorChain(chain: GasChainId, address: string): Promise<void> {
     return
   }
 
-  // Cache in Redis (30 min TTL so admin dashboard always has a recent value)
+  const usdPrice = await getNativeUsdPrice(chain)
+  const balanceUsd = usdPrice > 0 ? balance * usdPrice : null
+
+  // Cache native + USD balances (30 min TTL)
   await redis.set(balanceKey, String(balance), 'EX', 1800)
-  logger.info({ balance, address, chain }, 'Gas hot wallet balance refreshed')
+  if (balanceUsd !== null) {
+    await redis.set(balanceUsdKey, String(balanceUsd.toFixed(4)), 'EX', 1800)
+  }
 
-  const alertThreshold = chainConfig.getAlertThreshold()
-  const pauseThreshold = chainConfig.getPauseThreshold()
-  const symbol = chainConfig.nativeSymbol
+  logger.info({ balance, balanceUsd, address, chain }, 'Gas hot wallet balance refreshed')
 
-  if (balance < pauseThreshold) {
+  const { alertThresholdUsd, pauseThresholdUsd } = thresholds
+
+  // No thresholds configured — skip alerting
+  if (alertThresholdUsd === null && pauseThresholdUsd === null) {
+    await redis.del(pausedKey)
+    return
+  }
+
+  // Cannot compute USD balance — clear pause and bail
+  if (balanceUsd === null) {
+    logger.warn({ chain }, 'USD price unavailable — skipping threshold check')
+    return
+  }
+
+  if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) {
     await redis.set(pausedKey, '1', 'EX', PAUSED_TTL_S)
-    logger.error({ balance, pauseThreshold, chain }, 'Gas hot wallet CRITICAL — below pause threshold')
+    logger.error({ balanceUsd, pauseThresholdUsd, chain }, 'Gas hot wallet CRITICAL — below pause threshold (USD)')
     await sendAdminAlertEmail(
       `CRITICAL: ${chain} Gas Hot Wallet Below Pause Threshold`,
-      `${chain} hot wallet balance: ${balance.toFixed(6)} ${symbol}\n` +
-      `Pause threshold: ${pauseThreshold} ${symbol}\n\n` +
+      `${chain} hot wallet\n` +
+      `  Balance:         $${balanceUsd.toFixed(2)} USD (${balance.toFixed(6)} native)\n` +
+      `  Pause threshold: $${pauseThresholdUsd} USD\n\n` +
       `New gas orders on ${chain} are now automatically paused. Please top up the hot wallet immediately.\n\n` +
       `Wallet address: ${address}`,
     )
-  } else if (balance < alertThreshold) {
+  } else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) {
     await redis.del(pausedKey)
-    logger.warn({ balance, alertThreshold, chain }, 'Gas hot wallet LOW — below alert threshold')
+    logger.warn({ balanceUsd, alertThresholdUsd, chain }, 'Gas hot wallet LOW — below alert threshold (USD)')
     await sendAdminAlertEmail(
       `WARNING: ${chain} Gas Hot Wallet Low Balance`,
-      `${chain} hot wallet balance: ${balance.toFixed(6)} ${symbol}\n` +
-      `Alert threshold: ${alertThreshold} ${symbol}\n\n` +
+      `${chain} hot wallet\n` +
+      `  Balance:         $${balanceUsd.toFixed(2)} USD (${balance.toFixed(6)} native)\n` +
+      `  Alert threshold: $${alertThresholdUsd} USD\n\n` +
       `Please top up the hot wallet soon to avoid service interruption.\n\n` +
       `Wallet address: ${address}`,
     )
@@ -64,8 +93,22 @@ export async function runGasMonitorBalances(): Promise<void> {
     return
   }
 
+  // Fetch all GasChainConfig rows that have a backendChainId (one query for all wallets)
+  const chainConfigs = await db.gasChainConfig.findMany({
+    where: { backendChainId: { not: null } },
+    select: { backendChainId: true, alertThresholdUsd: true, pauseThresholdUsd: true },
+  })
+  const thresholdMap = Object.fromEntries(
+    chainConfigs.map((c) => [c.backendChainId!, { alertThresholdUsd: c.alertThresholdUsd, pauseThresholdUsd: c.pauseThresholdUsd }]),
+  ) as Record<string, ChainThresholds>
+
   // Monitor all active chains in parallel; individual failures don't abort others
   await Promise.allSettled(
-    wallets.map((w) => monitorChain(fromDbChain(w.chain), w.address)),
+    wallets.map((w) => {
+      const chain = fromDbChain(w.chain)
+      const dbChain = w.chain as string
+      const thresholds: ChainThresholds = thresholdMap[dbChain] ?? { alertThresholdUsd: null, pauseThresholdUsd: null }
+      return monitorChain(chain, w.address, thresholds)
+    }),
   )
 }

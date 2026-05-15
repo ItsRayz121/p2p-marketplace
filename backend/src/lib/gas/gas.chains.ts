@@ -13,8 +13,6 @@ export interface GasChainConfig {
   validateAddress: (addr: string) => boolean
   getDepositAddress: () => string | undefined
   getMarkupMultiplier: () => number
-  getAlertThreshold: () => number
-  getPauseThreshold: () => number
   getPrivateKey: () => string | undefined
   getRpcUrl: () => string
 }
@@ -33,8 +31,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => TRC20_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_TRC20,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_TRON,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_TRON,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_TRON,
     getPrivateKey:      () => env.GAS_WALLET_PRIVATE_KEY_TRON,
     getRpcUrl:          () => env.TRON_FULLNODE_URL,
   },
@@ -48,8 +44,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => EVM_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BSC,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_BSC,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_BSC,
     getPrivateKey:      () => env.GAS_WALLET_PRIVATE_KEY_BSC,
     getRpcUrl:          () => env.BSC_RPC_URL,
   },
@@ -63,8 +57,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => EVM_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_ETH,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_ETH,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_ETH,
     getPrivateKey:      () => env.GAS_WALLET_PRIVATE_KEY_ETH,
     getRpcUrl:          () => env.ETHEREUM_RPC_URL,
   },
@@ -78,8 +70,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => EVM_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_BASE,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BASE,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_BASE,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_BASE,
     getPrivateKey:      () => undefined,
     getRpcUrl:          () => env.BASE_RPC_URL,
   },
@@ -93,8 +83,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => EVM_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_ARB,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_ARB,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_ARB,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_ARB,
     getPrivateKey:      () => undefined,
     getRpcUrl:          () => env.ARBITRUM_RPC_URL,
   },
@@ -108,8 +96,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => EVM_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_OP,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_OP,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_OP,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_OP,
     getPrivateKey:      () => undefined,
     getRpcUrl:          () => env.OPTIMISM_RPC_URL,
   },
@@ -123,8 +109,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => EVM_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_MATIC,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_MATIC,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_MATIC,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_MATIC,
     getPrivateKey:      () => undefined,
     getRpcUrl:          () => env.POLYGON_RPC_URL,
   },
@@ -138,8 +122,6 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     validateAddress: (addr) => EVM_RE.test(addr),
     getDepositAddress:  () => env.GAS_FEE_DEPOSIT_ADDRESS_AVAX,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_AVAX,
-    getAlertThreshold:  () => env.GAS_WALLET_ALERT_THRESHOLD_AVAX,
-    getPauseThreshold:  () => env.GAS_WALLET_PAUSE_THRESHOLD_AVAX,
     getPrivateKey:      () => undefined,
     getRpcUrl:          () => env.AVALANCHE_RPC_URL,
   },

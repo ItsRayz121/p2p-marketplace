@@ -1,8 +1,30 @@
 import type { Chain } from 'viem'
 import { createPublicClient, http, formatEther } from 'viem'
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
+import { redis } from '../redis'
 import { env } from '../env'
 import type { GasChainId } from './gas.chains'
+
+// ── Native → USD price ────────────────────────────────────────────────────────
+// Rates are stored in Redis as PKR values by the rate updater job.
+// USD price = pkrRate / usdPkrRate
+
+const CHAIN_PRICE_SYMBOL: Record<GasChainId, string> = {
+  TRON: 'TRX', BSC: 'BNB',
+  ETHEREUM: 'ETH', BASE: 'ETH', ARB: 'ETH', OP: 'ETH',
+  MATIC: 'MATIC', AVAX: 'AVAX',
+}
+
+export async function getNativeUsdPrice(chain: GasChainId): Promise<number> {
+  const symbol = CHAIN_PRICE_SYMBOL[chain]
+  const [usdPkrStr, symbolStr] = await Promise.all([
+    redis.get('rate:USD_PKR'),
+    redis.get(`rate:${symbol}`),
+  ])
+  const usdPkr = usdPkrStr ? parseFloat(usdPkrStr) : 0
+  const pkrRate = symbolStr ? (JSON.parse(symbolStr) as { rate: number }).rate : 0
+  return usdPkr > 0 && pkrRate > 0 ? pkrRate / usdPkr : 0
+}
 
 // ── TRON balance ──────────────────────────────────────────────────────────────
 

@@ -84,52 +84,36 @@ const envSchema = z.object({
   GAS_FEE_DEPOSIT_ADDRESS_TRC20: z.string().optional(),
   GAS_WALLET_PRIVATE_KEY_TRON: z.string().optional(),
   GAS_WALLET_SECRET_ARN_TRON: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_TRON: z.coerce.number().default(5000),
-  GAS_WALLET_PAUSE_THRESHOLD_TRON: z.coerce.number().default(1000),
   GAS_MARKUP_MULTIPLIER_TRON: z.coerce.number().default(1.5),
 
   // Gas Fee System — BSC
   GAS_FEE_DEPOSIT_ADDRESS_BEP20: z.string().optional(),
   GAS_WALLET_PRIVATE_KEY_BSC: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_BSC: z.coerce.number().default(5),
-  GAS_WALLET_PAUSE_THRESHOLD_BSC: z.coerce.number().default(1),
   GAS_MARKUP_MULTIPLIER_BSC: z.coerce.number().default(1.5),
 
   // Gas Fee System — Ethereum
   GAS_FEE_DEPOSIT_ADDRESS_ERC20: z.string().optional(),
   GAS_WALLET_PRIVATE_KEY_ETH: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_ETH: z.coerce.number().default(0.5),
-  GAS_WALLET_PAUSE_THRESHOLD_ETH: z.coerce.number().default(0.1),
   GAS_MARKUP_MULTIPLIER_ETH: z.coerce.number().default(1.5),
 
   // Gas Fee System — Base
   GAS_FEE_DEPOSIT_ADDRESS_BASE: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_BASE: z.coerce.number().default(0.05),
-  GAS_WALLET_PAUSE_THRESHOLD_BASE: z.coerce.number().default(0.01),
   GAS_MARKUP_MULTIPLIER_BASE: z.coerce.number().default(1.5),
 
   // Gas Fee System — Arbitrum
   GAS_FEE_DEPOSIT_ADDRESS_ARB: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_ARB: z.coerce.number().default(0.05),
-  GAS_WALLET_PAUSE_THRESHOLD_ARB: z.coerce.number().default(0.01),
   GAS_MARKUP_MULTIPLIER_ARB: z.coerce.number().default(1.5),
 
   // Gas Fee System — Optimism
   GAS_FEE_DEPOSIT_ADDRESS_OP: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_OP: z.coerce.number().default(0.05),
-  GAS_WALLET_PAUSE_THRESHOLD_OP: z.coerce.number().default(0.01),
   GAS_MARKUP_MULTIPLIER_OP: z.coerce.number().default(1.5),
 
   // Gas Fee System — Polygon
   GAS_FEE_DEPOSIT_ADDRESS_MATIC: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_MATIC: z.coerce.number().default(50),
-  GAS_WALLET_PAUSE_THRESHOLD_MATIC: z.coerce.number().default(10),
   GAS_MARKUP_MULTIPLIER_MATIC: z.coerce.number().default(1.5),
 
   // Gas Fee System — Avalanche
   GAS_FEE_DEPOSIT_ADDRESS_AVAX: z.string().optional(),
-  GAS_WALLET_ALERT_THRESHOLD_AVAX: z.coerce.number().default(1),
-  GAS_WALLET_PAUSE_THRESHOLD_AVAX: z.coerce.number().default(0.2),
   GAS_MARKUP_MULTIPLIER_AVAX: z.coerce.number().default(1.5),
 
   // Gas Fee System — shared

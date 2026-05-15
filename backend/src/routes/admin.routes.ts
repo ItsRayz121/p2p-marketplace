@@ -16,6 +16,7 @@ import { getRpcUrl } from '../lib/chains'
 import { getTransactionByHash, getTransactionReceipt, getBlockNumber } from '../lib/evmRpc'
 import { Prisma } from '@prisma/client'
 import { getWithdrawalTierConfig, upsertWithdrawalTierConfig } from '../services/withdrawal-risk.service'
+import { getNativeUsdPrice } from '../lib/gas/gas.balance'
 type JsonValue = Prisma.InputJsonValue
 
 const adminOrSuper = requireRole('admin', 'super_admin')
@@ -1800,27 +1801,42 @@ export async function adminRoutes(app: FastifyInstance) {
 
     // Hot wallets with balances from cache
     const allWallets = await db.gasHotWallet.findMany()
+    const chainThresholds = await db.gasChainConfig.findMany({
+      where: { backendChainId: { not: null } },
+      select: { backendChainId: true, alertThresholdUsd: true, pauseThresholdUsd: true },
+    })
+    const thresholdMap = Object.fromEntries(chainThresholds.map((c) => [c.backendChainId!, c]))
     const hotWallets = await Promise.all(
       allWallets.map(async (w) => {
         const chainConfig = GAS_CHAINS[fromDbChain(w.chain)]
-        const balanceCached = await redisClient.get(`gas_wallet_balance:${w.chain}`)
-        const isPaused = await redisClient.get(`gas_wallet_paused:${w.chain}`)
+        const [balanceCached, isPaused, balanceUsdCached] = await Promise.all([
+          redisClient.get(`gas_wallet_balance:${w.chain}`),
+          redisClient.get(`gas_wallet_paused:${w.chain}`),
+          redisClient.get(`gas_wallet_balance_usd:${w.chain}`),
+        ])
         const balance = balanceCached ? parseFloat(balanceCached) : null
-        const alertThreshold = chainConfig?.getAlertThreshold() ?? 0
-        const pauseThreshold = chainConfig?.getPauseThreshold() ?? 0
-        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable' = 'healthy'
+        const cfg = thresholdMap[w.chain as string]
+        const alertThresholdUsd = cfg?.alertThresholdUsd ?? null
+        const pauseThresholdUsd = cfg?.pauseThresholdUsd ?? null
+        const balanceUsd = balanceUsdCached
+          ? parseFloat(balanceUsdCached)
+          : balance !== null && chainConfig
+          ? await getNativeUsdPrice(fromDbChain(w.chain)).then((p) => balance * p).catch(() => null)
+          : null
+        let status: 'healthy' | 'low' | 'paused' | 'unavailable' = 'healthy'
         if (!w.isActive || isPaused) status = 'paused'
-        else if (balance === null) status = 'unavailable'
-        else if (balance < pauseThreshold) status = 'critical'
-        else if (balance < alertThreshold) status = 'warning'
+        else if (balanceUsd === null) status = 'unavailable'
+        else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
+        else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
         return {
           chain: w.chain,
           address: w.address,
           isActive: w.isActive,
           balance,
+          balanceUsd,
           nativeSymbol: chainConfig?.nativeSymbol ?? w.chain,
-          alertThreshold,
-          pauseThreshold,
+          alertThresholdUsd,
+          pauseThresholdUsd,
           status,
         }
       }),
@@ -2000,30 +2016,43 @@ export async function adminRoutes(app: FastifyInstance) {
       db.gasHotWallet.findMany(),
     ])
 
+    const statsThresholds = await db.gasChainConfig.findMany({
+      where: { backendChainId: { not: null } },
+      select: { backendChainId: true, alertThresholdUsd: true, pauseThresholdUsd: true },
+    })
+    const statsThresholdMap = Object.fromEntries(statsThresholds.map((c) => [c.backendChainId!, c]))
     const wallets = await Promise.all(
       allWallets.map(async (w) => {
         const chainConfig = GAS_CHAINS[fromDbChain(w.chain)]
-        const balanceCached = await redisClient.get(`gas_wallet_balance:${w.chain}`)
-        const isPaused = await redisClient.get(`gas_wallet_paused:${w.chain}`)
+        const [balanceCached, isPaused, balanceUsdCached] = await Promise.all([
+          redisClient.get(`gas_wallet_balance:${w.chain}`),
+          redisClient.get(`gas_wallet_paused:${w.chain}`),
+          redisClient.get(`gas_wallet_balance_usd:${w.chain}`),
+        ])
         const balance = balanceCached ? parseFloat(balanceCached) : null
-        const alertThreshold = chainConfig?.getAlertThreshold() ?? 0
-        const pauseThreshold = chainConfig?.getPauseThreshold() ?? 0
-
-        let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable' = 'healthy'
+        const cfg = statsThresholdMap[w.chain as string]
+        const alertThresholdUsd = cfg?.alertThresholdUsd ?? null
+        const pauseThresholdUsd = cfg?.pauseThresholdUsd ?? null
+        const balanceUsd = balanceUsdCached
+          ? parseFloat(balanceUsdCached)
+          : balance !== null && chainConfig
+          ? await getNativeUsdPrice(fromDbChain(w.chain)).then((p) => balance * p).catch(() => null)
+          : null
+        let status: 'healthy' | 'low' | 'paused' | 'unavailable' = 'healthy'
         if (!w.isActive || isPaused) status = 'paused'
-        else if (balance === null) status = 'unavailable'
-        else if (balance < pauseThreshold) status = 'critical'
-        else if (balance < alertThreshold) status = 'warning'
-
+        else if (balanceUsd === null) status = 'unavailable'
+        else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
+        else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
         return {
           chain:           w.chain,
           address:         w.address,
           isActive:        w.isActive,
           balance,
+          balanceUsd,
           nativeSymbol:    chainConfig?.nativeSymbol ?? w.chain,
           status,
-          alertThreshold,
-          pauseThreshold,
+          alertThresholdUsd,
+          pauseThresholdUsd,
         }
       }),
     )
@@ -2105,16 +2134,26 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_REFRESHED', 'GasHotWallet', wallet.id, { chain, balance })
 
     const isPaused = await redisClient.get(`gas_wallet_paused:${chain}`)
-    const alertThreshold = chainConfig.getAlertThreshold()
-    const pauseThreshold = chainConfig.getPauseThreshold()
-    let status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable' = 'healthy'
+    const dbThreshold = await db.gasChainConfig.findFirst({
+      where: { backendChainId: chain },
+      select: { alertThresholdUsd: true, pauseThresholdUsd: true },
+    })
+    const alertThresholdUsd = dbThreshold?.alertThresholdUsd ?? null
+    const pauseThresholdUsd = dbThreshold?.pauseThresholdUsd ?? null
+    const usdPrice = await getNativeUsdPrice(chainId).catch(() => 0)
+    const balanceUsd = usdPrice > 0 ? balance * usdPrice : null
+    if (balanceUsd !== null) {
+      await redisClient.set(`gas_wallet_balance_usd:${chain}`, String(balanceUsd.toFixed(4)), 'EX', 1800)
+    }
+    let status: 'healthy' | 'low' | 'paused' | 'unavailable' = 'healthy'
     if (!wallet.isActive || isPaused) status = 'paused'
-    else if (balance < pauseThreshold) status = 'critical'
-    else if (balance < alertThreshold) status = 'warning'
+    else if (balanceUsd === null) status = 'unavailable'
+    else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
+    else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
 
     return reply.send({
       success: true,
-      data: { chain, balance, nativeSymbol: chainConfig.nativeSymbol, status, alertThreshold, pauseThreshold },
+      data: { chain, balance, balanceUsd, nativeSymbol: chainConfig.nativeSymbol, status, alertThresholdUsd, pauseThresholdUsd },
     })
   })
 
@@ -2214,6 +2253,8 @@ export async function adminRoutes(app: FastifyInstance) {
       explorerBase:       z.string().url().nullable().default(null),
       backendChainId:     z.string().nullable().default(null),
       platformFeePercent: z.number().min(0).max(100).default(10),
+      alertThresholdUsd:  z.number().positive().nullable().default(null),
+      pauseThresholdUsd:  z.number().positive().nullable().default(null),
       isActive:           z.boolean().default(true),
       displayOrder:       z.number().int().default(0),
     })
@@ -2224,6 +2265,7 @@ export async function adminRoutes(app: FastifyInstance) {
         category: d.category, networkLabel: d.networkLabel, addressType: d.addressType,
         logoUrl: d.logoUrl, explorerBase: d.explorerBase,
         backendChainId: d.backendChainId, platformFeePercent: d.platformFeePercent,
+        alertThresholdUsd: d.alertThresholdUsd, pauseThresholdUsd: d.pauseThresholdUsd,
         isActive: d.isActive, displayOrder: d.displayOrder,
       },
     })
@@ -2249,6 +2291,8 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('explorerBase' in body) updateData.explorerBase = body.explorerBase ?? null
     if ('backendChainId' in body) updateData.backendChainId = body.backendChainId ?? null
     if ('platformFeePercent' in body) updateData.platformFeePercent = Math.min(100, Math.max(0, Number(body.platformFeePercent) || 10))
+    if ('alertThresholdUsd' in body) updateData.alertThresholdUsd = body.alertThresholdUsd != null ? Math.max(0, Number(body.alertThresholdUsd)) : null
+    if ('pauseThresholdUsd' in body) updateData.pauseThresholdUsd = body.pauseThresholdUsd != null ? Math.max(0, Number(body.pauseThresholdUsd)) : null
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
 

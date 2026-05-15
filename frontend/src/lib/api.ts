@@ -948,6 +948,8 @@ export interface AdminGasChain {
   explorerBase: string | null
   backendChainId: string | null
   platformFeePercent: number
+  alertThresholdUsd: number | null
+  pauseThresholdUsd: number | null
   isActive: boolean
   displayOrder: number
   createdAt: string
@@ -1081,9 +1083,9 @@ export const adminApi = {
       }>
       hotWallets: Array<{
         chain: string; address: string; isActive: boolean
-        balance: number | null; nativeSymbol: string
-        alertThreshold: number; pauseThreshold: number
-        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
+        balance: number | null; balanceUsd: number | null; nativeSymbol: string
+        alertThresholdUsd: number | null; pauseThresholdUsd: number | null
+        status: 'healthy' | 'low' | 'paused' | 'unavailable'
       }>
       orderSummary: Record<string, number>
       configWarnings: Array<{ key: string; label: string; required: boolean }>
@@ -1131,20 +1133,22 @@ export const adminApi = {
         address: string
         isActive: boolean
         balance: number | null
+        balanceUsd: number | null
         nativeSymbol: string
-        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
-        alertThreshold: number
-        pauseThreshold: number
+        status: 'healthy' | 'low' | 'paused' | 'unavailable'
+        alertThresholdUsd: number | null
+        pauseThresholdUsd: number | null
       } | null
       wallets: Array<{
         chain: string
         address: string
         isActive: boolean
         balance: number | null
+        balanceUsd: number | null
         nativeSymbol: string
-        status: 'healthy' | 'warning' | 'critical' | 'paused' | 'unavailable'
-        alertThreshold: number
-        pauseThreshold: number
+        status: 'healthy' | 'low' | 'paused' | 'unavailable'
+        alertThresholdUsd: number | null
+        pauseThresholdUsd: number | null
       }>
     }>('/admin/gas/stats'),
   getGasWallets: () =>
@@ -1152,7 +1156,7 @@ export const adminApi = {
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>
     apiRequest<void>(`/admin/gas/wallets/${chain}/balance`, { method: 'POST', body: JSON.stringify({ balanceTRX }) }),
   refreshGasWalletBalance: (chain: string) =>
-    apiRequest<{ chain: string; balance: number; nativeSymbol: string; status: string; alertThreshold: number; pauseThreshold: number }>(`/admin/gas/wallets/${chain}/refresh-balance`, { method: 'POST' }),
+    apiRequest<{ chain: string; balance: number; balanceUsd: number | null; nativeSymbol: string; status: string; alertThresholdUsd: number | null; pauseThresholdUsd: number | null }>(`/admin/gas/wallets/${chain}/refresh-balance`, { method: 'POST' }),
   toggleGasChain: (chain: string) =>
     apiRequest<{ chain: string; isActive: boolean }>(`/admin/gas/chains/${chain}/toggle`, { method: 'POST' }),
 

@@ -16,6 +16,7 @@ const COINGECKO_IDS: Record<string, string> = {
   SOL: 'solana',
   TRX: 'tron',
   AVAX: 'avalanche-2',
+  MATIC: 'matic-network',
   TON: 'the-open-network',
   USDC: 'usd-coin',
 }
@@ -27,6 +28,7 @@ const BINANCE_SYMBOLS: Record<string, string> = {
   SOL: 'SOLUSDT',
   TRX: 'TRXUSDT',
   AVAX: 'AVAXUSDT',
+  MATIC: 'MATICUSDT',
   TON: 'TONUSDT',
   USDC: 'USDCUSDT',
 }
@@ -48,6 +50,7 @@ const BYBIT_SYMBOLS: Record<string, string> = {
   SOL: 'SOLUSDT',
   TRX: 'TRXUSDT',
   AVAX: 'AVAXUSDT',
+  MATIC: 'MATICUSDT',
   TON: 'TONUSDT',
   USDC: 'USDCUSDT',
 }

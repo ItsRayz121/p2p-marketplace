@@ -23,11 +23,10 @@ const ORDER_STATUS_LABELS: Record<string, { label: string; variant: 'success' | 
 }
 
 const WALLET_STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'outline'> = {
-  healthy:      'success',
-  warning:      'warning',
-  critical:     'danger',
-  paused:       'outline',
-  unconfigured: 'outline',
+  healthy:     'success',
+  low:         'warning',
+  paused:      'outline',
+  unavailable: 'outline',
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -208,13 +207,16 @@ export default function WalletPage() {
                     <div className="flex items-center gap-4 text-xs text-text-muted">
                       <span>
                         Balance: {w.balance !== null ? `${w.balance.toLocaleString()} ${w.nativeSymbol}` : 'Not fetched'}
+                        {w.balanceUsd != null && <span className="ml-1 text-text-muted">(${w.balanceUsd.toFixed(2)})</span>}
                       </span>
-                      <span>Alert at: {w.alertThreshold} {w.nativeSymbol}</span>
-                      <span>Pause at: {w.pauseThreshold} {w.nativeSymbol}</span>
+                      {w.alertThresholdUsd != null && <span>Alert at: ${w.alertThresholdUsd}</span>}
+                      {w.pauseThresholdUsd != null && <span>Pause at: ${w.pauseThresholdUsd}</span>}
                     </div>
-                    {w.balance !== null && w.balance < w.alertThreshold && (
-                      <p className={`text-xs mt-1 font-medium ${w.balance < w.pauseThreshold ? 'text-danger' : 'text-warning'}`}>
-                        {w.balance < w.pauseThreshold ? 'CRITICAL: Balance below pause threshold — gas delivery paused' : 'WARNING: Balance below alert threshold — top up soon'}
+                    {w.balanceUsd != null && w.alertThresholdUsd != null && w.balanceUsd <= w.alertThresholdUsd && (
+                      <p className={`text-xs mt-1 font-medium ${w.pauseThresholdUsd != null && w.balanceUsd <= w.pauseThresholdUsd ? 'text-danger' : 'text-warning'}`}>
+                        {w.pauseThresholdUsd != null && w.balanceUsd <= w.pauseThresholdUsd
+                          ? 'CRITICAL: Balance below pause threshold — gas delivery paused'
+                          : 'WARNING: Balance below alert threshold — top up soon'}
                       </p>
                     )}
                   </div>
