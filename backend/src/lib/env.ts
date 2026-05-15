@@ -64,6 +64,16 @@ const envSchema = z.object({
   OPTIMISM_RPC_URL: z.string().url().default('https://mainnet.optimism.io'),
   BASE_RPC_URL: z.string().url().default('https://mainnet.base.org'),
   AVALANCHE_RPC_URL: z.string().url().default('https://api.avax.network/ext/bc/C/rpc'),
+
+  // Non-EVM chain RPC endpoints (chains are inactive by default)
+  // SOL: Solana JSON-RPC node (Helius, QuickNode, or public mainnet-beta endpoint)
+  SOL_RPC_URL: z.string().url().default('https://api.mainnet-beta.solana.com'),
+  // TON: TON HTTP API v2 base URL (toncenter.com or self-hosted)
+  TON_ENDPOINT_URL: z.string().url().default('https://toncenter.com'),
+  // TON_API_KEY: optional API key for toncenter.com rate-limit tier
+  TON_API_KEY: z.string().optional(),
+  // SUI: SUI Mainnet JSON-RPC node (mysten, Shinami, QuickNode, etc.)
+  SUI_RPC_URL: z.string().url().default('https://fullnode.mainnet.sui.io'),
   // Reconciler tuning. The reconciler scans detected deposits older than
   // `DEPOSIT_RECONCILE_MIN_AGE_SECONDS` every `DEPOSIT_RECONCILE_INTERVAL_SECONDS`.
   DEPOSIT_RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
@@ -115,6 +125,18 @@ const envSchema = z.object({
   // Gas Fee System — Avalanche
   GAS_FEE_DEPOSIT_ADDRESS_AVAX: z.string().optional(),
   GAS_MARKUP_MULTIPLIER_AVAX: z.coerce.number().default(1.5),
+
+  // Gas Fee System — Solana (inactive)
+  GAS_FEE_DEPOSIT_ADDRESS_SOL: z.string().optional(),
+  GAS_MARKUP_MULTIPLIER_SOL: z.coerce.number().default(1.5),
+
+  // Gas Fee System — TON (inactive)
+  GAS_FEE_DEPOSIT_ADDRESS_TON: z.string().optional(),
+  GAS_MARKUP_MULTIPLIER_TON: z.coerce.number().default(1.5),
+
+  // Gas Fee System — SUI (inactive)
+  GAS_FEE_DEPOSIT_ADDRESS_SUI: z.string().optional(),
+  GAS_MARKUP_MULTIPLIER_SUI: z.coerce.number().default(1.5),
 
   // Gas Fee System — shared
   GAS_GUEST_DAILY_LIMIT_USD: z.coerce.number().default(10),

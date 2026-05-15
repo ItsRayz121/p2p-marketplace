@@ -196,18 +196,21 @@ export function getEvmHotWalletAddress(): string | null {
  *
  * Validates:
  *   - GAS_MASTER_KEY and GAS_SEED_CIPHERTEXT are both set or both unset.
- *     Half-configured is a deploy mistake the server refuses to start with.
- *   - When both are set, the ciphertext decrypts and produces valid addresses
- *     for both TRON (T...) and EVM (0x...). Catches a wrong key or corrupted
- *     ciphertext before any request is served.
+ *   - When set, decrypts and derives valid TRON + EVM addresses.
+ *   - Non-EVM chains (SOL/TON/SUI) are validated separately (they don't block startup).
  *
- * Warms the address caches so getters are instant after startup.
- * Throws on misconfiguration — let the exception kill the process.
+ * Throws on EVM/TRON misconfiguration — let the exception kill the process.
+ * Non-EVM errors are logged as warnings (chains are inactive).
  */
 export function validateGasWalletAtStartup(): {
   configured: boolean
   tronHotWallet?: string
   evmHotWallet?: string
+  nonEvm?: {
+    sol?: { address: string; warning?: string } | { error: string }
+    ton?: { address: string; warning?: string } | { error: string }
+    sui?: { address: string; blake2bAvailable?: boolean; warning?: string } | { error: string }
+  }
 } {
   const hasKey = !!env.GAS_MASTER_KEY
   const hasCt  = !!env.GAS_SEED_CIPHERTEXT
@@ -233,11 +236,35 @@ export function validateGasWalletAtStartup(): {
       throw new Error(`Derived EVM address has unexpected format: ${evmHotWallet}`)
     }
 
-    // Warm the caches so getter calls after startup are instant
     _tronAddressCache = tronHotWallet
     _evmAddressCache  = evmHotWallet
 
-    return { configured: true, tronHotWallet, evmHotWallet }
+    // Non-EVM validation — chains are inactive so errors are non-fatal warnings
+    const { validateSolanaAtStartup } = require('./solanaWalletService') as typeof import('./solanaWalletService')
+    const { validateTonAtStartup }    = require('./tonWalletService')    as typeof import('./tonWalletService')
+    const { validateSuiAtStartup }    = require('./suiWalletService')    as typeof import('./suiWalletService')
+
+    const solResult = validateSolanaAtStartup()
+    const tonResult = validateTonAtStartup()
+    const suiResult = validateSuiAtStartup()
+
+    const nonEvm = {
+      sol: solResult.error
+        ? { error: solResult.error }
+        : { address: solResult.address!, ...(solResult.warning ? { warning: solResult.warning } : {}) },
+      ton: tonResult.error
+        ? { error: tonResult.error }
+        : { address: tonResult.address!, ...(tonResult.warning ? { warning: tonResult.warning } : {}) },
+      sui: suiResult.error
+        ? { error: suiResult.error }
+        : {
+            address: suiResult.address!,
+            ...(suiResult.blake2bAvailable !== undefined ? { blake2bAvailable: suiResult.blake2bAvailable } : {}),
+            ...(suiResult.warning ? { warning: suiResult.warning } : {}),
+          },
+    }
+
+    return { configured: true, tronHotWallet, evmHotWallet, nonEvm }
   } finally {
     seed.fill(0)
   }

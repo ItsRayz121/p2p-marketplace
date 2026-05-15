@@ -188,6 +188,7 @@ enum GasChain {
   OP
   AVAX
   TON
+  SUI
 }
 
 enum GasFeeTier {
@@ -1011,18 +1012,21 @@ model GasHotWallet {
 model GasChainConfig {
   id             String           @id @default(cuid())
   name           String           // "TRON", "BNB Smart Chain", "Ethereum"
-  slug           String           @unique // "TRON", "BSC", "ETH", "BASE", "ARB", "MATIC", "OP", "SOL", "SUI"
+  slug           String           @unique // "TRON", "BSC", "ETH", "BASE", "ARB", "MATIC", "OP", "SOL", "TON", "SUI"
   symbol         String           // "TRX", "BNB", "ETH"
   logoUrl        String?
-  category       String           // "tron" | "bnb" | "ethereum" | "solana" | "sui"
-  networkLabel   String           // "TRC20", "BEP20", "ERC20"
-  addressType    String           // "TRC20" | "EVM" | "SOL" | "SUI" — maps to frontend regex
+  category       String           // "tron" | "bnb" | "ethereum" | "solana" | "ton" | "sui"
+  networkLabel   String           // "TRC20", "BEP20", "ERC20", "Solana", "TON", "SUI"
+  addressType    String           // "TRC20" | "EVM" | "SOL" | "TON" | "SUI" — maps to frontend regex
   explorerBase   String?
   backendChainId    String?          // Maps to GasChain enum value. Null = not yet deliverable.
   platformFeePercent Float           @default(10)
   alertThresholdUsd Float?           // Auto-alert below this USD wallet balance; null = no alert
   pauseThresholdUsd Float?           // Auto-pause new orders below this USD balance; null = no pause
   isActive          Boolean          @default(true)
+  // Feature readiness state: inactive | testing | beta | stable
+  // inactive = hidden from public UI; stable = fully operational
+  readinessState    String           @default("inactive")
   displayOrder   Int              @default(0)
   tokens         GasTokenConfig[]
   createdAt      DateTime         @default(now())

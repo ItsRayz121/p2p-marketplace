@@ -2260,7 +2260,8 @@ export async function adminRoutes(app: FastifyInstance) {
       platformFeePercent: z.number().min(0).max(100).default(10),
       alertThresholdUsd:  z.number().positive().nullable().default(null),
       pauseThresholdUsd:  z.number().positive().nullable().default(null),
-      isActive:           z.boolean().default(true),
+      isActive:           z.boolean().default(false),
+      readinessState:     z.enum(['inactive', 'testing', 'beta', 'stable']).default('inactive'),
       displayOrder:       z.number().int().default(0),
     })
     const d = schema.parse(req.body)
@@ -2271,7 +2272,7 @@ export async function adminRoutes(app: FastifyInstance) {
         logoUrl: d.logoUrl, explorerBase: d.explorerBase,
         backendChainId: d.backendChainId, platformFeePercent: d.platformFeePercent,
         alertThresholdUsd: d.alertThresholdUsd, pauseThresholdUsd: d.pauseThresholdUsd,
-        isActive: d.isActive, displayOrder: d.displayOrder,
+        isActive: d.isActive, readinessState: d.readinessState, displayOrder: d.displayOrder,
       },
     })
     await createAuditLog(req.user!.id, 'GAS_CHAIN_CREATED', 'GasChainConfig', chain.id, { slug: chain.slug })
@@ -2300,6 +2301,12 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('pauseThresholdUsd' in body) updateData.pauseThresholdUsd = body.pauseThresholdUsd != null ? Math.max(0, Number(body.pauseThresholdUsd)) : null
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
+    if ('readinessState' in body) {
+      const validStates = ['inactive', 'testing', 'beta', 'stable']
+      const state = String(body.readinessState)
+      if (!validStates.includes(state)) throw new AppError('VALIDATION_ERROR', `readinessState must be one of: ${validStates.join(', ')}`, 400)
+      updateData.readinessState = state
+    }
 
     // ── Activation guardrails: refuse to enable a chain that isn't operationally ready ──
     const activating = updateData.isActive === true && chain.isActive === false
@@ -2571,9 +2578,12 @@ export async function adminRoutes(app: FastifyInstance) {
     const { chain } = req.params as { chain: string }
     const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
     const { gasWalletIsConfigured, getEvmHotWalletAddress, getTronHotWalletAddress } = await import('../lib/gas/gasWalletService')
+    const { getSolanaHotWalletAddress } = await import('../lib/gas/solanaWalletService')
+    const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
+    const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
 
     const wallet = await db.gasHotWallet.findUnique({
-      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' },
+      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI' },
     })
     if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
 
@@ -2590,7 +2600,19 @@ export async function adminRoutes(app: FastifyInstance) {
     let signerError: string | undefined
     try {
       if (gasWalletIsConfigured()) {
-        derivedAddress = chain === 'TRON' ? getTronHotWalletAddress() : getEvmHotWalletAddress()
+        // Route to the correct hot wallet getter by chain family
+        if (chain === 'TRON') {
+          derivedAddress = getTronHotWalletAddress()
+        } else if (chain === 'SOL') {
+          derivedAddress = getSolanaHotWalletAddress()
+        } else if (chain === 'TON') {
+          derivedAddress = getTonHotWalletAddress()
+        } else if (chain === 'SUI') {
+          derivedAddress = getSuiHotWalletAddress()
+        } else {
+          // All EVM chains share the same hot wallet address
+          derivedAddress = getEvmHotWalletAddress()
+        }
         signerOk = !!derivedAddress
       } else {
         const legacyKey = chainConfig.getPrivateKey()
@@ -2668,6 +2690,242 @@ export async function adminRoutes(app: FastifyInstance) {
     })
 
     return reply.send({ success: true, data: { paused, reason: reason ?? null } })
+  })
+
+  // ── GET /admin/gas/system-health — comprehensive production health check ───────
+  //
+  // Returns a single payload covering every aspect of the gas fee system:
+  //   - RPC connectivity for all configured chains
+  //   - Hot wallet balances + status
+  //   - Queue health (BullMQ)
+  //   - Redis connectivity
+  //   - Mnemonic system status
+  //   - Global pause state
+  //   - Stale rate warnings
+  //   - Chain readiness matrix
+  //   - Delivery health per chain
+
+  app.get('/admin/gas/system-health', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { redis: redisClient } = await import('../lib/redis')
+    const { GAS_CHAINS, fromDbChain, SUPPORTED_GAS_CHAINS } = await import('../lib/gas/gas.chains')
+    const { testRpcHealth, getNativeUsdPrice } = await import('../lib/gas/gas.balance')
+    const { gasWalletIsConfigured, getTronHotWalletAddress, getEvmHotWalletAddress } = await import('../lib/gas/gasWalletService')
+    const { getSolanaHotWalletAddress } = await import('../lib/gas/solanaWalletService')
+    const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
+    const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
+    const { CHAIN_READINESS_MATRIX, UNSUPPORTED_FEATURES, getChainCapabilities } = await import('../lib/gas/chainMeta')
+
+    // ── 1. Redis health ────────────────────────────────────────────────────────
+    let redisOk = false
+    let redisError: string | undefined
+    try {
+      await redisClient.ping()
+      redisOk = true
+    } catch (err) {
+      redisError = err instanceof Error ? err.message : String(err)
+    }
+
+    // ── 2. Mnemonic system ────────────────────────────────────────────────────
+    const mnemonicConfigured = gasWalletIsConfigured()
+    const mnemonicAddresses = mnemonicConfigured ? {
+      tron: getTronHotWalletAddress(),
+      evm:  getEvmHotWalletAddress(),
+      sol:  getSolanaHotWalletAddress(),
+      ton:  getTonHotWalletAddress(),
+      sui:  getSuiHotWalletAddress(),
+    } : null
+
+    // ── 3. Global pause ───────────────────────────────────────────────────────
+    const globalPauseRow = await db.platformConfig.findUnique({ where: { key: 'gas_global_pause' } })
+    const globallyPaused = globalPauseRow?.value === '1'
+
+    // ── 4. Hot wallets from DB ────────────────────────────────────────────────
+    const wallets = await db.gasHotWallet.findMany({ where: { isActive: true } })
+    const chainConfigs = await db.gasChainConfig.findMany({
+      select: { slug: true, backendChainId: true, alertThresholdUsd: true, pauseThresholdUsd: true, readinessState: true, isActive: true },
+    })
+    const chainConfigMap = Object.fromEntries(chainConfigs.map((c) => [c.slug, c]))
+
+    // ── 5. RPC health for all supported chains (parallel, best-effort) ────────
+    const rpcResults = await Promise.allSettled(
+      SUPPORTED_GAS_CHAINS.map(async (chainId) => {
+        const rpc = await testRpcHealth(chainId)
+        const pausedKey = `gas_wallet_paused:${chainId === 'ETHEREUM' ? 'ETH' : chainId}`
+        const isPaused = !!(await redisClient.get(pausedKey))
+        return { chainId, rpc, isPaused }
+      })
+    )
+
+    const rpcMap: Record<string, { reachable: boolean; latencyMs: number; isStale?: boolean; blockNumber?: number; error?: string; isPaused: boolean }> = {}
+    for (const r of rpcResults) {
+      if (r.status === 'fulfilled') {
+        const { chainId, rpc, isPaused } = r.value
+        rpcMap[chainId] = {
+          reachable: rpc.reachable,
+          latencyMs: rpc.latencyMs,
+          ...(rpc.isStale !== undefined ? { isStale: rpc.isStale } : {}),
+          ...(rpc.blockNumber !== undefined ? { blockNumber: rpc.blockNumber } : {}),
+          ...(rpc.error !== undefined ? { error: rpc.error } : {}),
+          isPaused,
+        }
+      }
+    }
+
+    // ── 6. Wallet health (cached balances) ────────────────────────────────────
+    const walletHealth = await Promise.all(
+      wallets.map(async (w) => {
+        const chainId = fromDbChain(w.chain)
+        const dbChain = w.chain as string
+        const balanceKey    = `gas_wallet_balance:${dbChain}`
+        const balanceUsdKey = `gas_wallet_balance_usd:${dbChain}`
+        const pausedKey     = `gas_wallet_paused:${dbChain}`
+        const [balStr, balUsdStr, pausedStr] = await Promise.all([
+          redisClient.get(balanceKey),
+          redisClient.get(balanceUsdKey),
+          redisClient.get(pausedKey),
+        ])
+        const balance    = balStr    ? parseFloat(balStr)    : null
+        const balanceUsd = balUsdStr ? parseFloat(balUsdStr) : null
+        const isPaused   = !!pausedStr
+        const cfg = GAS_CHAINS[chainId]
+        const chainCfg = chainConfigMap[dbChain === 'ETH' ? 'ETH' : dbChain]
+        const usdPrice = await getNativeUsdPrice(chainId).catch(() => 0)
+        const alertThresholdUsd = chainCfg?.alertThresholdUsd ?? null
+        const pauseThresholdUsd = chainCfg?.pauseThresholdUsd ?? null
+        let status: 'healthy' | 'low' | 'paused' | 'unavailable' = 'unavailable'
+        if (balanceUsd !== null) {
+          if (isPaused || (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd)) status = 'paused'
+          else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
+          else status = 'healthy'
+        }
+        return {
+          chain: dbChain,
+          chainId,
+          address: w.address,
+          nativeSymbol: cfg?.nativeSymbol ?? dbChain,
+          balance,
+          balanceUsd,
+          usdPrice,
+          isPaused,
+          status,
+          alertThresholdUsd,
+          pauseThresholdUsd,
+          lastRefreshedAt: w.lastBalanceRefreshAt?.toISOString() ?? null,
+        }
+      })
+    )
+
+    // ── 7. Stale rate detection ───────────────────────────────────────────────
+    const rateSymbols = ['TRX', 'BNB', 'ETH', 'MATIC', 'AVAX', 'SOL', 'TON', 'SUI']
+    const rateChecks = await Promise.all(
+      rateSymbols.map(async (sym) => {
+        const v = await redisClient.get(`rate:${sym}`)
+        return { symbol: sym, hasRate: !!v }
+      })
+    )
+    const staleRates = rateChecks.filter((r) => !r.hasRate).map((r) => r.symbol)
+
+    // ── 8. BullMQ queue health ────────────────────────────────────────────────
+    let queueHealth: Array<{ name: string; waiting: number; active: number; failed: number }> = []
+    try {
+      const { queues } = await import('../queues/definitions')
+      const queueEntries = Object.entries(queues)
+      queueHealth = await Promise.all(
+        queueEntries.map(async ([name, q]) => {
+          const [waiting, active, failed] = await Promise.all([
+            q.getWaitingCount().catch(() => -1),
+            q.getActiveCount().catch(() => -1),
+            q.getFailedCount().catch(() => -1),
+          ])
+          return { name, waiting, active, failed }
+        })
+      )
+    } catch {
+      // Queue health is best-effort — don't fail the endpoint
+    }
+
+    // ── 9. Delivery health per chain ──────────────────────────────────────────
+    const [pendingDeliveries, failedDeliveries] = await Promise.all([
+      db.gasFeeOrder.groupBy({
+        by: ['chain', 'status'],
+        where: { status: { in: ['payment_detected', 'sending'] } },
+        _count: { status: true },
+      }),
+      db.gasFeeOrder.groupBy({
+        by: ['chain'],
+        where: { status: 'failed', createdAt: { gte: new Date(Date.now() - 24 * 60 * 60_000) } },
+        _count: { status: true },
+      }),
+    ])
+
+    const deliveryHealth: Record<string, { pending: number; failed24h: number }> = {}
+    for (const r of pendingDeliveries) deliveryHealth[r.chain as string] = { pending: r._count.status, failed24h: 0 }
+    for (const r of failedDeliveries) {
+      const key = r.chain as string
+      if (!deliveryHealth[key]) deliveryHealth[key] = { pending: 0, failed24h: 0 }
+      deliveryHealth[key]!.failed24h = r._count.status
+    }
+
+    // ── 10. Chain readiness state ─────────────────────────────────────────────
+    const chainReadiness = chainConfigs.map((c) => ({
+      slug:          c.slug,
+      readinessState: c.readinessState,
+      isActive:      c.isActive,
+      hasBackend:    !!c.backendChainId,
+      capabilities:  getChainCapabilities(c.slug),
+      rpc:           rpcMap[c.backendChainId === 'ETH' ? 'ETHEREUM' : (c.backendChainId ?? c.slug)] ?? null,
+    }))
+
+    // ── Final assembly ────────────────────────────────────────────────────────
+    const criticalIssues: string[] = []
+    if (!redisOk) criticalIssues.push('Redis unreachable')
+    if (globallyPaused) criticalIssues.push('Gas system globally paused')
+    if (!mnemonicConfigured) criticalIssues.push('Gas mnemonic not configured — delivery using legacy env vars')
+    for (const w of walletHealth) {
+      if (w.status === 'paused') criticalIssues.push(`${w.chain} wallet auto-paused (below pause threshold)`)
+    }
+    for (const [chainId, rpc] of Object.entries(rpcMap)) {
+      if (!rpc.reachable) criticalIssues.push(`${chainId} RPC unreachable: ${rpc.error}`)
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        generatedAt:       new Date().toISOString(),
+        overallHealthy:    criticalIssues.length === 0,
+        criticalIssues,
+        redis: { ok: redisOk, error: redisError ?? null },
+        mnemonic: {
+          configured: mnemonicConfigured,
+          addresses:  mnemonicAddresses,
+        },
+        globallyPaused,
+        rpc:            rpcMap,
+        walletHealth,
+        staleRates,
+        queueHealth,
+        deliveryHealth,
+        chainReadiness,
+        readinessMatrix:    CHAIN_READINESS_MATRIX,
+        unsupportedFeatures: UNSUPPORTED_FEATURES,
+      },
+    })
+  })
+
+  // ── POST /admin/gas/chains/:chain/dry-run — pre-flight delivery check ─────────
+
+  app.post('/admin/gas/chains/:chain/dry-run', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const body = req.body as { toAddress?: string; amount?: number }
+    const toAddress = body.toAddress ?? ''
+    const amount    = typeof body.amount === 'number' ? body.amount : 0.001
+
+    const { dryRunDelivery } = await import('../lib/gas/gas.delivery')
+    const result = await dryRunDelivery(chain, toAddress, amount)
+
+    void createAuditLog(req.user!.id, 'GAS_DRY_RUN', 'GasChain', chain, { toAddress, amount, result })
+
+    return reply.send({ success: true, data: result })
   })
 
   // ── GET /admin/gas/analytics — delivery analytics ─────────────────────────────

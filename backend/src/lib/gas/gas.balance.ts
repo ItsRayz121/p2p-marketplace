@@ -4,6 +4,9 @@ import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem
 import { redis } from '../redis'
 import { env } from '../env'
 import type { GasChainId } from './gas.chains'
+import { getSolanaBalance, checkSolanaRpc } from './solanaWalletService'
+import { getTonBalance, checkTonRpc } from './tonWalletService'
+import { getSuiBalance, checkSuiRpc } from './suiWalletService'
 
 // ── RPC health result ─────────────────────────────────────────────────────────
 
@@ -17,13 +20,19 @@ export interface RpcHealthResult {
 }
 
 // ── Native → USD price ────────────────────────────────────────────────────────
-// Rates are stored in Redis as PKR values by the rate updater job.
-// USD price = pkrRate / usdPkrRate
 
 const CHAIN_PRICE_SYMBOL: Record<GasChainId, string> = {
-  TRON: 'TRX', BSC: 'BNB',
-  ETHEREUM: 'ETH', BASE: 'ETH', ARB: 'ETH', OP: 'ETH',
-  MATIC: 'MATIC', AVAX: 'AVAX',
+  TRON:     'TRX',
+  BSC:      'BNB',
+  ETHEREUM: 'ETH',
+  BASE:     'ETH',
+  ARB:      'ETH',
+  OP:       'ETH',
+  MATIC:    'MATIC',
+  AVAX:     'AVAX',
+  SOL:      'SOL',
+  TON:      'TON',
+  SUI:      'SUI',
 }
 
 export async function getNativeUsdPrice(chain: GasChainId): Promise<number> {
@@ -32,8 +41,8 @@ export async function getNativeUsdPrice(chain: GasChainId): Promise<number> {
     redis.get('rate:USD_PKR'),
     redis.get(`rate:${symbol}`),
   ])
-  const usdPkr = usdPkrStr ? parseFloat(usdPkrStr) : 0
-  const pkrRate = symbolStr ? (JSON.parse(symbolStr) as { rate: number }).rate : 0
+  const usdPkr   = usdPkrStr ? parseFloat(usdPkrStr) : 0
+  const pkrRate  = symbolStr ? (JSON.parse(symbolStr) as { rate: number }).rate : 0
   return usdPkr > 0 && pkrRate > 0 ? pkrRate / usdPkr : 0
 }
 
@@ -49,7 +58,7 @@ async function getTronBalanceTRX(address: string): Promise<number> {
 
   const data = (await res.json()) as { data?: Array<{ balance?: number }> }
   const balanceSun = data.data?.[0]?.balance ?? 0
-  return balanceSun / 1_000_000 // SUN → TRX
+  return balanceSun / 1_000_000  // SUN → TRX
 }
 
 // ── EVM native balance via viem ───────────────────────────────────────────────
@@ -73,15 +82,12 @@ async function checkEvmRpc(viemChain: Chain, rpcUrl: string): Promise<RpcHealthR
     const blockNumber = await client.getBlockNumber()
     const latencyMs = Date.now() - start
 
-    // Stale check: compare to previously cached block number
     const cacheKey = `gas_rpc_block:${viemChain.id}`
-    const [prevEntry] = await Promise.all([redis.get(cacheKey)])
+    const prevEntry = await redis.get(cacheKey)
     let isStale = false
     if (prevEntry) {
       const { block: prevBlock, ts } = JSON.parse(prevEntry) as { block: number; ts: number }
-      const ageMs = Date.now() - ts
-      // If 5+ min have passed and block hasn't moved → stale
-      if (ageMs > 300_000 && Number(blockNumber) <= prevBlock) isStale = true
+      if (Date.now() - ts > 300_000 && Number(blockNumber) <= prevBlock) isStale = true
     }
     await redis.set(cacheKey, JSON.stringify({ block: Number(blockNumber), ts: Date.now() }), 'EX', 600)
 
@@ -131,11 +137,14 @@ export async function testRpcHealth(chain: GasChainId): Promise<RpcHealthResult>
     case 'OP':       return checkEvmRpc(optimism,  env.OPTIMISM_RPC_URL)
     case 'MATIC':    return checkEvmRpc(polygon,   env.POLYGON_RPC_URL)
     case 'AVAX':     return checkEvmRpc(avalanche, env.AVALANCHE_RPC_URL)
+    case 'SOL':      return checkSolanaRpc()
+    case 'TON':      return checkTonRpc()
+    case 'SUI':      return checkSuiRpc()
     default: return { reachable: false, latencyMs: 0, error: `Unsupported chain: ${chain}` }
   }
 }
 
-// ── Public dispatch ───────────────────────────────────────────────────────────
+// ── Public balance dispatch ───────────────────────────────────────────────────
 
 export async function getHotWalletBalance(chain: GasChainId, address: string): Promise<number> {
   switch (chain) {
@@ -147,6 +156,9 @@ export async function getHotWalletBalance(chain: GasChainId, address: string): P
     case 'OP':       return getEvmNativeBalance(optimism,  env.OPTIMISM_RPC_URL,  address)
     case 'MATIC':    return getEvmNativeBalance(polygon,   env.POLYGON_RPC_URL,   address)
     case 'AVAX':     return getEvmNativeBalance(avalanche, env.AVALANCHE_RPC_URL, address)
+    case 'SOL':      return getSolanaBalance(address)
+    case 'TON':      return getTonBalance(address)
+    case 'SUI':      return getSuiBalance(address)
     default: throw new Error(`getHotWalletBalance: unsupported chain ${chain}`)
   }
 }

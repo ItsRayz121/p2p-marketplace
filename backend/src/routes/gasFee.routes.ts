@@ -9,6 +9,7 @@ import { env } from '../lib/env'
 import { queues } from '../queues/definitions'
 import { logger } from '../lib/logger'
 import { GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
+import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, type ChainReadinessState } from '../lib/gas/chainMeta'
 
 // ── Rate lookup helpers ───────────────────────────────────────────────────────
 
@@ -95,9 +96,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const chains = await Promise.all(
       dbChains.map(async (c) => {
-        // Check availability: needs backendChainId, deposit address configured, not paused
+        const readinessState = (c.readinessState ?? 'inactive') as ChainReadinessState
+        const publiclyVisible = isPubliclyVisible(readinessState)
+        const orderable       = isOrderable(readinessState)
+        const badge           = READINESS_BADGE[readinessState]
+        const capabilities    = getChainCapabilities(c.slug)
+
+        // Check operational availability: needs backendChainId, deposit address, not paused
         let isAvailable = false
-        if (c.isActive && c.backendChainId) {
+        if (c.isActive && c.backendChainId && orderable) {
           const legacyId = c.backendChainId === 'ETH' ? 'ETHEREUM' : c.backendChainId
           const chainCfg = GAS_CHAINS[legacyId as GasChainId]
           if (chainCfg) {
@@ -107,23 +114,32 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             isAvailable = !!(depositAddress && hotWallet && !isPaused)
           }
         }
+
         return {
-          id:           c.id,
-          slug:         c.slug,
-          name:         c.name,
-          symbol:       c.symbol,
-          logoUrl:      c.logoUrl,
-          category:     c.category,
-          networkLabel: c.networkLabel,
-          addressType:  c.addressType,
-          isActive:     c.isActive,
+          id:             c.id,
+          slug:           c.slug,
+          name:           c.name,
+          symbol:         c.symbol,
+          logoUrl:        c.logoUrl,
+          category:       c.category,
+          networkLabel:   c.networkLabel,
+          addressType:    c.addressType,
+          isActive:       c.isActive,
           isAvailable,
-          tokenCount:   c.tokens.length,
+          publiclyVisible,
+          orderable,
+          readinessState,
+          badge,
+          capabilities,
+          tokenCount:     c.tokens.length,
         }
       }),
     )
 
-    return reply.send({ success: true, data: { chains } })
+    // Public endpoint: filter to only visible chains (admin sees all via /admin/gas/chains)
+    const visibleChains = chains.filter((c) => c.publiclyVisible)
+
+    return reply.send({ success: true, data: { chains: visibleChains } })
   })
 
   // ── GET /api/gas-fee/chains/:chainSlug/tokens — tokens with live pricing ───

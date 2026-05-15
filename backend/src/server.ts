@@ -29,6 +29,26 @@ async function start() {
         { tronHotWallet: gasWallet.tronHotWallet, evmHotWallet: gasWallet.evmHotWallet },
         'Gas wallet (mnemonic) configured — TRON + all EVM chains active',
       )
+      // Non-EVM chain startup status (inactive chains — warnings only)
+      const { sol, ton, sui } = gasWallet.nonEvm ?? {}
+      if (sol && 'address' in sol) {
+        logger.info({ address: sol.address }, 'SOL hot wallet address derived (chain inactive)')
+        if (sol.warning) logger.warn({ warning: sol.warning }, 'SOL startup warning')
+      } else if (sol && 'error' in sol) {
+        logger.warn({ error: sol.error }, 'SOL startup derivation failed (chain inactive — non-fatal)')
+      }
+      if (ton && 'address' in ton) {
+        logger.info({ address: ton.address }, 'TON hot wallet address derived (chain inactive)')
+        if (ton.warning) logger.warn({ warning: ton.warning }, 'TON startup warning')
+      } else if (ton && 'error' in ton) {
+        logger.warn({ error: ton.error }, 'TON startup derivation failed (chain inactive — non-fatal)')
+      }
+      if (sui && 'address' in sui) {
+        logger.info({ address: sui.address, blake2bAvailable: sui.blake2bAvailable }, 'SUI hot wallet address derived (chain inactive)')
+        if (sui.warning) logger.warn({ warning: sui.warning }, 'SUI startup warning')
+      } else if (sui && 'error' in sui) {
+        logger.warn({ error: sui.error }, 'SUI startup derivation failed (chain inactive — non-fatal)')
+      }
     } else {
       logger.warn('Gas wallet mnemonic not configured — using legacy GAS_WALLET_PRIVATE_KEY_* env vars')
     }

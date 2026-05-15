@@ -18,6 +18,7 @@ import { logger } from '../lib/logger'
 const RATE_COIN: Record<GasChainId, string> = {
   TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH',
   BASE: 'ETH', ARB: 'ETH', OP: 'ETH', MATIC: 'MATIC', AVAX: 'AVAX',
+  SOL: 'SOL', TON: 'TON', SUI: 'SUI',
 }
 
 // ── DB-driven markup: reads platformFeePercent from GasChainConfig ────────────
