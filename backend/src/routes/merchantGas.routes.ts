@@ -17,6 +17,20 @@ import { logger } from '../lib/logger'
 
 const RATE_COIN: Record<GasChainId, string> = { TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH' }
 
+// ── DB-driven markup: reads platformFeePercent from GasChainConfig ────────────
+// Falls back to env-based multiplier only when no DB record exists for the chain.
+
+async function getChainMarkup(chain: GasChainId): Promise<{ markup: number; isActive: boolean | null }> {
+  const slug = chain === 'ETHEREUM' ? 'ETH' : chain
+  const dbChain = await db.gasChainConfig.findUnique({ where: { slug }, select: { platformFeePercent: true, isActive: true } })
+  if (dbChain) {
+    return { markup: 1 + dbChain.platformFeePercent / 100, isActive: dbChain.isActive }
+  }
+  const envMarkup = GAS_CHAINS[chain].getMarkupMultiplier()
+  logger.warn({ chain, envMarkup }, '[merchantGas] No DB chain config found — falling back to env-based markup multiplier')
+  return { markup: envMarkup, isActive: null }
+}
+
 async function getNativeUsdRate(chain: GasChainId): Promise<number> {
   const coin = RATE_COIN[chain]
   const usdPkrStr = await redis.get('rate:USD_PKR')
@@ -163,10 +177,12 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     const chainConfig = GAS_CHAINS[chain as GasChainId]
     if (!chainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chain}' is not supported`, 400)
 
+    const { markup, isActive } = await getChainMarkup(chain as GasChainId)
+    if (isActive === false) throw new AppError('CHAIN_NOT_SUPPORTED', `${chain} gas is not currently active`, 400)
+
     const usdPkrStr = await redis.get('rate:USD_PKR')
     const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 280
     const nativeUsdRate = await getNativeUsdRate(chain as GasChainId)
-    const markup = chainConfig.getMarkupMultiplier()
     const nativePkrRate = nativeUsdRate * usdPkrRate
 
     const tiers = Object.entries(chainConfig.nativeTierAmounts).map(([name, nativeAmount]) => ({
@@ -217,6 +233,12 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     const chainConfig = GAS_CHAINS[chain]
     const merchantKeyId = req.merchantKey!.id
 
+    // DB chain config: enforce isActive + get DB-driven markup
+    const { markup, isActive } = await getChainMarkup(chain as GasChainId)
+    if (isActive === false) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${chain} gas is not currently active`, 400)
+    }
+
     if (!chainConfig.validateAddress(toAddress)) {
       throw new AppError('INVALID_ADDRESS', `Invalid ${chainConfig.networkLabel} address format`, 400)
     }
@@ -250,8 +272,6 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     if (!(nativeUsdRate > 0)) {
       throw new AppError('RATE_UNAVAILABLE', 'Exchange rate temporarily unavailable.', 503)
     }
-
-    const markup = chainConfig.getMarkupMultiplier()
     const gasAmountNative = chainConfig.nativeTierAmounts[tier]
     if (gasAmountNative === undefined) {
       throw new AppError('VALIDATION_ERROR', `Tier '${tier}' is not supported for chain ${chain}`, 400)
