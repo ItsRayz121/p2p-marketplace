@@ -13,6 +13,8 @@ import { runGasMonitorBalances } from '../jobs/gasMonitorBalances.job'
 import { processGasRefund } from '../jobs/gasRefund.job'
 import { fireGasWebhook } from '../jobs/gasWebhook.job'
 import { runRefillJob } from '../lib/gas/gas.refill'
+import { runReconciliation } from '../lib/gas/gas.reconciliation'
+import { runMerchantSettlementJob } from '../jobs/gasMerchantSettlement.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
@@ -161,6 +163,28 @@ export function startWorkers() {
       }
     },
     { max: 3, duration: 1000 }, // 3 req/sec ceiling
+  )
+
+  // Gas reconciliation — runs daily at 02:00 UTC (every 24h from first fire)
+  queues.gasReconciliation
+    .add('daily-recon', {}, { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: 'gas-recon-daily-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule gas reconciliation daily job'))
+
+  createWorker(
+    QUEUE_NAMES.GAS_RECONCILIATION,
+    async () => { await runReconciliation() },
+    { max: 1, duration: 60_000 },
+  )
+
+  // Merchant settlement — runs daily
+  queues.gasMerchantSettlement
+    .add('daily-settlements', {}, { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: 'gas-merchant-settlement-daily' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule merchant settlement daily job'))
+
+  createWorker(
+    QUEUE_NAMES.GAS_MERCHANT_SETTLEMENT,
+    async () => { await runMerchantSettlementJob() },
+    { max: 1, duration: 60_000 },
   )
 
   logger.info('BullMQ workers ready')

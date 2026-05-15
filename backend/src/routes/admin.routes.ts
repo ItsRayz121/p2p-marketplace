@@ -23,6 +23,10 @@ import { getAllThresholds, getThreshold, upsertThreshold, setThresholdEnabled, v
 import { approveRefill, cancelRefill, checkAndQueueRefills, processApprovedRefills } from '../lib/gas/gas.refill'
 import { getTronHotWalletAddress, getEvmHotWalletAddress, getTronTreasuryAddress, getEvmTreasuryAddress } from '../lib/gas/gasWalletService'
 import type { GasChainId } from '../lib/gas/gas.chains'
+import { listReconciliationRuns, getReconciliationRun, resolveDiscrepancy } from '../lib/gas/gas.reconciliation'
+import { getChainBurnRates, getChainRunways, getProfitabilityByChain, getVolumeTimeSeries } from '../lib/gas/gas.analytics'
+import { listFlaggedOrders, reviewFlaggedOrder } from '../lib/gas/gas.risk'
+import { listMerchantAccounts, createMerchantAccount, updateMerchantAccount, getMerchantAccount, listMerchantSettlements, approveSettlement } from '../lib/gas/gas.merchant-settlement'
 type JsonValue = Prisma.InputJsonValue
 
 const adminOrSuper = requireRole('admin', 'super_admin')
@@ -2118,7 +2122,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
     const { getHotWalletBalance } = await import('../lib/gas/gas.balance')
 
-    const wallet = await db.gasHotWallet.findUnique({ where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' } })
+    const wallet = await db.gasHotWallet.findFirst({ where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON', hdIndex: 0 } })
     if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
 
     const chainId = fromDbChain(chain)
@@ -2166,20 +2170,22 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/gas/chains/:chain/toggle', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
     const { chain } = req.params as { chain: string }
 
-    // Validate chain exists in DB
-    const wallet = await db.gasHotWallet.findUnique({ where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' } })
+    // Validate chain exists in DB — toggle ALL wallets for the chain
+    const wallet = await db.gasHotWallet.findFirst({ where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON', hdIndex: 0 } })
     if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
 
-    const updated = await db.gasHotWallet.update({
+    // Toggle all wallets for this chain together
+    const newIsActive = !wallet.isActive
+    await db.gasHotWallet.updateMany({
       where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' },
-      data: { isActive: !wallet.isActive },
+      data: { isActive: newIsActive },
     })
     await createAuditLog(req.user!.id, 'GAS_CHAIN_TOGGLED', 'GasHotWallet', wallet.id, {
       chain,
-      isActive: updated.isActive,
+      isActive: newIsActive,
     })
 
-    return reply.send({ success: true, data: { chain, isActive: updated.isActive } })
+    return reply.send({ success: true, data: { chain, isActive: newIsActive } })
   })
 
   // GET /admin/gas/unattributed — payments received with no matching order
@@ -2582,8 +2588,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
     const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
 
-    const wallet = await db.gasHotWallet.findUnique({
-      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI' },
+    const wallet = await db.gasHotWallet.findFirst({
+      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI', hdIndex: 0 },
     })
     if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
 
@@ -3331,5 +3337,257 @@ export async function adminRoutes(app: FastifyInstance) {
           : { chain: chains[i]!.chain, error: String(r.reason) },
       ),
     })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 4 — RECONCILIATION
+  // ─────────────────────────────────────────────────────────────────────────
+
+  app.get('/admin/gas/reconciliation', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { page, limit } = paginationParams(req.query as Record<string, string>)
+    const result = await listReconciliationRuns(page, limit)
+    return reply.send({ success: true, data: result })
+  })
+
+  app.get('/admin/gas/reconciliation/:runId', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { runId } = req.params as { runId: string }
+    const run = await getReconciliationRun(runId)
+    if (!run) throw Errors.NOT_FOUND('Reconciliation run')
+    return reply.send({ success: true, data: run })
+  })
+
+  app.post('/admin/gas/reconciliation/trigger', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { chain } = (req.body ?? {}) as { chain?: string }
+    // Enqueue rather than run inline to avoid HTTP timeout on large datasets
+    await queues.gasReconciliation.add('manual-trigger', { chain: chain ?? null }, { priority: 1 })
+    await createAuditLog(req.user!.id, 'GAS_RECONCILIATION_TRIGGERED', 'GasReconciliation', 'manual', { chain: chain ?? 'all' })
+    return reply.code(202).send({ success: true, data: { queued: true, message: `Reconciliation queued for ${chain ?? 'all chains'}` } })
+  })
+
+  app.patch('/admin/gas/reconciliation/discrepancies/:id/resolve', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { adminNote } = (req.body ?? {}) as { adminNote?: string }
+    const updated = await resolveDiscrepancy(id, req.user!.id, adminNote)
+    await createAuditLog(req.user!.id, 'GAS_DISCREPANCY_RESOLVED', 'GasReconciliationDiscrepancy', id, { adminNote })
+    return reply.send({ success: true, data: updated })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 5 — RISK / FRAUD FLAGGED ORDERS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  app.get('/admin/gas/flagged', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const q = req.query as Record<string, string>
+    const { page, limit } = paginationParams(q)
+    const status = q.status
+    const result = await listFlaggedOrders(status, page, limit)
+    return reply.send({ success: true, data: result })
+  })
+
+  app.patch('/admin/gas/flagged/:id/review', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { status: 'reviewed_ok' | 'reviewed_blocked'; adminNote?: string }
+    if (!['reviewed_ok', 'reviewed_blocked'].includes(body.status)) {
+      throw new AppError('VALIDATION_ERROR', 'status must be reviewed_ok or reviewed_blocked', 400)
+    }
+    const updated = await reviewFlaggedOrder(id, body.status, req.user!.id, body.adminNote)
+    await createAuditLog(req.user!.id, 'GAS_FLAGGED_ORDER_REVIEWED', 'GasFlaggedOrder', id, { status: body.status, adminNote: body.adminNote })
+    return reply.send({ success: true, data: updated })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 6 — MERCHANT SETTLEMENT
+  // ─────────────────────────────────────────────────────────────────────────
+
+  app.get('/admin/gas/merchants', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { page, limit } = paginationParams(req.query as Record<string, string>)
+    const result = await listMerchantAccounts(page, limit)
+    return reply.send({ success: true, data: result })
+  })
+
+  app.post('/admin/gas/merchants', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const body = req.body as { name: string; apiKeyId: string; commissionRate?: number; settlementCycle?: string; payoutAddress?: string }
+    if (!body.name || !body.apiKeyId) throw new AppError('VALIDATION_ERROR', 'name and apiKeyId are required', 400)
+    const apiKey = await db.merchantApiKey.findUnique({ where: { id: body.apiKeyId }, select: { id: true } })
+    if (!apiKey) throw Errors.NOT_FOUND('Merchant API key')
+    const account = await createMerchantAccount(body)
+    await createAuditLog(req.user!.id, 'GAS_MERCHANT_ACCOUNT_CREATED', 'GasMerchantAccount', account.id, { name: body.name })
+    return reply.code(201).send({ success: true, data: account })
+  })
+
+  app.get('/admin/gas/merchants/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const account = await getMerchantAccount(id)
+    if (!account) throw Errors.NOT_FOUND('Merchant account')
+    return reply.send({ success: true, data: account })
+  })
+
+  app.patch('/admin/gas/merchants/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { name?: string; commissionRate?: number; settlementCycle?: string; payoutAddress?: string | null; isActive?: boolean }
+    const account = await updateMerchantAccount(id, body)
+    await createAuditLog(req.user!.id, 'GAS_MERCHANT_ACCOUNT_UPDATED', 'GasMerchantAccount', id, body as Record<string, unknown>)
+    return reply.send({ success: true, data: account })
+  })
+
+  app.get('/admin/gas/merchants/:id/settlements', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { page, limit } = paginationParams(req.query as Record<string, string>)
+    const result = await listMerchantSettlements(id, page, limit)
+    return reply.send({ success: true, data: result })
+  })
+
+  app.post('/admin/gas/settlements/:id/approve', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { adminNote } = (req.body ?? {}) as { adminNote?: string }
+    const settlement = await approveSettlement(id, req.user!.id, adminNote)
+    await createAuditLog(req.user!.id, 'GAS_SETTLEMENT_APPROVED', 'GasMerchantSettlement', id, { adminNote })
+    return reply.send({ success: true, data: settlement })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 7 — TREASURY ANALYTICS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  app.get('/admin/gas/analytics/burn-rates', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const q = req.query as { windowDays?: string; window?: string }
+    const windowDays = parseInt(q.windowDays ?? q.window ?? '7', 10)
+    const burnRates = await getChainBurnRates(windowDays)
+    return reply.send({ success: true, data: { burnRates } })
+  })
+
+  app.get('/admin/gas/analytics/runways', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const runways = await getChainRunways()
+    return reply.send({ success: true, data: { runways } })
+  })
+
+  app.get('/admin/gas/analytics/profitability', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { from, to } = req.query as { from?: string; to?: string }
+    const fromDate = from ? new Date(from) : undefined
+    const toDate   = to   ? new Date(to)   : undefined
+    const profitability = await getProfitabilityByChain(fromDate, toDate)
+    return reply.send({ success: true, data: { profitability } })
+  })
+
+  app.get('/admin/gas/analytics/volume', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const q = req.query as { chain?: string; windowDays?: string; window?: string }
+    const windowDays = parseInt(q.windowDays ?? q.window ?? '30', 10)
+    const raw = await getVolumeTimeSeries(q.chain as Parameters<typeof getVolumeTimeSeries>[0], windowDays)
+    // Normalize field name: backend uses orderCount, expose as orders for the frontend
+    const series = raw.map((d) => ({ date: d.date, orders: d.orderCount, revenueUsd: d.revenueUsd }))
+    return reply.send({ success: true, data: { series } })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 8 — MULTI-HOT-WALLET MANAGEMENT
+  // ─────────────────────────────────────────────────────────────────────────
+
+  app.get('/admin/gas/hot-wallets/:chain', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const wallets = await db.gasHotWallet.findMany({
+      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI' },
+      orderBy: { hdIndex: 'asc' },
+    })
+    const { redis: redisClient } = await import('../lib/redis')
+    const withBalances = await Promise.all(
+      wallets.map(async (w) => {
+        const balStr    = await redisClient.get(`gas_wallet_balance:${chain}`)
+        const balUsdStr = await redisClient.get(`gas_wallet_balance_usd:${chain}`)
+        return {
+          ...w,
+          cachedBalanceNative: balStr    ? parseFloat(balStr)    : null,
+          cachedBalanceUsd:    balUsdStr ? parseFloat(balUsdStr) : null,
+        }
+      }),
+    )
+    return reply.send({ success: true, data: { wallets: withBalances } })
+  })
+
+  app.post('/admin/gas/hot-wallets/:chain/add', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const { gasWalletIsConfigured, getTronHotWalletAddress, getEvmHotWalletAddress } = await import('../lib/gas/gasWalletService')
+
+    if (!gasWalletIsConfigured()) {
+      throw new AppError('CONFIG_ERROR', 'Gas mnemonic not configured', 503)
+    }
+
+    // Find next available hdIndex for this chain
+    const existing = await db.gasHotWallet.findMany({
+      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI' },
+      orderBy: { hdIndex: 'desc' },
+      take: 1,
+    })
+    const nextIndex = existing.length > 0 ? existing[0]!.hdIndex + 1 : 1
+
+    // Derive address for new index — currently only index 0 is used for delivery;
+    // additional wallets require manual funding before activation
+    const address = chain === 'TRON' ? getTronHotWalletAddress(nextIndex) : getEvmHotWalletAddress(nextIndex)
+    if (!address) throw new AppError('DERIVATION_ERROR', 'Could not derive address for new wallet', 500)
+
+    const wallet = await db.gasHotWallet.create({
+      data: {
+        chain:    chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI',
+        address,
+        hdIndex:  nextIndex,
+        weight:   0, // start with 0 weight until funded
+        isActive: false,
+      },
+    })
+
+    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain, hdIndex: nextIndex, address })
+    return reply.code(201).send({ success: true, data: wallet })
+  })
+
+  app.patch('/admin/gas/hot-wallets/:id/toggle', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const wallet = await db.gasHotWallet.findUnique({ where: { id } })
+    if (!wallet) throw Errors.NOT_FOUND('Gas hot wallet')
+
+    // Prevent disabling the last active wallet for a chain — would block all deliveries
+    if (wallet.isActive) {
+      const activeCount = await db.gasHotWallet.count({ where: { chain: wallet.chain, isActive: true } })
+      if (activeCount <= 1) {
+        throw new AppError('VALIDATION_ERROR', `Cannot disable the last active wallet for ${wallet.chain}. Fund and activate another wallet first.`, 400)
+      }
+    }
+
+    const updated = await db.gasHotWallet.update({ where: { id }, data: { isActive: !wallet.isActive } })
+    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_TOGGLED', 'GasHotWallet', id, { chain: wallet.chain, hdIndex: wallet.hdIndex, isActive: updated.isActive })
+    return reply.send({ success: true, data: { id: updated.id, isActive: updated.isActive } })
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 9 — EMERGENCY / DISASTER RECOVERY ENDPOINTS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  app.get('/admin/gas/emergency/verify-derivation', { preHandler: [authenticate, superAdminOnly] }, async (_req, reply) => {
+    const { gasWalletIsConfigured, getTronHotWalletAddress, getEvmHotWalletAddress } = await import('../lib/gas/gasWalletService')
+    const { getSolanaHotWalletAddress } = await import('../lib/gas/solanaWalletService')
+    const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
+    const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
+
+    if (!gasWalletIsConfigured()) throw new AppError('CONFIG_ERROR', 'Gas mnemonic not configured', 503)
+
+    const dbWallets = await db.gasHotWallet.findMany({ orderBy: [{ chain: 'asc' }, { hdIndex: 'asc' }] })
+
+    const report = dbWallets.map((w) => {
+      let derivedAddress: string | undefined
+      try {
+        if (w.chain === 'TRON') derivedAddress = getTronHotWalletAddress(w.hdIndex) ?? undefined
+        else if (w.chain === 'SOL') derivedAddress = getSolanaHotWalletAddress() ?? undefined
+        else if (w.chain === 'TON') derivedAddress = getTonHotWalletAddress() ?? undefined
+        else if (w.chain === 'SUI') derivedAddress = getSuiHotWalletAddress() ?? undefined
+        else derivedAddress = getEvmHotWalletAddress(w.hdIndex) ?? undefined
+      } catch { /* unsupported chain */ }
+
+      const match = derivedAddress
+        ? derivedAddress.toLowerCase() === w.address.toLowerCase()
+        : null
+
+      return { chain: w.chain, hdIndex: w.hdIndex, dbAddress: w.address, derivedAddress: derivedAddress ?? null, match }
+    })
+
+    const allMatch = report.every((r) => r.match !== false)
+    return reply.send({ success: true, data: { allMatch, wallets: report } })
   })
 }

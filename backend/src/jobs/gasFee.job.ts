@@ -8,6 +8,7 @@ import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { fromDbChain } from '../lib/gas/gas.chains'
+import { selectHotWallet } from '../lib/gas/gasWalletService'
 
 export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   const { orderId } = job.data
@@ -39,7 +40,14 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   }
 
   try {
-    const deliveryTxHash = await deliverGas(order)
+    // Select load-balanced hot wallet for this chain, stamp on order before delivery
+    const hotWallet = await selectHotWallet(order.chain).catch(() => null)
+    if (hotWallet && hotWallet.address !== order.fromHotWallet) {
+      await db.gasFeeOrder.update({ where: { id: orderId }, data: { fromHotWallet: hotWallet.address } })
+    }
+    const hdIndex = hotWallet?.hdIndex ?? 0
+
+    const deliveryTxHash = await deliverGas(order, hdIndex)
 
     await db.gasFeeOrder.update({
       where: { id: orderId },
@@ -48,6 +56,7 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
         deliveryTxHash,
         deliveryConfirmed: false,
         deliveredAt: new Date(),
+        fromHotWallet: hotWallet?.address ?? order.fromHotWallet,
       },
     })
 

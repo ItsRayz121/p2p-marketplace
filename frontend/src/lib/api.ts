@@ -1228,6 +1228,58 @@ export const adminApi = {
   deleteGasToken: (id: string) =>
     apiRequest<void>(`/admin/gas/tokens/${id}`, { method: 'DELETE' }),
 
+  // Phase 4 — Reconciliation
+  listReconciliationRuns: (page = 1, limit = 20) =>
+    apiRequest<{ runs: Array<{ id: string; ranAt: string; chain: string | null; totalOrders: number; ordersChecked: number; discrepancyCount: number; status: string; notes: string | null }>; total: number; page: number; limit: number }>(`/admin/gas/reconciliation?page=${page}&limit=${limit}`),
+  getReconciliationRun: (runId: string) =>
+    apiRequest<{ run: { id: string; ranAt: string; chain: string | null; totalOrders: number; ordersChecked: number; discrepancyCount: number; status: string; notes: string | null; discrepancies: Array<{ id: string; orderId: string | null; type: string; description: string; resolvedAt: string | null; resolvedBy: string | null; adminNote: string | null; createdAt: string }> } }>(`/admin/gas/reconciliation/${runId}`),
+  triggerReconciliation: (chain?: string) =>
+    apiRequest<{ queued: boolean; message: string }>('/admin/gas/reconciliation/trigger', { method: 'POST', body: JSON.stringify({ chain }) }),
+  resolveDiscrepancy: (id: string, adminNote?: string) =>
+    apiRequest<void>(`/admin/gas/reconciliation/discrepancies/${id}/resolve`, { method: 'PATCH', body: JSON.stringify({ adminNote }) }),
+
+  // Phase 5 — Flagged Orders
+  listFlaggedOrders: (status?: string, page = 1, limit = 20) =>
+    apiRequest<{ flagged: Array<{ id: string; orderId: string; reasons: string; riskScore: number; status: string; reviewedBy: string | null; reviewedAt: string | null; adminNote: string | null; createdAt: string; order: { orderRef: string; chain: string; status: string; toAddress: string; gasAmountUSD: number; paymentAmount: number; createdAt: string; ipAddress: string | null } }>; total: number; page: number; limit: number }>(`/admin/gas/flagged?page=${page}&limit=${limit}` + (status ? `&status=${status}` : '')),
+  reviewFlaggedOrder: (id: string, status: 'reviewed_ok' | 'reviewed_blocked', adminNote?: string) =>
+    apiRequest<void>(`/admin/gas/flagged/${id}/review`, { method: 'PATCH', body: JSON.stringify({ status, adminNote }) }),
+
+  // Phase 6 — Merchants
+  listMerchantAccounts: (page = 1, limit = 20) =>
+    apiRequest<{ merchants: Array<{ id: string; name: string; apiKeyId: string; commissionRate: number; settlementCycle: string; payoutAddress: string | null; isActive: boolean; createdAt: string }>; total: number; page: number; limit: number }>(`/admin/gas/merchants?page=${page}&limit=${limit}`),
+  getMerchantAccount: (id: string) =>
+    apiRequest<{ merchant: { id: string; name: string; apiKeyId: string; commissionRate: number; settlementCycle: string; payoutAddress: string | null; isActive: boolean; createdAt: string } }>(`/admin/gas/merchants/${id}`),
+  createMerchantAccount: (data: { name: string; apiKeyId: string; commissionRate?: number; settlementCycle?: string; payoutAddress?: string }) =>
+    apiRequest<{ id: string }>('/admin/gas/merchants', { method: 'POST', body: JSON.stringify(data) }),
+  updateMerchantAccount: (id: string, data: { name?: string; commissionRate?: number; settlementCycle?: string; payoutAddress?: string; isActive?: boolean }) =>
+    apiRequest<void>(`/admin/gas/merchants/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  listMerchantSettlements: (merchantId: string, page = 1, limit = 20) =>
+    apiRequest<{ settlements: Array<{ id: string; merchantId: string; periodStart: string; periodEnd: string; orderCount: number; grossRevenueUsd: number; platformFeeUsd: number; merchantShareUsd: number; status: string; payoutTxHash: string | null; paidAt: string | null; createdAt: string }>; total: number; page: number; limit: number }>(`/admin/gas/merchants/${merchantId}/settlements?page=${page}&limit=${limit}`),
+  approveSettlement: (id: string, adminNote?: string) =>
+    apiRequest<void>(`/admin/gas/settlements/${id}/approve`, { method: 'POST', body: JSON.stringify({ adminNote }) }),
+
+  // Phase 7 — Advanced Analytics
+  getGasBurnRates: (windowDays = 7) =>
+    apiRequest<{ burnRates: Array<{ chain: string; nativePerDay: number; usdPerDay: number; windowDays: number }> }>(`/admin/gas/analytics/burn-rates?windowDays=${windowDays}`),
+  getGasRunways: () =>
+    apiRequest<{ runways: Array<{ chain: string; nativeSymbol: string; currentBalanceNative: number | null; burnRateNativePerDay: number; daysRemaining: number | null; status: 'healthy' | 'low' | 'critical' | 'no_data' }> }>('/admin/gas/analytics/runways'),
+  getGasProfitability: (from?: string, to?: string) =>
+    apiRequest<{ profitability: Array<{ chain: string; revenueUsd: number; deliveryCostUsd: number; refundCostUsd: number; netProfitUsd: number; margin: number | null }> }>('/admin/gas/analytics/profitability' + (from || to ? `?from=${from ?? ''}&to=${to ?? ''}` : '')),
+  getGasVolume: (chain?: string, windowDays = 30) =>
+    apiRequest<{ series: Array<{ date: string; orders: number; revenueUsd: number }> }>(`/admin/gas/analytics/volume?windowDays=${windowDays}` + (chain ? `&chain=${chain}` : '')),
+
+  // Phase 8 — Hot Wallet Management
+  listHotWallets: (chain: string) =>
+    apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; hdIndex: number; weight: number; isActive: boolean; cachedBalanceNative: number | null; cachedBalanceUsd: number | null; createdAt: string }> }>(`/admin/gas/hot-wallets/${chain}`),
+  addHotWallet: (chain: string) =>
+    apiRequest<{ id: string; address: string; hdIndex: number }>(`/admin/gas/hot-wallets/${chain}/add`, { method: 'POST' }),
+  toggleHotWallet: (id: string) =>
+    apiRequest<{ id: string; isActive: boolean }>(`/admin/gas/hot-wallets/${id}/toggle`, { method: 'PATCH' }),
+
+  // Phase 9 — Emergency
+  verifyWalletDerivation: () =>
+    apiRequest<{ allMatch: boolean; wallets: Array<{ chain: string; hdIndex: number; dbAddress: string; derivedAddress: string | null; match: boolean | null }> }>('/admin/gas/emergency/verify-derivation'),
+
   // Audit Log
   getAuditLog: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ entries: Array<{ id: string; userId: string; action: string; details: unknown; ip?: string; userAgent?: string; createdAt: string }>; total: number }>('/admin/audit-log' + buildQs(params)),

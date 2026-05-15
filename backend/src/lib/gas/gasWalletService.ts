@@ -165,36 +165,71 @@ let _tronAddressCache: string | null = null
 let _evmAddressCache:  string | null = null
 
 /**
- * Return the derived TRON hot wallet address (T...).
- * Cached after first call. Returns null when mnemonic system is not configured.
+ * Return the derived TRON hot wallet address (T...) at the given HD index.
+ * Index 0 is cached after first call. Other indices are derived on demand.
+ * Returns null when mnemonic system is not configured.
  */
-export function getTronHotWalletAddress(): string | null {
+export function getTronHotWalletAddress(index = HOT_WALLET_INDEX): string | null {
   if (!gasWalletIsConfigured()) return null
-  if (_tronAddressCache) return _tronAddressCache
+  if (index === HOT_WALLET_INDEX && _tronAddressCache) return _tronAddressCache
   const seed = decryptGasSeed()
   try {
-    _tronAddressCache = deriveTronAddress(seed, HOT_WALLET_INDEX)
-    return _tronAddressCache
+    const addr = deriveTronAddress(seed, index)
+    if (index === HOT_WALLET_INDEX) _tronAddressCache = addr
+    return addr
   } finally {
     seed.fill(0)
   }
 }
 
 /**
- * Return the derived EVM hot wallet address (0x..., EIP-55 checksummed).
+ * Return the derived EVM hot wallet address (0x..., EIP-55 checksummed) at the given HD index.
  * The same address is valid on ETH, BSC, Base, ARB, OP, Polygon, Avalanche, opBNB.
- * Cached after first call. Returns null when mnemonic system is not configured.
+ * Index 0 is cached after first call. Other indices are derived on demand.
+ * Returns null when mnemonic system is not configured.
  */
-export function getEvmHotWalletAddress(): string | null {
+export function getEvmHotWalletAddress(index = HOT_WALLET_INDEX): string | null {
   if (!gasWalletIsConfigured()) return null
-  if (_evmAddressCache) return _evmAddressCache
+  if (index === HOT_WALLET_INDEX && _evmAddressCache) return _evmAddressCache
   const seed = decryptGasSeed()
   try {
-    _evmAddressCache = deriveEvmAddress(seed, HOT_WALLET_INDEX)
-    return _evmAddressCache
+    const addr = deriveEvmAddress(seed, index)
+    if (index === HOT_WALLET_INDEX) _evmAddressCache = addr
+    return addr
   } finally {
     seed.fill(0)
   }
+}
+
+// ── Multi-hot-wallet selector ─────────────────────────────────────────────────
+
+import { db } from '../prisma'
+import type { GasChain } from '@prisma/client'
+
+/**
+ * Select the best hot wallet for delivery on a chain using weighted random selection.
+ * Falls back to primary (hdIndex=0) if no wallets have weight > 0.
+ * Throws if no active wallet is found for the chain.
+ */
+export async function selectHotWallet(chain: GasChain) {
+  const wallets = await db.gasHotWallet.findMany({
+    where: { chain, isActive: true },
+    orderBy: { hdIndex: 'asc' },
+  })
+
+  if (wallets.length === 0) throw new Error(`No active hot wallet for chain ${chain}`)
+  if (wallets.length === 1) return wallets[0]!
+
+  // Weighted random selection
+  const totalWeight = wallets.reduce((s, w) => s + w.weight, 0)
+  if (totalWeight === 0) return wallets[0]! // all weights zero — use primary
+
+  let rand = Math.random() * totalWeight
+  for (const w of wallets) {
+    rand -= w.weight
+    if (rand <= 0) return w
+  }
+  return wallets[wallets.length - 1]!
 }
 
 // ── Treasury address getters ──────────────────────────────────────────────────

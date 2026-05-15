@@ -10,6 +10,7 @@ import { queues } from '../queues/definitions'
 import { logger } from '../lib/logger'
 import { GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
 import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, type ChainReadinessState } from '../lib/gas/chainMeta'
+import { flagIfRisky } from '../lib/gas/gas.risk'
 
 // ── Rate lookup helpers ───────────────────────────────────────────────────────
 
@@ -432,6 +433,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       await redis.setex(`idem:gasfee:${idempKey}`, 86400, order.id)
     }
 
+    // Fire-and-forget risk scoring (non-blocking)
+    flagIfRisky(order, clientIp).catch(() => {})
+
     return reply.code(201).send({
       success: true,
       data: {
@@ -554,6 +558,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (idempotencyKey) {
       await redis.setex(`idem:gasfee:${idempotencyKey}`, 86400, order.id)
     }
+
+    flagIfRisky(order, clientIp ?? req.ip ?? 'unknown').catch(() => {})
 
     return reply.code(201).send({
       success: true,
@@ -754,6 +760,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (idempKey) await redis.setex(`idem:gasfee:pkr:${idempKey}`, 86400, order.id)
     await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 24 * 60 * 60 * 1000, jobId: `gas-expire-${order.id}` })
 
+    flagIfRisky(order, req.ip ?? 'unknown').catch(() => {})
     logger.info({ orderId: order.id, userId, pkrAmount, pkrPaymentMethod }, 'PKR gas order created')
 
     return reply.code(201).send({

@@ -26,8 +26,10 @@ export const QUEUE_NAMES = {
   DATABASE_BACKUP: 'database-backup',
   MORALIS_SUBSCRIBE: 'moralis-subscribe',
   DEPOSIT_RECONCILE: 'deposit-reconcile',
-  GAS_WEBHOOK:  'gas-webhook',
-  GAS_REFILL:   'gas-refill',
+  GAS_WEBHOOK:              'gas-webhook',
+  GAS_REFILL:               'gas-refill',
+  GAS_RECONCILIATION:       'gas-reconciliation',
+  GAS_MERCHANT_SETTLEMENT:  'gas-merchant-settlement',
 } as const
 
 export const queues = {
@@ -76,5 +78,13 @@ export const queues = {
   depositReconcile: new Queue(QUEUE_NAMES.DEPOSIT_RECONCILE, {
     connection,
     defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
+  }),
+  gasReconciliation: new Queue(QUEUE_NAMES.GAS_RECONCILIATION, {
+    connection,
+    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 30 }, removeOnFail: { count: 50 } },
+  }),
+  gasMerchantSettlement: new Queue(QUEUE_NAMES.GAS_MERCHANT_SETTLEMENT, {
+    connection,
+    defaultJobOptions: { ...defaultJobOptions, attempts: 2, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
 }

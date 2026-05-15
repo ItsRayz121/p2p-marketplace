@@ -970,6 +970,7 @@ model GasFeeOrder {
   merchantApiKeyId    String?
   merchantApiKey      MerchantApiKey?   @relation(fields: [merchantApiKeyId], references: [id], onDelete: SetNull)
   ipAddress           String?
+  riskScore           Int?              // 0-100; set by gas.risk.ts on order creation
 
   chain               GasChain
   tier                GasFeeTier?       // nullable: new custom-amount orders skip fixed tiers
@@ -1007,6 +1008,7 @@ model GasFeeOrder {
   refundedAt          DateTime?
 
   ledgerEntries       GasLedgerEntry[]
+  flaggedOrder        GasFlaggedOrder?
 
   @@index([status, expiresAt])
   @@index([userId])
@@ -1016,12 +1018,15 @@ model GasFeeOrder {
 
 model GasHotWallet {
   id                   String    @id @default(cuid())
-  chain                GasChain  @unique
+  chain                GasChain
   address              String
+  hdIndex              Int       @default(0)   // BIP44 child index for this wallet
+  weight               Int       @default(100) // load-balancing weight; higher = preferred
   isActive             Boolean   @default(true)
   lastBalanceRefreshAt DateTime?
   createdAt            DateTime  @default(now())
 
+  @@unique([chain, hdIndex])
   @@index([chain, isActive])
 }
 
@@ -1178,7 +1183,8 @@ model MerchantApiKey {
 
   createdAt   DateTime @default(now())
 
-  gasOrders   GasFeeOrder[]
+  gasOrders       GasFeeOrder[]
+  merchantAccount GasMerchantAccount?
 
   @@index([userId])
   @@index([isActive])
@@ -1308,4 +1314,103 @@ model GasRefillRequest {
   @@index([chain, status])
   @@index([status])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 4 — RECONCILIATION ENGINE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GasReconciliationRun {
+  id               String   @id @default(cuid())
+  ranAt            DateTime @default(now())
+  chain            GasChain?
+  totalOrders      Int      @default(0)
+  ordersChecked    Int      @default(0)
+  discrepancyCount Int      @default(0)
+  status           String   // running | complete | failed
+  notes            String?  @db.VarChar(1000)
+  discrepancies    GasReconciliationDiscrepancy[]
+
+  @@index([status])
+  @@index([ranAt])
+}
+
+model GasReconciliationDiscrepancy {
+  id          String   @id @default(cuid())
+  runId       String
+  run         GasReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  orderId     String?
+  type        String   // delivery_tx_not_found | amount_mismatch | payment_not_on_chain | stuck_sending
+  description String   @db.VarChar(1000)
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  adminNote   String?  @db.VarChar(500)
+  createdAt   DateTime @default(now())
+
+  @@index([runId])
+  @@index([orderId])
+  @@index([type])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 5 — RISK / FRAUD FLAGGING
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GasFlaggedOrder {
+  id          String      @id @default(cuid())
+  orderId     String      @unique
+  order       GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reasons     String      // JSON array: ["HIGH_DEST_FREQUENCY", ...]
+  riskScore   Int         // 0–100
+  status      String      @default("pending_review") // pending_review | reviewed_ok | reviewed_blocked
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  adminNote   String?     @db.VarChar(500)
+  createdAt   DateTime    @default(now())
+
+  @@index([status])
+  @@index([riskScore])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 6 — MERCHANT SETTLEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GasMerchantAccount {
+  id              String   @id @default(cuid())
+  name            String
+  apiKeyId        String   @unique
+  apiKey          MerchantApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Restrict)
+  commissionRate  Decimal  @default(0) @db.Decimal(5, 4) // 0.0000–1.0000
+  settlementCycle String   @default("weekly")            // daily | weekly | monthly
+  payoutAddress   String?                                // USDT TRC20 for auto-payout
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  settlements     GasMerchantSettlement[]
+
+  @@index([isActive])
+}
+
+model GasMerchantSettlement {
+  id               String              @id @default(cuid())
+  merchantId       String
+  merchant         GasMerchantAccount  @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  periodStart      DateTime
+  periodEnd        DateTime
+  orderCount       Int                 @default(0)
+  grossRevenueUsd  Decimal             @db.Decimal(18, 6)
+  platformFeeUsd   Decimal             @db.Decimal(18, 6)
+  merchantShareUsd Decimal             @db.Decimal(18, 6)
+  status           String              @default("pending") // pending | approved | paid
+  payoutTxHash     String?
+  paidAt           DateTime?
+  adminNote        String?             @db.VarChar(500)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([merchantId, status])
+  @@index([status])
+  @@index([periodStart, periodEnd])
 }

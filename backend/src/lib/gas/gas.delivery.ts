@@ -13,10 +13,10 @@ import {
 
 // ── TRON delivery ─────────────────────────────────────────────────────────────
 
-async function deliverTron(order: GasFeeOrder): Promise<string> {
+async function deliverTron(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
   const seed = decryptGasSeed()
   try {
-    const privateKey = deriveTronPrivateKeyHex(seed, HOT_WALLET_INDEX)
+    const privateKey = deriveTronPrivateKeyHex(seed, hdIndex)
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { TronWeb } = require('tronweb')
@@ -53,44 +53,44 @@ async function deliverEvm(
   return hash
 }
 
-async function deliverBsc(order: GasFeeOrder): Promise<string> {
-  return deliverEvmMnemonic(order, bsc, env.BSC_RPC_URL)
-}
-
-async function deliverEth(order: GasFeeOrder): Promise<string> {
-  return deliverEvmMnemonic(order, mainnet, env.ETHEREUM_RPC_URL)
-}
-
 // ── L2 + alt-EVM delivery ─────────────────────────────────────────────────────
 
-async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: string): Promise<string> {
+async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: string, hdIndex = HOT_WALLET_INDEX): Promise<string> {
   const seed = decryptGasSeed()
   try {
-    const privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
+    const privateKey = deriveEvmPrivateKeyHex(seed, hdIndex)
     return await deliverEvm(order, viemChain, rpcUrl, privateKey)
   } finally {
     seed.fill(0)
   }
 }
 
-async function deliverBase(order: GasFeeOrder): Promise<string> {
-  return deliverEvmMnemonic(order, base, env.BASE_RPC_URL)
+async function deliverBsc(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, bsc, env.BSC_RPC_URL, hdIndex)
 }
 
-async function deliverArb(order: GasFeeOrder): Promise<string> {
-  return deliverEvmMnemonic(order, arbitrum, env.ARBITRUM_RPC_URL)
+async function deliverEth(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, mainnet, env.ETHEREUM_RPC_URL, hdIndex)
 }
 
-async function deliverOp(order: GasFeeOrder): Promise<string> {
-  return deliverEvmMnemonic(order, optimism, env.OPTIMISM_RPC_URL)
+async function deliverBase(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, base, env.BASE_RPC_URL, hdIndex)
 }
 
-async function deliverMatic(order: GasFeeOrder): Promise<string> {
-  return deliverEvmMnemonic(order, polygon, env.POLYGON_RPC_URL)
+async function deliverArb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, arbitrum, env.ARBITRUM_RPC_URL, hdIndex)
 }
 
-async function deliverAvax(order: GasFeeOrder): Promise<string> {
-  return deliverEvmMnemonic(order, avalanche, env.AVALANCHE_RPC_URL)
+async function deliverOp(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, optimism, env.OPTIMISM_RPC_URL, hdIndex)
+}
+
+async function deliverMatic(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, polygon, env.POLYGON_RPC_URL, hdIndex)
+}
+
+async function deliverAvax(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, avalanche, env.AVALANCHE_RPC_URL, hdIndex)
 }
 
 // ── Non-EVM delivery stubs (inactive — hard guards) ───────────────────────────
@@ -248,16 +248,16 @@ export async function dryRunDelivery(
 
 // ── Public dispatch ───────────────────────────────────────────────────────────
 
-export async function deliverGas(order: GasFeeOrder): Promise<string> {
+export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
   switch (order.chain) {
-    case 'TRON':  return deliverTron(order)
-    case 'BSC':   return deliverBsc(order)
-    case 'ETH':   return deliverEth(order)
-    case 'BASE':  return deliverBase(order)
-    case 'ARB':   return deliverArb(order)
-    case 'OP':    return deliverOp(order)
-    case 'MATIC': return deliverMatic(order)
-    case 'AVAX':  return deliverAvax(order)
+    case 'TRON':  return deliverTron(order, hdIndex)
+    case 'BSC':   return deliverBsc(order, hdIndex)
+    case 'ETH':   return deliverEth(order, hdIndex)
+    case 'BASE':  return deliverBase(order, hdIndex)
+    case 'ARB':   return deliverArb(order, hdIndex)
+    case 'OP':    return deliverOp(order, hdIndex)
+    case 'MATIC': return deliverMatic(order, hdIndex)
+    case 'AVAX':  return deliverAvax(order, hdIndex)
     case 'SOL':   return deliverSol(order)
     case 'TON':   return deliverTon(order)
     case 'SUI':   return deliverSui(order)
