@@ -2150,7 +2150,7 @@ export async function adminRoutes(app: FastifyInstance) {
       symbol:             z.string().min(1),
       category:           z.string().min(1),
       networkLabel:       z.string().min(1),
-      addressType:        z.enum(['TRC20', 'EVM', 'SOL', 'SUI']),
+      addressType:        z.enum(['TRC20', 'EVM', 'SOL', 'SUI', 'TON']),
       logoUrl:            z.string().url().nullable().default(null),
       explorerBase:       z.string().url().nullable().default(null),
       backendChainId:     z.string().nullable().default(null),

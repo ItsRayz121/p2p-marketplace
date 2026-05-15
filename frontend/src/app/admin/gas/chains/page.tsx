@@ -137,6 +137,7 @@ function ChainModal({
                 <option value="TRC20">TRC20 (T...)</option>
                 <option value="SOL">Solana (Base58)</option>
                 <option value="SUI">SUI (0x64...)</option>
+                <option value="TON">TON (UQ.../EQ...)</option>
               </select>
             </div>
             <div>
