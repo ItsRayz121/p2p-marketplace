@@ -15,6 +15,7 @@
     "db:push": "prisma db push",
     "workers": "tsx src/queues/workers.ts",
     "wallet:bootstrap": "tsx src/scripts/walletBootstrap.ts",
+    "gas:encrypt-mnemonic": "tsx src/scripts/encryptGasMnemonic.ts",
     "moralis:backfill": "prisma generate && tsx src/scripts/moralisBackfill.ts"
   },
   "dependencies": {
@@ -35,9 +36,10 @@
     "otplib": "^13.4.0",
     "pino": "^9.3.1",
     "pino-pretty": "^11.2.1",
+    "prisma": "^5.16.0",
     "qrcode": "^1.5.4",
     "resend": "^4.0.0",
-    "prisma": "^5.16.0",
+    "tronweb": "^6.3.0",
     "typescript": "^5.9.3",
     "viem": "^2.21.0",
     "zod": "^3.23.8"

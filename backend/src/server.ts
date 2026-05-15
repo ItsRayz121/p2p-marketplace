@@ -7,6 +7,7 @@ import { logger } from './lib/logger'
 import { env } from './lib/env'
 import { startWorkers } from './queues/workers'
 import { validateWalletCustodyAtStartup } from './lib/walletCrypto'
+import { validateGasWalletAtStartup } from './lib/gas/gasWalletService'
 import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
 import { validatePrismaSchemaAtStartup } from './lib/schemaValidation'
 
@@ -21,6 +22,13 @@ async function start() {
     // configured/not without ever printing key material.
     const custody = validateWalletCustodyAtStartup()
     logger.info({ configured: custody.configured }, 'Wallet custody validated')
+
+    const gasWallet = validateGasWalletAtStartup()
+    if (gasWallet.configured) {
+      logger.info({ tronHotWallet: gasWallet.tronHotWallet }, 'Gas wallet (mnemonic) configured')
+    } else {
+      logger.warn('Gas wallet mnemonic not configured — using legacy GAS_WALLET_PRIVATE_KEY_* env vars')
+    }
 
     // Verify the generated Prisma client has every model we rely on. Logs an
     // error (not throw) so the operator sees the gap without losing the

@@ -110,12 +110,17 @@ const envSchema = z.object({
   PLATFORM_DEPOSIT_USDT_BEP20: z.string().optional(),
   PLATFORM_DEPOSIT_USDT_ERC20: z.string().optional(),
 
-  // Wallet HD-derivation custody
-  // WALLET_MASTER_KEY: 64-char hex (32 bytes) — AES-256-GCM key wrapping the master seed
-  // WALLET_MASTER_SEED_CIPHERTEXT: base64-encoded `iv(12) || authTag(16) || ciphertext` of a BIP39 entropy or seed
-  // Generate both via `npm run wallet:bootstrap` — see backend/src/scripts/walletBootstrap.ts
+  // Wallet HD-derivation custody (user deposit addresses — random seed, NOT mnemonic)
+  // Generate via `npm run wallet:bootstrap` — see backend/src/scripts/walletBootstrap.ts
   WALLET_MASTER_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'WALLET_MASTER_KEY must be 64-char hex (32 bytes)').optional(),
   WALLET_MASTER_SEED_CIPHERTEXT: z.string().optional(),
+
+  // Gas wallet HD-derivation (hot wallets + deposit addresses — BIP39 mnemonic based)
+  // GAS_MASTER_KEY: 64-char hex (32 bytes) — AES-256-GCM key wrapping the gas seed
+  // GAS_SEED_CIPHERTEXT: base64 `iv(12) || authTag(16) || ciphertext(64)` of BIP39 seed
+  // Generate via `npm run gas:encrypt-mnemonic` — see backend/src/scripts/encryptGasMnemonic.ts
+  GAS_MASTER_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'GAS_MASTER_KEY must be 64-char hex (32 bytes)').optional(),
+  GAS_SEED_CIPHERTEXT: z.string().optional(),
 
   // Firebase Push Notifications
   FCM_SERVER_KEY: z.string().optional(),
