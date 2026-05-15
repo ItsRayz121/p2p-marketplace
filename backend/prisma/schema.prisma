@@ -199,6 +199,7 @@ enum GasFeeTier {
 enum GasFeeOrderStatus {
   created
   payment_pending
+  payment_uploaded
   payment_detected
   sending
   delivered
@@ -206,6 +207,13 @@ enum GasFeeOrderStatus {
   failed
   refund_pending
   refunded
+}
+
+enum GasCustomRequestStatus {
+  pending
+  reviewing
+  completed
+  rejected
 }
 
 enum RateAlertDirection {
@@ -955,6 +963,9 @@ model GasFeeOrder {
   paymentAmount        Decimal           @db.Decimal(10, 4)
   paymentTxHash        String?
   paymentSenderAddress String?
+  paymentProofUrl      String?
+  pkrPaymentMethod     String?
+  pkrAmount            Decimal?          @db.Decimal(12, 2)
 
   toAddress           String
   fromHotWallet       String?
@@ -1141,4 +1152,23 @@ model MerchantApiKey {
 
   @@index([userId])
   @@index([isActive])
+}
+
+model GasCustomRequest {
+  id             String                  @id @default(cuid())
+  blockchainName String
+  token          String
+  amount         String?
+  purpose        String
+  urgency        String                  @default("normal")
+  details        String?
+  contactEmail   String?
+  ipAddress      String?
+  status         GasCustomRequestStatus  @default(pending)
+  adminNotes     String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }

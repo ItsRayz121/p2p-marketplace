@@ -293,6 +293,13 @@ export async function webhookRoutes(app: FastifyInstance) {
     if (matchedDeposit) {
       const incoming = parseFloat((payload as { amount?: string }).amount ?? '0')
       if (incoming > 0) {
+        // Tx hash deduplication: reject replay attacks where the same txHash is presented twice.
+        const alreadyUsed = await db.gasFeeOrder.findFirst({ where: { paymentTxHash: txHash } })
+        if (alreadyUsed) {
+          logger.warn({ txHash, existingOrderId: alreadyUsed.id }, 'Duplicate txHash detected — possible replay attack, skipping')
+          return reply.send({ success: true })
+        }
+
         const lo = (incoming * 0.99).toFixed(4)
         const hi = (incoming * 1.01).toFixed(4)
         const gasOrder = await db.gasFeeOrder.findFirst({
@@ -313,21 +320,38 @@ export async function webhookRoutes(app: FastifyInstance) {
           await queues.gasFee.add('deliver', { orderId: gasOrder.id }, { priority: 1 })
           logger.info({ txHash, orderId: gasOrder.id, chain: matchedDeposit.chain }, 'Payment detected for gas fee order')
         } else {
-          // No matching active order — store for admin review
+          // No matching active order — detect over/underpayment for admin context
+          const nearestOrder = await db.gasFeeOrder.findFirst({
+            where: {
+              status: 'payment_pending',
+              chain: matchedDeposit.chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON',
+              expiresAt: { gt: new Date() },
+            },
+            orderBy: { createdAt: 'asc' },
+          })
+          let paymentNote = 'unmatched'
+          if (nearestOrder) {
+            const expected = parseFloat(nearestOrder.paymentAmount.toString())
+            if (incoming < expected * 0.99) paymentNote = 'underpayment'
+            else if (incoming > expected * 1.01) paymentNote = 'overpayment'
+            else paymentNote = 'expired_order'
+          }
+
           const member = JSON.stringify({
             txHash,
             amount: (payload as { amount?: string }).amount,
             chain: matchedDeposit.chain,
             network: matchedDeposit.network,
             toAddress,
+            paymentNote,
             detectedAt: new Date().toISOString(),
           })
           await redis.zadd('gas_unattributed', Date.now(), member)
           await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
-          logger.warn({ txHash, amount: incoming, chain: matchedDeposit.chain }, 'Unattributed gas fee payment received')
+          logger.warn({ txHash, amount: incoming, paymentNote, chain: matchedDeposit.chain }, 'Unattributed gas fee payment received')
           sendAdminAlertEmail(
-            'Unattributed Gas Fee Payment Received',
-            `A USDT payment arrived at the ${matchedDeposit.chain} gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${matchedDeposit.network}\n\nReview at /admin/gas and attribute manually.`,
+            `Unattributed Gas Fee Payment — ${paymentNote}`,
+            `A USDT payment arrived at the ${matchedDeposit.chain} gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${matchedDeposit.network}\nNote: ${paymentNote}\n\nReview at /admin/gas and attribute manually.`,
           ).catch(() => {})
         }
       }

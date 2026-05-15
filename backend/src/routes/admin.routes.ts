@@ -1878,15 +1878,16 @@ export async function adminRoutes(app: FastifyInstance) {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const [todayOrders, todayRevenue, pendingCount, failedCount, refundPendingCount, allWallets] = await Promise.all([
+    const [todayOrders, todayRevenue, pendingCount, failedCount, refundPendingCount, pendingCustomRequests, allWallets] = await Promise.all([
       db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
       db.gasFeeOrder.aggregate({
         where: { status: 'delivered', deliveredAt: { gte: today } },
         _sum: { paymentAmount: true },
       }),
-      db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_detected', 'sending'] } } }),
+      db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_detected', 'sending'] } } }),
       db.gasFeeOrder.count({ where: { status: 'failed' } }),
       db.gasFeeOrder.count({ where: { status: 'refund_pending' } }),
+      db.gasCustomRequest.count({ where: { status: 'pending' } }),
       db.gasHotWallet.findMany(),
     ])
 
@@ -1928,6 +1929,7 @@ export async function adminRoutes(app: FastifyInstance) {
         pendingCount,
         failedCount,
         refundPendingCount,
+        pendingCustomRequests,
         wallet: tronWallet,
         wallets,
       },
@@ -2210,5 +2212,97 @@ export async function adminRoutes(app: FastifyInstance) {
     await db.gasTokenConfig.delete({ where: { id } })
     await createAuditLog(req.user!.id, 'GAS_TOKEN_DELETED', 'GasTokenConfig', id, { symbol: token.symbol })
     return reply.send({ success: true })
+  })
+
+  // ── POST /admin/gas/orders/:id/approve-pkr — approve a payment_uploaded PKR order ──
+
+  app.post('/admin/gas/orders/:id/approve-pkr', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+
+    // Read first so we can check expiry before queuing delivery
+    const order = await db.gasFeeOrder.findUnique({ where: { id } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    if (order.status !== 'payment_uploaded' || order.paymentCoin !== 'PKR') {
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only approve payment_uploaded PKR orders`, 409)
+    }
+
+    if (order.expiresAt < new Date()) {
+      throw new AppError('ORDER_EXPIRED', 'Order has expired. The user must create a new order.', 409)
+    }
+
+    // CAS: transition payment_uploaded → payment_detected (guards against race with another admin)
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id, status: 'payment_uploaded', paymentCoin: 'PKR' },
+      data:  { status: 'payment_detected' },
+    })
+    if (claimed.count === 0) {
+      throw new AppError('CONFLICT', 'Order was already processed by another admin', 409)
+    }
+    await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
+    await createAuditLog(req.user!.id, 'GAS_PKR_APPROVED', 'GasFeeOrder', id, {})
+    return reply.send({ success: true, data: { status: 'payment_detected' } })
+  })
+
+  // ── POST /admin/gas/orders/:id/reject-pkr — reject a payment_uploaded PKR order ────
+
+  app.post('/admin/gas/orders/:id/reject-pkr', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { reason?: string }
+    const reason = body?.reason ?? 'PKR payment rejected by admin'
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id, status: 'payment_uploaded', paymentCoin: 'PKR' },
+      data:  { status: 'failed', failureReason: reason },
+    })
+    if (claimed.count === 0) {
+      const order = await db.gasFeeOrder.findUnique({ where: { id } })
+      if (!order) throw Errors.NOT_FOUND('Gas fee order')
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only reject payment_uploaded PKR orders`, 409)
+    }
+    await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, { reason })
+    return reply.send({ success: true, data: { status: 'failed' } })
+  })
+
+  // ── GET /admin/gas/custom-requests — list custom gas fee requests ─────────────────
+
+  app.get('/admin/gas/custom-requests', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { z } = await import('zod')
+    const qSchema = z.object({
+      page:   z.coerce.number().int().positive().default(1),
+      limit:  z.coerce.number().int().min(1).max(50).default(20),
+      status: z.enum(['pending', 'reviewing', 'completed', 'rejected']).optional(),
+    })
+    const { page, limit, status } = qSchema.parse(req.query)
+    const skip = (page - 1) * limit
+    const where = status ? { status } : {}
+    const [requests, total] = await Promise.all([
+      db.gasCustomRequest.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
+      db.gasCustomRequest.count({ where }),
+    ])
+    return reply.send({ success: true, data: { requests, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } })
+  })
+
+  // ── PATCH /admin/gas/custom-requests/:id — update status/notes ───────────────────
+
+  app.patch('/admin/gas/custom-requests/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { z } = await import('zod')
+    const schema = z.object({
+      status:     z.enum(['pending', 'reviewing', 'completed', 'rejected']).optional(),
+      adminNotes: z.string().max(1000).optional(),
+    })
+    const { id } = req.params as { id: string }
+    const body = schema.parse(req.body)
+    const existing = await db.gasCustomRequest.findUnique({ where: { id } })
+    if (!existing) throw Errors.NOT_FOUND('Gas custom request')
+    // Build update payload explicitly — exactOptionalPropertyTypes requires no undefined values on the data object
+    const updated = await db.gasCustomRequest.update({
+      where: { id },
+      data: {
+        ...(body.status     !== undefined ? { status:     body.status     } : {}),
+        ...(body.adminNotes !== undefined ? { adminNotes: body.adminNotes } : {}),
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_CUSTOM_REQUEST_UPDATED', 'GasCustomRequest', id, body)
+    return reply.send({ success: true, data: updated })
   })
 }

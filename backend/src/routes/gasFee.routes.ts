@@ -587,6 +587,394 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── GET /gas-fee/pkr-methods — admin-configured PKR payment accounts ────────
+
+  app.get('/gas-fee/pkr-methods', async (_req, reply) => {
+    const keys = [
+      'gas_pkr_bank_name', 'gas_pkr_bank_account_name', 'gas_pkr_bank_iban', 'gas_pkr_bank_account_number',
+      'gas_pkr_easypaisa_number', 'gas_pkr_easypaisa_name',
+      'gas_pkr_jazzcash_number', 'gas_pkr_jazzcash_name',
+    ]
+    const configs = await db.platformConfig.findMany({ where: { key: { in: keys } } })
+    const map: Record<string, string> = {}
+    configs.forEach(c => { map[c.key] = c.value })
+    return reply.send({
+      success: true,
+      data: {
+        bank: {
+          bankName:      map['gas_pkr_bank_name'] ?? null,
+          accountName:   map['gas_pkr_bank_account_name'] ?? null,
+          iban:          map['gas_pkr_bank_iban'] ?? null,
+          accountNumber: map['gas_pkr_bank_account_number'] ?? null,
+        },
+        easypaisa: {
+          number: map['gas_pkr_easypaisa_number'] ?? null,
+          name:   map['gas_pkr_easypaisa_name'] ?? null,
+        },
+        jazzcash: {
+          number: map['gas_pkr_jazzcash_number'] ?? null,
+          name:   map['gas_pkr_jazzcash_name'] ?? null,
+        },
+      },
+    })
+  })
+
+  // ── GET /gas-fee/crypto-methods — admin-configured USDT deposit addresses ──
+
+  app.get('/gas-fee/crypto-methods', async (_req, reply) => {
+    const configs = await db.platformConfig.findMany({
+      where: { key: { in: ['gas_usdt_bep20_address', 'gas_usdt_aptos_address'] } },
+    })
+    const map: Record<string, string> = {}
+    configs.forEach(c => { map[c.key] = c.value })
+    return reply.send({
+      success: true,
+      data: {
+        bep20: { address: map['gas_usdt_bep20_address'] ?? null, network: 'BEP20', fee: '~$0.29' },
+        aptos: { address: map['gas_usdt_aptos_address'] ?? null, network: 'APTOS', fee: '~$0.01' },
+      },
+    })
+  })
+
+  // ── POST /gas-fee/orders/pkr — create PKR fiat payment gas order ───────────
+
+  const createPkrOrderSchema = z.object({
+    tokenConfigId:    z.string().min(1),
+    amount:           z.number().positive(),
+    toAddress:        z.string().min(1),
+    pkrPaymentMethod: z.enum(['bank_transfer', 'easypaisa', 'jazzcash']),
+    idempotencyKey:   z.string().optional(),
+  })
+
+  app.post('/gas-fee/orders/pkr', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = createPkrOrderSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    const { tokenConfigId, amount, toAddress, pkrPaymentMethod, idempotencyKey } = parsed.data
+    const userId = req.user!.id
+
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
+    if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
+    const chainCfg = tokenCfg.chain
+    if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
+    if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
+
+    if (!validateAddress(toAddress, chainCfg.addressType)) {
+      throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
+    }
+
+    const legacyId = chainCfg.backendChainId === 'ETH' ? 'ETHEREUM' : chainCfg.backendChainId
+    const legacyChainConfig = GAS_CHAINS[legacyId as GasChainId]
+    if (!legacyChainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery not configured`, 400)
+
+    const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    const isAutoPaused = await redis.get(`gas_wallet_paused:${chainCfg.backendChainId}`)
+    if (!hotWallet || isAutoPaused) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
+
+    const minAmount = Number(tokenCfg.minAmount)
+    if (amount < minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${minAmount} ${tokenCfg.symbol}`, 400)
+
+    const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
+    if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
+
+    const usdPkrRate = await getUsdPkrRate()
+    const markup = getMarkupForChain(chainCfg.backendChainId)
+    const gasAmountUSD  = amount * nativeUsdRate
+    const maxUsdValue   = Number(tokenCfg.maxUsdValue)
+    if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
+
+    const paymentAmountUsd = gasAmountUSD * markup
+    const pkrAmount        = paymentAmountUsd * usdPkrRate
+
+    const idempKey = (req.headers['idempotency-key'] as string | undefined) ?? idempotencyKey
+    if (idempKey) {
+      const existingId = await redis.get(`idem:gasfee:pkr:${idempKey}`)
+      if (existingId) {
+        const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
+        if (existing) return reply.send({ success: true, data: existing })
+      }
+    }
+
+    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON'
+    const orderRef   = generateOrderRef('GF')
+    const expiresAt  = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+    const order = await db.gasFeeOrder.create({
+      data: {
+        orderRef,
+        userId,
+        ipAddress:        req.ip ?? 'unknown',
+        chain:            dbChainEnum,
+        gasTokenConfigId: tokenCfg.id,
+        gasAmountNative:  amount,
+        gasAmountUSD,
+        priceAtOrder:     nativeUsdRate,
+        paymentCoin:      'PKR',
+        paymentNetwork:   pkrPaymentMethod.toUpperCase(),
+        paymentAmount:    paymentAmountUsd,
+        pkrAmount,
+        pkrPaymentMethod,
+        fromHotWallet:    hotWallet.address,
+        toAddress,
+        status:           'payment_pending',
+        expiresAt,
+      },
+    })
+
+    if (idempKey) await redis.setex(`idem:gasfee:pkr:${idempKey}`, 86400, order.id)
+    await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 24 * 60 * 60 * 1000, jobId: `gas-expire-${order.id}` })
+
+    logger.info({ orderId: order.id, userId, pkrAmount, pkrPaymentMethod }, 'PKR gas order created')
+
+    return reply.code(201).send({
+      success: true,
+      data: {
+        orderRef:        order.orderRef,
+        paymentCoin:     'PKR',
+        paymentNetwork:  pkrPaymentMethod,
+        paymentAmount:   paymentAmountUsd.toFixed(2),
+        pkrAmount:       pkrAmount.toFixed(0),
+        gasAmountNative: order.gasAmountNative.toString(),
+        nativeSymbol:    tokenCfg.symbol,
+        chain:           order.chain,
+        status:          order.status,
+        expiresAt:       order.expiresAt.toISOString(),
+      },
+    })
+  })
+
+  // ── POST /gas-fee/orders/crypto — create USDT order with BEP20 or Aptos ────
+
+  const createCryptoOrderSchema = z.object({
+    tokenConfigId:   z.string().min(1),
+    amount:          z.number().positive(),
+    toAddress:       z.string().min(1),
+    paymentNetwork:  z.enum(['BEP20', 'APTOS']),
+    idempotencyKey:  z.string().optional(),
+  })
+
+  app.post('/gas-fee/orders/crypto', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const parsed = createCryptoOrderSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    const { tokenConfigId, amount, toAddress, paymentNetwork, idempotencyKey } = parsed.data
+
+    const configKey = paymentNetwork === 'BEP20' ? 'gas_usdt_bep20_address' : 'gas_usdt_aptos_address'
+    const depositConfig = await db.platformConfig.findUnique({ where: { key: configKey } })
+    if (!depositConfig?.value) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `USDT ${paymentNetwork} payment is not configured yet`, 400)
+    }
+    const depositAddress = depositConfig.value
+
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
+    if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
+    const chainCfg = tokenCfg.chain
+    if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
+    if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
+
+    if (!validateAddress(toAddress, chainCfg.addressType)) {
+      throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
+    }
+
+    const legacyId = chainCfg.backendChainId === 'ETH' ? 'ETHEREUM' : chainCfg.backendChainId
+    const legacyChainConfig = GAS_CHAINS[legacyId as GasChainId]
+    if (!legacyChainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery not configured`, 400)
+
+    const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    const isAutoPaused = await redis.get(`gas_wallet_paused:${chainCfg.backendChainId}`)
+    if (!hotWallet || isAutoPaused) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
+
+    const minAmount = Number(tokenCfg.minAmount)
+    if (amount < minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${minAmount} ${tokenCfg.symbol}`, 400)
+
+    const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
+    if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
+
+    const markup = getMarkupForChain(chainCfg.backendChainId)
+    const gasAmountUSD  = amount * nativeUsdRate
+    const maxUsdValue   = Number(tokenCfg.maxUsdValue)
+    if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
+    const paymentAmount = gasAmountUSD * markup
+
+    // IP rate limit
+    const clientIp  = req.ip ?? 'unknown'
+    const clockHour = Math.floor(Date.now() / 3_600_000)
+    const rlKey     = `gas_rl:${clientIp}:${clockHour}`
+    const rlCount   = await redis.incr(rlKey)
+    if (rlCount === 1) await redis.expire(rlKey, 3600)
+    if (rlCount > 3) throw new AppError('RATE_LIMITED', 'Maximum 3 gas fee orders per hour per IP', 429)
+
+    const idempKey = (req.headers['idempotency-key'] as string | undefined) ?? idempotencyKey
+    if (idempKey) {
+      const existingId = await redis.get(`idem:gasfee:crypto:${idempKey}`)
+      if (existingId) {
+        const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
+        if (existing) return reply.send({ success: true, data: { ...existing, paymentAddress: depositAddress } })
+      }
+    }
+
+    const userId = req.user?.id ?? null
+    if (!userId) {
+      const today    = new Date().toISOString().slice(0, 10)
+      const spendKey = `gas_guest_spend:${clientIp}:${today}`
+      const cur = parseFloat((await redis.get(spendKey)) ?? '0')
+      if (cur + paymentAmount > env.GAS_GUEST_DAILY_LIMIT_USD) {
+        throw new AppError('GUEST_LIMIT_EXCEEDED', `Guest orders are limited to $${env.GAS_GUEST_DAILY_LIMIT_USD} per day.`, 400)
+      }
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+      const destCount = await db.gasFeeOrder.count({ where: { toAddress, createdAt: { gte: todayStart } } })
+      if (destCount >= 2) throw new AppError('DEST_LIMIT_EXCEEDED', 'Maximum 2 gas orders to the same destination per day for guest users.', 400)
+    }
+
+    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON'
+    const orderRef   = generateOrderRef('GF')
+    const expiresAt  = new Date(Date.now() + 15 * 60 * 1000)
+
+    const order = await db.gasFeeOrder.create({
+      data: {
+        orderRef,
+        ...(userId ? { userId } : {}),
+        ipAddress:        clientIp,
+        chain:            dbChainEnum,
+        gasTokenConfigId: tokenCfg.id,
+        gasAmountNative:  amount,
+        gasAmountUSD,
+        priceAtOrder:     nativeUsdRate,
+        paymentCoin:      'USDT',
+        paymentNetwork,
+        paymentAmount,
+        fromHotWallet:    hotWallet.address,
+        toAddress,
+        status:           'payment_pending',
+        expiresAt,
+      },
+    })
+
+    if (idempKey) await redis.setex(`idem:gasfee:crypto:${idempKey}`, 86400, order.id)
+    if (!userId) {
+      const today    = new Date().toISOString().slice(0, 10)
+      const spendKey = `gas_guest_spend:${clientIp}:${today}`
+      await redis.incrbyfloat(spendKey, paymentAmount)
+      await redis.expire(spendKey, 86400)
+    }
+    await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 15 * 60 * 1000, jobId: `gas-expire-${order.id}` })
+
+    return reply.code(201).send({
+      success: true,
+      data: {
+        orderRef:        order.orderRef,
+        paymentAddress:  depositAddress,
+        paymentAmount:   order.paymentAmount.toString(),
+        paymentNetwork,
+        gasAmountNative: order.gasAmountNative.toString(),
+        nativeSymbol:    tokenCfg.symbol,
+        chain:           order.chain,
+        status:          order.status,
+        expiresAt:       order.expiresAt.toISOString(),
+      },
+    })
+  })
+
+  // ── POST /gas-fee/orders/:orderRef/proof — submit PKR payment proof ─────────
+
+  const proofSchema = z.object({ proofUrl: z.string().url().min(1) })
+
+  // Only accept Cloudinary-hosted proof screenshots
+  function isAllowedProofUrl(url: string): boolean {
+    try {
+      const { hostname } = new URL(url)
+      return hostname === 'res.cloudinary.com' || hostname.endsWith('.cloudinary.com')
+    } catch { return false }
+  }
+
+  app.post('/gas-fee/orders/:orderRef/proof', { preHandler: [authenticate] }, async (req, reply) => {
+    const { orderRef } = req.params as { orderRef: string }
+    const parsed = proofSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'proofUrl is required', 400)
+
+    if (!isAllowedProofUrl(parsed.data.proofUrl)) {
+      throw new AppError('VALIDATION_ERROR', 'Payment proof must be uploaded via the platform uploader (invalid URL domain)', 400)
+    }
+
+    const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+    if (order.userId !== req.user!.id) throw new AppError('FORBIDDEN', 'Not your order', 403)
+
+    if (order.paymentCoin !== 'PKR') {
+      throw new AppError('INVALID_STATUS', 'Proof upload is only for PKR payment orders', 400)
+    }
+    if (order.expiresAt < new Date()) {
+      throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
+    }
+    if (order.status !== 'payment_pending') {
+      throw new AppError('INVALID_STATUS', `Cannot submit proof for order in status ${order.status}`, 400)
+    }
+
+    const updated = await db.gasFeeOrder.update({
+      where: { orderRef },
+      data: { status: 'payment_uploaded', paymentProofUrl: parsed.data.proofUrl },
+    })
+
+    logger.info({ orderRef, userId: req.user!.id }, 'PKR payment proof submitted')
+
+    return reply.send({ success: true, data: { orderRef: updated.orderRef, status: updated.status } })
+  })
+
+  // ── POST /api/gas-fee/orders/wallet — REMOVED (was BKR wallet deduction) ───
+  // Replaced by /orders/pkr (PKR fiat) and /orders/crypto (USDT BEP20/Aptos)
+
+  app.post('/gas-fee/orders/wallet', async (_req, reply) => {
+    return reply.code(410).send({ success: false, error: { code: 'GONE', message: 'Use /gas-fee/orders/pkr or /gas-fee/orders/crypto instead.' } })
+  })
+
+
+  // ── POST /gas-fee/custom-request — admin notification for unsupported chains ─
+
+  const customRequestSchema = z.object({
+    blockchainName: z.string().min(1).max(100),
+    token:          z.string().min(1).max(50),
+    amount:         z.string().optional(),
+    purpose:        z.string().min(1),
+    urgency:        z.enum(['low', 'normal', 'urgent']),
+    details:        z.string().max(500).optional(),
+    contactEmail:   z.string().email().optional(),
+  })
+
+  app.post('/gas-fee/custom-request', async (req, reply) => {
+    const parsed = customRequestSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+
+    // Rate limit: 3 custom requests per IP per day
+    const clientIp = req.ip ?? 'unknown'
+    const today = new Date().toISOString().slice(0, 10)
+    const rlKey = `gas_custom_req:${clientIp}:${today}`
+    const rlCount = await redis.incr(rlKey)
+    if (rlCount === 1) await redis.expire(rlKey, 86400)
+    if (rlCount > 3) {
+      throw new AppError('RATE_LIMITED', 'Maximum 3 custom requests per day', 429)
+    }
+
+    const request = await db.gasCustomRequest.create({
+      data: {
+        blockchainName: parsed.data.blockchainName,
+        token:          parsed.data.token,
+        amount:         parsed.data.amount ?? null,
+        purpose:        parsed.data.purpose,
+        urgency:        parsed.data.urgency,
+        details:        parsed.data.details ?? null,
+        contactEmail:   parsed.data.contactEmail ?? null,
+        ipAddress:      clientIp,
+      },
+    })
+
+    logger.info({ customGasRequestId: request.id, blockchainName: request.blockchainName }, 'Custom gas fee request saved')
+    return reply.code(201).send({ success: true, data: { message: 'Request received. Our team will review and contact you within 24 hours.' } })
+  })
+
   // ── GET /api/gas-fee/orders/:orderRef — no auth ───────────────────────────
 
   app.get('/gas-fee/orders/:orderRef', async (req, reply) => {
