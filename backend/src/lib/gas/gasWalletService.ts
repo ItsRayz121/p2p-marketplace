@@ -1,5 +1,5 @@
 /**
- * Gas wallet service — mnemonic-based key derivation.
+ * Gas wallet service — mnemonic-based key derivation for all chains.
  *
  * Architecture:
  *   GAS_MASTER_KEY (AES-256-GCM key)
@@ -10,9 +10,13 @@
  * Rules enforced here:
  *   - Private key bytes are zeroed immediately after use
  *   - Seed buffer is NEVER cached — caller must zero it in a finally block
- *   - Addresses (public data) may be derived safely at startup
- *   - Private keys are never returned to callers outside this file;
- *     delivery functions call derive* inline and own the lifecycle
+ *   - Addresses (public — 0x.../T...) are derived once at startup and cached
+ *   - Private keys are NEVER cached and NEVER returned across module boundaries
+ *
+ * Derivation paths (BIP44):
+ *   TRON  m/44'/195'/0'/0/{index}   secp256k1, Base58Check address
+ *   EVM   m/44'/60'/0'/0/{index}    secp256k1, same 0x address on ALL EVM chains
+ *           (ETH, BSC, Base, ARB, OP, Polygon, Avalanche, opBNB)
  */
 
 import { createDecipheriv, createHash } from 'node:crypto'
@@ -90,15 +94,15 @@ export function decryptGasSeed(): Buffer {
   return seed
 }
 
-// ── Key derivation ─────────────────────────────────────────────────────────────
+// ── Private key derivation ─────────────────────────────────────────────────────
 
 /**
  * Derive a TRON private key at m/44'/195'/0'/0/{index}.
  * Returns plain hex WITHOUT 0x prefix — the format TronWeb expects.
  *
- * Use this value immediately and do not store it. The internal byte buffer
- * is zeroed before returning; the returned string cannot be zeroed (JS
- * strings are immutable) — minimise its scope.
+ * Use this value immediately. Do not store it. The internal byte buffer is
+ * zeroed before returning; JS strings are immutable so cannot be zeroed —
+ * minimise the scope of the returned value.
  */
 export function deriveTronPrivateKeyHex(seed: Buffer, index: number): string {
   const hdkey = HDKey.fromMasterSeed(seed)
@@ -110,17 +114,79 @@ export function deriveTronPrivateKeyHex(seed: Buffer, index: number): string {
 }
 
 /**
- * Derive the TRON address (public — safe to log and cache) at a given index.
- * Does NOT return the private key.
+ * Derive an EVM private key at m/44'/60'/0'/0/{index}.
+ * Returns hex WITH 0x prefix — the format viem expects.
+ * One derivation covers ALL EVM chains (ETH, BSC, Base, ARB, OP, Polygon, Avalanche, opBNB).
+ *
+ * Use this value immediately. Do not store it.
  */
+export function deriveEvmPrivateKeyHex(seed: Buffer, index: number): `0x${string}` {
+  const hdkey = HDKey.fromMasterSeed(seed)
+  const child = hdkey.derive(`m/44'/60'/0'/0/${index}`)
+  if (!child.privateKey) throw new Error('EVM HD derivation produced no private key')
+  const hex = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+  child.privateKey.fill(0)
+  return hex
+}
+
+// ── Address-only derivation (no private key exposure) ─────────────────────────
+
 function deriveTronAddress(seed: Buffer, index: number): string {
   const hdkey = HDKey.fromMasterSeed(seed)
   const child = hdkey.derive(`m/44'/195'/0'/0/${index}`)
   if (!child.privateKey) throw new Error('TRON HD derivation produced no private key')
-  const pkHex   = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+  const pkHex = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
   child.privateKey.fill(0)
-  const account = privateKeyToAccount(pkHex)
-  return ethAddressToTron(account.address)
+  return ethAddressToTron(privateKeyToAccount(pkHex).address)
+}
+
+function deriveEvmAddress(seed: Buffer, index: number): string {
+  const hdkey = HDKey.fromMasterSeed(seed)
+  const child = hdkey.derive(`m/44'/60'/0'/0/${index}`)
+  if (!child.privateKey) throw new Error('EVM HD derivation produced no private key')
+  const pkHex = ('0x' + Buffer.from(child.privateKey).toString('hex')) as `0x${string}`
+  child.privateKey.fill(0)
+  return privateKeyToAccount(pkHex).address  // EIP-55 checksummed
+}
+
+// ── Cached public address getters ──────────────────────────────────────────────
+// Addresses are public data — safe to cache in module scope.
+// Private keys are NEVER cached.
+
+let _tronAddressCache: string | null = null
+let _evmAddressCache:  string | null = null
+
+/**
+ * Return the derived TRON hot wallet address (T...).
+ * Cached after first call. Returns null when mnemonic system is not configured.
+ */
+export function getTronHotWalletAddress(): string | null {
+  if (!gasWalletIsConfigured()) return null
+  if (_tronAddressCache) return _tronAddressCache
+  const seed = decryptGasSeed()
+  try {
+    _tronAddressCache = deriveTronAddress(seed, HOT_WALLET_INDEX)
+    return _tronAddressCache
+  } finally {
+    seed.fill(0)
+  }
+}
+
+/**
+ * Return the derived EVM hot wallet address (0x..., EIP-55 checksummed).
+ * The same address is valid on ETH, BSC, Base, ARB, OP, Polygon, Avalanche, opBNB.
+ * Cached after first call. Returns null when mnemonic system is not configured.
+ */
+export function getEvmHotWalletAddress(): string | null {
+  if (!gasWalletIsConfigured()) return null
+  if (_evmAddressCache) return _evmAddressCache
+  const seed = decryptGasSeed()
+  try {
+    _evmAddressCache = deriveEvmAddress(seed, HOT_WALLET_INDEX)
+    return _evmAddressCache
+  } finally {
+    seed.fill(0)
+  }
 }
 
 // ── Startup validation ─────────────────────────────────────────────────────────
@@ -128,18 +194,20 @@ function deriveTronAddress(seed: Buffer, index: number): string {
 /**
  * Boot-time sanity check for the gas wallet mnemonic system.
  *
- * Validates that:
- *   - GAS_MASTER_KEY and GAS_SEED_CIPHERTEXT are either both set or both unset.
+ * Validates:
+ *   - GAS_MASTER_KEY and GAS_SEED_CIPHERTEXT are both set or both unset.
  *     Half-configured is a deploy mistake the server refuses to start with.
- *   - When both are set, the ciphertext decrypts and produces a valid T... address.
- *     Catches a typo'd ciphertext or wrong master key before any request is served.
+ *   - When both are set, the ciphertext decrypts and produces valid addresses
+ *     for both TRON (T...) and EVM (0x...). Catches a wrong key or corrupted
+ *     ciphertext before any request is served.
  *
- * Returns { configured: boolean, tronHotWallet?: string }.
- * Throws on misconfiguration — let the exception propagate to kill the process.
+ * Warms the address caches so getters are instant after startup.
+ * Throws on misconfiguration — let the exception kill the process.
  */
 export function validateGasWalletAtStartup(): {
   configured: boolean
   tronHotWallet?: string
+  evmHotWallet?: string
 } {
   const hasKey = !!env.GAS_MASTER_KEY
   const hasCt  = !!env.GAS_SEED_CIPHERTEXT
@@ -151,19 +219,25 @@ export function validateGasWalletAtStartup(): {
     )
   }
 
-  if (!hasKey) {
-    return { configured: false }
-  }
+  if (!hasKey) return { configured: false }
 
   const seed = decryptGasSeed()
   try {
     const tronHotWallet = deriveTronAddress(seed, HOT_WALLET_INDEX)
+    const evmHotWallet  = deriveEvmAddress(seed, HOT_WALLET_INDEX)
+
     if (!/^T[A-Za-z1-9]{33}$/.test(tronHotWallet)) {
-      throw new Error(
-        `Gas wallet: derived TRON address has unexpected format: ${tronHotWallet}`,
-      )
+      throw new Error(`Derived TRON address has unexpected format: ${tronHotWallet}`)
     }
-    return { configured: true, tronHotWallet }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(evmHotWallet)) {
+      throw new Error(`Derived EVM address has unexpected format: ${evmHotWallet}`)
+    }
+
+    // Warm the caches so getter calls after startup are instant
+    _tronAddressCache = tronHotWallet
+    _evmAddressCache  = evmHotWallet
+
+    return { configured: true, tronHotWallet, evmHotWallet }
   } finally {
     seed.fill(0)
   }

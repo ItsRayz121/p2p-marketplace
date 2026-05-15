@@ -72,7 +72,7 @@ export default function WalletPage() {
   if (error) return <ErrorState title={error} onRetry={fetchData} />
   if (!data) return null
 
-  const { depositAddresses, hotWallets, orderSummary, configWarnings } = data
+  const { depositAddresses, hotWallets, orderSummary, configWarnings, mnemonicConfigured, evmHotWallet } = data
   const criticalWarnings = configWarnings.filter((w) => w.required)
   const totalOrders = Object.values(orderSummary).reduce((a, b) => a + b, 0)
 
@@ -85,6 +85,36 @@ export default function WalletPage() {
         </div>
         <Button variant="secondary" size="sm" onClick={fetchData}>Refresh</Button>
       </div>
+
+      {/* Mnemonic System Status */}
+      {mnemonicConfigured ? (
+        <div className="rounded-xl border border-success/20 bg-success/5 px-5 py-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-success font-semibold text-sm">Mnemonic wallet system active</span>
+            <Badge variant="success" size="sm">HD Wallet</Badge>
+          </div>
+          <p className="text-xs text-text-muted">
+            All private keys are derived from the encrypted BIP39 seed. Manual key env vars are not required.
+          </p>
+          {evmHotWallet && (
+            <div className="pt-1 space-y-1">
+              <p className="text-xs text-text-secondary font-medium">EVM hot wallet (ETH / BSC / Base / ARB / OP / Polygon / Avalanche):</p>
+              <div className="flex items-center gap-1">
+                <span className="font-mono text-xs text-text-secondary break-all">{evmHotWallet}</span>
+                <CopyButton text={evmHotWallet} />
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-warning/20 bg-warning/5 px-5 py-4">
+          <p className="text-warning font-semibold text-sm">Mnemonic wallet system not configured</p>
+          <p className="text-xs text-text-muted mt-1">
+            Running in legacy mode — using GAS_WALLET_PRIVATE_KEY_* env vars.
+            Set GAS_MASTER_KEY + GAS_SEED_CIPHERTEXT in Railway to enable the mnemonic system.
+          </p>
+        </div>
+      )}
 
       {/* Configuration Warnings */}
       {configWarnings.length > 0 && (
@@ -120,8 +150,11 @@ export default function WalletPage() {
                   <Badge variant="outline" size="sm">{addr.network}</Badge>
                   <Badge variant="outline" size="sm">{addr.chain}</Badge>
                   {addr.source && (
-                    <Badge variant={addr.source === 'db' ? 'default' : 'outline'} size="sm">
-                      {addr.source === 'db' ? 'DB' : 'ENV'}
+                    <Badge
+                      variant={addr.source === 'db' ? 'default' : addr.source === 'mnemonic' ? 'success' : 'outline'}
+                      size="sm"
+                    >
+                      {addr.source === 'db' ? 'DB' : addr.source === 'mnemonic' ? 'MNEMONIC' : 'ENV'}
                     </Badge>
                   )}
                 </div>
@@ -220,7 +253,8 @@ export default function WalletPage() {
         <p className="font-semibold text-text-secondary text-sm mb-2">Notes</p>
         <p>• Deposit addresses shown here are what users send payment to. Private keys are never shown.</p>
         <p>• Hot wallet balances are cached from the last blockchain check (up to 30 min stale).</p>
-        <p>• To configure missing addresses, set the corresponding environment variable in Railway or add to DB via Config page.</p>
+        <p>• When the mnemonic system is active, EVM deposit addresses are derived automatically. No env var required for BSC / ETH.</p>
+        <p>• To override a derived address, set the corresponding ENV var in Railway or add a DB entry via the Config page.</p>
         <p>• Gas order counts refresh on page load. Click Refresh to get the latest.</p>
       </div>
     </div>

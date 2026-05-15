@@ -1076,7 +1076,7 @@ export const adminApi = {
     apiRequest<{
       depositAddresses: Array<{
         coin: string; network: string; chain: string
-        address: string | null; source: 'env' | 'db' | null
+        address: string | null; source: 'env' | 'db' | 'mnemonic' | null
         configured: boolean; updatedAt: string | null
       }>
       hotWallets: Array<{
@@ -1087,6 +1087,8 @@ export const adminApi = {
       }>
       orderSummary: Record<string, number>
       configWarnings: Array<{ key: string; label: string; required: boolean }>
+      mnemonicConfigured: boolean
+      evmHotWallet: string | null
     }>('/admin/wallet/status'),
   getWalletAddresses: () =>
     apiRequest<Array<{ id: string; key: string; value: string; updatedAt: string }>>('/admin/wallet/addresses'),

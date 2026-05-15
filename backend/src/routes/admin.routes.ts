@@ -1762,12 +1762,16 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/wallet/status', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { redis: redisClient } = await import('../lib/redis')
     const { GAS_CHAINS } = await import('../lib/gas/gas.chains')
+    const { gasWalletIsConfigured, getEvmHotWalletAddress } = await import('../lib/gas/gasWalletService')
 
-    // Deposit addresses: ENV-sourced first, then DB overrides
-    const envDepositMap: Array<{ coin: string; network: string; envVar: string; chain: string }> = [
-      { coin: 'USDT', network: 'TRC20',    envVar: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', chain: 'TRON' },
-      { coin: 'USDT', network: 'BEP20',    envVar: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20', chain: 'BSC' },
-      { coin: 'USDT', network: 'ERC20',    envVar: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20', chain: 'ETH' },
+    const mnemonicConfigured = gasWalletIsConfigured()
+    const evmHotWallet = mnemonicConfigured ? getEvmHotWalletAddress() : null
+
+    // Deposit addresses: DB override → ENV var → mnemonic-derived (for EVM chains)
+    const envDepositMap: Array<{ coin: string; network: string; envVar: string; chain: string; evmFallback?: boolean }> = [
+      { coin: 'USDT', network: 'TRC20',  envVar: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', chain: 'TRON' },
+      { coin: 'USDT', network: 'BEP20',  envVar: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20', chain: 'BSC',  evmFallback: true },
+      { coin: 'USDT', network: 'ERC20',  envVar: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20', chain: 'ETH',  evmFallback: true },
     ]
 
     const dbAddresses = await db.platformConfig.findMany({
@@ -1775,17 +1779,20 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     const dbMap = Object.fromEntries(dbAddresses.map((r) => [r.key, r]))
 
-    const depositAddresses = envDepositMap.map(({ coin, network, envVar, chain }) => {
-      const dbKey = `deposit_address_${coin.toLowerCase()}_${network.toLowerCase()}`
+    const depositAddresses = envDepositMap.map(({ coin, network, envVar, chain, evmFallback }) => {
+      const dbKey   = `deposit_address_${coin.toLowerCase()}_${network.toLowerCase()}`
       const dbEntry = dbMap[dbKey]
       const envValue = (env as unknown as Record<string, string | undefined>)[envVar]
-      const address = dbEntry?.value ?? envValue ?? null
+      // Priority: DB override → ENV var → mnemonic-derived EVM address
+      const mnemonicValue = (evmFallback && evmHotWallet) ? evmHotWallet : null
+      const address = dbEntry?.value ?? envValue ?? mnemonicValue ?? null
+      const source  = dbEntry ? 'db' : envValue ? 'env' : mnemonicValue ? 'mnemonic' : null
       return {
         coin,
         network,
         chain,
         address,
-        source: dbEntry ? 'db' : envValue ? 'env' : null,
+        source,
         configured: !!address,
         updatedAt: dbEntry?.updatedAt ?? null,
       }
@@ -1825,24 +1832,36 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     const orderSummary = Object.fromEntries(statusGroups.map((g) => [g.status, g._count.status])) as Record<string, number>
 
-    // Config warnings: required env vars
-    const requiredEnvChecks: Array<{ key: string; label: string; required: boolean }> = [
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', label: 'TRON deposit address',        required: true },
-      { key: 'GAS_WALLET_PRIVATE_KEY_TRON',   label: 'TRON hot wallet private key', required: true },
-      { key: 'TRON_FULLNODE_URL',              label: 'TRON full node URL',          required: true },
+    // Config warnings: flag missing env vars.
+    // When the mnemonic system is active it covers all GAS_WALLET_PRIVATE_KEY_* vars
+    // and the BSC/ETH deposit addresses — suppress those warnings.
+    const requiredEnvChecks: Array<{ key: string; label: string; required: boolean; suppressWhenMnemonic?: boolean }> = [
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', label: 'TRON deposit address',        required: true  },
+      { key: 'GAS_WALLET_PRIVATE_KEY_TRON',   label: 'TRON hot wallet private key', required: true,  suppressWhenMnemonic: true },
+      { key: 'TRON_FULLNODE_URL',              label: 'TRON full node URL',          required: true  },
       { key: 'TRONGRID_API_KEY',               label: 'TronGrid API key',            required: false },
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20',  label: 'BSC deposit address',         required: false },
-      { key: 'GAS_WALLET_PRIVATE_KEY_BSC',     label: 'BSC hot wallet private key',  required: false },
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20',  label: 'ETH deposit address',         required: false },
-      { key: 'GAS_WALLET_PRIVATE_KEY_ETH',     label: 'ETH hot wallet private key',  required: false },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20',  label: 'BSC deposit address',         required: false, suppressWhenMnemonic: true },
+      { key: 'GAS_WALLET_PRIVATE_KEY_BSC',     label: 'BSC hot wallet private key',  required: false, suppressWhenMnemonic: true },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20',  label: 'ETH deposit address',         required: false, suppressWhenMnemonic: true },
+      { key: 'GAS_WALLET_PRIVATE_KEY_ETH',     label: 'ETH hot wallet private key',  required: false, suppressWhenMnemonic: true },
     ]
     const configWarnings = requiredEnvChecks
-      .filter(({ key }) => !(env as unknown as Record<string, string | undefined>)[key])
+      .filter(({ key, suppressWhenMnemonic }) => {
+        if (mnemonicConfigured && suppressWhenMnemonic) return false
+        return !(env as unknown as Record<string, string | undefined>)[key]
+      })
       .map(({ key, label, required }) => ({ key, label, required }))
 
     return reply.send({
       success: true,
-      data: { depositAddresses, hotWallets, orderSummary, configWarnings },
+      data: {
+        depositAddresses,
+        hotWallets,
+        orderSummary,
+        configWarnings,
+        mnemonicConfigured,
+        evmHotWallet,
+      },
     })
   })
 

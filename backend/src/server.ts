@@ -25,7 +25,10 @@ async function start() {
 
     const gasWallet = validateGasWalletAtStartup()
     if (gasWallet.configured) {
-      logger.info({ tronHotWallet: gasWallet.tronHotWallet }, 'Gas wallet (mnemonic) configured')
+      logger.info(
+        { tronHotWallet: gasWallet.tronHotWallet, evmHotWallet: gasWallet.evmHotWallet },
+        'Gas wallet (mnemonic) configured — TRON + all EVM chains active',
+      )
     } else {
       logger.warn('Gas wallet mnemonic not configured — using legacy GAS_WALLET_PRIVATE_KEY_* env vars')
     }

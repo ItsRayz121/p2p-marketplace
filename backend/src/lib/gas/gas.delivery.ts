@@ -8,32 +8,31 @@ import {
   gasWalletIsConfigured,
   decryptGasSeed,
   deriveTronPrivateKeyHex,
+  deriveEvmPrivateKeyHex,
   HOT_WALLET_INDEX,
 } from './gasWalletService'
 
 // ── TRON delivery ─────────────────────────────────────────────────────────────
 
 async function deliverTron(order: GasFeeOrder): Promise<string> {
-  // Priority: mnemonic-derived key → legacy env var
-  // Both paths produce the same private key as long as the mnemonic matches the
-  // key originally used to set GAS_WALLET_PRIVATE_KEY_TRON (verified in Phase 1).
-  let privateKey: string | undefined
+  // Priority: mnemonic-derived key → legacy GAS_WALLET_PRIVATE_KEY_TRON env var.
+  // Both produce the same key as long as the mnemonic matches (verified Phase 1).
   let seed: Buffer | null = null
-
-  if (gasWalletIsConfigured()) {
-    seed = decryptGasSeed()
-    privateKey = deriveTronPrivateKeyHex(seed, HOT_WALLET_INDEX)
-  } else {
-    privateKey = env.GAS_WALLET_PRIVATE_KEY_TRON
-  }
-
-  if (!privateKey) {
-    throw new Error(
-      'TRON hot wallet not configured: set GAS_SEED_CIPHERTEXT or GAS_WALLET_PRIVATE_KEY_TRON',
-    )
-  }
-
   try {
+    let privateKey: string | undefined
+    if (gasWalletIsConfigured()) {
+      seed = decryptGasSeed()
+      privateKey = deriveTronPrivateKeyHex(seed, HOT_WALLET_INDEX)
+    } else {
+      privateKey = env.GAS_WALLET_PRIVATE_KEY_TRON
+    }
+
+    if (!privateKey) {
+      throw new Error(
+        'TRON hot wallet not configured: set GAS_SEED_CIPHERTEXT or GAS_WALLET_PRIVATE_KEY_TRON',
+      )
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { TronWeb } = require('tronweb')
     const tronWeb = new TronWeb({
@@ -71,15 +70,49 @@ async function deliverEvm(
 }
 
 async function deliverBsc(order: GasFeeOrder): Promise<string> {
-  const privateKey = env.GAS_WALLET_PRIVATE_KEY_BSC
-  if (!privateKey) throw new Error('GAS_WALLET_PRIVATE_KEY_BSC not configured')
-  return deliverEvm(order, bsc, env.BSC_RPC_URL, privateKey)
+  // Priority: mnemonic-derived key → legacy GAS_WALLET_PRIVATE_KEY_BSC env var.
+  let seed: Buffer | null = null
+  try {
+    let privateKey: string | undefined
+    if (gasWalletIsConfigured()) {
+      seed = decryptGasSeed()
+      privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
+    } else {
+      privateKey = env.GAS_WALLET_PRIVATE_KEY_BSC
+    }
+
+    if (!privateKey) {
+      throw new Error(
+        'BSC hot wallet not configured: set GAS_SEED_CIPHERTEXT or GAS_WALLET_PRIVATE_KEY_BSC',
+      )
+    }
+    return await deliverEvm(order, bsc, env.BSC_RPC_URL, privateKey)
+  } finally {
+    if (seed) seed.fill(0)
+  }
 }
 
 async function deliverEth(order: GasFeeOrder): Promise<string> {
-  const privateKey = env.GAS_WALLET_PRIVATE_KEY_ETH
-  if (!privateKey) throw new Error('GAS_WALLET_PRIVATE_KEY_ETH not configured')
-  return deliverEvm(order, mainnet, env.ETHEREUM_RPC_URL, privateKey)
+  // Priority: mnemonic-derived key → legacy GAS_WALLET_PRIVATE_KEY_ETH env var.
+  let seed: Buffer | null = null
+  try {
+    let privateKey: string | undefined
+    if (gasWalletIsConfigured()) {
+      seed = decryptGasSeed()
+      privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
+    } else {
+      privateKey = env.GAS_WALLET_PRIVATE_KEY_ETH
+    }
+
+    if (!privateKey) {
+      throw new Error(
+        'ETH hot wallet not configured: set GAS_SEED_CIPHERTEXT or GAS_WALLET_PRIVATE_KEY_ETH',
+      )
+    }
+    return await deliverEvm(order, mainnet, env.ETHEREUM_RPC_URL, privateKey)
+  } finally {
+    if (seed) seed.fill(0)
+  }
 }
 
 // ── Public dispatch ───────────────────────────────────────────────────────────
