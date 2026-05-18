@@ -12,6 +12,7 @@ import {
   processDepositEvent,
 } from '../services/depositWatcher.service'
 import { sendAdminAlertEmail } from '../services/email.service'
+import { getEffectiveDepositAddress } from '../lib/gas/gasWalletService'
 
 /**
  * Compute a candidate Moralis Streams signature.
@@ -281,9 +282,9 @@ export async function webhookRoutes(app: FastifyInstance) {
     // GasFeeOrder.toAddress is the user's delivery address — do not match on it here.
     // Match by deposit address → chain, then by amount (±1% tolerance), oldest first.
     const GAS_DEPOSIT_ADDRESSES = [
-      { address: env.GAS_FEE_DEPOSIT_ADDRESS_TRC20, chain: 'TRON',     network: 'TRC20' },
-      { address: env.GAS_FEE_DEPOSIT_ADDRESS_BEP20, chain: 'BSC',      network: 'BEP20' },
-      { address: env.GAS_FEE_DEPOSIT_ADDRESS_ERC20, chain: 'ETHEREUM', network: 'ERC20' },
+      { address: getEffectiveDepositAddress('TRON',     env.GAS_FEE_DEPOSIT_ADDRESS_TRC20).address,  chain: 'TRON',     network: 'TRC20' },
+      { address: getEffectiveDepositAddress('BSC',      env.GAS_FEE_DEPOSIT_ADDRESS_BEP20).address,  chain: 'BSC',      network: 'BEP20' },
+      { address: getEffectiveDepositAddress('ETHEREUM', env.GAS_FEE_DEPOSIT_ADDRESS_ERC20).address,  chain: 'ETHEREUM', network: 'ERC20' },
     ].filter((d): d is { address: string; chain: string; network: string } => !!d.address)
 
     const matchedDeposit = GAS_DEPOSIT_ADDRESSES.find(

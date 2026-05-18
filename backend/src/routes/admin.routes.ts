@@ -1861,14 +1861,19 @@ export async function adminRoutes(app: FastifyInstance) {
     const orderSummary = Object.fromEntries(statusGroups.map((g) => [g.status, g._count.status])) as Record<string, number>
 
     // Config warnings: flag missing env vars. Mnemonic system is now required.
+    // When mnemonic is configured, BEP20/ERC20 deposit addresses are derived from the HD wallet —
+    // their env vars are not needed and must not be flagged as warnings.
     const requiredEnvChecks: Array<{ key: string; label: string; required: boolean }> = [
-      { key: 'GAS_MASTER_KEY',                 label: 'Gas wallet master key (mnemonic)', required: true  },
-      { key: 'GAS_SEED_CIPHERTEXT',            label: 'Gas wallet seed ciphertext',       required: true  },
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20',  label: 'TRON deposit address',             required: true  },
-      { key: 'TRON_FULLNODE_URL',              label: 'TRON full node URL',               required: true  },
-      { key: 'TRONGRID_API_KEY',               label: 'TronGrid API key',                 required: false },
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20',  label: 'BSC deposit address',              required: false },
-      { key: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20',  label: 'ETH deposit address',              required: false },
+      { key: 'GAS_MASTER_KEY',                 label: 'Gas wallet master key (mnemonic)',          required: true  },
+      { key: 'GAS_SEED_CIPHERTEXT',            label: 'Gas wallet seed ciphertext',                required: true  },
+      { key: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20',  label: 'TRON deposit address',                      required: true  },
+      { key: 'TRON_FULLNODE_URL',              label: 'TRON full node URL',                        required: true  },
+      { key: 'TRONGRID_API_KEY',               label: 'TronGrid API key (rate-limit enhancement)', required: false },
+      // Only warn if mnemonic is NOT configured — otherwise the EVM hot wallet covers these
+      ...(!mnemonicConfigured ? [
+        { key: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20', label: 'BSC deposit address (override for non-mnemonic)', required: false },
+        { key: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20', label: 'ETH deposit address (override for non-mnemonic)', required: false },
+      ] : []),
     ]
     const configWarnings = requiredEnvChecks
       .filter(({ key }) => !(env as unknown as Record<string, string | undefined>)[key])

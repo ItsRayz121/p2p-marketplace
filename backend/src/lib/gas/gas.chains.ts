@@ -1,4 +1,5 @@
 import { env } from '../env'
+import { getEvmHotWalletAddress } from './gasWalletService'
 
 // Extended GasChainId now includes non-EVM chains.
 // Note: DB GasChain enum uses 'ETH' (not 'ETHEREUM') and 'SUI'.
@@ -50,7 +51,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://bscscan.com',
     nativeTierAmounts: { SMALL: 0.005, MEDIUM: 0.02, LARGE: 0.05, XLARGE: 0.1, JUMBO: 0.3 },
     validateAddress:     (addr) => EVM_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20 ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BSC,
     getRpcUrl:           () => env.BSC_RPC_URL,
     deliveryImplemented: true,
@@ -63,7 +64,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://etherscan.io',
     nativeTierAmounts: { SMALL: 0.002, MEDIUM: 0.005, LARGE: 0.01, XLARGE: 0.02, JUMBO: 0.05 },
     validateAddress:     (addr) => EVM_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20 ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_ETH,
     getRpcUrl:           () => env.ETHEREUM_RPC_URL,
     deliveryImplemented: true,
