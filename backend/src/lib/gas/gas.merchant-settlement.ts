@@ -89,7 +89,7 @@ export async function listMerchantAccounts(page = 1, limit = 20) {
     }),
     db.gasMerchantAccount.count(),
   ])
-  return { accounts, total, page, limit }
+  return { merchants: accounts, total, page, limit }
 }
 
 export async function getMerchantAccount(id: string) {

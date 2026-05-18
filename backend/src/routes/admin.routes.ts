@@ -1891,7 +1891,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.get('/admin/audit-log', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
-    const { page, limit, skip } = paginationParams(query)
+    const { limit, skip } = paginationParams(query)
 
     const where: Record<string, unknown> = {}
     if (query.adminId) where.actorId = query.adminId
@@ -1910,9 +1910,18 @@ export async function adminRoutes(app: FastifyInstance) {
       db.auditLog.count({ where }),
     ])
 
+    const entries = logs.map((l) => ({
+      id:        l.id,
+      userId:    l.actorId,
+      user:      l.actor,
+      action:    l.action,
+      details:   l.metadata,
+      createdAt: l.createdAt,
+    }))
+
     return reply.send({
       success: true,
-      data: { logs, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      data: { entries, total },
     })
   })
 

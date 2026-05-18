@@ -271,19 +271,10 @@ export default function ConfigPage() {
         </div>
       ))}
 
-      {/* Env-only settings notice */}
-      <div className="bg-surface rounded-xl border border-border px-5 py-4 text-xs text-text-muted space-y-1">
-        <p className="font-semibold text-text-secondary text-sm mb-2">Environment-only Settings</p>
-        <p>The following are set as Railway environment variables and cannot be edited here:</p>
-        <ul className="mt-2 space-y-0.5 list-disc list-inside">
-          <li><code>GAS_FEE_DEPOSIT_ADDRESS_TRC20</code> — TRON deposit address</li>
-          <li><code>GAS_WALLET_PRIVATE_KEY_TRON</code> — TRON hot wallet private key (never shown)</li>
-          <li><code>TRON_FULLNODE_URL</code> / <code>TRONGRID_API_KEY</code> — blockchain RPC</li>
-          <li><code>GAS_FEE_DEPOSIT_ADDRESS_BEP20</code> — BSC deposit address</li>
-          <li><code>GAS_WALLET_PRIVATE_KEY_BSC</code> / <code>GAS_WALLET_PRIVATE_KEY_ETH</code> — chain hot wallet keys</li>
-          <li><code>DATABASE_URL</code>, <code>JWT_SECRET</code>, <code>SMTP_*</code> — infrastructure secrets</li>
-        </ul>
-        <p className="mt-2">Manage these in the Railway dashboard under Variables.</p>
+      {/* Infrastructure secrets notice */}
+      <div className="bg-surface rounded-xl border border-border px-5 py-4 text-xs text-text-muted">
+        <p className="font-semibold text-text-secondary text-sm mb-1">Infrastructure Secrets</p>
+        <p>Private keys, wallet seeds, database credentials, and blockchain RPC keys are stored as server-side environment variables and are never exposed here. To rotate or update these secrets, use the deployment dashboard (Railway → Variables).</p>
       </div>
     </div>
   )

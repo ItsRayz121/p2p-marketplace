@@ -189,6 +189,16 @@ const nav: NavItem[] = [
       </svg>
     ),
   },
+  {
+    label: 'Settings',
+    href: '/admin/settings',
+    roles: ['admin', 'super_admin'],
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+    ),
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -263,6 +273,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isActive = (href: string) => {
     if (href === '/admin') return pathname === '/admin'
+    // Exact prefix match with path-segment boundary — prevents /admin/gas
+    // from matching when the current route is /admin/gas/merchants.
+    const longer = visibleNav.find(
+      (item) => item.href !== href && item.href.startsWith(href + '/') && pathname.startsWith(item.href),
+    )
+    if (longer) return false
     return pathname.startsWith(href)
   }
 
@@ -358,7 +374,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <span>Your admin account does not have 2FA enabled. Enable it in{' '}
-              <a href="/settings" className="underline font-medium">Settings → Security</a>{' '}
+              <a href="/admin/settings?tab=security" className="underline font-medium">Admin Settings → Security</a>{' '}
               to protect against account compromise.
             </span>
           </div>

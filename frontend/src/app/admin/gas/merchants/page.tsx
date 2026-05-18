@@ -96,8 +96,8 @@ export default function GasMerchantsPage() {
     setError(null)
     try {
       const res = await adminApi.listMerchantAccounts(p, LIMIT)
-      setMerchants(res.merchants)
-      setTotal(res.total)
+      setMerchants(res.merchants ?? [])
+      setTotal(res.total ?? 0)
       setPage(p)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load merchant accounts')
