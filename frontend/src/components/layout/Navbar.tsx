@@ -122,7 +122,7 @@ export default function Navbar() {
                         <Link href="/wallet" className={dropdownItemCls}>Wallet</Link>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
-                        <Link href="/ads" className={dropdownItemCls}>My Ads</Link>
+                        <Link href="/my-ads" className={dropdownItemCls}>My Ads</Link>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
                         <Link href="/settings" className={dropdownItemCls}>Settings</Link>
