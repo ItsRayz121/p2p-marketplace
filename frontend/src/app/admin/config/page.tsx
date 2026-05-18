@@ -18,6 +18,8 @@ interface KeyMeta {
   category: string
   sensitive?: boolean
   placeholder?: string
+  readonly?: boolean
+  readonlyReason?: string
 }
 
 const KEY_META: Record<string, KeyMeta> = {
@@ -54,6 +56,14 @@ const KEY_META: Record<string, KeyMeta> = {
   // Site Settings
   'site_maintenance':            { label: 'Maintenance Mode',         description: 'Set to "true" to enable site-wide maintenance mode', category: 'Site' },
   'site_notice':                 { label: 'Site Notice',              description: 'Banner message shown to all users (leave empty to hide)', category: 'Site' },
+  // System — read-only counters managed by the application
+  'next_evm_derivation_index':   {
+    label: 'EVM HD Derivation Counter',
+    description: 'Monotonically increasing counter for BIP-32 HD wallet address derivation. Each new user deposit address claims the next index. Editing this value will cause address collisions or skipped derivation paths — do not change it manually.',
+    category: 'Other',
+    readonly: true,
+    readonlyReason: 'System-managed. Editing risks address collisions across user wallets.',
+  },
 }
 
 const CATEGORY_ORDER = ['Payment', 'Crypto Deposit', 'Gas System', 'KYC', 'Merchant', 'Referral', 'Notifications', 'Site', 'Other']
@@ -189,11 +199,12 @@ export default function ConfigPage() {
                 {grouped[category]!.map((row) => {
                   const meta = KEY_META[row.key]
                   const sensitive = meta?.sensitive ?? isSensitive(row.key)
+                  const isReadonly = meta?.readonly ?? false
                   const revealed = showSensitive[row.key]
                   const displayValue = sensitive && !revealed
                     ? maskValue(row.value)
                     : (row.value || <span className="text-text-muted italic">empty</span>)
-                  const isEditing = editKey === row.key
+                  const isEditing = editKey === row.key && !isReadonly
 
                   return (
                     <tr key={row.key} className="hover:bg-surface/30">
@@ -202,6 +213,9 @@ export default function ConfigPage() {
                         <p className="font-mono text-xs text-text-muted mt-0.5">{row.key}</p>
                         {sensitive && (
                           <Badge variant="outline" size="sm" className="mt-1">Sensitive</Badge>
+                        )}
+                        {isReadonly && (
+                          <Badge variant="warning" size="sm" className="mt-1">System-managed</Badge>
                         )}
                       </td>
                       <td className="px-4 py-3 align-top">
@@ -247,7 +261,14 @@ export default function ConfigPage() {
                         {fmtDateTime(row.updatedAt)}
                       </td>
                       <td className="px-4 py-3 align-top text-right">
-                        {!isEditing && (
+                        {isReadonly ? (
+                          <span
+                            title={meta?.readonlyReason ?? 'This value is managed by the system and cannot be edited manually.'}
+                            className="text-xs text-text-muted cursor-default select-none"
+                          >
+                            Read-only
+                          </span>
+                        ) : !isEditing && (
                           <Button
                             size="sm"
                             variant="ghost"
