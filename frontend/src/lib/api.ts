@@ -344,6 +344,32 @@ export interface Ad {
   user?: Partial<AuthUser>
 }
 
+export interface CreateAdPayload {
+  side: 'buy' | 'sell'
+  coin: string
+  network: string
+  priceType: 'fixed' | 'float'
+  price: number
+  floatOffset?: number
+  totalAmount: number
+  minOrder: number
+  maxOrder: number
+  paymentMethods: string[]
+  tradeWindow?: number
+  terms?: string
+}
+
+export interface UpdateAdPayload {
+  price?: number
+  floatOffset?: number
+  minOrder?: number
+  maxOrder?: number
+  availableAmount?: number
+  paymentMethods?: string[]
+  tradeWindow?: number
+  terms?: string
+}
+
 // Shape returned by GET /marketplace/ads
 export interface MarketplaceAd {
   id: string
@@ -637,9 +663,9 @@ export const tradesApi = {
 }
 
 export const adsApi = {
-  createAd: (data: Partial<Ad>) =>
+  createAd: (data: CreateAdPayload) =>
     apiRequest<Ad>('/ads', { method: 'POST', body: JSON.stringify(data) }),
-  updateAd: (id: string, data: Partial<Ad>) =>
+  updateAd: (id: string, data: UpdateAdPayload) =>
     apiRequest<Ad>(`/ads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAd: (id: string) =>
     apiRequest<void>(`/ads/${id}`, { method: 'DELETE' }),

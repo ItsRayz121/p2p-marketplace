@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { adsApi, marketplaceApi } from '@/lib/api'
-import type { Ad } from '@/lib/api'
+import type { Ad, CreateAdPayload, UpdateAdPayload } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -125,14 +125,14 @@ function CreateAdPageContent() {
           type: ad.side,
           coin: ad.coin,
           network: ad.network ?? NETWORKS[ad.coin]?.[0] ?? '',
-          priceType: 'fixed',
+          priceType: ad.priceType ?? 'fixed',
           fixedPrice: ad.price,
-          floatOffset: '0',
+          floatOffset: ad.floatOffset ?? '0',
           minAmount: ad.minOrder,
           maxAmount: ad.maxOrder,
           availableAmount: '',
           paymentMethods: ad.paymentMethods,
-          tradeWindow: (ad as Ad & { tradeWindowMinutes?: number }).tradeWindowMinutes ?? 30,
+          tradeWindow: ad.tradeWindow ?? 30,
           terms: ad.terms ?? '',
         })
       })
@@ -185,24 +185,41 @@ function CreateAdPageContent() {
         ? form.fixedPrice
         : calculatedPrice ?? form.fixedPrice
 
-    const payload = {
-      side: form.type,
-      coin: form.coin,
-      network: form.network,
-      price,
-      minOrder: form.minAmount,
-      maxOrder: form.maxAmount,
-      availableAmount: form.availableAmount,
-      paymentMethods: form.paymentMethods,
-      tradeWindowMinutes: form.tradeWindow,
-      terms: form.terms,
-    }
+    const numPrice = parseFloat(price ?? '0')
+    const numMin = parseFloat(form.minAmount)
+    const numMax = parseFloat(form.maxAmount)
+    const numAvailable = parseFloat(form.availableAmount)
+    const numOffset = parseFloat(form.floatOffset || '0')
 
     try {
       if (editId) {
-        await adsApi.updateAd(editId, payload as Partial<Ad>)
+        const updatePayload: UpdateAdPayload = {
+          price: numPrice,
+          floatOffset: numOffset,
+          minOrder: numMin,
+          maxOrder: numMax,
+          availableAmount: numAvailable,
+          paymentMethods: form.paymentMethods,
+          tradeWindow: form.tradeWindow,
+          terms: form.terms,
+        }
+        await adsApi.updateAd(editId, updatePayload)
       } else {
-        await adsApi.createAd(payload as Partial<Ad>)
+        const createPayload: CreateAdPayload = {
+          side: form.type,
+          coin: form.coin,
+          network: form.network,
+          priceType: form.priceType,
+          price: numPrice,
+          floatOffset: numOffset,
+          totalAmount: numAvailable,
+          minOrder: numMin,
+          maxOrder: numMax,
+          paymentMethods: form.paymentMethods,
+          tradeWindow: form.tradeWindow,
+          terms: form.terms,
+        }
+        await adsApi.createAd(createPayload)
       }
       router.push('/my-ads')
     } catch (err) {
