@@ -2910,7 +2910,7 @@ export async function adminRoutes(app: FastifyInstance) {
     // ── 12. Per-chain deposit + refund + confirmation readiness ────────────────
     // Covers all EVM chains + TRON. SOL/TON/SUI remain inactive.
     const chainDepositRefundReadiness = (() => {
-      const evmDepositAddr = getEffectiveDepositAddress('EVM', envVars.GAS_FEE_DEPOSIT_ADDRESS_ERC20 ?? undefined)
+      const evmDepositAddr = getEffectiveDepositAddress('ETHEREUM', envVars.GAS_FEE_DEPOSIT_ADDRESS_ERC20 ?? undefined)
       const tronDepositAddr = getEffectiveDepositAddress('TRON', envVars.GAS_FEE_DEPOSIT_ADDRESS_TRC20 ?? undefined)
 
       const chainEnvDepositMap: Record<string, string | undefined> = {
