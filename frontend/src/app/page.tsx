@@ -108,7 +108,7 @@ function AdCard({ ad }: { ad: Ad }) {
             <span className="text-sm font-normal text-text-muted ml-1">/ {ad.coin}</span>
           </p>
           <p className="text-xs text-text-muted mt-1">
-            Limit: PKR {Number(ad.minAmount).toLocaleString()} – {Number(ad.maxAmount).toLocaleString()}
+            Limit: PKR {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()}
           </p>
           <div className="flex flex-wrap gap-1 mt-2">
             {ad.paymentMethods.map((pm) => (

@@ -35,7 +35,7 @@ export default function MyAdsPage() {
   const fetchAds = useCallback(async () => {
     try {
       const res = await adsApi.getMyAds({ limit: 100 })
-      setAds(res.ads)
+      setAds(res.items ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ads')
     } finally {
@@ -109,14 +109,14 @@ export default function MyAdsPage() {
                 {ads.map((ad) => (
                   <tr key={ad.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3">
-                      <Badge variant={ad.type === 'buy' ? 'success' : 'danger'} size="sm">
-                        {ad.type.toUpperCase()}
+                      <Badge variant={ad.side === 'buy' ? 'success' : 'danger'} size="sm">
+                        {ad.side.toUpperCase()}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-sm font-semibold text-text-primary">{ad.coin}</td>
                     <td className="px-4 py-3 text-sm text-text-primary">{parseFloat(ad.price).toLocaleString()}</td>
                     <td className="px-4 py-3 text-sm text-text-muted">
-                      {parseFloat(ad.minAmount).toLocaleString()} – {parseFloat(ad.maxAmount).toLocaleString()}
+                      {parseFloat(ad.minOrder).toLocaleString()} – {parseFloat(ad.maxOrder).toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-sm text-text-primary">—</td>
                     <td className="px-4 py-3">
@@ -157,8 +157,8 @@ export default function MyAdsPage() {
               <div key={ad.id} className="bg-white border border-border rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge variant={ad.type === 'buy' ? 'success' : 'danger'} size="sm">
-                      {ad.type.toUpperCase()}
+                    <Badge variant={ad.side === 'buy' ? 'success' : 'danger'} size="sm">
+                      {ad.side.toUpperCase()}
                     </Badge>
                     <span className="text-sm font-bold text-text-primary">{ad.coin}</span>
                   </div>
@@ -172,7 +172,7 @@ export default function MyAdsPage() {
                   <div>
                     <p className="text-text-muted text-xs">Min / Max</p>
                     <p className="font-semibold text-text-primary text-xs">
-                      {parseFloat(ad.minAmount).toLocaleString()} – {parseFloat(ad.maxAmount).toLocaleString()}
+                      {parseFloat(ad.minOrder).toLocaleString()} – {parseFloat(ad.maxOrder).toLocaleString()}
                     </p>
                   </div>
                   {ad.paymentMethods.length > 0 && (
@@ -219,7 +219,7 @@ export default function MyAdsPage() {
           isOpen={!!deleteTarget}
           onClose={() => setDeleteTarget(null)}
           title="Delete Ad"
-          description={`Are you sure you want to delete this ${deleteTarget.type} ad for ${deleteTarget.coin}? This action cannot be undone.`}
+          description={`Are you sure you want to delete this ${deleteTarget.side} ad for ${deleteTarget.coin}? This action cannot be undone.`}
           confirmLabel="Delete"
           cancelLabel="Cancel"
           onConfirm={handleDelete}

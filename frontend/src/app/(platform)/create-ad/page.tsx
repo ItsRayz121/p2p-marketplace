@@ -122,14 +122,14 @@ function CreateAdPageContent() {
     adsApi.getAd(editId)
       .then((ad) => {
         setForm({
-          type: ad.type,
+          type: ad.side,
           coin: ad.coin,
-          network: (ad as Ad & { network?: string }).network ?? NETWORKS[ad.coin]?.[0] ?? '',
+          network: ad.network ?? NETWORKS[ad.coin]?.[0] ?? '',
           priceType: 'fixed',
           fixedPrice: ad.price,
           floatOffset: '0',
-          minAmount: ad.minAmount,
-          maxAmount: ad.maxAmount,
+          minAmount: ad.minOrder,
+          maxAmount: ad.maxOrder,
           availableAmount: '',
           paymentMethods: ad.paymentMethods,
           tradeWindow: (ad as Ad & { tradeWindowMinutes?: number }).tradeWindowMinutes ?? 30,
@@ -185,13 +185,13 @@ function CreateAdPageContent() {
         ? form.fixedPrice
         : calculatedPrice ?? form.fixedPrice
 
-    const payload: Partial<Ad> & { network?: string; tradeWindowMinutes?: number; availableAmount?: string } = {
-      type: form.type,
+    const payload = {
+      side: form.type,
       coin: form.coin,
       network: form.network,
       price,
-      minAmount: form.minAmount,
-      maxAmount: form.maxAmount,
+      minOrder: form.minAmount,
+      maxOrder: form.maxAmount,
       availableAmount: form.availableAmount,
       paymentMethods: form.paymentMethods,
       tradeWindowMinutes: form.tradeWindow,

@@ -50,8 +50,8 @@ function NewTradePageContent() {
     const num = parseFloat(val)
     if (!val || isNaN(num)) return 'Enter an amount'
     if (!ad) return null
-    const min = parseFloat(ad.minAmount)
-    const max = parseFloat(ad.maxAmount)
+    const min = parseFloat(ad.minOrder)
+    const max = parseFloat(ad.maxOrder)
     if (num < min) return `Minimum is ${min} ${ad.coin}`
     if (num > max) return `Maximum is ${max} ${ad.coin}`
     const dailyRemaining = (user?.dailyBuyLimit ?? 0) - (user?.dailyBuyUsed ?? 0)
@@ -100,7 +100,7 @@ function NewTradePageContent() {
     <div className="max-w-xl mx-auto px-4 sm:px-6 py-8 pb-24 lg:pb-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">
-          {ad.type === 'sell' ? 'Buy' : 'Sell'} {ad.coin}
+          {ad.side === 'sell' ? 'Buy' : 'Sell'} {ad.coin}
         </h1>
         <p className="text-sm text-text-muted mt-1">Review the offer and enter the amount to trade</p>
       </div>
@@ -126,11 +126,11 @@ function NewTradePageContent() {
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="bg-surface rounded-lg p-3">
             <p className="text-xs text-text-muted mb-0.5">Min Amount</p>
-            <p className="font-medium text-text-primary">{Number(ad.minAmount).toLocaleString()} {ad.coin}</p>
+            <p className="font-medium text-text-primary">{Number(ad.minOrder).toLocaleString()} {ad.coin}</p>
           </div>
           <div className="bg-surface rounded-lg p-3">
             <p className="text-xs text-text-muted mb-0.5">Max Amount</p>
-            <p className="font-medium text-text-primary">{Number(ad.maxAmount).toLocaleString()} {ad.coin}</p>
+            <p className="font-medium text-text-primary">{Number(ad.maxOrder).toLocaleString()} {ad.coin}</p>
           </div>
         </div>
 
@@ -159,7 +159,7 @@ function NewTradePageContent() {
               type="number"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
-              placeholder={`${ad.minAmount} – ${ad.maxAmount}`}
+              placeholder={`${ad.minOrder} – ${ad.maxOrder}`}
               className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:ring-2 bg-white ${
                 amountError ? 'border-danger focus:ring-danger/30' : 'border-border focus:ring-primary'
               }`}

@@ -325,14 +325,20 @@ export interface Trade {
 export interface Ad {
   id: string
   userId: string
-  type: 'buy' | 'sell'
+  side: 'buy' | 'sell'
   coin: string
+  network: string
+  priceType: 'fixed' | 'float'
   price: string
-  minAmount: string
-  maxAmount: string
+  floatOffset: string
+  totalAmount: string
+  availableAmount: string
+  minOrder: string
+  maxOrder: string
   paymentMethods: string[]
+  tradeWindow: number
   terms?: string
-  status: 'active' | 'inactive' | 'paused'
+  status: 'active' | 'paused' | 'completed'
   createdAt: string
   updatedAt: string
   user?: Partial<AuthUser>
@@ -647,7 +653,7 @@ export const adsApi = {
             .map(([k, v]) => [k, String(v)])
         ).toString()
       : ''
-    return apiRequest<{ ads: Ad[]; total: number }>('/ads/me' + qs)
+    return apiRequest<{ items: Ad[]; total: number; page: number; limit: number; totalPages: number }>('/ads/me' + qs)
   },
   pauseAd: (id: string) =>
     apiRequest<Ad>(`/ads/${id}/pause`, { method: 'POST' }),
