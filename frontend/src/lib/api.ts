@@ -1331,6 +1331,79 @@ export const adminApi = {
     apiRequest<{ entries: Array<{ id: string; userId: string; action: string; details: unknown; ip?: string; userAgent?: string; createdAt: string }>; total: number }>('/admin/audit-log' + buildQs(params)),
 }
 
+// ─── Community Token Market ───────────────────────────────────────────────────
+
+export const ctmApi = {
+  // Tokens
+  getTokens: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ tokens: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/tokens' + buildQs(params)),
+  getToken: (slug: string) => apiRequest<unknown>(`/ctm/tokens/${slug}`),
+  suggestToken: (data: object) => apiRequest<unknown>('/ctm/tokens/suggest', { method: 'POST', body: JSON.stringify(data) }),
+  adminGetTokenQueue: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ requests: unknown[]; total: number; page: number; limit: number }>('/ctm/tokens/admin/queue' + buildQs(params)),
+  adminCreateToken: (data: object) => apiRequest<unknown>('/ctm/tokens/admin', { method: 'POST', body: JSON.stringify(data) }),
+  adminUpdateToken: (id: string, data: object) => apiRequest<unknown>(`/ctm/tokens/admin/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  adminDelistToken: (id: string) => apiRequest<void>(`/ctm/tokens/admin/${id}/delist`, { method: 'POST' }),
+  adminApproveTokenRequest: (id: string, data: object) => apiRequest<unknown>(`/ctm/tokens/admin/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  adminRejectTokenRequest: (id: string, data: object) => apiRequest<void>(`/ctm/tokens/admin/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Listings
+  getListings: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ listings: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/listings' + buildQs(params)),
+  getMyListings: () => apiRequest<{ listings: unknown[]; total: number }>('/ctm/listings/me'),
+  getListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}`),
+  createListing: (data: object) => apiRequest<unknown>('/ctm/listings', { method: 'POST', body: JSON.stringify(data) }),
+  updateListing: (id: string, data: object) => apiRequest<unknown>(`/ctm/listings/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  pauseListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/pause`, { method: 'POST' }),
+  activateListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/activate`, { method: 'POST' }),
+  deleteListing: (id: string) => apiRequest<void>(`/ctm/listings/${id}`, { method: 'DELETE' }),
+
+  // Requests (bid/RFQ mode)
+  getRequests: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ requests: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/requests' + buildQs(params)),
+  getMyRequests: () => apiRequest<{ requests: unknown[]; bids: unknown[] }>('/ctm/requests/me'),
+  getRequest: (id: string) => apiRequest<unknown>(`/ctm/requests/${id}`),
+  createRequest: (data: object) => apiRequest<unknown>('/ctm/requests', { method: 'POST', body: JSON.stringify(data) }),
+  cancelRequest: (id: string) => apiRequest<void>(`/ctm/requests/${id}`, { method: 'DELETE' }),
+  submitBid: (requestId: string, data: object) => apiRequest<unknown>(`/ctm/requests/${requestId}/bids`, { method: 'POST', body: JSON.stringify(data) }),
+  withdrawBid: (requestId: string, bidId: string) => apiRequest<void>(`/ctm/requests/${requestId}/bids/${bidId}`, { method: 'DELETE' }),
+  acceptBid: (requestId: string, bidId: string) => apiRequest<unknown>(`/ctm/requests/${requestId}/accept/${bidId}`, { method: 'POST' }),
+
+  // Trades
+  getMyTrades: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ trades: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/trades' + buildQs(params)),
+  getTrade: (ref: string) => apiRequest<unknown>(`/ctm/trades/${ref}`),
+  uploadPaymentProof: (ref: string, formData: FormData) =>
+    apiRequest<{ fileUrl: string }>(`/ctm/trades/${ref}/payment-proof`, { method: 'POST', body: formData }),
+  confirmPayment: (ref: string) => apiRequest<void>(`/ctm/trades/${ref}/confirm-payment`, { method: 'POST' }),
+  markTransferring: (ref: string) => apiRequest<void>(`/ctm/trades/${ref}/seller-transferring`, { method: 'POST' }),
+  uploadTokenProof: (ref: string, data: object | FormData) =>
+    apiRequest<{ fileUrl?: string }>(`/ctm/trades/${ref}/token-proof`, { method: 'POST', body: data instanceof FormData ? data : JSON.stringify(data) }),
+  confirmReceipt: (ref: string) => apiRequest<void>(`/ctm/trades/${ref}/confirm-receipt`, { method: 'POST' }),
+  openDispute: (ref: string, data: object) => apiRequest<void>(`/ctm/trades/${ref}/dispute`, { method: 'POST', body: JSON.stringify(data) }),
+  cancelTrade: (ref: string, data: object) => apiRequest<void>(`/ctm/trades/${ref}/cancel`, { method: 'POST', body: JSON.stringify(data) }),
+  sendMessage: (ref: string, data: object) => apiRequest<unknown>(`/ctm/trades/${ref}/messages`, { method: 'POST', body: JSON.stringify(data) }),
+  getMessages: (ref: string) => apiRequest<unknown[]>(`/ctm/trades/${ref}/messages`),
+  rateTrade: (ref: string, data: object) => apiRequest<unknown>(`/ctm/trades/${ref}/rate`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Merchant profile
+  getMyCtmProfile: () => apiRequest<unknown>('/ctm/merchants/me'),
+  registerCtmMerchant: () => apiRequest<unknown>('/ctm/merchants/register', { method: 'POST' }),
+  updateSettlementInstructions: (data: object) => apiRequest<unknown>('/ctm/merchants/me/settlement', { method: 'PATCH', body: JSON.stringify(data) }),
+  getPublicMerchant: (userId: string) => apiRequest<unknown>(`/ctm/merchants/${userId}/public`),
+
+  // Admin
+  adminGetTrades: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ trades: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/trades/admin/all' + buildQs(params)),
+  adminResolveDispute: (ref: string, data: object) => apiRequest<void>(`/ctm/trades/admin/${ref}/resolve-dispute`, { method: 'POST', body: JSON.stringify(data) }),
+  adminConfirmPayment: (ref: string) => apiRequest<void>(`/ctm/trades/admin/${ref}/confirm-payment`, { method: 'POST' }),
+  adminForceRelease: (ref: string) => apiRequest<void>(`/ctm/trades/admin/${ref}/release`, { method: 'POST' }),
+  adminGetMerchantQueue: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ merchants: unknown[]; total: number; page: number; limit: number }>('/ctm/merchants/admin/queue' + buildQs(params)),
+  adminApproveMerchant: (id: string, data?: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/approve`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
+  adminSuspendMerchant: (id: string, data: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/suspend`, { method: 'POST', body: JSON.stringify(data) }),
+}
+
 // ─── Health Check ─────────────────────────────────────────────────────────────
 
 export type HealthCheckResponse = {

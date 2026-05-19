@@ -267,6 +267,81 @@ enum SessionType {
   refresh
 }
 
+enum CtmSettlementType {
+  MANUAL
+  ON_CHAIN
+  HYBRID
+}
+
+enum CtmTokenStatus {
+  pending_review
+  approved
+  rejected
+  delisted
+  restricted
+}
+
+enum CtmTokenRiskTier {
+  low
+  medium
+  high
+  extreme
+}
+
+enum CtmListingStatus {
+  active
+  paused
+  completed
+  expired
+  cancelled
+}
+
+enum CtmRequestStatus {
+  open
+  accepted
+  expired
+  cancelled
+}
+
+enum CtmTradeStatus {
+  awaiting_payment
+  payment_uploaded
+  payment_confirmed
+  seller_transferring
+  proof_submitted
+  buyer_confirming
+  completed
+  cancelled
+  disputed
+  dispute_resolved
+  expired
+}
+
+enum CtmProofType {
+  screenshot
+  txhash
+  uid_receipt
+  video
+  other
+}
+
+enum CtmDisputeReason {
+  proof_fake
+  not_received
+  amount_mismatch
+  wrong_token
+  seller_unresponsive
+  buyer_unresponsive
+  other
+}
+
+enum CtmMerchantTier {
+  new
+  basic
+  verified
+  elite
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE MODELS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -350,6 +425,12 @@ model User {
   depositAddresses       DepositAddress[]
   deposits               Deposit[]
   trustedAddresses       TrustedWithdrawalAddress[]
+  ctmTokenRequests       CtmTokenRequest[]
+  ctmMerchantProfile     CtmMerchantProfile?
+  ctmBuyTrades           CtmTrade[]            @relation("CtmTradeBuyer")
+  ctmSellTrades          CtmTrade[]            @relation("CtmTradeSeller")
+  ctmRequests            CtmRequest[]          @relation("CtmRequestUser")
+  ctmBids                CtmBid[]              @relation("CtmBidder")
 
   @@index([email])
   @@index([username])
@@ -754,6 +835,7 @@ model Merchant {
   updatedAt           DateTime       @updatedAt
 
   inventory           MerchantInventory[]
+  ctmProfile          CtmMerchantProfile?
 }
 
 model MerchantInventory {
@@ -1417,4 +1499,296 @@ model GasMerchantSettlement {
   @@index([merchantId, status])
   @@index([status])
   @@index([periodStart, periodEnd])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMMUNITY TOKEN MARKET (CTM)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CtmToken {
+  id                String            @id @default(cuid())
+  slug              String            @unique
+  symbol            String
+  name              String
+  description       String            @db.VarChar(2000)
+  logoUrl           String?
+  bannerUrl         String?
+  settlementType    CtmSettlementType
+  network           String?
+  contractAddress   String?
+  explorerUrl       String?
+  officialWebsite   String?
+  officialTwitter   String?
+  officialTelegram  String?
+  whitePaperUrl     String?
+  status            CtmTokenStatus    @default(pending_review)
+  riskTier          CtmTokenRiskTier  @default(high)
+  riskNotes         String?           @db.VarChar(1000)
+  riskLabels        String[]          @default([])
+  communityVerified Boolean           @default(false)
+  verifiedByAdminId String?
+  verifiedAt        DateTime?
+  isListingEnabled  Boolean           @default(true)
+  maxListingAmount  Decimal?          @db.Decimal(28, 8)
+  minTradeAmountPkr Decimal?          @db.Decimal(14, 2)
+  totalListings     Int               @default(0)
+  totalTrades       Int               @default(0)
+  totalVolumePkr    Decimal           @default(0) @db.Decimal(18, 2)
+  lastTradedAt      DateTime?
+  suggestedByUserId String?
+  addedByAdminId    String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  listings          CtmListing[]
+  requests          CtmRequest[]
+  tokenRequests     CtmTokenRequest[]
+  trades            CtmTrade[]
+
+  @@index([status, isListingEnabled])
+  @@index([settlementType])
+  @@index([slug])
+}
+
+model CtmTokenRequest {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tokenId         String?
+  token           CtmToken? @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  tokenName       String
+  tokenSymbol     String
+  description     String    @db.VarChar(1000)
+  officialWebsite String?
+  evidenceUrl     String?
+  status          String    @default("pending")
+  adminNote       String?   @db.VarChar(500)
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+model CtmMerchantProfile {
+  id                     String          @id @default(cuid())
+  userId                 String          @unique
+  user                   User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  merchantId             String          @unique
+  merchant               Merchant        @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  tier                   CtmMerchantTier @default(new)
+  collateralAmount       Decimal         @default(0) @db.Decimal(18, 8)
+  collateralCoin         String          @default("USDT")
+  totalCtmTrades         Int             @default(0)
+  completedCtmTrades     Int             @default(0)
+  disputedCtmTrades      Int             @default(0)
+  ctmDisputeRate         Decimal         @default(0) @db.Decimal(6, 4)
+  ctmAvgRating           Decimal         @default(0) @db.Decimal(3, 2)
+  settlementInstructions Json            @default("{}")
+  isActive               Boolean         @default(true)
+  suspendedUntil         DateTime?
+  suspendReason          String?
+  approvedAt             DateTime?
+  approvedBy             String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  listings               CtmListing[]
+
+  @@index([tier, isActive])
+  @@index([userId])
+}
+
+model CtmListing {
+  id                String             @id @default(cuid())
+  listingRef        String             @unique @default(cuid())
+  merchantProfileId String
+  merchantProfile   CtmMerchantProfile @relation(fields: [merchantProfileId], references: [id], onDelete: Restrict)
+  tokenId           String
+  token             CtmToken           @relation(fields: [tokenId], references: [id], onDelete: Restrict)
+  side              AdSide
+  settlementType    CtmSettlementType
+  priceType         PriceType          @default(fixed)
+  pricePerUnit      Decimal            @db.Decimal(14, 2)
+  totalAmount       Decimal            @db.Decimal(28, 8)
+  availableAmount   Decimal            @db.Decimal(28, 8)
+  lockedAmount      Decimal            @default(0) @db.Decimal(28, 8)
+  minOrderPkr       Decimal            @db.Decimal(14, 2)
+  maxOrderPkr       Decimal            @db.Decimal(14, 2)
+  settlementMethod  String             @db.VarChar(100)
+  settlementNote    String             @db.VarChar(1000)
+  paymentMethods    String[]
+  tradeWindowMins   Int                @default(45)
+  terms             String             @default("") @db.VarChar(2000)
+  status            CtmListingStatus   @default(active)
+  requiresProof     Boolean            @default(true)
+  proofInstructions String?            @db.VarChar(500)
+  expiresAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  trades            CtmTrade[]
+
+  @@index([tokenId, side, status])
+  @@index([merchantProfileId])
+}
+
+model CtmRequest {
+  id             String           @id @default(cuid())
+  requestRef     String           @unique @default(cuid())
+  userId         String
+  user           User             @relation("CtmRequestUser", fields: [userId], references: [id], onDelete: Restrict)
+  tokenId        String
+  token          CtmToken         @relation(fields: [tokenId], references: [id], onDelete: Restrict)
+  side           AdSide
+  amount         Decimal          @db.Decimal(28, 8)
+  targetPricePkr Decimal?         @db.Decimal(14, 2)
+  paymentMethods String[]
+  note           String?          @db.VarChar(500)
+  status         CtmRequestStatus @default(open)
+  expiresAt      DateTime
+  acceptedBidId  String?          @unique
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  bids           CtmBid[]
+  trade          CtmTrade?        @relation("CtmRequestTrade")
+
+  @@index([tokenId, side, status])
+  @@index([userId])
+}
+
+model CtmBid {
+  id           String     @id @default(cuid())
+  requestId    String
+  request      CtmRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  bidderId     String
+  bidder       User       @relation("CtmBidder", fields: [bidderId], references: [id], onDelete: Restrict)
+  pricePerUnit Decimal    @db.Decimal(14, 2)
+  totalPkr     Decimal    @db.Decimal(14, 2)
+  message      String?    @db.VarChar(300)
+  status       String     @default("pending")
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+
+  @@index([requestId, status])
+  @@index([bidderId])
+}
+
+model CtmTrade {
+  id                String            @id @default(cuid())
+  tradeRef          String            @unique @default(cuid())
+  listingId         String?
+  listing           CtmListing?       @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  requestId         String?           @unique
+  request           CtmRequest?       @relation("CtmRequestTrade", fields: [requestId], references: [id], onDelete: Restrict)
+  buyerId           String
+  buyer             User              @relation("CtmTradeBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  sellerId          String
+  seller            User              @relation("CtmTradeSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  tokenId           String
+  token             CtmToken          @relation(fields: [tokenId], references: [id])
+  settlementType    CtmSettlementType
+  tokenAmount       Decimal           @db.Decimal(28, 8)
+  pricePerUnit      Decimal           @db.Decimal(14, 2)
+  fiatAmount        Decimal           @db.Decimal(14, 2)
+  paymentMethod     String
+  paymentProofUrl   String?
+  paymentProofHash  String?
+  settlementMethod  String            @db.VarChar(100)
+  buyerSettlementId String?           @db.VarChar(500)
+  status            CtmTradeStatus    @default(awaiting_payment)
+  proofDeadlineAt   DateTime?
+  confirmDeadlineAt DateTime?
+  expiresAt         DateTime
+  cancelledBy       String?
+  cancelReason      String?
+  cancelledAt       DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  proofs            CtmTradeProof[]
+  messages          CtmTradeMessage[]
+  dispute           CtmDispute?
+  ratings           CtmTradeRating[]
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@index([tradeRef])
+  @@index([tokenId, status])
+}
+
+model CtmTradeProof {
+  id              String       @id @default(cuid())
+  tradeId         String
+  trade           CtmTrade     @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  uploadedBy      String
+  proofType       CtmProofType
+  fileUrl         String?
+  fileHash        String?
+  txHash          String?
+  description     String?      @db.VarChar(500)
+  isAdminReviewed Boolean      @default(false)
+  adminNote       String?      @db.VarChar(500)
+  createdAt       DateTime     @default(now())
+
+  @@index([tradeId])
+}
+
+model CtmTradeMessage {
+  id            String   @id @default(cuid())
+  tradeId       String
+  trade         CtmTrade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  senderId      String
+  message       String   @db.VarChar(1000)
+  attachmentUrl String?
+  createdAt     DateTime @default(now())
+
+  @@index([tradeId])
+}
+
+model CtmDispute {
+  id                    String                 @id @default(cuid())
+  tradeId               String                 @unique
+  trade                 CtmTrade               @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  openedById            String
+  reason                CtmDisputeReason
+  description           String                 @db.VarChar(5000)
+  status                DisputeStatus          @default(open)
+  resolution            String?                @db.VarChar(2000)
+  winner                DisputeWinner?
+  resolutionType        DisputeResolutionType?
+  flaggedForTokenReview Boolean                @default(false)
+  escalatedAt           DateTime?
+  resolvedAt            DateTime?
+  resolvedBy            String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  messages              CtmDisputeMessage[]
+
+  @@index([status])
+}
+
+model CtmDisputeMessage {
+  id          String     @id @default(cuid())
+  disputeId   String
+  dispute     CtmDispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  senderId    String
+  message     String     @db.VarChar(2000)
+  evidenceUrl String?
+  createdAt   DateTime   @default(now())
+
+  @@index([disputeId])
+}
+
+model CtmTradeRating {
+  id            String   @id @default(cuid())
+  tradeId       String
+  trade         CtmTrade @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  ratedByUserId String
+  ratedUserId   String
+  rating        Int
+  comment       String?  @db.VarChar(500)
+  tags          String[]
+  createdAt     DateTime @default(now())
+
+  @@unique([tradeId, ratedByUserId])
+  @@index([ratedUserId])
 }

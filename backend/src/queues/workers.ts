@@ -18,6 +18,7 @@ import { runMerchantSettlementJob } from '../jobs/gasMerchantSettlement.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
+import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation } from '../ctm/ctm.jobs'
 import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -186,6 +187,23 @@ export function startWorkers() {
     async () => { await runMerchantSettlementJob() },
     { max: 1, duration: 60_000 },
   )
+
+  // CTM repeatable jobs
+  queues.ctmExpiry
+    .add('ctm-trade-expiry', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-trade-expiry-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule CTM trade expiry job'))
+
+  queues.ctmProofDeadline
+    .add('ctm-proof-deadline', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-proof-deadline-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule CTM proof deadline job'))
+
+  queues.ctmDisputeEscalation
+    .add('ctm-dispute-escalation', {}, { repeat: { every: 30 * 60 * 1000 }, jobId: 'ctm-dispute-escalation-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule CTM dispute escalation job'))
+
+  createWorker(QUEUE_NAMES.CTM_EXPIRY, async () => { await runCtmTradeExpiry() }, { max: 1, duration: 60_000 })
+  createWorker(QUEUE_NAMES.CTM_PROOF_DEADLINE, async () => { await runCtmProofDeadline() }, { max: 1, duration: 60_000 })
+  createWorker(QUEUE_NAMES.CTM_DISPUTE_ESCALATION, async () => { await runCtmDisputeEscalation() }, { max: 1, duration: 60_000 })
 
   logger.info('BullMQ workers ready')
 }

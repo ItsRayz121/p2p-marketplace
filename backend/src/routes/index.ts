@@ -20,6 +20,11 @@ import { rateAlertRoutes } from './rateAlert.routes'
 import { gasFeeRoutes } from './gasFee.routes'
 import { merchantGasRoutes } from './merchantGas.routes'
 import { adminRoutes } from './admin.routes'
+import { ctmTokenRoutes } from '../ctm/ctm.token.routes'
+import { ctmListingRoutes } from '../ctm/ctm.listing.routes'
+import { ctmRequestRoutes } from '../ctm/ctm.request.routes'
+import { ctmTradeRoutes } from '../ctm/ctm.trade.routes'
+import { ctmMerchantRoutes } from '../ctm/ctm.merchant.routes'
 
 export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes)
@@ -43,4 +48,9 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(gasFeeRoutes, { prefix: '/api/v1' })
   await app.register(merchantGasRoutes, { prefix: '/api/v1' })
   await app.register(adminRoutes, { prefix: '/api/v1' })
+  await app.register(ctmTokenRoutes, { prefix: '/api/v1' })
+  await app.register(ctmListingRoutes, { prefix: '/api/v1' })
+  await app.register(ctmRequestRoutes, { prefix: '/api/v1' })
+  await app.register(ctmTradeRoutes, { prefix: '/api/v1' })
+  await app.register(ctmMerchantRoutes, { prefix: '/api/v1' })
 }

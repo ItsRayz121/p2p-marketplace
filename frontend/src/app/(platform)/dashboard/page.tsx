@@ -226,10 +226,11 @@ export default function DashboardPage() {
       {/* ── 3. Quick Actions ── */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {[
             { href: '/instant-buy', label: 'Buy Crypto', icon: '⚡' },
             { href: '/marketplace', label: 'Marketplace', icon: '🏪' },
+            { href: '/ctm', label: 'Community Tokens', icon: '🪙' },
             { href: '/my-ads', label: 'My Ads', icon: '📢' },
             { href: '/referral', label: 'Referral', icon: '🎁' },
           ].map((item) => (

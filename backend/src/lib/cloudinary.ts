@@ -17,6 +17,9 @@ export const CLOUDINARY_FOLDERS = {
   KYC_SELFIE: 'pakswap/kyc/selfie',
   PAYMENT_PROOF: 'pakswap/payment-proof',
   MERCHANT_PROOF: 'pakswap/merchant/proof',
+  CTM_PAYMENT_PROOF: 'pakswap/ctm/payment-proof',
+  CTM_TOKEN_PROOF: 'pakswap/ctm/token-proof',
+  CTM_TOKEN_LOGO: 'pakswap/ctm/token-logos',
 } as const
 
 // Max file sizes in bytes

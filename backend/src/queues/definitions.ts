@@ -30,6 +30,9 @@ export const QUEUE_NAMES = {
   GAS_REFILL:               'gas-refill',
   GAS_RECONCILIATION:       'gas-reconciliation',
   GAS_MERCHANT_SETTLEMENT:  'gas-merchant-settlement',
+  CTM_EXPIRY:               'ctm-expiry',
+  CTM_PROOF_DEADLINE:       'ctm-proof-deadline',
+  CTM_DISPUTE_ESCALATION:   'ctm-dispute-escalation',
 } as const
 
 export const queues = {
@@ -87,4 +90,7 @@ export const queues = {
     connection,
     defaultJobOptions: { ...defaultJobOptions, attempts: 2, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
+  ctmExpiry: new Queue(QUEUE_NAMES.CTM_EXPIRY, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
+  ctmProofDeadline: new Queue(QUEUE_NAMES.CTM_PROOF_DEADLINE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
+  ctmDisputeEscalation: new Queue(QUEUE_NAMES.CTM_DISPUTE_ESCALATION, { connection, defaultJobOptions }),
 }

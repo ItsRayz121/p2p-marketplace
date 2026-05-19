@@ -36,6 +36,7 @@ export default function Navbar() {
           {/* Center nav — desktop only */}
           <nav className="hidden lg:flex items-center gap-1">
             <NavLink href="/marketplace">Marketplace</NavLink>
+            <NavLink href="/ctm">Community Tokens</NavLink>
             <NavLink href="/gas">Buy Gas</NavLink>
             <NavLink href="/leaderboard">Leaderboard</NavLink>
           </nav>
