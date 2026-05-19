@@ -978,8 +978,8 @@ export interface GasPkrMethods {
 }
 
 export interface GasCryptoMethods {
-  bep20: { address: string | null; network: string; fee: string }
-  aptos: { address: string | null; network: string; fee: string }
+  bep20: { address: string | null; network: string; fee: string; feeUsd: number }
+  aptos: { address: string | null; network: string; fee: string; feeUsd: number }
 }
 
 export interface GasCustomRequest {

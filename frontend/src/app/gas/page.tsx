@@ -1249,20 +1249,40 @@ export default function GasPage() {
 
                   <div className="space-y-3">
                     {/* BEP20 card */}
-                    <button onClick={() => setSelectedCryptoNetwork('BEP20')}
-                      className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                        selectedCryptoNetwork === 'BEP20' ? 'border-purple-400 bg-purple-50' : 'border-gray-100 bg-white hover:border-purple-200'
-                      }`}>
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">BNB</div>
-                      <div className="flex-1">
-                        <p className="text-sm font-bold text-gray-900">USDT BEP20</p>
-                        <p className="text-xs text-gray-400">BNB Smart Chain · ~$0.29 fee</p>
-                      </div>
-                      {selectedCryptoNetwork === 'BEP20'
-                        ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                        : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
-                      }
-                    </button>
+                    {(() => {
+                      const bepConfigured = !!cryptoMethods?.bep20?.address
+                      const bepAddr = cryptoMethods?.bep20?.address
+                      return (
+                        <button
+                          onClick={() => bepConfigured && setSelectedCryptoNetwork('BEP20')}
+                          disabled={!bepConfigured}
+                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                            !bepConfigured
+                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
+                              : selectedCryptoNetwork === 'BEP20'
+                              ? 'border-purple-400 bg-purple-50'
+                              : 'border-gray-100 bg-white hover:border-purple-200'
+                          }`}
+                        >
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">BNB</div>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-gray-900">USDT BEP20</p>
+                            <p className="text-xs text-gray-400">
+                              {bepConfigured ? 'BNB Smart Chain · ~$0.29 fee' : 'Coming soon — not yet configured'}
+                            </p>
+                            {bepAddr && (
+                              <p className="text-xs font-mono text-gray-400 mt-0.5">{bepAddr.slice(0, 8)}...{bepAddr.slice(-6)}</p>
+                            )}
+                          </div>
+                          {bepConfigured
+                            ? selectedCryptoNetwork === 'BEP20'
+                              ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                              : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 flex-shrink-0">Select</span>
+                            : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full flex-shrink-0">Soon</span>
+                          }
+                        </button>
+                      )
+                    })()}
 
                     {/* Aptos card — disabled until address is configured */}
                     {(() => {
@@ -1304,31 +1324,40 @@ export default function GasPage() {
                   </div>
 
                   {/* Amount to pay — full transparent breakdown */}
-                  {selectedCryptoNetwork && (
-                    <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5">
-                      <div className="flex justify-between"><span className="text-gray-500">Gas Ordered</span><span className="font-semibold">{amount} {selectedToken?.symbol}</span></div>
-                      {priceUsd > 0 && (
-                        <div className="flex justify-between"><span className="text-gray-500">Market Price</span><span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken?.symbol}</span></div>
-                      )}
-                      {priceUsd > 0 && (
-                        <div className="flex justify-between"><span className="text-gray-500">Gas Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Blockchain Fee</span>
-                        <span className="font-semibold text-gray-600">
-                          {selectedCryptoNetwork === 'BEP20'
-                            ? cryptoMethods?.bep20?.fee ?? '~$0.29'
-                            : cryptoMethods?.aptos?.fee ?? '~$0.01'}
-                        </span>
+                  {selectedCryptoNetwork && (() => {
+                    const networkFeeUsd = selectedCryptoNetwork === 'BEP20'
+                      ? (cryptoMethods?.bep20?.feeUsd ?? 0.29)
+                      : (cryptoMethods?.aptos?.feeUsd ?? 0.01)
+                    const networkFeeDisplay = selectedCryptoNetwork === 'BEP20'
+                      ? (cryptoMethods?.bep20?.fee ?? '~$0.29')
+                      : (cryptoMethods?.aptos?.fee ?? '~$0.01')
+                    const totalWalletCost = computedUsd + networkFeeUsd
+                    return (
+                      <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5">
+                        <div className="flex justify-between"><span className="text-gray-500">Gas Ordered</span><span className="font-semibold">{amount} {selectedToken?.symbol}</span></div>
+                        {priceUsd > 0 && (
+                          <div className="flex justify-between"><span className="text-gray-500">Market Price</span><span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken?.symbol}</span></div>
+                        )}
+                        {priceUsd > 0 && (
+                          <div className="flex justify-between"><span className="text-gray-500">Gas Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>
+                        )}
+                        <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span></div>
+                        <div className="flex justify-between pt-1.5 border-t border-gray-200">
+                          <span className="font-semibold text-gray-700">To Platform</span>
+                          <span className="font-semibold text-gray-800">${computedUsd.toFixed(2)} USDT</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">+ Network Fee (BSC)</span>
+                          <span className="font-semibold text-orange-600">{networkFeeDisplay}</span>
+                        </div>
+                        <div className="flex justify-between pt-1.5 border-t border-gray-200">
+                          <span className="font-bold text-gray-900">Total Wallet Cost</span>
+                          <span className="font-bold text-purple-700">~${totalWalletCost.toFixed(2)} USDT</span>
+                        </div>
+                        <p className="text-gray-400 italic pt-0.5">Your wallet will deduct ${computedUsd.toFixed(2)} to platform + {networkFeeDisplay} BSC network fee.</p>
                       </div>
-                      <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span></div>
-                      <div className="flex justify-between pt-1.5 border-t border-gray-200">
-                        <span className="font-bold text-gray-800">You Pay</span>
-                        <span className="font-bold text-purple-700">${computedUsd.toFixed(2)} USDT</span>
-                      </div>
-                      <p className="text-gray-400 italic pt-0.5">Blockchain fee charged separately by the network when sending USDT.</p>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   {cryptoError && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2">{cryptoError}</p>}
 

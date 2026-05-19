@@ -753,6 +753,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   })
 
   // ── GET /gas-fee/crypto-methods — admin-configured USDT deposit addresses ──
+  // Address resolution priority: platformConfig DB override → env var → mnemonic-derived
 
   app.get('/gas-fee/crypto-methods', async (_req, reply) => {
     const configs = await db.platformConfig.findMany({
@@ -760,11 +761,16 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
     const map: Record<string, string> = {}
     configs.forEach(c => { map[c.key] = c.value })
+
+    // BEP20: DB override → env var → mnemonic-derived (same chain resolution as order creation)
+    const bep20Address = map['gas_usdt_bep20_address'] ?? GAS_CHAINS.BSC.getDepositAddress() ?? null
+    const aptosAddress = map['gas_usdt_aptos_address'] ?? null
+
     return reply.send({
       success: true,
       data: {
-        bep20: { address: map['gas_usdt_bep20_address'] ?? null, network: 'BEP20', fee: '~$0.29' },
-        aptos: { address: map['gas_usdt_aptos_address'] ?? null, network: 'APTOS', fee: '~$0.01' },
+        bep20: { address: bep20Address, network: 'BEP20', fee: '~$0.29', feeUsd: 0.29 },
+        aptos: { address: aptosAddress,  network: 'APTOS', fee: '~$0.01', feeUsd: 0.01 },
       },
     })
   })
@@ -898,10 +904,13 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const configKey = paymentNetwork === 'BEP20' ? 'gas_usdt_bep20_address' : 'gas_usdt_aptos_address'
     const depositConfig = await db.platformConfig.findUnique({ where: { key: configKey } })
-    if (!depositConfig?.value) {
+    // BEP20: fall back to env var / mnemonic-derived address if no DB override
+    const depositAddress =
+      depositConfig?.value ??
+      (paymentNetwork === 'BEP20' ? (GAS_CHAINS.BSC.getDepositAddress() ?? null) : null)
+    if (!depositAddress) {
       throw new AppError('CHAIN_NOT_SUPPORTED', `USDT ${paymentNetwork} payment is not configured yet`, 400)
     }
-    const depositAddress = depositConfig.value
 
     const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
     if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)

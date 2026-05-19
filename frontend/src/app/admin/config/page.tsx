@@ -41,6 +41,18 @@ const KEY_META: Record<string, KeyMeta> = {
   'gas_expiry_minutes':          { label: 'Gas Order Expiry (min)',   description: 'Minutes before an unpaid gas order expires', category: 'Gas System', placeholder: '30' },
   'gas_pkr_proof_expiry_hours':  { label: 'PKR Proof Expiry (hrs)',   description: 'Hours before a PKR payment proof for gas expires', category: 'Gas System', placeholder: '2' },
   'gas_custom_daily_limit':      { label: 'Custom Request Daily Limit', description: 'Max custom gas requests per user per day', category: 'Gas System', placeholder: '3' },
+  // Gas PKR Payment Methods
+  'gas_pkr_bank_name':           { label: 'Gas Bank Name',            description: 'Bank name shown to users for gas PKR bank transfer payments', category: 'Gas System' },
+  'gas_pkr_bank_account_name':   { label: 'Gas Bank Account Name',    description: 'Account holder name for gas PKR bank transfers', category: 'Gas System' },
+  'gas_pkr_bank_iban':           { label: 'Gas Bank IBAN',            description: 'IBAN for gas PKR bank transfer payments', category: 'Gas System' },
+  'gas_pkr_bank_account_number': { label: 'Gas Bank Account No.',     description: 'Account number for gas PKR bank transfer payments', category: 'Gas System' },
+  'gas_pkr_easypaisa_number':    { label: 'Gas Easypaisa Number',     description: 'Easypaisa mobile number for gas PKR payments', category: 'Gas System' },
+  'gas_pkr_easypaisa_name':      { label: 'Gas Easypaisa Name',       description: 'Easypaisa account name for gas PKR payments', category: 'Gas System' },
+  'gas_pkr_jazzcash_number':     { label: 'Gas JazzCash Number',      description: 'JazzCash mobile number for gas PKR payments', category: 'Gas System' },
+  'gas_pkr_jazzcash_name':       { label: 'Gas JazzCash Name',        description: 'JazzCash account name for gas PKR payments', category: 'Gas System' },
+  // Gas Crypto Payment Methods
+  'gas_usdt_bep20_address':      { label: 'Gas USDT BEP20 Address',   description: 'Platform BSC address to receive USDT BEP20 for gas orders. Leave blank to use mnemonic-derived hot wallet address.', category: 'Gas System' },
+  'gas_usdt_aptos_address':      { label: 'Gas USDT Aptos Address',   description: 'Platform Aptos address to receive USDT for gas orders. Set this to enable Aptos payment method.', category: 'Gas System' },
   // Notification Settings
   'admin_email':                 { label: 'Admin Email',              description: 'Primary admin email for system notifications', category: 'Notifications' },
   'alert_email':                 { label: 'Alert Email',              description: 'Email address for critical alerts', category: 'Notifications' },
