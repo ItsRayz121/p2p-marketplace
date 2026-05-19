@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
 
-const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'Bank Transfer', 'SadaPay', 'NayaPay']
+const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'SadaPay', 'NayaPay', 'HBL', 'MCB', 'UBL', 'Allied Bank', 'Bank Alfalah', 'Meezan Bank', 'NBP', 'Standard Chartered', 'Askari Bank', 'Faysal Bank', 'JS Bank', 'Bank of Punjab', 'Silk Bank', 'Soneri Bank']
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string }
 

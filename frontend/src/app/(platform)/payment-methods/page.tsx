@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
+import { PK_BANKS } from '@/lib/pkPaymentMethods'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,30 +44,57 @@ interface AddFormProps {
   onCancel: () => void
 }
 
+const inputCls = 'w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-text-muted'
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-sm font-medium text-text-primary block mb-1">{label}</label>
+      {hint && <p className="text-xs text-text-muted mb-1.5">{hint}</p>}
+      {children}
+    </div>
+  )
+}
+
 function AddMethodForm({ onSuccess, onCancel }: AddFormProps) {
   const [type, setType] = useState<MethodType>('JazzCash')
-  const [accountTitle, setAccountTitle] = useState('')
-  const [accountNumber, setAccountNumber] = useState('')
-  const [bankName, setBankName] = useState('')
+  // Mobile fields (JazzCash / Easypaisa)
+  const [mobileName, setMobileName]     = useState('')
+  const [mobileNumber, setMobileNumber] = useState('')
+  // Bank fields
+  const [bankName, setBankName]         = useState('')
+  const [bankAccName, setBankAccName]   = useState('')
+  const [bankIban, setBankIban]         = useState('')
+  const [bankAccNo, setBankAccNo]       = useState('')
+
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = async () => {
-    if (!accountTitle.trim()) { setError('Account title is required'); return }
-    if (!accountNumber.trim()) { setError('Account number is required'); return }
-    if (type === 'Bank' && !bankName.trim()) { setError('Bank name is required'); return }
+    setError('')
+    let accountTitle = ''
+    let accountNumber = ''
+    let bName: string | undefined
+
+    if (type === 'Bank') {
+      if (!bankName) { setError('Please select your bank'); return }
+      if (!bankAccName.trim()) { setError('Account holder name is required'); return }
+      if (!bankIban.trim() && !bankAccNo.trim()) { setError('Enter your IBAN or account number'); return }
+      accountTitle  = bankAccName.trim()
+      accountNumber = bankIban.trim() || bankAccNo.trim()
+      bName         = bankName
+    } else {
+      if (!mobileName.trim()) { setError('Account name is required'); return }
+      if (!mobileNumber.trim()) { setError('Mobile number is required'); return }
+      accountTitle  = mobileName.trim()
+      accountNumber = mobileNumber.trim()
+    }
 
     setSubmitting(true)
-    setError('')
     try {
       const method = await apiRequest<PaymentMethod>('/wallet/payment-methods', {
         method: 'POST',
-        body: JSON.stringify({
-          type,
-          accountTitle: accountTitle.trim(),
-          accountNumber: accountNumber.trim(),
-          bankName: type === 'Bank' ? bankName.trim() : undefined,
-        }),
+        body: JSON.stringify({ type, accountTitle, accountNumber, bankName: bName }),
       })
       onSuccess(method)
     } catch (err) {
@@ -80,13 +108,14 @@ function AddMethodForm({ onSuccess, onCancel }: AddFormProps) {
     <div className="bg-white border border-border rounded-xl p-5 space-y-4">
       <h2 className="text-base font-bold text-text-primary">Add Payment Method</h2>
 
+      {/* Type selector */}
       <div>
         <label className="text-sm font-medium text-text-primary block mb-1.5">Type</label>
         <div className="flex gap-2">
           {METHOD_TYPES.map((t) => (
             <button
               key={t}
-              onClick={() => setType(t)}
+              onClick={() => { setType(t); setError('') }}
               className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
                 type === t ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-muted hover:border-primary/40'
               }`}
@@ -97,35 +126,47 @@ function AddMethodForm({ onSuccess, onCancel }: AddFormProps) {
         </div>
       </div>
 
-      <div>
-        <label className="text-sm font-medium text-text-primary block mb-1.5">Account Title</label>
-        <Input
-          placeholder="Full name as shown on account"
-          value={accountTitle}
-          onChange={(e) => { setAccountTitle(e.target.value); setError('') }}
-        />
-      </div>
+      {/* JazzCash / Easypaisa fields */}
+      {type !== 'Bank' && (
+        <>
+          <Field label="Account Name" hint="Full name registered on this account">
+            <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={mobileName} onChange={(e) => { setMobileName(e.target.value); setError('') }} />
+          </Field>
+          <Field label="Mobile Number" hint="Registered mobile number (03XXXXXXXXX)">
+            <input className={inputCls} placeholder="e.g. 03001234567" value={mobileNumber} onChange={(e) => { setMobileNumber(e.target.value); setError('') }} />
+          </Field>
+        </>
+      )}
 
-      <div>
-        <label className="text-sm font-medium text-text-primary block mb-1.5">
-          {type === 'Bank' ? 'Account Number / IBAN' : 'Mobile Number'}
-        </label>
-        <Input
-          placeholder={type === 'Bank' ? 'Account number or IBAN' : '03xx-xxxxxxx'}
-          value={accountNumber}
-          onChange={(e) => { setAccountNumber(e.target.value); setError('') }}
-        />
-      </div>
-
+      {/* Bank fields */}
       {type === 'Bank' && (
-        <div>
-          <label className="text-sm font-medium text-text-primary block mb-1.5">Bank Name</label>
-          <Input
-            placeholder="e.g. HBL, Meezan Bank, UBL"
-            value={bankName}
-            onChange={(e) => { setBankName(e.target.value); setError('') }}
-          />
-        </div>
+        <>
+          <Field label="Bank" hint="Select your bank from the list">
+            <select
+              className={inputCls + ' cursor-pointer'}
+              value={bankName}
+              onChange={(e) => { setBankName(e.target.value); setError('') }}
+            >
+              <option value="">— Select your bank —</option>
+              {PK_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </Field>
+          <Field label="Account Holder Name" hint="Full name exactly as it appears on your account">
+            <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={bankAccName} onChange={(e) => { setBankAccName(e.target.value); setError('') }} />
+          </Field>
+          <Field label="IBAN" hint="Your 24-character Pakistani IBAN (recommended)">
+            <input
+              className={inputCls + ' font-mono uppercase tracking-wide'}
+              placeholder="PK36HABB0000123456789012"
+              value={bankIban}
+              maxLength={24}
+              onChange={(e) => { setBankIban(e.target.value.toUpperCase()); setError('') }}
+            />
+          </Field>
+          <Field label="Account Number" hint="Optional if IBAN provided above">
+            <input className={inputCls + ' font-mono'} placeholder="e.g. 01234567890101" value={bankAccNo} onChange={(e) => { setBankAccNo(e.target.value); setError('') }} />
+          </Field>
+        </>
       )}
 
       {error && <p className="text-sm text-danger">{error}</p>}

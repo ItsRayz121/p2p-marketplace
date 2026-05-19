@@ -39,7 +39,7 @@ const NETWORK_LABELS: Record<string, string> = {
   Aptos: 'Aptos',
 }
 
-const PAYMENT_METHODS = ['Easypaisa', 'JazzCash', 'Bank Transfer', 'HBL', 'MCB', 'Meezan Bank', 'UBL']
+const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'SadaPay', 'NayaPay', 'HBL', 'MCB', 'UBL', 'Allied Bank', 'Bank Alfalah', 'Meezan Bank', 'NBP', 'Standard Chartered', 'Askari Bank', 'Faysal Bank', 'JS Bank', 'Bank of Punjab', 'Silk Bank', 'Soneri Bank']
 
 const TRADE_WINDOWS = [
   { value: 15, label: '15 minutes' },
