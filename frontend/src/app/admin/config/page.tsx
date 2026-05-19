@@ -11,104 +11,87 @@ import { Badge } from '@/components/ui/Badge'
 
 type ConfigRow = { id: string; key: string; value: string; updatedAt: string }
 
-// Known config keys with metadata
-interface KeyMeta {
-  label: string
-  description: string
-  category: string
-  sensitive?: boolean
-  placeholder?: string
-  readonly?: boolean
-  readonlyReason?: string
-}
+// ── Pakistani banks list ──────────────────────────────────────────────────────
+const PK_BANKS = [
+  'HBL — Habib Bank Limited',
+  'MCB — Muslim Commercial Bank',
+  'UBL — United Bank Limited',
+  'Allied Bank',
+  'Bank Alfalah',
+  'Meezan Bank (Islamic)',
+  'National Bank of Pakistan (NBP)',
+  'Standard Chartered Pakistan',
+  'Askari Bank',
+  'Faysal Bank',
+  'JS Bank',
+  'Bank of Punjab',
+  'Silk Bank',
+  'Soneri Bank',
+  'Summit Bank',
+  'Other',
+]
 
-const KEY_META: Record<string, KeyMeta> = {
-  // Payment Settings
-  'fee_platform_percent':        { label: 'Platform Fee %',           description: 'Percentage fee charged on each trade (e.g. 0.5 = 0.5%)', category: 'Payment', placeholder: '0.5' },
-  'fee_gas_markup_percent':      { label: 'Gas Fee Markup %',         description: 'Markup over actual gas cost charged to user (e.g. 50 = 50%)', category: 'Payment', placeholder: '50' },
-  'pkr_bank_account_title':      { label: 'Bank Account Title',       description: 'Account holder name for PKR bank transfers', category: 'Payment' },
-  'pkr_bank_account_number':     { label: 'Bank Account Number',      description: 'Account number for PKR bank transfers', category: 'Payment' },
-  'pkr_bank_name':               { label: 'Bank Name',                description: 'Name of the bank for PKR transfers', category: 'Payment' },
-  'pkr_easypaisa_number':        { label: 'Easypaisa Number',         description: 'Mobile account number for Easypaisa payments', category: 'Payment' },
-  'pkr_jazzcash_number':         { label: 'JazzCash Number',          description: 'Mobile account number for JazzCash payments', category: 'Payment' },
-  'payment_proof_expiry_hours':  { label: 'Proof Upload Expiry (hrs)', description: 'Hours before an unconfirmed payment proof expires', category: 'Payment', placeholder: '24' },
-  // Crypto Deposit Settings
-  'deposit_address_usdt_trc20':  { label: 'USDT TRC20 Deposit',       description: 'Platform TRON deposit address for USDT TRC20 payments', category: 'Crypto Deposit' },
-  'deposit_address_usdt_bep20':  { label: 'USDT BEP20 Deposit',       description: 'Platform BSC deposit address for USDT BEP20 payments', category: 'Crypto Deposit' },
-  'deposit_address_usdt_erc20':  { label: 'USDT ERC20 Deposit',       description: 'Platform Ethereum deposit address for USDT ERC20 payments', category: 'Crypto Deposit' },
-  // Gas System Settings
-  'gas_max_usd_limit':           { label: 'Gas Max USD Limit',        description: 'Maximum USD value of gas fee per single order', category: 'Gas System', placeholder: '50' },
-  'gas_expiry_minutes':          { label: 'Gas Order Expiry (min)',   description: 'Minutes before an unpaid gas order expires', category: 'Gas System', placeholder: '30' },
-  'gas_pkr_proof_expiry_hours':  { label: 'PKR Proof Expiry (hrs)',   description: 'Hours before a PKR payment proof for gas expires', category: 'Gas System', placeholder: '2' },
-  'gas_custom_daily_limit':      { label: 'Custom Request Daily Limit', description: 'Max custom gas requests per user per day', category: 'Gas System', placeholder: '3' },
-  // Gas PKR Payment Methods
-  'gas_pkr_bank_name':           { label: 'Gas Bank Name',            description: 'Bank name shown to users for gas PKR bank transfer payments', category: 'Gas System' },
-  'gas_pkr_bank_account_name':   { label: 'Gas Bank Account Name',    description: 'Account holder name for gas PKR bank transfers', category: 'Gas System' },
-  'gas_pkr_bank_iban':           { label: 'Gas Bank IBAN',            description: 'IBAN for gas PKR bank transfer payments', category: 'Gas System' },
-  'gas_pkr_bank_account_number': { label: 'Gas Bank Account No.',     description: 'Account number for gas PKR bank transfer payments', category: 'Gas System' },
-  'gas_pkr_easypaisa_number':    { label: 'Gas Easypaisa Number',     description: 'Easypaisa mobile number for gas PKR payments', category: 'Gas System' },
-  'gas_pkr_easypaisa_name':      { label: 'Gas Easypaisa Name',       description: 'Easypaisa account name for gas PKR payments', category: 'Gas System' },
-  'gas_pkr_jazzcash_number':     { label: 'Gas JazzCash Number',      description: 'JazzCash mobile number for gas PKR payments', category: 'Gas System' },
-  'gas_pkr_jazzcash_name':       { label: 'Gas JazzCash Name',        description: 'JazzCash account name for gas PKR payments', category: 'Gas System' },
-  // Gas Crypto Payment Methods
-  'gas_usdt_bep20_address':      { label: 'Gas USDT BEP20 Address',   description: 'Platform BSC address to receive USDT BEP20 for gas orders. Leave blank to use mnemonic-derived hot wallet address.', category: 'Gas System' },
-  'gas_usdt_aptos_address':      { label: 'Gas USDT Aptos Address',   description: 'Platform Aptos address to receive USDT for gas orders. Set this to enable Aptos payment method.', category: 'Gas System' },
-  'gas_bep20_network_fee_usdt':  { label: 'BEP20 Network Fee (USD)',  description: 'Override the BEP20 USDT transfer fee shown to users (e.g. 0.29). Leave blank to use live on-chain calculation via BSC RPC.', category: 'Gas System', placeholder: '0.29' },
-  'gas_aptos_network_fee_usdt': { label: 'Aptos Network Fee (USD)',  description: 'Override the Aptos USDT transfer fee shown to users (e.g. 0.01). Leave blank to use live on-chain calculation via Aptos full node.', category: 'Gas System', placeholder: '0.01' },
-  // Notification Settings
-  'admin_email':                 { label: 'Admin Email',              description: 'Primary admin email for system notifications', category: 'Notifications' },
-  'alert_email':                 { label: 'Alert Email',              description: 'Email address for critical alerts', category: 'Notifications' },
-  // KYC Settings
-  'kyc_required':                { label: 'KYC Required',             description: 'Whether users must complete KYC to trade (true/false)', category: 'KYC' },
-  'kyc_auto_approve':            { label: 'KYC Auto-Approve',         description: 'Auto-approve KYC submissions without manual review (true/false)', category: 'KYC' },
-  // Merchant Settings
-  'merchant_fee_percent':        { label: 'Merchant Fee %',           description: 'Fee rate applied to merchant trades', category: 'Merchant', placeholder: '0.3' },
-  'merchant_min_volume':         { label: 'Merchant Min Volume',      description: 'Minimum trade volume (PKR) to maintain merchant status', category: 'Merchant' },
-  // Referral Settings
-  'referral_bonus_percent':      { label: 'Referral Bonus %',         description: 'Percentage bonus awarded to referrer on first trade', category: 'Referral' },
-  'referral_min_trade_pkr':      { label: 'Referral Min Trade (PKR)', description: 'Minimum PKR trade size for referral bonus to apply', category: 'Referral' },
-  // Site Settings
-  'site_maintenance':            { label: 'Maintenance Mode',         description: 'Set to "true" to enable site-wide maintenance mode', category: 'Site' },
-  'site_notice':                 { label: 'Site Notice',              description: 'Banner message shown to all users (leave empty to hide)', category: 'Site' },
-  // System — read-only counters managed by the application
-  'next_evm_derivation_index':   {
-    label: 'EVM HD Derivation Counter',
-    description: 'Monotonically increasing counter for BIP-32 HD wallet address derivation. Each new user deposit address claims the next index. Editing this value will cause address collisions or skipped derivation paths — do not change it manually.',
-    category: 'Other',
-    readonly: true,
-    readonlyReason: 'System-managed. Editing risks address collisions across user wallets.',
-  },
-}
+// ── Keys handled by structured panels (hidden from raw table) ─────────────────
+const STRUCTURED_KEYS = new Set([
+  'gas_pkr_jazzcash_name', 'gas_pkr_jazzcash_number',
+  'gas_pkr_easypaisa_name', 'gas_pkr_easypaisa_number',
+  'gas_pkr_bank_name', 'gas_pkr_bank_account_name', 'gas_pkr_bank_iban', 'gas_pkr_bank_account_number',
+  'gas_usdt_bep20_address', 'gas_usdt_aptos_address',
+])
 
-const CATEGORY_ORDER = ['Payment', 'Crypto Deposit', 'Gas System', 'KYC', 'Merchant', 'Referral', 'Notifications', 'Site', 'Other']
-
+// ── Keys shown in the raw "Other Settings" table ──────────────────────────────
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
+function isSensitive(key: string) { return SENSITIVE_PATTERNS.some((p) => key.toLowerCase().includes(p)) }
+function maskValue(v: string) { return v.length <= 6 ? '••••••' : v.slice(0, 3) + '•'.repeat(Math.min(v.length - 6, 16)) + v.slice(-3) }
 
-function isSensitive(key: string): boolean {
-  const lower = key.toLowerCase()
-  return SENSITIVE_PATTERNS.some((p) => lower.includes(p))
+// ── Accordion wrapper ─────────────────────────────────────────────────────────
+function Accordion({ title, subtitle, open, onToggle, children, badge }: {
+  title: string; subtitle?: string; open: boolean; onToggle: () => void
+  children: React.ReactNode; badge?: React.ReactNode
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface/40 transition-colors text-left"
+      >
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-text-primary">{title}</span>
+            {badge}
+          </div>
+          {subtitle && <p className="text-xs text-text-muted mt-0.5">{subtitle}</p>}
+        </div>
+        <svg className={`w-5 h-5 text-text-muted transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="border-t border-border">{children}</div>}
+    </div>
+  )
 }
 
-function maskValue(value: string): string {
-  if (!value) return ''
-  if (value.length <= 6) return '••••••'
-  return value.slice(0, 3) + '•'.repeat(Math.min(value.length - 6, 20)) + value.slice(-3)
+// ── Field row ─────────────────────────────────────────────────────────────────
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-4">
+      <div className="sm:w-44 flex-shrink-0 pt-1.5">
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        {hint && <p className="text-xs text-text-muted mt-0.5">{hint}</p>}
+      </div>
+      <div className="flex-1">{children}</div>
+    </div>
+  )
 }
 
-function getCategory(key: string): string {
-  const meta = KEY_META[key]
-  if (meta) return meta.category
-  if (key.startsWith('fee_')) return 'Payment'
-  if (key.startsWith('deposit_address_')) return 'Crypto Deposit'
-  if (key.startsWith('gas_')) return 'Gas System'
-  if (key.startsWith('kyc_')) return 'KYC'
-  if (key.startsWith('merchant_')) return 'Merchant'
-  if (key.startsWith('referral_')) return 'Referral'
-  if (key.startsWith('site_')) return 'Site'
-  if (key.startsWith('admin_') || key.startsWith('alert_')) return 'Notifications'
-  if (key.startsWith('pkr_') || key.startsWith('payment_')) return 'Payment'
-  if (key.startsWith('rate_')) return 'Rates'
-  return 'Other'
+const inputCls = 'w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-text-muted'
+const selectCls = inputCls + ' cursor-pointer'
+
+// ── Status badge for a payment method ────────────────────────────────────────
+function MethodBadge({ configured }: { configured: boolean }) {
+  return configured
+    ? <Badge variant="success" size="sm">Configured</Badge>
+    : <Badge variant="outline" size="sm">Not set</Badge>
 }
 
 export default function ConfigPage() {
@@ -117,16 +100,46 @@ export default function ConfigPage() {
   const [rows, setRows] = useState<ConfigRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [editKey, setEditKey] = useState<string | null>(null)
+
+  // Accordion open state
+  const [pkrOpen, setPkrOpen] = useState(true)
+  const [cryptoOpen, setCryptoOpen] = useState(false)
+  const [advOpen, setAdvOpen] = useState(false)
+
+  // Global save feedback
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  function showToast(msg: string, ok = true) {
+    setToast({ msg, ok })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  // ── Form state: JazzCash ──────────────────────────────────────────────────
+  const [jcName, setJcName]       = useState('')
+  const [jcNumber, setJcNumber]   = useState('')
+  const [jcSaving, setJcSaving]   = useState(false)
+
+  // ── Form state: Easypaisa ─────────────────────────────────────────────────
+  const [epName, setEpName]       = useState('')
+  const [epNumber, setEpNumber]   = useState('')
+  const [epSaving, setEpSaving]   = useState(false)
+
+  // ── Form state: Bank Transfer ─────────────────────────────────────────────
+  const [bkName, setBkName]       = useState('')  // bank name
+  const [bkAccName, setBkAccName] = useState('')  // account holder name
+  const [bkIban, setBkIban]       = useState('')
+  const [bkAccNo, setBkAccNo]     = useState('')
+  const [bkSaving, setBkSaving]   = useState(false)
+
+  // ── Form state: Crypto ────────────────────────────────────────────────────
+  const [bep20Addr, setBep20Addr] = useState('')
+  const [aptosAddr, setAptosAddr] = useState('')
+  const [cryptoSaving, setCryptoSaving] = useState(false)
+
+  // ── Raw table edit ────────────────────────────────────────────────────────
+  const [editKey, setEditKey]     = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [editSaving, setEditSaving] = useState(false)
   const [showSensitive, setShowSensitive] = useState<Record<string, boolean>>({})
-  const [newKey, setNewKey] = useState<string | null>(null)
-  const [newValue, setNewValue] = useState('')
-  const [newSaving, setNewSaving] = useState(false)
-  const [newError, setNewError] = useState<string | null>(null)
 
   useEffect(() => {
     if (user && user.role !== 'super_admin') router.replace('/admin')
@@ -136,7 +149,21 @@ export default function ConfigPage() {
     setLoading(true)
     try {
       const data = await adminApi.getConfig()
-      setRows(Array.isArray(data) ? data : [])
+      const arr: ConfigRow[] = Array.isArray(data) ? data : []
+      setRows(arr)
+      // Populate form fields from DB
+      const m: Record<string, string> = {}
+      arr.forEach((r) => { m[r.key] = r.value })
+      setJcName(m['gas_pkr_jazzcash_name'] ?? '')
+      setJcNumber(m['gas_pkr_jazzcash_number'] ?? '')
+      setEpName(m['gas_pkr_easypaisa_name'] ?? '')
+      setEpNumber(m['gas_pkr_easypaisa_number'] ?? '')
+      setBkName(m['gas_pkr_bank_name'] ?? '')
+      setBkAccName(m['gas_pkr_bank_account_name'] ?? '')
+      setBkIban(m['gas_pkr_bank_iban'] ?? '')
+      setBkAccNo(m['gas_pkr_bank_account_number'] ?? '')
+      setBep20Addr(m['gas_usdt_bep20_address'] ?? '')
+      setAptosAddr(m['gas_usdt_aptos_address'] ?? '')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -147,114 +174,285 @@ export default function ConfigPage() {
 
   useEffect(() => { fetchConfig() }, [fetchConfig])
 
-  async function saveEdit(key: string) {
-    setSaving(true)
-    setSaveError(null)
-    setSaveSuccess(null)
-    try {
-      const updated = await adminApi.updateConfig({ key, value: editValue })
-      setRows((prev) =>
-        prev.map((r) => (r.key === key ? { ...r, value: editValue, updatedAt: updated.updatedAt } : r))
-      )
-      setSaveSuccess(`"${key}" updated successfully.`)
-      setEditKey(null)
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save config')
-    } finally {
-      setSaving(false)
-    }
+  // ── Helper: upsert a key into rows state ──────────────────────────────────
+  function applyRows(updates: Array<{ key: string; value: string; updatedAt: string }>) {
+    setRows((prev) => {
+      const next = [...prev]
+      for (const u of updates) {
+        const idx = next.findIndex((r) => r.key === u.key)
+        if (idx >= 0) next[idx] = { ...next[idx]!, value: u.value, updatedAt: u.updatedAt }
+        else next.push({ id: u.key, key: u.key, value: u.value, updatedAt: u.updatedAt })
+      }
+      return next
+    })
   }
 
-  async function saveNew(key: string) {
-    if (!newValue.trim()) return
-    setNewSaving(true)
-    setNewError(null)
+  async function saveKeys(pairs: Array<{ key: string; value: string }>) {
+    const results = await Promise.all(pairs.map((p) => adminApi.updateConfig(p)))
+    applyRows(results.map((r, i) => ({ key: pairs[i]!.key, value: pairs[i]!.value, updatedAt: r.updatedAt })))
+  }
+
+  // ── Save JazzCash ─────────────────────────────────────────────────────────
+  async function saveJazzCash() {
+    setJcSaving(true)
     try {
-      const updated = await adminApi.updateConfig({ key, value: newValue.trim() })
-      setRows((prev) => [...prev, { id: updated.id ?? key, key, value: newValue.trim(), updatedAt: updated.updatedAt }])
-      setSaveSuccess(`"${key}" created successfully.`)
-      setNewKey(null)
-      setNewValue('')
-    } catch (err) {
-      setNewError(err instanceof Error ? err.message : 'Failed to save')
-    } finally {
-      setNewSaving(false)
-    }
+      await saveKeys([
+        { key: 'gas_pkr_jazzcash_name',   value: jcName.trim() },
+        { key: 'gas_pkr_jazzcash_number', value: jcNumber.trim() },
+      ])
+      showToast('JazzCash details saved.')
+    } catch { showToast('Failed to save JazzCash details.', false) }
+    finally { setJcSaving(false) }
+  }
+
+  // ── Save Easypaisa ────────────────────────────────────────────────────────
+  async function saveEasypaisa() {
+    setEpSaving(true)
+    try {
+      await saveKeys([
+        { key: 'gas_pkr_easypaisa_name',   value: epName.trim() },
+        { key: 'gas_pkr_easypaisa_number', value: epNumber.trim() },
+      ])
+      showToast('Easypaisa details saved.')
+    } catch { showToast('Failed to save Easypaisa details.', false) }
+    finally { setEpSaving(false) }
+  }
+
+  // ── Save Bank Transfer ────────────────────────────────────────────────────
+  async function saveBank() {
+    setBkSaving(true)
+    try {
+      await saveKeys([
+        { key: 'gas_pkr_bank_name',           value: bkName.trim() },
+        { key: 'gas_pkr_bank_account_name',   value: bkAccName.trim() },
+        { key: 'gas_pkr_bank_iban',           value: bkIban.trim().toUpperCase() },
+        { key: 'gas_pkr_bank_account_number', value: bkAccNo.trim() },
+      ])
+      showToast('Bank transfer details saved.')
+    } catch { showToast('Failed to save bank details.', false) }
+    finally { setBkSaving(false) }
+  }
+
+  // ── Save Crypto ───────────────────────────────────────────────────────────
+  async function saveCrypto() {
+    setCryptoSaving(true)
+    try {
+      const pairs: Array<{ key: string; value: string }> = []
+      if (bep20Addr.trim()) pairs.push({ key: 'gas_usdt_bep20_address', value: bep20Addr.trim() })
+      if (aptosAddr.trim()) pairs.push({ key: 'gas_usdt_aptos_address', value: aptosAddr.trim() })
+      if (pairs.length === 0) { showToast('Enter at least one address.', false); return }
+      await saveKeys(pairs)
+      showToast('Crypto deposit addresses saved.')
+    } catch { showToast('Failed to save crypto addresses.', false) }
+    finally { setCryptoSaving(false) }
+  }
+
+  // ── Save raw edit ─────────────────────────────────────────────────────────
+  async function saveEdit(key: string) {
+    setEditSaving(true)
+    try {
+      const updated = await adminApi.updateConfig({ key, value: editValue })
+      applyRows([{ key, value: editValue, updatedAt: updated.updatedAt }])
+      showToast(`"${key}" updated.`)
+      setEditKey(null)
+    } catch { showToast('Failed to save.', false) }
+    finally { setEditSaving(false) }
   }
 
   if (user?.role !== 'super_admin') return null
   if (loading) return <LoadingState message="Loading configuration..." />
   if (error && rows.length === 0) return <ErrorState title={error} onRetry={fetchConfig} />
 
-  // Group rows by category
-  const grouped: Record<string, ConfigRow[]> = {}
-  for (const row of rows) {
-    const cat = getCategory(row.key)
-    if (!grouped[cat]) grouped[cat] = []
-    grouped[cat].push(row)
-  }
-  const categories = CATEGORY_ORDER.filter((c) => grouped[c])
+  const cfgMap: Record<string, string> = {}
+  rows.forEach((r) => { cfgMap[r.key] = r.value })
+
+  const jcConfigured  = !!(cfgMap['gas_pkr_jazzcash_name'] && cfgMap['gas_pkr_jazzcash_number'])
+  const epConfigured  = !!(cfgMap['gas_pkr_easypaisa_name'] && cfgMap['gas_pkr_easypaisa_number'])
+  const bkConfigured  = !!(cfgMap['gas_pkr_bank_name'] && cfgMap['gas_pkr_bank_account_name'])
+  const pkrAnySet     = jcConfigured || epConfigured || bkConfigured
+  const bep20Set      = !!cfgMap['gas_usdt_bep20_address']
+  const aptosSet      = !!cfgMap['gas_usdt_aptos_address']
+
+  // Raw "other" rows — exclude structured keys
+  const otherRows = rows.filter((r) => !STRUCTURED_KEYS.has(r.key))
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 max-w-3xl">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Platform Configuration</h1>
-        <p className="text-text-muted text-sm mt-0.5">Super admin only — edit platform settings</p>
+        <p className="text-text-muted text-sm mt-0.5">Super admin only</p>
       </div>
 
-      {rows.length === 0 && (
-        <div className="bg-surface rounded-xl border border-border px-5 py-8 text-center text-text-muted text-sm">
-          No configuration entries found in the database. Settings that come from environment variables are managed in Railway.
+      {/* ── Toast ─────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className={`px-4 py-3 rounded-xl text-sm ${toast.ok ? 'bg-success/10 border border-success/20 text-success' : 'bg-danger/10 border border-danger/20 text-danger'}`}>
+          {toast.msg}
         </div>
       )}
 
-      {saveSuccess && (
-        <div className="px-4 py-3 bg-success/10 border border-success/20 rounded-xl text-success text-sm">
-          {saveSuccess}
-        </div>
-      )}
+      {/* ══ SECTION 1 — PKR Payment Methods ══════════════════════════════════ */}
+      <Accordion
+        title="PKR Payment Methods"
+        subtitle="Bank accounts shown to customers paying with Pakistani Rupees (gas orders)"
+        open={pkrOpen}
+        onToggle={() => setPkrOpen((v) => !v)}
+        badge={pkrAnySet ? <Badge variant="success" size="sm">Active</Badge> : <Badge variant="outline" size="sm">None set</Badge>}
+      >
+        <div className="p-5 space-y-6">
 
-      {categories.map((category) => (
-        <div key={category} className="bg-white rounded-xl border border-border overflow-hidden">
-          <div className="px-5 py-3 bg-surface border-b border-border">
-            <h2 className="text-sm font-semibold text-text-primary">{category}</h2>
+          {/* ── JazzCash ─────────────────────────────────────────────────── */}
+          <div className="rounded-xl border border-border p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#CC0000]/10 flex items-center justify-center text-sm font-bold text-[#CC0000]">JC</div>
+                <span className="font-semibold text-text-primary">JazzCash</span>
+              </div>
+              <MethodBadge configured={jcConfigured} />
+            </div>
+            <Field label="Account Name" hint="Full name on the JazzCash account">
+              <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={jcName} onChange={(e) => setJcName(e.target.value)} />
+            </Field>
+            <Field label="Mobile Number" hint="Registered JazzCash number (03XXXXXXXXX)">
+              <input className={inputCls} placeholder="e.g. 03001234567" value={jcNumber} onChange={(e) => setJcNumber(e.target.value)} />
+            </Field>
+            <div className="flex justify-end">
+              <Button size="sm" loading={jcSaving} onClick={saveJazzCash}>Save JazzCash</Button>
+            </div>
           </div>
+
+          {/* ── Easypaisa ────────────────────────────────────────────────── */}
+          <div className="rounded-xl border border-border p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#00A651]/10 flex items-center justify-center text-sm font-bold text-[#00A651]">EP</div>
+                <span className="font-semibold text-text-primary">Easypaisa</span>
+              </div>
+              <MethodBadge configured={epConfigured} />
+            </div>
+            <Field label="Account Name" hint="Full name on the Easypaisa account">
+              <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={epName} onChange={(e) => setEpName(e.target.value)} />
+            </Field>
+            <Field label="Mobile Number" hint="Registered Easypaisa number (03XXXXXXXXX)">
+              <input className={inputCls} placeholder="e.g. 03001234567" value={epNumber} onChange={(e) => setEpNumber(e.target.value)} />
+            </Field>
+            <div className="flex justify-end">
+              <Button size="sm" loading={epSaving} onClick={saveEasypaisa}>Save Easypaisa</Button>
+            </div>
+          </div>
+
+          {/* ── Bank Transfer ─────────────────────────────────────────────── */}
+          <div className="rounded-xl border border-border p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">BK</div>
+                <span className="font-semibold text-text-primary">Bank Transfer</span>
+              </div>
+              <MethodBadge configured={bkConfigured} />
+            </div>
+            <Field label="Bank" hint="Select your bank">
+              <select className={selectCls} value={bkName} onChange={(e) => setBkName(e.target.value)}>
+                <option value="">— Select bank —</option>
+                {PK_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </Field>
+            <Field label="Account Holder Name" hint="Full name exactly as on your account">
+              <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={bkAccName} onChange={(e) => setBkAccName(e.target.value)} />
+            </Field>
+            <Field label="IBAN" hint="24-character Pakistani IBAN (PK + 22 digits)">
+              <input
+                className={inputCls + ' font-mono tracking-wide uppercase'}
+                placeholder="PK36HABB0000123456789012"
+                value={bkIban}
+                onChange={(e) => setBkIban(e.target.value.toUpperCase())}
+                maxLength={24}
+              />
+            </Field>
+            <Field label="Account Number" hint="Your bank account number (optional if IBAN provided)">
+              <input className={inputCls + ' font-mono'} placeholder="e.g. 01234567890101" value={bkAccNo} onChange={(e) => setBkAccNo(e.target.value)} />
+            </Field>
+            <div className="flex justify-end">
+              <Button size="sm" loading={bkSaving} onClick={saveBank}>Save Bank Details</Button>
+            </div>
+          </div>
+
+        </div>
+      </Accordion>
+
+      {/* ══ SECTION 2 — Crypto Deposit Addresses ═════════════════════════════ */}
+      <Accordion
+        title="Crypto Deposit Addresses"
+        subtitle="Platform wallet addresses where customers send USDT to pay for gas orders"
+        open={cryptoOpen}
+        onToggle={() => setCryptoOpen((v) => !v)}
+        badge={(bep20Set || aptosSet) ? <Badge variant="success" size="sm">Configured</Badge> : <Badge variant="outline" size="sm">Not set</Badge>}
+      >
+        <div className="p-5 space-y-4">
+          <div className="rounded-xl border border-border p-4 space-y-4">
+
+            <Field
+              label="USDT BEP20 (BSC)"
+              hint={bep20Set ? 'Override address — using DB value' : 'Leave blank to use mnemonic-derived hot wallet address automatically'}
+            >
+              <input
+                className={inputCls + ' font-mono text-xs'}
+                placeholder="0x… (leave blank to auto-use hot wallet)"
+                value={bep20Addr}
+                onChange={(e) => setBep20Addr(e.target.value)}
+              />
+            </Field>
+
+            <Field
+              label="USDT Aptos"
+              hint="Must be set to enable Aptos as a payment option"
+            >
+              <input
+                className={inputCls + ' font-mono text-xs'}
+                placeholder="0x… (64-char Aptos address)"
+                value={aptosAddr}
+                onChange={(e) => setAptosAddr(e.target.value)}
+              />
+            </Field>
+
+            <div className="flex justify-end">
+              <Button size="sm" loading={cryptoSaving} onClick={saveCrypto}>Save Addresses</Button>
+            </div>
+          </div>
+
+          <p className="text-xs text-text-muted px-1">
+            Other deposit addresses (TRC20, ERC20) are managed in the <strong>Wallet</strong> section of the admin panel.
+          </p>
+        </div>
+      </Accordion>
+
+      {/* ══ SECTION 3 — Advanced / Other Settings ════════════════════════════ */}
+      {otherRows.length > 0 && (
+        <Accordion
+          title="Advanced Settings"
+          subtitle={`${otherRows.length} other configuration values`}
+          open={advOpen}
+          onToggle={() => setAdvOpen((v) => !v)}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-surface/40">
                 <tr>
-                  <th className="text-left px-5 py-2.5 font-medium text-text-muted w-48">Setting</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-text-muted">Description</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-text-muted w-56">Current Value</th>
+                  <th className="text-left px-5 py-2.5 font-medium text-text-muted w-52">Key</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-text-muted w-44">Current Value</th>
                   <th className="text-left px-4 py-2.5 font-medium text-text-muted w-36">Last Updated</th>
-                  <th className="px-4 py-2.5 w-20" />
+                  <th className="px-4 py-2.5 w-16" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {grouped[category]!.map((row) => {
-                  const meta = KEY_META[row.key]
-                  const sensitive = meta?.sensitive ?? isSensitive(row.key)
-                  const isReadonly = meta?.readonly ?? false
-                  const revealed = showSensitive[row.key]
-                  const displayValue = sensitive && !revealed
-                    ? maskValue(row.value)
-                    : (row.value || <span className="text-text-muted italic">empty</span>)
-                  const isEditing = editKey === row.key && !isReadonly
-
+                {otherRows.map((row) => {
+                  const sensitive = isSensitive(row.key)
+                  const revealed  = showSensitive[row.key]
+                  const isEditing = editKey === row.key
+                  const isReadonly = row.key === 'next_evm_derivation_index'
                   return (
                     <tr key={row.key} className="hover:bg-surface/30">
                       <td className="px-5 py-3 align-top">
-                        <p className="font-medium text-text-primary text-xs">{meta?.label ?? row.key}</p>
-                        <p className="font-mono text-xs text-text-muted mt-0.5">{row.key}</p>
-                        {sensitive && (
-                          <Badge variant="outline" size="sm" className="mt-1">Sensitive</Badge>
-                        )}
-                        {isReadonly && (
-                          <Badge variant="warning" size="sm" className="mt-1">System-managed</Badge>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 align-top">
-                        <p className="text-xs text-text-secondary">{meta?.description ?? 'No description available.'}</p>
+                        <p className="font-mono text-xs text-text-primary break-all">{row.key}</p>
+                        {isReadonly && <Badge variant="warning" size="sm" className="mt-1">System-managed</Badge>}
                       </td>
                       <td className="px-4 py-3 align-top">
                         {isEditing ? (
@@ -262,60 +460,34 @@ export default function ConfigPage() {
                             <input
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
-                              placeholder={meta?.placeholder}
-                              className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs font-mono text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                              className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-primary"
                               autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveEdit(row.key)
-                                if (e.key === 'Escape') setEditKey(null)
-                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(row.key); if (e.key === 'Escape') setEditKey(null) }}
                             />
-                            {saveError && editKey === row.key && (
-                              <p className="text-danger text-xs">{saveError}</p>
-                            )}
                             <div className="flex gap-1.5">
-                              <Button size="sm" loading={saving} onClick={() => saveEdit(row.key)}>Save</Button>
-                              <Button size="sm" variant="secondary" onClick={() => setEditKey(null)} disabled={saving}>Cancel</Button>
+                              <Button size="sm" loading={editSaving} onClick={() => saveEdit(row.key)}>Save</Button>
+                              <Button size="sm" variant="secondary" onClick={() => setEditKey(null)} disabled={editSaving}>Cancel</Button>
                             </div>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-xs text-text-secondary break-all">{displayValue}</span>
+                            <span className="font-mono text-xs text-text-secondary break-all">
+                              {sensitive && !revealed ? maskValue(row.value) : (row.value || <span className="text-text-muted italic">empty</span>)}
+                            </span>
                             {sensitive && (
-                              <button
-                                onClick={() => setShowSensitive((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
-                                className="text-xs text-text-muted hover:text-primary underline flex-shrink-0"
-                              >
+                              <button onClick={() => setShowSensitive((p) => ({ ...p, [row.key]: !p[row.key] }))} className="text-xs text-text-muted hover:text-primary underline flex-shrink-0">
                                 {revealed ? 'Hide' : 'Show'}
                               </button>
                             )}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 align-top text-xs text-text-muted">
-                        {fmtDateTime(row.updatedAt)}
-                      </td>
+                      <td className="px-4 py-3 align-top text-xs text-text-muted">{fmtDateTime(row.updatedAt)}</td>
                       <td className="px-4 py-3 align-top text-right">
                         {isReadonly ? (
-                          <span
-                            title={meta?.readonlyReason ?? 'This value is managed by the system and cannot be edited manually.'}
-                            className="text-xs text-text-muted cursor-default select-none"
-                          >
-                            Read-only
-                          </span>
+                          <span className="text-xs text-text-muted" title="System-managed — do not edit">Read-only</span>
                         ) : !isEditing && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditKey(row.key)
-                              setEditValue(row.value)
-                              setSaveError(null)
-                              setSaveSuccess(null)
-                            }}
-                          >
-                            Edit
-                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setEditKey(row.key); setEditValue(row.value) }}>Edit</Button>
                         )}
                       </td>
                     </tr>
@@ -324,89 +496,13 @@ export default function ConfigPage() {
               </tbody>
             </table>
           </div>
-        </div>
-      ))}
+        </Accordion>
+      )}
 
-      {/* Known keys not yet set */}
-      {(() => {
-        const existingKeys = new Set(rows.map((r) => r.key))
-        const unset = Object.entries(KEY_META).filter(([k, m]) => !existingKeys.has(k) && !m.readonly)
-        if (unset.length === 0) return null
-        const grouped2: Record<string, typeof unset> = {}
-        for (const entry of unset) {
-          const cat = entry[1].category
-          if (!grouped2[cat]) grouped2[cat] = []
-          grouped2[cat].push(entry)
-        }
-        return (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-text-primary">Not Yet Configured</h2>
-              <p className="text-xs text-text-muted mt-0.5">These known settings have no value in the database. Click Set to configure them.</p>
-            </div>
-            {Object.entries(grouped2).map(([cat, entries]) => (
-              <div key={cat} className="bg-white rounded-xl border border-border overflow-hidden">
-                <div className="px-5 py-3 bg-surface border-b border-border">
-                  <h3 className="text-sm font-semibold text-text-primary">{cat}</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <tbody className="divide-y divide-border">
-                      {entries.map(([k, meta]) => (
-                        <tr key={k} className="hover:bg-surface/30">
-                          <td className="px-5 py-3 align-top w-48">
-                            <p className="font-medium text-text-primary text-xs">{meta.label}</p>
-                            <p className="font-mono text-xs text-text-muted mt-0.5">{k}</p>
-                          </td>
-                          <td className="px-4 py-3 align-top">
-                            <p className="text-xs text-text-secondary">{meta.description}</p>
-                          </td>
-                          <td className="px-4 py-3 align-top w-64">
-                            {newKey === k ? (
-                              <div className="space-y-1.5">
-                                <input
-                                  value={newValue}
-                                  onChange={(e) => setNewValue(e.target.value)}
-                                  placeholder={meta.placeholder ?? 'Enter value…'}
-                                  className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs font-mono text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                                  autoFocus
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveNew(k)
-                                    if (e.key === 'Escape') { setNewKey(null); setNewValue('') }
-                                  }}
-                                />
-                                {newError && <p className="text-danger text-xs">{newError}</p>}
-                                <div className="flex gap-1.5">
-                                  <Button size="sm" loading={newSaving} onClick={() => saveNew(k)}>Save</Button>
-                                  <Button size="sm" variant="secondary" onClick={() => { setNewKey(null); setNewValue('') }} disabled={newSaving}>Cancel</Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-text-muted italic">not set</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 align-top text-right w-20">
-                            {newKey !== k && (
-                              <Button size="sm" variant="ghost" onClick={() => { setNewKey(k); setNewValue(''); setNewError(null) }}>
-                                Set
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      })()}
-
-      {/* Infrastructure secrets notice */}
+      {/* Infrastructure notice */}
       <div className="bg-surface rounded-xl border border-border px-5 py-4 text-xs text-text-muted">
         <p className="font-semibold text-text-secondary text-sm mb-1">Infrastructure Secrets</p>
-        <p>Private keys, wallet seeds, database credentials, and blockchain RPC keys are stored as server-side environment variables and are never exposed here. To rotate or update these secrets, use the deployment dashboard (Railway → Variables).</p>
+        <p>Private keys, wallet seeds, database credentials, and blockchain RPC keys are stored as Railway environment variables and are never exposed here.</p>
       </div>
     </div>
   )
