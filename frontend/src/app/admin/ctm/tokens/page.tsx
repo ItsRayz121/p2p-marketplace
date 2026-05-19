@@ -23,6 +23,15 @@ interface Token {
   status: string; riskTier: string; isListingEnabled: boolean; totalTrades: number; totalVolumePkr: string
 }
 
+const EMPTY_ADD = {
+  slug: '', symbol: '', name: '', description: '',
+  logoUrl: '', bannerUrl: '', settlementType: 'MANUAL' as 'MANUAL' | 'ON_CHAIN' | 'HYBRID',
+  network: '', contractAddress: '', explorerUrl: '',
+  officialWebsite: '', officialTwitter: '', officialTelegram: '', whitePaperUrl: '',
+  riskTier: 'medium' as 'low' | 'medium' | 'high' | 'extreme',
+  riskNotes: '', maxListingAmount: '', minTradeAmountPkr: '',
+}
+
 export default function AdminCtmTokensPage() {
   const [tokens, setTokens] = useState<Token[]>([])
   const [total, setTotal] = useState(0)
@@ -30,17 +39,22 @@ export default function AdminCtmTokensPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [page, setPage] = useState(1)
+
+  // Edit state
   const [editToken, setEditToken] = useState<Token | null>(null)
   const [editStatus, setEditStatus] = useState('')
   const [editRisk, setEditRisk] = useState('')
   const [editListingEnabled, setEditListingEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  // Add token state
+  const [showAdd, setShowAdd] = useState(false)
+  const [addForm, setAddForm] = useState(EMPTY_ADD)
+  const [addError, setAddError] = useState('')
+  const [adding, setAdding] = useState(false)
+
   const fetchTokens = async () => {
     try {
-      const res = await ctmApi.adminGetTokenQueue({ page, limit: 20, ...( statusFilter ? { status: statusFilter } : {} ) })
-      // Admin view: use getTokens with adminView — but our queue endpoint returns all statuses
-      // Use the public endpoint with no filter for now since adminView is not in ctmApi.getTokens
       const r2 = await fetch(`/api/v1/ctm/tokens?adminView=true&page=${page}&limit=20${search ? `&search=${search}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}`, { credentials: 'include' })
       const data = await r2.json()
       setTokens(data.data?.tokens ?? [])
@@ -82,11 +96,68 @@ export default function AdminCtmTokensPage() {
     }
   }
 
+  const handleAddToken = async () => {
+    setAddError('')
+    if (!addForm.slug || !addForm.symbol || !addForm.name || !addForm.description) {
+      setAddError('Slug, symbol, name, and description are required.')
+      return
+    }
+    if (!/^[a-z0-9-]+$/.test(addForm.slug)) {
+      setAddError('Slug must be lowercase letters, numbers, and hyphens only.')
+      return
+    }
+    setAdding(true)
+    try {
+      const payload: Record<string, unknown> = {
+        slug: addForm.slug,
+        symbol: addForm.symbol.toUpperCase(),
+        name: addForm.name,
+        description: addForm.description,
+        settlementType: addForm.settlementType,
+        riskTier: addForm.riskTier,
+      }
+      if (addForm.logoUrl) payload.logoUrl = addForm.logoUrl
+      if (addForm.bannerUrl) payload.bannerUrl = addForm.bannerUrl
+      if (addForm.network) payload.network = addForm.network
+      if (addForm.contractAddress) payload.contractAddress = addForm.contractAddress
+      if (addForm.explorerUrl) payload.explorerUrl = addForm.explorerUrl
+      if (addForm.officialWebsite) payload.officialWebsite = addForm.officialWebsite
+      if (addForm.officialTwitter) payload.officialTwitter = addForm.officialTwitter
+      if (addForm.officialTelegram) payload.officialTelegram = addForm.officialTelegram
+      if (addForm.whitePaperUrl) payload.whitePaperUrl = addForm.whitePaperUrl
+      if (addForm.riskNotes) payload.riskNotes = addForm.riskNotes
+      if (addForm.maxListingAmount) payload.maxListingAmount = parseFloat(addForm.maxListingAmount)
+      if (addForm.minTradeAmountPkr) payload.minTradeAmountPkr = parseFloat(addForm.minTradeAmountPkr)
+
+      await ctmApi.adminCreateToken(payload)
+      setShowAdd(false)
+      setAddForm(EMPTY_ADD)
+      await fetchTokens()
+    } catch (err: unknown) {
+      setAddError((err as Error).message ?? 'Failed to create token')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const field = (label: string, key: keyof typeof EMPTY_ADD, opts?: { placeholder?: string; required?: boolean }) => (
+    <div>
+      <label className="block text-xs font-medium text-text-muted mb-1">{label}{opts?.required && <span className="text-red-500 ml-0.5">*</span>}</label>
+      <input
+        type="text"
+        placeholder={opts?.placeholder ?? ''}
+        value={addForm[key] as string}
+        onChange={(e) => setAddForm((f) => ({ ...f, [key]: e.target.value }))}
+        className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+      />
+    </div>
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-text-primary">CTM Tokens ({total})</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input type="text" placeholder="Search…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white w-40 focus:outline-none" />
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
             <option value="">All statuses</option>
@@ -96,6 +167,12 @@ export default function AdminCtmTokensPage() {
             <option value="delisted">Delisted</option>
             <option value="restricted">Restricted</option>
           </select>
+          <button
+            onClick={() => { setShowAdd(true); setAddError('') }}
+            className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            + Add Token
+          </button>
         </div>
       </div>
 
@@ -180,6 +257,92 @@ export default function AdminCtmTokensPage() {
               <button onClick={() => setEditToken(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
               <button onClick={handleSaveEdit} disabled={saving} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
                 {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Token modal */}
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 space-y-5 my-8">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-text-primary">Add Token (Admin)</h3>
+              <button onClick={() => setShowAdd(false)} className="text-text-muted hover:text-text-primary text-xl leading-none">&times;</button>
+            </div>
+            <p className="text-xs text-text-muted">Tokens added here are immediately <span className="font-semibold text-green-600">approved</span> and visible on the marketplace. Queue submissions still go through the review process.</p>
+
+            {/* Required fields */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {field('Slug', 'slug', { placeholder: 'e.g. bitcoin', required: true })}
+              {field('Symbol', 'symbol', { placeholder: 'e.g. BTC', required: true })}
+              {field('Name', 'name', { placeholder: 'e.g. Bitcoin', required: true })}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Description<span className="text-red-500 ml-0.5">*</span></label>
+              <textarea
+                rows={3}
+                placeholder="Brief description of the token…"
+                value={addForm.description}
+                onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
+
+            {/* Settlement & Risk */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Settlement Type<span className="text-red-500 ml-0.5">*</span></label>
+                <select value={addForm.settlementType} onChange={(e) => setAddForm((f) => ({ ...f, settlementType: e.target.value as typeof addForm.settlementType }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                  <option value="MANUAL">Manual</option>
+                  <option value="ON_CHAIN">On-Chain</option>
+                  <option value="HYBRID">Hybrid</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Risk Tier</label>
+                <select value={addForm.riskTier} onChange={(e) => setAddForm((f) => ({ ...f, riskTier: e.target.value as typeof addForm.riskTier }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="extreme">Extreme</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Optional fields */}
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">Optional Details</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {field('Logo URL', 'logoUrl', { placeholder: 'https://…' })}
+              {field('Banner URL', 'bannerUrl', { placeholder: 'https://…' })}
+              {field('Network', 'network', { placeholder: 'e.g. Ethereum' })}
+              {field('Contract Address', 'contractAddress', { placeholder: '0x…' })}
+              {field('Explorer URL', 'explorerUrl', { placeholder: 'https://etherscan.io/…' })}
+              {field('Official Website', 'officialWebsite', { placeholder: 'https://…' })}
+              {field('Twitter', 'officialTwitter', { placeholder: 'https://twitter.com/…' })}
+              {field('Telegram', 'officialTelegram', { placeholder: 'https://t.me/…' })}
+              {field('Whitepaper URL', 'whitePaperUrl', { placeholder: 'https://…' })}
+              {field('Max Listing Amount', 'maxListingAmount', { placeholder: 'e.g. 100000' })}
+              {field('Min Trade Amount (PKR)', 'minTradeAmountPkr', { placeholder: 'e.g. 1000' })}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Risk Notes</label>
+              <textarea
+                rows={2}
+                placeholder="Internal risk notes…"
+                value={addForm.riskNotes}
+                onChange={(e) => setAddForm((f) => ({ ...f, riskNotes: e.target.value }))}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
+
+            {addError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{addError}</p>}
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setShowAdd(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
+              <button onClick={handleAddToken} disabled={adding} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+                {adding ? 'Adding…' : 'Add Token'}
               </button>
             </div>
           </div>
