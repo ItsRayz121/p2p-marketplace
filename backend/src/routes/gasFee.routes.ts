@@ -20,18 +20,18 @@ const STABLECOIN_SYMBOLS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP
 async function getNativeUsdRate(priceSymbol: string): Promise<number> {
   if (STABLECOIN_SYMBOLS.has(priceSymbol.toUpperCase())) return 1.0
 
+  const raw = await redis.get(`rate:${priceSymbol}`)
+  if (!raw) return 0
+
+  const parsed = JSON.parse(raw) as { rate: number; usdPrice?: number }
+
+  // Prefer usdPrice stored directly (new format). Fall back to PKR-rate conversion
+  // for keys written before this field was added.
+  if (parsed.usdPrice !== undefined && parsed.usdPrice > 0) return parsed.usdPrice
+
   const usdPkrStr = await redis.get('rate:USD_PKR')
   const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 0
-
-  if (priceSymbol === 'TRX') {
-    const trxJson = await redis.get('rate:TRX')
-    const trxPkr = trxJson ? (JSON.parse(trxJson) as { rate: number }).rate : 0
-    return trxPkr > 0 && usdPkrRate > 0 ? trxPkr / usdPkrRate : 0
-  }
-
-  const raw = await redis.get(`rate:${priceSymbol}`)
-  const pkrRate = raw ? (JSON.parse(raw) as { rate: number }).rate : 0
-  return pkrRate > 0 && usdPkrRate > 0 ? pkrRate / usdPkrRate : 0
+  return parsed.rate > 0 && usdPkrRate > 0 ? parsed.rate / usdPkrRate : 0
 }
 
 async function getUsdPkrRate(): Promise<number> {

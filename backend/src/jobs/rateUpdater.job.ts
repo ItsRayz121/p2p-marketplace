@@ -1,7 +1,46 @@
 // Fetches live crypto rates every 5 minutes.
-// Source chain: CoinGecko → Kraken → Bybit → Binance → stale Redis cache.
+// Source chain: CoinGecko → Bybit → Kraken → Binance → stale Redis cache.
 // Binance geo-blocks Railway (451). CoinGecko free tier rate-limits (400).
 // Writes to Redis AND PlatformConfig.
+//
+// ─── HOW TO ADD PRICING FOR A NEW GAS TOKEN ───────────────────────────────────
+//
+// CASE A — Stablecoin (USDT, USDC, BUSD, DAI, TUSD, USDP, or any USD peg):
+//   Set priceSymbol to 'USDT' (or the matching stable symbol) in the DB seed.
+//   gasFee.routes.ts hardcodes 1.0 for all STABLECOIN_SYMBOLS — Redis is never
+//   consulted. No code change here is needed.
+//
+// CASE B — Native gas token that already has an entry below (ETH, BNB, TRX,
+//   AVAX, MATIC, SOL, TON, SUI, APT, NEAR):
+//   Set priceSymbol to the matching symbol in the DB seed. Done — the rate
+//   updater already writes rate:{symbol} to Redis every 5 minutes.
+//   Example: a new EVM L2 that uses ETH as gas → priceSymbol: 'ETH'. No code
+//   change here is needed.
+//
+// CASE C — Brand-new native token not yet listed below (e.g. 'XYZ'):
+//   1. Find its CoinGecko coin ID: coingecko.com/en/coins/xyz → slug in URL.
+//   2. Add one entry to each of the three maps below:
+//        COINGECKO_IDS:   XYZ: '<coingecko-slug>'
+//        BINANCE_SYMBOLS: XYZ: 'XYZUSDT'   (omit if Binance doesn't list it)
+//        BYBIT_SYMBOLS:   XYZ: 'XYZUSDT'   (omit if Bybit doesn't list it)
+//      Kraken only lists major coins — add to KRAKEN_PAIRS only if confirmed.
+//   3. Set priceSymbol: 'XYZ' in the DB seed for that token.
+//   After the next rate-updater cycle (~5 min after deploy) the price appears.
+//
+// ─── CURRENTLY REGISTERED NATIVE TOKENS ──────────────────────────────────────
+// Symbol │ Chains that use it
+// ───────┼────────────────────────────────────────────────────────────────────
+// ETH    │ Ethereum, Arbitrum (ARB), Optimism (OP), Base (BASE)
+// BNB    │ BNB Smart Chain (BSC), opBNB
+// TRX    │ TRON (also has dedicated CoinPaprika/CryptoCompare fallback)
+// AVAX   │ Avalanche C-Chain
+// MATIC  │ Polygon (priceSymbol stays 'MATIC' even though token renamed to POL)
+// SOL    │ Solana
+// TON    │ TON
+// SUI    │ SUI
+// APT    │ Aptos
+// NEAR   │ NEAR Protocol
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
@@ -10,30 +49,37 @@ import { sendAdminAlertEmail } from '../services/email.service'
 import { env } from '../lib/env'
 
 const COINGECKO_IDS: Record<string, string> = {
-  BTC: 'bitcoin',
-  ETH: 'ethereum',
-  BNB: 'binancecoin',
-  SOL: 'solana',
-  TRX: 'tron',
+  BTC:  'bitcoin',
+  ETH:  'ethereum',
+  BNB:  'binancecoin',
+  SOL:  'solana',
+  TRX:  'tron',
   AVAX: 'avalanche-2',
   MATIC: 'matic-network',
-  TON: 'the-open-network',
+  TON:  'the-open-network',
+  SUI:  'sui',
+  APT:  'aptos',
+  NEAR: 'near',
   USDC: 'usd-coin',
 }
 
 const BINANCE_SYMBOLS: Record<string, string> = {
-  BTC: 'BTCUSDT',
-  ETH: 'ETHUSDT',
-  BNB: 'BNBUSDT',
-  SOL: 'SOLUSDT',
-  TRX: 'TRXUSDT',
+  BTC:  'BTCUSDT',
+  ETH:  'ETHUSDT',
+  BNB:  'BNBUSDT',
+  SOL:  'SOLUSDT',
+  TRX:  'TRXUSDT',
   AVAX: 'AVAXUSDT',
   MATIC: 'MATICUSDT',
-  TON: 'TONUSDT',
+  TON:  'TONUSDT',
+  SUI:  'SUIUSDT',
+  APT:  'APTUSDT',
+  NEAR: 'NEARUSDT',
   USDC: 'USDCUSDT',
 }
 
-// Kraken pairs (quote = USD)
+// Kraken pairs (quote = USD) — Kraken lists only major coins; add here only
+// when confirmed listed: kraken.com/features/api#get-ticker-information
 const KRAKEN_PAIRS: Record<string, string> = {
   BTC: 'XBTUSD',
   ETH: 'ETHUSD',
@@ -42,16 +88,19 @@ const KRAKEN_PAIRS: Record<string, string> = {
   USDC: 'USDCUSD',
 }
 
-// Bybit symbols (linear USDT perps, price ≈ spot)
+// Bybit symbols (spot, USDT quote)
 const BYBIT_SYMBOLS: Record<string, string> = {
-  BTC: 'BTCUSDT',
-  ETH: 'ETHUSDT',
-  BNB: 'BNBUSDT',
-  SOL: 'SOLUSDT',
-  TRX: 'TRXUSDT',
+  BTC:  'BTCUSDT',
+  ETH:  'ETHUSDT',
+  BNB:  'BNBUSDT',
+  SOL:  'SOLUSDT',
+  TRX:  'TRXUSDT',
   AVAX: 'AVAXUSDT',
   MATIC: 'MATICUSDT',
-  TON: 'TONUSDT',
+  TON:  'TONUSDT',
+  SUI:  'SUIUSDT',
+  APT:  'APTUSDT',
+  NEAR: 'NEARUSDT',
   USDC: 'USDCUSDT',
 }
 
@@ -240,15 +289,24 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
     }
   }
 
-  // All live sources failed — try stale Redis cache
+  // All live sources failed — try stale Redis cache.
+  // Redis stores { rate: pkrRate, usdPrice: number } per coin. We read usdPrice
+  // directly (new format) and fall back to pkrRate / USD_PKR for old-format keys.
   logger.warn('All price sources failed — attempting stale Redis cache')
+  const usdPkrStr = await redis.get('rate:USD_PKR')
+  const cachedUsdPkr = usdPkrStr ? parseFloat(usdPkrStr) : 278.5
   const coins = Object.keys(COINGECKO_IDS)
   const priceMap: Record<string, number> = {}
   for (const coin of coins) {
     const cached = await redis.get(`rate:${coin}`)
     if (cached) {
-      const parsed = JSON.parse(cached) as { rate: number }
-      priceMap[coin] = parsed.rate
+      const parsed = JSON.parse(cached) as { rate: number; usdPrice?: number }
+      if (parsed.usdPrice !== undefined && parsed.usdPrice > 0) {
+        priceMap[coin] = parsed.usdPrice
+      } else if (parsed.rate > 0 && cachedUsdPkr > 0) {
+        // Legacy format: rate field holds PKR rate — convert back to USD
+        priceMap[coin] = parsed.rate / cachedUsdPkr
+      }
     }
   }
   if (Object.keys(priceMap).length > 0) {
@@ -294,7 +352,7 @@ export async function updateRates(): Promise<void> {
     const updates: Array<{ key: string; value: string }> = []
 
     updates.push({ key: 'rate_USDT_PKR', value: String(usdPkr.toFixed(2)) })
-    await redis.set('rate:USDT', JSON.stringify({ rate: usdPkr, updatedAt: now, source: priceSource }), 'EX', 600)
+    await redis.set('rate:USDT', JSON.stringify({ rate: usdPkr, usdPrice: 1.0, updatedAt: now, source: priceSource }), 'EX', 3600)
 
     const skippedCoins: string[] = []
     for (const coin of Object.keys(COINGECKO_IDS)) {
@@ -305,10 +363,12 @@ export async function updateRates(): Promise<void> {
       }
       const pkrRate = (usdPrice * usdPkr).toFixed(2)
       const redisKey = `rate:${coin}`
-      const redisValue = JSON.stringify({ rate: parseFloat(pkrRate), updatedAt: now, source: priceSource })
+      // Store both usdPrice (for direct use) and rate/PKR (for PKR display).
+      // TTL is 3600s — long enough to survive 1-hour gaps in the updater job.
+      const redisValue = JSON.stringify({ rate: parseFloat(pkrRate), usdPrice, updatedAt: now, source: priceSource })
       updates.push({ key: `rate_${coin}_PKR`, value: pkrRate })
       logger.debug({ key: redisKey, usdPrice, pkrRate }, 'Setting coin rate in Redis')
-      await redis.set(redisKey, redisValue, 'EX', 600)
+      await redis.set(redisKey, redisValue, 'EX', 3600)
       logger.debug({ key: redisKey }, 'Redis SET confirmed')
     }
 
