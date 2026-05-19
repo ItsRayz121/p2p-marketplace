@@ -4,7 +4,7 @@ import Link from 'next/link'
 import {
   gasApi,
   type GasChain, type GasToken, type GasTokensResponse, type GasOrder,
-  type GasPkrMethods, type GasCryptoMethods,
+  type GasPkrMethods, type GasCryptoMethods, type GasNetworkFee,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -402,6 +402,9 @@ export default function GasPage() {
   const [creatingPkr, setCreatingPkr]   = useState(false)
   const [pkrError, setPkrError]         = useState('')
 
+  // ── Live network fee (fetched when reaching address step) ───────────────────
+  const [networkFee, setNetworkFee] = useState<GasNetworkFee | null>(null)
+
   // ── Proof upload ────────────────────────────────────────────────────────────
   const { upload, uploading, error: uploadError } = useFileUpload('payment-proof')
   const [proofUrl, setProofUrl]       = useState('')
@@ -457,6 +460,15 @@ export default function GasPage() {
       })
       .finally(() => setMethodsLoading(false))
   }, [phase, pkrMethods, cryptoMethods])
+
+  // Fetch live network gas fee when the address step is reached
+  useEffect(() => {
+    if (phase !== PHASE.ADDRESS || !selectedChain) return
+    setNetworkFee(null)
+    gasApi.getNetworkFee(selectedChain.slug)
+      .then(fee => setNetworkFee(fee))
+      .catch(() => setNetworkFee(null))
+  }, [phase, selectedChain])
 
   const fetchTokens = useCallback(async (chain: GasChain) => {
     setTokensLoading(true); setTokensError(''); setTokenData(null); setSelectedToken(null)
@@ -814,12 +826,17 @@ export default function GasPage() {
                         const active  = amount === String(preset) && !tooHigh
                         return (
                           <button key={preset} onClick={() => { if (!tooHigh) { setAmount(String(preset)); if (usdVal > maxUsd) setAmountError(`Exceeds $${maxUsd} limit`); else setAmountError('') } }} disabled={tooHigh}
-                            className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all ${
+                            className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all flex flex-col items-center ${
                               active    ? 'border-purple-500 bg-purple-600 text-white shadow-sm'
                               : tooHigh ? 'border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed'
                               :           'border-gray-200 bg-white text-gray-700 hover:border-purple-300'
                             }`}>
-                            {preset} {selectedToken.symbol}
+                            <span>{preset} {selectedToken.symbol}</span>
+                            {priceUsd > 0 && (
+                              <span className={`text-[10px] font-medium mt-0.5 ${active ? 'text-purple-100' : tooHigh ? 'text-gray-300' : 'text-gray-400'}`}>
+                                ≈ ${usdVal.toFixed(2)}
+                              </span>
+                            )}
                           </button>
                         )
                       })}
@@ -880,9 +897,19 @@ export default function GasPage() {
                   {/* Summary */}
                   <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-xs">
                     <p className="font-bold text-gray-400 uppercase tracking-wide mb-1">Order Summary</p>
-                    {[['Network', selectedChain.name], ['Token', selectedToken.symbol], ['Amount', `${amount} ${selectedToken.symbol}`]].map(([l, v]) => (
+                    {[['Network', selectedChain.name], ['Token', selectedToken.symbol]].map(([l, v]) => (
                       <div key={l} className="flex justify-between"><span className="text-gray-500">{l}</span><span className="font-semibold text-gray-800">{v}</span></div>
                     ))}
+                    {/* Amount — with USDT equivalent in brackets */}
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Amount</span>
+                      <span className="font-semibold text-gray-800">
+                        {amount} {selectedToken.symbol}
+                        {priceUsd > 0 && amountNum > 0 && (
+                          <span className="text-gray-400 font-normal"> (≈ ${gasValueUsd.toFixed(2)})</span>
+                        )}
+                      </span>
+                    </div>
                     {priceUsd > 0 && amountNum > 0 && (
                       <>
                         <div className="flex justify-between">
@@ -890,7 +917,7 @@ export default function GasPage() {
                           <span className="font-semibold text-gray-800">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Gas Value</span>
+                          <span className="text-gray-500">Token Value</span>
                           <span className="font-semibold text-gray-800">${gasValueUsd.toFixed(2)} USDT</span>
                         </div>
                         <div className="flex justify-between">
@@ -906,6 +933,30 @@ export default function GasPage() {
                         <p className="text-gray-400">≈ PKR {computedPkr.toFixed(0)}</p>
                       </div>
                     </div>
+
+                    {/* Live network fee reference */}
+                    {networkFee?.supported && networkFee.estimatedFeeNative != null && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <div className="flex items-start gap-1.5 text-gray-500">
+                          <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          <div>
+                            <span className="font-medium text-gray-600">Current {selectedChain.name} network fee: </span>
+                            <span className="font-semibold text-gray-700">
+                              ~{networkFee.estimatedFeeNative.toFixed(6)} {networkFee.symbol}
+                              {networkFee.estimatedFeeUsd != null && ` (≈ $${networkFee.estimatedFeeUsd.toFixed(4)})`}
+                            </span>
+                            {networkFee.model === 'gas' && networkFee.gasPriceGwei != null && (
+                              <span className="text-gray-400"> · {networkFee.gasPriceGwei.toFixed(2)} Gwei</span>
+                            )}
+                            {amountNum > 0 && networkFee.estimatedFeeNative > 0 && (
+                              <p className="text-gray-400 mt-0.5">
+                                Your {amount} {selectedToken.symbol} covers ~{Math.floor(amountNum / networkFee.estimatedFeeNative).toLocaleString()} transfers
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <Button className="w-full" disabled={!validateAddress(address, selectedChain.addressType)}

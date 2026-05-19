@@ -225,6 +225,80 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── GET /api/gas-fee/chains/:chainSlug/network-fee — live on-chain gas estimate ─
+  // Returns the current network gas price and estimated cost for a standard transfer.
+  // Cached in Redis for 30 s so we don't hammer RPCs on every page load.
+
+  app.get('/gas-fee/chains/:chainSlug/network-fee', async (req, reply) => {
+    const { chainSlug } = req.params as { chainSlug: string }
+    const slug = chainSlug.toUpperCase()
+
+    const cacheKey = `gas_network_fee:${slug}`
+    const cached = await redis.get(cacheKey)
+    if (cached) {
+      return reply.send({ success: true, data: JSON.parse(cached) as object })
+    }
+
+    const chainCfg = await db.gasChainConfig.findUnique({
+      where: { slug },
+      include: { tokens: { where: { tokenType: 'native', isActive: true }, take: 1, orderBy: { displayOrder: 'asc' } } },
+    })
+
+    if (!chainCfg || !chainCfg.backendChainId) {
+      return reply.send({ success: true, data: { supported: false } })
+    }
+
+    const dbChain = chainCfg.backendChainId
+
+    // TRON: bandwidth-based, not gas-based
+    if (dbChain === 'TRON') {
+      const trxUsdPrice = await getNativeUsdRate('TRX')
+      const feeTrx = 0.267 // typical cost when no bandwidth is available
+      const data = {
+        supported: true,
+        model: 'bandwidth',
+        symbol: 'TRX',
+        estimatedFeeNative: feeTrx,
+        estimatedFeeUsd: trxUsdPrice > 0 ? feeTrx * trxUsdPrice : null,
+        note: 'TRON uses bandwidth instead of gas. Each transfer consumes ~270 bandwidth (free if you have 1,500+ TRX staked, otherwise ~0.267 TRX is burned).',
+      }
+      await redis.set(cacheKey, JSON.stringify(data), 'EX', 30)
+      return reply.send({ success: true, data })
+    }
+
+    // EVM chains
+    const legacyId = dbChain === 'ETH' ? 'ETHEREUM' : dbChain
+    const gasChain = GAS_CHAINS[legacyId as GasChainId]
+    if (!gasChain) return reply.send({ success: true, data: { supported: false } })
+
+    try {
+      const { getEvmGasPrice } = await import('../lib/evmRpc')
+      const gasPriceWei = await getEvmGasPrice(gasChain.getRpcUrl(), dbChain)
+      const feeWei = gasPriceWei * 21_000n
+      const feeNative = Number(feeWei) / 1e18
+
+      const priceSymbol = chainCfg.tokens[0]?.priceSymbol ?? gasChain.nativeSymbol
+      const usdPrice = await getNativeUsdRate(priceSymbol)
+      const feeUsd = usdPrice > 0 ? feeNative * usdPrice : null
+      const gasPriceGwei = Number(gasPriceWei) / 1e9
+
+      const data = {
+        supported: true,
+        model: 'gas',
+        symbol: gasChain.nativeSymbol,
+        gasPriceGwei,
+        gasLimit: 21_000,
+        estimatedFeeNative: feeNative,
+        estimatedFeeUsd: feeUsd,
+        note: `Standard transfer (21,000 gas × ${gasPriceGwei.toFixed(3)} Gwei)`,
+      }
+      await redis.set(cacheKey, JSON.stringify(data), 'EX', 30)
+      return reply.send({ success: true, data })
+    } catch {
+      return reply.send({ success: true, data: { supported: false } })
+    }
+  })
+
   // ── GET /api/gas-fee/prices — legacy endpoint kept for backward compat ──────
   // Still works for existing merchant integrations using ?chain=TRON/BSC/ETHEREUM
 

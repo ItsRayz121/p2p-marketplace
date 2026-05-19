@@ -73,6 +73,11 @@ export async function getBlockNumber(rpcUrl: string, chain: string): Promise<big
   return BigInt(hex)
 }
 
+export async function getEvmGasPrice(rpcUrl: string, chain: string): Promise<bigint> {
+  const hex = await rpcCall<string>(rpcUrl, chain, 'eth_gasPrice', [])
+  return BigInt(hex)
+}
+
 export async function getTransactionReceipt(
   rpcUrl: string,
   chain: string,

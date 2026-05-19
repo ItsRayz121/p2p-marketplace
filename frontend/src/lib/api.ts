@@ -998,6 +998,17 @@ export interface GasCustomRequest {
   updatedAt: string
 }
 
+export interface GasNetworkFee {
+  supported: boolean
+  model?: 'gas' | 'bandwidth'
+  symbol?: string
+  gasPriceGwei?: number
+  gasLimit?: number
+  estimatedFeeNative?: number
+  estimatedFeeUsd?: number | null
+  note?: string
+}
+
 export const gasApi = {
   getChains: () =>
     apiRequest<{ chains: GasChain[] }>('/gas-fee/chains'),
@@ -1031,6 +1042,9 @@ export const gasApi = {
 
   getOrderHistory: (params?: { page?: number; limit?: number }) =>
     apiRequest<{ orders: GasOrder[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/gas-fee/orders/history' + (params ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString() : '')),
+
+  getNetworkFee: (chainSlug: string) =>
+    apiRequest<GasNetworkFee>(`/gas-fee/chains/${chainSlug}/network-fee`),
 }
 
 export const gasFeeApi = {
