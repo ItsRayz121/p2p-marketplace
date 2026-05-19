@@ -9,6 +9,7 @@ import {
   deleteAd,
 } from '../services/ad.service'
 import { AppError } from '../lib/errors'
+import { db } from '../lib/prisma'
 
 const ALLOWED_NETWORKS = ['BEP20', 'Aptos'] as const
 
@@ -53,6 +54,20 @@ export async function adRoutes(app: FastifyInstance) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ad = await createAd(userId, parsed.data as any)
     return reply.code(201).send({ success: true, data: ad })
+  })
+
+  // GET /api/ads/:id — single ad by ID (used by trade/new page)
+  app.get('/ads/:id', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const ad = await db.ad.findUnique({
+      where: { id },
+      include: { user: { select: { id: true, username: true } } },
+    })
+    if (!ad) throw new AppError('NOT_FOUND', 'Ad not found', 404)
+    if (ad.coin !== 'USDT' || !ALLOWED_NETWORKS.includes(ad.network as typeof ALLOWED_NETWORKS[number])) {
+      throw new AppError('NOT_FOUND', 'Ad not found', 404)
+    }
+    return reply.send({ success: true, data: ad })
   })
 
   // GET /api/ads — user's own ads (also exposed at /ads/me for frontend convenience)

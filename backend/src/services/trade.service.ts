@@ -121,6 +121,8 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     if (!adRows) throw new AppError('NOT_FOUND', 'Ad not found', 404)
 
     if (adRows.status !== 'active') throw new AppError('AD_INACTIVE', 'This ad is not active', 400)
+    if (adRows.coin !== 'USDT') throw new AppError('UNSUPPORTED_ASSET', 'Only USDT ads are supported on this marketplace', 400)
+    if (!['BEP20', 'Aptos'].includes(adRows.network)) throw new AppError('UNSUPPORTED_NETWORK', 'Only BEP20 and Aptos networks are supported', 400)
     if (adRows.side !== 'sell') throw new AppError('INVALID_AD', 'Can only trade on sell ads', 400)
     if (adRows.userId === buyerId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
 
