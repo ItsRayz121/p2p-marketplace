@@ -1434,7 +1434,12 @@ export default function GasPage() {
                           <CopyButton text={order.paymentAmount} />
                         </div>
                         <p className="text-xs text-gray-400 mt-1.5">
-                          Send exactly this amount to the address above. Your wallet will also deduct a separate {order.paymentNetwork} network fee (~$0.29) when sending.
+                          Send exactly this amount to the address above. Your wallet will also deduct a separate {order.paymentNetwork} network fee ({
+                            (() => {
+                              const m = order.paymentNetwork === 'BEP20' ? cryptoMethods?.bep20 : cryptoMethods?.aptos
+                              return m?.fee ?? (order.paymentNetwork === 'BEP20' ? '~$0.29' : '~$0.01')
+                            })()
+                          }) when sending.
                         </p>
                       </div>
 

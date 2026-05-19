@@ -11,6 +11,7 @@ import { logger } from '../lib/logger'
 import { GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
 import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { flagIfRisky } from '../lib/gas/gas.risk'
+import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
 
 // ── Rate lookup helpers ───────────────────────────────────────────────────────
 
@@ -752,68 +753,62 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
   })
 
-  // ── GET /gas-fee/crypto-methods — admin-configured USDT deposit addresses ──
-  // Address resolution priority: platformConfig DB override → env var → mnemonic-derived
-  // BEP20 fee priority: admin override (gas_bep20_network_fee_usdt) → live from Redis
-  //   cache (BSC gas price × 65,000 gas for ERC20 token transfer) → default $0.29
+  // ── GET /gas-fee/crypto-methods — USDT deposit addresses + live network fees ──
+  // Address resolution: platformConfig DB override → env var → mnemonic-derived
+  // Fee resolution:     admin DB override → live RPC (gas.fees.ts) → default fallback
 
   app.get('/gas-fee/crypto-methods', async (_req, reply) => {
     const configs = await db.platformConfig.findMany({
-      where: { key: { in: ['gas_usdt_bep20_address', 'gas_usdt_aptos_address', 'gas_bep20_network_fee_usdt'] } },
+      where: {
+        key: {
+          in: [
+            'gas_usdt_bep20_address',
+            'gas_usdt_aptos_address',
+            'gas_bep20_network_fee_usdt',
+            'gas_aptos_network_fee_usdt',
+          ],
+        },
+      },
     })
     const map: Record<string, string> = {}
     configs.forEach(c => { map[c.key] = c.value })
 
-    // BEP20: DB override → env var → mnemonic-derived
     const bep20Address = map['gas_usdt_bep20_address'] ?? GAS_CHAINS.BSC.getDepositAddress() ?? null
     const aptosAddress = map['gas_usdt_aptos_address'] ?? null
 
-    // BEP20 USDT transfer fee — live when possible, admin-overridable
-    let bep20FeeUsd = 0.29
-    let bep20FeeIsLive = false
-
-    const adminFeeOverride = map['gas_bep20_network_fee_usdt']
-    if (adminFeeOverride) {
-      const v = parseFloat(adminFeeOverride)
-      if (v > 0) { bep20FeeUsd = v }
-    } else {
-      // Reuse the cached BSC gas price (populated by the network-fee endpoint, 30s TTL).
-      // USDT transfer uses ~65,000 gas vs 21,000 for native — scale accordingly.
-      const cachedBsc = await redis.get('gas_network_fee:BSC')
-      if (cachedBsc) {
-        try {
-          const parsed = JSON.parse(cachedBsc) as { supported?: boolean; estimatedFeeUsd?: number | null; estimatedFeeNative?: number }
-          if (parsed.supported && parsed.estimatedFeeUsd != null && parsed.estimatedFeeNative) {
-            bep20FeeUsd = parsed.estimatedFeeUsd * (65_000 / 21_000)
-            bep20FeeIsLive = true
-          }
-        } catch { /* keep default */ }
-      }
-      if (!bep20FeeIsLive) {
-        // Cache miss — attempt a direct RPC call (will be cached for next request)
-        try {
-          const { getEvmGasPrice } = await import('../lib/evmRpc')
-          const gasPriceWei = await getEvmGasPrice(GAS_CHAINS.BSC.getRpcUrl(), 'BSC')
-          const feeNative = Number(gasPriceWei * 65_000n) / 1e18
-          const bnbUsd = await getNativeUsdRate('BNB')
-          if (bnbUsd > 0) {
-            bep20FeeUsd = feeNative * bnbUsd
-            bep20FeeIsLive = true
-            // Populate the cache so subsequent calls skip the RPC
-            const cachePayload = { supported: true, model: 'gas', symbol: 'BNB', estimatedFeeNative: feeNative / (65_000 / 21_000), estimatedFeeUsd: feeNative / (65_000 / 21_000) * bnbUsd, gasLimit: 21_000, gasPriceGwei: Number(gasPriceWei) / 1e9, note: 'cached by crypto-methods' }
-            await redis.set('gas_network_fee:BSC', JSON.stringify(cachePayload), 'EX', 30)
-          }
-        } catch { /* keep default */ }
-      }
+    // BEP20 fee: admin override takes precedence, otherwise live via gas.fees.ts
+    let bep20Fee = await getUsdtNetworkFeeUsd('BSC')
+    const bep20AdminOverride = map['gas_bep20_network_fee_usdt']
+    if (bep20AdminOverride) {
+      const v = parseFloat(bep20AdminOverride)
+      if (v > 0) bep20Fee = { ...bep20Fee, feeUsd: v, feeDisplay: `~$${v.toFixed(2)}`, isLive: false }
     }
 
-    const bep20FeeDisplay = `~$${bep20FeeUsd.toFixed(2)}`
+    // Aptos fee: admin override takes precedence, otherwise live via gas.fees.ts
+    let aptosFee = await getUsdtNetworkFeeUsd('APTOS')
+    const aptosAdminOverride = map['gas_aptos_network_fee_usdt']
+    if (aptosAdminOverride) {
+      const v = parseFloat(aptosAdminOverride)
+      if (v > 0) aptosFee = { ...aptosFee, feeUsd: v, feeDisplay: `~$${v.toFixed(2)}`, isLive: false }
+    }
 
     return reply.send({
       success: true,
       data: {
-        bep20: { address: bep20Address, network: 'BEP20', fee: bep20FeeDisplay, feeUsd: bep20FeeUsd, feeIsLive: bep20FeeIsLive },
-        aptos: { address: aptosAddress,  network: 'APTOS', fee: '~$0.01',        feeUsd: 0.01,          feeIsLive: false },
+        bep20: {
+          address:   bep20Address,
+          network:   'BEP20',
+          fee:       bep20Fee.feeDisplay,
+          feeUsd:    bep20Fee.feeUsd,
+          feeIsLive: bep20Fee.isLive,
+        },
+        aptos: {
+          address:   aptosAddress,
+          network:   'APTOS',
+          fee:       aptosFee.feeDisplay,
+          feeUsd:    aptosFee.feeUsd,
+          feeIsLive: aptosFee.isLive,
+        },
       },
     })
   })

@@ -53,7 +53,8 @@ const KEY_META: Record<string, KeyMeta> = {
   // Gas Crypto Payment Methods
   'gas_usdt_bep20_address':      { label: 'Gas USDT BEP20 Address',   description: 'Platform BSC address to receive USDT BEP20 for gas orders. Leave blank to use mnemonic-derived hot wallet address.', category: 'Gas System' },
   'gas_usdt_aptos_address':      { label: 'Gas USDT Aptos Address',   description: 'Platform Aptos address to receive USDT for gas orders. Set this to enable Aptos payment method.', category: 'Gas System' },
-  'gas_bep20_network_fee_usdt':  { label: 'BEP20 Network Fee (USD)',  description: 'Override the estimated BEP20 USDT transfer fee shown to users (e.g. 0.29). Leave blank to use live on-chain calculation.', category: 'Gas System', placeholder: '0.29' },
+  'gas_bep20_network_fee_usdt':  { label: 'BEP20 Network Fee (USD)',  description: 'Override the BEP20 USDT transfer fee shown to users (e.g. 0.29). Leave blank to use live on-chain calculation via BSC RPC.', category: 'Gas System', placeholder: '0.29' },
+  'gas_aptos_network_fee_usdt': { label: 'Aptos Network Fee (USD)',  description: 'Override the Aptos USDT transfer fee shown to users (e.g. 0.01). Leave blank to use live on-chain calculation via Aptos full node.', category: 'Gas System', placeholder: '0.01' },
   // Notification Settings
   'admin_email':                 { label: 'Admin Email',              description: 'Primary admin email for system notifications', category: 'Notifications' },
   'alert_email':                 { label: 'Alert Email',              description: 'Email address for critical alerts', category: 'Notifications' },
