@@ -21,7 +21,9 @@ const CSRF_EXEMPT = new Set([
   '/api/v1/auth/refresh',
   '/api/v1/auth/2fa/verify',
   '/api/v1/gas-fee/orders',
+  '/api/v1/gas-fee/orders/crypto',
   '/api/v1/gas-fee/prices',
+  '/api/v1/gas-fee/custom-request',
 ])
 
 function sign(payload: string): string {

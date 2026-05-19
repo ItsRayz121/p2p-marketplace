@@ -21,18 +21,16 @@ const RATE_COIN: Record<GasChainId, string> = {
   SOL: 'SOL', TON: 'TON', SUI: 'SUI',
 }
 
-// ── DB-driven markup: reads platformFeePercent from GasChainConfig ────────────
-// Falls back to env-based multiplier only when no DB record exists for the chain.
+// ── DB-driven fee: reads platformFeeUsdt from GasChainConfig ─────────────────
 
-async function getChainMarkup(chain: GasChainId): Promise<{ markup: number; isActive: boolean | null }> {
+async function getChainFee(chain: GasChainId): Promise<{ platformFeeUsdt: number; isActive: boolean | null }> {
   const slug = chain === 'ETHEREUM' ? 'ETH' : chain
-  const dbChain = await db.gasChainConfig.findUnique({ where: { slug }, select: { platformFeePercent: true, isActive: true } })
+  const dbChain = await db.gasChainConfig.findUnique({ where: { slug }, select: { platformFeeUsdt: true, isActive: true } })
   if (dbChain) {
-    return { markup: 1 + dbChain.platformFeePercent / 100, isActive: dbChain.isActive }
+    return { platformFeeUsdt: dbChain.platformFeeUsdt, isActive: dbChain.isActive }
   }
-  const envMarkup = GAS_CHAINS[chain].getMarkupMultiplier()
-  logger.warn({ chain, envMarkup }, '[merchantGas] No DB chain config found — falling back to env-based markup multiplier')
-  return { markup: envMarkup, isActive: null }
+  logger.warn({ chain }, '[merchantGas] No DB chain config found — using default platform fee $0.25')
+  return { platformFeeUsdt: 0.25, isActive: null }
 }
 
 async function getNativeUsdRate(chain: GasChainId): Promise<number> {
@@ -181,22 +179,24 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     const chainConfig = GAS_CHAINS[chain as GasChainId]
     if (!chainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chain}' is not supported`, 400)
 
-    const { markup, isActive } = await getChainMarkup(chain as GasChainId)
+    const { platformFeeUsdt, isActive } = await getChainFee(chain as GasChainId)
     if (isActive === false) throw new AppError('CHAIN_NOT_SUPPORTED', `${chain} gas is not currently active`, 400)
 
     const usdPkrStr = await redis.get('rate:USD_PKR')
     const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 280
     const nativeUsdRate = await getNativeUsdRate(chain as GasChainId)
-    const nativePkrRate = nativeUsdRate * usdPkrRate
 
-    const tiers = Object.entries(chainConfig.nativeTierAmounts).map(([name, nativeAmount]) => ({
-      id:           name.toLowerCase(),
-      name,
-      nativeAmount,
-      nativeSymbol: chainConfig.nativeSymbol,
-      usdtPrice:    (nativeAmount * nativeUsdRate * markup).toFixed(2),
-      pkrPrice:     (nativeAmount * nativePkrRate * markup).toFixed(0),
-    }))
+    const tiers = Object.entries(chainConfig.nativeTierAmounts).map(([name, nativeAmount]) => {
+      const gasValueUsd = nativeAmount * nativeUsdRate
+      return {
+        id:           name.toLowerCase(),
+        name,
+        nativeAmount,
+        nativeSymbol: chainConfig.nativeSymbol,
+        usdtPrice:    (gasValueUsd + platformFeeUsdt).toFixed(2),
+        pkrPrice:     ((gasValueUsd + platformFeeUsdt) * usdPkrRate).toFixed(0),
+      }
+    })
 
     const chains = await Promise.all(
       SUPPORTED_GAS_CHAINS.map(async (chainId) => {
@@ -237,8 +237,8 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     const chainConfig = GAS_CHAINS[chain]
     const merchantKeyId = req.merchantKey!.id
 
-    // DB chain config: enforce isActive + get DB-driven markup
-    const { markup, isActive } = await getChainMarkup(chain as GasChainId)
+    // DB chain config: enforce isActive + get fixed platform fee
+    const { platformFeeUsdt, isActive } = await getChainFee(chain as GasChainId)
     if (isActive === false) {
       throw new AppError('CHAIN_NOT_SUPPORTED', `${chain} gas is not currently active`, 400)
     }
@@ -282,7 +282,7 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     }
 
     const gasAmountUSD  = gasAmountNative * nativeUsdRate
-    const paymentAmount = gasAmountUSD * markup
+    const paymentAmount = gasAmountUSD + platformFeeUsdt
     const orderRef      = generateOrderRef('MG')
     const expiresAt     = new Date(Date.now() + 30 * 60 * 1000) // 30-minute window for merchants
 

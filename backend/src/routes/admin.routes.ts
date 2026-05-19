@@ -2277,7 +2277,7 @@ export async function adminRoutes(app: FastifyInstance) {
       logoUrl:            z.string().url().nullable().default(null),
       explorerBase:       z.string().url().nullable().default(null),
       backendChainId:     z.string().nullable().default(null),
-      platformFeePercent: z.number().min(0).max(100).default(10),
+      platformFeeUsdt: z.number().min(0).default(0.25),
       alertThresholdUsd:  z.number().positive().nullable().default(null),
       pauseThresholdUsd:  z.number().positive().nullable().default(null),
       isActive:           z.boolean().default(false),
@@ -2290,7 +2290,7 @@ export async function adminRoutes(app: FastifyInstance) {
         name: d.name, slug: d.slug.toUpperCase(), symbol: d.symbol,
         category: d.category, networkLabel: d.networkLabel, addressType: d.addressType,
         logoUrl: d.logoUrl, explorerBase: d.explorerBase,
-        backendChainId: d.backendChainId, platformFeePercent: d.platformFeePercent,
+        backendChainId: d.backendChainId, platformFeeUsdt: d.platformFeeUsdt,
         alertThresholdUsd: d.alertThresholdUsd, pauseThresholdUsd: d.pauseThresholdUsd,
         isActive: d.isActive, readinessState: d.readinessState, displayOrder: d.displayOrder,
       },
@@ -2316,7 +2316,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('logoUrl' in body) updateData.logoUrl = body.logoUrl ?? null
     if ('explorerBase' in body) updateData.explorerBase = body.explorerBase ?? null
     if ('backendChainId' in body) updateData.backendChainId = body.backendChainId ?? null
-    if ('platformFeePercent' in body) updateData.platformFeePercent = Math.min(100, Math.max(0, Number(body.platformFeePercent) || 10))
+    if ('platformFeeUsdt' in body) updateData.platformFeeUsdt = Math.max(0, Number(body.platformFeeUsdt) || 0)
     if ('alertThresholdUsd' in body) updateData.alertThresholdUsd = body.alertThresholdUsd != null ? Math.max(0, Number(body.alertThresholdUsd)) : null
     if ('pauseThresholdUsd' in body) updateData.pauseThresholdUsd = body.pauseThresholdUsd != null ? Math.max(0, Number(body.pauseThresholdUsd)) : null
     if ('isActive' in body) updateData.isActive = body.isActive

@@ -58,13 +58,8 @@ async function getUsdPkrRate(): Promise<number> {
   return v ? parseFloat(v) : 0
 }
 
-// ── Markup helper — DB-driven per-chain platform fee ─────────────────────────
+// ── Legacy fallback multiplier — kept only for the old tier-based merchant flow ─
 
-function chainMarkup(platformFeePercent: number): number {
-  return 1 + platformFeePercent / 100
-}
-
-// Legacy fallback: used only for the old tier-based order flow
 function getMarkupForChain(backendChainId: string | null): number {
   if (!backendChainId) return 1.5
   const legacyId = backendChainId === 'ETH' ? 'ETHEREUM' : backendChainId
@@ -179,10 +174,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
 
     const usdPkrRate = await getUsdPkrRate()
-    const markup = chainMarkup(chainCfg.platformFeePercent)
-
-    const platformFeePercent = chainCfg.platformFeePercent
-    const markupPercent = platformFeePercent  // e.g. 10 for 10%
+    const platformFeeUsdt = chainCfg.platformFeeUsdt
 
     const tokensWithPricing = await Promise.all(
       tokens.map(async (t) => {
@@ -192,25 +184,24 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         const rateStale   = t.isActive && !(rawUsdPrice > 0)
 
         return {
-          id:             t.id,
-          name:           t.name,
-          symbol:         t.symbol,
-          tokenType:      t.tokenType,
-          logoUrl:        t.logoUrl,
-          priceSymbol:    t.priceSymbol,
+          id:              t.id,
+          name:            t.name,
+          symbol:          t.symbol,
+          tokenType:       t.tokenType,
+          logoUrl:         t.logoUrl,
+          priceSymbol:     t.priceSymbol,
           // rawUsdPrice = live market rate, no markup applied
           rawUsdPrice,
           // priceUsd kept for backward compat — equals rawUsdPrice
-          priceUsd:       rawUsdPrice,
-          pricePkr:       rawUsdPrice * usdPkrRate,
-          markup,
-          markupPercent,
-          priceSource:    rateInfo.source,
-          priceUpdatedAt: rateInfo.updatedAt,
-          minAmount:      Number(t.minAmount),
-          maxUsdValue:    Number(t.maxUsdValue),
-          presetAmounts:  t.presetAmounts as number[],
-          isActive:       t.isActive,
+          priceUsd:        rawUsdPrice,
+          pricePkr:        rawUsdPrice * usdPkrRate,
+          platformFeeUsdt, // fixed USDT fee per order
+          priceSource:     rateInfo.source,
+          priceUpdatedAt:  rateInfo.updatedAt,
+          minAmount:       Number(t.minAmount),
+          maxUsdValue:     Number(t.maxUsdValue),
+          presetAmounts:   t.presetAmounts as number[],
+          isActive:        t.isActive,
           rateStale,
         }
       }),
@@ -367,9 +358,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again in a moment.', 503)
     }
 
-    const markup = chainMarkup(chainCfg.platformFeePercent)
     const gasAmountUSD  = amount * nativeUsdRate
-    const paymentAmount = gasAmountUSD * markup
+    const platformFeeUsdt = chainCfg.platformFeeUsdt
+    const paymentAmount = gasAmountUSD + platformFeeUsdt
 
     if (gasAmountUSD > maxUsdValue) {
       throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
@@ -476,6 +467,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         nativeSymbol:    tokenCfg.symbol,
         chain:           order.chain,
         expiresAt:       order.expiresAt.toISOString(),
+        // Transparent price breakdown
+        gasValueUsd:     gasAmountUSD.toFixed(4),
+        platformFeeUsdt: platformFeeUsdt.toFixed(4),
+        priceAtOrder:    nativeUsdRate.toFixed(4),
       },
     })
   }
@@ -744,12 +739,12 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const usdPkrRate = await getUsdPkrRate()
     if (!(usdPkrRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'PKR exchange rate is temporarily unavailable. Please try again in a moment.', 503)
-    const markup = chainMarkup(chainCfg.platformFeePercent)
-    const gasAmountUSD  = amount * nativeUsdRate
-    const maxUsdValue   = Number(tokenCfg.maxUsdValue)
+    const gasAmountUSD    = amount * nativeUsdRate
+    const platformFeeUsdt = chainCfg.platformFeeUsdt
+    const maxUsdValue     = Number(tokenCfg.maxUsdValue)
     if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
 
-    const paymentAmountUsd = gasAmountUSD * markup
+    const paymentAmountUsd = gasAmountUSD + platformFeeUsdt
     const pkrAmount        = paymentAmountUsd * usdPkrRate
 
     const idempKey = (req.headers['idempotency-key'] as string | undefined) ?? idempotencyKey
@@ -858,11 +853,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
 
-    const markup = chainMarkup(chainCfg.platformFeePercent)
-    const gasAmountUSD  = amount * nativeUsdRate
-    const maxUsdValue   = Number(tokenCfg.maxUsdValue)
+    const gasAmountUSD    = amount * nativeUsdRate
+    const platformFeeUsdt = chainCfg.platformFeeUsdt
+    const maxUsdValue     = Number(tokenCfg.maxUsdValue)
     if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
-    const paymentAmount = gasAmountUSD * markup
+    const paymentAmount = gasAmountUSD + platformFeeUsdt
 
     // IP rate limit
     const clientIp  = req.ip ?? 'unknown'
@@ -939,6 +934,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         chain:           order.chain,
         status:          order.status,
         expiresAt:       order.expiresAt.toISOString(),
+        // Transparent price breakdown
+        gasValueUsd:     gasAmountUSD.toFixed(4),
+        platformFeeUsdt: platformFeeUsdt.toFixed(4),
+        priceAtOrder:    nativeUsdRate.toFixed(4),
       },
     })
   })

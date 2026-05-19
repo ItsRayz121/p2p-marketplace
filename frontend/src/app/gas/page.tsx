@@ -420,19 +420,20 @@ export default function GasPage() {
   const idempKeyRef = useRef(`gas_${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
   // ── Computed ────────────────────────────────────────────────────────────────
-  const rawUsdPrice   = selectedToken?.rawUsdPrice ?? selectedToken?.priceUsd ?? 0
-  const priceUsd      = rawUsdPrice   // raw market rate, no markup
-  const pricePkr      = selectedToken?.pricePkr  ?? 0
-  const markup        = selectedToken?.markup    ?? 1.5
-  const markupPercent = selectedToken?.markupPercent ?? Math.round((markup - 1) * 100)
-  // finalUsdPrice = what the user actually pays per 1 native token
-  const finalUsdPrice = priceUsd * markup
-  const amountNum = parseFloat(amount) || 0
-  const computedUsd = amountNum * priceUsd * markup
-  const computedPkr = amountNum * pricePkr * markup
-  const maxUsd      = selectedToken?.maxUsdValue ?? 10
-  const minAmount   = selectedToken?.minAmount   ?? 0.1
-  const usdExceeded = computedUsd > maxUsd && amountNum > 0
+  const rawUsdPrice    = selectedToken?.rawUsdPrice ?? selectedToken?.priceUsd ?? 0
+  const priceUsd       = rawUsdPrice   // raw market rate — no markup
+  const pricePkr       = selectedToken?.pricePkr ?? 0
+  const platformFeeUsdt = selectedToken?.platformFeeUsdt ?? 0.25
+  const amountNum      = parseFloat(amount) || 0
+  const gasValueUsd    = amountNum * priceUsd
+  // usdPkrRate derived from token data (pricePkr = priceUsd * usdPkrRate)
+  const usdPkrRate     = priceUsd > 0 ? pricePkr / priceUsd : 0
+  const totalUsd       = gasValueUsd + platformFeeUsdt
+  const computedUsd    = totalUsd   // alias used throughout — total user pays
+  const computedPkr    = totalUsd * usdPkrRate
+  const maxUsd         = selectedToken?.maxUsdValue ?? 10
+  const minAmount      = selectedToken?.minAmount   ?? 0.1
+  const usdExceeded    = gasValueUsd > maxUsd && amountNum > 0
 
   const isPkrOrder  = order?.paymentCoin === 'PKR'
   const explorerBase = tokenData?.chain?.explorerBase ?? null
@@ -479,7 +480,7 @@ export default function GasPage() {
     const n = parseFloat(val)
     if (!val || isNaN(n) || n <= 0) { setAmountError('Enter a valid amount'); return false }
     if (n < minAmount) { setAmountError(`Minimum is ${minAmount} ${selectedToken?.symbol ?? ''}`); return false }
-    if (n * priceUsd * markup > maxUsd) { setAmountError(`Exceeds $${maxUsd} USD limit`); return false }
+    if (n * priceUsd > maxUsd) { setAmountError(`Exceeds $${maxUsd} USD limit`); return false }
     setAmountError(''); return true
   }
 
@@ -735,9 +736,8 @@ export default function GasPage() {
                         const sel = selectedToken?.id === t.id
                         const inactive = !t.isActive
                         const tRaw = t.rawUsdPrice ?? t.priceUsd
-                        const tFee = t.markupPercent ?? Math.round((t.markup - 1) * 100)
-                        const displayPrice = tRaw > 0 ? `$${(tRaw * t.markup).toFixed(4)}` : t.rateStale ? 'Rate unavailable' : '—'
-                        const displayRaw   = tRaw > 0 ? `Mkt $${tRaw.toFixed(4)} +${tFee}% fee` : ''
+                        const displayPrice = tRaw > 0 ? `$${tRaw.toFixed(4)}` : t.rateStale ? 'Rate unavailable' : '—'
+                        const displaySub   = tRaw > 0 ? `per ${t.symbol}` : ''
                         return (
                           <button
                             key={t.id}
@@ -769,11 +769,7 @@ export default function GasPage() {
                               ) : (
                                 <>
                                   <p className={`text-sm font-bold ${t.rateStale ? 'text-yellow-600' : 'text-gray-900'}`}>{displayPrice}</p>
-                                  {displayRaw ? (
-                                    <p className="text-xs text-gray-400">{displayRaw}</p>
-                                  ) : (
-                                    <p className="text-xs text-gray-400">per {t.symbol}</p>
-                                  )}
+                                  <p className="text-xs text-gray-400">{displaySub || `per ${t.symbol}`}</p>
                                 </>
                               )}
                             </div>
@@ -799,14 +795,12 @@ export default function GasPage() {
 
                   <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3 text-sm">
                     <div>
-                      <span className="text-gray-500">1 {selectedToken.symbol}</span>
-                      {markupPercent > 0 && (
-                        <p className="text-xs text-gray-400 mt-0.5">Market: ${priceUsd.toFixed(4)} + {markupPercent}% fee</p>
-                      )}
+                      <span className="text-gray-500">Market Price</span>
+                      <p className="text-xs text-gray-400 mt-0.5">1 {selectedToken.symbol}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-gray-900">${finalUsdPrice.toFixed(4)} USDT</p>
-                      <p className="text-xs text-gray-400">≈ PKR {(pricePkr * markup).toFixed(0)}</p>
+                      <p className="font-bold text-gray-900">${priceUsd.toFixed(4)}</p>
+                      <p className="text-xs text-gray-400">≈ PKR {pricePkr.toFixed(0)}</p>
                     </div>
                   </div>
 
@@ -815,7 +809,7 @@ export default function GasPage() {
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Quick Select</p>
                     <div className="flex flex-wrap gap-2">
                       {selectedToken.presetAmounts.map(preset => {
-                        const usdVal = preset * priceUsd * markup
+                        const usdVal = preset * priceUsd
                         const tooHigh = usdVal > maxUsd
                         const active  = amount === String(preset) && !tooHigh
                         return (
@@ -889,6 +883,22 @@ export default function GasPage() {
                     {[['Network', selectedChain.name], ['Token', selectedToken.symbol], ['Amount', `${amount} ${selectedToken.symbol}`]].map(([l, v]) => (
                       <div key={l} className="flex justify-between"><span className="text-gray-500">{l}</span><span className="font-semibold text-gray-800">{v}</span></div>
                     ))}
+                    {priceUsd > 0 && amountNum > 0 && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Market Price</span>
+                          <span className="font-semibold text-gray-800">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Gas Value</span>
+                          <span className="font-semibold text-gray-800">${gasValueUsd.toFixed(2)} USDT</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Platform Fee</span>
+                          <span className="font-semibold text-gray-800">${platformFeeUsdt.toFixed(2)} USDT</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between pt-2 border-t border-gray-200">
                       <span className="text-gray-700 font-semibold">You Pay</span>
                       <div className="text-right">
@@ -1009,21 +1019,29 @@ export default function GasPage() {
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Payment Breakdown</p>
                       <div className="space-y-2">
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Order Amount (You receive)</span>
+                          <span className="text-gray-500">Gas Ordered</span>
                           <span className="font-semibold">{amount} {selectedToken.symbol}</span>
                         </div>
+                        {priceUsd > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Market Price</span>
+                            <span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Network Gas Fee</span>
-                          <span className="font-semibold">{(amountNum * priceUsd).toFixed(2)} USDT</span>
+                          <span className="text-gray-500">Gas Value</span>
+                          <span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span>
                         </div>
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Platform Service Fee</span>
-                          <span className="font-semibold">{(computedUsd - amountNum * priceUsd).toFixed(2)} USDT</span>
+                          <span className="text-gray-500">Platform Fee</span>
+                          <span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span>
                         </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Exchange Rate</span>
-                          <span className="font-semibold">1 USDT ≈ PKR {(pricePkr / priceUsd).toFixed(0)}</span>
-                        </div>
+                        {usdPkrRate > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Exchange Rate</span>
+                            <span className="font-semibold">1 USDT ≈ PKR {usdPkrRate.toFixed(0)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between pt-2 border-t border-gray-200">
                           <span className="font-bold text-gray-800">Total Payable in PKR</span>
                           <span className="font-bold text-green-700 text-base">PKR {computedPkr.toFixed(0)}</span>
@@ -1234,15 +1252,30 @@ export default function GasPage() {
                     })()}
                   </div>
 
-                  {/* Amount to pay */}
+                  {/* Amount to pay — full transparent breakdown */}
                   {selectedCryptoNetwork && (
                     <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5">
                       <div className="flex justify-between"><span className="text-gray-500">Gas Ordered</span><span className="font-semibold">{amount} {selectedToken?.symbol}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Network</span><span className="font-semibold">{selectedCryptoNetwork}</span></div>
+                      {priceUsd > 0 && (
+                        <div className="flex justify-between"><span className="text-gray-500">Market Price</span><span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken?.symbol}</span></div>
+                      )}
+                      {priceUsd > 0 && (
+                        <div className="flex justify-between"><span className="text-gray-500">Gas Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Blockchain Fee</span>
+                        <span className="font-semibold text-gray-600">
+                          {selectedCryptoNetwork === 'BEP20'
+                            ? cryptoMethods?.bep20?.fee ?? '~$0.29'
+                            : cryptoMethods?.aptos?.fee ?? '~$0.01'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span></div>
                       <div className="flex justify-between pt-1.5 border-t border-gray-200">
                         <span className="font-bold text-gray-800">You Pay</span>
                         <span className="font-bold text-purple-700">${computedUsd.toFixed(2)} USDT</span>
                       </div>
+                      <p className="text-gray-400 italic pt-0.5">Blockchain fee charged separately by the network when sending USDT.</p>
                     </div>
                   )}
 

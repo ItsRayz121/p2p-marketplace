@@ -1131,7 +1131,7 @@ model GasChainConfig {
   addressType    String           // "TRC20" | "EVM" | "SOL" | "TON" | "SUI" — maps to frontend regex
   explorerBase   String?
   backendChainId    String?          // Maps to GasChain enum value. Null = not yet deliverable.
-  platformFeePercent Float           @default(10)
+  platformFeeUsdt   Float            @default(0.25) // Fixed platform fee in USDT per order
   alertThresholdUsd Float?           // Auto-alert below this USD wallet balance; null = no alert
   pauseThresholdUsd Float?           // Auto-pause new orders below this USD balance; null = no pause
   isActive          Boolean          @default(true)

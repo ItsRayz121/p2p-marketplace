@@ -41,6 +41,26 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 let isRefreshing = false
 let refreshQueue: Array<(token: string) => void> = []
 
+// Cached CSRF fetch so concurrent requests don't all fire at once
+let csrfFetchPromise: Promise<string> | null = null
+
+async function fetchCsrfToken(): Promise<string> {
+  if (!csrfFetchPromise) {
+    csrfFetchPromise = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/auth/csrf`, { credentials: 'include' })
+        if (res.ok) {
+          const raw = await res.json() as { data?: { token: string }; token?: string }
+          return raw.data?.token ?? (raw as { token?: string }).token ?? ''
+        }
+      } catch { /* ignore */ }
+      return ''
+    })()
+    csrfFetchPromise.finally(() => { csrfFetchPromise = null })
+  }
+  return csrfFetchPromise
+}
+
 // These endpoints handle their own auth — a 401 from them is a real failure,
 // not a token-expiry. Never attempt a refresh cycle for them.
 const NO_REFRESH_PATHS = new Set([
@@ -95,9 +115,15 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   const token = useAuthStore.getState().accessToken
   if (token) headers['Authorization'] = 'Bearer ' + token
 
-  // Attach CSRF token for unsafe methods
-  const csrf = useAuthStore.getState().csrfToken
-  if (csrf && UNSAFE_METHODS.has(method)) headers['X-CSRF-Token'] = csrf
+  // Attach CSRF token for unsafe methods — auto-fetch if not yet cached
+  if (UNSAFE_METHODS.has(method)) {
+    let csrf = useAuthStore.getState().csrfToken
+    if (!csrf) {
+      csrf = await fetchCsrfToken()
+      if (csrf) useAuthStore.getState().setCsrfToken(csrf)
+    }
+    if (csrf) headers['X-CSRF-Token'] = csrf
+  }
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 15_000)
@@ -245,12 +271,30 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       )
     }
 
-    // Stale CSRF token — clear cache and silently fetch a fresh one for the next request
+    // Stale CSRF token — refresh and retry the original request once
     if (res.status === 403 && (data as { error?: string }).error === 'INVALID_CSRF_TOKEN') {
       invalidateCsrfToken()
-      apiRequest<{ token: string }>('/auth/csrf')
-        .then((d) => useAuthStore.getState().setCsrfToken(d.token))
-        .catch(() => {})
+      const freshCsrf = await fetchCsrfToken()
+      if (freshCsrf) {
+        useAuthStore.getState().setCsrfToken(freshCsrf)
+        headers['X-CSRF-Token'] = freshCsrf
+        const retryController = new AbortController()
+        const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
+        try {
+          const retryRes = await fetch(url, { ...options, method, headers, credentials: 'include', signal: retryController.signal })
+          const retryData = await retryRes.json()
+          if (!retryRes.ok) {
+            throw new ApiError(
+              (retryData as { error?: string }).error ?? 'UNKNOWN_ERROR',
+              (retryData as { message?: string }).message ?? 'An error occurred',
+              retryRes.status,
+            )
+          }
+          return unwrapEnvelope<T>(retryData)
+        } finally {
+          clearTimeout(retryTimeout)
+        }
+      }
     }
 
     throw new ApiError(
@@ -874,14 +918,13 @@ export interface GasToken {
   tokenType: string
   logoUrl: string | null
   priceSymbol: string
-  /** Raw live market USD price, no markup applied */
+  /** Raw live market USD price — no markup applied */
   rawUsdPrice: number
   /** Alias for rawUsdPrice — kept for backward compat */
   priceUsd: number
   pricePkr: number
-  markup: number
-  /** Platform fee percentage, e.g. 10 means 10% */
-  markupPercent: number
+  /** Fixed platform fee in USDT per order (set by admin per chain) */
+  platformFeeUsdt: number
   /** Which data source provided this price: coingecko / bybit / kraken / binance / cache / stale-cache */
   priceSource?: string
   priceUpdatedAt?: string | null
@@ -1021,7 +1064,7 @@ export interface AdminGasChain {
   addressType: string
   explorerBase: string | null
   backendChainId: string | null
-  platformFeePercent: number
+  platformFeeUsdt: number
   alertThresholdUsd: number | null
   pauseThresholdUsd: number | null
   isActive: boolean

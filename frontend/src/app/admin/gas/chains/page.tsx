@@ -26,7 +26,7 @@ interface ChainFormState {
   logoUrl: string
   explorerBase: string
   backendChainId: string
-  platformFeePercent: string
+  platformFeeUsdt: string
   alertThresholdUsd: string
   pauseThresholdUsd: string
   displayOrder: string
@@ -37,7 +37,7 @@ interface ChainFormState {
 const BLANK_CHAIN: ChainFormState = {
   name: '', slug: '', symbol: '', category: '', networkLabel: '',
   addressType: 'EVM', logoUrl: '', explorerBase: '', backendChainId: '',
-  platformFeePercent: '10', alertThresholdUsd: '', pauseThresholdUsd: '',
+  platformFeeUsdt: '0.25', alertThresholdUsd: '', pauseThresholdUsd: '',
   displayOrder: '0', isActive: false, readinessState: 'inactive',
 }
 
@@ -159,17 +159,16 @@ function ChainModal({
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-text-muted block mb-1">Platform Fee %</label>
+              <label className="text-xs font-medium text-text-muted block mb-1">Fixed Platform Fee (USDT)</label>
               <Input
                 type="number"
                 min="0"
-                max="100"
-                step="0.1"
-                placeholder="e.g. 10"
-                value={form.platformFeePercent}
-                onChange={field('platformFeePercent')}
+                step="0.01"
+                placeholder="e.g. 0.25"
+                value={form.platformFeeUsdt}
+                onChange={field('platformFeeUsdt')}
               />
-              <p className="text-xs text-text-muted mt-0.5">Markup added on top of spot price (e.g. 10 = 10%)</p>
+              <p className="text-xs text-text-muted mt-0.5">Fixed USDT fee added per order (e.g. 0.25 = $0.25)</p>
             </div>
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Alert Threshold (USD)</label>
@@ -457,7 +456,7 @@ export default function GasChainsAdminPage() {
       logoUrl: c.logoUrl ?? '',
       explorerBase: c.explorerBase ?? '',
       backendChainId: c.backendChainId ?? '',
-      platformFeePercent: String(c.platformFeePercent ?? 10),
+      platformFeeUsdt: String(c.platformFeeUsdt ?? 0.25),
       alertThresholdUsd: c.alertThresholdUsd != null ? String(c.alertThresholdUsd) : '',
       pauseThresholdUsd: c.pauseThresholdUsd != null ? String(c.pauseThresholdUsd) : '',
       displayOrder: String(c.displayOrder),
@@ -482,7 +481,7 @@ export default function GasChainsAdminPage() {
         logoUrl: chainForm.logoUrl || null,
         explorerBase: chainForm.explorerBase || null,
         backendChainId: chainForm.backendChainId || null,
-        platformFeePercent: parseFloat(chainForm.platformFeePercent) || 10,
+        platformFeeUsdt: parseFloat(chainForm.platformFeeUsdt) || 0,
         alertThresholdUsd: chainForm.alertThresholdUsd ? parseFloat(chainForm.alertThresholdUsd) : null,
         pauseThresholdUsd: chainForm.pauseThresholdUsd ? parseFloat(chainForm.pauseThresholdUsd) : null,
         displayOrder: parseInt(chainForm.displayOrder) || 0,
@@ -689,7 +688,7 @@ export default function GasChainsAdminPage() {
                             : <Badge variant="default" size="sm">Not Set</Badge>}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="text-sm font-semibold text-text-primary">{c.platformFeePercent ?? 10}%</div>
+                          <div className="text-sm font-semibold text-text-primary">${c.platformFeeUsdt ?? 0.25} USDT</div>
                           {c.alertThresholdUsd != null && (
                             <div className="text-xs text-text-muted">Alert ${ c.alertThresholdUsd} / Pause ${c.pauseThresholdUsd ?? '—'}</div>
                           )}

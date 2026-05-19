@@ -624,14 +624,14 @@ async function main() {
   for (const chain of chains) {
     const { tokens, ...chainData } = chain
 
-    // Upsert chain — on update do NOT overwrite platformFeePercent (admin may have changed it)
-    const { platformFeePercent: _ignored, ...updateData } = {
-      platformFeePercent: 10, // only used for create; excluded from update below
+    // Upsert chain — on update do NOT overwrite platformFeeUsdt (admin may have changed it)
+    const { platformFeeUsdt: _ignored, ...updateData } = {
+      platformFeeUsdt: 0.25, // only used for create; excluded from update below
       ...chainData,
     }
     const upsertedChain = await db.gasChainConfig.upsert({
       where:  { slug: chainData.slug },
-      create: { ...chainData, platformFeePercent: 10 },
+      create: { ...chainData, platformFeeUsdt: 0.25 },
       update: updateData,
     })
     console.log(`✓ Chain: ${upsertedChain.name} (${upsertedChain.slug})`)
