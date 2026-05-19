@@ -78,12 +78,16 @@ const BINANCE_SYMBOLS: Record<string, string> = {
   USDC: 'USDCUSDT',
 }
 
-// Kraken pairs (quote = USD) — Kraken lists only major coins; add here only
-// when confirmed listed: kraken.com/features/api#get-ticker-information
+// Kraken pairs — MUST use Kraken's canonical internal pair names, NOT aliases.
+// When you request 'ETHUSD', Kraken returns the key 'XETHZUSD' in its response.
+// The matching logic does k.includes(pair), so 'XETHZUSD'.includes('ETHUSD') = FALSE.
+// Using the canonical name ensures exact matching.
+// Kraken canonical names: BTC=XXBTZUSD, ETH=XETHZUSD. Newer coins (SOL/AVAX/USDC) use simple names.
+// Kraken does NOT list BNB or TRX — those are handled by dedicated fetchers.
 const KRAKEN_PAIRS: Record<string, string> = {
-  BTC: 'XBTUSD',
-  ETH: 'ETHUSD',
-  SOL: 'SOLUSD',
+  BTC:  'XXBTZUSD',
+  ETH:  'XETHZUSD',
+  SOL:  'SOLUSD',
   AVAX: 'AVAXUSD',
   USDC: 'USDCUSD',
 }
@@ -264,6 +268,53 @@ async function fetchTrxUsdPrice(): Promise<number | null> {
   return null
 }
 
+// Dedicated BNB/USD fetcher — Kraken does not list BNB and Binance is geo-blocked
+// on Railway. Called after the bulk source succeeds but is missing BNB.
+async function fetchBnbUsdPrice(): Promise<number | null> {
+  const attempts: Array<{ name: string; fn: () => Promise<number> }> = [
+    {
+      name: 'coinpaprika',
+      fn: async () => {
+        const res = await fetch('https://api.coinpaprika.com/v1/tickers/bnb-binance-coin', {
+          signal: AbortSignal.timeout(8000),
+        })
+        if (!res.ok) throw new Error(`CoinPaprika HTTP ${res.status}`)
+        const data = (await res.json()) as { quotes?: { USD?: { price?: number } } }
+        const price = data.quotes?.USD?.price
+        if (!price) throw new Error('CoinPaprika: no BNB price in response')
+        return price
+      },
+    },
+    {
+      name: 'cryptocompare',
+      fn: async () => {
+        const res = await fetch(
+          'https://min-api.cryptocompare.com/data/price?fsym=BNB&tsyms=USD',
+          { signal: AbortSignal.timeout(8000) },
+        )
+        if (!res.ok) throw new Error(`CryptoCompare HTTP ${res.status}`)
+        const data = (await res.json()) as { USD?: number }
+        const price = data.USD
+        if (!price) throw new Error('CryptoCompare: no BNB price in response')
+        return price
+      },
+    },
+  ]
+
+  for (const { name, fn } of attempts) {
+    try {
+      const price = await fn()
+      logger.info({ source: name, bnbUsdPrice: price }, 'BNB price fetched from dedicated source')
+      return price
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn({ source: name, err: msg }, `Dedicated BNB fetcher ${name} failed — trying next`)
+    }
+  }
+  logger.error('All dedicated BNB price fetchers failed — rate:BNB will not be updated this cycle')
+  return null
+}
+
 // Try each source in order; return first non-empty priceMap with source label.
 // Sources are accepted even if they are missing some coins (e.g. Kraken has no
 // TRX pairs). Missing gas-critical coins are patched in separately afterwards
@@ -339,12 +390,19 @@ export async function updateRates(): Promise<void> {
     // 2. Fetch crypto prices with multi-source fallback chain
     const { priceMap, source: priceSource } = await fetchPricesWithFallback()
 
-    // 2b. Fill in any gas-critical coins that the bulk source didn't cover.
-    // Kraken (which often wins on Railway) lacks TRX — fetch it separately.
+    // 2b. Fill in gas-critical coins that the bulk source didn't cover.
+    // Kraken (which often wins on Railway) lacks TRX and BNB — fetch them separately.
+    // Kraken's ETH/BTC pair names were also wrong (fixed above), but the dedicated
+    // fetchers remain here as a defence-in-depth safety net.
     if (!priceMap['TRX']) {
       logger.warn({ source: priceSource }, 'TRX missing from bulk source — running dedicated TRX fetcher')
       const trxUsd = await fetchTrxUsdPrice()
       if (trxUsd) priceMap['TRX'] = trxUsd
+    }
+    if (!priceMap['BNB']) {
+      logger.warn({ source: priceSource }, 'BNB missing from bulk source — running dedicated BNB fetcher')
+      const bnbUsd = await fetchBnbUsdPrice()
+      if (bnbUsd) priceMap['BNB'] = bnbUsd
     }
 
     // 3. Calculate PKR rates and write to Redis + DB
@@ -355,10 +413,20 @@ export async function updateRates(): Promise<void> {
     await redis.set('rate:USDT', JSON.stringify({ rate: usdPkr, usdPrice: 1.0, updatedAt: now, source: priceSource }), 'EX', 3600)
 
     const skippedCoins: string[] = []
+    const ttlExtendedCoins: string[] = []
     for (const coin of Object.keys(COINGECKO_IDS)) {
       const usdPrice = priceMap[coin]
       if (!usdPrice) {
-        skippedCoins.push(coin)
+        // Coin missing from this bulk source cycle. Re-extend the existing Redis TTL
+        // so the key doesn't expire while Kraken/partial sources are active.
+        // This prevents "Rate stale" showing for BNB/ETH when a partial source wins.
+        const existing = await redis.get(`rate:${coin}`)
+        if (existing) {
+          await redis.set(`rate:${coin}`, existing, 'EX', 3600)
+          ttlExtendedCoins.push(coin)
+        } else {
+          skippedCoins.push(coin)
+        }
         continue
       }
       const pkrRate = (usdPrice * usdPkr).toFixed(2)
@@ -372,8 +440,11 @@ export async function updateRates(): Promise<void> {
       logger.debug({ key: redisKey }, 'Redis SET confirmed')
     }
 
+    if (ttlExtendedCoins.length > 0) {
+      logger.info({ ttlExtendedCoins, source: priceSource }, 'Extended Redis TTL for coins not in current bulk source — prices preserved')
+    }
     if (skippedCoins.length > 0) {
-      logger.warn({ skippedCoins, source: priceSource }, 'Some coins missing from priceMap — Redis keys NOT written for these coins')
+      logger.warn({ skippedCoins, source: priceSource }, 'Some coins missing from priceMap AND no cached value — Redis keys NOT written')
     }
 
     await redis.set('rate:USD_PKR', String(usdPkr), 'EX', 3600)
