@@ -5,12 +5,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
 import { authApi } from '@/lib/api'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-
-type AccountType = 'user' | 'merchant'
 
 const schema = z
   .object({
@@ -28,26 +25,8 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>
 
-function UserIcon() {
-  return (
-    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-  )
-}
-
-function ShopIcon() {
-  return (
-    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-    </svg>
-  )
-}
-
 export default function RegisterPage() {
   const router = useRouter()
-  const [step, setStep] = useState<1 | 2>(1)
-  const [accountType, setAccountType] = useState<AccountType>('user')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -74,7 +53,6 @@ export default function RegisterPage() {
         fullName: values.fullName,
         password: values.password,
         referralCode: values.referralCode || undefined,
-        intendedRole: accountType === 'merchant' ? 'merchant' : undefined,
       })
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}`)
     } catch (err) {
@@ -94,95 +72,10 @@ export default function RegisterPage() {
       </svg>
     )
 
-  if (step === 1) {
-    return (
-      <div>
-        <h2 className="text-xl font-semibold text-text-primary mb-1">Create your account</h2>
-        <p className="text-text-muted text-sm mb-6">Choose the account type that fits your needs</p>
-
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {(
-            [
-              {
-                type: 'user' as AccountType,
-                icon: <UserIcon />,
-                title: 'Personal Account',
-                description: 'Buy & sell crypto peer-to-peer',
-              },
-              {
-                type: 'merchant' as AccountType,
-                icon: <ShopIcon />,
-                title: 'Merchant Account',
-                description: 'Sell crypto at scale with advanced tools',
-              },
-            ] as const
-          ).map(({ type, icon, title, description }) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => setAccountType(type)}
-              className={cn(
-                'flex flex-col items-center gap-3 p-5 rounded-xl border-2 text-center transition-all',
-                'hover:border-primary hover:bg-primary/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                accountType === type
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border bg-white',
-              )}
-            >
-              <span
-                className={cn(
-                  'transition-colors',
-                  accountType === type ? 'text-primary' : 'text-text-muted',
-                )}
-              >
-                {icon}
-              </span>
-              <div>
-                <p
-                  className={cn(
-                    'font-semibold text-sm',
-                    accountType === type ? 'text-primary' : 'text-text-primary',
-                  )}
-                >
-                  {title}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5 leading-tight">{description}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <Button fullWidth size="lg" onClick={() => setStep(2)}>
-          Continue
-        </Button>
-
-        <p className="text-center text-sm text-text-muted mt-6">
-          Already have an account?{' '}
-          <Link href="/login" className="text-primary font-medium hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </div>
-    )
-  }
-
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setStep(1)}
-        className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors mb-4 focus:outline-none"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-        Back
-      </button>
-
-      <h2 className="text-xl font-semibold text-text-primary mb-1">
-        {accountType === 'merchant' ? 'Merchant' : 'Personal'} Account
-      </h2>
-      <p className="text-text-muted text-sm mb-6">Fill in your details to get started</p>
+      <h2 className="text-xl font-semibold text-text-primary mb-1">Create your account</h2>
+      <p className="text-text-muted text-sm mb-6">Join PakSwap to buy and sell crypto peer-to-peer</p>
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
         <Input

@@ -24,6 +24,8 @@ export default function Navbar() {
 
   usePolling(fetchUnread, 60_000, !!user)
 
+  const isMerchant = user?.role === 'merchant'
+
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -90,9 +92,14 @@ export default function Navbar() {
                       <div className="w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
                         {(user.username || user.email).charAt(0).toUpperCase()}
                       </div>
-                      <span className="hidden sm:block text-sm font-medium text-text-primary max-w-[120px] truncate">
+                      <span className="hidden sm:block text-sm font-medium text-text-primary max-w-[100px] truncate">
                         {user.username || user.email}
                       </span>
+                      {isMerchant && (
+                        <span className="hidden sm:inline-flex items-center text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full leading-none">
+                          Merchant
+                        </span>
+                      )}
                       <svg className="w-4 h-4 text-text-muted hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
@@ -107,9 +114,16 @@ export default function Navbar() {
                     >
                       {/* User info */}
                       <div className="px-3 py-2 border-b border-border">
-                        <p className="text-sm font-semibold text-text-primary truncate">
-                          {user.username || 'No username'}
-                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-text-primary truncate">
+                            {user.username || 'No username'}
+                          </p>
+                          {isMerchant && (
+                            <span className="shrink-0 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full leading-none">
+                              Merchant
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-text-muted truncate">{user.email}</p>
                       </div>
 
@@ -131,6 +145,34 @@ export default function Navbar() {
                       <DropdownMenu.Item asChild>
                         <Link href="/referral" className={dropdownItemCls}>Referral</Link>
                       </DropdownMenu.Item>
+
+                      {/* Merchant mode switch */}
+                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                      {isMerchant ? (
+                        <DropdownMenu.Item asChild>
+                          <Link
+                            href="/merchant/dashboard"
+                            className={cn(dropdownItemCls, 'gap-2 font-medium text-primary focus:text-primary focus:bg-primary/5')}
+                          >
+                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            Merchant Dashboard
+                          </Link>
+                        </DropdownMenu.Item>
+                      ) : (
+                        <DropdownMenu.Item asChild>
+                          <Link
+                            href="/merchant-apply"
+                            className={cn(dropdownItemCls, 'gap-2 text-text-secondary focus:text-text-primary')}
+                          >
+                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            Become a Merchant
+                          </Link>
+                        </DropdownMenu.Item>
+                      )}
 
                       <DropdownMenu.Separator className="my-1 h-px bg-border" />
 
