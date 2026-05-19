@@ -1080,7 +1080,7 @@ export default function GasPage() {
                           </div>
                         )}
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Gas Value</span>
+                          <span className="text-gray-500">Token Value</span>
                           <span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span>
                         </div>
                         <div className="flex justify-between text-xs">
@@ -1339,7 +1339,7 @@ export default function GasPage() {
                           <div className="flex justify-between"><span className="text-gray-500">Market Price</span><span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken?.symbol}</span></div>
                         )}
                         {priceUsd > 0 && (
-                          <div className="flex justify-between"><span className="text-gray-500">Gas Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">Token Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>
                         )}
                         <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span></div>
                         <div className="flex justify-between pt-1.5 border-t border-gray-200">
@@ -1347,14 +1347,14 @@ export default function GasPage() {
                           <span className="font-semibold text-gray-800">${computedUsd.toFixed(2)} USDT</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-500">+ Network Fee (BSC)</span>
+                          <span className="text-gray-500">+ Network Fee ({selectedCryptoNetwork})</span>
                           <span className="font-semibold text-orange-600">{networkFeeDisplay}</span>
                         </div>
                         <div className="flex justify-between pt-1.5 border-t border-gray-200">
                           <span className="font-bold text-gray-900">Total Wallet Cost</span>
                           <span className="font-bold text-purple-700">~${totalWalletCost.toFixed(2)} USDT</span>
                         </div>
-                        <p className="text-gray-400 italic pt-0.5">Your wallet will deduct ${computedUsd.toFixed(2)} to platform + {networkFeeDisplay} BSC network fee.</p>
+                        <p className="text-gray-400 italic pt-0.5">Your wallet will deduct ${computedUsd.toFixed(2)} to platform + {networkFeeDisplay} {selectedCryptoNetwork} network fee.</p>
                       </div>
                     )
                   })()}
