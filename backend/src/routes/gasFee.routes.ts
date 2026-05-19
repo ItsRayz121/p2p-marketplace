@@ -447,8 +447,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const rlKey = `gas_rl:${clientIp}:${clockHour}`
     const rlCount = await redis.incr(rlKey)
     if (rlCount === 1) await redis.expire(rlKey, 3600)
-    if (rlCount > 3) {
-      throw new AppError('RATE_LIMITED', 'Maximum 3 gas fee orders per hour per IP', 429)
+    if (rlCount > 10) {
+      throw new AppError('RATE_LIMITED', 'Maximum 10 gas fee orders per hour per IP', 429)
     }
 
     // Idempotency
@@ -584,7 +584,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const rlKey = `gas_rl:${clientIp}:${clockHour}`
     const rlCount = await redis.incr(rlKey)
     if (rlCount === 1) await redis.expire(rlKey, 3600)
-    if (rlCount > 3) throw new AppError('RATE_LIMITED', 'Maximum 3 gas fee orders per hour per IP', 429)
+    if (rlCount > 10) throw new AppError('RATE_LIMITED', 'Maximum 10 gas fee orders per hour per IP', 429)
 
     if (idempotencyKey) {
       const idemRedisKey = `idem:gasfee:${idempotencyKey}`
@@ -988,7 +988,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const rlKey     = `gas_rl:${clientIp}:${clockHour}`
     const rlCount   = await redis.incr(rlKey)
     if (rlCount === 1) await redis.expire(rlKey, 3600)
-    if (rlCount > 3) throw new AppError('RATE_LIMITED', 'Maximum 3 gas fee orders per hour per IP', 429)
+    if (rlCount > 10) throw new AppError('RATE_LIMITED', 'Maximum 10 gas fee orders per hour per IP', 429)
 
     const idempKey = (req.headers['idempotency-key'] as string | undefined) ?? idempotencyKey
     if (idempKey) {
