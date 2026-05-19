@@ -874,9 +874,17 @@ export interface GasToken {
   tokenType: string
   logoUrl: string | null
   priceSymbol: string
+  /** Raw live market USD price, no markup applied */
+  rawUsdPrice: number
+  /** Alias for rawUsdPrice — kept for backward compat */
   priceUsd: number
   pricePkr: number
   markup: number
+  /** Platform fee percentage, e.g. 10 means 10% */
+  markupPercent: number
+  /** Which data source provided this price: coingecko / bybit / kraken / binance / cache / stale-cache */
+  priceSource?: string
+  priceUpdatedAt?: string | null
   minAmount: number
   maxUsdValue: number
   presetAmounts: number[]

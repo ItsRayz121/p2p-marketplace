@@ -420,9 +420,13 @@ export default function GasPage() {
   const idempKeyRef = useRef(`gas_${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
   // ── Computed ────────────────────────────────────────────────────────────────
-  const priceUsd  = selectedToken?.priceUsd  ?? 0
-  const pricePkr  = selectedToken?.pricePkr  ?? 0
-  const markup    = selectedToken?.markup    ?? 1.5
+  const rawUsdPrice   = selectedToken?.rawUsdPrice ?? selectedToken?.priceUsd ?? 0
+  const priceUsd      = rawUsdPrice   // raw market rate, no markup
+  const pricePkr      = selectedToken?.pricePkr  ?? 0
+  const markup        = selectedToken?.markup    ?? 1.5
+  const markupPercent = selectedToken?.markupPercent ?? Math.round((markup - 1) * 100)
+  // finalUsdPrice = what the user actually pays per 1 native token
+  const finalUsdPrice = priceUsd * markup
   const amountNum = parseFloat(amount) || 0
   const computedUsd = amountNum * priceUsd * markup
   const computedPkr = amountNum * pricePkr * markup
@@ -730,7 +734,10 @@ export default function GasPage() {
                       {tokenData.tokens.map(t => {
                         const sel = selectedToken?.id === t.id
                         const inactive = !t.isActive
-                        const displayPrice = t.priceUsd > 0 ? `$${(t.priceUsd * t.markup).toFixed(4)}` : t.rateStale ? 'Rate unavailable' : '—'
+                        const tRaw = t.rawUsdPrice ?? t.priceUsd
+                        const tFee = t.markupPercent ?? Math.round((t.markup - 1) * 100)
+                        const displayPrice = tRaw > 0 ? `$${(tRaw * t.markup).toFixed(4)}` : t.rateStale ? 'Rate unavailable' : '—'
+                        const displayRaw   = tRaw > 0 ? `Mkt $${tRaw.toFixed(4)} +${tFee}% fee` : ''
                         return (
                           <button
                             key={t.id}
@@ -762,7 +769,11 @@ export default function GasPage() {
                               ) : (
                                 <>
                                   <p className={`text-sm font-bold ${t.rateStale ? 'text-yellow-600' : 'text-gray-900'}`}>{displayPrice}</p>
-                                  <p className="text-xs text-gray-400">per {t.symbol}</p>
+                                  {displayRaw ? (
+                                    <p className="text-xs text-gray-400">{displayRaw}</p>
+                                  ) : (
+                                    <p className="text-xs text-gray-400">per {t.symbol}</p>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -787,9 +798,14 @@ export default function GasPage() {
                   <CardHeader onBack={() => setPhase(PHASE.TOKEN)} title="Choose Amount" />
 
                   <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3 text-sm">
-                    <span className="text-gray-500">1 {selectedToken.symbol}</span>
+                    <div>
+                      <span className="text-gray-500">1 {selectedToken.symbol}</span>
+                      {markupPercent > 0 && (
+                        <p className="text-xs text-gray-400 mt-0.5">Market: ${priceUsd.toFixed(4)} + {markupPercent}% fee</p>
+                      )}
+                    </div>
                     <div className="text-right">
-                      <p className="font-bold text-gray-900">${(priceUsd * markup).toFixed(4)} USDT</p>
+                      <p className="font-bold text-gray-900">${finalUsdPrice.toFixed(4)} USDT</p>
                       <p className="text-xs text-gray-400">≈ PKR {(pricePkr * markup).toFixed(0)}</p>
                     </div>
                   </div>

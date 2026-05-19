@@ -17,21 +17,40 @@ import { flagIfRisky } from '../lib/gas/gas.risk'
 // Stablecoins pegged 1:1 to USD — always return 1.0 without Redis lookup
 const STABLECOIN_SYMBOLS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP'])
 
+interface NativeRateInfo {
+  usdPrice: number
+  source: string
+  updatedAt: string | null
+}
+
+async function getNativeRateInfo(priceSymbol: string): Promise<NativeRateInfo> {
+  const sym = priceSymbol.toUpperCase()
+  if (STABLECOIN_SYMBOLS.has(sym)) {
+    return { usdPrice: 1.0, source: 'hardcoded-stable', updatedAt: null }
+  }
+
+  const raw = await redis.get(`rate:${sym}`)
+  if (!raw) return { usdPrice: 0, source: 'missing', updatedAt: null }
+
+  const parsed = JSON.parse(raw) as { rate: number; usdPrice?: number; source?: string; updatedAt?: string }
+
+  // Only accept new-format keys that carry usdPrice directly.
+  // Legacy format (only `rate` in PKR) is NOT used — dividing an old PKR rate by
+  // a changed USD/PKR rate yields wrong USD values (root cause of stale inflated prices).
+  if (parsed.usdPrice !== undefined && parsed.usdPrice > 0) {
+    return {
+      usdPrice:  parsed.usdPrice,
+      source:    parsed.source ?? 'cache',
+      updatedAt: parsed.updatedAt ?? null,
+    }
+  }
+
+  logger.warn({ sym }, 'getNativeRateInfo: legacy Redis key (no usdPrice) — returning 0 to force rate-stale UI')
+  return { usdPrice: 0, source: 'legacy-key', updatedAt: null }
+}
+
 async function getNativeUsdRate(priceSymbol: string): Promise<number> {
-  if (STABLECOIN_SYMBOLS.has(priceSymbol.toUpperCase())) return 1.0
-
-  const raw = await redis.get(`rate:${priceSymbol}`)
-  if (!raw) return 0
-
-  const parsed = JSON.parse(raw) as { rate: number; usdPrice?: number }
-
-  // Prefer usdPrice stored directly (new format). Fall back to PKR-rate conversion
-  // for keys written before this field was added.
-  if (parsed.usdPrice !== undefined && parsed.usdPrice > 0) return parsed.usdPrice
-
-  const usdPkrStr = await redis.get('rate:USD_PKR')
-  const usdPkrRate = usdPkrStr ? parseFloat(usdPkrStr) : 0
-  return parsed.rate > 0 && usdPkrRate > 0 ? parsed.rate / usdPkrRate : 0
+  return (await getNativeRateInfo(priceSymbol)).usdPrice
 }
 
 async function getUsdPkrRate(): Promise<number> {
@@ -162,11 +181,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const usdPkrRate = await getUsdPkrRate()
     const markup = chainMarkup(chainCfg.platformFeePercent)
 
+    const platformFeePercent = chainCfg.platformFeePercent
+    const markupPercent = platformFeePercent  // e.g. 10 for 10%
+
     const tokensWithPricing = await Promise.all(
       tokens.map(async (t) => {
         // Inactive tokens don't need live pricing
-        const nativeUsdRate = t.isActive ? await getNativeUsdRate(t.priceSymbol) : 0
-        const rateStale = t.isActive && !(nativeUsdRate > 0)
+        const rateInfo = t.isActive ? await getNativeRateInfo(t.priceSymbol) : { usdPrice: 0, source: 'inactive', updatedAt: null }
+        const rawUsdPrice = rateInfo.usdPrice
+        const rateStale   = t.isActive && !(rawUsdPrice > 0)
 
         return {
           id:             t.id,
@@ -175,9 +198,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           tokenType:      t.tokenType,
           logoUrl:        t.logoUrl,
           priceSymbol:    t.priceSymbol,
-          priceUsd:       nativeUsdRate,
-          pricePkr:       nativeUsdRate * usdPkrRate,
+          // rawUsdPrice = live market rate, no markup applied
+          rawUsdPrice,
+          // priceUsd kept for backward compat — equals rawUsdPrice
+          priceUsd:       rawUsdPrice,
+          pricePkr:       rawUsdPrice * usdPkrRate,
           markup,
+          markupPercent,
+          priceSource:    rateInfo.source,
+          priceUpdatedAt: rateInfo.updatedAt,
           minAmount:      Number(t.minAmount),
           maxUsdValue:    Number(t.maxUsdValue),
           presetAmounts:  t.presetAmounts as number[],

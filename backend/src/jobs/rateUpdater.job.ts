@@ -108,6 +108,49 @@ const BYBIT_SYMBOLS: Record<string, string> = {
   USDC: 'USDCUSDT',
 }
 
+// FreeCryptoApi symbol map — their API uses uppercase ticker symbols directly.
+// Endpoint: GET https://api.freecryptoapi.com/v1/getData?symbol=BTC,ETH,...
+// Auth: Authorization: {apiKey} header
+// Response: { data: { BTC: { price: number }, ETH: { price: number }, ... } }
+const FREECRYPTOAPI_SYMBOLS: Record<string, string> = {
+  BTC:  'BTC',
+  ETH:  'ETH',
+  BNB:  'BNB',
+  SOL:  'SOL',
+  TRX:  'TRX',
+  AVAX: 'AVAX',
+  MATIC: 'MATIC',
+  TON:  'TON',
+  SUI:  'SUI',
+  APT:  'APT',
+  NEAR: 'NEAR',
+  USDC: 'USDC',
+}
+
+async function fetchPricesFromFreeCryptoApi(): Promise<Record<string, number>> {
+  if (!env.FREECRYPTOAPI_KEY) throw new Error('FREECRYPTOAPI_KEY not set — skipping')
+  const symbols = Object.values(FREECRYPTOAPI_SYMBOLS).join(',')
+  const res = await fetch(
+    `https://api.freecryptoapi.com/v1/getData?symbol=${symbols}`,
+    {
+      headers: { Authorization: env.FREECRYPTOAPI_KEY },
+      signal: AbortSignal.timeout(8000),
+    },
+  )
+  if (!res.ok) throw new Error(`FreeCryptoApi returned ${res.status}`)
+
+  const body = (await res.json()) as { data?: Record<string, { price?: number }> }
+  if (!body.data) throw new Error('FreeCryptoApi: unexpected response shape (no data field)')
+
+  const priceMap: Record<string, number> = {}
+  for (const [coin, sym] of Object.entries(FREECRYPTOAPI_SYMBOLS)) {
+    const price = body.data[sym]?.price
+    if (price && price > 0) priceMap[coin] = price
+  }
+  if (Object.keys(priceMap).length === 0) throw new Error('FreeCryptoApi returned empty price map')
+  return priceMap
+}
+
 async function fetchPricesFromCoinGecko(): Promise<Record<string, number>> {
   const ids = Object.values(COINGECKO_IDS).join(',')
   const isPro = !!env.COINGECKO_API_KEY
@@ -197,122 +240,181 @@ async function fetchPricesFromBinance(): Promise<Record<string, number>> {
   return priceMap
 }
 
-// Lightweight dedicated TRX/USD fetchers.
-// CoinPaprika and CryptoCompare are free, no API key, and are not geo-blocked
-// on Railway cloud. Called after the bulk source succeeds but is missing TRX
-// (e.g. Kraken does not list TRX pairs).
-async function fetchTrxUsdPrice(): Promise<number | null> {
+// ─── Dedicated single-coin fetchers ──────────────────────────────────────────
+// Return { price, source } so the caller can record the exact data origin.
+// Called after the bulk source wins but is missing a specific coin.
+
+type DedicatedResult = { price: number; source: string }
+
+// CoinPaprika ticker helper (reused by both TRX and BNB fetchers)
+async function fetchCoinPaprikaTicker(paprikaId: string): Promise<number> {
+  const res = await fetch(`https://api.coinpaprika.com/v1/tickers/${paprikaId}`, {
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`CoinPaprika HTTP ${res.status}`)
+  const data = (await res.json()) as { quotes?: { USD?: { price?: number } } }
+  const price = data.quotes?.USD?.price
+  if (!price) throw new Error(`CoinPaprika: no price in response for ${paprikaId}`)
+  return price
+}
+
+// CoinGecko single-coin helper (reused by both fetchers)
+async function fetchCoinGeckoSingle(geckoId: string): Promise<number> {
+  const isPro = !!env.COINGECKO_API_KEY
+  const base = isPro ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3'
+  const headers: Record<string, string> = isPro ? { 'x-cg-pro-api-key': env.COINGECKO_API_KEY! } : {}
+  const res = await fetch(`${base}/simple/price?ids=${geckoId}&vs_currencies=usd`, {
+    headers, signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`CoinGecko single HTTP ${res.status}`)
+  const data = (await res.json()) as Record<string, { usd?: number }>
+  const price = data[geckoId]?.usd
+  if (!price) throw new Error(`CoinGecko single: no price for ${geckoId}`)
+  return price
+}
+
+async function fetchTrxUsdPrice(): Promise<DedicatedResult | null> {
   const attempts: Array<{ name: string; fn: () => Promise<number> }> = [
-    {
-      name: 'coinpaprika',
-      fn: async () => {
-        const res = await fetch('https://api.coinpaprika.com/v1/tickers/trx-tron', {
-          signal: AbortSignal.timeout(8000),
-        })
-        if (!res.ok) throw new Error(`CoinPaprika HTTP ${res.status}`)
-        const data = (await res.json()) as { quotes?: { USD?: { price?: number } } }
-        const price = data.quotes?.USD?.price
-        if (!price) throw new Error('CoinPaprika: no TRX price in response')
-        return price
-      },
-    },
-    {
-      name: 'cryptocompare',
-      fn: async () => {
-        const res = await fetch(
-          'https://min-api.cryptocompare.com/data/price?fsym=TRX&tsyms=USD',
-          { signal: AbortSignal.timeout(8000) },
-        )
+    { name: 'coinpaprika',     fn: () => fetchCoinPaprikaTicker('trx-tron') },
+    { name: 'cryptocompare',   fn: async () => {
+        const res = await fetch('https://min-api.cryptocompare.com/data/price?fsym=TRX&tsyms=USD', { signal: AbortSignal.timeout(8000) })
         if (!res.ok) throw new Error(`CryptoCompare HTTP ${res.status}`)
         const data = (await res.json()) as { USD?: number }
-        const price = data.USD
-        if (!price) throw new Error('CryptoCompare: no TRX price in response')
-        return price
+        if (!data.USD) throw new Error('CryptoCompare: no TRX price')
+        return data.USD
       },
     },
-    {
-      name: 'coingecko-simple',
-      fn: async () => {
-        // Single-coin request — much less likely to be rate-limited than the full batch.
-        const isPro = !!env.COINGECKO_API_KEY
-        const base = isPro
-          ? 'https://pro-api.coingecko.com/api/v3'
-          : 'https://api.coingecko.com/api/v3'
-        const headers: Record<string, string> = isPro
-          ? { 'x-cg-pro-api-key': env.COINGECKO_API_KEY! }
-          : {}
-        const res = await fetch(`${base}/simple/price?ids=tron&vs_currencies=usd`, {
-          headers,
-          signal: AbortSignal.timeout(8000),
-        })
-        if (!res.ok) throw new Error(`CoinGecko simple HTTP ${res.status}`)
-        const data = (await res.json()) as { tron?: { usd?: number } }
-        const price = data.tron?.usd
-        if (!price) throw new Error('CoinGecko simple: no TRX price')
-        return price
-      },
-    },
+    { name: 'coingecko-single', fn: () => fetchCoinGeckoSingle('tron') },
   ]
-
   for (const { name, fn } of attempts) {
     try {
       const price = await fn()
-      logger.info({ source: name, trxUsdPrice: price }, 'TRX price fetched from dedicated source')
-      return price
+      logger.info({ source: name, coin: 'TRX', price }, 'TRX price from dedicated fetcher')
+      return { price, source: name }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      logger.warn({ source: name, err: msg }, `Dedicated TRX fetcher ${name} failed — trying next`)
+      logger.warn({ source: name, err: err instanceof Error ? err.message : String(err) }, 'TRX dedicated fetcher failed — trying next')
     }
   }
-  logger.error('All dedicated TRX price fetchers failed — rate:TRX will not be updated this cycle')
+  logger.error('All dedicated TRX fetchers failed — rate:TRX will not be updated this cycle')
   return null
 }
 
-// Dedicated BNB/USD fetcher — Kraken does not list BNB and Binance is geo-blocked
-// on Railway. Called after the bulk source succeeds but is missing BNB.
-async function fetchBnbUsdPrice(): Promise<number | null> {
+async function fetchBnbUsdPrice(): Promise<DedicatedResult | null> {
   const attempts: Array<{ name: string; fn: () => Promise<number> }> = [
-    {
-      name: 'coinpaprika',
-      fn: async () => {
-        const res = await fetch('https://api.coinpaprika.com/v1/tickers/bnb-binance-coin', {
-          signal: AbortSignal.timeout(8000),
-        })
-        if (!res.ok) throw new Error(`CoinPaprika HTTP ${res.status}`)
-        const data = (await res.json()) as { quotes?: { USD?: { price?: number } } }
-        const price = data.quotes?.USD?.price
-        if (!price) throw new Error('CoinPaprika: no BNB price in response')
-        return price
-      },
-    },
-    {
-      name: 'cryptocompare',
-      fn: async () => {
-        const res = await fetch(
-          'https://min-api.cryptocompare.com/data/price?fsym=BNB&tsyms=USD',
-          { signal: AbortSignal.timeout(8000) },
-        )
+    { name: 'coinpaprika',      fn: () => fetchCoinPaprikaTicker('bnb-binance-coin') },
+    { name: 'cryptocompare',    fn: async () => {
+        const res = await fetch('https://min-api.cryptocompare.com/data/price?fsym=BNB&tsyms=USD', { signal: AbortSignal.timeout(8000) })
         if (!res.ok) throw new Error(`CryptoCompare HTTP ${res.status}`)
         const data = (await res.json()) as { USD?: number }
-        const price = data.USD
-        if (!price) throw new Error('CryptoCompare: no BNB price in response')
-        return price
+        if (!data.USD) throw new Error('CryptoCompare: no BNB price')
+        return data.USD
       },
     },
+    { name: 'coingecko-single', fn: () => fetchCoinGeckoSingle('binancecoin') },
   ]
-
   for (const { name, fn } of attempts) {
     try {
       const price = await fn()
-      logger.info({ source: name, bnbUsdPrice: price }, 'BNB price fetched from dedicated source')
-      return price
+      logger.info({ source: name, coin: 'BNB', price }, 'BNB price from dedicated fetcher')
+      return { price, source: name }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      logger.warn({ source: name, err: msg }, `Dedicated BNB fetcher ${name} failed — trying next`)
+      logger.warn({ source: name, err: err instanceof Error ? err.message : String(err) }, 'BNB dedicated fetcher failed — trying next')
     }
   }
-  logger.error('All dedicated BNB price fetchers failed — rate:BNB will not be updated this cycle')
+  logger.error('All dedicated BNB fetchers failed — rate:BNB will not be updated this cycle')
   return null
+}
+
+// Fetch a batch of coins not covered by the winning bulk source (e.g. MATIC/TON/SUI/APT/NEAR
+// when Kraken wins). Tries CoinGecko batch first, then individual CoinPaprika calls.
+// Returns { coin → usdPrice } for coins successfully fetched.
+async function fetchMissingCoins(
+  missingSymbols: string[],
+): Promise<{ prices: Record<string, number>; sources: Record<string, string> }> {
+  const prices: Record<string, number> = {}
+  const sources: Record<string, string> = {}
+  if (missingSymbols.length === 0) return { prices, sources }
+
+  // Attempt 1: CoinGecko batch for the missing coins
+  const geckoIds = missingSymbols.map(s => COINGECKO_IDS[s]).filter(Boolean)
+  if (geckoIds.length > 0) {
+    try {
+      const isPro = !!env.COINGECKO_API_KEY
+      const base = isPro ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3'
+      const headers: Record<string, string> = isPro ? { 'x-cg-pro-api-key': env.COINGECKO_API_KEY! } : {}
+      const res = await fetch(`${base}/simple/price?ids=${geckoIds.join(',')}&vs_currencies=usd`, {
+        headers, signal: AbortSignal.timeout(8000),
+      })
+      if (res.ok) {
+        const data = (await res.json()) as Record<string, { usd?: number }>
+        for (const sym of missingSymbols) {
+          const geckoId = COINGECKO_IDS[sym]
+          const price = geckoId ? data[geckoId]?.usd : undefined
+          if (price && price > 0) {
+            prices[sym] = price
+            sources[sym] = 'coingecko-fallback'
+          }
+        }
+        const found = Object.keys(prices)
+        if (found.length > 0) logger.info({ found, source: 'coingecko-fallback' }, 'Missing coins patched via CoinGecko fallback batch')
+      }
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'CoinGecko fallback batch for missing coins failed')
+    }
+  }
+
+  // Attempt 2: FreeCryptoApi for any still-missing coins (avoids per-coin rate limits)
+  const stillMissingAfterGecko = missingSymbols.filter(s => !prices[s])
+  if (stillMissingAfterGecko.length > 0 && env.FREECRYPTOAPI_KEY) {
+    try {
+      const symbols = stillMissingAfterGecko.map(s => FREECRYPTOAPI_SYMBOLS[s]).filter(Boolean).join(',')
+      const res = await fetch(`https://api.freecryptoapi.com/v1/getData?symbol=${symbols}`, {
+        headers: { Authorization: env.FREECRYPTOAPI_KEY },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (res.ok) {
+        const body = (await res.json()) as { data?: Record<string, { price?: number }> }
+        for (const sym of stillMissingAfterGecko) {
+          const fcaSym = FREECRYPTOAPI_SYMBOLS[sym]
+          const price = fcaSym ? body.data?.[fcaSym]?.price : undefined
+          if (price && price > 0) {
+            prices[sym] = price
+            sources[sym] = 'freecryptoapi-fallback'
+          }
+        }
+        const found = stillMissingAfterGecko.filter(s => prices[s])
+        if (found.length > 0) logger.info({ found }, 'Missing coins patched via FreeCryptoApi fallback')
+      }
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'FreeCryptoApi fallback for missing coins failed')
+    }
+  }
+
+  // Attempt 3: CoinPaprika individual calls for any still-missing coins
+  const PAPRIKA_IDS: Record<string, string> = {
+    MATIC: 'matic-network',
+    TON:   'ton-the-open-network',
+    SUI:   'sui-sui',
+    APT:   'apt-aptos',
+    NEAR:  'near-near-protocol',
+    SOL:   'sol-solana',
+    AVAX:  'avax-avalanche',
+  }
+  const stillMissing = missingSymbols.filter(s => !prices[s])
+  for (const sym of stillMissing) {
+    const paprikaId = PAPRIKA_IDS[sym]
+    if (!paprikaId) continue
+    try {
+      const price = await fetchCoinPaprikaTicker(paprikaId)
+      prices[sym] = price
+      sources[sym] = 'coinpaprika-fallback'
+      logger.info({ coin: sym, price, source: 'coinpaprika-fallback' }, 'Missing coin patched via CoinPaprika')
+    } catch (err) {
+      logger.warn({ coin: sym, err: err instanceof Error ? err.message : String(err) }, 'CoinPaprika fallback failed for missing coin')
+    }
+  }
+
+  return { prices, sources }
 }
 
 // Try each source in order; return first non-empty priceMap with source label.
@@ -321,10 +423,11 @@ async function fetchBnbUsdPrice(): Promise<number | null> {
 // by fetchTrxUsdPrice, so we never reject a whole source just because it lacks TRX.
 async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, number>; source: string }> {
   const sources: Array<{ name: string; fn: () => Promise<Record<string, number>> }> = [
-    { name: 'coingecko', fn: fetchPricesFromCoinGecko },
-    { name: 'bybit', fn: fetchPricesFromBybit },
-    { name: 'kraken', fn: fetchPricesFromKraken },
-    { name: 'binance', fn: fetchPricesFromBinance },
+    { name: 'coingecko',     fn: fetchPricesFromCoinGecko },
+    { name: 'freecryptoapi', fn: fetchPricesFromFreeCryptoApi },
+    { name: 'bybit',         fn: fetchPricesFromBybit },
+    { name: 'kraken',        fn: fetchPricesFromKraken },
+    { name: 'binance',       fn: fetchPricesFromBinance },
   ]
 
   const errors: string[] = []
@@ -344,8 +447,6 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
   // Redis stores { rate: pkrRate, usdPrice: number } per coin. We read usdPrice
   // directly (new format) and fall back to pkrRate / USD_PKR for old-format keys.
   logger.warn('All price sources failed — attempting stale Redis cache')
-  const usdPkrStr = await redis.get('rate:USD_PKR')
-  const cachedUsdPkr = usdPkrStr ? parseFloat(usdPkrStr) : 278.5
   const coins = Object.keys(COINGECKO_IDS)
   const priceMap: Record<string, number> = {}
   for (const coin of coins) {
@@ -354,9 +455,8 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
       const parsed = JSON.parse(cached) as { rate: number; usdPrice?: number }
       if (parsed.usdPrice !== undefined && parsed.usdPrice > 0) {
         priceMap[coin] = parsed.usdPrice
-      } else if (parsed.rate > 0 && cachedUsdPkr > 0) {
-        // Legacy format: rate field holds PKR rate — convert back to USD
-        priceMap[coin] = parsed.rate / cachedUsdPkr
+        // Legacy format (no usdPrice) intentionally ignored: dividing an old PKR rate
+        // by a changed USD/PKR rate yields wrong USD prices. Let it expire.
       }
     }
   }
@@ -390,19 +490,34 @@ export async function updateRates(): Promise<void> {
     // 2. Fetch crypto prices with multi-source fallback chain
     const { priceMap, source: priceSource } = await fetchPricesWithFallback()
 
-    // 2b. Fill in gas-critical coins that the bulk source didn't cover.
-    // Kraken (which often wins on Railway) lacks TRX and BNB — fetch them separately.
-    // Kraken's ETH/BTC pair names were also wrong (fixed above), but the dedicated
-    // fetchers remain here as a defence-in-depth safety net.
+    // Per-coin source tracking: starts with the bulk source for all coins that came
+    // from it; overwritten for any coin patched by a dedicated fetcher below.
+    const coinSources: Record<string, string> = {}
+    for (const sym of Object.keys(priceMap)) coinSources[sym] = priceSource
+
+    // 2b. Patch gas-critical coins missing from the bulk source.
+    // Kraken (common winner on Railway) lacks BNB and TRX — fetch them individually.
     if (!priceMap['TRX']) {
-      logger.warn({ source: priceSource }, 'TRX missing from bulk source — running dedicated TRX fetcher')
-      const trxUsd = await fetchTrxUsdPrice()
-      if (trxUsd) priceMap['TRX'] = trxUsd
+      logger.warn({ source: priceSource }, 'TRX missing from bulk — running dedicated TRX fetcher')
+      const result = await fetchTrxUsdPrice()
+      if (result) { priceMap['TRX'] = result.price; coinSources['TRX'] = result.source }
     }
     if (!priceMap['BNB']) {
-      logger.warn({ source: priceSource }, 'BNB missing from bulk source — running dedicated BNB fetcher')
-      const bnbUsd = await fetchBnbUsdPrice()
-      if (bnbUsd) priceMap['BNB'] = bnbUsd
+      logger.warn({ source: priceSource }, 'BNB missing from bulk — running dedicated BNB fetcher')
+      const result = await fetchBnbUsdPrice()
+      if (result) { priceMap['BNB'] = result.price; coinSources['BNB'] = result.source }
+    }
+
+    // 2c. Patch any remaining coins still missing (e.g. MATIC/TON/SUI/APT/NEAR when
+    // Kraken wins). Uses CoinGecko targeted batch → CoinPaprika per-coin fallback.
+    const missingAfterDedicated = Object.keys(COINGECKO_IDS).filter(s => !priceMap[s])
+    if (missingAfterDedicated.length > 0) {
+      logger.warn({ missingAfterDedicated, source: priceSource }, 'Coins still missing after dedicated fetchers — running bulk fallback patch')
+      const { prices: patchedPrices, sources: patchedSources } = await fetchMissingCoins(missingAfterDedicated)
+      for (const [sym, price] of Object.entries(patchedPrices)) {
+        priceMap[sym] = price
+        coinSources[sym] = patchedSources[sym] ?? 'fallback'
+      }
     }
 
     // 3. Calculate PKR rates and write to Redis + DB
@@ -414,16 +529,25 @@ export async function updateRates(): Promise<void> {
 
     const skippedCoins: string[] = []
     const ttlExtendedCoins: string[] = []
+    const legacyDroppedCoins: string[] = []
     for (const coin of Object.keys(COINGECKO_IDS)) {
       const usdPrice = priceMap[coin]
       if (!usdPrice) {
-        // Coin missing from this bulk source cycle. Re-extend the existing Redis TTL
-        // so the key doesn't expire while Kraken/partial sources are active.
-        // This prevents "Rate stale" showing for BNB/ETH when a partial source wins.
+        // Coin missing from this bulk source cycle.
+        // Only extend TTL for keys that already carry a valid usdPrice field.
+        // Legacy keys ({rate: pkrRate} without usdPrice) must NOT be extended —
+        // dividing an old PKR rate by a changed USD/PKR yields wrong USD prices,
+        // which is the root cause of inflated ETH/BNB stale prices.
         const existing = await redis.get(`rate:${coin}`)
         if (existing) {
-          await redis.set(`rate:${coin}`, existing, 'EX', 3600)
-          ttlExtendedCoins.push(coin)
+          const parsedExisting = JSON.parse(existing) as { usdPrice?: number }
+          if (parsedExisting.usdPrice !== undefined && parsedExisting.usdPrice > 0) {
+            await redis.set(`rate:${coin}`, existing, 'EX', 3600)
+            ttlExtendedCoins.push(coin)
+          } else {
+            legacyDroppedCoins.push(coin)
+            logger.warn({ coin }, 'Legacy Redis key (no usdPrice) — NOT extending TTL; will expire to force fresh fetch next cycle')
+          }
         } else {
           skippedCoins.push(coin)
         }
@@ -431,17 +555,19 @@ export async function updateRates(): Promise<void> {
       }
       const pkrRate = (usdPrice * usdPkr).toFixed(2)
       const redisKey = `rate:${coin}`
-      // Store both usdPrice (for direct use) and rate/PKR (for PKR display).
-      // TTL is 3600s — long enough to survive 1-hour gaps in the updater job.
-      const redisValue = JSON.stringify({ rate: parseFloat(pkrRate), usdPrice, updatedAt: now, source: priceSource })
+      const coinSource = coinSources[coin] ?? priceSource
+      // Store usdPrice (raw market) + PKR rate + which source provided this price.
+      const redisValue = JSON.stringify({ rate: parseFloat(pkrRate), usdPrice, updatedAt: now, source: coinSource })
       updates.push({ key: `rate_${coin}_PKR`, value: pkrRate })
-      logger.debug({ key: redisKey, usdPrice, pkrRate }, 'Setting coin rate in Redis')
+      logger.debug({ key: redisKey, usdPrice, pkrRate, source: coinSource }, 'Setting coin rate in Redis')
       await redis.set(redisKey, redisValue, 'EX', 3600)
-      logger.debug({ key: redisKey }, 'Redis SET confirmed')
     }
 
     if (ttlExtendedCoins.length > 0) {
       logger.info({ ttlExtendedCoins, source: priceSource }, 'Extended Redis TTL for coins not in current bulk source — prices preserved')
+    }
+    if (legacyDroppedCoins.length > 0) {
+      logger.warn({ legacyDroppedCoins, source: priceSource }, 'Legacy Redis keys dropped (no usdPrice field) — will be refreshed next successful cycle')
     }
     if (skippedCoins.length > 0) {
       logger.warn({ skippedCoins, source: priceSource }, 'Some coins missing from priceMap AND no cached value — Redis keys NOT written')
@@ -459,7 +585,7 @@ export async function updateRates(): Promise<void> {
     await redis.del('rate_update_fail_count')
 
     logger.info(
-      { coinsUpdated: updates.length, skippedCoins, usdPkr, source: priceSource, writtenKeys: updates.map(u => u.key) },
+      { coinsUpdated: updates.length, skippedCoins, legacyDroppedCoins, usdPkr, bulkSource: priceSource, coinSources },
       'Rates updated successfully',
     )
   } catch (err) {

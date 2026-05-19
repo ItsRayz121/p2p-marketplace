@@ -140,6 +140,7 @@ const envSchema = z.object({
   // Gas Fee System — shared
   GAS_GUEST_DAILY_LIMIT_USD: z.coerce.number().default(10),
   COINGECKO_API_KEY: z.string().optional(),
+  FREECRYPTOAPI_KEY: z.string().optional(),
 
   // P2P Platform Deposit Addresses (legacy shared addresses — fallback only)
   PLATFORM_DEPOSIT_USDT_TRC20: z.string().optional(),
