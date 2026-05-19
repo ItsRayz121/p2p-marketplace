@@ -560,7 +560,9 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
 export async function updateRates(): Promise<void> {
   try {
     // 1. Fetch USD/PKR rate
-    let usdPkr = 278.5
+    const HARDCODED_USD_PKR = 278.5
+    let usdPkr = HARDCODED_USD_PKR
+    let usingHardcodedPkr = false
     try {
       const fxRes = await fetch(
         `https://v6.exchangerate-api.com/v6/${env.EXCHANGERATE_API_KEY}/latest/USD`,
@@ -571,9 +573,22 @@ export async function updateRates(): Promise<void> {
         usdPkr = fxData.conversion_rates?.PKR ?? usdPkr
       }
     } catch (e) {
-      logger.warn({ err: e }, 'ExchangeRate API failed — using last known USD/PKR')
+      logger.warn({ err: e }, 'ExchangeRate API failed — checking Redis cache for USD/PKR')
       const cached = await redis.get('rate:USD_PKR')
-      if (cached) usdPkr = parseFloat(cached)
+      if (cached) {
+        usdPkr = parseFloat(cached)
+        logger.warn({ usdPkr }, 'USD/PKR loaded from Redis cache')
+      } else {
+        usingHardcodedPkr = true
+        logger.error({ usdPkr: HARDCODED_USD_PKR }, 'USD/PKR ExchangeRate API failed AND no Redis cache — using hardcoded fallback')
+        sendAdminAlertEmail(
+          'USD/PKR Rate: Using Hardcoded Fallback',
+          `The ExchangeRate API failed and no cached USD/PKR rate was found in Redis.\n\nAll gas fee prices and trade rate calculations are currently using the hardcoded fallback value of ${HARDCODED_USD_PKR} PKR/USD.\n\nThis will produce incorrect prices if the real rate has changed significantly. Check the ExchangeRate API key and connectivity immediately.`,
+        ).catch((alertErr: unknown) => logger.error({ err: alertErr }, 'Failed to send USD/PKR fallback alert email'))
+      }
+    }
+    if (usingHardcodedPkr) {
+      logger.warn({ usdPkr }, 'Rate cycle proceeding with hardcoded USD/PKR — prices may be inaccurate')
     }
 
     // 2. Fetch crypto prices with multi-source fallback chain
@@ -662,8 +677,12 @@ export async function updateRates(): Promise<void> {
       logger.warn({ skippedCoins, source: priceSource }, 'Some coins missing from priceMap AND no cached value — Redis keys NOT written')
     }
 
-    await redis.set('rate:USD_PKR', String(usdPkr), 'EX', 3600)
-    logger.debug({ key: 'rate:USD_PKR', usdPkr }, 'Redis SET rate:USD_PKR confirmed')
+    // Don't cache the hardcoded fallback — writing 278.5 would silence future alerts
+    // by making the next failure look like a cache hit.
+    if (!usingHardcodedPkr) {
+      await redis.set('rate:USD_PKR', String(usdPkr), 'EX', 3600)
+      logger.debug({ key: 'rate:USD_PKR', usdPkr }, 'Redis SET rate:USD_PKR confirmed')
+    }
 
     await Promise.all(
       updates.map(({ key, value }) =>

@@ -20,6 +20,8 @@ const CSRF_EXEMPT = new Set([
   '/api/v1/auth/reset-password',
   '/api/v1/auth/refresh',
   '/api/v1/auth/2fa/verify',
+  // Gas fee order creation uses optionalAuth — guests can create orders (no funds move at creation time).
+  // Authenticated users can call these too; their browsers should send a CSRF token if available.
   '/api/v1/gas-fee/orders',
   '/api/v1/gas-fee/orders/crypto',
   '/api/v1/gas-fee/prices',

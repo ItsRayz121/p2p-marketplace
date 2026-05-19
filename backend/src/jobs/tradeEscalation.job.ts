@@ -9,8 +9,11 @@ export async function runTradeEscalation(): Promise<void> {
   const now = new Date()
 
   // 1. Auto-cancel payment_pending trades that have passed their expiresAt deadline
+  // take: 200 prevents OOM if many trades expire simultaneously (e.g. after downtime)
   const stalePending = await db.trade.findMany({
     where: { status: 'payment_pending', expiresAt: { lt: now } },
+    take: 200,
+    orderBy: { expiresAt: 'asc' },
     include: {
       buyer: { select: { email: true } },
       seller: { select: { email: true } },

@@ -79,7 +79,7 @@ async function upsertTradeStats(
 
 export async function createTrade(buyerId: string, adId: string, data: CreateTradeInput) {
   // Idempotency check
-  const idempKey = `idempotency:trade:${buyerId}:${adId}:${data.amount}`
+  const idempKey = `idempotency:trade:${buyerId}:${adId}:${data.amount}:${data.paymentMethod}`
   const existing = await redis.get(idempKey)
   if (existing) {
     const trade = await db.trade.findUnique({ where: { id: existing } })
@@ -88,8 +88,11 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
 
   const trade = await db.$transaction(async (tx: Tx) => {
     // SELECT FOR UPDATE on buyer user
-    const [buyerRows] = await tx.$queryRaw<Array<{ id: string; dailyBuyUsed: Prisma.Decimal; dailyBuyLimit: Prisma.Decimal; isBanned: boolean; isSuspended: boolean }>>`
-      SELECT id, "dailyBuyUsed", "dailyBuyLimit", "isBanned", "isSuspended"
+    const [buyerRows] = await tx.$queryRaw<Array<{
+      id: string; dailyBuyUsed: Prisma.Decimal; dailyBuyLimit: Prisma.Decimal;
+      dailyBuyReset: Date | null; isBanned: boolean; isSuspended: boolean; kycStatus: string
+    }>>`
+      SELECT id, "dailyBuyUsed", "dailyBuyLimit", "dailyBuyReset", "isBanned", "isSuspended", "kycStatus"
       FROM "User"
       WHERE id = ${buyerId}
       FOR UPDATE
@@ -97,6 +100,7 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     if (!buyerRows) throw new AppError('NOT_FOUND', 'Buyer not found', 404)
     if (buyerRows.isBanned) throw new AppError('ACCOUNT_BANNED', 'Account is banned', 403)
     if (buyerRows.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Account is suspended', 403)
+    if (buyerRows.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
 
     // SELECT FOR UPDATE on ad
     const [adRows] = await tx.$queryRaw<Array<{
@@ -137,11 +141,13 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       throw new AppError('INSUFFICIENT_AMOUNT', 'Requested amount exceeds available amount', 400)
     }
 
-    // Check daily buy limit
-    const dailyBuyUsed = new Prisma.Decimal(buyerRows.dailyBuyUsed)
+    // Check daily buy limit — reset used amount if the daily window has rolled over
+    const now = new Date()
+    const needsReset = buyerRows.dailyBuyReset && now > buyerRows.dailyBuyReset
+    const effectiveDailyUsed = needsReset ? new Prisma.Decimal(0) : new Prisma.Decimal(buyerRows.dailyBuyUsed)
     const dailyBuyLimit = new Prisma.Decimal(buyerRows.dailyBuyLimit)
     const fiatAmount = amount.mul(adRows.price)
-    if (dailyBuyUsed.add(fiatAmount).gt(dailyBuyLimit)) {
+    if (effectiveDailyUsed.add(fiatAmount).gt(dailyBuyLimit)) {
       throw new AppError('DAILY_LIMIT_EXCEEDED', 'Daily buy limit would be exceeded', 400)
     }
 
@@ -154,10 +160,14 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       data: { availableAmount: newAvailable, status: newAdStatus },
     })
 
-    // Increment buyer dailyBuyUsed
+    // Increment buyer dailyBuyUsed (reset counter first if window rolled over)
+    const resetAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
     await tx.user.update({
       where: { id: buyerId },
-      data: { dailyBuyUsed: { increment: fiatAmount } },
+      data: {
+        dailyBuyUsed: needsReset ? fiatAmount : { increment: fiatAmount },
+        ...(needsReset ? { dailyBuyReset: resetAt } : {}),
+      },
     })
 
     // Create the trade
@@ -201,37 +211,44 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
 }
 
 export async function uploadPaymentProof(tradeId: string, buyerId: string, proofUrl: string) {
-  const trade = await db.trade.findUnique({
-    where: { id: tradeId },
-    include: { seller: { select: { email: true, username: true } } },
-  })
-
-  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-  if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Not your trade', 403)
-  if (trade.status !== 'payment_pending') {
-    throw new AppError('INVALID_STATUS', `Cannot upload proof for trade in status: ${trade.status}`, 400)
-  }
-
   assertCloudinaryUrl(proofUrl, 'proofUrl')
 
-  const updated = await db.trade.update({
+  // Load seller info for email — safe outside tx (read-only, non-critical timing)
+  const tradeForEmail = await db.trade.findUnique({
     where: { id: tradeId },
+    select: { seller: { select: { email: true, username: true } }, sellerId: true, orderRef: true, coin: true, amount: true, fiatAmount: true },
+  })
+  if (!tradeForEmail) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  // Use optimistic updateMany with status guard — prevents two concurrent uploads both succeeding
+  const result = await db.trade.updateMany({
+    where: { id: tradeId, buyerId, status: 'payment_pending' },
     data: { status: 'payment_uploaded', paymentProofUrl: proofUrl },
   })
 
-  notify(trade.sellerId, 'trade', 'Payment Proof Uploaded', 'The buyer has uploaded payment proof. Please review and confirm.', { tradeId })
+  if (result.count === 0) {
+    // Distinguish "not your trade" from "wrong status" with a secondary read
+    const check = await db.trade.findUnique({ where: { id: tradeId }, select: { buyerId: true, status: true } })
+    if (!check) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+    if (check.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Not your trade', 403)
+    throw new AppError('INVALID_STATUS', `Cannot upload proof for trade in status: ${check.status}`, 400)
+  }
+
+  const updated = await db.trade.findUniqueOrThrow({ where: { id: tradeId } })
+
+  notify(tradeForEmail.sellerId, 'trade', 'Payment Proof Uploaded', 'The buyer has uploaded payment proof. Please review and confirm.', { tradeId })
 
   // Notify seller via email
   await sendTradeEmail(
     'payment_uploaded',
     {
-      orderRef: trade.orderRef,
-      coin: trade.coin,
-      amount: trade.amount.toString(),
-      pkrValue: trade.fiatAmount.toString(),
+      orderRef: tradeForEmail.orderRef,
+      coin: tradeForEmail.coin,
+      amount: tradeForEmail.amount.toString(),
+      pkrValue: tradeForEmail.fiatAmount.toString(),
       counterpartyUsername: 'Buyer',
     },
-    trade.seller.email,
+    tradeForEmail.seller.email,
   )
 
   return updated
@@ -285,20 +302,32 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
 }
 
 export async function releaseTrade(tradeId: string, buyerId: string) {
-  const trade = await db.trade.findUnique({
+  // Load buyer/seller details needed for emails/queues — safe to read outside tx
+  const tradeDetails = await db.trade.findUnique({
     where: { id: tradeId },
     include: {
       buyer: { select: { email: true, username: true, firstTradeBonusPaid: true } },
       seller: { select: { email: true, username: true } },
     },
   })
-  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-  if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can release the trade', 403)
-  if (trade.status !== 'crypto_sent') {
-    throw new AppError('INVALID_STATUS', `Cannot release trade in status: ${trade.status}`, 400)
-  }
+  if (!tradeDetails) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
   await db.$transaction(async (tx: Tx) => {
+    // SELECT FOR UPDATE prevents concurrent release from double-completing
+    const [rows] = await tx.$queryRaw<Array<{
+      id: string; status: string; buyerId: string; sellerId: string; fiatAmount: Prisma.Decimal
+    }>>`
+      SELECT id, status, "buyerId", "sellerId", "fiatAmount"
+      FROM "Trade"
+      WHERE id = ${tradeId}
+      FOR UPDATE
+    `
+    if (!rows) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+    if (rows.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can release the trade', 403)
+    if (rows.status !== 'crypto_sent') {
+      throw new AppError('INVALID_STATUS', `Cannot release trade in status: ${rows.status}`, 400)
+    }
+
     await tx.trade.update({
       where: { id: tradeId },
       data: { status: 'crypto_released', escrowReleased: true },
@@ -306,56 +335,71 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
 
     // Increment completedSellTrades for seller
     await tx.user.update({
-      where: { id: trade.sellerId },
+      where: { id: rows.sellerId },
       data: { completedSellTrades: { increment: 1 } },
     })
 
     // Update TradeStats for buyer and seller
-    await upsertTradeStats(tx, buyerId, true, trade.fiatAmount)
-    await upsertTradeStats(tx, trade.sellerId, true, trade.fiatAmount)
+    await upsertTradeStats(tx, buyerId, true, rows.fiatAmount)
+    await upsertTradeStats(tx, rows.sellerId, true, rows.fiatAmount)
   })
 
   // Queue badge recalculation for both
   await queues.badgeRecalculate.add('recalculate', { userId: buyerId })
-  await queues.badgeRecalculate.add('recalculate', { userId: trade.sellerId })
+  await queues.badgeRecalculate.add('recalculate', { userId: tradeDetails.sellerId })
 
   // Queue referral payout if first trade bonus not yet paid
-  if (!trade.buyer.firstTradeBonusPaid) {
+  if (!tradeDetails.buyer.firstTradeBonusPaid) {
     await queues.referralPayout.add('first-trade', { userId: buyerId, tradeId })
   }
 
-  notify(trade.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId })
+  notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId })
 
   // Send completion emails
   await sendTradeEmail(
     'completed',
     {
-      orderRef: trade.orderRef,
-      coin: trade.coin,
-      amount: trade.amount.toString(),
-      pkrValue: trade.fiatAmount.toString(),
-      counterpartyUsername: trade.seller.username,
+      orderRef: tradeDetails.orderRef,
+      coin: tradeDetails.coin,
+      amount: tradeDetails.amount.toString(),
+      pkrValue: tradeDetails.fiatAmount.toString(),
+      counterpartyUsername: tradeDetails.seller.username,
     },
-    trade.buyer.email,
+    tradeDetails.buyer.email,
   )
 
   return db.trade.findUnique({ where: { id: tradeId } })
 }
 
 export async function cancelTrade(tradeId: string, actorId: string, role: string, reason: string) {
-  const trade = await db.trade.findUnique({ where: { id: tradeId } })
-  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-
-  if (role !== 'admin' && trade.buyerId !== actorId && trade.sellerId !== actorId) {
-    throw new AppError('FORBIDDEN', 'Not authorized to cancel this trade', 403)
-  }
-
-  const cancellableStatuses = ['payment_pending', 'payment_uploaded']
-  if (!cancellableStatuses.includes(trade.status)) {
-    throw new AppError('INVALID_STATUS', `Cannot cancel trade in status: ${trade.status}`, 400)
-  }
+  let buyerId: string
+  let sellerId: string
 
   await db.$transaction(async (tx: Tx) => {
+    // SELECT FOR UPDATE prevents concurrent cancel+release from both succeeding
+    const [trade] = await tx.$queryRaw<Array<{
+      id: string; status: string; buyerId: string; sellerId: string;
+      adId: string; amount: Prisma.Decimal; fiatAmount: Prisma.Decimal
+    }>>`
+      SELECT id, status, "buyerId", "sellerId", "adId", amount, "fiatAmount"
+      FROM "Trade"
+      WHERE id = ${tradeId}
+      FOR UPDATE
+    `
+    if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+    if (role !== 'admin' && trade.buyerId !== actorId && trade.sellerId !== actorId) {
+      throw new AppError('FORBIDDEN', 'Not authorized to cancel this trade', 403)
+    }
+
+    const cancellableStatuses = ['payment_pending', 'payment_uploaded']
+    if (!cancellableStatuses.includes(trade.status)) {
+      throw new AppError('INVALID_STATUS', `Cannot cancel trade in status: ${trade.status}`, 400)
+    }
+
+    buyerId = trade.buyerId
+    sellerId = trade.sellerId
+
     await tx.trade.update({
       where: { id: tradeId },
       data: {
@@ -384,7 +428,7 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
     })
   })
 
-  const otherPartyId = actorId === trade.buyerId ? trade.sellerId : trade.buyerId
+  const otherPartyId = actorId === buyerId! ? sellerId! : buyerId!
   notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId })
 
   return db.trade.findUnique({ where: { id: tradeId } })
@@ -408,23 +452,26 @@ export async function openDispute(
     throw new AppError('INVALID_STATUS', `Cannot open dispute for trade in status: ${trade.status}`, 400)
   }
 
-  const existingDispute = await db.dispute.findUnique({ where: { tradeId } })
-  if (existingDispute) {
-    throw new AppError('CONFLICT', 'A dispute already exists for this trade', 409)
+  let dispute: Awaited<ReturnType<typeof db.dispute.create>>
+  try {
+    dispute = await db.$transaction(async (tx: Tx) => {
+      const newDispute = await tx.dispute.create({
+        data: { tradeId, openedById, reason, description },
+      })
+
+      await tx.trade.update({
+        where: { id: tradeId },
+        data: { status: 'disputed' },
+      })
+
+      return newDispute
+    })
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new AppError('CONFLICT', 'A dispute already exists for this trade', 409)
+    }
+    throw err
   }
-
-  const dispute = await db.$transaction(async (tx: Tx) => {
-    const newDispute = await tx.dispute.create({
-      data: { tradeId, openedById, reason, description },
-    })
-
-    await tx.trade.update({
-      where: { id: tradeId },
-      data: { status: 'disputed' },
-    })
-
-    return newDispute
-  })
 
   const otherPartyId = openedById === trade.buyerId ? trade.sellerId : trade.buyerId
   notify(otherPartyId, 'dispute', 'Dispute Opened', `A dispute has been opened on your trade. Reason: ${reason}`, { tradeId, disputeId: dispute.id })

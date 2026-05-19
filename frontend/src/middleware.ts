@@ -10,6 +10,15 @@ const AUTH_REQUIRED = [
   '/merchant',
   '/instant-buy',
   '/setup-username',
+  '/kyc',
+  '/orders',
+  '/payment-methods',
+  '/my-ads',
+  '/create-ad',
+  '/notifications',
+  '/referral',
+  '/ctm',
+  '/gas/orders',
 ]
 
 // Routes that require admin role — handled server-side too, this is UX-only

@@ -1,3 +1,5 @@
+// Custom HS256 JWT implementation. Functionally correct (timing-safe compare, expiry, type field).
+// Future: migrate to `jose` (npm) for battle-tested JOSE compliance and key-rotation support.
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { env } from './env'
 
@@ -70,7 +72,7 @@ export function signAccessToken(
 export function signPreAuthToken(
   payload: Omit<PreAuthTokenPayload, 'type' | 'iat' | 'exp'>,
 ): string {
-  return signJwt({ ...payload, type: 'pre_auth' }, env.JWT_SECRET, 5 * 60)
+  return signJwt({ ...payload, type: 'pre_auth' }, env.JWT_REFRESH_SECRET, 5 * 60)
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload | null {
@@ -80,7 +82,7 @@ export function verifyAccessToken(token: string): AccessTokenPayload | null {
 }
 
 export function verifyPreAuthToken(token: string): PreAuthTokenPayload | null {
-  const payload = verifyJwt<PreAuthTokenPayload>(token, env.JWT_SECRET)
+  const payload = verifyJwt<PreAuthTokenPayload>(token, env.JWT_REFRESH_SECRET)
   if (!payload || payload.type !== 'pre_auth') return null
   return payload
 }

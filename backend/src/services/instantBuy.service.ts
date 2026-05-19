@@ -28,67 +28,70 @@ export async function createOrder(
     }
   }
 
-  // Check KYC
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { kycStatus: true, dailyBuyUsed: true, dailyBuyLimit: true, dailyBuyReset: true },
-  })
-  if (!user) throw Errors.NOT_FOUND('User')
-  if (user.kycStatus !== 'approved') {
-    throw new AppError('KYC_REQUIRED', 'KYC verification required to use instant buy', 403)
-  }
-
-  // Check daily limit
-  const now = new Date()
-  let dailyUsed = Number(user.dailyBuyUsed)
-  if (user.dailyBuyReset && now > user.dailyBuyReset) {
-    dailyUsed = 0
-  }
-  if (dailyUsed + data.amount > Number(user.dailyBuyLimit)) {
-    throw new AppError(
-      'DAILY_LIMIT_EXCEEDED',
-      `Daily buy limit of PKR ${user.dailyBuyLimit} would be exceeded`,
-      400,
-    )
-  }
-
-  // Get live rate from Redis
-  const rateKey = `rate:${data.coin}:PKR`
-  const rateStr = await redis.get(rateKey)
+  // Fetch rate, fee config, and deposit address outside the transaction (read-only, non-critical timing)
+  const rateStr = await redis.get(`rate:${data.coin}`)
   if (!rateStr) {
     throw new AppError('RATE_UNAVAILABLE', `Rate for ${data.coin}/PKR is not available`, 503)
   }
-  const rate = parseFloat(rateStr)
+  const rateParsed = JSON.parse(rateStr) as { rate?: number }
+  const rate = rateParsed.rate
+  if (!rate || rate <= 0) {
+    throw new AppError('RATE_UNAVAILABLE', `Rate for ${data.coin}/PKR is not available`, 503)
+  }
 
-  // Get fee config
-  const feeConfig = await db.platformConfig.findUnique({
-    where: { key: 'instant_buy_fee_pct' },
-  })
-  const feePct = feeConfig ? parseFloat(feeConfig.value) : 1.5 // default 1.5%
+  const feeConfig = await db.platformConfig.findUnique({ where: { key: 'instant_buy_fee_pct' } })
+  const feePct = feeConfig ? parseFloat(feeConfig.value) : 1.5
+
+  const depositAddrKey = `deposit_address_${data.coin.toLowerCase()}_${data.network.toLowerCase()}`
+  const depositConfig = await db.platformConfig.findUnique({ where: { key: depositAddrKey } })
 
   // Calculate amounts
   const fiatAmount = data.paymentMode === 'pkr' ? data.amount : null
   const coinAmount = data.paymentMode === 'pkr' ? data.amount / rate : data.amount
   const fee = coinAmount * (feePct / 100)
 
-  // Get deposit address from config
-  const depositAddrKey = `deposit_address_${data.coin.toLowerCase()}_${data.network.toLowerCase()}`
-  const depositConfig = await db.platformConfig.findUnique({
-    where: { key: depositAddrKey },
-  })
-
   const orderRef = generateOrderRef('IB')
-  const quoteExpiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
+  const quoteExpiresAt = new Date(Date.now() + 30 * 60 * 1000)
 
   const order = await db.$transaction(async (tx) => {
-    const newOrder = await tx.instantBuyOrder.create({
+    // SELECT FOR UPDATE — KYC check and daily limit increment must be atomic
+    const [userRow] = await tx.$queryRaw<Array<{
+      id: string; kycStatus: string; dailyBuyUsed: string; dailyBuyLimit: string; dailyBuyReset: Date | null
+    }>>`
+      SELECT id, "kycStatus", "dailyBuyUsed", "dailyBuyLimit", "dailyBuyReset"
+      FROM "User" WHERE id = ${userId} FOR UPDATE
+    `
+    if (!userRow) throw Errors.NOT_FOUND('User')
+    if (userRow.kycStatus !== 'approved') {
+      throw new AppError('KYC_REQUIRED', 'KYC verification required to use instant buy', 403)
+    }
+
+    const now = new Date()
+    const needsReset = userRow.dailyBuyReset && now > userRow.dailyBuyReset
+    const effectiveUsed = needsReset ? 0 : Number(userRow.dailyBuyUsed)
+    const fiatIncrement = data.paymentMode === 'pkr' ? data.amount : coinAmount * rate
+
+    if (effectiveUsed + fiatIncrement > Number(userRow.dailyBuyLimit)) {
+      throw new AppError('DAILY_LIMIT_EXCEEDED', `Daily buy limit of PKR ${userRow.dailyBuyLimit} would be exceeded`, 400)
+    }
+
+    const resetAt = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        dailyBuyUsed: needsReset ? fiatIncrement : { increment: fiatIncrement },
+        ...(needsReset ? { dailyBuyReset: resetAt } : {}),
+      },
+    })
+
+    return tx.instantBuyOrder.create({
       data: {
         orderRef,
         userId,
         coin: data.coin,
         network: data.network,
         paymentMode: data.paymentMode,
-        fiatAmount: fiatAmount,
+        fiatAmount,
         coinAmount,
         rate,
         fee,
@@ -98,19 +101,6 @@ export async function createOrder(
         quoteExpiresAt,
       },
     })
-
-    // Increment daily buy used
-    const resetAt = new Date(now)
-    resetAt.setHours(23, 59, 59, 999)
-    await tx.user.update({
-      where: { id: userId },
-      data: {
-        dailyBuyUsed: { increment: data.paymentMode === 'pkr' ? data.amount : coinAmount * rate },
-        ...(user.dailyBuyReset && now < user.dailyBuyReset ? {} : { dailyBuyReset: resetAt }),
-      },
-    })
-
-    return newOrder
   })
 
   // Store idempotency key

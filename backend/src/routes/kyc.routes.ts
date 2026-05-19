@@ -8,7 +8,7 @@ import { AppError } from '../lib/errors'
 
 const submitKycSchema = z.object({
   tier: z.enum(['basic', 'enhanced']),
-  cnicNumber: z.string().min(13).max(15),
+  cnicNumber: z.string().regex(/^\d{5}-\d{7}-\d$|^\d{13}$/, 'Invalid CNIC format (expected XXXXX-XXXXXXX-X or 13 digits)'),
   frontUrl: z.string().url(),
   backUrl: z.string().url(),
   selfieUrl: z.string().url(),

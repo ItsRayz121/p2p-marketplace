@@ -1,6 +1,6 @@
 import type { GasFeeOrder } from '@prisma/client'
 import type { Chain } from 'viem'
-import { createWalletClient, http, parseEther } from 'viem'
+import { createWalletClient, http, parseEther, parseGwei } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
 import { env } from '../env'
@@ -81,6 +81,8 @@ async function deliverTron(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Prom
 
 // ── EVM delivery (shared pattern) ─────────────────────────────────────────────
 
+// Retry EVM tx up to 3 times with a 20% gas price bump on each attempt.
+// Handles transient RPC errors and mempool congestion without blocking indefinitely.
 async function deliverEvm(
   order: GasFeeOrder,
   viemChain: Chain,
@@ -89,12 +91,28 @@ async function deliverEvm(
 ): Promise<string> {
   const account = privateKeyToAccount(privateKey as `0x${string}`)
   const client = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
-  const hash = await client.sendTransaction({
-    account,
-    to: order.toAddress as `0x${string}`,
-    value: parseEther(order.gasAmountNative.toString()),
-  })
-  return hash
+
+  const MAX_ATTEMPTS = 3
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      // On retries bump maxFeePerGas by 20% per attempt to escape a stuck mempool slot.
+      const gasBump = attempt > 1 ? { maxFeePerGas: parseGwei(String(10 * 1.2 ** (attempt - 1))) } : {}
+      const hash = await client.sendTransaction({
+        account,
+        to: order.toAddress as `0x${string}`,
+        value: parseEther(order.gasAmountNative.toString()),
+        ...gasBump,
+      })
+      return hash
+    } catch (err) {
+      lastErr = err
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 2000 * attempt))
+      }
+    }
+  }
+  throw lastErr
 }
 
 // ── L2 + alt-EVM delivery ─────────────────────────────────────────────────────

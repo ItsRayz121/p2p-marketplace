@@ -248,33 +248,60 @@ export async function webhookRoutes(app: FastifyInstance) {
 
     // 2. Idempotency check (legacy path only — Moralis events are de-duped
     //    inside processDepositEvent via the (txHash, chain, asset) unique).
+    // Use SET NX to atomically claim the key. This prevents concurrent requests
+    // from double-processing but still allows retries when a previous attempt
+    // crashed mid-handler (in which case we delete the key on error below).
     const idemKey = `webhook_event:${txHash}`
-    const alreadyProcessed = await redis.get(idemKey)
-    if (alreadyProcessed) {
+    const existing = await redis.get(idemKey)
+    if (existing === 'done') {
       logger.info({ txHash }, 'Webhook already processed, skipping')
       return reply.send({ success: true, skipped: true })
     }
-
-    // Mark as processing
-    await redis.setex(idemKey, 86400, '1')
+    // Claim the slot (NX = only set if not already present).
+    // If 'processing' key already exists from a concurrent request, SET NX will
+    // return null — we fall through to let the DB-level optimistic locks handle it.
+    await redis.set(idemKey, 'processing', 'EX', 86400, 'NX')
 
     // 3. Match InstantBuyOrder
-    const instantOrder = await db.instantBuyOrder.findFirst({
-      where: {
-        status: 'payment_pending',
-        ...(coin ? { coin } : {}),
-      },
-    })
+    // Verify toAddress is the platform's deposit address for this coin/network,
+    // then match by amount (±1%) and expiry — never grab a random pending order.
+    if (toAddress && coin && payload.network) {
+      const depositKey = `deposit_address_${coin.toLowerCase()}_${(payload.network as string).toLowerCase()}`
+      const depositConfig = await db.platformConfig.findUnique({ where: { key: depositKey } })
+      const platformDepositAddr = depositConfig?.value
 
-    if (instantOrder) {
-      await db.instantBuyOrder.update({
-        where: { id: instantOrder.id },
-        data: {
-          status: 'payment_uploaded',
-          incomingTxHash: txHash,
-        },
-      })
-      logger.info({ txHash, orderId: instantOrder.id }, 'Deposit detected for instant buy order')
+      if (platformDepositAddr && toAddress.toLowerCase() === platformDepositAddr.toLowerCase()) {
+        const incomingAmount = parseFloat(payload.amount ?? '0')
+        if (incomingAmount > 0) {
+          const lo = (incomingAmount * 0.99).toFixed(8)
+          const hi = (incomingAmount * 1.01).toFixed(8)
+
+          const instantOrder = await db.instantBuyOrder.findFirst({
+            where: {
+              status: 'payment_pending',
+              coin,
+              network: payload.network as string,
+              coinAmount: { gte: lo, lte: hi },
+              quoteExpiresAt: { gt: new Date() },
+              incomingTxHash: null,
+            },
+            orderBy: { createdAt: 'asc' },
+          })
+
+          if (instantOrder) {
+            // Optimistic lock: only claim if still payment_pending with no txHash
+            const claimed = await db.instantBuyOrder.updateMany({
+              where: { id: instantOrder.id, status: 'payment_pending', incomingTxHash: null },
+              data: { status: 'payment_uploaded', incomingTxHash: txHash },
+            })
+            if (claimed.count > 0) {
+              logger.info({ txHash, orderId: instantOrder.id }, 'Deposit detected for instant buy order')
+            } else {
+              logger.warn({ txHash, orderId: instantOrder.id }, 'InstantBuy order already claimed by concurrent webhook')
+            }
+          }
+        }
+      }
     }
 
     // 4. Match GasFeeOrder
@@ -366,6 +393,10 @@ export async function webhookRoutes(app: FastifyInstance) {
         }
       }
     }
+
+    // Mark as fully processed so retries are skipped. Key was set to 'processing'
+    // on entry; update to 'done' now that all DB writes succeeded.
+    await redis.set(idemKey, 'done', 'EX', 86400)
 
     return reply.send({ success: true })
   })

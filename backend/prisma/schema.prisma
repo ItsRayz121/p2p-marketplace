@@ -602,6 +602,8 @@ model Trade {
   @@index([buyerId, status])
   @@index([sellerId, status])
   @@index([orderRef])
+  @@index([adId])
+  @@index([status, expiresAt])
 }
 
 model TradeMessage {
