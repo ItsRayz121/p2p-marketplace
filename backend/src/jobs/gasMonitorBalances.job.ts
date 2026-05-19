@@ -10,9 +10,17 @@ import type { GasChainId } from '../lib/gas/gas.chains'
 // either extend or clear it — 6 min gives a comfortable margin.
 const PAUSED_TTL_S = 360
 
+// TTL for the last-fetch-error key: 2 hours.  Cleared on next successful fetch.
+const ERROR_TTL_S = 7200
+
 // Retry config: 3 attempts with 2 s back-off between each.
 const MAX_ATTEMPTS = 3
 const RETRY_DELAY_MS = 2_000
+
+function extractErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.slice(0, 200)
+}
 
 interface ChainThresholds {
   alertThresholdUsd: number | null
@@ -48,15 +56,21 @@ async function monitorChain(
   const balanceKey    = `gas_wallet_balance:${dbChain}`
   const balanceUsdKey = `gas_wallet_balance_usd:${dbChain}`
   const pausedKey     = `gas_wallet_paused:${dbChain}`
+  const errorKey      = `gas_wallet_error:${dbChain}`
 
   let balance: number
   let attempts: number
   try {
     ;({ balance, attempts } = await fetchBalanceWithRetry(chain, address))
   } catch (err) {
-    logger.error({ err, chain }, 'Gas hot wallet balance fetch failed after all retries')
+    const msg = extractErrorMessage(err)
+    logger.error({ err, chain, rpcError: msg }, 'Gas hot wallet balance fetch failed after all retries')
+    await redis.set(errorKey, msg, 'EX', ERROR_TTL_S)
     return
   }
+
+  // Successful fetch — clear any stale error
+  await redis.del(errorKey)
 
   if (attempts > 1) {
     logger.warn({ chain, attempts }, 'Gas hot wallet balance fetch succeeded after retry')

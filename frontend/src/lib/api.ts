@@ -1218,6 +1218,7 @@ export const adminApi = {
         balance: number | null; balanceUsd: number | null; nativeSymbol: string
         alertThresholdUsd: number | null; pauseThresholdUsd: number | null
         status: 'healthy' | 'low' | 'paused' | 'unavailable'
+        lastFetchError: string | null
       }>
       orderSummary: Record<string, number>
       configWarnings: Array<{ key: string; label: string; required: boolean }>
@@ -1290,7 +1291,7 @@ export const adminApi = {
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>
     apiRequest<void>(`/admin/gas/wallets/${chain}/balance`, { method: 'POST', body: JSON.stringify({ balanceTRX }) }),
   refreshGasWalletBalance: (chain: string) =>
-    apiRequest<{ chain: string; balance: number; balanceUsd: number | null; nativeSymbol: string; status: string; alertThresholdUsd: number | null; pauseThresholdUsd: number | null }>(`/admin/gas/wallets/${chain}/refresh-balance`, { method: 'POST' }),
+    apiRequest<{ chain: string; balance: number; balanceUsd: number | null; nativeSymbol: string; status: 'healthy' | 'low' | 'paused' | 'unavailable'; alertThresholdUsd: number | null; pauseThresholdUsd: number | null }>(`/admin/gas/wallets/${chain}/refresh-balance`, { method: 'POST' }),
   toggleGasChain: (chain: string) =>
     apiRequest<{ chain: string; isActive: boolean }>(`/admin/gas/chains/${chain}/toggle`, { method: 'POST' }),
   testRpcHealth: (chain: string) =>

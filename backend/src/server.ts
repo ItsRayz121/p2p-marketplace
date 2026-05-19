@@ -19,6 +19,7 @@ import { startWorkers } from './queues/workers'
 import { validateWalletCustodyAtStartup } from './lib/walletCrypto'
 import { validateGasWalletAtStartup } from './lib/gas/gasWalletService'
 import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
+import { reportGasRpcStartupStatus } from './lib/gas/gasRpcStartupCheck'
 import { validatePrismaSchemaAtStartup } from './lib/schemaValidation'
 
 async function start() {
@@ -90,6 +91,8 @@ async function start() {
     // Async, fire-and-forget — never blocks listen(). Logs an ops report
     // (which streams are configured, which respond) without throwing.
     void reportMoralisStartupStatus()
+    // Log RPC config for active gas chains; warns if using public defaults.
+    void reportGasRpcStartupStatus()
   } catch (err) {
     logger.error({ err }, 'Failed to start server')
     process.exit(1)

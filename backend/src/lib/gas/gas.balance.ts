@@ -68,7 +68,7 @@ async function getEvmNativeBalance(
   rpcUrl: string,
   address: string,
 ): Promise<number> {
-  const client = createPublicClient({ chain: viemChain, transport: http(rpcUrl) })
+  const client = createPublicClient({ chain: viemChain, transport: http(rpcUrl, { timeout: 10_000 }) })
   const balanceWei = await client.getBalance({ address: address as `0x${string}` })
   return parseFloat(formatEther(balanceWei))
 }

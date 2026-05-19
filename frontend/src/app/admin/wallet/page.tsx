@@ -51,6 +51,8 @@ export default function WalletPage() {
   const [data, setData] = useState<WalletStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState<Record<string, boolean>>({})
+  const [refreshErrors, setRefreshErrors] = useState<Record<string, string | null>>({})
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -62,6 +64,25 @@ export default function WalletPage() {
       setError(err instanceof Error ? err.message : 'Failed to load wallet status')
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  const refreshWalletBalance = useCallback(async (chain: string) => {
+    setRefreshing((prev) => ({ ...prev, [chain]: true }))
+    setRefreshErrors((prev) => ({ ...prev, [chain]: null }))
+    try {
+      const updated = await adminApi.refreshGasWalletBalance(chain)
+      setData((prev) => prev ? {
+        ...prev,
+        hotWallets: prev.hotWallets.map((w) =>
+          w.chain === chain ? { ...w, ...updated, lastFetchError: null } : w
+        ),
+      } : null)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Refresh failed'
+      setRefreshErrors((prev) => ({ ...prev, [chain]: msg }))
+    } finally {
+      setRefreshing((prev) => ({ ...prev, [chain]: false }))
     }
   }, [])
 
@@ -189,40 +210,63 @@ export default function WalletPage() {
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {hotWallets.map((w) => (
-              <div key={w.chain} className="px-5 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="font-semibold text-text-primary">{w.chain}</span>
-                      <Badge variant={WALLET_STATUS_VARIANT[w.status] ?? 'outline'} size="sm">
-                        {w.status.charAt(0).toUpperCase() + w.status.slice(1)}
-                      </Badge>
-                      {!w.isActive && <Badge variant="outline" size="sm">Inactive</Badge>}
+            {hotWallets.map((w) => {
+              const isRefreshing = refreshing[w.chain] ?? false
+              const refreshError = refreshErrors[w.chain] ?? null
+              const fetchError = w.lastFetchError ?? null
+              return (
+                <div key={w.chain} className="px-5 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="font-semibold text-text-primary">{w.chain}</span>
+                        <Badge variant={WALLET_STATUS_VARIANT[w.status] ?? 'outline'} size="sm">
+                          {w.status.charAt(0).toUpperCase() + w.status.slice(1)}
+                        </Badge>
+                        {!w.isActive && <Badge variant="outline" size="sm">Inactive</Badge>}
+                      </div>
+                      <div className="flex items-center gap-1 mb-1">
+                        <p className="font-mono text-xs text-text-secondary">{w.address}</p>
+                        <CopyButton text={w.address} />
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-text-muted">
+                        <span>
+                          Balance: {w.balance !== null ? `${w.balance.toLocaleString()} ${w.nativeSymbol}` : 'Not fetched'}
+                          {w.balanceUsd != null && <span className="ml-1 text-text-muted">(${w.balanceUsd.toFixed(2)})</span>}
+                        </span>
+                        {w.alertThresholdUsd != null && <span>Alert at: ${w.alertThresholdUsd}</span>}
+                        {w.pauseThresholdUsd != null && <span>Pause at: ${w.pauseThresholdUsd}</span>}
+                      </div>
+                      {w.balanceUsd != null && w.alertThresholdUsd != null && w.balanceUsd <= w.alertThresholdUsd && (
+                        <p className={`text-xs mt-1 font-medium ${w.pauseThresholdUsd != null && w.balanceUsd <= w.pauseThresholdUsd ? 'text-danger' : 'text-warning'}`}>
+                          {w.pauseThresholdUsd != null && w.balanceUsd <= w.pauseThresholdUsd
+                            ? 'CRITICAL: Balance below pause threshold — gas delivery paused'
+                            : 'WARNING: Balance below alert threshold — top up soon'}
+                        </p>
+                      )}
+                      {fetchError && !refreshError && (
+                        <p className="text-xs mt-1 text-danger font-mono break-all">
+                          RPC error: {fetchError}
+                        </p>
+                      )}
+                      {refreshError && (
+                        <p className="text-xs mt-1 text-danger font-mono break-all">
+                          Refresh failed: {refreshError}
+                        </p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 mb-1">
-                      <p className="font-mono text-xs text-text-secondary">{w.address}</p>
-                      <CopyButton text={w.address} />
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-text-muted">
-                      <span>
-                        Balance: {w.balance !== null ? `${w.balance.toLocaleString()} ${w.nativeSymbol}` : 'Not fetched'}
-                        {w.balanceUsd != null && <span className="ml-1 text-text-muted">(${w.balanceUsd.toFixed(2)})</span>}
-                      </span>
-                      {w.alertThresholdUsd != null && <span>Alert at: ${w.alertThresholdUsd}</span>}
-                      {w.pauseThresholdUsd != null && <span>Pause at: ${w.pauseThresholdUsd}</span>}
-                    </div>
-                    {w.balanceUsd != null && w.alertThresholdUsd != null && w.balanceUsd <= w.alertThresholdUsd && (
-                      <p className={`text-xs mt-1 font-medium ${w.pauseThresholdUsd != null && w.balanceUsd <= w.pauseThresholdUsd ? 'text-danger' : 'text-warning'}`}>
-                        {w.pauseThresholdUsd != null && w.balanceUsd <= w.pauseThresholdUsd
-                          ? 'CRITICAL: Balance below pause threshold — gas delivery paused'
-                          : 'WARNING: Balance below alert threshold — top up soon'}
-                      </p>
-                    )}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => refreshWalletBalance(w.chain)}
+                      disabled={isRefreshing}
+                    >
+                      {isRefreshing ? 'Refreshing…' : 'Refresh Balance'}
+                    </Button>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

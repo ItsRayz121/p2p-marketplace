@@ -1836,10 +1836,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const hotWallets = await Promise.all(
       allWallets.map(async (w) => {
         const chainConfig = GAS_CHAINS[fromDbChain(w.chain)]
-        const [balanceCached, isPaused, balanceUsdCached] = await Promise.all([
+        const [balanceCached, isPaused, balanceUsdCached, lastFetchError] = await Promise.all([
           redisClient.get(`gas_wallet_balance:${w.chain}`),
           redisClient.get(`gas_wallet_paused:${w.chain}`),
           redisClient.get(`gas_wallet_balance_usd:${w.chain}`),
+          redisClient.get(`gas_wallet_error:${w.chain}`),
         ])
         const balance = balanceCached ? parseFloat(balanceCached) : null
         const cfg = thresholdMap[w.chain as string]
@@ -1865,6 +1866,7 @@ export async function adminRoutes(app: FastifyInstance) {
           alertThresholdUsd,
           pauseThresholdUsd,
           status,
+          lastFetchError:       lastFetchError ?? null,
           lastBalanceRefreshAt: w.lastBalanceRefreshAt ?? null,
         }
       }),
@@ -2164,9 +2166,13 @@ export async function adminRoutes(app: FastifyInstance) {
     try {
       balance = await getHotWalletBalance(chainId, wallet.address)
     } catch (err) {
-      throw new AppError('BALANCE_FETCH_FAILED', `Failed to fetch ${chain} balance: ${err instanceof Error ? err.message : String(err)}`, 502)
+      const msg = err instanceof Error ? err.message : String(err)
+      await redisClient.set(`gas_wallet_error:${chain}`, msg.slice(0, 200), 'EX', 7200)
+      throw new AppError('BALANCE_FETCH_FAILED', `Failed to fetch ${chain} balance: ${msg}`, 502)
     }
 
+    // Successful fetch — clear any stale error
+    await redisClient.del(`gas_wallet_error:${chain}`)
     await redisClient.set(`gas_wallet_balance:${chain}`, String(balance), 'EX', 1800)
     await Promise.all([
       createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_REFRESHED', 'GasHotWallet', wallet.id, { chain, balance }),
