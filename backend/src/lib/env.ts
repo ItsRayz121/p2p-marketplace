@@ -141,6 +141,10 @@ const envSchema = z.object({
   GAS_GUEST_DAILY_LIMIT_USD: z.coerce.number().default(10),
   COINGECKO_API_KEY: z.string().optional(),
   FREECRYPTOAPI_KEY: z.string().optional(),
+  COINSTATS_API_KEY: z.string().optional(),
+  CMC_API_KEY: z.string().optional(),
+  // Alchemy — Ethereum node RPC (not a price API). Set as ETHEREUM_RPC_URL value.
+  ALCHEMY_API_KEY: z.string().optional(),
 
   // P2P Platform Deposit Addresses (legacy shared addresses — fallback only)
   PLATFORM_DEPOSIT_USDT_TRC20: z.string().optional(),

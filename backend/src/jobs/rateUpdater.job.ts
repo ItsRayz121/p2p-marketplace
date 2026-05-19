@@ -1,6 +1,7 @@
 // Fetches live crypto rates every 5 minutes.
-// Source chain: CoinGecko → Bybit → Kraken → Binance → stale Redis cache.
+// Source chain: CoinGecko → FreeCryptoApi → CoinStats → Bybit → Kraken → Binance → CMC(emergency) → stale Redis cache.
 // Binance geo-blocks Railway (451). CoinGecko free tier rate-limits (400).
+// CMC is emergency-only (charged 1 credit/coin — stays out of the regular 5-min cycle).
 // Writes to Redis AND PlatformConfig.
 //
 // ─── HOW TO ADD PRICING FOR A NEW GAS TOKEN ───────────────────────────────────
@@ -148,6 +149,71 @@ async function fetchPricesFromFreeCryptoApi(): Promise<Record<string, number>> {
     if (price && price > 0) priceMap[coin] = price
   }
   if (Object.keys(priceMap).length === 0) throw new Error('FreeCryptoApi returned empty price map')
+  return priceMap
+}
+
+// ── CoinStats ─────────────────────────────────────────────────────────────────
+// Endpoint: GET https://openapi.coinstats.app/public/v1/coins?currency=USD&limit=250
+// Auth: X-API-KEY header
+// Response: { coins: [{ symbol: string, price: number }] }
+// Free tier: 20,000 requests/month. At 288 runs/day × 30 = 8,640/month — well within.
+const COINSTATS_SYMBOLS = new Set(['BTC','ETH','BNB','SOL','TRX','AVAX','MATIC','TON','SUI','APT','NEAR','USDC'])
+
+async function fetchPricesFromCoinStats(): Promise<Record<string, number>> {
+  if (!env.COINSTATS_API_KEY) throw new Error('COINSTATS_API_KEY not set — skipping')
+  const res = await fetch(
+    'https://openapi.coinstats.app/public/v1/coins?currency=USD&limit=250',
+    {
+      headers: { 'X-API-KEY': env.COINSTATS_API_KEY },
+      signal: AbortSignal.timeout(8000),
+    },
+  )
+  if (!res.ok) throw new Error(`CoinStats returned ${res.status}`)
+  const body = (await res.json()) as { coins?: Array<{ symbol: string; price: number }> }
+  if (!body.coins?.length) throw new Error('CoinStats: empty coins array')
+
+  const priceMap: Record<string, number> = {}
+  for (const coin of body.coins) {
+    const sym = coin.symbol?.toUpperCase()
+    if (sym && COINSTATS_SYMBOLS.has(sym) && coin.price > 0) {
+      priceMap[sym] = coin.price
+    }
+  }
+  if (Object.keys(priceMap).length === 0) throw new Error('CoinStats: no matching coins found in response')
+  return priceMap
+}
+
+// ── CoinMarketCap — emergency-only ────────────────────────────────────────────
+// 1 credit charged per coin per call. Free plan = 10,000 credits/month.
+// At 12 coins × 288 runs/day this burns 103,680 credits — far over the limit.
+// Therefore: used ONLY when ALL bulk sources fail, not in the regular 5-min chain.
+// Endpoint: GET https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC,ETH,...
+// Auth: X-CMC_PRO_API_KEY header
+// Response: { data: { BTC: { quote: { USD: { price: number } } } } }
+const CMC_SYMBOLS = ['BTC','ETH','BNB','SOL','TRX','AVAX','MATIC','TON','SUI','APT','NEAR','USDC']
+
+async function fetchPricesFromCoinMarketCap(): Promise<Record<string, number>> {
+  if (!env.CMC_API_KEY) throw new Error('CMC_API_KEY not set — skipping')
+  const symbols = CMC_SYMBOLS.join(',')
+  const res = await fetch(
+    `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=${symbols}&convert=USD`,
+    {
+      headers: { 'X-CMC_PRO_API_KEY': env.CMC_API_KEY, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    },
+  )
+  if (!res.ok) throw new Error(`CoinMarketCap returned ${res.status}`)
+  const body = (await res.json()) as {
+    data?: Record<string, { quote?: { USD?: { price?: number } } }>
+  }
+  if (!body.data) throw new Error('CoinMarketCap: unexpected response (no data field)')
+
+  const priceMap: Record<string, number> = {}
+  for (const sym of CMC_SYMBOLS) {
+    const price = body.data[sym]?.quote?.USD?.price
+    if (price && price > 0) priceMap[sym] = price
+  }
+  if (Object.keys(priceMap).length === 0) throw new Error('CoinMarketCap: no prices in response')
   return priceMap
 }
 
@@ -422,9 +488,17 @@ async function fetchMissingCoins(
 // TRX pairs). Missing gas-critical coins are patched in separately afterwards
 // by fetchTrxUsdPrice, so we never reject a whole source just because it lacks TRX.
 async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, number>; source: string }> {
+  // Source priority (all are batch requests — one HTTP call per source):
+  // 1. CoinGecko   — best data quality; rate-limited on free Railway tier
+  // 2. FreeCryptoApi — 100K/month free; reliable fallback
+  // 3. CoinStats   — 20K/month free; wide coverage
+  // 4. Bybit       — exchange ticker; geo-accessible on Railway
+  // 5. Kraken      — exchange ticker; geo-accessible; missing BNB/TRX
+  // 6. Binance     — geo-blocked on Railway (451); last resort
   const sources: Array<{ name: string; fn: () => Promise<Record<string, number>> }> = [
     { name: 'coingecko',     fn: fetchPricesFromCoinGecko },
     { name: 'freecryptoapi', fn: fetchPricesFromFreeCryptoApi },
+    { name: 'coinstats',     fn: fetchPricesFromCoinStats },
     { name: 'bybit',         fn: fetchPricesFromBybit },
     { name: 'kraken',        fn: fetchPricesFromKraken },
     { name: 'binance',       fn: fetchPricesFromBinance },
@@ -440,6 +514,21 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
       const msg = err instanceof Error ? err.message : String(err)
       logger.warn({ source: name, err: msg }, `${name} failed — trying next source`)
       errors.push(`${name}: ${msg}`)
+    }
+  }
+
+  // CMC emergency attempt — only reached when ALL bulk sources fail.
+  // Costs 1 credit per coin requested (12 coins = 12 credits per call).
+  // Keeping it here (not in the regular chain) preserves the 10K/month free quota.
+  if (env.CMC_API_KEY) {
+    try {
+      const cmcMap = await fetchPricesFromCoinMarketCap()
+      logger.warn({ coins: Object.keys(cmcMap) }, 'All bulk sources failed — using CoinMarketCap emergency fallback')
+      return { priceMap: cmcMap, source: 'coinmarketcap-emergency' }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn({ err: msg }, 'CoinMarketCap emergency fallback also failed')
+      errors.push(`coinmarketcap-emergency: ${msg}`)
     }
   }
 
