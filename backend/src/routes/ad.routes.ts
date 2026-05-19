@@ -10,10 +10,12 @@ import {
 } from '../services/ad.service'
 import { AppError } from '../lib/errors'
 
+const ALLOWED_NETWORKS = ['BEP20', 'Aptos'] as const
+
 const createAdSchema = z.object({
   side: z.enum(['buy', 'sell']),
-  coin: z.string().min(1),
-  network: z.string().min(1),
+  coin: z.literal('USDT'),
+  network: z.enum(ALLOWED_NETWORKS),
   priceType: z.enum(['fixed', 'float']),
   price: z.number().positive(),
   floatOffset: z.number().optional(),

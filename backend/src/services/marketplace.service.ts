@@ -229,13 +229,13 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
 
   const [buyAds, sellAds] = await Promise.all([
     db.ad.findMany({
-      where: { status: 'active', side: 'buy' },
+      where: { status: 'active', side: 'buy', coin: 'USDT' },
       orderBy: { price: 'desc' },
       take: 6,
       include: { user: sellerInclude },
     }),
     db.ad.findMany({
-      where: { status: 'active', side: 'sell' },
+      where: { status: 'active', side: 'sell', coin: 'USDT' },
       orderBy: { price: 'asc' },
       take: 6,
       include: { user: sellerInclude },
@@ -349,11 +349,13 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   const limit = Math.min(params.limit ?? 20, 50)
   const skip = (page - 1) * limit
 
+  const ALLOWED_NETWORKS = ['BEP20', 'Aptos']
+
   const where: Prisma.AdWhereInput = {
     status: 'active',
+    coin: 'USDT',
     ...(params.side ? { side: params.side as 'buy' | 'sell' } : {}),
-    ...(params.coin ? { coin: params.coin } : {}),
-    ...(params.network ? { network: params.network } : {}),
+    ...(params.network && ALLOWED_NETWORKS.includes(params.network) ? { network: params.network } : {}),
     ...(params.paymentMethod ? { paymentMethods: { has: params.paymentMethod } } : {}),
     ...(params.minAmount !== undefined ? { minOrder: { lte: new Prisma.Decimal(params.minAmount) } } : {}),
     ...(params.maxAmount !== undefined ? { maxOrder: { gte: new Prisma.Decimal(params.maxAmount) } } : {}),

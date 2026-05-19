@@ -10,13 +10,17 @@ import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 
-const COINS = ['USDT', 'BTC', 'ETH', 'BNB', 'TRX']
+const NETWORKS = [
+  { value: '', label: 'All Networks' },
+  { value: 'BEP20', label: 'BNB Chain (BEP20)' },
+  { value: 'Aptos', label: 'Aptos' },
+]
 const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'Bank Transfer', 'SadaPay', 'NayaPay']
 const PAGE_SIZE = 10
 
 interface Filters {
   side: 'buy' | 'sell'
-  coin: string
+  network: string
   paymentMethod: string
   minAmount: string
   maxAmount: string
@@ -36,6 +40,9 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             <p className="text-sm font-semibold text-text-primary truncate">
               {ad.seller?.username || 'Anonymous'}
             </p>
+            {ad.network && (
+              <p className="text-xs text-text-muted">{ad.network}</p>
+            )}
           </div>
         </div>
 
@@ -44,7 +51,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           <p className="text-xl font-bold text-text-primary">
             PKR {Number(ad.price).toLocaleString()}
           </p>
-          <p className="text-xs text-text-muted">per {ad.coin}</p>
+          <p className="text-xs text-text-muted">per USDT</p>
         </div>
 
         {/* Limits */}
@@ -70,7 +77,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
 
         {/* CTA */}
         <Link href={`/trade/new?adId=${ad.id}`} className="flex-shrink-0">
-          <Button size="sm">Trade</Button>
+          <Button size="sm">{ad.side === 'sell' ? 'Buy' : 'Sell'}</Button>
         </Link>
       </div>
     </div>
@@ -80,7 +87,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
 export default function MarketplacePage() {
   const [filters, setFilters] = useState<Filters>({
     side: 'buy',
-    coin: 'USDT',
+    network: '',
     paymentMethod: '',
     minAmount: '',
     maxAmount: '',
@@ -95,11 +102,12 @@ export default function MarketplacePage() {
   const fetchAds = useCallback(async (p = 1, append = false) => {
     try {
       const params: Record<string, string | number | undefined> = {
-        type: filters.side === 'buy' ? 'sell' : 'buy', // buyer wants sell ads
-        coin: filters.coin,
+        type: filters.side === 'buy' ? 'sell' : 'buy', // buyer sees sell ads
+        coin: 'USDT',
         page: p,
         limit: PAGE_SIZE,
       }
+      if (filters.network) params.network = filters.network
       if (filters.paymentMethod) params.paymentMethod = filters.paymentMethod
       if (filters.minAmount) params.minAmount = filters.minAmount
       if (filters.maxAmount) params.maxAmount = filters.maxAmount
@@ -115,22 +123,21 @@ export default function MarketplacePage() {
     }
   }, [filters])
 
-  // Reset on filter change
   useEffect(() => {
     setLoading(true)
     setPage(1)
     fetchAds(1, false)
   }, [fetchAds])
 
-  // Poll every 30s
   const pollFn = useCallback(async () => {
     try {
       const params: Record<string, string | number | undefined> = {
         type: filters.side === 'buy' ? 'sell' : 'buy',
-        coin: filters.coin,
+        coin: 'USDT',
         page: 1,
         limit: PAGE_SIZE,
       }
+      if (filters.network) params.network = filters.network
       const res = await marketplaceApi.getAds(params)
       setAds(res.ads)
       setTotal(res.total)
@@ -139,7 +146,6 @@ export default function MarketplacePage() {
 
   usePolling(pollFn, 30_000, !loading)
 
-  // Refresh on focus
   useEffect(() => {
     const onFocus = () => { fetchAds(1, false) }
     window.addEventListener('focus', onFocus)
@@ -154,7 +160,7 @@ export default function MarketplacePage() {
   }
 
   const clearFilters = () => {
-    setFilters({ side: 'buy', coin: 'USDT', paymentMethod: '', minAmount: '', maxAmount: '' })
+    setFilters({ side: 'buy', network: '', paymentMethod: '', minAmount: '', maxAmount: '' })
   }
 
   const hasMore = ads.length < total
@@ -174,18 +180,18 @@ export default function MarketplacePage() {
                   filters.side === s ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface'
                 }`}
               >
-                {s === 'buy' ? 'Buy' : 'Sell'}
+                {s === 'buy' ? 'Buy USDT' : 'Sell USDT'}
               </button>
             ))}
           </div>
 
-          {/* Coin selector */}
+          {/* Network selector */}
           <select
-            value={filters.coin}
-            onChange={(e) => setFilters((f) => ({ ...f, coin: e.target.value }))}
+            value={filters.network}
+            onChange={(e) => setFilters((f) => ({ ...f, network: e.target.value }))}
             className="px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            {COINS.map((c) => <option key={c}>{c}</option>)}
+            {NETWORKS.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}
           </select>
 
           {/* Payment method */}
@@ -219,7 +225,8 @@ export default function MarketplacePage() {
 
         <div className="mt-3 flex items-center justify-between">
           <h1 className="text-lg font-bold text-text-primary">
-            {filters.side === 'buy' ? 'Buy' : 'Sell'} {filters.coin}
+            {filters.side === 'buy' ? 'Buy USDT' : 'Sell USDT'}
+            {filters.network ? ` · ${filters.network === 'BEP20' ? 'BNB Chain' : filters.network}` : ''}
           </h1>
           <p className="text-sm text-text-muted">{total} offers</p>
         </div>
@@ -233,7 +240,7 @@ export default function MarketplacePage() {
       ) : error ? (
         <ErrorState title={error} onRetry={() => fetchAds(1, false)} />
       ) : ads.length === 0 ? (
-        <EmptyState title="No offers found" description="Try adjusting your filters" />
+        <EmptyState title="No offers found" description="Try adjusting your filters or check back later" />
       ) : (
         <div className="space-y-3">
           {ads.map((ad) => (

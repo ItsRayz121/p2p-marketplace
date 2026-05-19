@@ -32,14 +32,11 @@ function RateSourceBadge({ source }: { source: string }) {
 
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const COINS = ['USDT', 'BTC', 'ETH', 'BNB', 'TRX']
+const NETWORKS = ['BEP20', 'Aptos']
 
-const NETWORKS: Record<string, string[]> = {
-  USDT: ['TRC20', 'ERC20', 'BEP20'],
-  BTC: ['Bitcoin'],
-  ETH: ['ERC20'],
-  BNB: ['BEP20'],
-  TRX: ['TRC20'],
+const NETWORK_LABELS: Record<string, string> = {
+  BEP20: 'BNB Chain (BEP20)',
+  Aptos: 'Aptos',
 }
 
 const PAYMENT_METHODS = ['Easypaisa', 'JazzCash', 'Bank Transfer', 'HBL', 'MCB', 'Meezan Bank', 'UBL']
@@ -71,7 +68,7 @@ interface FormState {
 const defaultForm: FormState = {
   type: 'buy',
   coin: 'USDT',
-  network: 'TRC20',
+  network: 'BEP20',
   priceType: 'fixed',
   fixedPrice: '',
   floatOffset: '0',
@@ -124,7 +121,7 @@ function CreateAdPageContent() {
         setForm({
           type: ad.side,
           coin: ad.coin,
-          network: ad.network ?? NETWORKS[ad.coin]?.[0] ?? '',
+          network: NETWORKS.includes(ad.network ?? '') ? (ad.network ?? 'BEP20') : 'BEP20',
           priceType: ad.priceType ?? 'fixed',
           fixedPrice: ad.price,
           floatOffset: ad.floatOffset ?? '0',
@@ -254,7 +251,7 @@ function CreateAdPageContent() {
                   : 'border-border text-text-muted hover:border-primary/40'
               }`}
             >
-              {t === 'buy' ? 'Buy Crypto' : 'Sell Crypto'}
+              {t === 'buy' ? 'Buy USDT' : 'Sell USDT'}
             </button>
           ))}
         </div>
@@ -262,27 +259,20 @@ function CreateAdPageContent() {
 
       {/* Coin + Network */}
       <div className="bg-white border border-border rounded-xl p-5 space-y-4">
-        <p className="text-sm font-semibold text-text-primary">Coin & Network</p>
+        <p className="text-sm font-semibold text-text-primary">Asset & Network</p>
         <div>
-          <label className="text-xs text-text-muted mb-1.5 block">Coin</label>
-          <div className="flex flex-wrap gap-2">
-            {COINS.map((c) => (
-              <button
-                key={c}
-                onClick={() => { setField('coin', c); setField('network', NETWORKS[c][0]) }}
-                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-                  form.coin === c ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-muted hover:border-primary/40'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
+          <label className="text-xs text-text-muted mb-1.5 block">Asset</label>
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-semibold">
+              USDT
+            </span>
+            <span className="text-xs text-text-muted">Tether USD — only supported stablecoin</span>
           </div>
         </div>
         <div>
           <label className="text-xs text-text-muted mb-1.5 block">Network</label>
           <div className="flex flex-wrap gap-2">
-            {(NETWORKS[form.coin] ?? []).map((n) => (
+            {NETWORKS.map((n) => (
               <button
                 key={n}
                 onClick={() => setField('network', n)}
@@ -290,7 +280,7 @@ function CreateAdPageContent() {
                   form.network === n ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-muted hover:border-primary/40'
                 }`}
               >
-                {n}
+                {NETWORK_LABELS[n]}
               </button>
             ))}
           </div>

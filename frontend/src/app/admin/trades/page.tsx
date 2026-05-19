@@ -148,7 +148,7 @@ export default function TradesPage() {
         </select>
         <div className="w-36">
           <Input
-            placeholder="Coin (BTC, USDT...)"
+            placeholder="Coin (e.g. USDT)"
             value={coinFilter}
             onChange={(e) => { setCoinFilter(e.target.value.toUpperCase()); setPage(1) }}
           />
