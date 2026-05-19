@@ -1347,6 +1347,22 @@ export default function GasPage() {
                           <div className="flex justify-between"><span className="text-gray-500">Token Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>
                         )}
                         <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span></div>
+
+                        {/* Delivery network fee — informational, absorbed into platform fee */}
+                        {networkFee?.supported && networkFee.estimatedFeeNative != null && networkFee.estimatedFeeNative > 0 && (
+                          <div className="flex justify-between items-start gap-2 pl-3 border-l-2 border-blue-100">
+                            <span className="text-blue-400 italic">
+                              ↳ incl. {selectedChain?.name ?? ''} delivery fee
+                            </span>
+                            <span className="text-blue-400 italic text-right">
+                              <span className="block">~{networkFee.estimatedFeeNative.toFixed(6)} {networkFee.symbol}</span>
+                              {networkFee.estimatedFeeUsd != null && (
+                                <span className="block text-blue-300">≈ ${networkFee.estimatedFeeUsd.toFixed(4)}</span>
+                              )}
+                            </span>
+                          </div>
+                        )}
+
                         <div className="flex justify-between pt-1.5 border-t border-gray-200">
                           <span className="font-semibold text-gray-700">To Platform</span>
                           <span className="font-semibold text-gray-800">${computedUsd.toFixed(2)} USDT</span>
@@ -1367,6 +1383,7 @@ export default function GasPage() {
                         </div>
                         <p className="text-gray-400 italic pt-0.5">
                           ${computedUsd.toFixed(2)} USDT to platform + {feeIsLive ? 'live' : 'est.'} {nativeDisplay ?? networkFeeUsd_display} {selectedCryptoNetwork} transfer fee deducted by your wallet.
+                          {networkFee?.supported && networkFee.estimatedFeeNative ? ` Platform absorbs ~${networkFee.estimatedFeeNative.toFixed(6)} ${networkFee.symbol} to deliver gas to your address.` : ''}
                           {!feeIsLive && ' May vary with network conditions.'}
                         </p>
                       </div>
