@@ -934,13 +934,13 @@ export default function GasPage() {
                       </div>
                     </div>
 
-                    {/* Live network fee reference */}
+                    {/* Approx network fee reference (live RPC, may vary per block) */}
                     {networkFee?.supported && networkFee.estimatedFeeNative != null && (
                       <div className="mt-2 pt-2 border-t border-gray-200">
                         <div className="flex items-start gap-1.5 text-gray-500">
                           <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                           <div>
-                            <span className="font-medium text-gray-600">Current {selectedChain.name} network fee: </span>
+                            <span className="font-medium text-gray-600">Approx. {selectedChain.name} network fee: </span>
                             <span className="font-semibold text-gray-700">
                               ~{networkFee.estimatedFeeNative.toFixed(6)} {networkFee.symbol}
                               {networkFee.estimatedFeeUsd != null && ` (≈ $${networkFee.estimatedFeeUsd.toFixed(4)})`}
@@ -1268,7 +1268,7 @@ export default function GasPage() {
                           <div className="flex-1">
                             <p className="text-sm font-bold text-gray-900">USDT BEP20</p>
                             <p className="text-xs text-gray-400">
-                              {bepConfigured ? 'BNB Smart Chain · ~$0.29 fee' : 'Coming soon — not yet configured'}
+                              {bepConfigured ? 'BNB Smart Chain · est. ~$0.29 network fee' : 'Coming soon — not yet configured'}
                             </p>
                             {bepAddr && (
                               <p className="text-xs font-mono text-gray-400 mt-0.5">{bepAddr.slice(0, 8)}...{bepAddr.slice(-6)}</p>
@@ -1347,14 +1347,14 @@ export default function GasPage() {
                           <span className="font-semibold text-gray-800">${computedUsd.toFixed(2)} USDT</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-500">+ Network Fee ({selectedCryptoNetwork})</span>
+                          <span className="text-gray-500">+ Est. network fee ({selectedCryptoNetwork})</span>
                           <span className="font-semibold text-orange-600">{networkFeeDisplay}</span>
                         </div>
                         <div className="flex justify-between pt-1.5 border-t border-gray-200">
                           <span className="font-bold text-gray-900">Total Wallet Cost</span>
                           <span className="font-bold text-purple-700">~${totalWalletCost.toFixed(2)} USDT</span>
                         </div>
-                        <p className="text-gray-400 italic pt-0.5">Your wallet will deduct ${computedUsd.toFixed(2)} to platform + {networkFeeDisplay} {selectedCryptoNetwork} network fee.</p>
+                        <p className="text-gray-400 italic pt-0.5">${computedUsd.toFixed(2)} to platform + approx. {networkFeeDisplay} network fee. Actual fee may vary with network conditions.</p>
                       </div>
                     )
                   })()}
