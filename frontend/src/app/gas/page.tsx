@@ -461,7 +461,7 @@ export default function GasPage() {
       .finally(() => setMethodsLoading(false))
   }, [phase, pkrMethods, cryptoMethods])
 
-  // Fetch live network gas fee when the address step is reached
+  // Fetch live network gas fee when the address step is reached (fee shown in order summary there)
   useEffect(() => {
     if (phase !== PHASE.ADDRESS || !selectedChain) return
     setNetworkFee(null)
@@ -896,7 +896,7 @@ export default function GasPage() {
                     )}
                   </div>
 
-                  {/* Summary */}
+                  {/* Order Summary — all fees before proceeding to payment */}
                   <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-xs">
                     <p className="font-bold text-gray-400 uppercase tracking-wide mb-1">Order Summary</p>
                     <div className="flex justify-between"><span className="text-gray-500">Network</span><span className="font-semibold text-gray-800">{selectedChain.name}</span></div>
@@ -920,8 +920,6 @@ export default function GasPage() {
                         <span className="font-semibold text-gray-800">${gasValueUsd.toFixed(2)} USDT</span>
                       </div>
                     )}
-
-                    {/* ── Platform charges — delivery fee first, then service fee ── */}
                     <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
                       <p className="text-gray-400 font-semibold uppercase tracking-wide" style={{fontSize:'0.65rem'}}>Platform charges</p>
                       {networkFee?.supported && (networkFee.estimatedFeeNative ?? 0) > 0 ? (
@@ -950,7 +948,6 @@ export default function GasPage() {
                         <span className="font-semibold text-gray-800">${platformFeeUsdt.toFixed(2)} USDT</span>
                       </div>
                     </div>
-
                     <div className="flex justify-between pt-2 border-t border-gray-200">
                       <span className="text-gray-700 font-semibold">You Pay</span>
                       <div className="text-right">
@@ -958,17 +955,13 @@ export default function GasPage() {
                         <p className="text-gray-400">≈ PKR {computedPkr.toFixed(0)}</p>
                       </div>
                     </div>
-
-                    {/* Remaining context about the gas amount's utility */}
                     {networkFee?.supported && networkFee.estimatedFeeNative != null && amountNum > 0 && networkFee.estimatedFeeNative > 0 && (
                       <div className="mt-1 pt-2 border-t border-gray-200">
                         <div className="flex items-start gap-1.5 text-gray-500">
                           <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                          <div>
-                            <p className="text-gray-400">
-                              Your {amount} {selectedToken.symbol} covers ~{Math.floor(amountNum / networkFee.estimatedFeeNative).toLocaleString()} {selectedChain.name} transfers
-                            </p>
-                          </div>
+                          <p className="text-gray-400">
+                            Your {amount} {selectedToken.symbol} covers ~{Math.floor(amountNum / networkFee.estimatedFeeNative).toLocaleString()} {selectedChain.name} transfers
+                          </p>
                         </div>
                       </div>
                     )}
