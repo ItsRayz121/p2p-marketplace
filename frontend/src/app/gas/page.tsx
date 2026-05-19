@@ -1327,11 +1327,16 @@ export default function GasPage() {
 
                   {/* Amount to pay — full transparent breakdown */}
                   {selectedCryptoNetwork && (() => {
-                    const methodData = selectedCryptoNetwork === 'BEP20' ? cryptoMethods?.bep20 : cryptoMethods?.aptos
+                    const methodData        = selectedCryptoNetwork === 'BEP20' ? cryptoMethods?.bep20 : cryptoMethods?.aptos
                     const networkFeeUsd     = methodData?.feeUsd ?? (selectedCryptoNetwork === 'BEP20' ? 0.29 : 0.01)
-                    const networkFeeDisplay = methodData?.fee    ?? (selectedCryptoNetwork === 'BEP20' ? '~$0.29' : '~$0.01')
+                    const networkFeeUsd_display = networkFeeUsd < 0.001  ? `~$${networkFeeUsd.toFixed(5)}`
+                                               : networkFeeUsd < 0.01   ? `~$${networkFeeUsd.toFixed(4)}`
+                                               : networkFeeUsd < 0.10   ? `~$${networkFeeUsd.toFixed(3)}`
+                                               : `~$${networkFeeUsd.toFixed(2)}`
+                    const nativeDisplay     = methodData?.feeNativeDisplay ?? null
                     const feeIsLive         = methodData?.feeIsLive ?? false
                     const totalWalletCost   = computedUsd + networkFeeUsd
+                    const totalDisplay      = totalWalletCost < 0.01 ? `~$${totalWalletCost.toFixed(4)}` : `~$${totalWalletCost.toFixed(2)}`
                     return (
                       <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5">
                         <div className="flex justify-between"><span className="text-gray-500">Gas Ordered</span><span className="font-semibold">{amount} {selectedToken?.symbol}</span></div>
@@ -1346,19 +1351,22 @@ export default function GasPage() {
                           <span className="font-semibold text-gray-700">To Platform</span>
                           <span className="font-semibold text-gray-800">${computedUsd.toFixed(2)} USDT</span>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-500">
-                            + {feeIsLive ? 'Live' : 'Est.'} network fee ({selectedCryptoNetwork})
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="text-gray-500 shrink-0">
+                            + {feeIsLive ? 'Live' : 'Est.'} USDT transfer fee · {selectedCryptoNetwork}
                             {feeIsLive && <span className="ml-1 text-green-500 font-semibold">●</span>}
                           </span>
-                          <span className="font-semibold text-orange-600">{networkFeeDisplay}</span>
+                          <span className="font-semibold text-orange-600 text-right">
+                            {nativeDisplay && <span className="block">{nativeDisplay}</span>}
+                            <span className="block text-orange-400">{networkFeeUsd_display}</span>
+                          </span>
                         </div>
                         <div className="flex justify-between pt-1.5 border-t border-gray-200">
                           <span className="font-bold text-gray-900">Total Wallet Cost</span>
-                          <span className="font-bold text-purple-700">~${totalWalletCost.toFixed(2)} USDT</span>
+                          <span className="font-bold text-purple-700">{totalDisplay} USDT</span>
                         </div>
                         <p className="text-gray-400 italic pt-0.5">
-                          ${computedUsd.toFixed(2)} to platform + {feeIsLive ? 'live' : 'approx.'} {networkFeeDisplay} {selectedCryptoNetwork} network fee.
+                          ${computedUsd.toFixed(2)} USDT to platform + {feeIsLive ? 'live' : 'est.'} {nativeDisplay ?? networkFeeUsd_display} {selectedCryptoNetwork} transfer fee deducted by your wallet.
                           {!feeIsLive && ' May vary with network conditions.'}
                         </p>
                       </div>
@@ -1434,10 +1442,10 @@ export default function GasPage() {
                           <CopyButton text={order.paymentAmount} />
                         </div>
                         <p className="text-xs text-gray-400 mt-1.5">
-                          Send exactly this amount to the address above. Your wallet will also deduct a separate {order.paymentNetwork} network fee ({
+                          Send exactly this amount to the address above. Your wallet will also deduct a separate {order.paymentNetwork} USDT transfer fee ({
                             (() => {
                               const m = order.paymentNetwork === 'BEP20' ? cryptoMethods?.bep20 : cryptoMethods?.aptos
-                              return m?.fee ?? (order.paymentNetwork === 'BEP20' ? '~$0.29' : '~$0.01')
+                              return m?.feeNativeDisplay ?? m?.fee ?? (order.paymentNetwork === 'BEP20' ? '~$0.29' : '~$0.01')
                             })()
                           }) when sending.
                         </p>

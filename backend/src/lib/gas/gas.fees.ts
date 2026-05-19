@@ -21,14 +21,33 @@ export interface NetworkFeeResult {
   feeNative: number
   nativeSymbol: string
   isLive: boolean
-  /** Ready-to-display string, e.g. "~$0.29" */
+  /** USD display with adaptive precision, e.g. "~$0.04" or "~$0.0042" */
   feeDisplay: string
+  /** Native token amount display, e.g. "0.000065 BNB" */
+  feeNativeDisplay: string
 }
 
 // Gas limit for an ERC-20 USDT transfer on any EVM chain (vs 21,000 for native)
 const ERC20_GAS_LIMIT = 65_000n
 
 const STABLES = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP'])
+
+/** Adaptive USD precision — shows ~$0.04 not ~$0.00 for sub-cent fees */
+function fmtUsd(usd: number): string {
+  if (usd < 0.001)  return `~$${usd.toFixed(5)}`
+  if (usd < 0.01)   return `~$${usd.toFixed(4)}`
+  if (usd < 0.10)   return `~$${usd.toFixed(3)}`
+  return `~$${usd.toFixed(2)}`
+}
+
+/** Adaptive native precision — shows enough sig figs regardless of chain */
+function fmtNative(amount: number, symbol: string): string {
+  if (amount <= 0)      return `0 ${symbol}`
+  if (amount < 0.000001) return `${amount.toFixed(8)} ${symbol}`
+  if (amount < 0.001)    return `${amount.toFixed(6)} ${symbol}`
+  if (amount < 0.1)      return `${amount.toFixed(5)} ${symbol}`
+  return `${amount.toFixed(4)} ${symbol}`
+}
 
 async function getUsdPrice(symbol: string): Promise<number> {
   if (STABLES.has(symbol.toUpperCase())) return 1.0
@@ -53,7 +72,10 @@ async function toCache(key: string, result: NetworkFeeResult, ttl = 30): Promise
 }
 
 function fallback(symbol: string, defaultUsd: number): NetworkFeeResult {
-  return { feeUsd: defaultUsd, feeNative: 0, nativeSymbol: symbol, isLive: false, feeDisplay: `~$${defaultUsd.toFixed(2)}` }
+  return {
+    feeUsd: defaultUsd, feeNative: 0, nativeSymbol: symbol, isLive: false,
+    feeDisplay: fmtUsd(defaultUsd), feeNativeDisplay: `~${fmtNative(0, symbol)}`,
+  }
 }
 
 // ── EVM chains ─────────────────────────────────────────────────────────────────
@@ -70,7 +92,10 @@ async function evmFee(chainId: GasChainId, nativeSymbol: string, defaultUsd: num
     const nativeUsd = await getUsdPrice(nativeSymbol)
     if (nativeUsd > 0) {
       const feeUsd = feeNative * nativeUsd
-      const result: NetworkFeeResult = { feeUsd, feeNative, nativeSymbol, isLive: true, feeDisplay: `~$${feeUsd.toFixed(2)}` }
+      const result: NetworkFeeResult = {
+        feeUsd, feeNative, nativeSymbol, isLive: true,
+        feeDisplay: fmtUsd(feeUsd), feeNativeDisplay: fmtNative(feeNative, nativeSymbol),
+      }
       await toCache(key, result)
       return result
     }
@@ -105,7 +130,10 @@ async function tronFee(): Promise<NetworkFeeResult> {
         const trxUsd = await getUsdPrice('TRX')
         if (trxUsd > 0) {
           const feeUsd = feeTrx * trxUsd
-          const result: NetworkFeeResult = { feeUsd, feeNative: feeTrx, nativeSymbol: 'TRX', isLive: true, feeDisplay: `~$${feeUsd.toFixed(2)}` }
+          const result: NetworkFeeResult = {
+            feeUsd, feeNative: feeTrx, nativeSymbol: 'TRX', isLive: true,
+            feeDisplay: fmtUsd(feeUsd), feeNativeDisplay: fmtNative(feeTrx, 'TRX'),
+          }
           await toCache(key, result)
           return result
         }
@@ -139,7 +167,10 @@ async function aptosFee(): Promise<NetworkFeeResult> {
       const aptUsd = await getUsdPrice('APT')
       if (aptUsd > 0) {
         const feeUsd = feeApt * aptUsd
-        const result: NetworkFeeResult = { feeUsd, feeNative: feeApt, nativeSymbol: 'APT', isLive: true, feeDisplay: `~$${feeUsd.toFixed(2)}` }
+        const result: NetworkFeeResult = {
+          feeUsd, feeNative: feeApt, nativeSymbol: 'APT', isLive: true,
+          feeDisplay: fmtUsd(feeUsd), feeNativeDisplay: fmtNative(feeApt, 'APT'),
+        }
         await toCache(key, result)
         return result
       }
@@ -180,7 +211,10 @@ async function solanaFee(): Promise<NetworkFeeResult> {
       const solUsd = await getUsdPrice('SOL')
       if (solUsd > 0) {
         const feeUsd = feeSol * solUsd
-        const result: NetworkFeeResult = { feeUsd, feeNative: feeSol, nativeSymbol: 'SOL', isLive: true, feeDisplay: `~$${feeUsd.toFixed(2)}` }
+        const result: NetworkFeeResult = {
+          feeUsd, feeNative: feeSol, nativeSymbol: 'SOL', isLive: true,
+          feeDisplay: fmtUsd(feeUsd), feeNativeDisplay: fmtNative(feeSol, 'SOL'),
+        }
         await toCache(key, result)
         return result
       }
@@ -206,13 +240,19 @@ async function tonFee(): Promise<NetworkFeeResult> {
     const tonUsd = await getUsdPrice('TON')
     if (tonUsd > 0) {
       const feeUsd = JETTON_FEE_TON * tonUsd
-      const result: NetworkFeeResult = { feeUsd, feeNative: JETTON_FEE_TON, nativeSymbol: 'TON', isLive: true, feeDisplay: `~$${feeUsd.toFixed(2)}` }
+      const result: NetworkFeeResult = {
+        feeUsd, feeNative: JETTON_FEE_TON, nativeSymbol: 'TON', isLive: true,
+        feeDisplay: fmtUsd(feeUsd), feeNativeDisplay: fmtNative(JETTON_FEE_TON, 'TON'),
+      }
       await toCache(key, result, 60)
       return result
     }
   } catch { /* fall through */ }
 
-  return { feeUsd: defaultUsd, feeNative: JETTON_FEE_TON, nativeSymbol: 'TON', isLive: false, feeDisplay: `~$${defaultUsd.toFixed(2)}` }
+  return {
+    feeUsd: defaultUsd, feeNative: JETTON_FEE_TON, nativeSymbol: 'TON', isLive: false,
+    feeDisplay: fmtUsd(defaultUsd), feeNativeDisplay: fmtNative(JETTON_FEE_TON, 'TON'),
+  }
 }
 
 // ── SUI ───────────────────────────────────────────────────────────────────────
@@ -243,7 +283,10 @@ async function suiFee(): Promise<NetworkFeeResult> {
         const suiUsd = await getUsdPrice('SUI')
         if (suiUsd > 0) {
           const feeUsd = feeSui * suiUsd
-          const result: NetworkFeeResult = { feeUsd, feeNative: feeSui, nativeSymbol: 'SUI', isLive: true, feeDisplay: `~$${feeUsd.toFixed(2)}` }
+          const result: NetworkFeeResult = {
+            feeUsd, feeNative: feeSui, nativeSymbol: 'SUI', isLive: true,
+            feeDisplay: fmtUsd(feeUsd), feeNativeDisplay: fmtNative(feeSui, 'SUI'),
+          }
           await toCache(key, result)
           return result
         }
