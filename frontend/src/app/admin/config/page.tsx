@@ -123,6 +123,10 @@ export default function ConfigPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
   const [showSensitive, setShowSensitive] = useState<Record<string, boolean>>({})
+  const [newKey, setNewKey] = useState<string | null>(null)
+  const [newValue, setNewValue] = useState('')
+  const [newSaving, setNewSaving] = useState(false)
+  const [newError, setNewError] = useState<string | null>(null)
 
   useEffect(() => {
     if (user && user.role !== 'super_admin') router.replace('/admin')
@@ -158,6 +162,23 @@ export default function ConfigPage() {
       setSaveError(err instanceof Error ? err.message : 'Failed to save config')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function saveNew(key: string) {
+    if (!newValue.trim()) return
+    setNewSaving(true)
+    setNewError(null)
+    try {
+      const updated = await adminApi.updateConfig({ key, value: newValue.trim() })
+      setRows((prev) => [...prev, { id: updated.id ?? key, key, value: newValue.trim(), updatedAt: updated.updatedAt }])
+      setSaveSuccess(`"${key}" created successfully.`)
+      setNewKey(null)
+      setNewValue('')
+    } catch (err) {
+      setNewError(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setNewSaving(false)
     }
   }
 
@@ -305,6 +326,82 @@ export default function ConfigPage() {
           </div>
         </div>
       ))}
+
+      {/* Known keys not yet set */}
+      {(() => {
+        const existingKeys = new Set(rows.map((r) => r.key))
+        const unset = Object.entries(KEY_META).filter(([k, m]) => !existingKeys.has(k) && !m.readonly)
+        if (unset.length === 0) return null
+        const grouped2: Record<string, typeof unset> = {}
+        for (const entry of unset) {
+          const cat = entry[1].category
+          if (!grouped2[cat]) grouped2[cat] = []
+          grouped2[cat].push(entry)
+        }
+        return (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-text-primary">Not Yet Configured</h2>
+              <p className="text-xs text-text-muted mt-0.5">These known settings have no value in the database. Click Set to configure them.</p>
+            </div>
+            {Object.entries(grouped2).map(([cat, entries]) => (
+              <div key={cat} className="bg-white rounded-xl border border-border overflow-hidden">
+                <div className="px-5 py-3 bg-surface border-b border-border">
+                  <h3 className="text-sm font-semibold text-text-primary">{cat}</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-border">
+                      {entries.map(([k, meta]) => (
+                        <tr key={k} className="hover:bg-surface/30">
+                          <td className="px-5 py-3 align-top w-48">
+                            <p className="font-medium text-text-primary text-xs">{meta.label}</p>
+                            <p className="font-mono text-xs text-text-muted mt-0.5">{k}</p>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <p className="text-xs text-text-secondary">{meta.description}</p>
+                          </td>
+                          <td className="px-4 py-3 align-top w-64">
+                            {newKey === k ? (
+                              <div className="space-y-1.5">
+                                <input
+                                  value={newValue}
+                                  onChange={(e) => setNewValue(e.target.value)}
+                                  placeholder={meta.placeholder ?? 'Enter value…'}
+                                  className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs font-mono text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveNew(k)
+                                    if (e.key === 'Escape') { setNewKey(null); setNewValue('') }
+                                  }}
+                                />
+                                {newError && <p className="text-danger text-xs">{newError}</p>}
+                                <div className="flex gap-1.5">
+                                  <Button size="sm" loading={newSaving} onClick={() => saveNew(k)}>Save</Button>
+                                  <Button size="sm" variant="secondary" onClick={() => { setNewKey(null); setNewValue('') }} disabled={newSaving}>Cancel</Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-text-muted italic">not set</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 align-top text-right w-20">
+                            {newKey !== k && (
+                              <Button size="sm" variant="ghost" onClick={() => { setNewKey(k); setNewValue(''); setNewError(null) }}>
+                                Set
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Infrastructure secrets notice */}
       <div className="bg-surface rounded-xl border border-border px-5 py-4 text-xs text-text-muted">
