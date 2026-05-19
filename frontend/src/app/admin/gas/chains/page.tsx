@@ -1,6 +1,7 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
+import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -70,6 +71,113 @@ function presetDisplay(amounts: number[]): string {
   return Array.isArray(amounts) ? amounts.join(', ') : ''
 }
 
+function isNonDirectImageUrl(url: string): boolean {
+  if (!url) return false
+  try {
+    const u = new URL(url)
+    const blockedHosts = ['drive.google.com', 'share.google.com', 'docs.google.com']
+    if (blockedHosts.some((h) => u.hostname === h || u.hostname.endsWith('.' + h))) return true
+    const imageExts = ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif']
+    const hasImageExt = imageExts.some((ext) => u.pathname.toLowerCase().endsWith(ext))
+    const trustedHosts = ['res.cloudinary.com', 'githubusercontent.com', 'cryptologos.cc', 'icons8.com']
+    const isTrustedHost = trustedHosts.some((h) => u.hostname.includes(h))
+    return !hasImageExt && !isTrustedHost
+  } catch {
+    return false
+  }
+}
+
+// ─── Logo Upload Field ────────────────────────────────────────────────────────
+
+function LogoUploadField({
+  logoUrl,
+  onLogoUrlChange,
+}: {
+  logoUrl: string
+  onLogoUrlChange: (url: string) => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const { upload, uploading, error: uploadError } = useAdminLogoUpload()
+  const [imgError, setImgError] = useState(false)
+
+  const urlWarn = isNonDirectImageUrl(logoUrl)
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImgError(false)
+    try {
+      const url = await upload(file)
+      onLogoUrlChange(url)
+    } catch { /* error shown via uploadError */ }
+    e.target.value = ''
+  }
+
+  return (
+    <div className="col-span-2 space-y-2">
+      <label className="text-xs font-medium text-text-muted block">Logo</label>
+
+      {/* Preview */}
+      {logoUrl && !imgError && (
+        <div className="flex items-center gap-3 p-2 bg-surface rounded-lg border border-border">
+          <img
+            src={logoUrl}
+            alt="Logo preview"
+            className="w-10 h-10 rounded-full object-contain border border-border"
+            onError={() => setImgError(true)}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-text-muted truncate">{logoUrl}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { onLogoUrlChange(''); setImgError(false) }}
+            className="text-danger text-xs hover:underline flex-shrink-0"
+          >
+            Remove
+          </button>
+        </div>
+      )}
+      {logoUrl && imgError && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-danger text-xs">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          Image failed to load — URL may be broken or blocked by CORS.
+        </div>
+      )}
+
+      {/* Upload button */}
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleFile} />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className="w-full py-2 border-2 border-dashed border-border rounded-lg text-sm text-text-muted hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+      >
+        {uploading ? 'Uploading...' : logoUrl ? 'Replace with upload (PNG/JPG/SVG/WebP · max 2MB)' : 'Upload logo (PNG/JPG/SVG/WebP · max 2MB)'}
+      </button>
+
+      {/* Or paste URL */}
+      <div>
+        <label className="text-xs font-medium text-text-muted block mb-1">Or paste direct image URL</label>
+        <input
+          type="url"
+          placeholder="https://example.com/logo.png"
+          value={logoUrl}
+          onChange={(e) => { onLogoUrlChange(e.target.value); setImgError(false) }}
+          className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+        />
+        {urlWarn && (
+          <p className="text-xs text-warning mt-1">
+            Warning: this URL does not look like a direct image link. Google Drive share links are not supported — use a direct CDN or upload the file instead.
+          </p>
+        )}
+      </div>
+
+      {uploadError && <p className="text-xs text-danger">{uploadError}</p>}
+    </div>
+  )
+}
+
 function parsePresets(raw: string): number[] {
   return raw.split(',').map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n) && n > 0)
 }
@@ -97,6 +205,8 @@ function ChainModal({
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm({ ...form, [key]: e.target.value })
   }
+
+  function setLogoUrl(url: string) { setForm({ ...form, logoUrl: url }) }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -194,10 +304,7 @@ function ChainModal({
               />
               <p className="text-xs text-text-muted mt-0.5">Wallet auto-pauses below this USD balance.</p>
             </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-text-muted block mb-1">Logo URL</label>
-              <Input placeholder="https://..." value={form.logoUrl} onChange={field('logoUrl')} />
-            </div>
+            <LogoUploadField logoUrl={form.logoUrl} onLogoUrlChange={setLogoUrl} />
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Explorer Base URL</label>
               <Input placeholder="https://tronscan.org/#" value={form.explorerBase} onChange={field('explorerBase')} />
@@ -272,6 +379,8 @@ function TokenModal({
       setForm({ ...form, [key]: e.target.value })
   }
 
+  function setLogoUrl(url: string) { setForm({ ...form, logoUrl: url }) }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -311,10 +420,7 @@ function TokenModal({
               <label className="text-xs font-medium text-text-muted block mb-1">Contract Address</label>
               <Input placeholder="0x... or T... (leave blank for native)" value={form.contractAddress} onChange={field('contractAddress')} />
             </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-text-muted block mb-1">Logo URL</label>
-              <Input placeholder="https://..." value={form.logoUrl} onChange={field('logoUrl')} />
-            </div>
+            <LogoUploadField logoUrl={form.logoUrl} onLogoUrlChange={setLogoUrl} />
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Min Amount *</label>
               <Input type="number" step="any" value={form.minAmount} onChange={field('minAmount')} />
@@ -604,9 +710,9 @@ export default function GasChainsAdminPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Gas Chain Config</h1>
+          <h1 className="text-2xl font-bold text-text-primary">Crypto Gas Fee Config</h1>
           <p className="text-text-muted text-sm mt-0.5">
-            Manage chains and tokens — changes appear on the Buy Gas page immediately.
+            Manage crypto gas fee chains and tokens — changes appear on the Buy Gas page immediately.
           </p>
         </div>
       </div>
@@ -673,7 +779,14 @@ export default function GasChainsAdminPage() {
                       <tr key={c.id} className="hover:bg-surface/50 transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            {c.logoUrl && <img src={c.logoUrl} alt={c.symbol} className="w-6 h-6 rounded-full" />}
+                            {c.logoUrl && (
+                              <img
+                                src={c.logoUrl}
+                                alt={c.symbol}
+                                className="w-6 h-6 rounded-full object-contain"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                              />
+                            )}
                             <span className="font-medium text-text-primary">{c.name}</span>
                             <span className="text-text-muted text-xs">({c.symbol})</span>
                           </div>
@@ -771,7 +884,14 @@ export default function GasChainsAdminPage() {
                       <tr key={t.id} className="hover:bg-surface/50 transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            {t.logoUrl && <img src={t.logoUrl} alt={t.symbol} className="w-5 h-5 rounded-full" />}
+                            {t.logoUrl && (
+                              <img
+                                src={t.logoUrl}
+                                alt={t.symbol}
+                                className="w-5 h-5 rounded-full object-contain"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                              />
+                            )}
                             <span className="font-medium text-text-primary">{t.name}</span>
                             <span className="text-text-muted text-xs">({t.symbol})</span>
                           </div>
@@ -841,8 +961,8 @@ export default function GasChainsAdminPage() {
         isOpen={!!confirmDeleteChain}
         onClose={() => setConfirmDeleteChain(null)}
         onConfirm={() => { if (confirmDeleteChain) void deleteChain(confirmDeleteChain) }}
-        title={`Delete Chain: ${confirmDeleteChain?.name ?? ''}`}
-        description="This will delete the chain and all its tokens. Orders referencing these tokens cannot be deleted. This action cannot be undone."
+        title={`Delete Gas Chain: ${confirmDeleteChain?.name ?? ''}`}
+        description="This will delete the gas chain and all its tokens. Orders referencing these tokens cannot be deleted. This action cannot be undone."
         confirmLabel="Delete"
         confirmVariant="danger"
       />

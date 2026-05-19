@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import { cloudinary, CLOUDINARY_FOLDERS } from '../lib/cloudinary'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { env } from '../lib/env'
@@ -32,6 +33,22 @@ type JsonValue = Prisma.InputJsonValue
 const adminOrSuper = requireRole('admin', 'super_admin')
 const adminOrSuperOrKyc = requireRole('admin', 'super_admin', 'kyc_reviewer')
 const superAdminOnly = requireRole('super_admin')
+
+// Rejects known non-direct-image URLs (Google Drive share links etc.)
+function validateLogoUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    const blockedHosts = ['drive.google.com', 'share.google.com', 'docs.google.com']
+    if (blockedHosts.some((h) => u.hostname === h || u.hostname.endsWith('.' + h))) return false
+    const imageExts = ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif']
+    const hasImageExt = imageExts.some((ext) => u.pathname.toLowerCase().endsWith(ext))
+    const trustedHosts = ['res.cloudinary.com', 'githubusercontent.com', 'cryptologos.cc', 'icons8.com', 'cdn.']
+    const isTrustedHost = trustedHosts.some((h) => u.hostname.includes(h))
+    return hasImageExt || isTrustedHost
+  } catch {
+    return false
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2274,7 +2291,7 @@ export async function adminRoutes(app: FastifyInstance) {
       category:           z.string().min(1),
       networkLabel:       z.string().min(1),
       addressType:        z.enum(['TRC20', 'EVM', 'SOL', 'SUI', 'TON']),
-      logoUrl:            z.string().url().nullable().default(null),
+      logoUrl:            z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
       explorerBase:       z.string().url().nullable().default(null),
       backendChainId:     z.string().nullable().default(null),
       platformFeeUsdt: z.number().min(0).default(0.25),
@@ -2313,7 +2330,14 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('category' in body) updateData.category = body.category
     if ('networkLabel' in body) updateData.networkLabel = body.networkLabel
     if ('addressType' in body) updateData.addressType = body.addressType
-    if ('logoUrl' in body) updateData.logoUrl = body.logoUrl ?? null
+    if ('logoUrl' in body) {
+      const rawLogo = body.logoUrl ?? null
+      if (rawLogo !== null) {
+        if (typeof rawLogo !== 'string' || !validateLogoUrl(rawLogo))
+          throw new AppError('INVALID_URL', 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.', 400)
+      }
+      updateData.logoUrl = rawLogo
+    }
     if ('explorerBase' in body) updateData.explorerBase = body.explorerBase ?? null
     if ('backendChainId' in body) updateData.backendChainId = body.backendChainId ?? null
     if ('platformFeeUsdt' in body) updateData.platformFeeUsdt = Math.max(0, Number(body.platformFeeUsdt) || 0)
@@ -2435,7 +2459,7 @@ export async function adminRoutes(app: FastifyInstance) {
       symbol:          z.string().min(1),
       tokenType:       z.enum(['native', 'token']),
       contractAddress: z.string().nullable().default(null),
-      logoUrl:         z.string().url().nullable().default(null),
+      logoUrl:         z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
       priceSymbol:     z.string().min(1),
       minAmount:       z.number().positive().default(0.1),
       maxUsdValue:     z.number().positive().default(10),
@@ -2471,7 +2495,14 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('symbol' in body) updateData.symbol = body.symbol
     if ('tokenType' in body) updateData.tokenType = body.tokenType
     if ('contractAddress' in body) updateData.contractAddress = body.contractAddress ?? null
-    if ('logoUrl' in body) updateData.logoUrl = body.logoUrl ?? null
+    if ('logoUrl' in body) {
+      const rawLogo = body.logoUrl ?? null
+      if (rawLogo !== null) {
+        if (typeof rawLogo !== 'string' || !validateLogoUrl(rawLogo))
+          throw new AppError('INVALID_URL', 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.', 400)
+      }
+      updateData.logoUrl = rawLogo
+    }
     if ('priceSymbol' in body) updateData.priceSymbol = body.priceSymbol
     if ('minAmount' in body) updateData.minAmount = Number(body.minAmount)
     if ('maxUsdValue' in body) updateData.maxUsdValue = Number(body.maxUsdValue)
@@ -2498,6 +2529,39 @@ export async function adminRoutes(app: FastifyInstance) {
     await db.gasTokenConfig.delete({ where: { id } })
     await createAuditLog(req.user!.id, 'GAS_TOKEN_DELETED', 'GasTokenConfig', id, { symbol: token.symbol })
     return reply.send({ success: true })
+  })
+
+  // POST /admin/gas/logo-presign — Cloudinary presign for chain/token logo uploads (admin only)
+  app.post('/admin/gas/logo-presign', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const schema = z.object({
+      mimeType: z.string().regex(/^image\/(png|jpe?g|svg\+xml|webp)$/, 'Only PNG, JPG, SVG, and WebP are allowed'),
+    })
+    schema.parse(req.body) // validate MIME type only
+
+    if (!env.CLOUDINARY_API_SECRET || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_CLOUD_NAME) {
+      throw new AppError('CONFIG_ERROR', 'File upload is not configured', 503)
+    }
+
+    const folder = CLOUDINARY_FOLDERS.GAS_LOGO
+    const publicId = randomUUID()
+    const timestamp = Math.round(Date.now() / 1000)
+    const paramsToSign = { timestamp, public_id: publicId, folder }
+    const signature = cloudinary.utils.api_sign_request(paramsToSign, env.CLOUDINARY_API_SECRET)
+
+    return reply.send({
+      success: true,
+      data: {
+        url: `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+        fields: {
+          api_key: env.CLOUDINARY_API_KEY,
+          timestamp,
+          public_id: publicId,
+          folder,
+          signature,
+        },
+        publicUrl: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/${folder}/${publicId}`,
+      },
+    })
   })
 
   // ── POST /admin/gas/orders/:id/approve-pkr — approve a payment_uploaded PKR order ──

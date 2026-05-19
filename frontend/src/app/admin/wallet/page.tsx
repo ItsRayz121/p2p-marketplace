@@ -185,7 +185,7 @@ export default function WalletPage() {
         </div>
         {hotWallets.length === 0 ? (
           <div className="px-5 py-8 text-center text-text-muted text-sm">
-            No hot wallets configured. Add gas chains via the Gas Fee page.
+            No hot wallets configured. Add crypto gas fee chains via the Gas Fee page.
           </div>
         ) : (
           <div className="divide-y divide-border">
