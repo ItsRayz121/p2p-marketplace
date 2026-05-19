@@ -71,6 +71,21 @@ function explorerUrl(chain: string, explorerBase: string | null, txHash: string)
   return chain === 'TRON' ? `${explorerBase}/transaction/${txHash}` : `${explorerBase}/tx/${txHash}`
 }
 
+// ─── Payment QR URI builder ───────────────────────────────────────────────────
+// BEP20: EIP-681 token transfer URI so wallets (Trust Wallet, MetaMask) open
+//        with recipient address AND amount pre-filled.
+// Aptos / unknown: fall back to plain address.
+const USDT_BEP20_CONTRACT = '0x55d398326f99059fF775485246999027B3197955'
+const BSC_CHAIN_ID = 56
+
+function buildPaymentQrData(network: string, paymentAddress: string, paymentAmount: string): string {
+  if (network === 'BEP20') {
+    const amountWei = BigInt(Math.round(parseFloat(paymentAmount) * 1e18))
+    return `ethereum:${USDT_BEP20_CONTRACT}@${BSC_CHAIN_ID}/transfer?address=${paymentAddress}&uint256=${amountWei}`
+  }
+  return paymentAddress
+}
+
 // ─── Status labels ────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
@@ -1468,14 +1483,14 @@ export default function GasPage() {
                           <div className="w-48 h-48 rounded-2xl overflow-hidden border-4 border-white shadow-lg">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={`https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(order.paymentAddress)}`}
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(buildPaymentQrData(order.paymentNetwork, order.paymentAddress, order.paymentAmount))}`}
                               alt="Payment QR Code"
                               className="w-full h-full"
                               onError={() => setQrFailed(true)}
                             />
                           </div>
                         )}
-                        <p className="text-xs text-gray-400">{qrFailed ? 'Use the address and amount below' : 'Scan to get the address'}</p>
+                        <p className="text-xs text-gray-400">{qrFailed ? 'Use the address and amount below' : 'Scan to pay — address & amount included'}</p>
                       </div>
 
                       {/* Address */}
