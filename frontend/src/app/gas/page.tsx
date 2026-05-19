@@ -899,35 +899,58 @@ export default function GasPage() {
                   {/* Summary */}
                   <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-xs">
                     <p className="font-bold text-gray-400 uppercase tracking-wide mb-1">Order Summary</p>
-                    {[['Network', selectedChain.name], ['Token', selectedToken.symbol]].map(([l, v]) => (
-                      <div key={l} className="flex justify-between"><span className="text-gray-500">{l}</span><span className="font-semibold text-gray-800">{v}</span></div>
-                    ))}
-                    {/* Amount — with USDT equivalent in brackets */}
+                    <div className="flex justify-between"><span className="text-gray-500">Network</span><span className="font-semibold text-gray-800">{selectedChain.name}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Token</span><span className="font-semibold text-gray-800">{selectedToken.symbol}</span></div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Amount</span>
                       <span className="font-semibold text-gray-800">
                         {amount} {selectedToken.symbol}
-                        {priceUsd > 0 && amountNum > 0 && (
-                          <span className="text-gray-400 font-normal"> (≈ ${gasValueUsd.toFixed(2)})</span>
-                        )}
+                        {priceUsd > 0 && amountNum > 0 && <span className="text-gray-400 font-normal"> (≈ ${gasValueUsd.toFixed(2)})</span>}
                       </span>
                     </div>
                     {priceUsd > 0 && amountNum > 0 && (
-                      <>
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Market Price</span>
-                          <span className="font-semibold text-gray-800">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Token Value</span>
-                          <span className="font-semibold text-gray-800">${gasValueUsd.toFixed(2)} USDT</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Platform Fee</span>
-                          <span className="font-semibold text-gray-800">${platformFeeUsdt.toFixed(2)} USDT</span>
-                        </div>
-                      </>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Market Price</span>
+                        <span className="font-semibold text-gray-800">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
+                      </div>
                     )}
+                    {priceUsd > 0 && amountNum > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Token Value</span>
+                        <span className="font-semibold text-gray-800">${gasValueUsd.toFixed(2)} USDT</span>
+                      </div>
+                    )}
+
+                    {/* ── Platform charges — delivery fee first, then service fee ── */}
+                    <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
+                      <p className="text-gray-400 font-semibold uppercase tracking-wide" style={{fontSize:'0.65rem'}}>Platform charges</p>
+                      {networkFee?.supported && (networkFee.estimatedFeeNative ?? 0) > 0 ? (
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="text-gray-600 font-medium">
+                            {selectedChain.name} Network Fee
+                            {networkFee.gasPriceGwei != null && <span className="text-gray-400 font-normal"> · {networkFee.gasPriceGwei.toFixed(2)} Gwei</span>}
+                          </span>
+                          <span className="font-semibold text-gray-800 text-right">
+                            <span className="block">~{(networkFee.estimatedFeeNative ?? 0).toFixed(6)} {networkFee.symbol}</span>
+                            {networkFee.estimatedFeeUsd != null && (
+                              <span className="block text-gray-500 font-normal">
+                                {networkFee.estimatedFeeUsd < 0.001 ? `≈ $${networkFee.estimatedFeeUsd.toFixed(5)}` : networkFee.estimatedFeeUsd < 0.01 ? `≈ $${networkFee.estimatedFeeUsd.toFixed(4)}` : `≈ $${networkFee.estimatedFeeUsd.toFixed(3)}`}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 font-medium">{selectedChain.name} Network Fee</span>
+                          <span className="text-gray-400 italic">included in platform fee</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 font-medium">Platform Service Fee</span>
+                        <span className="font-semibold text-gray-800">${platformFeeUsdt.toFixed(2)} USDT</span>
+                      </div>
+                    </div>
+
                     <div className="flex justify-between pt-2 border-t border-gray-200">
                       <span className="text-gray-700 font-semibold">You Pay</span>
                       <div className="text-right">
@@ -936,25 +959,15 @@ export default function GasPage() {
                       </div>
                     </div>
 
-                    {/* Approx network fee reference (live RPC, may vary per block) */}
-                    {networkFee?.supported && networkFee.estimatedFeeNative != null && (
-                      <div className="mt-2 pt-2 border-t border-gray-200">
+                    {/* Remaining context about the gas amount's utility */}
+                    {networkFee?.supported && networkFee.estimatedFeeNative != null && amountNum > 0 && networkFee.estimatedFeeNative > 0 && (
+                      <div className="mt-1 pt-2 border-t border-gray-200">
                         <div className="flex items-start gap-1.5 text-gray-500">
                           <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                           <div>
-                            <span className="font-medium text-gray-600">Approx. {selectedChain.name} network fee: </span>
-                            <span className="font-semibold text-gray-700">
-                              ~{networkFee.estimatedFeeNative.toFixed(6)} {networkFee.symbol}
-                              {networkFee.estimatedFeeUsd != null && ` (≈ $${networkFee.estimatedFeeUsd.toFixed(4)})`}
-                            </span>
-                            {networkFee.model === 'gas' && networkFee.gasPriceGwei != null && (
-                              <span className="text-gray-400"> · {networkFee.gasPriceGwei.toFixed(2)} Gwei</span>
-                            )}
-                            {amountNum > 0 && networkFee.estimatedFeeNative > 0 && (
-                              <p className="text-gray-400 mt-0.5">
-                                Your {amount} {selectedToken.symbol} covers ~{Math.floor(amountNum / networkFee.estimatedFeeNative).toLocaleString()} transfers
-                              </p>
-                            )}
+                            <p className="text-gray-400">
+                              Your {amount} {selectedToken.symbol} covers ~{Math.floor(amountNum / networkFee.estimatedFeeNative).toLocaleString()} {selectedChain.name} transfers
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -1325,67 +1338,97 @@ export default function GasPage() {
                     })()}
                   </div>
 
-                  {/* Amount to pay — full transparent breakdown */}
+                  {/* Amount to pay — delivery-chain-first breakdown */}
                   {selectedCryptoNetwork && (() => {
-                    const methodData        = selectedCryptoNetwork === 'BEP20' ? cryptoMethods?.bep20 : cryptoMethods?.aptos
-                    const networkFeeUsd     = methodData?.feeUsd ?? (selectedCryptoNetwork === 'BEP20' ? 0.29 : 0.01)
-                    const networkFeeUsd_display = networkFeeUsd < 0.001  ? `~$${networkFeeUsd.toFixed(5)}`
-                                               : networkFeeUsd < 0.01   ? `~$${networkFeeUsd.toFixed(4)}`
-                                               : networkFeeUsd < 0.10   ? `~$${networkFeeUsd.toFixed(3)}`
-                                               : `~$${networkFeeUsd.toFixed(2)}`
-                    const nativeDisplay     = methodData?.feeNativeDisplay ?? null
-                    const feeIsLive         = methodData?.feeIsLive ?? false
-                    const totalWalletCost   = computedUsd + networkFeeUsd
-                    const totalDisplay      = totalWalletCost < 0.01 ? `~$${totalWalletCost.toFixed(4)}` : `~$${totalWalletCost.toFixed(2)}`
+                    const methodData    = selectedCryptoNetwork === 'BEP20' ? cryptoMethods?.bep20 : cryptoMethods?.aptos
+                    const payFeeUsd     = methodData?.feeUsd ?? (selectedCryptoNetwork === 'BEP20' ? 0.29 : 0.01)
+                    const payNative     = methodData?.feeNativeDisplay ?? null
+                    const payFeeDisplay = payFeeUsd < 0.001 ? `~$${payFeeUsd.toFixed(5)}`
+                                       : payFeeUsd < 0.01  ? `~$${payFeeUsd.toFixed(4)}`
+                                       : payFeeUsd < 0.10  ? `~$${payFeeUsd.toFixed(3)}`
+                                       : `~$${payFeeUsd.toFixed(2)}`
+                    const payIsLive     = methodData?.feeIsLive ?? false
+                    const totalCost     = computedUsd + payFeeUsd
+                    const totalDisplay  = `~$${totalCost.toFixed(2)}`
+
+                    // Delivery chain network fee (what the platform pays to send gas to the user)
+                    const hasDeliveryFee = networkFee?.supported && (networkFee.estimatedFeeNative ?? 0) > 0
+                    const deliveryNative = networkFee?.estimatedFeeNative ?? 0
+                    const deliveryUsd    = networkFee?.estimatedFeeUsd ?? null
+                    const deliverySymbol = networkFee?.symbol ?? selectedToken?.symbol ?? ''
+                    const deliveryUsdDisplay = deliveryUsd != null
+                      ? (deliveryUsd < 0.001 ? `≈ $${deliveryUsd.toFixed(5)}` : deliveryUsd < 0.01 ? `≈ $${deliveryUsd.toFixed(4)}` : `≈ $${deliveryUsd.toFixed(3)}`)
+                      : null
+
                     return (
                       <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5">
-                        <div className="flex justify-between"><span className="text-gray-500">Gas Ordered</span><span className="font-semibold">{amount} {selectedToken?.symbol}</span></div>
-                        {priceUsd > 0 && (
-                          <div className="flex justify-between"><span className="text-gray-500">Market Price</span><span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken?.symbol}</span></div>
-                        )}
-                        {priceUsd > 0 && (
-                          <div className="flex justify-between"><span className="text-gray-500">Token Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>
-                        )}
-                        <div className="flex justify-between"><span className="text-gray-500">Platform Fee</span><span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span></div>
 
-                        {/* Delivery network fee — informational, absorbed into platform fee */}
-                        {networkFee?.supported && networkFee.estimatedFeeNative != null && networkFee.estimatedFeeNative > 0 && (
-                          <div className="flex justify-between items-start gap-2 pl-3 border-l-2 border-blue-100">
-                            <span className="text-blue-400 italic">
-                              ↳ incl. {selectedChain?.name ?? ''} delivery fee
+                        {/* ── What you're ordering ── */}
+                        <div className="flex justify-between"><span className="text-gray-500">Gas Ordered</span><span className="font-semibold">{amount} {selectedToken?.symbol}</span></div>
+                        {priceUsd > 0 && <div className="flex justify-between"><span className="text-gray-500">Market Price</span><span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken?.symbol}</span></div>}
+                        {priceUsd > 0 && <div className="flex justify-between"><span className="text-gray-500">Token Value</span><span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span></div>}
+
+                        {/* ── Platform charges (always visible, chain-specific) ── */}
+                        <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
+                          <p className="text-gray-400 font-semibold uppercase tracking-wide" style={{fontSize:'0.65rem'}}>Platform charges</p>
+
+                          {/* Delivery network fee — primary, chain-specific */}
+                          {hasDeliveryFee ? (
+                            <div className="flex justify-between items-start gap-2">
+                              <span className="text-gray-600 font-medium">
+                                {selectedChain?.name ?? selectedToken?.symbol} Network Fee
+                                {networkFee?.gasPriceGwei != null && (
+                                  <span className="text-gray-400 font-normal"> · {networkFee.gasPriceGwei.toFixed(2)} Gwei</span>
+                                )}
+                              </span>
+                              <span className="font-semibold text-gray-800 text-right">
+                                <span className="block">~{deliveryNative.toFixed(6)} {deliverySymbol}</span>
+                                {deliveryUsdDisplay && <span className="block text-gray-500 font-normal">{deliveryUsdDisplay}</span>}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 font-medium">{selectedChain?.name ?? ''} Network Fee</span>
+                              <span className="text-gray-400 italic">included in platform fee</span>
+                            </div>
+                          )}
+
+                          {/* Platform service fee */}
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 font-medium">Platform Service Fee</span>
+                            <span className="font-semibold text-gray-800">${platformFeeUsdt.toFixed(2)} USDT</span>
+                          </div>
+                        </div>
+
+                        {/* ── Total to platform ── */}
+                        <div className="flex justify-between pt-1.5 border-t border-gray-200">
+                          <span className="font-bold text-gray-900">You Send to Platform</span>
+                          <span className="font-bold text-gray-900">${computedUsd.toFixed(2)} USDT</span>
+                        </div>
+
+                        {/* ── Payment method cost (your wallet deducts separately) ── */}
+                        <div className="pt-1.5 border-t border-dashed border-gray-200 space-y-1.5">
+                          <p className="text-gray-400 font-semibold uppercase tracking-wide" style={{fontSize:'0.65rem'}}>Your wallet also deducts</p>
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="text-gray-500">
+                              {selectedCryptoNetwork} USDT Transfer Fee
+                              {payIsLive && <span className="ml-1 text-green-500 font-semibold">● Live</span>}
+                              {!payIsLive && <span className="text-gray-400"> (est.)</span>}
                             </span>
-                            <span className="text-blue-400 italic text-right">
-                              <span className="block">~{networkFee.estimatedFeeNative.toFixed(6)} {networkFee.symbol}</span>
-                              {networkFee.estimatedFeeUsd != null && (
-                                <span className="block text-blue-300">≈ ${networkFee.estimatedFeeUsd.toFixed(4)}</span>
-                              )}
+                            <span className="font-semibold text-orange-600 text-right">
+                              {payNative && <span className="block">{payNative}</span>}
+                              <span className="block text-orange-400">{payFeeDisplay}</span>
                             </span>
                           </div>
-                        )}
+                        </div>
 
+                        {/* ── Grand total from wallet ── */}
                         <div className="flex justify-between pt-1.5 border-t border-gray-200">
-                          <span className="font-semibold text-gray-700">To Platform</span>
-                          <span className="font-semibold text-gray-800">${computedUsd.toFixed(2)} USDT</span>
-                        </div>
-                        <div className="flex justify-between items-start gap-2">
-                          <span className="text-gray-500 shrink-0">
-                            + {feeIsLive ? 'Live' : 'Est.'} USDT transfer fee · {selectedCryptoNetwork}
-                            {feeIsLive && <span className="ml-1 text-green-500 font-semibold">●</span>}
-                          </span>
-                          <span className="font-semibold text-orange-600 text-right">
-                            {nativeDisplay && <span className="block">{nativeDisplay}</span>}
-                            <span className="block text-orange-400">{networkFeeUsd_display}</span>
-                          </span>
-                        </div>
-                        <div className="flex justify-between pt-1.5 border-t border-gray-200">
-                          <span className="font-bold text-gray-900">Total Wallet Cost</span>
+                          <span className="font-bold text-gray-900">Total from Wallet</span>
                           <span className="font-bold text-purple-700">{totalDisplay} USDT</span>
                         </div>
-                        <p className="text-gray-400 italic pt-0.5">
-                          ${computedUsd.toFixed(2)} USDT to platform + {feeIsLive ? 'live' : 'est.'} {nativeDisplay ?? networkFeeUsd_display} {selectedCryptoNetwork} transfer fee deducted by your wallet.
-                          {networkFee?.supported && networkFee.estimatedFeeNative ? ` Platform absorbs ~${networkFee.estimatedFeeNative.toFixed(6)} ${networkFee.symbol} to deliver gas to your address.` : ''}
-                          {!feeIsLive && ' May vary with network conditions.'}
-                        </p>
+
+                        {!payIsLive && <p className="text-gray-400 italic">Transfer fee may vary with network conditions.</p>}
                       </div>
                     )
                   })()}
