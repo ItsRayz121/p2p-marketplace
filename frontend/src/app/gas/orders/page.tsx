@@ -44,13 +44,14 @@ function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' 
   if (s === 'delivered') return 'success'
   if (s === 'refunded') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
-  if (s === 'payment_detected' || s === 'sending' || s === 'refund_pending') return 'warning'
+  if (s === 'payment_uploaded' || s === 'payment_detected' || s === 'sending' || s === 'refund_pending') return 'warning'
   return 'default'
 }
 
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
-  payment_detected: 'Payment Detected',
+  payment_uploaded: 'Payment Under Review',
+  payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Delivered',
   failed:           'Failed',
@@ -96,7 +97,7 @@ function explorerTxUrl(chain: string, txHash: string): string {
 }
 
 function isInProgress(status: string): boolean {
-  return ['payment_pending', 'payment_detected', 'sending', 'refund_pending'].includes(status)
+  return ['payment_pending', 'payment_uploaded', 'payment_detected', 'sending', 'refund_pending'].includes(status)
 }
 
 // ─── Row ─────────────────────────────────────────────────────────────────────
@@ -108,7 +109,28 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
   })
 
   return (
-    <div className="grid grid-cols-[1fr_auto_auto_auto] sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center p-4 border-b border-border last:border-0 hover:bg-surface transition-colors">
+    <div className="border-b border-border last:border-0">
+      {order.status === 'payment_uploaded' && (
+        <div className="mx-4 mt-3 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-50 border border-purple-200">
+          <svg className="w-4 h-4 text-purple-500 shrink-0 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-xs text-purple-700 font-medium">
+            Your payment is under review. An admin will verify and release your gas shortly.
+          </p>
+        </div>
+      )}
+      {(order.status === 'payment_detected' || order.status === 'sending') && (
+        <div className="mx-4 mt-3 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
+          <svg className="w-4 h-4 text-blue-500 shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <p className="text-xs text-blue-700 font-medium">
+            {order.status === 'payment_detected' ? 'Payment confirmed — gas delivery in progress…' : 'Sending gas to your wallet…'}
+          </p>
+        </div>
+      )}
+    <div className="grid grid-cols-[1fr_auto_auto_auto] sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center p-4 hover:bg-surface transition-colors">
       {/* Date + ref + address */}
       <div className="min-w-0">
         <p className="text-xs text-text-muted">{date}</p>
@@ -164,6 +186,7 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
           </a>
         )}
       </div>
+    </div>
     </div>
   )
 }

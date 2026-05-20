@@ -262,7 +262,9 @@ export default function GasOrderDetailPage() {
 
   const isFailed = order.status === 'failed'
   const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
-  const isAwaitingPayment = order.status === 'payment_pending' || order.status === 'expired'
+  // USDT payment_uploaded = user submitted tx hash but deposit address wasn't configured for auto-verify
+  const isUsdtProofPending = order.status === 'payment_uploaded' && order.paymentCoin !== 'PKR'
+  const isAwaitingPayment = order.status === 'payment_pending' || order.status === 'expired' || isUsdtProofPending
   const isOrderExpired = order.expiresAt ? new Date(order.expiresAt) < new Date() : false
 
   return (
@@ -322,35 +324,54 @@ export default function GasOrderDetailPage() {
         </div>
       )}
 
-      {/* Actions — awaiting payment */}
+      {/* Actions — awaiting payment / USDT proof submitted */}
       {isAwaitingPayment && (
-        <div className={`mb-6 p-4 rounded-xl border ${isOrderExpired ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
-          {isOrderExpired && (
+        <div className={`mb-6 p-4 rounded-xl border ${
+          isUsdtProofPending ? 'bg-purple-50 border-purple-200' :
+          isOrderExpired ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'
+        }`}>
+          {isUsdtProofPending && (
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-purple-100 border border-purple-200">
+              <svg className="w-4 h-4 text-purple-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs font-semibold text-purple-800">
+                User submitted a transaction hash for manual review. Verify the tx on-chain then confirm or reject below.
+              </p>
+            </div>
+          )}
+          {isOrderExpired && !isUsdtProofPending && (
             <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-100 border border-amber-200">
               <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <p className="text-xs font-semibold text-amber-800">
-                Order expired. If the user paid before expiry, use &quot;Mark Payment Received&quot; to still deliver gas. Otherwise cancel.
+                Order expired. If the user paid before expiry, mark it to still deliver gas.
               </p>
             </div>
           )}
           <div className="flex gap-3 items-start">
             <div className="flex-1">
-              <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-amber-900' : 'text-blue-900'}`}>
-                {isOrderExpired ? 'Order Expired' : 'Awaiting Payment'}
+              <p className={`text-sm font-semibold mb-0.5 ${
+                isUsdtProofPending ? 'text-purple-900' : isOrderExpired ? 'text-amber-900' : 'text-blue-900'
+              }`}>
+                {isUsdtProofPending ? 'TX Hash Submitted — Pending Review' : isOrderExpired ? 'Order Expired' : 'Awaiting Payment'}
               </p>
-              <p className={`text-xs ${isOrderExpired ? 'text-amber-700' : 'text-blue-700'}`}>
-                {isOrderExpired
+              <p className={`text-xs font-mono ${
+                isUsdtProofPending ? 'text-purple-700' : isOrderExpired ? 'text-amber-700' : 'text-blue-700'
+              }`}>
+                {isUsdtProofPending && order.paymentTxHash
+                  ? `${order.paymentTxHash.slice(0, 20)}…${order.paymentTxHash.slice(-10)}`
+                  : isOrderExpired
                   ? 'If payment was received off-chain, mark it to release gas. Otherwise cancel.'
-                  : 'If you have received payment off-chain or auto-detection failed, mark it as received to release gas.'}
+                  : 'If you have received payment or auto-detection failed, mark it as received to release gas.'}
               </p>
             </div>
             <Button variant="primary" size="sm" onClick={() => setMarkPaymentOpen(true)}>
-              Mark Payment Received
+              {isUsdtProofPending ? 'Confirm & Release Gas' : 'Mark Payment Received'}
             </Button>
             <Button variant="danger" size="sm" onClick={() => setCancelOpen(true)}>
-              Cancel Order
+              {isUsdtProofPending ? 'Reject' : 'Cancel Order'}
             </Button>
           </div>
         </div>

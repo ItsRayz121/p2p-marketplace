@@ -409,6 +409,7 @@ export default function GasAdminPage() {
   const [confirmRetry, setConfirmRetry] = useState(false)
   const [confirmRefund, setConfirmRefund] = useState(false)
   const [confirmToggle, setConfirmToggle] = useState<string | null>(null)
+  const [confirmMarkPayment, setConfirmMarkPayment] = useState(false)
   const [confirmApprovePkr, setConfirmApprovePkr] = useState(false)
   const [confirmRejectPkr, setConfirmRejectPkr] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -516,6 +517,19 @@ export default function GasAdminPage() {
       void refresh()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to approve PKR order')
+    }
+  }
+
+  async function handleMarkPayment() {
+    if (!selectedId) return
+    setActionError(null)
+    try {
+      await adminApi.markGasPaymentReceived(selectedId)
+      setConfirmMarkPayment(false)
+      setActionSuccess('Payment confirmed — gas delivery queued.')
+      void refresh()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to confirm payment')
     }
   }
 
@@ -844,14 +858,32 @@ export default function GasAdminPage() {
                         <Link href={`/admin/gas/orders/${o.orderRef}`}>
                           <Button size="sm" variant="ghost">View</Button>
                         </Link>
-                        {o.status === 'payment_uploaded' && (
+                        {o.status === 'payment_uploaded' && o.paymentCoin === 'PKR' && (
                           <>
                             <Button
                               size="sm"
                               variant="primary"
                               onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmApprovePkr(true) }}
                             >
-                              Approve
+                              Approve PKR
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRejectPkr(true) }}
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                        {o.status === 'payment_uploaded' && o.paymentCoin !== 'PKR' && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmMarkPayment(true) }}
+                            >
+                              Confirm Payment
                             </Button>
                             <Button
                               size="sm"
@@ -901,6 +933,15 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Modals ───────────────────────────────────────────────────────────── */}
+      <ConfirmModal
+        isOpen={confirmMarkPayment}
+        onClose={() => setConfirmMarkPayment(false)}
+        onConfirm={handleMarkPayment}
+        title="Confirm Payment Received"
+        description="Confirm you have verified this USDT payment. Gas delivery will be queued immediately."
+        confirmLabel="Confirm & Release Gas"
+        confirmVariant="primary"
+      />
       <ConfirmModal
         isOpen={confirmApprovePkr}
         onClose={() => setConfirmApprovePkr(false)}

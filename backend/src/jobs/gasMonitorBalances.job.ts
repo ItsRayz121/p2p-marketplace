@@ -80,6 +80,26 @@ async function monitorChain(
   const usdPrice = await getNativeUsdPrice(chain)
   const balanceUsd = usdPrice > 0 ? balance * usdPrice : null
 
+  // Detect inbound top-up: if balance increased by more than dust since last check, notify admin
+  const prevBalanceStr = await redis.get(balanceKey)
+  if (prevBalanceStr !== null) {
+    const prevBalance = parseFloat(prevBalanceStr)
+    const delta = balance - prevBalance
+    const dustThreshold = 0.000001
+    if (delta > dustThreshold) {
+      const deltaUsd = usdPrice > 0 ? delta * usdPrice : null
+      const usdStr = deltaUsd !== null ? ` (~$${deltaUsd.toFixed(2)})` : ''
+      void createAdminNotif({
+        category: 'GAS',
+        title: `Hot Wallet Topped Up — ${chain} +${delta.toFixed(6)}${usdStr}`,
+        body: `${chain} hot wallet received ${delta.toFixed(6)} native${usdStr}. New balance: ${balance.toFixed(6)}.`,
+        href: '/admin/gas',
+        metadata: { chain, delta, balance, deltaUsd, address },
+      })
+      logger.info({ chain, delta, balance, address }, 'Gas hot wallet inbound transfer detected')
+    }
+  }
+
   // Cache native + USD balances (30 min TTL)
   await redis.set(balanceKey, String(balance), 'EX', 1800)
   if (balanceUsd !== null) {
