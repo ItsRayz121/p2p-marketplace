@@ -91,6 +91,13 @@ export async function adminRoutes(app: FastifyInstance) {
         pendingWithdrawals,
         pendingInstantBuy,
         todayRevenueResult,
+        totalVolumePkrResult,
+        totalUsers,
+        newUsersToday,
+        totalTrades,
+        todayTrades,
+        unreadNotifCount,
+        recentNotifications,
       ] = await Promise.all([
         db.kycSubmission.count({ where: { status: 'pending' } }),
         db.dispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
@@ -99,6 +106,20 @@ export async function adminRoutes(app: FastifyInstance) {
         db.trade.aggregate({
           where: { status: 'crypto_released', updatedAt: { gte: today } },
           _sum: { fiatAmount: true },
+        }),
+        db.trade.aggregate({
+          where: { status: 'crypto_released' },
+          _sum: { fiatAmount: true },
+        }),
+        db.user.count(),
+        db.user.count({ where: { createdAt: { gte: today } } }),
+        db.trade.count(),
+        db.trade.count({ where: { createdAt: { gte: today } } }),
+        db.adminNotification.count({ where: { isRead: false } }),
+        db.adminNotification.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: { id: true, category: true, title: true, body: true, href: true, isRead: true, createdAt: true },
         }),
       ])
 
@@ -109,7 +130,14 @@ export async function adminRoutes(app: FastifyInstance) {
           openDisputes,
           pendingWithdrawals,
           pendingInstantBuy,
-          todayRevenue: todayRevenueResult._sum.fiatAmount ?? 0,
+          todayRevenuePkr:   (todayRevenueResult._sum.fiatAmount ?? 0).toString(),
+          totalVolumePkr:    (totalVolumePkrResult._sum.fiatAmount ?? 0).toString(),
+          totalUsers,
+          newUsersToday,
+          totalTrades,
+          todayTrades,
+          unreadNotifCount,
+          recentNotifications,
         },
       })
     },

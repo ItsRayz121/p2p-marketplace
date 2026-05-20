@@ -1227,7 +1227,28 @@ export interface AdminGasToken {
 export const adminApi = {
   // Dashboard
   getStats: () =>
-    apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; pendingKyc: number; openDisputes: number; pendingWithdrawals?: number; pendingInstantBuy?: number; todayRevenuePkr?: string }>('/admin/dashboard/stats'),
+    apiRequest<{
+      pendingKyc: number
+      openDisputes: number
+      pendingWithdrawals: number
+      pendingInstantBuy: number
+      todayRevenuePkr: string
+      totalVolumePkr: string
+      totalUsers: number
+      newUsersToday: number
+      totalTrades: number
+      todayTrades: number
+      unreadNotifCount: number
+      recentNotifications: Array<{
+        id: string
+        category: AdminNotifCategory
+        title: string
+        body: string
+        href: string | null
+        isRead: boolean
+        createdAt: string
+      }>
+    }>('/admin/dashboard/stats'),
 
   // Users
   getUsers: (params?: Record<string, string | number | undefined>) =>
