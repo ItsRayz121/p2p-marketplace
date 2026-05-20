@@ -1323,7 +1323,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const alreadyUsed = await db.gasFeeOrder.findFirst({ where: { paymentTxHash: txHash } })
     if (alreadyUsed) {
       if (alreadyUsed.orderRef === orderRef) {
-        return reply.send({ success: true, data: { status: order.status, message: 'Transaction already attributed to this order.' } })
+        return reply.send({ success: true, data: { status: alreadyUsed.status, message: 'Transaction already attributed to this order.' } })
       }
       throw new AppError('CONFLICT', 'This transaction hash is already linked to another order.', 409)
     }
@@ -1420,8 +1420,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const toAddr = '0x' + log.topics[2].slice(26).toLowerCase()
       if (toAddr !== depositAddress) continue
 
-      // Decode uint256 value from data field
-      const rawValue = BigInt(log.data)
+      // Decode uint256 value from data field (guard against empty data on non-standard logs)
+      if (!log.data || log.data === '0x') continue
+      let rawValue: bigint
+      try { rawValue = BigInt(log.data) } catch { continue }
       const humanAmount = Number(rawValue) / Math.pow(10, netDef.usdtDecimals)
       if (humanAmount >= lo && humanAmount <= hi) {
         matchedAmount = humanAmount
