@@ -60,18 +60,39 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const NATIVE_SYMBOLS: Record<string, string> = {
-  TRON: 'TRX',
-  BSC: 'BNB',
-  ETHEREUM: 'ETH',
+  TRON:  'TRX',
+  BSC:   'BNB',
+  ETH:   'ETH',
+  SOL:   'SOL',
+  MATIC: 'POL',
+  ARB:   'ETH',
+  BASE:  'ETH',
+  OP:    'ETH',
+  AVAX:  'AVAX',
+  TON:   'TON',
+  SUI:   'SUI',
+  APT:   'APT',
+}
+
+const EXPLORER_TX: Record<string, string> = {
+  TRON:  'https://tronscan.org/#/transaction',
+  BSC:   'https://bscscan.com/tx',
+  ETH:   'https://etherscan.io/tx',
+  SOL:   'https://solscan.io/tx',
+  MATIC: 'https://polygonscan.com/tx',
+  ARB:   'https://arbiscan.io/tx',
+  BASE:  'https://basescan.org/tx',
+  OP:    'https://optimistic.etherscan.io/tx',
+  AVAX:  'https://snowtrace.io/tx',
+  TON:   'https://tonscan.org/tx',
+  SUI:   'https://suiexplorer.com/txblock',
+  APT:   'https://explorer.aptoslabs.com/txn',
 }
 
 function explorerTxUrl(chain: string, txHash: string): string {
-  switch (chain) {
-    case 'TRON':     return `https://tronscan.org/#/transaction/${txHash}`
-    case 'BSC':      return `https://bscscan.com/tx/${txHash}`
-    case 'ETHEREUM': return `https://etherscan.io/tx/${txHash}`
-    default: return '#'
-  }
+  const base = EXPLORER_TX[chain.toUpperCase()]
+  if (!base) return '#'
+  return `${base}/${txHash}`
 }
 
 function isInProgress(status: string): boolean {

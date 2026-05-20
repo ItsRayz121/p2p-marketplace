@@ -40,6 +40,36 @@ interface GasOrderDetail {
   user: { username: string; email: string } | null
 }
 
+// ─── Chain metadata ───────────────────────────────────────────────────────────
+
+interface ChainMeta { symbol: string; explorerTx: string; name: string }
+
+const CHAIN_META: Record<string, ChainMeta> = {
+  TRON:  { symbol: 'TRX',  explorerTx: 'https://tronscan.org/#/transaction', name: 'TRON (TRC20)' },
+  BSC:   { symbol: 'BNB',  explorerTx: 'https://bscscan.com/tx',             name: 'BNB Smart Chain' },
+  ETH:   { symbol: 'ETH',  explorerTx: 'https://etherscan.io/tx',            name: 'Ethereum' },
+  SOL:   { symbol: 'SOL',  explorerTx: 'https://solscan.io/tx',              name: 'Solana' },
+  MATIC: { symbol: 'POL',  explorerTx: 'https://polygonscan.com/tx',         name: 'Polygon' },
+  ARB:   { symbol: 'ETH',  explorerTx: 'https://arbiscan.io/tx',             name: 'Arbitrum' },
+  BASE:  { symbol: 'ETH',  explorerTx: 'https://basescan.org/tx',            name: 'Base' },
+  OP:    { symbol: 'ETH',  explorerTx: 'https://optimistic.etherscan.io/tx', name: 'Optimism' },
+  AVAX:  { symbol: 'AVAX', explorerTx: 'https://snowtrace.io/tx',            name: 'Avalanche C-Chain' },
+  TON:   { symbol: 'TON',  explorerTx: 'https://tonscan.org/tx',             name: 'TON' },
+  SUI:   { symbol: 'SUI',  explorerTx: 'https://suiexplorer.com/txblock',    name: 'SUI' },
+  APT:   { symbol: 'APT',  explorerTx: 'https://explorer.aptoslabs.com/txn', name: 'Aptos' },
+}
+
+function chainMeta(chain: string): ChainMeta {
+  return CHAIN_META[chain.toUpperCase()] ?? { symbol: chain, explorerTx: '#', name: chain }
+}
+
+function explorerTxUrl(chain: string, hash: string): string {
+  const meta = chainMeta(chain)
+  if (meta.explorerTx === '#') return '#'
+  // TRON uses /#/transaction/ path, all others use /tx/
+  return `${meta.explorerTx}/${hash}`
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
@@ -62,10 +92,6 @@ function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' 
   return 'outline'
 }
 
-function tronscanTx(hash: string): string {
-  return `https://tronscan.org/#/transaction/${hash}`
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -77,11 +103,12 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function TxLink({ hash }: { hash: string }) {
+function TxLink({ chain, hash }: { chain: string; hash: string }) {
+  const url = explorerTxUrl(chain, hash)
   return (
     <span className="inline-flex items-center gap-1.5 font-mono text-xs">
       <a
-        href={tronscanTx(hash)}
+        href={url}
         target="_blank"
         rel="noopener noreferrer"
         className="text-primary hover:underline truncate max-w-xs"
@@ -196,6 +223,10 @@ export default function GasOrderDetailPage() {
     />
   )
 
+  const meta = chainMeta(order.chain)
+  const nativeSymbol = meta.symbol
+  const chainName = meta.name
+
   const isFailed = order.status === 'failed'
   const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
   const isOrderExpired = order.expiresAt ? new Date(order.expiresAt) < new Date() : false
@@ -274,11 +305,16 @@ export default function GasOrderDetailPage() {
         <SectionHeading>Order</SectionHeading>
         <div>
           <InfoRow label="Reference">{order.orderRef}</InfoRow>
-          <InfoRow label="Chain">{order.chain}</InfoRow>
+          <InfoRow label="Chain">
+            <span className="font-medium">{chainName}</span>
+            <span className="ml-2 text-xs text-text-muted font-mono">({order.chain})</span>
+          </InfoRow>
           <InfoRow label="Tier">{order.tier ?? '—'}</InfoRow>
-          <InfoRow label="TRX Amount">{parseFloat(order.gasAmountNative).toFixed(2)} TRX</InfoRow>
+          <InfoRow label={`${nativeSymbol} Amount`}>
+            {parseFloat(order.gasAmountNative).toFixed(6)} {nativeSymbol}
+          </InfoRow>
           <InfoRow label="Price at Order">
-            {order.priceAtOrder ? `${parseFloat(order.priceAtOrder).toFixed(4)} USD/TRX` : '—'}
+            {order.priceAtOrder ? `${parseFloat(order.priceAtOrder).toFixed(4)} USD/${nativeSymbol}` : '—'}
           </InfoRow>
         </div>
 
@@ -292,9 +328,11 @@ export default function GasOrderDetailPage() {
               <InfoRow label="PKR Method">{order.pkrPaymentMethod?.replace('_', ' ') ?? '—'}</InfoRow>
             </>
           )}
-          <InfoRow label="Network">{order.paymentNetwork ?? 'TRC20'}</InfoRow>
+          <InfoRow label="Network">{order.paymentNetwork ?? '—'}</InfoRow>
           <InfoRow label="Payment Tx">
-            {order.paymentTxHash ? <TxLink hash={order.paymentTxHash} /> : '—'}
+            {order.paymentTxHash
+              ? <TxLink chain={order.paymentNetwork === 'TRC20' ? 'TRON' : order.chain} hash={order.paymentTxHash} />
+              : '—'}
           </InfoRow>
           {order.paymentProofUrl && (
             <InfoRow label="Payment Proof">
@@ -322,7 +360,7 @@ export default function GasOrderDetailPage() {
             ) : '—'}
           </InfoRow>
           <InfoRow label="Delivery Tx">
-            {order.deliveryTxHash ? <TxLink hash={order.deliveryTxHash} /> : '—'}
+            {order.deliveryTxHash ? <TxLink chain={order.chain} hash={order.deliveryTxHash} /> : '—'}
           </InfoRow>
           <InfoRow label="Confirmed On-Chain">
             {order.deliveryTxHash ? (
@@ -385,7 +423,7 @@ export default function GasOrderDetailPage() {
         onClose={() => setRetryOpen(false)}
         onConfirm={handleRetry}
         title="Retry Delivery"
-        description={`Re-queue delivery for order ${order.orderRef}. This will attempt to send ${parseFloat(order.gasAmountNative).toFixed(2)} TRX to ${order.toAddress}.`}
+        description={`Re-queue delivery for order ${order.orderRef}. This will attempt to send ${parseFloat(order.gasAmountNative).toFixed(6)} ${nativeSymbol} to ${order.toAddress}.`}
         confirmLabel="Retry"
         confirmVariant="primary"
       />

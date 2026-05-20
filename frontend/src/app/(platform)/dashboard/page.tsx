@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { dashboardApi, tradesApi, notificationsApi, marketplaceApi, instantBuyApi } from '@/lib/api'
+import { dashboardApi, tradesApi, notificationsApi, marketplaceApi, instantBuyApi, gasApi } from '@/lib/api'
 import type { WalletBalance, Trade, Notification } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
@@ -37,6 +37,39 @@ interface InstantOrder {
   amount: string
   amountPkr: string
   createdAt: string
+}
+
+interface RecentGasOrder {
+  orderRef: string
+  chain: string
+  gasAmountNative: string
+  status: string
+  createdAt: string
+  deliveryTxHash?: string | null
+}
+
+const GAS_NATIVE_SYMBOL: Record<string, string> = {
+  TRON: 'TRX', BSC: 'BNB', ETH: 'ETH', SOL: 'SOL',
+  MATIC: 'POL', ARB: 'ETH', BASE: 'ETH', OP: 'ETH',
+  AVAX: 'AVAX', TON: 'TON', SUI: 'SUI', APT: 'APT',
+}
+
+function gasStatusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
+  if (s === 'delivered' || s === 'refunded') return 'success'
+  if (s === 'failed' || s === 'expired') return 'danger'
+  if (s === 'payment_detected' || s === 'sending') return 'warning'
+  return 'default'
+}
+
+const GAS_STATUS_LABELS: Record<string, string> = {
+  payment_pending:  'Awaiting',
+  payment_uploaded: 'Proof Sent',
+  payment_detected: 'Confirmed',
+  sending:          'Sending',
+  delivered:        'Delivered',
+  failed:           'Failed',
+  expired:          'Expired',
+  refunded:         'Refunded',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -79,6 +112,7 @@ export default function DashboardPage() {
   const [trades, setTrades] = useState<Trade[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [instantOrders, setInstantOrders] = useState<InstantOrder[]>([])
+  const [gasOrders, setGasOrders] = useState<RecentGasOrder[]>([])
   const [usdtRate, setUsdtRate] = useState<number>(0)
   const [usdtRateSource, setUsdtRateSource] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -86,17 +120,19 @@ export default function DashboardPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [summaryRes, tradesRes, notifRes, instantRes] = await Promise.allSettled([
+      const [summaryRes, tradesRes, notifRes, instantRes, gasRes] = await Promise.allSettled([
         dashboardApi.getSummary(),
         tradesApi.getMyTrades({ limit: 5 }),
         notificationsApi.getAll({ limit: 5, unreadOnly: true }),
         instantBuyApi.getMyOrders({ limit: 3 }),
+        gasApi.getOrderHistory({ limit: 3, page: 1 }),
       ])
 
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value)
       if (tradesRes.status === 'fulfilled') setTrades(tradesRes.value.trades ?? [])
       if (notifRes.status === 'fulfilled') setNotifications(notifRes.value.notifications ?? [])
       if (instantRes.status === 'fulfilled') setInstantOrders(instantRes.value.orders ?? [])
+      if (gasRes.status === 'fulfilled') setGasOrders((gasRes.value.orders ?? []).slice(0, 3) as RecentGasOrder[])
 
       // USDT rate for PKR equivalent — optional, never block dashboard render.
       // Use the API client so requests resolve to the configured backend origin
@@ -226,10 +262,11 @@ export default function DashboardPage() {
       {/* ── 3. Quick Actions ── */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           {[
             { href: '/instant-buy', label: 'Buy Crypto', icon: '⚡' },
             { href: '/marketplace', label: 'Marketplace', icon: '🏪' },
+            { href: '/gas', label: 'Gas Fees', icon: '⛽' },
             { href: '/ctm', label: 'Community Tokens', icon: '🪙' },
             { href: '/my-ads', label: 'My Ads', icon: '📢' },
             { href: '/referral', label: 'Referral', icon: '🎁' },
@@ -278,7 +315,38 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ── 5. Recent Instant Buy ── */}
+      {/* ── 5. Recent Gas Orders ── */}
+      {gasOrders.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-text-primary">Recent Gas Orders</h2>
+            <Link href="/gas/orders" className="text-xs text-primary hover:underline">View all</Link>
+          </div>
+          <div className="bg-white rounded-xl border border-border divide-y divide-border">
+            {gasOrders.map((o) => {
+              const symbol = GAS_NATIVE_SYMBOL[o.chain] ?? o.chain
+              return (
+                <div key={o.orderRef} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Badge variant={gasStatusVariant(o.status)} size="sm">
+                      {GAS_STATUS_LABELS[o.status] ?? o.status}
+                    </Badge>
+                    <div>
+                      <p className="text-sm font-medium text-text-primary">
+                        {parseFloat(o.gasAmountNative).toFixed(4)} {symbol}
+                      </p>
+                      <p className="text-xs text-text-muted font-mono">{o.orderRef}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-text-muted">{timeAgo(o.createdAt)}</span>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── 6. Recent Instant Buy ── */}
       {(instantOrders ?? []).length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -299,7 +367,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── 6. Trader Badge ── */}
+      {/* ── 7. Trader Badge ── */}
       <section>
         <div className="bg-white rounded-xl border border-border p-5">
           <h2 className="text-base font-semibold text-text-primary mb-3">Trader Badge</h2>
@@ -317,7 +385,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ── 7. Notifications ── */}
+      {/* ── 8. Notifications ── */}
       {(notifications ?? []).length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -345,7 +413,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── 8. Onboarding Checklist ── */}
+      {/* ── 9. Onboarding Checklist ── */}
       {!onboardingDone && (
         <section>
           <div className="bg-white rounded-xl border border-border p-5">
