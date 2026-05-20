@@ -942,6 +942,33 @@ model Session {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ADMIN NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AdminNotifCategory {
+  KYC
+  TRADE
+  GAS
+  DISPUTE
+  CTM
+  SYSTEM
+}
+
+model AdminNotification {
+  id        String               @id @default(cuid())
+  category  AdminNotifCategory
+  title     String
+  body      String
+  href      String?
+  isRead    Boolean              @default(false)
+  metadata  Json                 @default("{}")
+  createdAt DateTime             @default(now())
+
+  @@index([isRead, createdAt])
+  @@index([category, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PLATFORM ADMIN
 // ─────────────────────────────────────────────────────────────────────────────
 

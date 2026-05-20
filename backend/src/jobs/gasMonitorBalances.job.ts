@@ -5,6 +5,7 @@ import { fromDbChain } from '../lib/gas/gas.chains'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
+import { createAdminNotif } from '../services/adminNotification.service'
 
 // TTL for the auto-pause flag: next monitor run (5 min) will re-evaluate and
 // either extend or clear it — 6 min gives a comfortable margin.
@@ -110,6 +111,13 @@ async function monitorChain(
   if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) {
     await redis.set(pausedKey, '1', 'EX', PAUSED_TTL_S)
     logger.error({ balanceUsd, pauseThresholdUsd, chain }, 'Gas hot wallet CRITICAL — below pause threshold (USD)')
+    void createAdminNotif({
+      category: 'GAS',
+      title:    `CRITICAL: ${chain} Hot Wallet Below Pause Threshold`,
+      body:     `${chain} balance $${balanceUsd.toFixed(2)} is below pause threshold $${pauseThresholdUsd}. New orders paused.`,
+      href:     `/admin/gas`,
+      metadata: { chain, balanceUsd, pauseThresholdUsd },
+    })
     await sendAdminAlertEmail(
       `CRITICAL: ${chain} Gas Hot Wallet Below Pause Threshold`,
       `${chain} hot wallet\n` +
@@ -121,6 +129,13 @@ async function monitorChain(
   } else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) {
     await redis.del(pausedKey)
     logger.warn({ balanceUsd, alertThresholdUsd, chain }, 'Gas hot wallet LOW — below alert threshold (USD)')
+    void createAdminNotif({
+      category: 'GAS',
+      title:    `WARNING: ${chain} Hot Wallet Low Balance`,
+      body:     `${chain} balance $${balanceUsd.toFixed(2)} is below alert threshold $${alertThresholdUsd}.`,
+      href:     `/admin/gas`,
+      metadata: { chain, balanceUsd, alertThresholdUsd },
+    })
     await sendAdminAlertEmail(
       `WARNING: ${chain} Gas Hot Wallet Low Balance`,
       `${chain} hot wallet\n` +

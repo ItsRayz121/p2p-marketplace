@@ -12,6 +12,7 @@ import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { randomUUID } from 'crypto'
+import { createAdminNotif } from '../services/adminNotification.service'
 
 const createOrderSchema = z.object({
   coin: z.string().min(1).max(20),
@@ -144,6 +145,13 @@ export async function instantBuyRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const order = await uploadPaymentProof(id, req.user!.id, parsed.data.proofUrl)
+    void createAdminNotif({
+      category: 'TRADE',
+      title:    'Instant Buy Awaiting Review',
+      body:     `Order ${id} has payment proof uploaded and is awaiting admin review.`,
+      href:     `/admin/instant-buy`,
+      metadata: { orderId: id, userId: req.user!.id },
+    })
     return reply.send({ success: true, data: order })
   })
 

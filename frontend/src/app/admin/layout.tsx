@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
-import { authApi } from '@/lib/api'
+import { authApi, adminApi, type AdminNotif, type AdminNotifCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 type AdminRole = 'admin' | 'super_admin' | 'kyc_reviewer'
@@ -52,6 +52,16 @@ const navGroups: NavGroup[] = [
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Notifications',
+        href: '/admin/notifications',
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
           </svg>
         ),
       },
@@ -343,6 +353,74 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [mobileOpen, setMobileOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
 
+  // ── Admin notification bell ────────────────────────────────────────────────
+  const [unreadCount, setUnreadCount]   = useState(0)
+  const [bellOpen, setBellOpen]         = useState(false)
+  const [bellNotifs, setBellNotifs]     = useState<AdminNotif[]>([])
+  const [bellLoading, setBellLoading]   = useState(false)
+  const bellRef                         = useRef<HTMLDivElement>(null)
+
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await adminApi.getAdminUnreadCount()
+      setUnreadCount(res.count)
+    } catch { /* ignore — non-critical */ }
+  }, [])
+
+  const fetchBellNotifs = useCallback(async () => {
+    setBellLoading(true)
+    try {
+      const res = await adminApi.getAdminNotifications({ limit: 10 })
+      setBellNotifs(res.notifications)
+      setUnreadCount(res.unreadCount)
+    } catch { /* ignore */ } finally {
+      setBellLoading(false)
+    }
+  }, [])
+
+  // Poll unread count every 30 s
+  useEffect(() => {
+    void fetchUnreadCount()
+    const id = setInterval(() => { void fetchUnreadCount() }, 30_000)
+    return () => clearInterval(id)
+  }, [fetchUnreadCount])
+
+  // Open bell dropdown
+  const handleBellClick = () => {
+    if (!bellOpen) void fetchBellNotifs()
+    setBellOpen((o) => !o)
+  }
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const markRead = async (id: string) => {
+    try { await adminApi.markAdminNotifRead(id) } catch { /* ignore */ }
+    setBellNotifs((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))
+    setUnreadCount((c) => Math.max(0, c - 1))
+  }
+
+  const markAllRead = async () => {
+    try { await adminApi.markAllAdminNotifsRead() } catch { /* ignore */ }
+    setBellNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    setUnreadCount(0)
+  }
+
+  const CATEGORY_COLORS: Record<AdminNotifCategory, string> = {
+    KYC:     'bg-blue-100 text-blue-700',
+    TRADE:   'bg-purple-100 text-purple-700',
+    GAS:     'bg-orange-100 text-orange-700',
+    DISPUTE: 'bg-red-100 text-red-700',
+    CTM:     'bg-teal-100 text-teal-700',
+    SYSTEM:  'bg-gray-100 text-gray-600',
+  }
+
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const defaults = Object.fromEntries(navGroups.map((g) => [g.id, true]))
     if (typeof window === 'undefined') return defaults
@@ -559,6 +637,113 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
           <span className="text-text-primary font-semibold text-base flex-1">Admin Panel</span>
           <span className="hidden sm:block text-text-muted text-sm">{user?.username || user?.email}</span>
+
+          {/* Notification bell */}
+          <div className="relative" ref={bellRef}>
+            <button
+              onClick={handleBellClick}
+              className="relative p-2 rounded-lg text-text-secondary hover:bg-surface transition-colors"
+              aria-label="Notifications"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Dropdown */}
+            {bellOpen && (
+              <div className="absolute right-0 top-12 w-96 bg-white rounded-xl shadow-xl border border-border z-50 overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-text-primary">Notifications</span>
+                    {unreadCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-bold">{unreadCount}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {unreadCount > 0 && (
+                      <button onClick={markAllRead} className="text-xs text-primary hover:underline font-medium">Mark all read</button>
+                    )}
+                    <Link href="/admin/notifications" onClick={() => setBellOpen(false)} className="text-xs text-text-muted hover:text-primary">View all</Link>
+                  </div>
+                </div>
+
+                {/* List */}
+                <div className="max-h-[420px] overflow-y-auto divide-y divide-border">
+                  {bellLoading ? (
+                    <div className="flex items-center justify-center py-8 text-text-muted text-sm">Loading…</div>
+                  ) : bellNotifs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-text-muted gap-2">
+                      <svg className="w-8 h-8 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                      </svg>
+                      <span className="text-xs">No notifications</span>
+                    </div>
+                  ) : (
+                    bellNotifs.map((n) => (
+                      <div
+                        key={n.id}
+                        className={cn('px-4 py-3 hover:bg-surface transition-colors', !n.isRead && 'bg-blue-50/40')}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className={cn('mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide', CATEGORY_COLORS[n.category])}>
+                            {n.category}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-text-primary truncate">{n.title}</p>
+                            <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{n.body}</p>
+                            <p className="text-[10px] text-text-muted mt-1">{new Date(n.createdAt).toLocaleString()}</p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {n.href && (
+                              <Link
+                                href={n.href}
+                                onClick={() => { void markRead(n.id); setBellOpen(false) }}
+                                className="p-1 rounded hover:bg-primary/10 text-primary transition-colors"
+                                title="Go to page"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </Link>
+                            )}
+                            {!n.isRead && (
+                              <button
+                                onClick={() => void markRead(n.id)}
+                                className="p-1 rounded hover:bg-green-50 text-green-600 transition-colors"
+                                title="Mark read"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="border-t border-border px-4 py-2.5 text-center">
+                  <Link
+                    href="/admin/notifications"
+                    onClick={() => setBellOpen(false)}
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    View all notifications →
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
         </header>
 
         {/* L-10: 2FA warning banner for admin/super_admin accounts without 2FA */}

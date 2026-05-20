@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, requireRole, optionalAuth } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
+import { createAdminNotif } from '../services/adminNotification.service'
 import {
   listApprovedTokens,
   getTokenBySlug,
@@ -101,6 +102,13 @@ export async function ctmTokenRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const request = await submitTokenRequest(req.user!.id, parsed.data as any)
+    void createAdminNotif({
+      category: 'CTM',
+      title:    'New CTM Token Suggestion',
+      body:     `A user suggested a new token for CTM listing. Request ID: ${request.id}`,
+      href:     `/admin/ctm/tokens/queue`,
+      metadata: { userId: req.user!.id, requestId: request.id },
+    })
     return reply.code(201).send({ success: true, data: request })
   })
 

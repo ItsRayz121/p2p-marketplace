@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, requireTotpIfEnabled } from '../middleware/auth.middleware'
+import { createAdminNotif } from '../services/adminNotification.service'
 import {
   getUserWallets,
   getDepositAddress,
@@ -277,6 +278,13 @@ export async function walletRoutes(app: FastifyInstance) {
     }
 
     const result = await requestWithdrawal(userId, { ...parsed.data, idempotencyKey })
+    void createAdminNotif({
+      category: 'SYSTEM',
+      title:    'Withdrawal Requested',
+      body:     `User ${userId} requested a withdrawal of ${parsed.data.amount} ${parsed.data.coin}`,
+      href:     `/admin/wallet`,
+      metadata: { userId, amount: parsed.data.amount, coin: parsed.data.coin },
+    })
     return reply.code(201).send({ success: true, data: result })
   })
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, optionalAuth } from '../middleware/auth.middleware'
+import { createAdminNotif } from '../services/adminNotification.service'
 import {
   getMerchantProfile,
   applyMerchant,
@@ -56,6 +57,13 @@ export async function merchantRoutes(app: FastifyInstance) {
       ...(cnicFrontUrl !== undefined ? { cnicFrontUrl } : {}),
       ...(cnicBackUrl !== undefined ? { cnicBackUrl } : {}),
       ...(selfieUrl !== undefined ? { selfieUrl } : {}),
+    })
+    void createAdminNotif({
+      category: 'KYC',
+      title:    'Merchant KYC Application',
+      body:     `New merchant KYC application from user ${req.user!.id}. Business: ${businessName}`,
+      href:     `/admin/merchant-kyc`,
+      metadata: { userId: req.user!.id, businessName },
     })
     return reply.code(201).send({ success: true, data: submission })
   })

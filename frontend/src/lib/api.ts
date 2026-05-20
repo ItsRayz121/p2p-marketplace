@@ -342,6 +342,19 @@ export interface Session {
   isCurrent: boolean
 }
 
+export type AdminNotifCategory = 'KYC' | 'TRADE' | 'GAS' | 'DISPUTE' | 'CTM' | 'SYSTEM'
+
+export interface AdminNotif {
+  id: string
+  category: AdminNotifCategory
+  title: string
+  body: string
+  href: string | null
+  isRead: boolean
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
 export interface Trade {
   id: string
   orderRef?: string
@@ -1519,6 +1532,22 @@ export const adminApi = {
   // Audit Log
   getAuditLog: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ entries: Array<{ id: string; userId: string; action: string; details: unknown; ip?: string; userAgent?: string; createdAt: string }>; total: number }>('/admin/audit-log' + buildQs(params)),
+
+  // Admin Notifications
+  getAdminNotifications: (params?: { category?: string; unreadOnly?: boolean; page?: number; limit?: number }) =>
+    apiRequest<{
+      notifications: AdminNotif[]
+      unreadCount: number
+      pagination: { page: number; limit: number; total: number; pages: number }
+    }>('/admin/notifications' + buildQs(params as Record<string, string | number | undefined>)),
+  getAdminUnreadCount: (category?: string) =>
+    apiRequest<{ count: number }>('/admin/notifications/unread-count' + (category ? `?category=${category}` : '')),
+  markAdminNotifRead: (id: string) =>
+    apiRequest<void>(`/admin/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllAdminNotifsRead: (category?: string) =>
+    apiRequest<void>('/admin/notifications/read-all' + (category ? `?category=${category}` : ''), { method: 'PATCH' }),
+  deleteOldAdminNotifs: () =>
+    apiRequest<{ deleted: number }>('/admin/notifications/old', { method: 'DELETE' }),
 }
 
 // ─── Community Token Market ───────────────────────────────────────────────────

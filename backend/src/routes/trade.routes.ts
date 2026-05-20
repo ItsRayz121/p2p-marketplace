@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { authenticate } from '../middleware/auth.middleware'
+import { createAdminNotif } from '../services/adminNotification.service'
 import {
   createTrade,
   getTrades,
@@ -220,6 +221,13 @@ export async function tradeRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const dispute = await openDispute(id, userId, parsed.data.reason, parsed.data.description)
+    void createAdminNotif({
+      category: 'DISPUTE',
+      title:    'Trade Dispute Opened',
+      body:     `A dispute was opened on trade ${id}. Reason: ${parsed.data.reason}`,
+      href:     `/admin/disputes`,
+      metadata: { tradeId: id, userId, reason: parsed.data.reason },
+    })
     return reply.code(201).send({ success: true, data: dispute })
   })
 

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
+import { createAdminNotif } from '../services/adminNotification.service'
 import { cloudinary, CLOUDINARY_FOLDERS, UPLOAD_LIMITS } from '../lib/cloudinary'
 import { createHash } from 'node:crypto'
 import {
@@ -206,6 +207,13 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     const parsed = disputeSchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     await openDispute(ref, req.user!.id, parsed.data.reason, parsed.data.description)
+    void createAdminNotif({
+      category: 'CTM',
+      title:    'CTM Trade Dispute Opened',
+      body:     `Dispute opened on CTM trade ${ref}. Reason: ${parsed.data.reason}`,
+      href:     `/admin/ctm/disputes`,
+      metadata: { tradeRef: ref, userId: req.user!.id, reason: parsed.data.reason },
+    })
     return reply.send({ success: true })
   })
 

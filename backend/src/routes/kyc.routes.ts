@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
 import { getKycStatus, submitKyc, getUserSubmissions } from '../services/kyc.service'
 import { AppError } from '../lib/errors'
+import { createAdminNotif } from '../services/adminNotification.service'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -42,6 +43,13 @@ export async function kycRoutes(app: FastifyInstance) {
     const submission = await submitKyc(userId, {
       ...kycCore,
       ...(socialLinks ? { socialLinks } : {}),
+    })
+    void createAdminNotif({
+      category: 'KYC',
+      title:    'New KYC Submission',
+      body:     `User submitted ${kycCore.tier} KYC. Submission ID: ${submission.id}`,
+      href:     `/admin/kyc`,
+      metadata: { userId, submissionId: submission.id, tier: kycCore.tier },
     })
     return reply.code(201).send({ success: true, data: submission })
   })

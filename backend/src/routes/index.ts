@@ -28,6 +28,7 @@ import { ctmMerchantRoutes } from '../ctm/ctm.merchant.routes'
 import { ctmAdminRoutes } from '../ctm/ctm.admin.routes'
 import { pushRoutes } from './push.routes'
 import { sseRoutes } from './sse.routes'
+import { adminNotificationRoutes } from './adminNotification.routes'
 
 export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes)
@@ -59,4 +60,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(ctmAdminRoutes, { prefix: '/api/v1' })
   await app.register(pushRoutes, { prefix: '/api/v1' })
   await app.register(sseRoutes, { prefix: '/api/v1' })
+  await app.register(adminNotificationRoutes, { prefix: '/api/v1' })
 }
