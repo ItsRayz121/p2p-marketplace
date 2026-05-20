@@ -178,7 +178,10 @@ const envSchema = z.object({
   POSTHOG_API_KEY: z.string().optional(),
 
   // Alerts
-  ADMIN_ALERT_EMAIL: z.string().email().optional(),
+  ADMIN_ALERT_EMAIL: z.preprocess(
+    (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+    z.string().email().optional(),
+  ),
 })
 
 // Production-only required vars: fail fast if missing in prod.
