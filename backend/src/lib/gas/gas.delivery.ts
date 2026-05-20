@@ -14,11 +14,32 @@ import {
 } from './gasWalletService'
 import { getHotWalletBalance } from './gas.balance'
 import type { GasChainId } from './gas.chains'
+import {
+  getSolanaHotWalletAddress,
+  deriveSolanaPrivateKeyForDelivery,
+} from './solanaWalletService'
+import {
+  getTonHotWalletAddress,
+  deriveTonKeypairForDelivery,
+} from './tonWalletService'
+import {
+  getSuiHotWalletAddress,
+  deriveSuiPrivateKeyForDelivery,
+} from './suiWalletService'
 
 // Map GasFeeOrder.chain (GasChain enum) to GasChainId used by balance helpers.
 const CHAIN_TO_BALANCE_ID: Partial<Record<string, GasChainId>> = {
   TRON: 'TRON', BSC: 'BSC', ETH: 'ETHEREUM', BASE: 'BASE',
   ARB: 'ARB', OP: 'OP', MATIC: 'MATIC', AVAX: 'AVAX',
+  SOL: 'SOL', TON: 'TON', SUI: 'SUI',
+}
+
+function getHotWalletAddressForChain(chain: string): string | null {
+  if (chain === 'TRON') return getTronHotWalletAddress()
+  if (chain === 'SOL')  return getSolanaHotWalletAddress()
+  if (chain === 'TON')  return getTonHotWalletAddress()
+  if (chain === 'SUI')  return getSuiHotWalletAddress()
+  return getEvmHotWalletAddress()
 }
 
 /**
@@ -28,11 +49,10 @@ const CHAIN_TO_BALANCE_ID: Partial<Record<string, GasChainId>> = {
  */
 async function assertHotWalletSufficient(order: GasFeeOrder): Promise<void> {
   const balanceChain = CHAIN_TO_BALANCE_ID[order.chain]
-  if (!balanceChain) return // non-EVM/TRON stubs — they throw on their own
+  if (!balanceChain) return
 
-  const isTron = order.chain === 'TRON'
-  const hotAddr = isTron ? getTronHotWalletAddress() : getEvmHotWalletAddress()
-  if (!hotAddr) return // wallet not configured — delivery will fail anyway
+  const hotAddr = getHotWalletAddressForChain(order.chain)
+  if (!hotAddr) return
 
   let balance: number
   try {
@@ -155,37 +175,123 @@ async function deliverAvax(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Prom
   return deliverEvmMnemonic(order, avalanche, env.AVALANCHE_RPC_URL, hdIndex)
 }
 
-// ── Non-EVM delivery stubs (inactive — hard guards) ───────────────────────────
-//
-// These functions intentionally throw before attempting any real transaction.
-// Delivery for SOL/TON/SUI is architecturally stubbed:
-//   SOL: requires @solana/web3.js for transaction signing
-//   TON: requires @ton/ton + proper V4R2 StateInit address
-//   SUI: requires @mysten/sui for transaction object building
-//
-// The guards below ensure that even if an order for these chains somehow
-// reaches deliverGas(), it fails safely with a clear error instead of
-// silently doing nothing or partially executing.
+// ── Solana delivery ───────────────────────────────────────────────────────────
 
-function deliverSol(_order: GasFeeOrder): never {
-  throw new Error(
-    'SOL gas delivery is not yet implemented. ' +
-    'Chain status: inactive. Requires @solana/web3.js for ed25519 tx signing.',
-  )
+async function deliverSol(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  const { Connection, Keypair, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } =
+    await import('@solana/web3.js')
+
+  const seed = decryptGasSeed()
+  let privateKeySeed: Buffer | null = null
+  try {
+    privateKeySeed = deriveSolanaPrivateKeyForDelivery(seed)
+    const keypair = Keypair.fromSeed(new Uint8Array(privateKeySeed))
+    const connection = new Connection(env.SOL_RPC_URL, 'confirmed')
+
+    const toPubkey = new PublicKey(order.toAddress)
+    const lamports = Math.round(Number(order.gasAmountNative) * LAMPORTS_PER_SOL)
+
+    const { blockhash } = await connection.getLatestBlockhash('confirmed')
+    const tx = new Transaction({
+      recentBlockhash: blockhash,
+      feePayer: keypair.publicKey,
+    }).add(SystemProgram.transfer({
+      fromPubkey: keypair.publicKey,
+      toPubkey,
+      lamports,
+    }))
+
+    tx.sign(keypair)
+    const signature = await connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed',
+    })
+    return signature
+  } finally {
+    seed.fill(0)
+    if (privateKeySeed) privateKeySeed.fill(0)
+  }
 }
 
-function deliverTon(_order: GasFeeOrder): never {
-  throw new Error(
-    'TON gas delivery is not yet implemented. ' +
-    'Chain status: inactive. Requires @ton/ton + correct V4R2 wallet address derivation.',
-  )
+// ── TON delivery ──────────────────────────────────────────────────────────────
+
+async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  const { WalletContractV4, TonClient, internal } = await import('@ton/ton')
+  const { toNano } = await import('@ton/core')
+
+  const seed = decryptGasSeed()
+  let privateKey: Buffer | null = null
+  try {
+    const keypair = deriveTonKeypairForDelivery(seed)
+    privateKey = keypair.privateKey
+    const { publicKey } = keypair
+
+    // TON nacl-style secret key: private (32 bytes) || public (32 bytes)
+    const secretKey = Buffer.concat([privateKey, Buffer.from(publicKey)])
+
+    const wallet = WalletContractV4.create({ workchain: 0, publicKey: Buffer.from(publicKey) })
+    const endpoint = `${env.TON_ENDPOINT_URL.replace(/\/$/, '')}/api/v2/jsonRPC`
+    const client = new TonClient({
+      endpoint,
+      ...(env.TON_API_KEY ? { apiKey: env.TON_API_KEY } : {}),
+    })
+    const contract = client.open(wallet)
+
+    const seqno = await contract.getSeqno()
+    const value = toNano(Number(order.gasAmountNative).toFixed(9))
+
+    const transfer = contract.createTransfer({
+      seqno,
+      secretKey,
+      messages: [
+        internal({
+          to: order.toAddress,
+          value,
+          bounce: false,
+        }),
+      ],
+    })
+
+    // External message cell hash — unique identifier usable on Tonscan
+    const txHash = transfer.hash().toString('hex')
+    await client.sendFile(transfer.toBoc())
+    return txHash
+  } finally {
+    seed.fill(0)
+    if (privateKey) privateKey.fill(0)
+  }
 }
 
-function deliverSui(_order: GasFeeOrder): never {
-  throw new Error(
-    'SUI gas delivery is not yet implemented. ' +
-    'Chain status: inactive. Requires @mysten/sui for transaction object construction.',
-  )
+// ── SUI delivery ──────────────────────────────────────────────────────────────
+
+async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  const { SuiClient } = await import('@mysten/sui/client')
+  const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519')
+  const { Transaction } = await import('@mysten/sui/transactions')
+
+  const seed = decryptGasSeed()
+  let privateKeySeed: Buffer | null = null
+  try {
+    privateKeySeed = deriveSuiPrivateKeyForDelivery(seed)
+    const keypair = Ed25519Keypair.fromSecretKey(new Uint8Array(privateKeySeed))
+    const client = new SuiClient({ url: env.SUI_RPC_URL })
+
+    const mistAmount = BigInt(Math.round(Number(order.gasAmountNative) * 1e9))
+    const tx = new Transaction()
+    const [coin] = tx.splitCoins(tx.gas, [mistAmount])
+    tx.transferObjects([coin], order.toAddress)
+
+    const result = await client.signAndExecuteTransaction({
+      signer: keypair,
+      transaction: tx,
+      requestType: 'WaitForLocalExecution',
+      options: { showEffects: true },
+    })
+    return result.digest
+  } finally {
+    seed.fill(0)
+    if (privateKeySeed) privateKeySeed.fill(0)
+  }
 }
 
 // ── Dry-run support ───────────────────────────────────────────────────────────
@@ -219,16 +325,14 @@ export async function dryRunDelivery(
     const r = await dryRunSolanaDelivery(toAddress, amount)
     return {
       chain: 'SOL',
-      supported: false,
+      supported: true,
       hotWalletAddress: r.hotWalletAddress,
       hotWalletBalance: r.hotWalletBalance,
       toAddressValid: r.toAddressValid,
       rpcReachable: r.rpc.reachable,
       rpcLatencyMs: r.rpc.latencyMs,
-      canDeliver: false,
-      blockers: r.error
-        ? [r.error, 'Delivery not implemented — requires @solana/web3.js']
-        : ['Delivery not implemented — requires @solana/web3.js'],
+      canDeliver: r.ok,
+      blockers: r.error ? [r.error] : [],
       warnings: [],
     }
   }
@@ -238,18 +342,14 @@ export async function dryRunDelivery(
     const r = await dryRunTonDelivery(toAddress, amount)
     return {
       chain: 'TON',
-      supported: false,
+      supported: true,
       hotWalletAddress: r.hotWalletAddress,
       hotWalletBalance: r.hotWalletBalance,
       toAddressValid: r.toAddressValid,
       rpcReachable: r.rpc.reachable,
       rpcLatencyMs: r.rpc.latencyMs,
-      canDeliver: false,
-      blockers: [
-        'Delivery not implemented — requires @ton/ton',
-        'V4R2 wallet address requires @ton/core for StateInit hash',
-        ...(r.error ? [r.error] : []),
-      ],
+      canDeliver: r.ok,
+      blockers: r.error ? [r.error] : [],
       warnings: r.warning ? [r.warning] : [],
     }
   }
@@ -258,19 +358,19 @@ export async function dryRunDelivery(
     const { dryRunSuiDelivery } = await import('./suiWalletService')
     const r = await dryRunSuiDelivery(toAddress, amount)
     const warnings: string[] = []
-    if (!r.blake2bAvailable) warnings.push('blake2b-256 unavailable — address derivation uses sha3-256 fallback (WRONG)')
+    if (!r.blake2bAvailable) warnings.push('blake2b-256 unavailable — SUI address is wrong, delivery blocked')
     return {
       chain: 'SUI',
-      supported: false,
+      supported: true,
       hotWalletAddress: r.hotWalletAddress,
       hotWalletBalance: r.hotWalletBalance,
       toAddressValid: r.toAddressValid,
       rpcReachable: r.rpc.reachable,
       rpcLatencyMs: r.rpc.latencyMs,
-      canDeliver: false,
+      canDeliver: r.ok && r.blake2bAvailable,
       blockers: [
-        'Delivery not implemented — requires @mysten/sui',
         ...(r.error ? [r.error] : []),
+        ...(!r.blake2bAvailable ? ['blake2b-256 unavailable on this host — SUI address derivation incorrect'] : []),
       ],
       warnings,
     }
@@ -323,9 +423,9 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX)
     case 'OP':    return deliverOp(order, hdIndex)
     case 'MATIC': return deliverMatic(order, hdIndex)
     case 'AVAX':  return deliverAvax(order, hdIndex)
-    case 'SOL':   return deliverSol(order)
-    case 'TON':   return deliverTon(order)
-    case 'SUI':   return deliverSui(order)
+    case 'SOL':   return deliverSol(order, hdIndex)
+    case 'TON':   return deliverTon(order, hdIndex)
+    case 'SUI':   return deliverSui(order, hdIndex)
     default: throw new Error(`deliverGas: unsupported chain ${order.chain}`)
   }
 }

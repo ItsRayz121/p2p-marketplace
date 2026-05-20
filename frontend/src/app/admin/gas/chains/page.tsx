@@ -266,6 +266,9 @@ function ChainModal({
                 <option value="OP">OP</option>
                 <option value="MATIC">MATIC</option>
                 <option value="AVAX">AVAX</option>
+                <option value="SOL">SOL</option>
+                <option value="TON">TON</option>
+                <option value="SUI">SUI</option>
               </select>
             </div>
             <div>

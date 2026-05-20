@@ -14,7 +14,7 @@
  *   - Stored address is the sha256 fingerprint of the public key (safe, non-secret).
  */
 
-import { createHash } from 'node:crypto'
+import { WalletContractV4 } from '@ton/ton'
 import { env } from '../env'
 import { decryptGasSeed, gasWalletIsConfigured } from './gasWalletService'
 import { deriveSlip10Ed25519, ed25519PublicKeyFromSeed } from './nonEvmDerivation'
@@ -38,28 +38,33 @@ export function validateTonAddress(addr: string): boolean {
 // ── Key + address derivation ───────────────────────────────────────────────────
 
 /**
- * Derive the TON hot wallet ed25519 public key from the BIP39 seed.
- *
- * NOTE: The TON V4R2 wallet address is derived from the StateInit hash which
- * depends on the wallet contract bytecode + public key. Until @ton/core is
- * added as a dependency, we return a deterministic placeholder:
- *   "0:" + sha256(0x00 || pubkey).toString('hex')
- *
- * This address is used for internal validation only. It will NOT receive funds
- * correctly unless replaced with a proper V4R2 derivation before activation.
+ * Derive the TON V4R2 hot wallet address from the BIP39 seed.
+ * Uses WalletContractV4 to compute the real StateInit-based address.
+ * Derivation path: m/44'/607'/0'/0' (SLIP-0010 compatible for TON)
  */
 function deriveTonPublicKeyAndAddress(seed: Buffer): { publicKey: Buffer; address: string } {
   const { privateKey } = deriveSlip10Ed25519(seed, TON_SLIP10_PATH)
   try {
     const publicKey = ed25519PublicKeyFromSeed(privateKey)
-    // Simplified placeholder: 0:sha256(flag || pubkey)
-    const hashInput = Buffer.concat([Buffer.from([0x00]), publicKey])
-    const fingerprint = createHash('sha256').update(hashInput).digest('hex')
-    const address = `0:${fingerprint}`
-    return { publicKey: Buffer.from(publicKey), address }
+    const wallet = WalletContractV4.create({ workchain: 0, publicKey: Buffer.from(publicKey) })
+    // Raw format (0:hex64) — accepted by TON HTTP API and consistent with address validation
+    return { publicKey: Buffer.from(publicKey), address: wallet.address.toRawString() }
   } finally {
     privateKey.fill(0)
   }
+}
+
+// ── Delivery key helper ───────────────────────────────────────────────────────
+
+/**
+ * Derive the TON V4R2 keypair for delivery signing.
+ * Returns { privateKey (32 bytes), publicKey (32 bytes) }.
+ * Caller MUST zero both Buffers immediately after use (in a finally block).
+ */
+export function deriveTonKeypairForDelivery(seed: Buffer): { privateKey: Buffer; publicKey: Buffer } {
+  const { privateKey } = deriveSlip10Ed25519(seed, TON_SLIP10_PATH)
+  const publicKey = ed25519PublicKeyFromSeed(privateKey)
+  return { privateKey, publicKey: Buffer.from(publicKey) } // caller responsibility to zero
 }
 
 // ── Address cache ─────────────────────────────────────────────────────────────
@@ -107,12 +112,7 @@ export function validateTonAtStartup(): {
     }
 
     _tonAddressCache = address
-    return {
-      configured: true,
-      address,
-      // Remind operators that this is the simplified form until @ton/core is integrated
-      warning: 'TON address is a derivation placeholder. Integrate @ton/core before activating delivery.',
-    }
+    return { configured: true, address }
   } catch (err) {
     return {
       configured: true,
@@ -206,7 +206,6 @@ export async function dryRunTonDelivery(toAddress: string, amountTon: number): P
     hotWalletBalance,
     toAddressValid,
     rpc,
-    warning: 'TON delivery requires @ton/core integration and a properly-registered V4R2 wallet before activation.',
     ...(error ? { error } : {}),
   }
 }

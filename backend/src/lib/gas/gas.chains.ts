@@ -148,7 +148,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SOL,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_SOL,
     getRpcUrl:           () => env.SOL_RPC_URL,
-    deliveryImplemented: false,
+    deliveryImplemented: true,
   },
   TON: {
     id: 'TON',
@@ -161,7 +161,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_TON,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_TON,
     getRpcUrl:           () => env.TON_ENDPOINT_URL,
-    deliveryImplemented: false,
+    deliveryImplemented: true,
   },
   SUI: {
     id: 'SUI',
@@ -174,7 +174,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SUI,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_SUI,
     getRpcUrl:           () => env.SUI_RPC_URL,
-    deliveryImplemented: false,
+    deliveryImplemented: true,
   },
 }
 

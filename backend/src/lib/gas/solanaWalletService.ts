@@ -61,6 +61,18 @@ export function deriveSolanaHotWalletAddress(): string | null {
   }
 }
 
+// ── Delivery key helper ───────────────────────────────────────────────────────
+
+/**
+ * Derive the raw 32-byte ed25519 private key seed for transaction signing.
+ * Caller MUST zero the returned Buffer immediately after use (in a finally block).
+ * This is the SLIP-0010 derived seed that @solana/web3.js Keypair.fromSeed expects.
+ */
+export function deriveSolanaPrivateKeyForDelivery(seed: Buffer): Buffer {
+  const { privateKey } = deriveSlip10Ed25519(seed, SOLANA_SLIP10_PATH)
+  return privateKey // caller responsibility to zero
+}
+
 // ── Address cache ─────────────────────────────────────────────────────────────
 
 let _solanaAddressCache: string | null = null

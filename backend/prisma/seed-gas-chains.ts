@@ -421,7 +421,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'Solana',
     addressType: 'SOL',
     explorerBase: 'https://solscan.io',
-    backendChainId: null,
+    backendChainId: 'SOL',
     isActive: false,
     displayOrder: 8,
     tokens: [
@@ -474,7 +474,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'SUI',
     addressType: 'SUI',
     explorerBase: 'https://suiscan.xyz',
-    backendChainId: null,
+    backendChainId: 'SUI',
     isActive: false,
     displayOrder: 9,
     tokens: [
@@ -578,7 +578,7 @@ const chains: ChainSeed[] = [
     networkLabel: 'TON',
     addressType: 'TON',
     explorerBase: 'https://tonscan.org',
-    backendChainId: null,
+    backendChainId: 'TON',
     isActive: false,
     displayOrder: 11,
     tokens: [

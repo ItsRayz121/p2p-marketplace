@@ -77,6 +77,18 @@ function deriveSuiPublicKeyAndAddress(seed: Buffer): { publicKey: Buffer; addres
   }
 }
 
+// ── Delivery key helper ───────────────────────────────────────────────────────
+
+/**
+ * Derive the raw 32-byte ed25519 private key seed for SUI delivery signing.
+ * Caller MUST zero the returned Buffer immediately after use (in a finally block).
+ * This is the seed that @mysten/sui Ed25519Keypair.fromSecretKey expects.
+ */
+export function deriveSuiPrivateKeyForDelivery(seed: Buffer): Buffer {
+  const { privateKey } = deriveSlip10Ed25519(seed, SUI_SLIP10_PATH)
+  return privateKey // caller responsibility to zero
+}
+
 // ── Address cache ─────────────────────────────────────────────────────────────
 
 let _suiAddressCache: string | null = null
