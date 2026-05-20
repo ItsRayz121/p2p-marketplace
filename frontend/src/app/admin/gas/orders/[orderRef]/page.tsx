@@ -143,6 +143,10 @@ export default function GasOrderDetailPage() {
   const [refundOpen, setRefundOpen] = useState(false)
   const [approvePkrOpen, setApprovePkrOpen] = useState(false)
   const [rejectPkrOpen, setRejectPkrOpen] = useState(false)
+  const [markPaymentOpen, setMarkPaymentOpen] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [markPaymentTxHash, setMarkPaymentTxHash] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
@@ -214,6 +218,36 @@ export default function GasOrderDetailPage() {
     }
   }
 
+  async function handleMarkPayment() {
+    if (!order) return
+    setActionError(null)
+    try {
+      await adminApi.markGasPaymentReceived(order.id, markPaymentTxHash.trim() || undefined)
+      setMarkPaymentOpen(false)
+      setMarkPaymentTxHash('')
+      setActionSuccess('Payment marked as received — gas delivery queued.')
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed')
+      setMarkPaymentOpen(false)
+    }
+  }
+
+  async function handleCancel() {
+    if (!order) return
+    setActionError(null)
+    try {
+      await adminApi.cancelGasOrder(order.id, cancelReason.trim() || undefined)
+      setCancelOpen(false)
+      setCancelReason('')
+      setActionSuccess('Order cancelled.')
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Cancel failed')
+      setCancelOpen(false)
+    }
+  }
+
   if (loading) return <LoadingState message="Loading order..." />
   if (error || !order) return (
     <ErrorState
@@ -228,6 +262,7 @@ export default function GasOrderDetailPage() {
 
   const isFailed = order.status === 'failed'
   const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
+  const isAwaitingPayment = order.status === 'payment_pending' || order.status === 'expired'
   const isOrderExpired = order.expiresAt ? new Date(order.expiresAt) < new Date() : false
 
   return (
@@ -283,6 +318,40 @@ export default function GasOrderDetailPage() {
             </div>
             <Button variant="primary" size="sm" onClick={() => setApprovePkrOpen(true)} disabled={isOrderExpired}>Approve</Button>
             <Button variant="danger" size="sm" onClick={() => setRejectPkrOpen(true)}>Reject</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Actions — awaiting payment */}
+      {isAwaitingPayment && (
+        <div className={`mb-6 p-4 rounded-xl border ${isOrderExpired ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+          {isOrderExpired && (
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-100 border border-amber-200">
+              <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="text-xs font-semibold text-amber-800">
+                Order expired. If the user paid before expiry, use &quot;Mark Payment Received&quot; to still deliver gas. Otherwise cancel.
+              </p>
+            </div>
+          )}
+          <div className="flex gap-3 items-start">
+            <div className="flex-1">
+              <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-amber-900' : 'text-blue-900'}`}>
+                {isOrderExpired ? 'Order Expired' : 'Awaiting Payment'}
+              </p>
+              <p className={`text-xs ${isOrderExpired ? 'text-amber-700' : 'text-blue-700'}`}>
+                {isOrderExpired
+                  ? 'If payment was received off-chain, mark it to release gas. Otherwise cancel.'
+                  : 'If you have received payment off-chain or auto-detection failed, mark it as received to release gas.'}
+              </p>
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setMarkPaymentOpen(true)}>
+              Mark Payment Received
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => setCancelOpen(true)}>
+              Cancel Order
+            </Button>
           </div>
         </div>
       )}
@@ -435,6 +504,58 @@ export default function GasOrderDetailPage() {
         confirmLabel="Mark Refunded"
         confirmVariant="danger"
       />
+
+      {/* Mark Payment Received modal */}
+      {markPaymentOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-card rounded-2xl border border-border shadow-xl w-full max-w-md p-6">
+            <h3 className="text-base font-semibold text-text-primary mb-1">Mark Payment Received</h3>
+            <p className="text-sm text-text-muted mb-4">
+              Confirm you have received payment for order <span className="font-mono font-medium">{order.orderRef}</span>. Gas delivery will be queued immediately.
+            </p>
+            <label className="block text-xs font-medium text-text-muted mb-1">
+              Transaction Hash <span className="text-text-muted font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="0x... or TRON tx hash"
+              value={markPaymentTxHash}
+              onChange={e => setMarkPaymentTxHash(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-primary font-mono placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary mb-5"
+            />
+            <div className="flex gap-3 justify-end">
+              <Button variant="ghost" size="sm" onClick={() => { setMarkPaymentOpen(false); setMarkPaymentTxHash('') }}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={handleMarkPayment}>Confirm &amp; Release Gas</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Order modal */}
+      {cancelOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-card rounded-2xl border border-border shadow-xl w-full max-w-md p-6">
+            <h3 className="text-base font-semibold text-text-primary mb-1">Cancel Order</h3>
+            <p className="text-sm text-text-muted mb-4">
+              Cancel order <span className="font-mono font-medium">{order.orderRef}</span>. The order will be marked as failed.
+            </p>
+            <label className="block text-xs font-medium text-text-muted mb-1">
+              Reason <span className="text-text-muted font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Expired, fraud suspected, user request…"
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-danger mb-5"
+            />
+            <div className="flex gap-3 justify-end">
+              <Button variant="ghost" size="sm" onClick={() => { setCancelOpen(false); setCancelReason('') }}>Back</Button>
+              <Button variant="danger" size="sm" onClick={handleCancel}>Cancel Order</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

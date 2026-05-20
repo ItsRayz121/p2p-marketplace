@@ -427,6 +427,7 @@ export default function GasPage() {
   const [qrFailed, setQrFailed]             = useState(false)
 
   // ── Manual payment verification ─────────────────────────────────────────────
+  const [paymentSent, setPaymentSent]   = useState(false)
   const [verifyOpen, setVerifyOpen]     = useState(false)
   const [verifyTxHash, setVerifyTxHash] = useState('')
   const [verifying, setVerifying]       = useState(false)
@@ -1547,26 +1548,48 @@ export default function GasPage() {
                         </p>
                       )}
 
-                      {/* Already sent? — manual verification */}
+                      {/* Payment sent flow */}
                       {verifySuccess ? (
                         <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
-                          <p className="text-sm font-bold text-green-700 mb-0.5">Payment Verified!</p>
+                          <p className="text-sm font-bold text-green-700 mb-0.5">Payment Submitted!</p>
                           <p className="text-xs text-green-600">{verifySuccess}</p>
                         </div>
-                      ) : !verifyOpen ? (
+                      ) : !paymentSent ? (
                         <button
-                          onClick={() => setVerifyOpen(true)}
-                          className="w-full text-xs text-gray-400 underline underline-offset-2 text-center pt-1 hover:text-gray-600 transition-colors"
+                          onClick={() => setPaymentSent(true)}
+                          className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-sm font-semibold transition-colors shadow-sm"
                         >
-                          Already sent? Enter your transaction hash
+                          I&apos;ve Sent the Payment
                         </button>
+                      ) : !verifyOpen ? (
+                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4 text-purple-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            <p className="text-sm font-semibold text-purple-900">Payment Sent</p>
+                          </div>
+                          <p className="text-xs text-purple-700">
+                            We&apos;ll detect your payment automatically. If it doesn&apos;t confirm in a minute, paste your transaction hash to speed it up.
+                          </p>
+                          <button
+                            onClick={() => setVerifyOpen(true)}
+                            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-sm font-semibold transition-colors"
+                          >
+                            Enter Transaction Hash
+                          </button>
+                          <button
+                            onClick={() => setPaymentSent(false)}
+                            className="w-full text-xs text-purple-400 hover:text-purple-600 text-center"
+                          >
+                            I haven&apos;t sent yet — go back
+                          </button>
+                        </div>
                       ) : (
                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-blue-800">Verify Your Payment</p>
+                            <p className="text-xs font-bold text-blue-800">Enter Transaction Hash</p>
                             <button onClick={() => { setVerifyOpen(false); setVerifyError('') }} className="text-blue-400 hover:text-blue-600 text-lg leading-none">&times;</button>
                           </div>
-                          <p className="text-xs text-blue-700">Paste your transaction hash from your wallet or blockchain explorer. We'll verify it automatically.</p>
+                          <p className="text-xs text-blue-700">Paste your transaction hash from your wallet or blockchain explorer. We&apos;ll verify and release your gas.</p>
                           <input
                             type="text"
                             value={verifyTxHash}
@@ -1580,7 +1603,7 @@ export default function GasPage() {
                             disabled={verifying || !verifyTxHash.trim()}
                             className="w-full text-sm"
                           >
-                            {verifying ? 'Verifying on-chain…' : 'Verify Payment'}
+                            {verifying ? 'Verifying…' : 'Confirm Payment'}
                           </Button>
                         </div>
                       )}

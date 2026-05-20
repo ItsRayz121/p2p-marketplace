@@ -9,6 +9,7 @@ import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { fromDbChain } from '../lib/gas/gas.chains'
 import { selectHotWallet } from '../lib/gas/gasWalletService'
+import { createAdminNotif } from '../services/adminNotification.service'
 
 export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   const { orderId } = job.data
@@ -86,6 +87,13 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
 
     logger.info({ orderId, deliveryTxHash, chain: order.chain }, 'Gas fee delivered successfully')
     await notifyMerchantWebhook(orderId, 'delivered')
+    void createAdminNotif({
+      category: 'GAS',
+      title: `Gas Sent — ${Number(order.gasAmountNative).toFixed(6)} ${order.chain}`,
+      body: `Order ${order.orderRef} delivered to ${order.toAddress.slice(0, 10)}… Tx: ${deliveryTxHash.slice(0, 12)}…`,
+      href: `/admin/gas/orders/${order.orderRef}`,
+      metadata: { txHash: deliveryTxHash, orderId, chain: order.chain, toAddress: order.toAddress, amount: order.gasAmountNative },
+    })
   } catch (err) {
     const attemptNumber = job.attemptsMade + 1
     const maxAttempts = job.opts.attempts ?? 3

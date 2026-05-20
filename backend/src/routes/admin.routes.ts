@@ -98,6 +98,13 @@ export async function adminRoutes(app: FastifyInstance) {
         todayTrades,
         unreadNotifCount,
         recentNotifications,
+        pendingGasOrders,
+        pkrGasProofsPending,
+        todayGasOrders,
+        todayGasRevenueResult,
+        totalGasOrders,
+        totalGasRevenueResult,
+        recentGasActivity,
       ] = await Promise.all([
         db.kycSubmission.count({ where: { status: 'pending' } }),
         db.dispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
@@ -121,6 +128,37 @@ export async function adminRoutes(app: FastifyInstance) {
           take: 5,
           select: { id: true, category: true, title: true, body: true, href: true, isRead: true, createdAt: true },
         }),
+        // Gas fee stats
+        db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_detected', 'sending'] } } }),
+        db.gasFeeOrder.count({ where: { status: 'payment_uploaded', paymentCoin: 'PKR' } }),
+        db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
+        db.gasFeeOrder.aggregate({
+          where: { status: 'delivered', deliveredAt: { gte: today } },
+          _sum: { paymentAmount: true },
+        }),
+        db.gasFeeOrder.count(),
+        db.gasFeeOrder.aggregate({
+          where: { status: 'delivered' },
+          _sum: { paymentAmount: true },
+        }),
+        // Recent gas wallet activity (inbound deposits + outbound deliveries)
+        db.gasFeeOrder.findMany({
+          where: {
+            OR: [
+              { paymentTxHash: { not: null } },
+              { deliveryTxHash: { not: null } },
+            ],
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 8,
+          select: {
+            id: true, orderRef: true, chain: true,
+            paymentAmount: true, paymentCoin: true, paymentNetwork: true,
+            paymentTxHash: true, deliveryTxHash: true,
+            gasAmountNative: true, status: true,
+            createdAt: true, updatedAt: true, deliveredAt: true,
+          },
+        }),
       ])
 
       return reply.send({
@@ -138,6 +176,13 @@ export async function adminRoutes(app: FastifyInstance) {
           todayTrades,
           unreadNotifCount,
           recentNotifications,
+          pendingGasOrders,
+          pkrGasProofsPending,
+          todayGasOrders,
+          todayGasRevenueUsdt: Number(todayGasRevenueResult._sum.paymentAmount ?? 0).toFixed(2),
+          totalGasOrders,
+          totalGasRevenueUsdt: Number(totalGasRevenueResult._sum.paymentAmount ?? 0).toFixed(2),
+          recentGasActivity,
         },
       })
     },
@@ -2962,6 +3007,55 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('CONFLICT', `Order is in '${order.status}' — can only reject payment_uploaded PKR orders`, 409)
     }
     await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, { reason })
+    return reply.send({ success: true, data: { status: 'failed' } })
+  })
+
+  // ── POST /admin/gas/orders/:id/mark-payment — manually confirm payment received ────
+
+  app.post('/admin/gas/orders/:id/mark-payment', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { txHash?: string }
+    const txHash = body?.txHash?.trim() || null
+
+    const order = await db.gasFeeOrder.findUnique({ where: { id } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    // Admins can mark payment on any non-terminal status — including expired orders
+    // where the user paid after the timer ran out.
+    const allowedStatuses = ['payment_pending', 'payment_uploaded', 'expired']
+    if (!allowedStatuses.includes(order.status)) {
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only confirm payment for pending, uploaded, or expired orders`, 409)
+    }
+
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id, status: { in: ['payment_pending', 'payment_uploaded', 'expired'] } },
+      data:  { status: 'payment_detected', ...(txHash ? { paymentTxHash: txHash } : {}) },
+    })
+    if (claimed.count === 0) {
+      throw new AppError('CONFLICT', 'Order was already processed by another admin', 409)
+    }
+    await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
+    await createAuditLog(req.user!.id, 'GAS_PAYMENT_MANUALLY_CONFIRMED', 'GasFeeOrder', id, { txHash })
+    return reply.send({ success: true, data: { status: 'payment_detected' } })
+  })
+
+  // ── POST /admin/gas/orders/:id/cancel — cancel a payment_pending order ────────────
+
+  app.post('/admin/gas/orders/:id/cancel', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { reason?: string }
+    const reason = body?.reason?.trim() || 'Cancelled by admin'
+
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id, status: { in: ['payment_pending', 'payment_uploaded'] } },
+      data:  { status: 'failed', failureReason: reason },
+    })
+    if (claimed.count === 0) {
+      const order = await db.gasFeeOrder.findUnique({ where: { id } })
+      if (!order) throw Errors.NOT_FOUND('Gas fee order')
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only cancel payment_pending or payment_uploaded orders`, 409)
+    }
+    await createAuditLog(req.user!.id, 'GAS_ORDER_CANCELLED', 'GasFeeOrder', id, { reason })
     return reply.send({ success: true, data: { status: 'failed' } })
   })
 

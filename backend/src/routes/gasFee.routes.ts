@@ -452,7 +452,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const gasAmountUSD    = amount * nativeUsdRate
     const platformFeeUsdt = resolved.platformFeeUsdt
-    const paymentAmount   = gasAmountUSD + platformFeeUsdt
+    // Round to 2 decimal places so users see and pay a clean amount (e.g. 0.16, not 0.1644)
+    const paymentAmount   = Math.round((gasAmountUSD + platformFeeUsdt) * 100) / 100
 
     if (gasAmountUSD > resolved.maxUsdValue) {
       throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolved.maxUsdValue} USD. Reduce the amount.`, 400)
@@ -624,7 +625,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const gasAmountUSD  = gasAmountNative * nativeUsdRate
     const priceAtOrder  = nativeUsdRate
-    const paymentAmount = gasAmountUSD * markup
+    const paymentAmount = Math.round(gasAmountUSD * markup * 100) / 100
 
     const userId = req.user?.id ?? null
     if (!userId) {
@@ -1375,7 +1376,21 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // Resolve the deposit address (DB override takes precedence)
     const dbDepositOverride = await db.platformConfig.findUnique({ where: { key: netDef.depositAddressDbKey } })
     const depositAddress = (dbDepositOverride?.value ?? netDef.depositAddressEnvFn())?.toLowerCase()
-    if (!depositAddress) throw new AppError('CHAIN_NOT_SUPPORTED', 'Deposit address not configured for this network', 400)
+
+    // If deposit address is not configured we cannot verify on-chain, but we can
+    // still accept the txHash and queue the order for manual admin review.
+    if (!depositAddress) {
+      const claimed = await db.gasFeeOrder.updateMany({
+        where: { id: order.id, status: { in: ['payment_pending', 'expired'] }, paymentTxHash: null },
+        data:  { status: 'payment_uploaded', paymentTxHash: txHash },
+      })
+      if (claimed.count === 0) {
+        const fresh = await db.gasFeeOrder.findUnique({ where: { id: order.id }, select: { status: true } })
+        return reply.send({ success: true, data: { status: fresh?.status ?? order.status, message: 'Payment already recorded.' } })
+      }
+      logger.warn({ orderRef, txHash, network: order.paymentNetwork }, 'verify-payment: deposit address not configured — txHash queued for admin review')
+      return reply.send({ success: true, data: { status: 'payment_uploaded', message: 'Payment submitted for review. An admin will verify and release your gas shortly.' } })
+    }
 
     // ── EVM verification (BSC / ETH) ─────────────────────────────────────────
     const client = createPublicClient({ chain: netDef.viemChain, transport: viemHttp(netDef.rpcUrl, { timeout: 12_000 }) })

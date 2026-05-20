@@ -12,6 +12,7 @@ import { queues } from '../queues/definitions'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
 import { sendAdminAlertEmail } from '../services/email.service'
+import { createAdminNotif } from '../services/adminNotification.service'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
 const TRANSFER_EVENT = parseAbiItem(
@@ -166,6 +167,13 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
       if (claimed.count > 0) {
         await queues.gasFee.add('deliver', { orderId: activeOrder.id }, { priority: 1 })
         logger.info({ txHash, orderId: activeOrder.id, network: cfg.paymentNetwork, incoming }, 'gasPaymentPoller: payment detected — active order attributed')
+        void createAdminNotif({
+          category: 'GAS',
+          title: `Deposit Received — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
+          body: `Order ${activeOrder.orderRef} payment detected. Gas delivery queued. Tx: ${txHash.slice(0, 12)}…`,
+          href: `/admin/gas/orders/${activeOrder.orderRef}`,
+          metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork, orderId: activeOrder.id },
+        })
       }
       continue
     }
@@ -215,6 +223,13 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
             `Gas Order Resurrected — Late Payment Detection`,
             `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${cfg.paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but Moralis never fired. The poller detected and attributed it.`,
           ).catch(() => {})
+          void createAdminNotif({
+            category: 'GAS',
+            title: `Late Deposit Detected — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
+            body: `Expired order ${expiredOrder.orderRef} resurrected. Payment was on-chain before expiry. Delivery queued. Tx: ${txHash.slice(0, 12)}…`,
+            href: `/admin/gas/orders/${expiredOrder.orderRef}`,
+            metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork, orderId: expiredOrder.id },
+          })
         }
         continue
       }
@@ -232,6 +247,13 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     await redis.zadd('gas_unattributed', Date.now(), member)
     await redis.zremrangebyrank('gas_unattributed', 0, -101)
     logger.warn({ txHash, incoming, network: cfg.paymentNetwork }, 'gasPaymentPoller: unattributed transfer — no matching order')
+    void createAdminNotif({
+      category: 'GAS',
+      title: `Unattributed Deposit — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
+      body: `Received ${incoming.toFixed(4)} USDT but no matching order found. Needs manual attribution. Tx: ${txHash.slice(0, 12)}…`,
+      href: '/admin/gas/flagged',
+      metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork },
+    })
   }
 }
 

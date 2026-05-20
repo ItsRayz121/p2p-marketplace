@@ -1248,6 +1248,27 @@ export const adminApi = {
         isRead: boolean
         createdAt: string
       }>
+      pendingGasOrders: number
+      pkrGasProofsPending: number
+      todayGasOrders: number
+      todayGasRevenueUsdt: string
+      totalGasOrders: number
+      totalGasRevenueUsdt: string
+      recentGasActivity: Array<{
+        id: string
+        orderRef: string
+        chain: string
+        paymentAmount: string
+        paymentCoin: string | null
+        paymentNetwork: string | null
+        paymentTxHash: string | null
+        deliveryTxHash: string | null
+        gasAmountNative: string
+        status: string
+        createdAt: string
+        updatedAt: string
+        deliveredAt: string | null
+      }>
     }>('/admin/dashboard/stats'),
 
   // Users
@@ -1381,6 +1402,10 @@ export const adminApi = {
     apiRequest<{ status: string }>(`/admin/gas/orders/${id}/approve-pkr`, { method: 'POST' }),
   rejectPkrOrder: (id: string, reason?: string) =>
     apiRequest<{ status: string }>(`/admin/gas/orders/${id}/reject-pkr`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  markGasPaymentReceived: (id: string, txHash?: string) =>
+    apiRequest<{ status: string }>(`/admin/gas/orders/${id}/mark-payment`, { method: 'POST', body: JSON.stringify({ txHash }) }),
+  cancelGasOrder: (id: string, reason?: string) =>
+    apiRequest<{ status: string }>(`/admin/gas/orders/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
 
   // Gas Custom Requests
   getGasCustomRequests: (params?: Record<string, string | number | undefined>) =>
