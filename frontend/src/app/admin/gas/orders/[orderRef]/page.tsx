@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/fmt'
@@ -133,7 +133,6 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 
 export default function GasOrderDetailPage() {
   const params = useParams()
-  const router = useRouter()
   const orderRef = params.orderRef as string
 
   const [order, setOrder] = useState<GasOrderDetail | null>(null)

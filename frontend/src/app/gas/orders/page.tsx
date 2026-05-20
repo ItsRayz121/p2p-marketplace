@@ -184,8 +184,8 @@ export default function GasOrdersPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await apiRequest<{ data: HistoryResponse }>(`/gas-fee/orders/history?page=${p}&limit=20`)
-      setData(res.data)
+      const res = await apiRequest<HistoryResponse>(`/gas-fee/orders/history?page=${p}&limit=20`)
+      setData(res)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load order history')
     } finally {
