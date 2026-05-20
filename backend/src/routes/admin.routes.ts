@@ -3857,37 +3857,54 @@ export async function adminRoutes(app: FastifyInstance) {
       ethereum: 'ethereum', bsc: 'binance-smart-chain', polygon: 'polygon-pos',
       arbitrum: 'arbitrum-one', optimism: 'optimistic-ethereum', base: 'base', avalanche: 'avalanche',
     }
-    const COINGECKO_SYMBOL_TO_ID: Record<string, string> = {
-      USDT: 'tether', USDC: 'usd-coin', DAI: 'dai', WBTC: 'wrapped-bitcoin',
-      LINK: 'chainlink', UNI: 'uniswap', AAVE: 'aave',
-    }
     const cgPlatform = COINGECKO_PLATFORM[chainSlug.toLowerCase()]
-    const cgId = COINGECKO_SYMBOL_TO_ID[symbol.toUpperCase()]
-    if (cgPlatform && cgId) {
+    if (cgPlatform) {
       try {
         const cgBase = 'https://api.coingecko.com/api/v3'
         const headers: Record<string, string> = env.COINGECKO_API_KEY
           ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY }
           : {}
-        const res = await fetch(`${cgBase}/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`, { headers })
-        if (res.ok) {
-          const data = await res.json() as { detail_platforms?: Record<string, { contract_address: string; decimal_place: number } | null> }
-          const platformData = data.detail_platforms?.[cgPlatform]
-          if (platformData?.contract_address) {
-            result.address = platformData.contract_address
-            result.decimals = platformData.decimal_place
-            result.coingeckoVerified = true
-          } else {
-            result.coingeckoError = `Token ${symbol} not found on platform ${cgPlatform}`
+
+        // Dynamically resolve symbol → CoinGecko ID via search API
+        const searchRes = await fetch(`${cgBase}/search?query=${encodeURIComponent(symbol)}`, { headers })
+        let cgId: string | null = null
+        if (searchRes.ok) {
+          const searchData = await searchRes.json() as { coins: Array<{ id: string; symbol: string; market_cap_rank: number | null }> }
+          // Pick the exact symbol match with the best (lowest) market cap rank
+          const matches = searchData.coins.filter(c => c.symbol.toUpperCase() === symbol.toUpperCase())
+          if (matches.length > 0) {
+            const best = matches.reduce((a, b) => {
+              if (a.market_cap_rank === null) return b
+              if (b.market_cap_rank === null) return a
+              return a.market_cap_rank <= b.market_cap_rank ? a : b
+            })
+            cgId = best.id
           }
+        }
+
+        if (!cgId) {
+          result.coingeckoError = `No CoinGecko ID mapping for symbol ${symbol}`
         } else {
-          result.coingeckoError = `CoinGecko returned HTTP ${res.status}`
+          const res = await fetch(`${cgBase}/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`, { headers })
+          if (res.ok) {
+            const data = await res.json() as { detail_platforms?: Record<string, { contract_address: string; decimal_place: number } | null> }
+            const platformData = data.detail_platforms?.[cgPlatform]
+            if (platformData?.contract_address) {
+              result.address = platformData.contract_address
+              result.decimals = platformData.decimal_place
+              result.coingeckoVerified = true
+            } else {
+              result.coingeckoError = `Token ${symbol} not found on platform ${cgPlatform}`
+            }
+          } else {
+            result.coingeckoError = `CoinGecko returned HTTP ${res.status}`
+          }
         }
       } catch (err) {
         result.coingeckoError = err instanceof Error ? err.message : 'CoinGecko fetch failed'
       }
     } else {
-      result.coingeckoError = cgId ? `No CoinGecko platform mapping for chain ${chainSlug}` : `No CoinGecko ID mapping for symbol ${symbol}`
+      result.coingeckoError = `No CoinGecko platform mapping for chain ${chainSlug}`
     }
 
     // Layer 2: On-chain RPC (EVM only)
