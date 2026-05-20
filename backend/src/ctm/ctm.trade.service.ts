@@ -386,7 +386,6 @@ export async function getMessages(tradeRef: string, userId: string, role: string
   return db.ctmTradeMessage.findMany({
     where: { tradeId: trade.id },
     orderBy: { createdAt: 'asc' },
-    include: { sender: { select: { id: true, username: true } } } as never,
   })
 }
 

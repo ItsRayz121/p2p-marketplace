@@ -2274,6 +2274,317 @@ export async function adminRoutes(app: FastifyInstance) {
   // GAS CHAIN CONFIG CRUD
   // ─────────────────────────────────────────────────────────────────────────
 
+  // GET /admin/gas/chain-lookup?q=<name|symbol> — auto-fill suggestion for the Add Chain form.
+  // Combines: local static map (confidence=high) → CoinGecko logo → chainid.network EVM data.
+  app.get('/admin/gas/chain-lookup', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { q } = req.query as { q?: string }
+    if (!q || q.trim().length < 2) throw new AppError('VALIDATION_ERROR', 'q must be at least 2 characters', 400)
+
+    const query = q.trim().toLowerCase()
+
+    // ── Static map — covers the chains we already know about ─────────────────
+    type StaticEntry = {
+      name: string; slug: string; symbol: string; category: string
+      addressType: string; networkLabel: string; explorerBase: string
+      evmChainId?: number; coingeckoId?: string
+    }
+    const STATIC: Record<string, StaticEntry> = {
+      ethereum:  { name: 'Ethereum',         slug: 'ETH',      symbol: 'ETH',  category: 'ethereum',  addressType: 'EVM',        networkLabel: 'ERC20',       explorerBase: 'https://etherscan.io',              evmChainId: 1,      coingeckoId: 'ethereum'  },
+      eth:       { name: 'Ethereum',         slug: 'ETH',      symbol: 'ETH',  category: 'ethereum',  addressType: 'EVM',        networkLabel: 'ERC20',       explorerBase: 'https://etherscan.io',              evmChainId: 1,      coingeckoId: 'ethereum'  },
+      bnb:       { name: 'BNB Smart Chain',  slug: 'BSC',      symbol: 'BNB',  category: 'bnb',       addressType: 'EVM',        networkLabel: 'BEP20',       explorerBase: 'https://bscscan.com',               evmChainId: 56,     coingeckoId: 'binancecoin' },
+      bsc:       { name: 'BNB Smart Chain',  slug: 'BSC',      symbol: 'BNB',  category: 'bnb',       addressType: 'EVM',        networkLabel: 'BEP20',       explorerBase: 'https://bscscan.com',               evmChainId: 56,     coingeckoId: 'binancecoin' },
+      tron:      { name: 'TRON',             slug: 'TRON',     symbol: 'TRX',  category: 'tron',      addressType: 'TRC20',      networkLabel: 'TRC20',       explorerBase: 'https://tronscan.org/#',            coingeckoId: 'tron' },
+      trx:       { name: 'TRON',             slug: 'TRON',     symbol: 'TRX',  category: 'tron',      addressType: 'TRC20',      networkLabel: 'TRC20',       explorerBase: 'https://tronscan.org/#',            coingeckoId: 'tron' },
+      solana:    { name: 'Solana',           slug: 'SOL',      symbol: 'SOL',  category: 'solana',    addressType: 'SOL',        networkLabel: 'SPL',         explorerBase: 'https://solscan.io',                coingeckoId: 'solana' },
+      sol:       { name: 'Solana',           slug: 'SOL',      symbol: 'SOL',  category: 'solana',    addressType: 'SOL',        networkLabel: 'SPL',         explorerBase: 'https://solscan.io',                coingeckoId: 'solana' },
+      ton:       { name: 'TON',              slug: 'TON',      symbol: 'TON',  category: 'ton',       addressType: 'TON',        networkLabel: 'TON',         explorerBase: 'https://tonscan.org',               coingeckoId: 'the-open-network' },
+      sui:       { name: 'SUI',              slug: 'SUI',      symbol: 'SUI',  category: 'sui',       addressType: 'SUI',        networkLabel: 'SUI',         explorerBase: 'https://suiscan.xyz',               coingeckoId: 'sui'  },
+      avalanche: { name: 'Avalanche',        slug: 'AVAX',     symbol: 'AVAX', category: 'avalanche', addressType: 'EVM',        networkLabel: 'AVAX C-Chain',explorerBase: 'https://snowtrace.io',              evmChainId: 43114,  coingeckoId: 'avalanche-2' },
+      avax:      { name: 'Avalanche',        slug: 'AVAX',     symbol: 'AVAX', category: 'avalanche', addressType: 'EVM',        networkLabel: 'AVAX C-Chain',explorerBase: 'https://snowtrace.io',              evmChainId: 43114,  coingeckoId: 'avalanche-2' },
+      polygon:   { name: 'Polygon',          slug: 'MATIC',    symbol: 'POL',  category: 'polygon',   addressType: 'EVM',        networkLabel: 'POLYGON',     explorerBase: 'https://polygonscan.com',           evmChainId: 137,    coingeckoId: 'matic-network' },
+      matic:     { name: 'Polygon',          slug: 'MATIC',    symbol: 'POL',  category: 'polygon',   addressType: 'EVM',        networkLabel: 'POLYGON',     explorerBase: 'https://polygonscan.com',           evmChainId: 137,    coingeckoId: 'matic-network' },
+      arbitrum:  { name: 'Arbitrum One',     slug: 'ARB',      symbol: 'ETH',  category: 'arbitrum',  addressType: 'EVM',        networkLabel: 'ARBITRUM',    explorerBase: 'https://arbiscan.io',               evmChainId: 42161,  coingeckoId: 'ethereum'  },
+      arb:       { name: 'Arbitrum One',     slug: 'ARB',      symbol: 'ETH',  category: 'arbitrum',  addressType: 'EVM',        networkLabel: 'ARBITRUM',    explorerBase: 'https://arbiscan.io',               evmChainId: 42161,  coingeckoId: 'ethereum'  },
+      optimism:  { name: 'Optimism',         slug: 'OP',       symbol: 'ETH',  category: 'optimism',  addressType: 'EVM',        networkLabel: 'OPTIMISM',    explorerBase: 'https://optimistic.etherscan.io',   evmChainId: 10,     coingeckoId: 'ethereum'  },
+      base:      { name: 'Base',             slug: 'BASE',     symbol: 'ETH',  category: 'base',      addressType: 'EVM',        networkLabel: 'BASE',        explorerBase: 'https://basescan.org',              evmChainId: 8453,   coingeckoId: 'ethereum'  },
+      bitcoin:   { name: 'Bitcoin',          slug: 'BTC',      symbol: 'BTC',  category: 'bitcoin',   addressType: 'BTC_BECH32', networkLabel: 'BTC',         explorerBase: 'https://mempool.space',             coingeckoId: 'bitcoin' },
+      btc:       { name: 'Bitcoin',          slug: 'BTC',      symbol: 'BTC',  category: 'bitcoin',   addressType: 'BTC_BECH32', networkLabel: 'BTC',         explorerBase: 'https://mempool.space',             coingeckoId: 'bitcoin' },
+    }
+
+    const warnings: string[] = []
+    let confidence: 'high' | 'partial' | 'low' = 'low'
+    let logoUrl: string | null = null
+
+    // ── Step 1: static match ──────────────────────────────────────────────────
+    const staticMatch = STATIC[query]
+
+    // ── Step 2: CoinGecko logo ───────────────────────────────────────────────
+    const cgId = staticMatch?.coingeckoId ?? null
+    if (cgId) {
+      try {
+        const headers: Record<string, string> = env.COINGECKO_API_KEY
+          ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY }
+          : {}
+        const res = await fetch(
+          `https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`,
+          { headers, signal: AbortSignal.timeout(6000) }
+        )
+        if (res.ok) {
+          const data = await res.json() as { image?: { large?: string; thumb?: string } }
+          logoUrl = data.image?.large ?? data.image?.thumb ?? null
+        }
+      } catch {
+        warnings.push('Could not fetch logo from CoinGecko (will be empty)')
+      }
+    }
+
+    // ── Step 3: return result ─────────────────────────────────────────────────
+    if (staticMatch) {
+      confidence = 'high'
+      return reply.send({
+        success: true,
+        data: {
+          suggestedName:        staticMatch.name,
+          suggestedSlug:        staticMatch.slug,
+          suggestedSymbol:      staticMatch.symbol,
+          suggestedCategory:    staticMatch.category,
+          suggestedAddressType: staticMatch.addressType,
+          suggestedNetworkLabel:staticMatch.networkLabel,
+          suggestedExplorerBase:staticMatch.explorerBase,
+          suggestedLogoUrl:     logoUrl ?? '',
+          suggestedEvmChainId:  staticMatch.evmChainId ?? null,
+          confidence,
+          warnings,
+        },
+      })
+    }
+
+    // ── Step 4: no static match — try CoinGecko search + chainid.network ─────
+    let cgResult: { name: string; symbol: string; id: string; thumb: string } | null = null
+    try {
+      const headers: Record<string, string> = env.COINGECKO_API_KEY
+        ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY }
+        : {}
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(q.trim())}`,
+        { headers, signal: AbortSignal.timeout(6000) }
+      )
+      if (res.ok) {
+        const data = await res.json() as { coins: Array<{ id: string; name: string; symbol: string; thumb: string; market_cap_rank: number | null }> }
+        const best = data.coins
+          .filter(c => c.name.toLowerCase().includes(query) || c.symbol.toLowerCase() === query)
+          .sort((a, b) => {
+            if (a.market_cap_rank === null) return 1
+            if (b.market_cap_rank === null) return -1
+            return a.market_cap_rank - b.market_cap_rank
+          })[0] ?? null
+        if (best) {
+          cgResult = { name: best.name, symbol: best.symbol.toUpperCase(), id: best.id, thumb: best.thumb }
+          logoUrl = best.thumb
+        }
+      }
+    } catch {
+      warnings.push('CoinGecko search failed')
+    }
+
+    if (!cgResult) {
+      warnings.push('No match found in CoinGecko. Fill fields manually.')
+      return reply.send({
+        success: true,
+        data: {
+          suggestedName: q.trim(), suggestedSlug: q.trim().toUpperCase().replace(/[^A-Z0-9]/g, ''),
+          suggestedSymbol: '', suggestedCategory: '', suggestedAddressType: 'EVM',
+          suggestedNetworkLabel: '', suggestedExplorerBase: '', suggestedLogoUrl: '',
+          suggestedEvmChainId: null, confidence: 'low', warnings,
+        },
+      })
+    }
+
+    // Try to enrich with chainid.network for EVM
+    let evmChainId: number | null = null
+    let explorerBase = ''
+    try {
+      type ChainEntry = { chainId: number; name: string; shortName: string; nativeCurrency: { symbol: string }; explorers?: Array<{ url: string; standard?: string }> }
+      const res = await fetch('https://chainid.network/chains.json', { signal: AbortSignal.timeout(8000) })
+      if (res.ok) {
+        const all = await res.json() as ChainEntry[]
+        const match = all.find(c =>
+          c.nativeCurrency.symbol.toUpperCase() === cgResult!.symbol ||
+          c.name.toLowerCase().includes(query)
+        )
+        if (match) {
+          evmChainId = match.chainId
+          const exp = match.explorers?.find(e => e.standard === 'EIP3091')?.url ?? match.explorers?.[0]?.url ?? null
+          explorerBase = exp ? exp.replace(/\/$/, '') : ''
+          confidence = 'partial'
+        } else {
+          warnings.push('Not found on chainid.network — may be non-EVM. Set Address Type manually.')
+        }
+      }
+    } catch {
+      warnings.push('chainid.network lookup failed')
+    }
+
+    // confidence was set to 'partial' inside the chainid.network block only if a match was found
+    // if no match found, it stays 'low' — which is correct
+
+    return reply.send({
+      success: true,
+      data: {
+        suggestedName:         cgResult.name,
+        suggestedSlug:         cgResult.symbol.replace(/[^A-Z0-9]/g, ''),
+        suggestedSymbol:       cgResult.symbol,
+        suggestedCategory:     evmChainId ? 'ethereum' : '',
+        suggestedAddressType:  evmChainId ? 'EVM' : '',
+        suggestedNetworkLabel: evmChainId ? cgResult.symbol : '',
+        suggestedExplorerBase: explorerBase,
+        suggestedLogoUrl:      logoUrl ?? '',
+        suggestedEvmChainId:   evmChainId,
+        confidence,
+        warnings,
+      },
+    })
+  })
+
+  // GET /admin/gas/token-address-lookup?address=<addr>&chainSlug=<slug>
+  // Address-first token lookup: given a contract address, returns name/symbol/decimals/logo.
+  // EVM: calls on-chain name()/symbol()/decimals() + CoinGecko contract endpoint.
+  // TRON: calls CoinGecko platform=tron contract endpoint.
+  // Others: CoinGecko only (best-effort).
+  app.get('/admin/gas/token-address-lookup', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { address, chainSlug } = req.query as { address?: string; chainSlug?: string }
+    if (!address || !chainSlug) throw new AppError('VALIDATION_ERROR', 'address and chainSlug are required', 400)
+
+    const addr = address.trim()
+    const slug = chainSlug.trim().toLowerCase()
+
+    // CoinGecko platform slugs
+    const CG_PLATFORM: Record<string, string> = {
+      ethereum: 'ethereum', bsc: 'binance-smart-chain', polygon: 'polygon-pos',
+      arbitrum: 'arbitrum-one', optimism: 'optimistic-ethereum', base: 'base',
+      avalanche: 'avalanche', tron: 'tron',
+    }
+
+    // backendChainId → deposit chain slug (for RPC lookup)
+    const BACKEND_TO_CHAIN: Record<string, string> = {
+      ETH: 'ethereum', BSC: 'bsc', MATIC: 'polygon',
+      ARB: 'arbitrum', OP: 'optimism', BASE: 'base', AVAX: 'avalanche',
+    }
+
+    // TrustWallet chain folder names
+    const TW_CHAIN: Record<string, string> = {
+      ethereum: 'ethereum', bsc: 'smartchain', polygon: 'polygon',
+      arbitrum: 'arbitrum', optimism: 'optimism', base: 'base',
+    }
+
+    let name: string | null = null
+    let symbol: string | null = null
+    let decimals: number | null = null
+    let logoUrl: string | null = null
+    let onChainVerified = false
+    let coingeckoVerified = false
+    const errors: string[] = []
+
+    const cgHeaders: Record<string, string> = env.COINGECKO_API_KEY
+      ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY }
+      : {}
+
+    // ── Layer 1: On-chain RPC (EVM only) ──────────────────────────────────────
+    // Find the deposit-chain slug for this gas chain by matching backendChainId
+    const gasChain = await db.gasChainConfig.findFirst({ where: { slug: chainSlug.toUpperCase() } })
+    const depositSlug = gasChain?.backendChainId ? BACKEND_TO_CHAIN[gasChain.backendChainId] : null
+    const rpcUrl = depositSlug ? getRpcUrl(depositSlug) : null
+
+    if (rpcUrl && addr.startsWith('0x')) {
+      try {
+        const nameSelector     = '0x06fdde03' // name()
+        const symbolSelector   = '0x95d89b41' // symbol()
+        const decimalsSelector = '0x313ce567' // decimals()
+
+        const ethCall = async (data: string): Promise<string> => {
+          const body = { jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: addr, data }, 'latest'] }
+          const r = await fetch(rpcUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(5000) })
+          const json = await r.json() as { result?: string; error?: { message: string } }
+          if (json.error) throw new Error(json.error.message)
+          return json.result ?? '0x'
+        }
+
+        const decodeString = (hex: string): string | null => {
+          const clean = hex.startsWith('0x') ? hex.slice(2) : hex
+          if (clean.length < 128) return null
+          const len = parseInt(clean.slice(64, 128), 16)
+          const strHex = clean.slice(128, 128 + len * 2)
+          return Buffer.from(strHex, 'hex').toString('utf8').replace(/\0/g, '') || null
+        }
+
+        const [nameHex, symbolHex, decimalsHex] = await Promise.all([
+          ethCall(nameSelector), ethCall(symbolSelector), ethCall(decimalsSelector),
+        ])
+        name     = decodeString(nameHex)
+        symbol   = decodeString(symbolHex)
+        decimals = decimalsHex && decimalsHex !== '0x' ? Number(BigInt(decimalsHex)) : null
+        if (symbol) onChainVerified = true
+      } catch (err) {
+        errors.push(`On-chain: ${err instanceof Error ? err.message : 'RPC call failed'}`)
+      }
+    }
+
+    // ── Layer 2: CoinGecko contract endpoint ──────────────────────────────────
+    const cgPlatform = CG_PLATFORM[slug] ?? CG_PLATFORM[depositSlug ?? '']
+    if (cgPlatform) {
+      try {
+        const res = await fetch(
+          `https://api.coingecko.com/api/v3/coins/${cgPlatform}/contract/${encodeURIComponent(addr)}`,
+          { headers: cgHeaders, signal: AbortSignal.timeout(6000) }
+        )
+        if (res.ok) {
+          const data = await res.json() as {
+            name?: string; symbol?: string
+            image?: { large?: string; thumb?: string }
+            detail_platforms?: Record<string, { decimal_place?: number } | null>
+          }
+          if (!name   && data.name)   name   = data.name
+          if (!symbol && data.symbol) symbol = data.symbol.toUpperCase()
+          const platformData = data.detail_platforms?.[cgPlatform]
+          if (decimals === null && platformData?.decimal_place != null) decimals = platformData.decimal_place
+          logoUrl = data.image?.large ?? data.image?.thumb ?? null
+          coingeckoVerified = true
+        } else if (res.status !== 404) {
+          errors.push(`CoinGecko: HTTP ${res.status}`)
+        }
+      } catch (err) {
+        errors.push(`CoinGecko: ${err instanceof Error ? err.message : 'fetch failed'}`)
+      }
+    }
+
+    // ── Layer 3: TrustWallet logo (EVM only, fallback) ────────────────────────
+    // Use depositSlug as fallback because gas chain slug ('eth') differs from TW key ('ethereum')
+    const twKey = TW_CHAIN[slug] ?? TW_CHAIN[depositSlug ?? '']
+    if (!logoUrl && twKey) {
+      try {
+        const twUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${twKey}/assets/${addr}/logo.png`
+        const twRes = await fetch(twUrl, { signal: AbortSignal.timeout(4000) })
+        if (twRes.ok) logoUrl = twUrl
+      } catch {
+        // logo not found — non-fatal
+      }
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        address: addr,
+        name,
+        symbol,
+        decimals,
+        logoUrl,
+        onChainVerified,
+        coingeckoVerified,
+        errors,
+      },
+    })
+  })
+
   // GET /admin/gas/chains — list all chains (including inactive)
   app.get('/admin/gas/chains', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const chains = await db.gasChainConfig.findMany({
@@ -3860,7 +4171,7 @@ export async function adminRoutes(app: FastifyInstance) {
           slug:            slugBase,
           nativeSymbol:    c.nativeCurrency.symbol,
           networkLabel:    c.nativeCurrency.symbol.toUpperCase(),
-          explorerBase:    explorerUrl ? `${explorerUrl.replace(/\/$/, '')}/tx/` : null,
+          explorerBase:    explorerUrl ? explorerUrl.replace(/\/$/, '') : null,
           publicRpc,
         }
       })

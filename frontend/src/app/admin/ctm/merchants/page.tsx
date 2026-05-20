@@ -65,8 +65,8 @@ export default function AdminCtmMerchantsPage() {
     if (!suspendModal || !suspendReason.trim()) return
     setSubmitting(true)
     try {
-      const until = new Date(Date.now() + parseInt(suspendDays) * 86400000).toISOString()
-      await ctmApi.adminSuspendMerchant(suspendModal.id, { reason: suspendReason, until })
+      const suspendUntil = new Date(Date.now() + parseInt(suspendDays) * 86400000).toISOString()
+      await ctmApi.adminSuspendMerchant(suspendModal.id, { reason: suspendReason, suspendUntil })
       setSuspendModal(null); setSuspendReason('')
       await fetchMerchants()
     } catch (err: unknown) {
@@ -80,11 +80,7 @@ export default function AdminCtmMerchantsPage() {
     if (!tierModal || !newTier) return
     setSubmitting(true)
     try {
-      await fetch(`/api/v1/ctm/merchants/admin/${tierModal.id}/tier`, {
-        method: 'PATCH', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier: newTier }),
-      })
+      await ctmApi.adminChangeMerchantTier(tierModal.id, newTier)
       setTierModal(null)
       await fetchMerchants()
     } catch (err: unknown) {

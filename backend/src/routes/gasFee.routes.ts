@@ -779,9 +779,13 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       where: {
         key: {
           in: [
+            'gas_usdt_trc20_address',
             'gas_usdt_bep20_address',
+            'gas_usdt_erc20_address',
             'gas_usdt_aptos_address',
+            'gas_trc20_network_fee_usdt',
             'gas_bep20_network_fee_usdt',
+            'gas_erc20_network_fee_usdt',
             'gas_aptos_network_fee_usdt',
           ],
         },
@@ -790,10 +794,20 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const map: Record<string, string> = {}
     configs.forEach(c => { map[c.key] = c.value })
 
+    const trc20Address = map['gas_usdt_trc20_address'] ?? GAS_CHAINS.TRON.getDepositAddress() ?? null
     const bep20Address = map['gas_usdt_bep20_address'] ?? GAS_CHAINS.BSC.getDepositAddress() ?? null
+    const erc20Address = map['gas_usdt_erc20_address'] ?? GAS_CHAINS.ETHEREUM.getDepositAddress() ?? null
     const aptosAddress = map['gas_usdt_aptos_address'] ?? null
 
-    // BEP20 fee: admin override takes precedence, otherwise live via gas.fees.ts
+    // TRC20 fee: admin override → live via gas.fees.ts
+    let trc20Fee = await getUsdtNetworkFeeUsd('TRON')
+    const trc20AdminOverride = map['gas_trc20_network_fee_usdt']
+    if (trc20AdminOverride) {
+      const v = parseFloat(trc20AdminOverride)
+      if (v > 0) trc20Fee = { ...trc20Fee, feeUsd: v, feeDisplay: `~$${v.toFixed(2)}`, isLive: false }
+    }
+
+    // BEP20 fee: admin override → live via gas.fees.ts
     let bep20Fee = await getUsdtNetworkFeeUsd('BSC')
     const bep20AdminOverride = map['gas_bep20_network_fee_usdt']
     if (bep20AdminOverride) {
@@ -801,7 +815,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       if (v > 0) bep20Fee = { ...bep20Fee, feeUsd: v, feeDisplay: `~$${v.toFixed(2)}`, isLive: false }
     }
 
-    // Aptos fee: admin override takes precedence, otherwise live via gas.fees.ts
+    // ERC20 fee: admin override → live via gas.fees.ts
+    let erc20Fee = await getUsdtNetworkFeeUsd('ETHEREUM')
+    const erc20AdminOverride = map['gas_erc20_network_fee_usdt']
+    if (erc20AdminOverride) {
+      const v = parseFloat(erc20AdminOverride)
+      if (v > 0) erc20Fee = { ...erc20Fee, feeUsd: v, feeDisplay: `~$${v.toFixed(2)}`, isLive: false }
+    }
+
+    // Aptos fee: admin override → live via gas.fees.ts
     let aptosFee = await getUsdtNetworkFeeUsd('APTOS')
     const aptosAdminOverride = map['gas_aptos_network_fee_usdt']
     if (aptosAdminOverride) {
@@ -812,6 +834,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
+        trc20: {
+          address:          trc20Address,
+          network:          'TRC20',
+          fee:              trc20Fee.feeDisplay,
+          feeNativeDisplay: trc20Fee.feeNativeDisplay,
+          feeUsd:           trc20Fee.feeUsd,
+          feeIsLive:        trc20Fee.isLive,
+        },
         bep20: {
           address:          bep20Address,
           network:          'BEP20',
@@ -819,6 +849,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           feeNativeDisplay: bep20Fee.feeNativeDisplay,
           feeUsd:           bep20Fee.feeUsd,
           feeIsLive:        bep20Fee.isLive,
+        },
+        erc20: {
+          address:          erc20Address,
+          network:          'ERC20',
+          fee:              erc20Fee.feeDisplay,
+          feeNativeDisplay: erc20Fee.feeNativeDisplay,
+          feeUsd:           erc20Fee.feeUsd,
+          feeIsLive:        erc20Fee.isLive,
         },
         aptos: {
           address:          aptosAddress,
@@ -947,7 +985,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     tokenConfigId:   z.string().min(1),
     amount:          z.number().positive(),
     toAddress:       z.string().min(1),
-    paymentNetwork:  z.enum(['BEP20', 'APTOS']),
+    paymentNetwork:  z.enum(['TRC20', 'BEP20', 'ERC20', 'APTOS']),
     idempotencyKey:  z.string().optional(),
   })
 
@@ -958,12 +996,20 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
     const { tokenConfigId, amount, toAddress, paymentNetwork, idempotencyKey } = parsed.data
 
-    const configKey = paymentNetwork === 'BEP20' ? 'gas_usdt_bep20_address' : 'gas_usdt_aptos_address'
-    const depositConfig = await db.platformConfig.findUnique({ where: { key: configKey } })
-    // BEP20: fall back to env var / mnemonic-derived address if no DB override
-    const depositAddress =
-      depositConfig?.value ??
-      (paymentNetwork === 'BEP20' ? (GAS_CHAINS.BSC.getDepositAddress() ?? null) : null)
+    const configKeyMap: Record<string, string> = {
+      TRC20:  'gas_usdt_trc20_address',
+      BEP20:  'gas_usdt_bep20_address',
+      ERC20:  'gas_usdt_erc20_address',
+      APTOS:  'gas_usdt_aptos_address',
+    }
+    const configKey = configKeyMap[paymentNetwork]
+    const depositConfig = configKey ? await db.platformConfig.findUnique({ where: { key: configKey } }) : null
+    const fallbackAddress =
+      paymentNetwork === 'TRC20' ? (GAS_CHAINS.TRON.getDepositAddress() ?? null)
+      : paymentNetwork === 'BEP20' ? (GAS_CHAINS.BSC.getDepositAddress() ?? null)
+      : paymentNetwork === 'ERC20' ? (GAS_CHAINS.ETHEREUM.getDepositAddress() ?? null)
+      : null
+    const depositAddress = depositConfig?.value ?? fallbackAddress
     if (!depositAddress) {
       throw new AppError('CHAIN_NOT_SUPPORTED', `USDT ${paymentNetwork} payment is not configured yet`, 400)
     }
@@ -1059,6 +1105,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       await redis.expire(spendKey, 86400)
     }
     await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 15 * 60 * 1000, jobId: `gas-expire-${order.id}` })
+
+    flagIfRisky(order, clientIp).catch(() => {})
+    logger.info({ orderId: order.id, paymentNetwork, gasAmountNative: amount }, 'Crypto gas order created')
 
     return reply.code(201).send({
       success: true,
@@ -1192,9 +1241,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     let paymentAddress: string | null = null
     if (order.paymentCoin === 'USDT') {
-      if (order.paymentNetwork === 'BEP20') {
+      if (order.paymentNetwork === 'TRC20') {
+        const dbOverride = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_trc20_address' } })
+        paymentAddress = dbOverride?.value ?? GAS_CHAINS.TRON.getDepositAddress() ?? null
+      } else if (order.paymentNetwork === 'BEP20') {
         const dbOverride = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_bep20_address' } })
         paymentAddress = dbOverride?.value ?? GAS_CHAINS.BSC.getDepositAddress() ?? null
+      } else if (order.paymentNetwork === 'ERC20') {
+        const dbOverride = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_erc20_address' } })
+        paymentAddress = dbOverride?.value ?? GAS_CHAINS.ETHEREUM.getDepositAddress() ?? null
       } else if (order.paymentNetwork === 'APTOS') {
         const dbOverride = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_aptos_address' } })
         paymentAddress = dbOverride?.value ?? null

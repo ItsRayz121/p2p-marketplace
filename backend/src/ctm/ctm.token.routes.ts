@@ -59,15 +59,18 @@ const adminUpdateSchema = z.object({
 const rejectSchema = z.object({ adminNote: z.string().min(1).max(500) })
 
 export async function ctmTokenRoutes(app: FastifyInstance) {
-  // GET /ctm/tokens — public browse
+  // GET /ctm/tokens — public browse (adminView=true requires admin role)
   app.get('/ctm/tokens', { preHandler: [optionalAuth] }, async (req, reply) => {
     const q = req.query as Record<string, string>
+    const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin'
+    const adminView = isAdmin && q.adminView === 'true'
     const result = await listApprovedTokens({
       ...(q.search ? { search: q.search } : {}),
       ...(q.settlementType ? { settlementType: q.settlementType as never } : {}),
       ...(q.riskTier ? { riskTier: q.riskTier as never } : {}),
       page: q.page ? parseInt(q.page, 10) : 1,
       limit: q.limit ? parseInt(q.limit, 10) : 20,
+      adminView,
     })
     return reply.send({ success: true, data: result })
   })

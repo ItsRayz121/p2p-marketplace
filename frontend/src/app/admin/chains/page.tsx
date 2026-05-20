@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { adminApi, type AdminDepositChain, type ChainSearchResult } from '@/lib/api'
+import { CHAIN_META } from '@/lib/chainTokenStandards'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
@@ -11,7 +12,12 @@ const FAMILIES = ['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC'] as const
 type Family = typeof FAMILIES[number]
 
 const ADDRESS_TYPE_FOR_FAMILY: Record<Family, string> = {
-  EVM: 'EVM', TRON: 'TRC20', SOL: 'SOL', TON: 'TON', SUI: 'SUI', BTC: 'EVM',
+  EVM: 'EVM', TRON: 'TRC20', SOL: 'SOL', TON: 'TON', SUI: 'SUI', BTC: 'BTC_BECH32',
+}
+
+// Maps deposit chain family → gas chain category (used when "Also add to Gas" is checked)
+const FAMILY_TO_GAS_CATEGORY: Record<Family, string> = {
+  EVM: 'ethereum', TRON: 'tron', SOL: 'solana', TON: 'ton', SUI: 'sui', BTC: 'bitcoin',
 }
 
 // ── Add Chain Form ─────────────────────────────────────────────────────────────
@@ -84,18 +90,23 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
       } as Parameters<typeof adminApi.createDepositChain>[0])
 
       if (addToGas) {
+        const gasCategory = FAMILY_TO_GAS_CATEGORY[family]
+        // Prefer CHAIN_META networkLabel if available (e.g. 'ERC20' for ethereum), else use form value
+        const gasNetworkLabel = CHAIN_META[gasCategory]?.networkLabel || networkLabel
+        // Strip any trailing /tx/ path that may have come from chainid.network auto-fill
+        const gasExplorerBase = explorerBase.replace(/\/tx\/?$/, '').replace(/\/$/, '') || null
         await adminApi.createGasChain({
           name,
-          slug:          slug.toUpperCase(),
-          symbol:        nativeSymbol,
-          category:      slug.toLowerCase(),
-          networkLabel,
-          addressType:   ADDRESS_TYPE_FOR_FAMILY[family],
-          explorerBase:  explorerBase || null,
-          backendChainId: null,
-          isActive:      false,
-          readinessState: 'inactive',
-          displayOrder:  999,
+          slug:            slug.toUpperCase(),
+          symbol:          nativeSymbol,
+          category:        gasCategory,
+          networkLabel:    gasNetworkLabel,
+          addressType:     ADDRESS_TYPE_FOR_FAMILY[family],
+          explorerBase:    gasExplorerBase,
+          backendChainId:  null,
+          isActive:        false,
+          readinessState:  'inactive',
+          displayOrder:    999,
           platformFeeUsdt: 0.25,
         })
       }
@@ -182,8 +193,8 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Explorer Base URL * <span className="text-slate-400 font-normal">(must end with /tx/)</span></label>
-          <input value={explorerBase} onChange={e => setExplorerBase(e.target.value)} placeholder="https://explorer.zetachain.com/tx/" required
+          <label className="block text-sm font-medium text-slate-700 mb-1">Explorer Base URL * <span className="text-slate-400 font-normal">(no trailing slash — system appends /tx/hash)</span></label>
+          <input value={explorerBase} onChange={e => setExplorerBase(e.target.value)} placeholder="https://explorer.zetachain.com" required
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 

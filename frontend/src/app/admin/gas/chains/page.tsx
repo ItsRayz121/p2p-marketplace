@@ -1,6 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { adminApi, type AdminGasChain, type AdminGasToken, type TokenLookupResult } from '@/lib/api'
+import { adminApi, type AdminGasChain, type AdminGasToken, type TokenLookupResult, type GasChainLookupResult, type TokenAddressLookupResult } from '@/lib/api'
+import { CHAIN_META, CHAIN_CATEGORIES, ADDRESS_TYPES } from '@/lib/chainTokenStandards'
 import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -208,6 +209,7 @@ function ChainModal({
   editing,
   form,
   setForm,
+  chains,
   onSave,
   onClose,
   saving,
@@ -216,11 +218,43 @@ function ChainModal({
   editing: AdminGasChain | null
   form: ChainFormState
   setForm: (f: ChainFormState) => void
+  chains: AdminGasChain[]
   onSave: () => void
   onClose: () => void
   saving: boolean
   error: string
 }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [searchResult, setSearchResult] = useState<GasChainLookupResult | null>(null)
+  const [searchErr, setSearchErr] = useState<string | null>(null)
+
+  async function handleAutoFill() {
+    if (!searchQuery.trim()) return
+    setSearching(true)
+    setSearchResult(null)
+    setSearchErr(null)
+    try {
+      const result = await adminApi.lookupGasChain(searchQuery.trim())
+      setSearchResult(result)
+      setForm({
+        ...form,
+        name:         result.suggestedName        || form.name,
+        slug:         result.suggestedSlug        || form.slug,
+        symbol:       result.suggestedSymbol      || form.symbol,
+        category:     result.suggestedCategory    || form.category,
+        addressType:  result.suggestedAddressType || form.addressType,
+        networkLabel: result.suggestedNetworkLabel|| form.networkLabel,
+        explorerBase: result.suggestedExplorerBase|| form.explorerBase,
+        logoUrl:      result.suggestedLogoUrl     || form.logoUrl,
+      })
+    } catch (e) {
+      setSearchErr(e instanceof Error ? e.message : 'Lookup failed')
+    } finally {
+      setSearching(false)
+    }
+  }
+
   function field(key: keyof ChainFormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm({ ...form, [key]: e.target.value })
@@ -235,6 +269,48 @@ function ChainModal({
           <h2 className="text-lg font-bold text-text-primary">
             {editing ? `Edit: ${editing.name}` : 'Add New Chain'}
           </h2>
+
+          {/* ── Auto-fill search (new chain only) ── */}
+          {!editing && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-text-muted block">Auto-fill from name or symbol</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. tron, solana, bnb…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && void handleAutoFill()}
+                  className="flex-1 border border-border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleAutoFill()}
+                  disabled={searching || !searchQuery.trim()}
+                  className="shrink-0 px-3 py-2 text-xs font-medium bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {searching ? 'Searching…' : 'Auto-fill'}
+                </button>
+              </div>
+              {searchErr && <p className="text-xs text-danger">{searchErr}</p>}
+              {searchResult && (
+                <div className={`text-xs px-3 py-2 rounded-lg border ${
+                  searchResult.confidence === 'high'    ? 'bg-success/10 border-success/30 text-success' :
+                  searchResult.confidence === 'partial' ? 'bg-warning/10 border-warning/30 text-warning' :
+                                                          'bg-surface border-border text-text-muted'
+                }`}>
+                  <span className="font-semibold capitalize">{searchResult.confidence} confidence</span>
+                  {' '}— fields pre-filled. Review before saving.
+                  {searchResult.warnings.length > 0 && (
+                    <ul className="mt-1 list-disc list-inside space-y-0.5">
+                      {searchResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+              <div className="border-t border-border" />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
@@ -251,14 +327,33 @@ function ChainModal({
             </div>
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Category *</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.category} onChange={field('category')}>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                value={form.category}
+                onChange={(e) => {
+                  const cat = e.target.value
+                  const meta = CHAIN_CATEGORIES.find((c) => c.value === cat)
+                  const chainMeta = CHAIN_META[cat]
+                  setForm({
+                    ...form,
+                    category: cat,
+                    addressType: meta?.addressType ?? form.addressType,
+                    networkLabel: form.networkLabel || chainMeta?.networkLabel || '',
+                    symbol: form.symbol || chainMeta?.nativeSymbol || '',
+                    explorerBase: form.explorerBase || chainMeta?.explorerBase || '',
+                  })
+                }}
+              >
                 <option value="">Select...</option>
-                <option value="tron">TRON</option>
-                <option value="bnb">BNB</option>
-                <option value="ethereum">Ethereum</option>
-                <option value="solana">Solana</option>
-                <option value="sui">SUI</option>
+                {CHAIN_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
               </select>
+              {form.category && CHAIN_META[form.category] && (
+                <p className="text-xs text-text-muted mt-0.5">
+                  Address format: <span className="font-medium text-text-primary">{CHAIN_META[form.category]?.addressFormat.example}</span>
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Network Label *</label>
@@ -267,29 +362,40 @@ function ChainModal({
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Address Type *</label>
               <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.addressType} onChange={field('addressType')}>
-                <option value="EVM">EVM (0x...)</option>
-                <option value="TRC20">TRC20 (T...)</option>
-                <option value="SOL">Solana (Base58)</option>
-                <option value="SUI">SUI (0x64...)</option>
-                <option value="TON">TON (UQ.../EQ...)</option>
+                {ADDRESS_TYPES.map((a) => (
+                  <option key={a.value} value={a.value}>{a.label}</option>
+                ))}
               </select>
             </div>
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Backend Chain ID</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.backendChainId} onChange={field('backendChainId')}>
-                <option value="">Not deliverable yet</option>
-                <option value="TRON">TRON</option>
-                <option value="BSC">BSC</option>
-                <option value="ETH">ETH</option>
-                <option value="BASE">BASE</option>
-                <option value="ARB">ARB</option>
-                <option value="OP">OP</option>
-                <option value="MATIC">MATIC</option>
-                <option value="AVAX">AVAX</option>
-                <option value="SOL">SOL</option>
-                <option value="TON">TON</option>
-                <option value="SUI">SUI</option>
-              </select>
+              {(() => {
+                // Build set of backendChainIds already in use by OTHER chains
+                const taken = new Set(
+                  chains
+                    .filter((c) => c.id !== editing?.id && c.backendChainId)
+                    .map((c) => c.backendChainId as string)
+                )
+                const GAS_CHAINS = ['TRON','BSC','ETH','BASE','ARB','OP','MATIC','AVAX','SOL','TON','SUI']
+                return (
+                  <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.backendChainId} onChange={field('backendChainId')}>
+                    <option value="">Not deliverable yet</option>
+                    {GAS_CHAINS.map((id) => {
+                      const inUse = taken.has(id)
+                      return (
+                        <option key={id} value={id} disabled={inUse}>
+                          {id}{inUse ? ' (already assigned)' : ''}
+                        </option>
+                      )
+                    })}
+                  </select>
+                )
+              })()}
+              {form.backendChainId && (
+                <p className="text-xs text-text-muted mt-0.5">
+                  Delivery engine will process orders for this chain via the <span className="font-medium text-text-primary">{form.backendChainId}</span> hot wallet.
+                </p>
+              )}
             </div>
 
             {/* ── Chain-level defaults (inherited by tokens) ── */}
@@ -442,6 +548,14 @@ function TokenModal({
   const [looking, setLooking] = useState(false)
   const [lookupErr, setLookupErr] = useState<string | null>(null)
 
+  // Address-first auto-fill state
+  const [addrLookup, setAddrLookup] = useState<TokenAddressLookupResult | null>(null)
+  const [addrLooking, setAddrLooking] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Keep latest form in a ref so the debounced callback reads fresh values
+  const formRef = useRef(form)
+  useEffect(() => { formRef.current = form })
+
   function field(key: keyof TokenFormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm({ ...form, [key]: e.target.value })
@@ -450,6 +564,53 @@ function TokenModal({
   function setLogoUrl(url: string) { setForm({ ...form, logoUrl: url }) }
 
   const selectedChain = chains.find((c) => c.id === form.chainConfigId) ?? null
+  const chainMeta = selectedChain ? CHAIN_META[selectedChain.category] : null
+  const tokenStandards = chainMeta?.tokenStandards ?? [
+    { value: 'native', label: 'Native Gas', isNative: true, hasContract: false },
+    { value: 'erc20',  label: 'ERC-20 (Fungible Token)',    hasContract: true  },
+  ]
+  // "token" is the legacy DB value before named standards were introduced — treat it as hasContract=true
+  const selectedStandard = tokenStandards.find((s) => s.value === form.tokenType)
+    ?? (form.tokenType !== 'native'
+      ? { value: form.tokenType, label: form.tokenType, hasContract: true }
+      : tokenStandards[0])
+
+  // Debounced address-first auto-fill: fires 800ms after user stops typing a valid address
+  useEffect(() => {
+    const addr = form.contractAddress.trim()
+    const regex = chainMeta?.addressFormat.regex
+    const canLookup = selectedStandard?.hasContract && addr && regex && new RegExp(regex).test(addr) && selectedChain?.slug
+
+    if (!canLookup) {
+      setAddrLookup(null)
+      return
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setAddrLooking(true)
+      setAddrLookup(null)
+      try {
+        const result = await adminApi.lookupGasTokenByAddress(addr, selectedChain!.slug)
+        setAddrLookup(result)
+        const cur = formRef.current
+        setForm({
+          ...cur,
+          name:        (!cur.name        && result.name)    ? result.name    : cur.name,
+          symbol:      (!cur.symbol      && result.symbol)  ? result.symbol  : cur.symbol,
+          priceSymbol: (!cur.priceSymbol && result.symbol)  ? result.symbol  : cur.priceSymbol,
+          logoUrl:     (!cur.logoUrl     && result.logoUrl) ? result.logoUrl : cur.logoUrl,
+        })
+      } catch {
+        // non-fatal — user can still fill manually
+      } finally {
+        setAddrLooking(false)
+      }
+    }, 800)
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.contractAddress, selectedChain?.slug, selectedStandard?.hasContract])
 
   async function handleCoinGeckoLookup() {
     if (!form.symbol || !selectedChain?.backendChainId) return
@@ -492,7 +653,23 @@ function TokenModal({
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Chain *</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.chainConfigId} onChange={field('chainConfigId')} disabled={!!editing}>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                value={form.chainConfigId}
+                disabled={!!editing}
+                onChange={(e) => {
+                  const newChainId = e.target.value
+                  const newChain = chains.find((c) => c.id === newChainId)
+                  const newMeta = newChain ? CHAIN_META[newChain.category] : null
+                  const firstStandard = newMeta?.tokenStandards[0]?.value ?? 'native'
+                  setForm({
+                    ...form,
+                    chainConfigId: newChainId,
+                    tokenType: firstStandard,
+                    contractAddress: '',
+                  })
+                }}
+              >
                 <option value="">Select chain...</option>
                 {chains.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>)}
               </select>
@@ -507,22 +684,43 @@ function TokenModal({
             </div>
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Token Type *</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.tokenType} onChange={field('tokenType')}>
-                <option value="native">Native Gas</option>
-                <option value="token">Token (ERC20/TRC20)</option>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                value={form.tokenType}
+                onChange={(e) => {
+                  const next = e.target.value
+                  const std = tokenStandards.find((s) => s.value === next)
+                  setForm({
+                    ...form,
+                    tokenType: next,
+                    contractAddress: std?.hasContract ? form.contractAddress : '',
+                  })
+                }}
+              >
+                {tokenStandards.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
               </select>
+              {!selectedChain && (
+                <p className="text-xs text-warning mt-0.5">Select a chain first to see correct token standards.</p>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Price Symbol *</label>
               <Input placeholder="e.g. TRX, BNB, ETH" value={form.priceSymbol} onChange={field('priceSymbol')} />
             </div>
+            {selectedStandard?.hasContract !== false && (
             <div className="col-span-2">
-              <label className="text-xs font-medium text-text-muted block mb-1">Contract Address</label>
+              <label className="text-xs font-medium text-text-muted block mb-1">
+                Contract Address {selectedStandard?.hasContract ? '*' : ''}
+              </label>
               <div className="flex gap-2">
                 <Input
-                  placeholder="0x... or T... (leave blank for native)"
+                  placeholder={chainMeta ? `e.g. ${chainMeta.addressFormat.example}` : '0x... or T...'}
                   value={form.contractAddress}
-                  onChange={field('contractAddress')}
+                  onChange={(e) => {
+                    setForm({ ...form, contractAddress: e.target.value })
+                  }}
                   className="flex-1"
                 />
                 {form.symbol && selectedChain?.backendChainId && (
@@ -536,7 +734,28 @@ function TokenModal({
                   </button>
                 )}
               </div>
+              {chainMeta && form.contractAddress && !new RegExp(chainMeta.addressFormat.regex).test(form.contractAddress) && (
+                <p className="text-xs text-danger mt-1">
+                  Invalid format for {selectedChain?.category ?? 'this chain'}. Expected: {chainMeta.addressFormat.example}
+                </p>
+              )}
               {lookupErr && <p className="text-xs text-red-500 mt-1">{lookupErr}</p>}
+              {/* Address-first auto-fill status */}
+              {addrLooking && (
+                <p className="text-xs text-text-muted mt-1 animate-pulse">Looking up contract…</p>
+              )}
+              {addrLookup && !addrLooking && (
+                <div className="mt-2 flex gap-2 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {addrLookup.onChainVerified ? '✓' : '–'} On-chain
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {addrLookup.coingeckoVerified ? '✓' : '–'} CoinGecko
+                  </span>
+                  {addrLookup.symbol && <span className="text-xs text-slate-500">symbol: {addrLookup.symbol}</span>}
+                  {addrLookup.decimals != null && <span className="text-xs text-slate-500">decimals: {addrLookup.decimals}</span>}
+                </div>
+              )}
               {lookupResult && (
                 <div className="mt-2 flex gap-2 flex-wrap">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
@@ -554,6 +773,7 @@ function TokenModal({
                 </div>
               )}
             </div>
+            )}
             <LogoUploadField logoUrl={form.logoUrl} onLogoUrlChange={setLogoUrl} />
 
             {/* ── Per-token config overrides ── */}
@@ -1141,6 +1361,7 @@ export default function GasChainsAdminPage() {
           editing={editingChain}
           form={chainForm}
           setForm={setChainForm}
+          chains={chains}
           onSave={saveChain}
           onClose={() => setShowChainModal(false)}
           saving={chainSaving}

@@ -977,9 +977,20 @@ export interface GasPkrMethods {
   jazzcash: { number: string | null; name: string | null }
 }
 
+export interface GasCryptoNetworkMethod {
+  address: string | null
+  network: string
+  fee: string
+  feeNativeDisplay?: string
+  feeUsd: number
+  feeIsLive?: boolean
+}
+
 export interface GasCryptoMethods {
-  bep20: { address: string | null; network: string; fee: string; feeNativeDisplay?: string; feeUsd: number; feeIsLive?: boolean }
-  aptos: { address: string | null; network: string; fee: string; feeNativeDisplay?: string; feeUsd: number; feeIsLive?: boolean }
+  trc20: GasCryptoNetworkMethod
+  bep20: GasCryptoNetworkMethod
+  erc20: GasCryptoNetworkMethod
+  aptos: GasCryptoNetworkMethod
 }
 
 export interface GasCustomRequest {
@@ -1022,7 +1033,7 @@ export const gasApi = {
   createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash'; idempotencyKey?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/pkr', { method: 'POST', body: JSON.stringify(data) }),
 
-  createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'BEP20' | 'APTOS'; idempotencyKey?: string }) =>
+  createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'TRC20' | 'BEP20' | 'ERC20' | 'APTOS'; idempotencyKey?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/crypto', { method: 'POST', body: JSON.stringify(data) }),
 
   submitProof: (orderRef: string, proofUrl: string) =>
@@ -1125,6 +1136,31 @@ export interface TokenLookupResult {
   onChainError: string | null
   trustWalletVerified: boolean
   trustWalletError: string | null
+}
+
+export interface TokenAddressLookupResult {
+  address: string
+  name: string | null
+  symbol: string | null
+  decimals: number | null
+  logoUrl: string | null
+  onChainVerified: boolean
+  coingeckoVerified: boolean
+  errors: string[]
+}
+
+export interface GasChainLookupResult {
+  suggestedName: string
+  suggestedSlug: string
+  suggestedSymbol: string
+  suggestedCategory: string
+  suggestedAddressType: string
+  suggestedNetworkLabel: string
+  suggestedExplorerBase: string
+  suggestedLogoUrl: string
+  suggestedEvmChainId: number | null
+  confidence: 'high' | 'partial' | 'low'
+  warnings: string[]
 }
 
 export interface AdminGasChain {
@@ -1402,6 +1438,10 @@ export const adminApi = {
     apiRequest<{ chains: ChainSearchResult[] }>(`/admin/deposit-chains/chain-search?query=${encodeURIComponent(query)}`),
 
   // Gas Chain Config CRUD
+  lookupGasChain: (q: string) =>
+    apiRequest<GasChainLookupResult>(`/admin/gas/chain-lookup?q=${encodeURIComponent(q)}`),
+  lookupGasTokenByAddress: (address: string, chainSlug: string) =>
+    apiRequest<TokenAddressLookupResult>(`/admin/gas/token-address-lookup?address=${encodeURIComponent(address)}&chainSlug=${encodeURIComponent(chainSlug)}`),
   getGasChains: () =>
     apiRequest<{ chains: AdminGasChain[] }>('/admin/gas/chains'),
   createGasChain: (data: Partial<AdminGasChain>) =>
@@ -1549,6 +1589,7 @@ export const ctmApi = {
     apiRequest<{ merchants: unknown[]; total: number; page: number; limit: number }>('/ctm/merchants/admin/queue' + buildQs(params)),
   adminApproveMerchant: (id: string, data?: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/approve`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
   adminSuspendMerchant: (id: string, data: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/suspend`, { method: 'POST', body: JSON.stringify(data) }),
+  adminChangeMerchantTier: (id: string, tier: string) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/tier`, { method: 'PATCH', body: JSON.stringify({ tier }) }),
 }
 
 // ─── Health Check ─────────────────────────────────────────────────────────────

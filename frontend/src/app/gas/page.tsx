@@ -96,19 +96,27 @@ function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' 
 // ─── Chain category colours ───────────────────────────────────────────────────
 
 const CAT_COLORS: Record<string, { gradient: string }> = {
-  tron:     { gradient: 'from-red-400 to-red-600' },
-  bnb:      { gradient: 'from-yellow-400 to-yellow-600' },
-  ethereum: { gradient: 'from-blue-400 to-blue-600' },
-  solana:   { gradient: 'from-purple-400 to-purple-600' },
-  sui:      { gradient: 'from-cyan-400 to-cyan-600' },
-  ton:      { gradient: 'from-sky-400 to-sky-600' },
-  avalanche:{ gradient: 'from-red-400 to-red-600' },
-  polygon:  { gradient: 'from-violet-400 to-violet-600' },
+  tron:      { gradient: 'from-red-400 to-red-600' },
+  bnb:       { gradient: 'from-yellow-400 to-yellow-600' },
+  ethereum:  { gradient: 'from-blue-400 to-blue-600' },
+  solana:    { gradient: 'from-purple-400 to-purple-600' },
+  sui:       { gradient: 'from-cyan-400 to-cyan-600' },
+  ton:       { gradient: 'from-sky-400 to-sky-600' },
+  avalanche: { gradient: 'from-red-400 to-red-600' },
+  polygon:   { gradient: 'from-violet-400 to-violet-600' },
+  arbitrum:  { gradient: 'from-blue-500 to-indigo-600' },
+  optimism:  { gradient: 'from-rose-400 to-red-600' },
+  base:      { gradient: 'from-blue-600 to-blue-800' },
+  bitcoin:   { gradient: 'from-orange-400 to-orange-600' },
+  xrp:       { gradient: 'from-slate-400 to-slate-600' },
+  cosmos:    { gradient: 'from-indigo-400 to-purple-600' },
 }
 
 const CAT_LABELS: Record<string, string> = {
-  tron: 'TRON', bnb: 'BNB Chain', ethereum: 'Ethereum Ecosystem',
+  tron: 'TRON', bnb: 'BNB Chain', ethereum: 'Ethereum',
   solana: 'Solana', sui: 'SUI', ton: 'TON', avalanche: 'Avalanche', polygon: 'Polygon',
+  arbitrum: 'Arbitrum', optimism: 'Optimism', base: 'Base',
+  bitcoin: 'Bitcoin', xrp: 'XRP Ledger', cosmos: 'Cosmos',
 }
 
 function catGradient(cat: string) {
@@ -413,7 +421,7 @@ export default function GasPage() {
   const [proofError, setProofError]   = useState('')
 
   // ── Crypto sub-flow ─────────────────────────────────────────────────────────
-  const [selectedCryptoNetwork, setSelectedCryptoNetwork] = useState<'BEP20' | 'APTOS' | null>(null)
+  const [selectedCryptoNetwork, setSelectedCryptoNetwork] = useState<'TRC20' | 'BEP20' | 'ERC20' | 'APTOS' | null>(null)
   const [creatingCrypto, setCreatingCrypto] = useState(false)
   const [cryptoError, setCryptoError]       = useState('')
   const [qrFailed, setQrFailed]             = useState(false)
@@ -1257,6 +1265,49 @@ export default function GasPage() {
                   <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Select Payment Network" sub="Choose a network to send your payment" />
 
                   <div className="space-y-3">
+                    {/* TRC20 card — recommended (lowest fee) */}
+                    {(() => {
+                      const trcConfigured = !!cryptoMethods?.trc20?.address
+                      const trcAddr = cryptoMethods?.trc20?.address
+                      const trcFee = cryptoMethods?.trc20?.feeNativeDisplay ?? cryptoMethods?.trc20?.fee ?? '~$1'
+                      return (
+                        <button
+                          onClick={() => trcConfigured && setSelectedCryptoNetwork('TRC20')}
+                          disabled={!trcConfigured}
+                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                            !trcConfigured
+                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
+                              : selectedCryptoNetwork === 'TRC20'
+                              ? 'border-purple-400 bg-purple-50'
+                              : 'border-gray-100 bg-white hover:border-purple-200'
+                          }`}
+                        >
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">TRX</div>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-gray-900">USDT TRC20</p>
+                            <p className="text-xs text-gray-400">
+                              {trcConfigured ? `TRON Network · est. ${trcFee} network fee` : 'Coming soon — not yet configured'}
+                            </p>
+                            {trcAddr && (
+                              <p className="text-xs font-mono text-gray-400 mt-0.5">{trcAddr.slice(0, 8)}...{trcAddr.slice(-6)}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {trcConfigured
+                              ? <>
+                                  <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Recommended</span>
+                                  {selectedCryptoNetwork === 'TRC20'
+                                    ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                                    : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
+                                  }
+                                </>
+                              : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full">Soon</span>
+                            }
+                          </div>
+                        </button>
+                      )
+                    })()}
+
                     {/* BEP20 card */}
                     {(() => {
                       const bepConfigured = !!cryptoMethods?.bep20?.address
@@ -1285,6 +1336,43 @@ export default function GasPage() {
                           </div>
                           {bepConfigured
                             ? selectedCryptoNetwork === 'BEP20'
+                              ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                              : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 flex-shrink-0">Select</span>
+                            : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full flex-shrink-0">Soon</span>
+                          }
+                        </button>
+                      )
+                    })()}
+
+                    {/* ERC20 card */}
+                    {(() => {
+                      const ercConfigured = !!cryptoMethods?.erc20?.address
+                      const ercAddr = cryptoMethods?.erc20?.address
+                      const ercFee = cryptoMethods?.erc20?.feeNativeDisplay ?? cryptoMethods?.erc20?.fee ?? '~$2'
+                      return (
+                        <button
+                          onClick={() => ercConfigured && setSelectedCryptoNetwork('ERC20')}
+                          disabled={!ercConfigured}
+                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                            !ercConfigured
+                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
+                              : selectedCryptoNetwork === 'ERC20'
+                              ? 'border-purple-400 bg-purple-50'
+                              : 'border-gray-100 bg-white hover:border-purple-200'
+                          }`}
+                        >
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">ETH</div>
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-gray-900">USDT ERC20</p>
+                            <p className="text-xs text-gray-400">
+                              {ercConfigured ? `Ethereum Network · est. ${ercFee} network fee` : 'Coming soon — not yet configured'}
+                            </p>
+                            {ercAddr && (
+                              <p className="text-xs font-mono text-gray-400 mt-0.5">{ercAddr.slice(0, 8)}...{ercAddr.slice(-6)}</p>
+                            )}
+                          </div>
+                          {ercConfigured
+                            ? selectedCryptoNetwork === 'ERC20'
                               ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
                               : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 flex-shrink-0">Select</span>
                             : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full flex-shrink-0">Soon</span>
@@ -1403,8 +1491,12 @@ export default function GasPage() {
                         <p className="text-xs text-gray-400 mt-1.5">
                           Send exactly this amount to the address above. Your wallet will also deduct a separate {order.paymentNetwork} USDT transfer fee ({
                             (() => {
-                              const m = order.paymentNetwork === 'BEP20' ? cryptoMethods?.bep20 : cryptoMethods?.aptos
-                              return m?.feeNativeDisplay ?? m?.fee ?? (order.paymentNetwork === 'BEP20' ? '~$0.29' : '~$0.01')
+                              const m = order.paymentNetwork === 'TRC20' ? cryptoMethods?.trc20
+                                : order.paymentNetwork === 'BEP20' ? cryptoMethods?.bep20
+                                : order.paymentNetwork === 'ERC20' ? cryptoMethods?.erc20
+                                : cryptoMethods?.aptos
+                              const fallback = order.paymentNetwork === 'TRC20' ? '~$1' : order.paymentNetwork === 'BEP20' ? '~$0.29' : order.paymentNetwork === 'ERC20' ? '~$2' : '~$0.01'
+                              return m?.feeNativeDisplay ?? m?.fee ?? fallback
                             })()
                           }) when sending.
                         </p>

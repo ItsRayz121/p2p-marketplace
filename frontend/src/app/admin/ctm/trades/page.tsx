@@ -21,10 +21,10 @@ interface CtmAdminTrade {
   fiatAmount: string; tokenAmount: string; pricePerUnit: string
   createdAt: string; expiresAt: string; completedAt?: string
   buyer: { id: string; username: string }; seller: { id: string; username: string }
+  token: { id: string; name: string; symbol: string }
   proofs: Array<{ fileUrl?: string; proofType: string; uploadedBy: string; createdAt: string }>
   messages: Array<{ senderId: string; message: string; createdAt: string }>
   dispute?: { id: string; reason: string; status: string }
-  listing?: { token: { symbol: string; name: string } }
 }
 
 export default function AdminCtmTradesPage() {
@@ -118,7 +118,7 @@ export default function AdminCtmTradesPage() {
                   <td className="px-4 py-3 font-mono text-xs text-text-primary">#{t.tradeRef.slice(-10)}</td>
                   <td className="px-4 py-3">
                     <p className="text-text-primary text-xs">{t.buyer.username} → {t.seller.username}</p>
-                    {t.listing?.token && <p className="text-text-muted text-xs">{t.listing.token.symbol}</p>}
+                    {t.token && <p className="text-text-muted text-xs">{t.token.symbol}</p>}
                   </td>
                   <td className="px-4 py-3 text-text-primary font-medium">PKR {Number(t.fiatAmount).toLocaleString()}</td>
                   <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>{t.status.replace(/_/g, ' ')}</span></td>

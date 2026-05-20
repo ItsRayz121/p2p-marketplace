@@ -114,8 +114,20 @@ export async function runCtmProofDeadline() {
     const autoComplete = sellerTier === 'verified' || sellerTier === 'elite'
 
     if (autoComplete) {
-      await db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null } })
-      await db.ctmToken.update({ where: { id: trade.tokenId }, data: { totalTrades: { increment: 1 }, totalVolumePkr: { increment: trade.fiatAmount }, lastTradedAt: new Date() } })
+      await db.$transaction(async (tx) => {
+        await tx.ctmTrade.update({ where: { id: trade.id }, data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null } })
+        await tx.ctmToken.update({ where: { id: trade.tokenId }, data: { totalTrades: { increment: 1 }, totalVolumePkr: { increment: trade.fiatAmount }, lastTradedAt: new Date() } })
+        if (trade.listingId) {
+          await tx.ctmListing.update({
+            where: { id: trade.listingId },
+            data: { lockedAmount: { decrement: trade.tokenAmount }, totalAmount: { decrement: trade.tokenAmount } },
+          })
+        }
+        await tx.ctmMerchantProfile.updateMany({
+          where: { userId: trade.sellerId },
+          data: { totalCtmTrades: { increment: 1 }, completedCtmTrades: { increment: 1 } },
+        })
+      })
 
       await db.notification.createMany({
         data: [

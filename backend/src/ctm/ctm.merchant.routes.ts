@@ -52,6 +52,7 @@ export async function ctmMerchantRoutes(app: FastifyInstance) {
         userId,
         merchantId: merchant.id,
         settlementInstructions: {} as JsonValue,
+        isActive: false,
       },
     })
     return reply.code(201).send({ success: true, data: profile })
@@ -135,6 +136,30 @@ export async function ctmMerchantRoutes(app: FastifyInstance) {
         ...(tier ? { tier: tier as never } : {}),
       },
     })
+    return reply.send({ success: true, data: updated })
+  })
+
+  // PATCH /ctm/merchants/admin/:id/tier — change merchant tier
+  app.patch('/ctm/merchants/admin/:id/tier', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = req.body as { tier?: string } | null
+    const tier = (body as Record<string, unknown>)?.tier as string | undefined
+    if (!tier || !['new', 'basic', 'verified', 'elite'].includes(tier)) {
+      throw new AppError('VALIDATION_ERROR', 'tier must be one of: new, basic, verified, elite', 400)
+    }
+
+    const profile = await db.ctmMerchantProfile.findUnique({ where: { id } })
+    if (!profile) throw new AppError('NOT_FOUND', 'CTM merchant profile not found', 404)
+
+    const updated = await db.ctmMerchantProfile.update({
+      where: { id },
+      data: { tier: tier as never },
+    })
+
+    await db.auditLog.create({
+      data: { actorId: req.user!.id, action: 'CTM_MERCHANT_TIER_CHANGED', metadata: { profileId: id, newTier: tier } as JsonValue },
+    }).catch(() => {})
+
     return reply.send({ success: true, data: updated })
   })
 
