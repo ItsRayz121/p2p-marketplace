@@ -1101,6 +1101,16 @@ export interface AdminDepositToken {
   updatedAt?: string
 }
 
+export interface ChainSearchResult {
+  chainId: number
+  name: string
+  slug: string
+  nativeSymbol: string
+  networkLabel: string
+  explorerBase: string | null
+  publicRpc: string | null
+}
+
 export interface TokenLookupResult {
   symbol: string
   chainSlug: string
@@ -1388,6 +1398,8 @@ export const adminApi = {
     apiRequest<AdminDepositToken>(`/admin/deposit-chains/${slug}/tokens/${tokenId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   lookupDepositToken: (symbol: string, chainSlug: string) =>
     apiRequest<TokenLookupResult>(`/admin/deposit-chains/lookup?symbol=${encodeURIComponent(symbol)}&chainSlug=${encodeURIComponent(chainSlug)}`),
+  searchChains: (query: string) =>
+    apiRequest<{ chains: ChainSearchResult[] }>(`/admin/deposit-chains/chain-search?query=${encodeURIComponent(query)}`),
 
   // Gas Chain Config CRUD
   getGasChains: () =>

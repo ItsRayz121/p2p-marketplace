@@ -1,21 +1,217 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { adminApi, type AdminDepositChain } from '@/lib/api'
+import { adminApi, type AdminDepositChain, type ChainSearchResult } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 
-// ── Verification badge ────────────────────────────────────────────────────────
+const FAMILIES = ['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC'] as const
+type Family = typeof FAMILIES[number]
 
-function VerifiedBadge({ ok, label }: { ok: boolean; label: string }) {
+const ADDRESS_TYPE_FOR_FAMILY: Record<Family, string> = {
+  EVM: 'EVM', TRON: 'TRC20', SOL: 'SOL', TON: 'TON', SUI: 'SUI', BTC: 'EVM',
+}
+
+// ── Add Chain Form ─────────────────────────────────────────────────────────────
+
+function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+  const [query,         setQuery]         = useState('')
+  const [results,       setResults]       = useState<ChainSearchResult[]>([])
+  const [searching,     setSearching]     = useState(false)
+  const [selected,      setSelected]      = useState<ChainSearchResult | null>(null)
+  const [showDropdown,  setShowDropdown]  = useState(false)
+
+  const [name,          setName]          = useState('')
+  const [slug,          setSlug]          = useState('')
+  const [family,        setFamily]        = useState<Family>('EVM')
+  const [nativeSymbol,  setNativeSymbol]  = useState('')
+  const [networkLabel,  setNetworkLabel]  = useState('')
+  const [minConf,       setMinConf]       = useState('12')
+  const [explorerBase,  setExplorerBase]  = useState('')
+  const [rpcEnvVar,     setRpcEnvVar]     = useState('')
+  const [addToGas,      setAddToGas]      = useState(true)
+
+  const [submitting,    setSubmitting]    = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function applyResult(r: ChainSearchResult) {
+    setSelected(r)
+    setQuery(r.name)
+    setShowDropdown(false)
+    setName(r.name)
+    setSlug(r.slug)
+    setNativeSymbol(r.nativeSymbol)
+    setNetworkLabel(r.networkLabel)
+    setExplorerBase(r.explorerBase ?? '')
+    if (r.publicRpc) setRpcEnvVar('')
+  }
+
+  function handleQueryChange(v: string) {
+    setQuery(v)
+    setSelected(null)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (v.trim().length < 2) { setResults([]); setShowDropdown(false); return }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const data = await adminApi.searchChains(v.trim())
+        setResults(data.chains)
+        setShowDropdown(data.chains.length > 0)
+      } catch { setResults([]) }
+      finally { setSearching(false) }
+    }, 350)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    if (!name || !slug || !nativeSymbol || !networkLabel || !explorerBase) {
+      setError('Name, slug, native symbol, network label, and explorer URL are required.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await adminApi.createDepositChain({
+        slug, name, family, nativeSymbol, networkLabel,
+        minConfirmations: parseInt(minConf, 10) || 12,
+        explorerBase,
+        rpcEnvVar: rpcEnvVar || undefined,
+        isActive: true,
+      } as Parameters<typeof adminApi.createDepositChain>[0])
+
+      if (addToGas) {
+        await adminApi.createGasChain({
+          name,
+          slug:          slug.toUpperCase(),
+          symbol:        nativeSymbol,
+          category:      slug.toLowerCase(),
+          networkLabel,
+          addressType:   ADDRESS_TYPE_FOR_FAMILY[family],
+          explorerBase:  explorerBase || null,
+          backendChainId: null,
+          isActive:      false,
+          readinessState: 'inactive',
+          displayOrder:  999,
+          platformFeeUsdt: 0.25,
+        })
+      }
+
+      onSuccess()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create chain')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
-    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
-      ok ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-    }`}>
-      {ok ? '✓' : '–'} {label}
-    </span>
+    <div className="bg-white rounded-xl border border-blue-200 p-6 space-y-5">
+      <h2 className="text-lg font-semibold text-slate-900">Add New Blockchain</h2>
+
+      {/* Chain search */}
+      <div className="relative">
+        <label className="block text-sm font-medium text-slate-700 mb-1">Search chain (EVM auto-lookup)</label>
+        <input
+          type="text"
+          value={query}
+          onChange={e => handleQueryChange(e.target.value)}
+          onFocus={() => results.length > 0 && setShowDropdown(true)}
+          placeholder="e.g. ZetaChain, Linea, Scroll…"
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        {searching && (
+          <span className="absolute right-3 top-9 text-xs text-slate-400">Searching…</span>
+        )}
+        {showDropdown && (
+          <ul className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-auto text-sm">
+            {results.map(r => (
+              <li
+                key={r.chainId}
+                onMouseDown={() => applyResult(r)}
+                className="px-3 py-2 cursor-pointer hover:bg-blue-50 flex items-center justify-between"
+              >
+                <span className="font-medium">{r.name}</span>
+                <span className="text-xs text-slate-400">chainId {r.chainId} · {r.nativeSymbol}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {selected && (
+          <p className="mt-1 text-xs text-emerald-600">✓ Auto-filled from chainid.network — review fields below</p>
+        )}
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="ZetaChain" required
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Slug * <span className="text-slate-400 font-normal">(lowercase, no spaces)</span></label>
+            <input value={slug} onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))} placeholder="zeta" required
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Family *</label>
+            <select value={family} onChange={e => setFamily(e.target.value as Family)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              {FAMILIES.map(f => <option key={f}>{f}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Native Symbol *</label>
+            <input value={nativeSymbol} onChange={e => setNativeSymbol(e.target.value.toUpperCase())} placeholder="ZETA" required
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Network Label * <span className="text-slate-400 font-normal">(shown in UI)</span></label>
+            <input value={networkLabel} onChange={e => setNetworkLabel(e.target.value.toUpperCase())} placeholder="ZETA" required
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Min Confirmations *</label>
+            <input type="number" min={1} value={minConf} onChange={e => setMinConf(e.target.value)} required
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Explorer Base URL * <span className="text-slate-400 font-normal">(must end with /tx/)</span></label>
+          <input value={explorerBase} onChange={e => setExplorerBase(e.target.value)} placeholder="https://explorer.zetachain.com/tx/" required
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">RPC Env Var <span className="text-slate-400 font-normal">(optional — e.g. ZETA_RPC_URL)</span></label>
+          <input value={rpcEnvVar} onChange={e => setRpcEnvVar(e.target.value)} placeholder="ZETA_RPC_URL"
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <input type="checkbox" checked={addToGas} onChange={e => setAddToGas(e.target.checked)}
+            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+          <div>
+            <span className="text-sm font-medium text-slate-800">Also add to Gas section</span>
+            <p className="text-xs text-slate-500">Creates an inactive Gas chain entry so you can configure it under Gas → Chains later.</p>
+          </div>
+        </label>
+
+        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <Button type="submit" disabled={submitting}>
+            {submitting ? 'Adding…' : 'Add Blockchain'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+        </div>
+      </form>
+    </div>
   )
 }
 
@@ -23,10 +219,11 @@ function VerifiedBadge({ ok, label }: { ok: boolean; label: string }) {
 
 export default function DepositChainsPage() {
   const router = useRouter()
-  const [chains, setChains] = useState<AdminDepositChain[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState<string | null>(null)
+  const [chains,   setChains]   = useState<AdminDepositChain[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState<string | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [adding,   setAdding]   = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -65,7 +262,17 @@ export default function DepositChainsPage() {
             DB-backed deposit chain and token configuration. Changes take effect immediately via Redis cache invalidation.
           </p>
         </div>
+        {!adding && (
+          <Button onClick={() => setAdding(true)}>+ Add Blockchain</Button>
+        )}
       </div>
+
+      {adding && (
+        <AddChainPanel
+          onSuccess={() => { setAdding(false); void load() }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">

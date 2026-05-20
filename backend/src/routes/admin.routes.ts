@@ -3829,6 +3829,45 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: updated })
   })
 
+  // GET /admin/deposit-chains/chain-search?query=zeta — search chainid.network for EVM chains
+  app.get('/admin/deposit-chains/chain-search', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { query } = req.query as { query?: string }
+    if (!query || query.trim().length < 2) throw new AppError('VALIDATION_ERROR', 'query must be at least 2 characters', 400)
+
+    type ChainEntry = {
+      chainId: number
+      name: string
+      shortName: string
+      nativeCurrency: { symbol: string; decimals: number }
+      explorers?: Array<{ url: string; standard?: string }>
+      rpc: string[]
+    }
+    const res = await fetch('https://chainid.network/chains.json', { signal: AbortSignal.timeout(8000) })
+    if (!res.ok) throw new AppError('UPSTREAM_ERROR', 'Failed to fetch chain list from chainid.network', 502)
+    const all = await res.json() as ChainEntry[]
+
+    const q = query.trim().toLowerCase()
+    const matches = all
+      .filter(c => c.name.toLowerCase().includes(q) || c.shortName.toLowerCase().includes(q))
+      .slice(0, 10)
+      .map(c => {
+        const explorerUrl = c.explorers?.find(e => e.standard === 'EIP3091')?.url ?? c.explorers?.[0]?.url ?? null
+        const publicRpc = c.rpc.find(r => !r.includes('${') && r.startsWith('https')) ?? null
+        const slugBase = c.shortName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+        return {
+          chainId:         c.chainId,
+          name:            c.name,
+          slug:            slugBase,
+          nativeSymbol:    c.nativeCurrency.symbol,
+          networkLabel:    c.nativeCurrency.symbol.toUpperCase(),
+          explorerBase:    explorerUrl ? `${explorerUrl.replace(/\/$/, '')}/tx/` : null,
+          publicRpc,
+        }
+      })
+
+    return reply.send({ success: true, data: { chains: matches } })
+  })
+
   // GET /admin/deposit-chains/lookup?symbol=USDT&chainSlug=ethereum
   // 3-layer verification: CoinGecko → on-chain RPC → TrustWallet
   app.get('/admin/deposit-chains/lookup', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
