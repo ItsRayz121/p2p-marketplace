@@ -3,7 +3,7 @@
  *
  * Derivation path: m/44'/501'/0'/0'  (Phantom / Solflare standard)
  * Address format:  base58( 32-byte ed25519 public key )
- * Chain status:    inactive — delivery not yet enabled
+ * Chain status:    beta — delivery enabled via @solana/web3.js
  *
  * Security rules:
  *   - Private key seeds are zeroed immediately after use.

@@ -150,33 +150,33 @@ export const CHAIN_CAPABILITIES: Record<string, ChainCapabilities> = {
   },
   SOL: {
     supportsMnemonic:         true,
-    supportsAutoDelivery:     false, // delivery not yet implemented
+    supportsAutoDelivery:     true,  // @solana/web3.js delivery implemented
     supportsStablecoins:      false, // USDT-on-SOL not yet wired
     supportsRefunds:          false,
     supportsConfirmation:     false,
-    supportsDepositAddress:   true,  // address derivable, but chain is inactive
+    supportsDepositAddress:   true,
     supportsMonitoring:       true,
     supportsRpcHealthCheck:   true,
     supportsDryRun:           true,
   },
   TON: {
     supportsMnemonic:         true,
-    supportsAutoDelivery:     false, // requires @ton/core + V4R2 wallet
+    supportsAutoDelivery:     true,  // @ton/ton WalletContractV4 delivery implemented
     supportsStablecoins:      false,
     supportsRefunds:          false,
     supportsConfirmation:     false,
-    supportsDepositAddress:   false, // TON address is a sha256 placeholder — NOT real
+    supportsDepositAddress:   true,  // real V4R2 address via WalletContractV4
     supportsMonitoring:       true,
     supportsRpcHealthCheck:   true,
     supportsDryRun:           true,
   },
   SUI: {
     supportsMnemonic:         true,
-    supportsAutoDelivery:     false, // requires @mysten/sui SDK for tx signing
+    supportsAutoDelivery:     true,  // @mysten/sui delivery implemented (requires blake2b-256)
     supportsStablecoins:      false,
     supportsRefunds:          false,
     supportsConfirmation:     false,
-    supportsDepositAddress:   true,  // address correct if blake2b-256 available
+    supportsDepositAddress:   true,  // address correct when blake2b-256 available
     supportsMonitoring:       true,
     supportsRpcHealthCheck:   true,
     supportsDryRun:           true,
@@ -298,12 +298,6 @@ export interface UnsupportedFeatureEntry {
 
 export const UNSUPPORTED_FEATURES: UnsupportedFeatureEntry[] = [
   {
-    feature: 'Auto delivery',
-    affectedChains: ['SOL', 'TON', 'SUI'],
-    reason: 'Chain-specific SDK not installed (no npm packages for non-EVM signing)',
-    resolution: 'Add @solana/web3.js, @ton/ton, @mysten/sui to dependencies',
-  },
-  {
     feature: 'Stablecoin payment acceptance',
     affectedChains: ['SOL', 'TON', 'SUI'],
     reason: 'SPL/Jetton/SUI token payment detection not implemented in deposit watcher',
@@ -312,20 +306,20 @@ export const UNSUPPORTED_FEATURES: UnsupportedFeatureEntry[] = [
   {
     feature: 'Refund flow',
     affectedChains: ['SOL', 'TON', 'SUI'],
-    reason: 'Refunds require delivery to work first',
-    resolution: 'Implement after delivery is live and proven',
+    reason: 'Non-EVM refund path not implemented; requires stablecoin acceptance first',
+    resolution: 'Implement after stablecoin payment acceptance is live and proven',
   },
   {
-    feature: 'Exact TON V4R2 address',
-    affectedChains: ['TON'],
-    reason: 'StateInit hash requires TL-B cell serialization (@ton/core)',
-    resolution: 'Install @ton/core and replace placeholder in tonWalletService.ts',
+    feature: 'Tx confirmation check',
+    affectedChains: ['SOL', 'TON', 'SUI'],
+    reason: 'Post-delivery confirmation polling not yet implemented for non-EVM chains',
+    resolution: 'Add chain-specific confirmation check in gas.confirmation.ts',
   },
   {
     feature: 'SUI address on non-blake2b hosts',
     affectedChains: ['SUI'],
     reason: 'sha3-256 fallback produces wrong address if OpenSSL lacks blake2b-256',
-    resolution: 'Verify Node 20 + OpenSSL 3 on production host; check startup log',
+    resolution: 'Verify Node 20 + OpenSSL 3 on production host; run deploy:verify before activating SUI',
   },
 ]
 

@@ -2,16 +2,13 @@
  * TON wallet service — SLIP-0010 ed25519 key derivation, HTTP API balance.
  *
  * Derivation path: m/44'/607'/0'/0'  (SLIP-0010 compatible path for TON)
- * Address format:  Raw TON address computed from public key (simplified v4R2 approximation).
- *                  IMPORTANT: The exact TON wallet V4R2 StateInit address requires the
- *                  @ton/core SDK for TL-B cell serialization. This implementation stores
- *                  a deterministic placeholder for startup validation only. When activating
- *                  TON delivery, replace with proper @ton/core address derivation.
- * Chain status:    inactive — delivery not yet enabled
+ * Address format:  Real WalletContractV4 (V4R2) raw address derived via @ton/ton.
+ *                  StateInit hash is computed by WalletContractV4.create().address.
+ * Chain status:    beta — delivery enabled via @ton/ton WalletContractV4
  *
  * Security rules:
  *   - Private key seeds are zeroed after use.
- *   - Stored address is the sha256 fingerprint of the public key (safe, non-secret).
+ *   - Stored address is public data derived from the public key (safe to cache).
  */
 
 import { WalletContractV4 } from '@ton/ton'

@@ -4,7 +4,7 @@
  * Derivation path: m/44'/784'/0'/0'/0'  (Mysten standard for SUI)
  * Address format:  0x + hex(blake2b-256( 0x00 || public_key ))[0:64]
  *                  (signature_scheme_flag = 0x00 for ed25519)
- * Chain status:    inactive — delivery not yet enabled
+ * Chain status:    beta — delivery enabled via @mysten/sui (requires blake2b-256)
  *
  * blake2b-256:
  *   Node 20 + OpenSSL 3 expose BLAKE2b-256 as "blake2b-256".
