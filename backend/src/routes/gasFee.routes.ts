@@ -1279,4 +1279,193 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       },
     })
   })
+
+  // ── POST /gas-fee/orders/:orderRef/verify-payment — user self-reports txHash ─
+  // Lets the user submit their on-chain txHash when automatic detection failed.
+  // We verify the tx on-chain (correct recipient, token, amount, confirmations),
+  // then attribute the order without waiting for Moralis.
+  // Rate-limited to 5 attempts per order to prevent RPC abuse.
+
+  const verifyPaymentSchema = z.object({ txHash: z.string().min(10).max(100) })
+
+  app.post('/gas-fee/orders/:orderRef/verify-payment', async (req, reply) => {
+    const { orderRef } = req.params as { orderRef: string }
+    const parsed = verifyPaymentSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'txHash is required', 400)
+
+    const { txHash } = parsed.data
+
+    // Rate limit: 5 verify attempts per order per 10 minutes
+    const rlKey = `gas_verify_rl:${orderRef}`
+    const attempts = await redis.incr(rlKey)
+    if (attempts === 1) await redis.expire(rlKey, 600)
+    if (attempts > 5) throw new AppError('RATE_LIMITED', 'Too many verification attempts. Please wait 10 minutes.', 429)
+
+    const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    // Only allow verification for USDT crypto orders (not PKR fiat orders)
+    if (order.paymentCoin !== 'USDT') {
+      throw new AppError('INVALID_STATUS', 'Manual verification is only available for USDT payment orders', 400)
+    }
+
+    // Accept payment_pending or recently-expired orders (15-min grace window)
+    const GRACE_MS = 15 * 60 * 1000
+    const isExpiredInGrace = order.status === 'expired' && order.expiresAt.getTime() >= Date.now() - GRACE_MS
+    if (order.status !== 'payment_pending' && !isExpiredInGrace) {
+      const msg = order.status === 'expired'
+        ? 'Order expired too long ago to verify. Please create a new order.'
+        : `Order is already in status '${order.status}'.`
+      throw new AppError('INVALID_STATUS', msg, 409)
+    }
+
+    // Duplicate txHash guard
+    const alreadyUsed = await db.gasFeeOrder.findFirst({ where: { paymentTxHash: txHash } })
+    if (alreadyUsed) {
+      if (alreadyUsed.orderRef === orderRef) {
+        return reply.send({ success: true, data: { status: order.status, message: 'Transaction already attributed to this order.' } })
+      }
+      throw new AppError('CONFLICT', 'This transaction hash is already linked to another order.', 409)
+    }
+
+    // ── On-chain verification ────────────────────────────────────────────────
+    // Resolve the correct RPC and USDT contract for this order's payment network.
+    const { createPublicClient, http: viemHttp } = await import('viem')
+    const viemChains = await import('viem/chains')
+
+    type NetworkDef = {
+      viemChain: import('viem').Chain
+      rpcUrl: string
+      usdtContract: `0x${string}`
+      usdtDecimals: number
+      depositAddressDbKey: string
+      depositAddressEnvFn: () => string | undefined
+      requiredConfirmations: number
+    }
+
+    const NETWORK_MAP: Record<string, NetworkDef> = {
+      BEP20: {
+        viemChain:            viemChains.bsc,
+        rpcUrl:               env.BSC_RPC_URL,
+        usdtContract:         '0x55d398326f99059fF775485246999027B3197955',
+        usdtDecimals:         18,
+        depositAddressDbKey:  'gas_usdt_bep20_address',
+        depositAddressEnvFn:  () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
+        requiredConfirmations: 3,
+      },
+      ERC20: {
+        viemChain:            viemChains.mainnet,
+        rpcUrl:               env.ETHEREUM_RPC_URL,
+        usdtContract:         '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        usdtDecimals:         6,
+        depositAddressDbKey:  'gas_usdt_erc20_address',
+        depositAddressEnvFn:  () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
+        requiredConfirmations: 12,
+      },
+    }
+
+    // TRC20 on-chain decode requires TronWeb ABI parsing — the automatic poller handles TRON.
+    if (order.paymentNetwork === 'TRC20') {
+      throw new AppError('CHAIN_NOT_SUPPORTED', 'Manual verification for TRC20 is not yet available. Please wait for automatic detection or contact support.', 400)
+    }
+
+    const netDef = NETWORK_MAP[order.paymentNetwork]
+    if (!netDef) throw new AppError('CHAIN_NOT_SUPPORTED', `Payment network '${order.paymentNetwork}' does not support on-chain verification`, 400)
+
+    // Resolve the deposit address (DB override takes precedence)
+    const dbDepositOverride = await db.platformConfig.findUnique({ where: { key: netDef.depositAddressDbKey } })
+    const depositAddress = (dbDepositOverride?.value ?? netDef.depositAddressEnvFn())?.toLowerCase()
+    if (!depositAddress) throw new AppError('CHAIN_NOT_SUPPORTED', 'Deposit address not configured for this network', 400)
+
+    // ── EVM verification (BSC / ETH) ─────────────────────────────────────────
+    const client = createPublicClient({ chain: netDef.viemChain, transport: viemHttp(netDef.rpcUrl, { timeout: 12_000 }) })
+
+    let receipt: Awaited<ReturnType<typeof client.getTransactionReceipt>> | null = null
+    try {
+      receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` })
+    } catch (err) {
+      logger.warn({ err, txHash, orderRef }, 'verify-payment: getTransactionReceipt failed')
+      throw new AppError('VERIFICATION_ERROR', 'Transaction not found on-chain. It may still be pending — please wait for at least 1 confirmation and try again.', 400)
+    }
+
+    if (!receipt || receipt.status !== 'success') {
+      throw new AppError('VERIFICATION_ERROR', 'Transaction failed or was reverted on-chain.', 400)
+    }
+
+    // Check confirmation count
+    const currentBlock = await client.getBlockNumber()
+    const confirmations = Number(currentBlock) - Number(receipt.blockNumber)
+    if (confirmations < netDef.requiredConfirmations) {
+      throw new AppError('VERIFICATION_ERROR', `Transaction needs ${netDef.requiredConfirmations} confirmations but only has ${confirmations}. Please wait a moment and try again.`, 400)
+    }
+
+    // Parse ERC20 Transfer logs from the receipt
+    const TRANSFER_SIG = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+    const transferLogs = receipt.logs.filter(
+      (l) => l.address.toLowerCase() === netDef.usdtContract.toLowerCase() && l.topics[0] === TRANSFER_SIG,
+    )
+
+    if (transferLogs.length === 0) {
+      throw new AppError('VERIFICATION_ERROR', `No USDT transfer found in this transaction. Make sure you sent USDT on the ${order.paymentNetwork} network.`, 400)
+    }
+
+    // Find a Transfer log whose 'to' matches our deposit address and amount is in range
+    const paymentAmountFloat = parseFloat(order.paymentAmount.toString())
+    const lo = paymentAmountFloat * 0.99
+    const hi = paymentAmountFloat * 1.01
+
+    let matchedAmount: number | null = null
+    for (const log of transferLogs) {
+      if (!log.topics[2]) continue
+      const toAddr = '0x' + log.topics[2].slice(26).toLowerCase()
+      if (toAddr !== depositAddress) continue
+
+      // Decode uint256 value from data field
+      const rawValue = BigInt(log.data)
+      const humanAmount = Number(rawValue) / Math.pow(10, netDef.usdtDecimals)
+      if (humanAmount >= lo && humanAmount <= hi) {
+        matchedAmount = humanAmount
+        break
+      }
+    }
+
+    if (matchedAmount === null) {
+      // Give the user a useful error: did the 'to' match but amount was wrong?
+      const anyToUs = transferLogs.some((l) => l.topics[2] && '0x' + l.topics[2].slice(26).toLowerCase() === depositAddress)
+      if (anyToUs) {
+        throw new AppError('VERIFICATION_ERROR', `USDT transfer found but the amount doesn't match the order. Expected ~${paymentAmountFloat.toFixed(4)} USDT (±1%).`, 400)
+      }
+      throw new AppError('VERIFICATION_ERROR', `This transaction does not send USDT to our deposit address. Please check you used the correct address.`, 400)
+    }
+
+    // ── Block timestamp vs order expiry (grace window) ───────────────────────
+    if (order.status === 'expired') {
+      let blockTimestampMs: number | null = null
+      try {
+        const block = await client.getBlock({ blockNumber: receipt.blockNumber })
+        blockTimestampMs = Number(block.timestamp) * 1000
+      } catch { /* best effort */ }
+
+      if (blockTimestampMs !== null && blockTimestampMs >= order.expiresAt.getTime()) {
+        throw new AppError('VERIFICATION_ERROR', 'Your transaction was confirmed after the order expired. Please create a new order.', 409)
+      }
+    }
+
+    // ── Attribute order ───────────────────────────────────────────────────────
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id: order.id, status: order.status === 'expired' ? 'expired' : 'payment_pending', paymentTxHash: null },
+      data:  { status: 'payment_detected', paymentTxHash: txHash },
+    })
+
+    if (claimed.count === 0) {
+      // Race condition: another process (webhook / poller) already claimed it
+      const fresh = await db.gasFeeOrder.findUnique({ where: { id: order.id }, select: { status: true } })
+      return reply.send({ success: true, data: { status: fresh?.status ?? order.status, message: 'Payment already detected.' } })
+    }
+
+    await queues.gasFee.add('deliver', { orderId: order.id }, { priority: 1 })
+    logger.info({ orderRef, txHash, amount: matchedAmount, network: order.paymentNetwork }, 'verify-payment: user self-reported — payment verified and delivery queued')
+
+    return reply.send({ success: true, data: { status: 'payment_detected', message: 'Payment verified! Your gas is being delivered.' } })
+  })
 }

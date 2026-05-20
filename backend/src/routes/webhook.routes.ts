@@ -358,38 +358,69 @@ export async function webhookRoutes(app: FastifyInstance) {
           await queues.gasFee.add('deliver', { orderId: gasOrder.id }, { priority: 1 })
           logger.info({ txHash, orderId: gasOrder.id, paymentNetwork: matchedDeposit.network }, 'Payment detected for gas fee order')
         } else {
-          // No matching active order — detect over/underpayment for admin context
-          const nearestOrder = await db.gasFeeOrder.findFirst({
+          // No active match — try recently-expired orders as a grace window.
+          // Moralis can fire the webhook after the order expiry job has already run.
+          // If payment arrived while the order was still live, attribute it.
+          const GRACE_MS = 15 * 60 * 1000
+          const graceCutoff = new Date(Date.now() - GRACE_MS)
+          const expiredOrder = await db.gasFeeOrder.findFirst({
             where: {
-              status: 'payment_pending',
+              status:         'expired',
               paymentNetwork: matchedDeposit.network,
-              expiresAt: { gt: new Date() },
+              paymentAmount:  { gte: lo, lte: hi },
+              expiresAt:      { gte: graceCutoff },
+              paymentTxHash:  null,
             },
             orderBy: { createdAt: 'asc' },
           })
-          let paymentNote = 'unmatched'
-          if (nearestOrder) {
-            const expected = parseFloat(nearestOrder.paymentAmount.toString())
-            if (incoming < expected * 0.99) paymentNote = 'underpayment'
-            else if (incoming > expected * 1.01) paymentNote = 'overpayment'
-            else paymentNote = 'expired_order'
-          }
 
-          const member = JSON.stringify({
-            txHash,
-            amount: (payload as { amount?: string }).amount,
-            network: matchedDeposit.network,
-            toAddress,
-            paymentNote,
-            detectedAt: new Date().toISOString(),
-          })
-          await redis.zadd('gas_unattributed', Date.now(), member)
-          await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
-          logger.warn({ txHash, amount: incoming, paymentNote, network: matchedDeposit.network }, 'Unattributed gas fee payment received')
-          sendAdminAlertEmail(
-            `Unattributed Gas Fee Payment — ${paymentNote}`,
-            `A USDT payment arrived at the ${matchedDeposit.network} gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${matchedDeposit.network}\nNote: ${paymentNote}\n\nReview at /admin/gas and attribute manually.`,
-          ).catch(() => {})
+          if (expiredOrder) {
+            const claimed = await db.gasFeeOrder.updateMany({
+              where: { id: expiredOrder.id, status: 'expired', paymentTxHash: null },
+              data:  { status: 'payment_detected', paymentTxHash: txHash },
+            })
+            if (claimed.count > 0) {
+              await queues.gasFee.add('deliver', { orderId: expiredOrder.id }, { priority: 1 })
+              logger.info({ txHash, orderId: expiredOrder.id, paymentNetwork: matchedDeposit.network }, 'Late webhook — expired order resurrected (payment was on-time)')
+              sendAdminAlertEmail(
+                `Gas Order Resurrected — Late Moralis Webhook`,
+                `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${matchedDeposit.network}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nMoralis webhook arrived after the order expired. The order was resurrected and delivery queued.`,
+              ).catch(() => {})
+            }
+          } else {
+            // No matching active or recently-expired order — log for admin review
+            const nearestOrder = await db.gasFeeOrder.findFirst({
+              where: {
+                status: 'payment_pending',
+                paymentNetwork: matchedDeposit.network,
+                expiresAt: { gt: new Date() },
+              },
+              orderBy: { createdAt: 'asc' },
+            })
+            let paymentNote = 'unmatched'
+            if (nearestOrder) {
+              const expected = parseFloat(nearestOrder.paymentAmount.toString())
+              if (incoming < expected * 0.99) paymentNote = 'underpayment'
+              else if (incoming > expected * 1.01) paymentNote = 'overpayment'
+              else paymentNote = 'expired_order'
+            }
+
+            const member = JSON.stringify({
+              txHash,
+              amount: (payload as { amount?: string }).amount,
+              network: matchedDeposit.network,
+              toAddress,
+              paymentNote,
+              detectedAt: new Date().toISOString(),
+            })
+            await redis.zadd('gas_unattributed', Date.now(), member)
+            await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
+            logger.warn({ txHash, amount: incoming, paymentNote, network: matchedDeposit.network }, 'Unattributed gas fee payment received')
+            sendAdminAlertEmail(
+              `Unattributed Gas Fee Payment — ${paymentNote}`,
+              `A USDT payment arrived at the ${matchedDeposit.network} gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${matchedDeposit.network}\nNote: ${paymentNote}\n\nReview at /admin/gas and attribute manually.`,
+            ).catch(() => {})
+          }
         }
       }
     }

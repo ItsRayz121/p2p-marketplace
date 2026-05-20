@@ -1056,6 +1056,9 @@ export const gasApi = {
 
   getNetworkFee: (chainSlug: string) =>
     apiRequest<GasNetworkFee>(`/gas-fee/chains/${chainSlug}/network-fee`),
+
+  verifyPayment: (orderRef: string, txHash: string) =>
+    apiRequest<{ status: string; message: string }>(`/gas-fee/orders/${orderRef}/verify-payment`, { method: 'POST', body: JSON.stringify({ txHash }) }),
 }
 
 export const gasFeeApi = {

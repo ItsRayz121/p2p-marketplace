@@ -426,6 +426,13 @@ export default function GasPage() {
   const [cryptoError, setCryptoError]       = useState('')
   const [qrFailed, setQrFailed]             = useState(false)
 
+  // ── Manual payment verification ─────────────────────────────────────────────
+  const [verifyOpen, setVerifyOpen]     = useState(false)
+  const [verifyTxHash, setVerifyTxHash] = useState('')
+  const [verifying, setVerifying]       = useState(false)
+  const [verifyError, setVerifyError]   = useState('')
+  const [verifySuccess, setVerifySuccess] = useState('')
+
   // ── Order tracking ──────────────────────────────────────────────────────────
   const [order, setOrder]               = useState<GasOrder | null>(null)
   const [pollErrCount, setPollErrCount] = useState(0)
@@ -574,6 +581,24 @@ export default function GasPage() {
       setPhase(PHASE.CRYPTO_QR)
     } catch (e: unknown) { setCryptoError(e instanceof Error ? e.message : 'Failed to create order') }
     finally { setCreatingCrypto(false) }
+  }
+
+  // ── Manual payment verification ─────────────────────────────────────────────
+
+  async function handleVerifyPayment() {
+    if (!order?.orderRef || !verifyTxHash.trim()) return
+    setVerifying(true); setVerifyError(''); setVerifySuccess('')
+    try {
+      const res = await gasApi.verifyPayment(order.orderRef, verifyTxHash.trim())
+      setVerifySuccess(res.message ?? 'Payment verified!')
+      setOrder(prev => prev ? { ...prev, status: res.status as GasOrder['status'] } : prev)
+      setVerifyOpen(false)
+      setVerifyTxHash('')
+    } catch (e: unknown) {
+      setVerifyError(e instanceof Error ? e.message : 'Verification failed. Please check your transaction hash and try again.')
+    } finally {
+      setVerifying(false)
+    }
   }
 
   // ── Order polling ───────────────────────────────────────────────────────────
@@ -1521,6 +1546,44 @@ export default function GasPage() {
                           Connection issue. <button className="underline font-semibold" onClick={() => { setPollErrCount(0); pollOrder() }}>Refresh</button>
                         </p>
                       )}
+
+                      {/* Already sent? — manual verification */}
+                      {verifySuccess ? (
+                        <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                          <p className="text-sm font-bold text-green-700 mb-0.5">Payment Verified!</p>
+                          <p className="text-xs text-green-600">{verifySuccess}</p>
+                        </div>
+                      ) : !verifyOpen ? (
+                        <button
+                          onClick={() => setVerifyOpen(true)}
+                          className="w-full text-xs text-gray-400 underline underline-offset-2 text-center pt-1 hover:text-gray-600 transition-colors"
+                        >
+                          Already sent? Enter your transaction hash
+                        </button>
+                      ) : (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-blue-800">Verify Your Payment</p>
+                            <button onClick={() => { setVerifyOpen(false); setVerifyError('') }} className="text-blue-400 hover:text-blue-600 text-lg leading-none">&times;</button>
+                          </div>
+                          <p className="text-xs text-blue-700">Paste your transaction hash from your wallet or blockchain explorer. We'll verify it automatically.</p>
+                          <input
+                            type="text"
+                            value={verifyTxHash}
+                            onChange={e => { setVerifyTxHash(e.target.value); setVerifyError('') }}
+                            placeholder="0x... transaction hash"
+                            className="w-full text-xs font-mono bg-white border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-gray-300"
+                          />
+                          {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
+                          <Button
+                            onClick={handleVerifyPayment}
+                            disabled={verifying || !verifyTxHash.trim()}
+                            className="w-full text-sm"
+                          >
+                            {verifying ? 'Verifying on-chain…' : 'Verify Payment'}
+                          </Button>
+                        </div>
+                      )}
                     </>
                   )}
 
@@ -1536,8 +1599,53 @@ export default function GasPage() {
                   {(order.status === 'expired' || order.status === 'failed') && (
                     <div className="text-center py-4">
                       <p className="text-base font-bold text-red-600 mb-2">{order.status === 'expired' ? 'Order Expired' : 'Order Failed'}</p>
-                      <p className="text-sm text-gray-500 mb-4">{order.status === 'expired' ? 'Payment not received in time.' : 'Something went wrong.'}</p>
-                      <Button onClick={resetFlow}>Try Again</Button>
+                      {order.status === 'expired' ? (
+                        <>
+                          <p className="text-sm text-gray-500 mb-3">Payment not received in time.</p>
+                          {/* Grace window: offer verify option for recently-expired orders */}
+                          {!verifyOpen && !verifySuccess ? (
+                            <div className="mb-4 space-y-2">
+                              <p className="text-xs text-gray-400">Already sent the payment? We can still verify it.</p>
+                              <button
+                                onClick={() => setVerifyOpen(true)}
+                                className="text-xs text-blue-600 underline underline-offset-2 hover:text-blue-800 font-semibold"
+                              >
+                                Enter transaction hash to verify
+                              </button>
+                            </div>
+                          ) : verifySuccess ? (
+                            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center mb-4">
+                              <p className="text-sm font-bold text-green-700 mb-0.5">Payment Verified!</p>
+                              <p className="text-xs text-green-600">{verifySuccess}</p>
+                            </div>
+                          ) : (
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3 text-left mb-4">
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-bold text-blue-800">Verify Your Payment</p>
+                                <button onClick={() => { setVerifyOpen(false); setVerifyError('') }} className="text-blue-400 hover:text-blue-600 text-lg leading-none">&times;</button>
+                              </div>
+                              <p className="text-xs text-blue-700">Enter the transaction hash from your wallet. If you paid before the timer expired, we&apos;ll process your order.</p>
+                              <input
+                                type="text"
+                                value={verifyTxHash}
+                                onChange={e => { setVerifyTxHash(e.target.value); setVerifyError('') }}
+                                placeholder="0x... transaction hash"
+                                className="w-full text-xs font-mono bg-white border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-gray-300"
+                              />
+                              {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
+                              <Button onClick={handleVerifyPayment} disabled={verifying || !verifyTxHash.trim()} className="w-full text-sm">
+                                {verifying ? 'Verifying on-chain…' : 'Verify Payment'}
+                              </Button>
+                            </div>
+                          )}
+                          <Button onClick={resetFlow}>Create New Order</Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm text-gray-500 mb-4">Something went wrong.</p>
+                          <Button onClick={resetFlow}>Try Again</Button>
+                        </>
+                      )}
                     </div>
                   )}
 

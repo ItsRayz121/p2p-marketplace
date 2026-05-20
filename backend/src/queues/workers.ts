@@ -19,6 +19,7 @@ import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor } from '../ctm/ctm.jobs'
+import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,6 +216,14 @@ export function startWorkers() {
 
   createWorker(QUEUE_NAMES.CTM_TIER_UPGRADE, async () => { await runCtmMerchantTierUpgrade() }, { max: 1, duration: 120_000 })
   createWorker(QUEUE_NAMES.CTM_ESCROW_MONITOR, async () => { await runCtmEscrowMonitor() }, { max: 1, duration: 60_000 })
+
+  // Gas payment poller — fallback RPC-based detection when Moralis misses a webhook.
+  // Runs every 30 s, skips quickly when no pending orders exist.
+  queues.gasPaymentPoller
+    .add('poll', {}, { repeat: { every: 30_000 }, jobId: 'gas-payment-poller-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule gas payment poller'))
+
+  createWorker(QUEUE_NAMES.GAS_PAYMENT_POLLER, async () => { await runGasPaymentPoller() }, { max: 1, duration: 60_000 })
 
   logger.info('BullMQ workers ready')
 }
