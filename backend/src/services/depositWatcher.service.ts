@@ -2,7 +2,8 @@ import { Prisma } from '@prisma/client'
 import { formatUnits } from 'viem'
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
-import { ALL_CHAINS, type ChainConfig } from '../lib/chains'
+import { getAllChains } from './chainRegistry.service'
+import type { ChainConfig } from '../lib/chains'
 import { findUserByDepositAddress } from './depositAddress.service'
 
 /**
@@ -30,8 +31,9 @@ export type ProcessResult =
   | { status: 'credited'; depositId: string; userId: string; symbol: string; amount: string }
   | { status: 'rejected'; depositId: string; reason: string }
 
-function chainFromId(chainId: number): ChainConfig | undefined {
-  return ALL_CHAINS.find((c) => c.chainId === chainId)
+async function chainFromId(chainId: number): Promise<ChainConfig | undefined> {
+  const chains = await getAllChains()
+  return chains.find((c) => c.chainId === chainId)
 }
 
 /**
@@ -83,7 +85,7 @@ function toHumanAmount(rawAmount: string, decimals: number): string {
  *     Deposit row to status='credited' all-or-nothing.
  */
 export async function processDepositEvent(event: NormalizedDepositEvent): Promise<ProcessResult> {
-  const chain = chainFromId(event.chainId)
+  const chain = await chainFromId(event.chainId)
   if (!chain) {
     return { status: 'ignored', reason: `unsupported chainId ${event.chainId}` }
   }
@@ -309,9 +311,9 @@ export async function processDepositEvent(event: NormalizedDepositEvent): Promis
  *     confirmations?: number
  *   }
  */
-export function normalizeMoralisEvent(
+export async function normalizeMoralisEvent(
   payload: unknown,
-): NormalizedDepositEvent[] {
+): Promise<NormalizedDepositEvent[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = payload as any
   if (!p || typeof p !== 'object') return []
@@ -331,7 +333,7 @@ export function normalizeMoralisEvent(
   //
   // `p.confirmations` is preserved as a fallback in case Moralis (or a future
   // provider) ever sends an explicit count.
-  const chain = chainFromId(chainId)
+  const chain = await chainFromId(chainId)
   const threshold = chain?.minConfirmations ?? 0
   let confirmations: number
   if (p.confirmations != null && Number.isFinite(Number(p.confirmations))) {
@@ -438,7 +440,7 @@ export async function creditDetectedDeposit(
     return { status: 'rejected', depositId, reason: 'deposit_rejected' }
   }
 
-  const chain = ALL_CHAINS.find((c) => c.id === deposit.chain)
+  const chain = (await getAllChains()).find((c) => c.id === deposit.chain)
   const network = chain?.networkLabel ?? deposit.chain.toUpperCase()
   const symbol = deposit.symbol
   const amountStr = deposit.amount.toString()

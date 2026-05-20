@@ -1,7 +1,8 @@
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
-import { ALL_CHAINS, getRpcUrl, type ChainConfig } from '../lib/chains'
+import { getAllChains, getRpcUrl } from './chainRegistry.service'
+import type { ChainConfig } from '../lib/chains'
 import { getBlockNumber, getTransactionReceipt, EvmRpcError } from '../lib/evmRpc'
 import { creditDetectedDeposit } from './depositWatcher.service'
 
@@ -61,7 +62,8 @@ export async function refreshDepositFromRpc(depositId: string): Promise<{
   const deposit = await db.deposit.findUnique({ where: { id: depositId } })
   if (!deposit) return { ok: false, reason: 'not_found' }
 
-  const chain = ALL_CHAINS.find((c) => c.id === deposit.chain)
+  const chains = await getAllChains()
+  const chain = chains.find((c) => c.id === deposit.chain)
   if (!chain || chain.family !== 'EVM') return { ok: false, reason: 'unsupported_chain' }
 
   const rpcUrl = getRpcUrl(chain.id)
@@ -215,7 +217,7 @@ export async function runReconcileTick(): Promise<ReconcileSummary> {
 
   await Promise.all(
     Array.from(byChain.entries()).map(async ([chainId, deposits]) => {
-      const chainCfg = ALL_CHAINS.find((c) => c.id === chainId)
+      const chainCfg = (await getAllChains()).find((c) => c.id === chainId)
       if (!chainCfg || chainCfg.family !== 'EVM') {
         summary.errors += deposits.length
         return

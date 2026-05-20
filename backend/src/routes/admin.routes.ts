@@ -10,10 +10,9 @@ import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../servi
 import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
-import { getChainById } from '../lib/chains'
+import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
 import { processDepositEvent, creditDetectedDeposit } from '../services/depositWatcher.service'
 import { refreshDepositFromRpc } from '../services/depositReconcile.service'
-import { getRpcUrl } from '../lib/chains'
 import { getTransactionByHash, getTransactionReceipt, getBlockNumber } from '../lib/evmRpc'
 import { Prisma } from '@prisma/client'
 import { getWithdrawalTierConfig, upsertWithdrawalTierConfig } from '../services/withdrawal-risk.service'
@@ -928,7 +927,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     const { txHash, chain, asset, symbol, fromAddress, toAddress, rawAmount, confirmations } = parsed.data
 
-    const chainCfg = getChainById(chain)
+    const chainCfg = await getChainById(chain)
     if (!chainCfg || chainCfg.chainId == null) {
       throw new AppError('UNSUPPORTED_CHAIN', `Chain ${chain} is not supported`, 400)
     }
@@ -977,7 +976,7 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('NO_USER', 'Deposit has no associated user — cannot force-credit', 400)
     }
 
-    const chainCfg = getChainById(deposit.chain)
+    const chainCfg = await getChainById(deposit.chain)
     if (!chainCfg) {
       throw new AppError('UNSUPPORTED_CHAIN', `Chain ${deposit.chain} not configured`, 400)
     }
@@ -1150,7 +1149,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const parsed = schema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
 
-    const chainCfg = getChainById(parsed.data.chain)
+    const chainCfg = await getChainById(parsed.data.chain)
     if (!chainCfg || chainCfg.chainId == null) {
       throw new AppError('UNSUPPORTED_CHAIN', `Chain ${parsed.data.chain} is not supported`, 400)
     }
@@ -3683,5 +3682,280 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const allMatch = report.every((r) => r.match !== false)
     return reply.send({ success: true, data: { allMatch, wallets: report } })
+  })
+
+  // ─── Deposit Chain Registry ───────────────────────────────────────────────────
+
+  // GET /admin/deposit-chains — list all deposit chains with token counts
+  app.get('/admin/deposit-chains', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (_req, reply) => {
+    const rows = await db.depositChain.findMany({
+      include: { _count: { select: { tokens: { where: { isActive: true } } } } },
+      orderBy: { createdAt: 'asc' },
+    })
+    return reply.send({ success: true, data: rows.map((r) => ({
+      id: r.id, slug: r.slug, name: r.name, family: r.family, networkLabel: r.networkLabel,
+      nativeSymbol: r.nativeSymbol, minConfirmations: r.minConfirmations, explorerBase: r.explorerBase,
+      rpcEnvVar: r.rpcEnvVar, isActive: r.isActive, activeTokens: r._count.tokens,
+    })) })
+  })
+
+  // POST /admin/deposit-chains — create a new chain
+  app.post('/admin/deposit-chains', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
+    const schema = z.object({
+      slug:             z.string().min(1).max(50).regex(/^[a-z0-9-]+$/),
+      chainId:          z.number().int().positive().optional(),
+      name:             z.string().min(1).max(100),
+      family:           z.enum(['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC']),
+      nativeSymbol:     z.string().min(1).max(20),
+      networkLabel:     z.string().min(1).max(50),
+      minConfirmations: z.number().int().positive(),
+      explorerBase:     z.string().url(),
+      rpcEnvVar:        z.string().optional(),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const d = parsed.data
+    const existing = await db.depositChain.findFirst({ where: { OR: [{ slug: d.slug }, { networkLabel: d.networkLabel }] } })
+    if (existing) throw new AppError('DUPLICATE_CHAIN', 'A chain with that slug or networkLabel already exists', 409)
+    const row = await db.depositChain.create({ data: { ...d, chainId: d.chainId ?? null, rpcEnvVar: d.rpcEnvVar ?? null } })
+    await invalidateCache()
+    log.info({ adminId: req.user!.id, chainSlug: row.slug }, 'Admin created deposit chain')
+    return reply.code(201).send({ success: true, data: row })
+  })
+
+  // PATCH /admin/deposit-chains/:slug — update chain settings
+  app.patch('/admin/deposit-chains/:slug', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const schema = z.object({
+      name:             z.string().min(1).max(100).optional(),
+      minConfirmations: z.number().int().positive().optional(),
+      explorerBase:     z.string().url().optional(),
+      rpcEnvVar:        z.string().optional(),
+      isActive:         z.boolean().optional(),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const chain = await db.depositChain.findUnique({ where: { slug } })
+    if (!chain) throw new AppError('NOT_FOUND', `Chain ${slug} not found`, 404)
+    const d = parsed.data
+    const updateData: Parameters<typeof db.depositChain.update>[0]['data'] = {}
+    if (d.name             !== undefined) updateData.name             = d.name
+    if (d.minConfirmations !== undefined) updateData.minConfirmations = d.minConfirmations
+    if (d.explorerBase     !== undefined) updateData.explorerBase     = d.explorerBase
+    if (d.rpcEnvVar        !== undefined) updateData.rpcEnvVar        = d.rpcEnvVar
+    if (d.isActive         !== undefined) updateData.isActive         = d.isActive
+    const updated = await db.depositChain.update({ where: { slug }, data: updateData })
+    await invalidateCache()
+    log.info({ adminId: req.user!.id, chainSlug: slug, changes: d }, 'Admin updated deposit chain')
+    return reply.send({ success: true, data: updated })
+  })
+
+  // POST /admin/deposit-chains/:slug/tokens — add a token (requires on-chain verification)
+  app.post('/admin/deposit-chains/:slug/tokens', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const schema = z.object({
+      symbol:              z.string().min(1).max(20),
+      address:             z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM contract address (0x + 40 hex)').nullable().optional(),
+      decimals:            z.number().int().min(0).max(36),
+      coingeckoId:         z.string().optional(),
+      onChainVerified:     z.boolean().optional(),
+      trustWalletVerified: z.boolean().optional(),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const chain = await db.depositChain.findUnique({ where: { slug } })
+    if (!chain) throw new AppError('NOT_FOUND', `Chain ${slug} not found`, 404)
+    const d = parsed.data
+    const token = await db.depositToken.create({
+      data: {
+        chainId:             chain.id,
+        symbol:              d.symbol.toUpperCase(),
+        address:             d.address ?? null,
+        decimals:            d.decimals,
+        coingeckoId:         d.coingeckoId ?? null,
+        onChainVerified:     d.onChainVerified ?? false,
+        trustWalletVerified: d.trustWalletVerified ?? false,
+        verifiedAt:          (d.onChainVerified || d.trustWalletVerified) ? new Date() : null,
+        isActive:            true,
+      },
+    })
+    await invalidateCache()
+    log.info({ adminId: req.user!.id, chainSlug: slug, symbol: token.symbol }, 'Admin added deposit token')
+    return reply.code(201).send({ success: true, data: token })
+  })
+
+  // GET /admin/deposit-chains/:slug/tokens — list tokens for a chain
+  app.get('/admin/deposit-chains/:slug/tokens', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    const chain = await db.depositChain.findUnique({ where: { slug } })
+    if (!chain) throw new AppError('NOT_FOUND', `Chain ${slug} not found`, 404)
+    const tokens = await db.depositToken.findMany({
+      where: { chainId: chain.id },
+      orderBy: { symbol: 'asc' },
+    })
+    return reply.send({ success: true, data: { tokens } })
+  })
+
+  // PATCH /admin/deposit-chains/:slug/tokens/:id — update token (fix decimals, toggle active)
+  app.patch('/admin/deposit-chains/:slug/tokens/:id', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { slug, id } = req.params as { slug: string; id: string }
+    const schema = z.object({
+      address:             z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+      decimals:            z.number().int().min(0).max(36).optional(),
+      isActive:            z.boolean().optional(),
+      coingeckoId:         z.string().optional(),
+      onChainVerified:     z.boolean().optional(),
+      trustWalletVerified: z.boolean().optional(),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const chain = await db.depositChain.findUnique({ where: { slug } })
+    if (!chain) throw new AppError('NOT_FOUND', `Chain ${slug} not found`, 404)
+    const token = await db.depositToken.findFirst({ where: { id, chainId: chain.id } })
+    if (!token) throw new AppError('NOT_FOUND', 'Token not found on this chain', 404)
+    const now = new Date()
+    const verifiedAt = ((parsed.data.onChainVerified ?? false) || (parsed.data.trustWalletVerified ?? false)) ? now : token.verifiedAt
+    const d2 = parsed.data
+    const tokenUpdateData: Parameters<typeof db.depositToken.update>[0]['data'] = { verifiedAt }
+    if (d2.address             !== undefined) tokenUpdateData.address             = d2.address
+    if (d2.decimals            !== undefined) tokenUpdateData.decimals            = d2.decimals
+    if (d2.isActive            !== undefined) tokenUpdateData.isActive            = d2.isActive
+    if (d2.coingeckoId         !== undefined) tokenUpdateData.coingeckoId         = d2.coingeckoId
+    if (d2.onChainVerified     !== undefined) tokenUpdateData.onChainVerified     = d2.onChainVerified
+    if (d2.trustWalletVerified !== undefined) tokenUpdateData.trustWalletVerified = d2.trustWalletVerified
+    const updated = await db.depositToken.update({ where: { id }, data: tokenUpdateData })
+    await invalidateCache()
+    log.info({ adminId: req.user!.id, tokenId: id, changes: parsed.data }, 'Admin updated deposit token')
+    return reply.send({ success: true, data: updated })
+  })
+
+  // GET /admin/deposit-chains/lookup?symbol=USDT&chainSlug=ethereum
+  // 3-layer verification: CoinGecko → on-chain RPC → TrustWallet
+  app.get('/admin/deposit-chains/lookup', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { symbol, chainSlug } = req.query as { symbol?: string; chainSlug?: string }
+    if (!symbol || !chainSlug) throw new AppError('VALIDATION_ERROR', 'symbol and chainSlug query params are required', 400)
+
+    const chain = await getAllChains().then((cs) => cs.find((c) => c.id === chainSlug.toLowerCase()))
+    if (!chain) throw new AppError('NOT_FOUND', `Chain ${chainSlug} not found in registry`, 404)
+
+    const result: {
+      symbol: string; chainSlug: string; chainName: string
+      address: string | null; decimals: number | null
+      coingeckoVerified: boolean; coingeckoError: string | null
+      onChainVerified: boolean; onChainSymbol: string | null; onChainDecimals: number | null; onChainError: string | null
+      trustWalletVerified: boolean; trustWalletError: string | null
+    } = {
+      symbol: symbol.toUpperCase(), chainSlug, chainName: chain.name,
+      address: null, decimals: null,
+      coingeckoVerified: false, coingeckoError: null,
+      onChainVerified: false, onChainSymbol: null, onChainDecimals: null, onChainError: null,
+      trustWalletVerified: false, trustWalletError: null,
+    }
+
+    // Layer 1: CoinGecko
+    const COINGECKO_PLATFORM: Record<string, string> = {
+      ethereum: 'ethereum', bsc: 'binance-smart-chain', polygon: 'polygon-pos',
+      arbitrum: 'arbitrum-one', optimism: 'optimistic-ethereum', base: 'base', avalanche: 'avalanche',
+    }
+    const COINGECKO_SYMBOL_TO_ID: Record<string, string> = {
+      USDT: 'tether', USDC: 'usd-coin', DAI: 'dai', WBTC: 'wrapped-bitcoin',
+      LINK: 'chainlink', UNI: 'uniswap', AAVE: 'aave',
+    }
+    const cgPlatform = COINGECKO_PLATFORM[chainSlug.toLowerCase()]
+    const cgId = COINGECKO_SYMBOL_TO_ID[symbol.toUpperCase()]
+    if (cgPlatform && cgId) {
+      try {
+        const cgBase = 'https://api.coingecko.com/api/v3'
+        const headers: Record<string, string> = env.COINGECKO_API_KEY
+          ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY }
+          : {}
+        const res = await fetch(`${cgBase}/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`, { headers })
+        if (res.ok) {
+          const data = await res.json() as { detail_platforms?: Record<string, { contract_address: string; decimal_place: number } | null> }
+          const platformData = data.detail_platforms?.[cgPlatform]
+          if (platformData?.contract_address) {
+            result.address = platformData.contract_address
+            result.decimals = platformData.decimal_place
+            result.coingeckoVerified = true
+          } else {
+            result.coingeckoError = `Token ${symbol} not found on platform ${cgPlatform}`
+          }
+        } else {
+          result.coingeckoError = `CoinGecko returned HTTP ${res.status}`
+        }
+      } catch (err) {
+        result.coingeckoError = err instanceof Error ? err.message : 'CoinGecko fetch failed'
+      }
+    } else {
+      result.coingeckoError = cgId ? `No CoinGecko platform mapping for chain ${chainSlug}` : `No CoinGecko ID mapping for symbol ${symbol}`
+    }
+
+    // Layer 2: On-chain RPC (EVM only)
+    const address = result.address
+    if (address && chain.family === 'EVM') {
+      const rpcUrl = getRpcUrl(chain.id)
+      if (rpcUrl) {
+        try {
+          // ERC20 ABI minimal selectors
+          const symbolSelector = '0x95d89b41'
+          const decimalsSelector = '0x313ce567'
+          const call = async (data: string) => {
+            const body = { jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: address, data }, 'latest'] }
+            const r = await fetch(rpcUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+            const json = await r.json() as { result?: string; error?: { message: string } }
+            if (json.error) throw new Error(json.error.message)
+            return json.result ?? '0x'
+          }
+          const [symbolHex, decimalsHex] = await Promise.all([call(symbolSelector), call(decimalsSelector)])
+          const decNum = Number(BigInt(decimalsHex || '0x0'))
+          // Decode ABI-encoded string (offset 64 bytes + length 32 bytes + data)
+          const decodeString = (hex: string) => {
+            const clean = hex.startsWith('0x') ? hex.slice(2) : hex
+            if (clean.length < 128) return null
+            const len = parseInt(clean.slice(64, 128), 16)
+            const strHex = clean.slice(128, 128 + len * 2)
+            return Buffer.from(strHex, 'hex').toString('utf8').replace(/\0/g, '')
+          }
+          result.onChainSymbol = decodeString(symbolHex)
+          result.onChainDecimals = decNum
+          result.onChainVerified = (
+            result.onChainSymbol?.toUpperCase() === symbol.toUpperCase() &&
+            (result.decimals == null || result.onChainDecimals === result.decimals)
+          )
+          if (!result.onChainVerified) {
+            result.onChainError = `On-chain: symbol=${result.onChainSymbol}, decimals=${result.onChainDecimals}; expected symbol=${symbol}, decimals=${result.decimals}`
+          }
+        } catch (err) {
+          result.onChainError = err instanceof Error ? err.message : 'RPC call failed'
+        }
+      } else {
+        result.onChainError = `No RPC URL configured for chain ${chain.id}`
+      }
+    }
+
+    // Layer 3: TrustWallet assets
+    const TW_CHAIN: Record<string, string> = {
+      ethereum: 'ethereum', bsc: 'smartchain', polygon: 'polygon',
+      arbitrum: 'arbitrum', optimism: 'optimism', base: 'base',
+    }
+    const twChain = TW_CHAIN[chainSlug.toLowerCase()]
+    if (twChain && address) {
+      try {
+        const checksumAddress = address
+        const twUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${twChain}/assets/${checksumAddress}/info.json`
+        const twRes = await fetch(twUrl)
+        if (twRes.ok) {
+          result.trustWalletVerified = true
+        } else {
+          result.trustWalletError = twRes.status === 404 ? 'Not in TrustWallet registry' : `TrustWallet returned HTTP ${twRes.status}`
+        }
+      } catch (err) {
+        result.trustWalletError = err instanceof Error ? err.message : 'TrustWallet fetch failed'
+      }
+    } else if (!twChain) {
+      result.trustWalletError = `No TrustWallet mapping for chain ${chainSlug}`
+    }
+
+    return reply.send({ success: true, data: result })
   })
 }

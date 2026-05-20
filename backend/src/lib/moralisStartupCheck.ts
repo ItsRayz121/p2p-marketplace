@@ -1,6 +1,6 @@
 import { logger } from './logger'
 import { env } from './env'
-import { EVM_CHAINS, getMoralisStreamId } from './chains'
+import { getAllChains, getMoralisStreamId } from '../services/chainRegistry.service'
 import { getStreamMetadata } from './moralisClient'
 
 /**
@@ -16,7 +16,8 @@ export async function reportMoralisStartupStatus(): Promise<void> {
   }
 
   const report: Array<{ chain: string; streamConfigured: boolean; reachable: boolean | null; error: string | null }> = []
-  for (const chain of EVM_CHAINS) {
+  const evmChains = (await getAllChains()).filter((c) => c.family === 'EVM')
+  for (const chain of evmChains) {
     const streamId = getMoralisStreamId(chain.id)
     if (!streamId) {
       report.push({ chain: chain.id, streamConfigured: false, reachable: null, error: null })

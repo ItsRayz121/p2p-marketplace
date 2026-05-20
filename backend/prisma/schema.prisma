@@ -1797,3 +1797,45 @@ model CtmTradeRating {
   @@unique([tradeId, ratedByUserId])
   @@index([ratedUserId])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPOSIT CHAIN REGISTRY
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DepositChain {
+  id               String         @id @default(cuid())
+  slug             String         @unique
+  chainId          Int?
+  name             String
+  family           String
+  nativeSymbol     String
+  networkLabel     String         @unique
+  minConfirmations Int
+  explorerBase     String
+  rpcEnvVar        String?
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  tokens           DepositToken[]
+
+  @@index([family])
+}
+
+model DepositToken {
+  id                  String       @id @default(cuid())
+  chainId             String
+  chain               DepositChain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  symbol              String
+  address             String?
+  decimals            Int
+  isActive            Boolean      @default(true)
+  coingeckoId         String?
+  trustWalletVerified Boolean      @default(false)
+  onChainVerified     Boolean      @default(false)
+  verifiedAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([chainId, symbol])
+  @@index([symbol])
+}

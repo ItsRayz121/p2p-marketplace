@@ -1067,6 +1067,56 @@ function buildQs(params?: Record<string, string | number | undefined>): string {
 
 // ─── Admin gas config types ───────────────────────────────────────────────────
 
+// ── Deposit Chain Registry ────────────────────────────────────────────────────
+
+export interface AdminDepositChain {
+  id: string
+  slug: string
+  chainId: number | null
+  name: string
+  family: string
+  nativeSymbol: string
+  networkLabel: string
+  minConfirmations: number
+  explorerBase: string
+  rpcEnvVar: string | null
+  isActive: boolean
+  activeTokens: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface AdminDepositToken {
+  id: string
+  chainId: string
+  symbol: string
+  address: string | null
+  decimals: number
+  isActive: boolean
+  coingeckoId: string | null
+  trustWalletVerified: boolean
+  onChainVerified: boolean
+  verifiedAt: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface TokenLookupResult {
+  symbol: string
+  chainSlug: string
+  chainName: string
+  address: string | null
+  decimals: number | null
+  coingeckoVerified: boolean
+  coingeckoError: string | null
+  onChainVerified: boolean
+  onChainSymbol: string | null
+  onChainDecimals: number | null
+  onChainError: string | null
+  trustWalletVerified: boolean
+  trustWalletError: string | null
+}
+
 export interface AdminGasChain {
   id: string
   name: string
@@ -1322,6 +1372,22 @@ export const adminApi = {
     apiRequest<{ payments: unknown[]; total: number }>('/admin/gas/unattributed'),
   attributeGasPayment: (txHash: string, orderId: string) =>
     apiRequest<void>(`/admin/gas/unattributed/${encodeURIComponent(txHash)}/attribute`, { method: 'POST', body: JSON.stringify({ orderId }) }),
+
+  // Deposit Chain Registry
+  getDepositChains: () =>
+    apiRequest<AdminDepositChain[]>('/admin/deposit-chains'),
+  createDepositChain: (data: Omit<AdminDepositChain, 'id' | 'activeTokens' | 'createdAt' | 'updatedAt'>) =>
+    apiRequest<AdminDepositChain>('/admin/deposit-chains', { method: 'POST', body: JSON.stringify(data) }),
+  updateDepositChain: (slug: string, data: Partial<Pick<AdminDepositChain, 'name' | 'minConfirmations' | 'explorerBase' | 'rpcEnvVar' | 'isActive'>>) =>
+    apiRequest<AdminDepositChain>(`/admin/deposit-chains/${slug}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getDepositTokens: (slug: string) =>
+    apiRequest<{ tokens: AdminDepositToken[] }>(`/admin/deposit-chains/${slug}/tokens`),
+  createDepositToken: (slug: string, data: { symbol: string; address?: string | null; decimals: number; coingeckoId?: string; onChainVerified?: boolean; trustWalletVerified?: boolean }) =>
+    apiRequest<AdminDepositToken>(`/admin/deposit-chains/${slug}/tokens`, { method: 'POST', body: JSON.stringify(data) }),
+  updateDepositToken: (slug: string, tokenId: string, data: Partial<Pick<AdminDepositToken, 'address' | 'decimals' | 'isActive' | 'coingeckoId' | 'onChainVerified' | 'trustWalletVerified'>>) =>
+    apiRequest<AdminDepositToken>(`/admin/deposit-chains/${slug}/tokens/${tokenId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  lookupDepositToken: (symbol: string, chainSlug: string) =>
+    apiRequest<TokenLookupResult>(`/admin/deposit-chains/lookup?symbol=${encodeURIComponent(symbol)}&chainSlug=${encodeURIComponent(chainSlug)}`),
 
   // Gas Chain Config CRUD
   getGasChains: () =>

@@ -2,7 +2,7 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { generateOrderRef } from '../lib/hash'
-import { getChainByNetworkLabel, isEvmNetwork } from '../lib/chains'
+import { getChainByNetworkLabel, isEvmNetwork } from './chainRegistry.service'
 import { getOrCreateEvmDepositAddress } from './depositAddress.service'
 import { recordAuditLog } from '../lib/audit'
 import { assessWithdrawalRisk, getWithdrawalTierConfig } from './withdrawal-risk.service'
@@ -36,8 +36,8 @@ export async function getUserWallets(userId: string) {
  * this" state.
  */
 export async function getDepositAddress(userId: string, coin: string, network: string) {
-  if (isEvmNetwork(network)) {
-    const chain = getChainByNetworkLabel(network)
+  if (await isEvmNetwork(network)) {
+    const chain = await getChainByNetworkLabel(network)
     if (!chain) {
       throw new AppError('UNSUPPORTED_NETWORK', `Network ${network} is not supported`, 400)
     }

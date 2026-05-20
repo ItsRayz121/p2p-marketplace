@@ -1,6 +1,6 @@
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
-import { EVM_CHAINS, getMoralisStreamId } from '../lib/chains'
+import { getAllChains, getMoralisStreamId } from './chainRegistry.service'
 import { addAddressToStream, getStreamMetadata, MoralisApiError } from '../lib/moralisClient'
 import { recordAuditLog } from '../lib/audit'
 import { env } from '../lib/env'
@@ -16,7 +16,8 @@ import { queues } from '../queues/definitions'
  * status='pending' and get enqueued.
  */
 export async function ensureSubscriptionRows(depositAddressId: string): Promise<void> {
-  for (const chain of EVM_CHAINS) {
+  const evmChains = (await getAllChains()).filter((c) => c.family === 'EVM')
+  for (const chain of evmChains) {
     const streamId = getMoralisStreamId(chain.id)
     await db.moralisStreamSubscription.upsert({
       where: { depositAddressId_chain: { depositAddressId, chain: chain.id } },
@@ -157,8 +158,9 @@ export async function getStreamStatusSummary() {
     perChain[r.chain] = bucket
   }
   // Operator-visible status per chain: stream id configured + reachable?
+  const evmChains = (await getAllChains()).filter((c) => c.family === 'EVM')
   const chains = await Promise.all(
-    EVM_CHAINS.map(async (c) => {
+    evmChains.map(async (c) => {
       const streamId = getMoralisStreamId(c.id)
       let reachable: boolean | null = null
       let lastError: string | null = null

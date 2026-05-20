@@ -224,7 +224,7 @@ export async function webhookRoutes(app: FastifyInstance) {
     )
 
     if (looksLikeMoralis) {
-      const events = normalizeMoralisEvent(payload)
+      const events = await normalizeMoralisEvent(payload)
       const results = []
       for (const event of events) {
         try {

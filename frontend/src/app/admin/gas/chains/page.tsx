@@ -1,6 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
+import { adminApi, type AdminGasChain, type AdminGasToken, type TokenLookupResult } from '@/lib/api'
 import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -438,6 +438,10 @@ function TokenModal({
   saving: boolean
   error: string
 }) {
+  const [lookupResult, setLookupResult] = useState<TokenLookupResult | null>(null)
+  const [looking, setLooking] = useState(false)
+  const [lookupErr, setLookupErr] = useState<string | null>(null)
+
   function field(key: keyof TokenFormState) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm({ ...form, [key]: e.target.value })
@@ -446,6 +450,28 @@ function TokenModal({
   function setLogoUrl(url: string) { setForm({ ...form, logoUrl: url }) }
 
   const selectedChain = chains.find((c) => c.id === form.chainConfigId) ?? null
+
+  async function handleCoinGeckoLookup() {
+    if (!form.symbol || !selectedChain?.backendChainId) return
+    const chainSlugMap: Record<string, string> = {
+      ETH: 'ethereum', BSC: 'bsc', MATIC: 'polygon',
+      ARB: 'arbitrum', OP: 'optimism', BASE: 'base', AVAX: 'avalanche',
+    }
+    const chainSlug = chainSlugMap[selectedChain.backendChainId]
+    if (!chainSlug) { setLookupErr(`No deposit chain mapping for ${selectedChain.backendChainId}`); return }
+    setLooking(true)
+    setLookupResult(null)
+    setLookupErr(null)
+    try {
+      const result = await adminApi.lookupDepositToken(form.symbol, chainSlug)
+      setLookupResult(result)
+      if (result.address) setForm({ ...form, contractAddress: result.address })
+    } catch (e) {
+      setLookupErr(e instanceof Error ? e.message : 'Lookup failed')
+    } finally {
+      setLooking(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -492,7 +518,41 @@ function TokenModal({
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Contract Address</label>
-              <Input placeholder="0x... or T... (leave blank for native)" value={form.contractAddress} onChange={field('contractAddress')} />
+              <div className="flex gap-2">
+                <Input
+                  placeholder="0x... or T... (leave blank for native)"
+                  value={form.contractAddress}
+                  onChange={field('contractAddress')}
+                  className="flex-1"
+                />
+                {form.symbol && selectedChain?.backendChainId && (
+                  <button
+                    type="button"
+                    onClick={handleCoinGeckoLookup}
+                    disabled={looking}
+                    className="shrink-0 px-3 py-2 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                  >
+                    {looking ? '…' : '🔍 CoinGecko'}
+                  </button>
+                )}
+              </div>
+              {lookupErr && <p className="text-xs text-red-500 mt-1">{lookupErr}</p>}
+              {lookupResult && (
+                <div className="mt-2 flex gap-2 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {lookupResult.coingeckoVerified ? '✓' : '–'} CoinGecko
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {lookupResult.onChainVerified ? '✓' : '–'} On-chain
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.trustWalletVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {lookupResult.trustWalletVerified ? '✓' : '–'} TrustWallet
+                  </span>
+                  {lookupResult.decimals != null && (
+                    <span className="text-xs text-slate-500">decimals: {lookupResult.decimals}</span>
+                  )}
+                </div>
+              )}
             </div>
             <LogoUploadField logoUrl={form.logoUrl} onLogoUrlChange={setLogoUrl} />
 

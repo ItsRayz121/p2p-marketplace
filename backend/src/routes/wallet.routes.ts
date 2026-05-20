@@ -26,7 +26,7 @@ import {
 } from '../services/wallet.service'
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
-import { ALL_CHAINS, explorerTxUrl, getChainById } from '../lib/chains'
+import { getAllChains, explorerTxUrl } from '../services/chainRegistry.service'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -181,8 +181,11 @@ export async function walletRoutes(app: FastifyInstance) {
       take: limit,
     })
 
-    const data = rows.map((r) => {
-      const chain = getChainById(r.chain)
+    const allChains = await getAllChains()
+    const chainMap = new Map(allChains.map((c) => [c.id, c]))
+
+    const data = await Promise.all(rows.map(async (r) => {
+      const chain = chainMap.get(r.chain)
       const minConfirmations = chain?.minConfirmations ?? 0
       return {
         id: r.id,
@@ -195,14 +198,14 @@ export async function walletRoutes(app: FastifyInstance) {
         progress: minConfirmations > 0
           ? Math.min(1, r.confirmations / minConfirmations)
           : null,
-        status: r.status, // 'detected' | 'credited' | 'rejected'
+        status: r.status,
         rejectionReason: r.rejectionReason,
         txHash: r.txHash,
-        explorerUrl: explorerTxUrl(r.chain, r.txHash),
+        explorerUrl: await explorerTxUrl(r.chain, r.txHash),
         detectedAt: r.detectedAt,
         creditedAt: r.creditedAt,
       }
-    })
+    }))
 
     return reply.send({ success: true, data: { deposits: data } })
   })
@@ -230,7 +233,8 @@ export async function walletRoutes(app: FastifyInstance) {
 
   // GET /api/wallet/chains — public catalogue of supported chains + tokens
   app.get('/wallet/chains', async (_req, reply) => {
-    const chains = ALL_CHAINS.map((c) => ({
+    const allChains = await getAllChains()
+    const chains = allChains.map((c) => ({
       id: c.id,
       chainId: c.chainId,
       name: c.name,
