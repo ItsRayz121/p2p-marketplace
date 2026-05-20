@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import * as ToastPrimitive from '@radix-ui/react-toast'
 import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
+import { initPostHog, identifyUser } from '@/lib/analytics'
 
 interface ProvidersProps {
   children: React.ReactNode
@@ -16,6 +17,8 @@ export default function Providers({ children }: ProvidersProps) {
   const clearAuth = useAuthStore((s) => s.clearAuth)
 
   useEffect(() => {
+    initPostHog()
+
     async function init() {
       setLoading(true)
       try {
@@ -23,6 +26,7 @@ export default function Providers({ children }: ProvidersProps) {
         setAccessToken(refreshData.accessToken)
         const user = await authApi.me()
         setUser(user)
+        identifyUser(user.id, { email: user.email, role: user.role, kycLevel: user.kycLevel })
       } catch {
         // Not logged in — drop any stale hint cookie so the middleware
         // doesn't keep us on /dashboard with an expired backend session.

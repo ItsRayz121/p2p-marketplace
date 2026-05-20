@@ -3,25 +3,11 @@ import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { assertCloudinaryUrl } from '../lib/upload'
-type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
 import { sendTradeEmail } from './email.service'
 import { queues } from '../queues/definitions'
 import { generateOrderRef } from '../lib/hash'
-
-// ─── Notification Helper ──────────────────────────────────────────────────────
-
-function notify(
-  userId: string,
-  type: string,
-  title: string,
-  body: string,
-  metadata: Record<string, unknown>,
-) {
-  db.notification
-    .create({ data: { userId, type, title, body, metadata: metadata as JsonValue } })
-    .catch(() => {})
-}
+import { notify } from '../lib/notify'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -236,7 +222,7 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
 
   const updated = await db.trade.findUniqueOrThrow({ where: { id: tradeId } })
 
-  notify(tradeForEmail.sellerId, 'trade', 'Payment Proof Uploaded', 'The buyer has uploaded payment proof. Please review and confirm.', { tradeId })
+  notify(tradeForEmail.sellerId, 'trade', 'Payment Proof Uploaded', 'The buyer has uploaded payment proof. Please review and confirm.', { tradeId }, tradeId)
 
   // Notify seller via email
   await sendTradeEmail(
@@ -275,7 +261,7 @@ export async function confirmPayment(tradeId: string, actorId: string, role: str
     })
   })
 
-  notify(updated.buyerId, 'trade', 'Payment Confirmed', 'The seller has confirmed your payment. Crypto will be sent soon.', { tradeId })
+  notify(updated.buyerId, 'trade', 'Payment Confirmed', 'The seller has confirmed your payment. Crypto will be sent soon.', { tradeId }, tradeId)
   return updated
 }
 
@@ -297,7 +283,7 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
     })
   })
 
-  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', 'The seller has sent the crypto. Please verify and release once received.', { tradeId })
+  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', 'The seller has sent the crypto. Please verify and release once received.', { tradeId }, tradeId)
   return updated
 }
 
@@ -353,7 +339,7 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     await queues.referralPayout.add('first-trade', { userId: buyerId, tradeId })
   }
 
-  notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId })
+  notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId }, tradeId)
 
   // Send completion emails
   await sendTradeEmail(
@@ -429,7 +415,7 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
   })
 
   const otherPartyId = actorId === buyerId! ? sellerId! : buyerId!
-  notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId })
+  notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId }, tradeId)
 
   return db.trade.findUnique({ where: { id: tradeId } })
 }
@@ -474,9 +460,9 @@ export async function openDispute(
   }
 
   const otherPartyId = openedById === trade.buyerId ? trade.sellerId : trade.buyerId
-  notify(otherPartyId, 'dispute', 'Dispute Opened', `A dispute has been opened on your trade. Reason: ${reason}`, { tradeId, disputeId: dispute.id })
+  notify(otherPartyId, 'dispute', 'Dispute Opened', `A dispute has been opened on your trade. Reason: ${reason}`, { tradeId, disputeId: dispute.id }, tradeId)
   // Notify admins via a system user placeholder — admin panel polls disputes directly
-  notify(openedById, 'dispute', 'Dispute Submitted', 'Your dispute has been submitted and will be reviewed by an admin.', { tradeId, disputeId: dispute.id })
+  notify(openedById, 'dispute', 'Dispute Submitted', 'Your dispute has been submitted and will be reviewed by an admin.', { tradeId, disputeId: dispute.id }, tradeId)
 
   return dispute
 }

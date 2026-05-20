@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { tradesApi } from '@/lib/api'
 import type { Trade } from '@/lib/api'
+import { analytics } from '@/lib/analytics'
+import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { useFileUpload } from '@/hooks/useFileUpload'
@@ -200,7 +202,15 @@ export default function TradePage() {
   }, [id])
 
   useEffect(() => { fetchTrade() }, [fetchTrade])
-  usePolling(fetchTrade, 10_000, !loading && !error)
+  // Polling as fallback; SSE triggers immediate refresh on trade events
+  usePolling(fetchTrade, 30_000, !loading && !error)
+
+  useSSE((event) => {
+    if (event.type === 'notification') {
+      const payload = event.payload as { metadata?: { tradeId?: string } } | undefined
+      if (payload?.metadata?.tradeId === id) void fetchTrade()
+    }
+  })
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -225,6 +235,7 @@ export default function TradePage() {
     try {
       const url = await upload(file)
       await tradesApi.uploadPaymentProof(id, url)
+      analytics.paymentProofUploaded({ tradeId: id })
       await fetchTrade()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Upload failed')
@@ -237,6 +248,7 @@ export default function TradePage() {
     setActionError(null)
     try {
       await tradesApi.confirmPayment(id)
+      analytics.paymentConfirmed({ tradeId: id })
       await fetchTrade()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Action failed')
@@ -268,6 +280,9 @@ export default function TradePage() {
     setActionError(null)
     try {
       await tradesApi.releaseCrypto(id)
+      if (trade) {
+        analytics.tradeCompleted({ tradeId: id, amount: parseFloat(trade.amount), coin: trade.coin ?? '' })
+      }
       await fetchTrade()
       setShowReleaseModal(false)
     } catch (err) {

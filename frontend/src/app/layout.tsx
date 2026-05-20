@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
@@ -18,6 +19,8 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const crispId = process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID
+
   return (
     <html lang="en">
       <body className="min-h-screen bg-surface antialiased">
@@ -25,6 +28,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
           <Toaster />
         </Providers>
+        {crispId && (
+          <Script id="crisp-widget" strategy="afterInteractive">
+            {`window.$crisp=[];window.CRISP_WEBSITE_ID="${crispId}";(function(){var d=document;var s=d.createElement("script");s.src="https://client.crisp.chat/l.js";s.async=1;d.getElementsByTagName("head")[0].appendChild(s);})();`}
+          </Script>
+        )}
       </body>
     </html>
   )

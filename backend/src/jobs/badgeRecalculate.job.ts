@@ -4,6 +4,7 @@
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import { Prisma } from '@prisma/client'
+import { notify } from '../lib/notify'
 
 function computeBadge(
   totalTrades: number,
@@ -108,21 +109,15 @@ export async function recalculateUserBadge(userId: string): Promise<void> {
       const direction =
         BADGE_ORDER.indexOf(badge) > BADGE_ORDER.indexOf(current.badge) ? 'upgraded' : 'downgraded'
 
-      await db.notification.create({
-        data: {
-          userId,
-          title:
-            direction === 'upgraded'
-              ? `🏅 Badge upgraded to ${badgeLabel}!`
-              : `Your badge changed to ${badgeLabel}`,
-          body:
-            direction === 'upgraded'
-              ? `Congratulations! You've earned the ${badgeLabel} badge.`
-              : `Your trader badge has changed to ${badgeLabel}. Maintain your completion rate to upgrade.`,
-          type: direction === 'upgraded' ? 'badge_upgraded' : 'badge_downgraded',
-          metadata: { badge, previousBadge: current.badge },
-        },
-      })
+      notify(
+        userId,
+        direction === 'upgraded' ? 'badge_upgraded' : 'badge_downgraded',
+        direction === 'upgraded' ? `Badge upgraded to ${badgeLabel}!` : `Your badge changed to ${badgeLabel}`,
+        direction === 'upgraded'
+          ? `Congratulations! You've earned the ${badgeLabel} badge.`
+          : `Your trader badge has changed to ${badgeLabel}. Maintain your completion rate to upgrade.`,
+        { badge, previousBadge: current.badge },
+      )
     }
 
     logger.info({ userId, badge, completionRate, trustScore }, 'Badge recalculated')

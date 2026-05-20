@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { kycApi } from '@/lib/api'
 import type { KycDocument } from '@/lib/api'
+import { analytics } from '@/lib/analytics'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -260,6 +261,7 @@ export default function KycPage() {
         selfieUrl,
         ...(selectedTier === 'enhanced' && validLinks.length > 0 ? { socialLinks: validLinks } : {}),
       })
+      analytics.kycSubmitted({ level: selectedTier })
       await fetchStatus()
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed')

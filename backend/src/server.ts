@@ -21,6 +21,7 @@ import { validateGasWalletAtStartup } from './lib/gas/gasWalletService'
 import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
 import { reportGasRpcStartupStatus } from './lib/gas/gasRpcStartupCheck'
 import { validatePrismaSchemaAtStartup } from './lib/schemaValidation'
+import { configurePush } from './lib/push.service'
 
 async function start() {
   let app: Awaited<ReturnType<typeof buildApp>> | null = null
@@ -79,6 +80,7 @@ async function start() {
     await db.$connect()
     logger.info('Database connected')
 
+    configurePush()
     app = await buildApp()
     startWorkers()
     logger.info('BullMQ workers started')

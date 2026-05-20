@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
+import { PushToggle } from '@/components/ui/PushToggle'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
@@ -277,6 +278,13 @@ function SecurityTab() {
             </Button>
           </div>
         )}
+      </div>
+
+      {/* Push Notifications */}
+      <div className="bg-white border border-border rounded-xl p-5 space-y-3">
+        <h3 className="text-base font-semibold text-text-primary">Push Notifications</h3>
+        <p className="text-sm text-text-muted">Get instant alerts for trade updates and payment events.</p>
+        <PushToggle />
       </div>
     </div>
   )

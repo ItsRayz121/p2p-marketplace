@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { authApi } from '@/lib/api'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { analytics } from '@/lib/analytics'
 
 const schema = z
   .object({
@@ -54,6 +55,7 @@ export default function RegisterPage() {
         password: values.password,
         referralCode: values.referralCode || undefined,
       })
+      analytics.userRegistered()
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}`)
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Registration failed. Please try again.')

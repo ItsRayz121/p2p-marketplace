@@ -1,6 +1,7 @@
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import https from 'node:https'
+import { notify } from '../lib/notify'
 
 export async function runCtmTradeExpiry() {
   const now = new Date()
@@ -26,12 +27,8 @@ export async function runCtmTradeExpiry() {
       }
     })
 
-    await db.notification.createMany({
-      data: [
-        { userId: trade.buyerId, type: 'CTM_TRADE_EXPIRED', title: 'Trade expired', body: `Trade ${trade.tradeRef} expired — payment was not uploaded in time.`, metadata: { tradeRef: trade.tradeRef } },
-        { userId: trade.sellerId, type: 'CTM_TRADE_EXPIRED', title: 'Trade expired', body: `Trade ${trade.tradeRef} expired — buyer did not upload payment proof in time.`, metadata: { tradeRef: trade.tradeRef } },
-      ],
-    }).catch(() => {})
+    notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${trade.tradeRef} expired — payment was not uploaded in time.`, { tradeRef: trade.tradeRef })
+    notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${trade.tradeRef} expired — buyer did not upload payment proof in time.`, { tradeRef: trade.tradeRef })
 
     logger.info({ tradeRef: trade.tradeRef }, 'CTM trade expired')
   }
@@ -63,12 +60,8 @@ export async function runCtmProofDeadline() {
       }),
     ])
 
-    await db.notification.createMany({
-      data: [
-        { userId: trade.buyerId, type: 'CTM_AUTO_DISPUTE', title: 'Dispute auto-opened', body: `Trade ${trade.tradeRef}: seller missed the confirmation deadline. Admin will review.`, metadata: { tradeRef: trade.tradeRef } },
-        { userId: trade.sellerId, type: 'CTM_AUTO_DISPUTE', title: 'Dispute auto-opened', body: `Trade ${trade.tradeRef}: you missed the payment confirmation deadline. Admin will review.`, metadata: { tradeRef: trade.tradeRef } },
-      ],
-    }).catch(() => {})
+    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: seller missed the confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef })
+    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: you missed the payment confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef })
 
     logger.warn({ tradeRef: trade.tradeRef }, 'CTM auto-dispute: seller missed payment confirmation deadline')
   }
@@ -92,12 +85,8 @@ export async function runCtmProofDeadline() {
       }),
     ])
 
-    await db.notification.createMany({
-      data: [
-        { userId: trade.buyerId, type: 'CTM_AUTO_DISPUTE', title: 'Dispute auto-opened', body: `Trade ${trade.tradeRef}: seller missed the token proof deadline. Admin will review.`, metadata: { tradeRef: trade.tradeRef } },
-        { userId: trade.sellerId, type: 'CTM_AUTO_DISPUTE', title: 'Dispute auto-opened', body: `Trade ${trade.tradeRef}: you missed the token proof deadline. Admin will review.`, metadata: { tradeRef: trade.tradeRef } },
-      ],
-    }).catch(() => {})
+    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: seller missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef })
+    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: you missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef })
 
     logger.warn({ tradeRef: trade.tradeRef }, 'CTM auto-dispute: seller missed token proof deadline')
   }
@@ -130,12 +119,8 @@ export async function runCtmProofDeadline() {
         })
       })
 
-      await db.notification.createMany({
-        data: [
-          { userId: trade.buyerId, type: 'CTM_AUTO_COMPLETED', title: 'Trade auto-completed', body: `Trade ${trade.tradeRef} was auto-completed because you missed the confirmation deadline.`, metadata: { tradeRef: trade.tradeRef } },
-          { userId: trade.sellerId, type: 'CTM_AUTO_COMPLETED', title: 'Trade auto-completed', body: `Trade ${trade.tradeRef} was auto-completed after buyer's confirmation deadline passed.`, metadata: { tradeRef: trade.tradeRef } },
-        ],
-      }).catch(() => {})
+      notify(trade.buyerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${trade.tradeRef} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef })
+      notify(trade.sellerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${trade.tradeRef} was auto-completed after buyer's confirmation deadline passed.`, { tradeRef: trade.tradeRef })
 
       logger.info({ tradeRef: trade.tradeRef, sellerTier }, 'CTM auto-completed: buyer missed confirmation deadline')
     } else {
@@ -257,12 +242,8 @@ export async function runCtmEscrowMonitor() {
             },
           }),
         ])
-        await db.notification.createMany({
-          data: [
-            { userId: trade.buyerId, type: 'CTM_ESCROW_CONFIRMED', title: 'USDT deposit confirmed', body: `Your USDT deposit for trade ${trade.tradeRef} has been confirmed.`, metadata: { tradeRef: trade.tradeRef } },
-            { userId: trade.sellerId, type: 'CTM_ESCROW_CONFIRMED', title: 'USDT escrow received', body: `Buyer deposited USDT for trade ${trade.tradeRef}. Please confirm the PKR payment or send tokens.`, metadata: { tradeRef: trade.tradeRef } },
-          ],
-        }).catch(() => {})
+        notify(trade.buyerId, 'CTM_ESCROW_CONFIRMED', 'USDT deposit confirmed', `Your USDT deposit for trade ${trade.tradeRef} has been confirmed.`, { tradeRef: trade.tradeRef })
+        notify(trade.sellerId, 'CTM_ESCROW_CONFIRMED', 'USDT escrow received', `Buyer deposited USDT for trade ${trade.tradeRef}. Please confirm the PKR payment or send tokens.`, { tradeRef: trade.tradeRef })
         logger.info({ tradeRef: trade.tradeRef, txId: matchingTx.transaction_id }, 'CTM escrow deposit auto-confirmed')
       }
     } catch (err) {

@@ -1,11 +1,7 @@
 import type { Job } from 'bullmq'
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
-import { Prisma } from '@prisma/client'
-
-function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
-  db.notification.create({ data: { userId, type, title, body, metadata: metadata as Prisma.InputJsonValue } }).catch(() => {})
-}
+import { notify } from '../lib/notify'
 
 export async function processReferralPayout(job: Job) {
   const { userId } = job.data as { userId: string; tradeId?: string }

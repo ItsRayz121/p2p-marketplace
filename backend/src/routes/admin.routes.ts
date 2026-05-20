@@ -71,9 +71,7 @@ async function createAuditLog(
   })
 }
 
-function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
-  db.notification.create({ data: { userId, type, title, body, metadata: metadata as JsonValue } }).catch(() => {})
-}
+import { notify } from '../lib/notify'
 
 // ─── Route Export ─────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { notificationsApi } from '@/lib/api'
 import type { Notification } from '@/lib/api'
+import { useSSE } from '@/hooks/useSSE'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -102,6 +103,15 @@ export default function NotificationsPage() {
   }, [])
 
   useEffect(() => { fetchPage(1) }, [fetchPage])
+
+  useSSE((event) => {
+    if (event.type === 'notification') {
+      const n = event.payload as Notification | undefined
+      if (!n) return
+      setNotifications((prev) => [{ ...n, isRead: false }, ...prev])
+      setTotal((t) => t + 1)
+    }
+  })
 
   const handleMarkAllRead = async () => {
     setMarkingAll(true)

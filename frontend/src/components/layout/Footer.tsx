@@ -13,6 +13,7 @@ export default function Footer() {
             <FooterLink href="/terms">Terms</FooterLink>
             <FooterLink href="/privacy">Privacy</FooterLink>
             <FooterLink href="/fees">Fees</FooterLink>
+            <FooterLink href="/help">Help</FooterLink>
           </nav>
         </div>
       </div>

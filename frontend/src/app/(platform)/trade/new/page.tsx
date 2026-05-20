@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { adsApi, tradesApi } from '@/lib/api'
 import type { Ad } from '@/lib/api'
+import { analytics } from '@/lib/analytics'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -79,6 +80,12 @@ function NewTradePageContent() {
         adId: ad.id,
         amount,
         paymentMethod,
+      })
+      analytics.tradeInitiated({
+        tradeId: trade.id,
+        coin: ad.coin,
+        amount: parseFloat(amount),
+        side: ad.side === 'sell' ? 'buy' : 'sell',
       })
       router.push(`/trade/${trade.id}`)
     } catch (e) {
