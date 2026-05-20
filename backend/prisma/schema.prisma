@@ -1707,6 +1707,11 @@ model CtmTrade {
   cancelReason      String?
   cancelledAt       DateTime?
   completedAt       DateTime?
+  escrowAddress     String?           @db.VarChar(200)
+  escrowAmount      Decimal?          @db.Decimal(28, 8)
+  escrowCurrency    String?           @db.VarChar(20)
+  escrowTxHash      String?           @db.VarChar(200)
+  escrowConfirmedAt DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   proofs            CtmTradeProof[]

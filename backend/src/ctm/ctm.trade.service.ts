@@ -344,6 +344,12 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     })
     if (updated.count === 0) throw new AppError('CONFLICT', 'Listing is no longer available for trading', 409)
 
+    const isOnChain = listing.settlementType === 'ON_CHAIN'
+    const escrowAddress = isOnChain ? (process.env.PLATFORM_USDT_WALLET ?? null) : null
+    const escrowCurrency = isOnChain ? (process.env.PLATFORM_ESCROW_CURRENCY ?? 'USDT_TRC20') : null
+    // escrowAmount mirrors fiatAmount but represents USDT; rate bridging is handled off-chain for Phase 2
+    const escrowAmount = isOnChain ? listing.pricePerUnit.mul(listing.availableAmount) : null
+
     const trade = await tx.ctmTrade.create({
       data: {
         listingId: listing.id,
@@ -359,6 +365,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         buyerSettlementId: data.buyerSettlementId ?? null,
         status: 'awaiting_payment',
         expiresAt,
+        ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
       },
     })
 

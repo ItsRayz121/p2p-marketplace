@@ -18,7 +18,7 @@ import { runMerchantSettlementJob } from '../jobs/gasMerchantSettlement.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
-import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation } from '../ctm/ctm.jobs'
+import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor } from '../ctm/ctm.jobs'
 import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,6 +204,17 @@ export function startWorkers() {
   createWorker(QUEUE_NAMES.CTM_EXPIRY, async () => { await runCtmTradeExpiry() }, { max: 1, duration: 60_000 })
   createWorker(QUEUE_NAMES.CTM_PROOF_DEADLINE, async () => { await runCtmProofDeadline() }, { max: 1, duration: 60_000 })
   createWorker(QUEUE_NAMES.CTM_DISPUTE_ESCALATION, async () => { await runCtmDisputeEscalation() }, { max: 1, duration: 60_000 })
+
+  queues.ctmTierUpgrade
+    .add('ctm-tier-upgrade', {}, { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: 'ctm-tier-upgrade-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule CTM tier upgrade job'))
+
+  queues.ctmEscrowMonitor
+    .add('ctm-escrow-monitor', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-escrow-monitor-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule CTM escrow monitor job'))
+
+  createWorker(QUEUE_NAMES.CTM_TIER_UPGRADE, async () => { await runCtmMerchantTierUpgrade() }, { max: 1, duration: 120_000 })
+  createWorker(QUEUE_NAMES.CTM_ESCROW_MONITOR, async () => { await runCtmEscrowMonitor() }, { max: 1, duration: 60_000 })
 
   logger.info('BullMQ workers ready')
 }

@@ -244,6 +244,18 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     return reply.code(201).send({ success: true, data: rating })
   })
 
+  // GET /ctm/trades/:ref/escrow-info — escrow address for ON_CHAIN trades
+  app.get('/ctm/trades/:ref/escrow-info', { preHandler: [authenticate] }, async (req, reply) => {
+    const { ref } = req.params as { ref: string }
+    const trade = await db.ctmTrade.findUnique({
+      where: { tradeRef: ref },
+      select: { buyerId: true, sellerId: true, escrowAddress: true, escrowAmount: true, escrowCurrency: true, escrowConfirmedAt: true, escrowTxHash: true, settlementType: true },
+    })
+    if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+    if (trade.buyerId !== req.user!.id && trade.sellerId !== req.user!.id) throw new AppError('FORBIDDEN', 'Access denied', 403)
+    return reply.send({ success: true, data: trade })
+  })
+
   // POST /ctm/trades/admin/:ref/resolve-dispute — admin resolves dispute
   app.post('/ctm/trades/admin/:ref/resolve-dispute', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
     const { ref } = req.params as { ref: string }

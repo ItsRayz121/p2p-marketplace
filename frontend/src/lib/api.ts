@@ -1590,6 +1590,19 @@ export const ctmApi = {
   adminApproveMerchant: (id: string, data?: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/approve`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
   adminSuspendMerchant: (id: string, data: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/suspend`, { method: 'POST', body: JSON.stringify(data) }),
   adminChangeMerchantTier: (id: string, tier: string) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/tier`, { method: 'PATCH', body: JSON.stringify({ tier }) }),
+
+  // Admin proofs
+  adminGetProofs: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ proofs: unknown[]; total: number; page: number; limit: number }>('/ctm/trades/admin/proofs' + buildQs(params)),
+  adminReviewProof: (id: string, data: object) => apiRequest<void>(`/ctm/trades/admin/proofs/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Admin stats + escrow
+  adminGetCtmStats: () => apiRequest<unknown>('/ctm/admin/stats'),
+  adminGetEscrowQueue: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ trades: unknown[]; total: number }>('/ctm/admin/escrow' + buildQs(params)),
+
+  // Escrow info for ON_CHAIN trades
+  getEscrowInfo: (ref: string) => apiRequest<unknown>(`/ctm/trades/${ref}/escrow-info`),
 }
 
 // ─── Health Check ─────────────────────────────────────────────────────────────

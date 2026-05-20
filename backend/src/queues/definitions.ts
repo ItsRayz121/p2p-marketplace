@@ -33,6 +33,8 @@ export const QUEUE_NAMES = {
   CTM_EXPIRY:               'ctm-expiry',
   CTM_PROOF_DEADLINE:       'ctm-proof-deadline',
   CTM_DISPUTE_ESCALATION:   'ctm-dispute-escalation',
+  CTM_TIER_UPGRADE:         'ctm-tier-upgrade',
+  CTM_ESCROW_MONITOR:       'ctm-escrow-monitor',
 } as const
 
 export const queues = {
@@ -93,4 +95,6 @@ export const queues = {
   ctmExpiry: new Queue(QUEUE_NAMES.CTM_EXPIRY, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
   ctmProofDeadline: new Queue(QUEUE_NAMES.CTM_PROOF_DEADLINE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
   ctmDisputeEscalation: new Queue(QUEUE_NAMES.CTM_DISPUTE_ESCALATION, { connection, defaultJobOptions }),
+  ctmTierUpgrade: new Queue(QUEUE_NAMES.CTM_TIER_UPGRADE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
+  ctmEscrowMonitor: new Queue(QUEUE_NAMES.CTM_ESCROW_MONITOR, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
 }

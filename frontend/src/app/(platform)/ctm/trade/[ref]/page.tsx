@@ -25,7 +25,10 @@ interface Trade {
   id: string; tradeRef: string; status: string
   tokenAmount: string; fiatAmount: string; pricePerUnit: string; paymentMethod: string
   settlementMethod: string; settlementNote: string; buyerSettlementId?: string
+  settlementType: string
   expiresAt: string; confirmDeadlineAt?: string; proofDeadlineAt?: string
+  escrowAddress?: string; escrowAmount?: string; escrowCurrency?: string
+  escrowTxHash?: string; escrowConfirmedAt?: string
   token: { name: string; symbol: string; logoUrl?: string; riskTier: string }
   buyer: { id: string; username: string }
   seller: { id: string; username: string }
@@ -199,7 +202,34 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             <h2 className="font-semibold text-text-primary">Actions</h2>
 
             {/* Buyer actions */}
-            {isBuyer && trade.status === 'awaiting_payment' && (
+            {isBuyer && trade.status === 'awaiting_payment' && trade.settlementType === 'ON_CHAIN' && trade.escrowAddress ? (
+              <div className="space-y-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+                  <p className="text-sm font-semibold text-blue-800">Send USDT to Escrow Address</p>
+                  <div className="bg-white rounded-lg border border-blue-200 p-2">
+                    <p className="text-xs text-text-muted mb-1">Escrow Address ({trade.escrowCurrency ?? 'USDT_TRC20'})</p>
+                    <p className="font-mono text-xs text-text-primary break-all select-all">{trade.escrowAddress}</p>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-700">Amount required:</span>
+                    <span className="font-bold text-blue-900">{trade.escrowAmount ? `PKR ${Number(trade.escrowAmount).toLocaleString()}` : `PKR ${Number(trade.fiatAmount).toLocaleString()}`}</span>
+                  </div>
+                  {trade.escrowConfirmedAt ? (
+                    <p className="text-xs text-green-700 font-medium">Deposit confirmed — trade is progressing.</p>
+                  ) : (
+                    <p className="text-xs text-blue-600">Send exact amount. Deposit auto-confirms within 5 minutes.</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted mb-1.5">Or upload deposit screenshot as proof:</p>
+                  <input type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} className="w-full border border-border rounded-xl p-2 text-sm" />
+                  <button onClick={() => handleUploadProof('payment')} disabled={actionLoading || !proofFile} className="w-full mt-2 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 hover:bg-primary/90">
+                    {actionLoading ? 'Uploading…' : 'Upload Deposit Screenshot'}
+                  </button>
+                </div>
+                <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-200 text-red-600 py-2 rounded-xl text-sm hover:bg-red-50">Cancel Trade</button>
+              </div>
+            ) : isBuyer && trade.status === 'awaiting_payment' ? (
               <div className="space-y-2">
                 <input type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} className="w-full border border-border rounded-xl p-2 text-sm" />
                 <button onClick={() => handleUploadProof('payment')} disabled={actionLoading || !proofFile} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 hover:bg-primary/90">
@@ -207,7 +237,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 </button>
                 <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-200 text-red-600 py-2 rounded-xl text-sm hover:bg-red-50">Cancel Trade</button>
               </div>
-            )}
+            ) : null}
             {isBuyer && trade.status === 'proof_submitted' && (
               <button onClick={() => doAction(() => ctmApi.confirmReceipt(ref))} disabled={actionLoading} className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
                 {actionLoading ? '…' : 'Confirm Token Received'}

@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 
 interface CtmProof {
@@ -19,10 +20,10 @@ export default function AdminCtmProofsPage() {
 
   const fetchProofs = async () => {
     try {
-      const res = await fetch(`/api/v1/ctm/trades/admin/proofs?reviewed=false&page=${page}&limit=20`, { credentials: 'include' })
-      const data = await res.json()
-      setProofs(data.data?.proofs ?? [])
-      setTotal(data.data?.total ?? 0)
+      const res = await ctmApi.adminGetProofs({ reviewed: 'false', page, limit: 20 })
+      const data = res as { proofs: CtmProof[]; total: number }
+      setProofs(data.proofs ?? [])
+      setTotal(data.total ?? 0)
     } catch {
       // ignore
     } finally {
@@ -36,12 +37,7 @@ export default function AdminCtmProofsPage() {
     if (!selected) return
     setSubmitting(true)
     try {
-      await fetch(`/api/v1/ctm/trades/admin/proofs/${selected.id}/review`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, adminNote: adminNote.trim() || undefined }),
-      })
+      await ctmApi.adminReviewProof(selected.id, { action, adminNote: adminNote.trim() || undefined })
       setSelected(null); setAdminNote('')
       await fetchProofs()
     } catch (err: unknown) {
