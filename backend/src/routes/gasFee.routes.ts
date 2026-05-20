@@ -13,6 +13,23 @@ import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, 
 import { flagIfRisky } from '../lib/gas/gas.risk'
 import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
 
+// ── Token config resolution (token override → chain default → system fallback) ─
+
+const FALLBACK_PLATFORM_FEE  = 0.25
+const FALLBACK_MIN_AMOUNT    = 0.1
+const FALLBACK_MAX_USD_VALUE = 10
+
+function resolveTokenConfig(
+  token: { platformFeeUsdt: number | null; minAmount: unknown; maxUsdValue: unknown },
+  chain: { platformFeeUsdt: number; defaultMinAmount: unknown; defaultMaxUsdValue: unknown },
+) {
+  return {
+    platformFeeUsdt: token.platformFeeUsdt ?? chain.platformFeeUsdt ?? FALLBACK_PLATFORM_FEE,
+    minAmount:       Number(token.minAmount   ?? chain.defaultMinAmount   ?? FALLBACK_MIN_AMOUNT),
+    maxUsdValue:     Number(token.maxUsdValue ?? chain.defaultMaxUsdValue ?? FALLBACK_MAX_USD_VALUE),
+  }
+}
+
 // ── Rate lookup helpers ───────────────────────────────────────────────────────
 
 // Stablecoins pegged 1:1 to USD — always return 1.0 without Redis lookup
@@ -175,7 +192,6 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
 
     const usdPkrRate = await getUsdPkrRate()
-    const platformFeeUsdt = chainCfg.platformFeeUsdt
 
     const tokensWithPricing = await Promise.all(
       tokens.map(async (t) => {
@@ -183,6 +199,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         const rateInfo = t.isActive ? await getNativeRateInfo(t.priceSymbol) : { usdPrice: 0, source: 'inactive', updatedAt: null }
         const rawUsdPrice = rateInfo.usdPrice
         const rateStale   = t.isActive && !(rawUsdPrice > 0)
+
+        const resolved = resolveTokenConfig(t, chainCfg)
 
         return {
           id:              t.id,
@@ -196,11 +214,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           // priceUsd kept for backward compat — equals rawUsdPrice
           priceUsd:        rawUsdPrice,
           pricePkr:        rawUsdPrice * usdPkrRate,
-          platformFeeUsdt, // fixed USDT fee per order
+          platformFeeUsdt: resolved.platformFeeUsdt,
           priceSource:     rateInfo.source,
           priceUpdatedAt:  rateInfo.updatedAt,
-          minAmount:       Number(t.minAmount),
-          maxUsdValue:     Number(t.maxUsdValue),
+          minAmount:       resolved.minAmount,
+          maxUsdValue:     resolved.maxUsdValue,
           presetAmounts:   t.presetAmounts as number[],
           isActive:        t.isActive,
           rateStale,
@@ -419,11 +437,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
     }
 
-    // Validate amount bounds
-    const minAmount = Number(tokenCfg.minAmount)
-    const maxUsdValue = Number(tokenCfg.maxUsdValue)
-    if (amount < minAmount) {
-      throw new AppError('VALIDATION_ERROR', `Minimum amount is ${minAmount} ${tokenCfg.symbol}`, 400)
+    // Resolve config: token override → chain default → fallback
+    const resolved = resolveTokenConfig(tokenCfg, chainCfg)
+    if (amount < resolved.minAmount) {
+      throw new AppError('VALIDATION_ERROR', `Minimum amount is ${resolved.minAmount} ${tokenCfg.symbol}`, 400)
     }
 
     // Rate + USD value check
@@ -433,12 +450,12 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again in a moment.', 503)
     }
 
-    const gasAmountUSD  = amount * nativeUsdRate
-    const platformFeeUsdt = chainCfg.platformFeeUsdt
-    const paymentAmount = gasAmountUSD + platformFeeUsdt
+    const gasAmountUSD    = amount * nativeUsdRate
+    const platformFeeUsdt = resolved.platformFeeUsdt
+    const paymentAmount   = gasAmountUSD + platformFeeUsdt
 
-    if (gasAmountUSD > maxUsdValue) {
-      throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
+    if (gasAmountUSD > resolved.maxUsdValue) {
+      throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolved.maxUsdValue} USD. Reduce the amount.`, 400)
     }
 
     // IP rate limit
@@ -851,8 +868,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const isAutoPaused = await redis.get(`gas_wallet_paused:${chainCfg.backendChainId}`)
     if (!hotWallet || isAutoPaused) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
 
-    const minAmount = Number(tokenCfg.minAmount)
-    if (amount < minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${minAmount} ${tokenCfg.symbol}`, 400)
+    const resolvedPkr = resolveTokenConfig(tokenCfg, chainCfg)
+    if (amount < resolvedPkr.minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${resolvedPkr.minAmount} ${tokenCfg.symbol}`, 400)
 
     const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
@@ -860,9 +877,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const usdPkrRate = await getUsdPkrRate()
     if (!(usdPkrRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'PKR exchange rate is temporarily unavailable. Please try again in a moment.', 503)
     const gasAmountUSD    = amount * nativeUsdRate
-    const platformFeeUsdt = chainCfg.platformFeeUsdt
-    const maxUsdValue     = Number(tokenCfg.maxUsdValue)
-    if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
+    const platformFeeUsdt = resolvedPkr.platformFeeUsdt
+    if (gasAmountUSD > resolvedPkr.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolvedPkr.maxUsdValue} USD. Reduce the amount.`, 400)
 
     const paymentAmountUsd = gasAmountUSD + platformFeeUsdt
     const pkrAmount        = paymentAmountUsd * usdPkrRate
@@ -970,16 +986,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const isAutoPaused = await redis.get(`gas_wallet_paused:${chainCfg.backendChainId}`)
     if (!hotWallet || isAutoPaused) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
 
-    const minAmount = Number(tokenCfg.minAmount)
-    if (amount < minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${minAmount} ${tokenCfg.symbol}`, 400)
+    const resolvedCrypto = resolveTokenConfig(tokenCfg, chainCfg)
+    if (amount < resolvedCrypto.minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${resolvedCrypto.minAmount} ${tokenCfg.symbol}`, 400)
 
     const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
 
     const gasAmountUSD    = amount * nativeUsdRate
-    const platformFeeUsdt = chainCfg.platformFeeUsdt
-    const maxUsdValue     = Number(tokenCfg.maxUsdValue)
-    if (gasAmountUSD > maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${maxUsdValue} USD. Reduce the amount.`, 400)
+    const platformFeeUsdt = resolvedCrypto.platformFeeUsdt
+    if (gasAmountUSD > resolvedCrypto.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolvedCrypto.maxUsdValue} USD. Reduce the amount.`, 400)
     const paymentAmount = gasAmountUSD + platformFeeUsdt
 
     // IP rate limit

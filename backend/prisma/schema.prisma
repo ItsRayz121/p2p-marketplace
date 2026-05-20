@@ -1133,9 +1133,11 @@ model GasChainConfig {
   addressType    String           // "TRC20" | "EVM" | "SOL" | "TON" | "SUI" — maps to frontend regex
   explorerBase   String?
   backendChainId    String?          // Maps to GasChain enum value. Null = not yet deliverable.
-  platformFeeUsdt   Float            @default(0.25) // Fixed platform fee in USDT per order
+  platformFeeUsdt   Float            @default(0.25) // Default platform fee (USDT) — used when token has no override
   alertThresholdUsd Float?           // Auto-alert below this USD wallet balance; null = no alert
   pauseThresholdUsd Float?           // Auto-pause new orders below this USD balance; null = no pause
+  defaultMinAmount  Decimal?         @db.Decimal(18, 8) // Default min amount for tokens under this chain
+  defaultMaxUsdValue Decimal?        @db.Decimal(10, 4) // Default max USD value for tokens under this chain
   isActive          Boolean          @default(true)
   // Feature readiness state: inactive | testing | beta | stable
   // inactive = hidden from public UI; stable = fully operational
@@ -1156,8 +1158,9 @@ model GasTokenConfig {
   contractAddress String?
   logoUrl         String?
   priceSymbol     String         // "TRX", "BNB", "ETH" — Redis rate key for pricing
-  minAmount       Decimal        @db.Decimal(18, 8) @default(0.1)
-  maxUsdValue     Decimal        @db.Decimal(10, 4) @default(10)
+  platformFeeUsdt Float?         // Override; null = inherit from parent chain default
+  minAmount       Decimal?       @db.Decimal(18, 8) // Override; null = inherit from parent chain default
+  maxUsdValue     Decimal?       @db.Decimal(10, 4) // Override; null = inherit from parent chain default
   presetAmounts   Json           // number[] e.g. [10, 50, 100, 200]
   isActive        Boolean        @default(true)
   displayOrder    Int            @default(0)

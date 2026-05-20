@@ -30,6 +30,8 @@ interface ChainFormState {
   platformFeeUsdt: string
   alertThresholdUsd: string
   pauseThresholdUsd: string
+  defaultMinAmount: string
+  defaultMaxUsdValue: string
   displayOrder: string
   isActive: boolean
   readinessState: string
@@ -39,6 +41,7 @@ const BLANK_CHAIN: ChainFormState = {
   name: '', slug: '', symbol: '', category: '', networkLabel: '',
   addressType: 'EVM', logoUrl: '', explorerBase: '', backendChainId: '',
   platformFeeUsdt: '0.25', alertThresholdUsd: '', pauseThresholdUsd: '',
+  defaultMinAmount: '', defaultMaxUsdValue: '',
   displayOrder: '0', isActive: false, readinessState: 'inactive',
 }
 
@@ -52,8 +55,9 @@ interface TokenFormState {
   contractAddress: string
   logoUrl: string
   priceSymbol: string
-  minAmount: string
-  maxUsdValue: string
+  platformFeeUsdt: string   // blank = inherit from chain
+  minAmount: string         // blank = inherit from chain
+  maxUsdValue: string       // blank = inherit from chain
   presetAmounts: string
   displayOrder: string
   isActive: boolean
@@ -61,8 +65,9 @@ interface TokenFormState {
 
 const BLANK_TOKEN: TokenFormState = {
   chainConfigId: '', name: '', symbol: '', tokenType: 'native',
-  contractAddress: '', logoUrl: '', priceSymbol: '', minAmount: '0.1',
-  maxUsdValue: '10', presetAmounts: '', displayOrder: '0', isActive: true,
+  contractAddress: '', logoUrl: '', priceSymbol: '',
+  platformFeeUsdt: '', minAmount: '', maxUsdValue: '',
+  presetAmounts: '', displayOrder: '0', isActive: true,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -85,6 +90,17 @@ function isNonDirectImageUrl(url: string): boolean {
   } catch {
     return false
   }
+}
+
+function parsePresets(raw: string): number[] {
+  return raw.split(',').map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n) && n > 0)
+}
+
+// Resolve effective value (token override → chain default → fallback)
+function resolveEffective(tokenVal: string, chainDefault: number | null, fallback: number): number {
+  const tv = parseFloat(tokenVal)
+  if (!isNaN(tv) && tv > 0) return tv
+  return chainDefault ?? fallback
 }
 
 // ─── Logo Upload Field ────────────────────────────────────────────────────────
@@ -117,7 +133,6 @@ function LogoUploadField({
     <div className="col-span-2 space-y-2">
       <label className="text-xs font-medium text-text-muted block">Logo</label>
 
-      {/* Preview */}
       {logoUrl && !imgError && (
         <div className="flex items-center gap-3 p-2 bg-surface rounded-lg border border-border">
           <img
@@ -145,7 +160,6 @@ function LogoUploadField({
         </div>
       )}
 
-      {/* Upload button */}
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleFile} />
       <button
         type="button"
@@ -156,7 +170,6 @@ function LogoUploadField({
         {uploading ? 'Uploading...' : logoUrl ? 'Replace with upload (PNG/JPG/SVG/WebP · max 2MB)' : 'Upload logo (PNG/JPG/SVG/WebP · max 2MB)'}
       </button>
 
-      {/* Or paste URL */}
       <div>
         <label className="text-xs font-medium text-text-muted block mb-1">Or paste direct image URL</label>
         <input
@@ -178,8 +191,15 @@ function LogoUploadField({
   )
 }
 
-function parsePresets(raw: string): number[] {
-  return raw.split(',').map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n) && n > 0)
+// ─── Inherit hint component ───────────────────────────────────────────────────
+
+function InheritHint({ label, value }: { label: string; value: string | number | null }) {
+  if (value == null) return null
+  return (
+    <p className="text-xs text-text-muted mt-0.5">
+      Chain default: <span className="font-medium text-text-primary">{value}</span>. Leave blank to inherit.
+    </p>
+  )
 }
 
 // ─── Chain Modal ─────────────────────────────────────────────────────────────
@@ -210,7 +230,7 @@ function ChainModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="p-6 space-y-4">
           <h2 className="text-lg font-bold text-text-primary">
             {editing ? `Edit: ${editing.name}` : 'Add New Chain'}
@@ -271,8 +291,16 @@ function ChainModal({
                 <option value="SUI">SUI</option>
               </select>
             </div>
+
+            {/* ── Chain-level defaults (inherited by tokens) ── */}
+            <div className="col-span-2 pt-1">
+              <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 border-t border-border pt-3">
+                Token Defaults (inherited by new tokens)
+              </div>
+            </div>
+
             <div>
-              <label className="text-xs font-medium text-text-muted block mb-1">Fixed Platform Fee (USDT)</label>
+              <label className="text-xs font-medium text-text-muted block mb-1">Default Platform Fee (USDT) *</label>
               <Input
                 type="number"
                 min="0"
@@ -281,8 +309,40 @@ function ChainModal({
                 value={form.platformFeeUsdt}
                 onChange={field('platformFeeUsdt')}
               />
-              <p className="text-xs text-text-muted mt-0.5">Fixed USDT fee added per order (e.g. 0.25 = $0.25)</p>
+              <p className="text-xs text-text-muted mt-0.5">Fixed USDT fee per order — inherited by tokens unless overridden.</p>
             </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Default Min Amount</label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="e.g. 0.1"
+                value={form.defaultMinAmount}
+                onChange={field('defaultMinAmount')}
+              />
+              <p className="text-xs text-text-muted mt-0.5">Minimum native amount. Inherited by tokens that have no override.</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Default Max USD Value</label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="e.g. 100"
+                value={form.defaultMaxUsdValue}
+                onChange={field('defaultMaxUsdValue')}
+              />
+              <p className="text-xs text-text-muted mt-0.5">Maximum order value in USD. Inherited by tokens that have no override.</p>
+            </div>
+
+            {/* ── Operational thresholds ── */}
+            <div className="col-span-2 pt-1">
+              <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 border-t border-border pt-3">
+                Operational Thresholds
+              </div>
+            </div>
+
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Alert Threshold (USD)</label>
               <Input
@@ -293,7 +353,7 @@ function ChainModal({
                 value={form.alertThresholdUsd}
                 onChange={field('alertThresholdUsd')}
               />
-              <p className="text-xs text-text-muted mt-0.5">Send alert email below this USD balance</p>
+              <p className="text-xs text-text-muted mt-0.5">Send alert email below this USD wallet balance.</p>
             </div>
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Pause Threshold (USD)</label>
@@ -307,6 +367,7 @@ function ChainModal({
               />
               <p className="text-xs text-text-muted mt-0.5">Wallet auto-pauses below this USD balance.</p>
             </div>
+
             <LogoUploadField logoUrl={form.logoUrl} onLogoUrlChange={setLogoUrl} />
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Explorer Base URL</label>
@@ -384,13 +445,23 @@ function TokenModal({
 
   function setLogoUrl(url: string) { setForm({ ...form, logoUrl: url }) }
 
+  const selectedChain = chains.find((c) => c.id === form.chainConfigId) ?? null
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="p-6 space-y-4">
           <h2 className="text-lg font-bold text-text-primary">
             {editing ? `Edit: ${editing.name}` : 'Add New Token'}
           </h2>
+
+          {/* Inheritance info banner */}
+          {selectedChain && (
+            <div className="px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg text-xs text-text-muted">
+              Token config inherits from <span className="font-semibold text-text-primary">{selectedChain.name}</span> chain defaults.
+              Fields left blank will use the chain&apos;s values.
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
@@ -424,14 +495,54 @@ function TokenModal({
               <Input placeholder="0x... or T... (leave blank for native)" value={form.contractAddress} onChange={field('contractAddress')} />
             </div>
             <LogoUploadField logoUrl={form.logoUrl} onLogoUrlChange={setLogoUrl} />
+
+            {/* ── Per-token config overrides ── */}
+            <div className="col-span-2 pt-1">
+              <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1 border-t border-border pt-3">
+                Config Overrides
+              </div>
+              <p className="text-xs text-text-muted mb-2">
+                Leave blank to inherit from the parent chain default.
+              </p>
+            </div>
+
             <div>
-              <label className="text-xs font-medium text-text-muted block mb-1">Min Amount *</label>
-              <Input type="number" step="any" value={form.minAmount} onChange={field('minAmount')} />
+              <label className="text-xs font-medium text-text-muted block mb-1">Platform Fee (USDT)</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder={selectedChain ? `Chain default: ${selectedChain.platformFeeUsdt}` : 'e.g. 0.25'}
+                value={form.platformFeeUsdt}
+                onChange={field('platformFeeUsdt')}
+              />
+              <InheritHint label="Platform fee" value={selectedChain?.platformFeeUsdt ?? null} />
             </div>
             <div>
-              <label className="text-xs font-medium text-text-muted block mb-1">Max USD Value *</label>
-              <Input type="number" value={form.maxUsdValue} onChange={field('maxUsdValue')} />
+              <label className="text-xs font-medium text-text-muted block mb-1">Min Amount</label>
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                placeholder={selectedChain?.defaultMinAmount != null ? `Chain default: ${selectedChain.defaultMinAmount}` : 'e.g. 0.1'}
+                value={form.minAmount}
+                onChange={field('minAmount')}
+              />
+              <InheritHint label="Min amount" value={selectedChain?.defaultMinAmount ?? null} />
             </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Max USD Value</label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder={selectedChain?.defaultMaxUsdValue != null ? `Chain default: ${selectedChain.defaultMaxUsdValue}` : 'e.g. 100'}
+                value={form.maxUsdValue}
+                onChange={field('maxUsdValue')}
+              />
+              <InheritHint label="Max USD value" value={selectedChain?.defaultMaxUsdValue ?? null} />
+            </div>
+
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">
                 Preset Amounts (comma-separated) *
@@ -477,36 +588,30 @@ export default function GasChainsAdminPage() {
 
   const [tab, setTab] = useState<Tab>('chains')
 
-  // Chains state
   const [chains, setChains] = useState<AdminGasChain[]>([])
   const [chainsLoading, setChainsLoading] = useState(true)
   const [chainsError, setChainsError] = useState<string | null>(null)
 
-  // Tokens state
   const [tokens, setTokens] = useState<AdminGasToken[]>([])
   const [tokensLoading, setTokensLoading] = useState(false)
   const [tokensError, setTokensError] = useState<string | null>(null)
 
-  // Chain modal
   const [showChainModal, setShowChainModal] = useState(false)
   const [editingChain, setEditingChain] = useState<AdminGasChain | null>(null)
   const [chainForm, setChainForm] = useState<ChainFormState>(BLANK_CHAIN)
   const [chainSaving, setChainSaving] = useState(false)
   const [chainFormError, setChainFormError] = useState('')
 
-  // Token modal
   const [showTokenModal, setShowTokenModal] = useState(false)
   const [editingToken, setEditingToken] = useState<AdminGasToken | null>(null)
   const [tokenForm, setTokenForm] = useState<TokenFormState>(BLANK_TOKEN)
   const [tokenSaving, setTokenSaving] = useState(false)
   const [tokenFormError, setTokenFormError] = useState('')
 
-  // Delete confirms
   const [confirmDeleteChain, setConfirmDeleteChain] = useState<AdminGasChain | null>(null)
   const [confirmDeleteToken, setConfirmDeleteToken] = useState<AdminGasToken | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Global success/error
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -568,6 +673,8 @@ export default function GasChainsAdminPage() {
       platformFeeUsdt: String(c.platformFeeUsdt ?? 0.25),
       alertThresholdUsd: c.alertThresholdUsd != null ? String(c.alertThresholdUsd) : '',
       pauseThresholdUsd: c.pauseThresholdUsd != null ? String(c.pauseThresholdUsd) : '',
+      defaultMinAmount: c.defaultMinAmount != null ? String(c.defaultMinAmount) : '',
+      defaultMaxUsdValue: c.defaultMaxUsdValue != null ? String(c.defaultMaxUsdValue) : '',
       displayOrder: String(c.displayOrder),
       isActive: c.isActive,
       readinessState: c.readinessState ?? 'inactive',
@@ -593,6 +700,8 @@ export default function GasChainsAdminPage() {
         platformFeeUsdt: parseFloat(chainForm.platformFeeUsdt) || 0,
         alertThresholdUsd: chainForm.alertThresholdUsd ? parseFloat(chainForm.alertThresholdUsd) : null,
         pauseThresholdUsd: chainForm.pauseThresholdUsd ? parseFloat(chainForm.pauseThresholdUsd) : null,
+        defaultMinAmount: chainForm.defaultMinAmount ? parseFloat(chainForm.defaultMinAmount) : null,
+        defaultMaxUsdValue: chainForm.defaultMaxUsdValue ? parseFloat(chainForm.defaultMaxUsdValue) : null,
         displayOrder: parseInt(chainForm.displayOrder) || 0,
         isActive: chainForm.isActive,
         readinessState: chainForm.readinessState,
@@ -647,8 +756,9 @@ export default function GasChainsAdminPage() {
       contractAddress: t.contractAddress ?? '',
       logoUrl: t.logoUrl ?? '',
       priceSymbol: t.priceSymbol,
-      minAmount: String(t.minAmount),
-      maxUsdValue: String(t.maxUsdValue),
+      platformFeeUsdt: t.platformFeeUsdt != null ? String(t.platformFeeUsdt) : '',
+      minAmount: t.minAmount != null ? String(t.minAmount) : '',
+      maxUsdValue: t.maxUsdValue != null ? String(t.maxUsdValue) : '',
       presetAmounts: presetDisplay(t.presetAmounts),
       displayOrder: String(t.displayOrder),
       isActive: t.isActive,
@@ -663,6 +773,12 @@ export default function GasChainsAdminPage() {
     try {
       const presets = parsePresets(tokenForm.presetAmounts)
       if (presets.length === 0) { setTokenFormError('Enter at least one preset amount'); return }
+
+      // blank string → null (inherit from chain)
+      const platformFeeUsdtVal = tokenForm.platformFeeUsdt.trim()
+      const minAmountVal = tokenForm.minAmount.trim()
+      const maxUsdValueVal = tokenForm.maxUsdValue.trim()
+
       const payload = {
         chainConfigId: tokenForm.chainConfigId,
         name: tokenForm.name,
@@ -671,8 +787,9 @@ export default function GasChainsAdminPage() {
         contractAddress: tokenForm.contractAddress || null,
         logoUrl: tokenForm.logoUrl || null,
         priceSymbol: tokenForm.priceSymbol,
-        minAmount: parseFloat(tokenForm.minAmount),
-        maxUsdValue: parseFloat(tokenForm.maxUsdValue),
+        platformFeeUsdt: platformFeeUsdtVal !== '' ? parseFloat(platformFeeUsdtVal) : null,
+        minAmount: minAmountVal !== '' ? parseFloat(minAmountVal) : null,
+        maxUsdValue: maxUsdValueVal !== '' ? parseFloat(maxUsdValueVal) : null,
         presetAmounts: presets,
         displayOrder: parseInt(tokenForm.displayOrder) || 0,
         isActive: tokenForm.isActive,
@@ -708,6 +825,29 @@ export default function GasChainsAdminPage() {
     }
   }
 
+  // ── Resolve effective token values for display ──────────────────────────────
+
+  function getEffectiveFee(t: AdminGasToken): string {
+    if (t.platformFeeUsdt != null) return `$${t.platformFeeUsdt} (override)`
+    const chain = chains.find((c) => c.id === t.chainConfigId)
+    if (chain) return `$${chain.platformFeeUsdt} (chain)`
+    return '—'
+  }
+
+  function getEffectiveMin(t: AdminGasToken): string {
+    if (t.minAmount != null) return `${Number(t.minAmount)} (override)`
+    const chain = chains.find((c) => c.id === t.chainConfigId)
+    if (chain?.defaultMinAmount != null) return `${chain.defaultMinAmount} (chain)`
+    return '0.1 (fallback)'
+  }
+
+  function getEffectiveMax(t: AdminGasToken): string {
+    if (t.maxUsdValue != null) return `$${Number(t.maxUsdValue)} (override)`
+    const chain = chains.find((c) => c.id === t.chainConfigId)
+    if (chain?.defaultMaxUsdValue != null) return `$${chain.defaultMaxUsdValue} (chain)`
+    return '$10 (fallback)'
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -720,7 +860,6 @@ export default function GasChainsAdminPage() {
         </div>
       </div>
 
-      {/* Alerts */}
       {successMsg && (
         <div className="px-4 py-3 bg-success/10 border border-success/20 rounded-xl text-success text-sm">{successMsg}</div>
       )}
@@ -767,13 +906,12 @@ export default function GasChainsAdminPage() {
                     <tr>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Chain</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Slug</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Category</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Backend</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Fee %</th>
+                      <th className="text-left px-4 py-3 font-medium text-text-muted">Default Fee</th>
+                      <th className="text-left px-4 py-3 font-medium text-text-muted">Default Limits</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Tokens</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Readiness</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Order</th>
                       <th className="px-4 py-3 text-right font-medium text-text-muted">Actions</th>
                     </tr>
                   </thead>
@@ -797,7 +935,6 @@ export default function GasChainsAdminPage() {
                         <td className="px-4 py-3">
                           <code className="text-xs bg-surface px-1.5 py-0.5 rounded">{c.slug}</code>
                         </td>
-                        <td className="px-4 py-3 text-text-muted capitalize">{c.category}</td>
                         <td className="px-4 py-3">
                           {c.backendChainId
                             ? <Badge variant="success" size="sm">{c.backendChainId}</Badge>
@@ -806,8 +943,13 @@ export default function GasChainsAdminPage() {
                         <td className="px-4 py-3">
                           <div className="text-sm font-semibold text-text-primary">${c.platformFeeUsdt ?? 0.25} USDT</div>
                           {c.alertThresholdUsd != null && (
-                            <div className="text-xs text-text-muted">Alert ${ c.alertThresholdUsd} / Pause ${c.pauseThresholdUsd ?? '—'}</div>
+                            <div className="text-xs text-text-muted">Alert ${c.alertThresholdUsd} / Pause ${c.pauseThresholdUsd ?? '—'}</div>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-text-muted">
+                          {c.defaultMinAmount != null && <div>Min: {c.defaultMinAmount}</div>}
+                          {c.defaultMaxUsdValue != null && <div>Max: ${c.defaultMaxUsdValue}</div>}
+                          {c.defaultMinAmount == null && c.defaultMaxUsdValue == null && <span className="text-text-muted/50">—</span>}
                         </td>
                         <td className="px-4 py-3 text-text-muted">{c._count?.tokens ?? c.tokens?.length ?? 0}</td>
                         <td className="px-4 py-3">
@@ -825,7 +967,6 @@ export default function GasChainsAdminPage() {
                             : <Badge variant="default" size="sm">Inactive</Badge>
                           }
                         </td>
-                        <td className="px-4 py-3 text-text-muted">{c.displayOrder}</td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <Button size="sm" variant="ghost" onClick={() => openEditChain(c)}>Edit</Button>
@@ -874,9 +1015,9 @@ export default function GasChainsAdminPage() {
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Token</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Chain</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Type</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Price Symbol</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Min</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Max $</th>
+                      <th className="text-left px-4 py-3 font-medium text-text-muted">Platform Fee</th>
+                      <th className="text-left px-4 py-3 font-medium text-text-muted">Min Amount</th>
+                      <th className="text-left px-4 py-3 font-medium text-text-muted">Max USD</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Presets</th>
                       <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
                       <th className="px-4 py-3 text-right font-medium text-text-muted">Actions</th>
@@ -907,9 +1048,9 @@ export default function GasChainsAdminPage() {
                             {t.tokenType}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3 text-text-muted">{t.priceSymbol}</td>
-                        <td className="px-4 py-3 text-text-muted">{Number(t.minAmount)}</td>
-                        <td className="px-4 py-3 text-text-muted">${Number(t.maxUsdValue)}</td>
+                        <td className="px-4 py-3 text-xs text-text-muted">{getEffectiveFee(t)}</td>
+                        <td className="px-4 py-3 text-xs text-text-muted">{getEffectiveMin(t)}</td>
+                        <td className="px-4 py-3 text-xs text-text-muted">{getEffectiveMax(t)}</td>
                         <td className="px-4 py-3 text-text-muted text-xs">{presetDisplay(t.presetAmounts)}</td>
                         <td className="px-4 py-3">
                           <Badge variant={t.isActive ? 'success' : 'default'} size="sm">

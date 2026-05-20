@@ -2300,9 +2300,11 @@ export async function adminRoutes(app: FastifyInstance) {
       logoUrl:            z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
       explorerBase:       z.string().url().nullable().default(null),
       backendChainId:     z.string().nullable().default(null),
-      platformFeeUsdt: z.number().min(0).default(0.25),
+      platformFeeUsdt:    z.number().min(0).default(0.25),
       alertThresholdUsd:  z.number().positive().nullable().default(null),
       pauseThresholdUsd:  z.number().positive().nullable().default(null),
+      defaultMinAmount:   z.number().positive().nullable().default(null),
+      defaultMaxUsdValue: z.number().positive().nullable().default(null),
       isActive:           z.boolean().default(false),
       readinessState:     z.enum(['inactive', 'testing', 'beta', 'stable']).default('inactive'),
       displayOrder:       z.number().int().default(0),
@@ -2315,6 +2317,7 @@ export async function adminRoutes(app: FastifyInstance) {
         logoUrl: d.logoUrl, explorerBase: d.explorerBase,
         backendChainId: d.backendChainId, platformFeeUsdt: d.platformFeeUsdt,
         alertThresholdUsd: d.alertThresholdUsd, pauseThresholdUsd: d.pauseThresholdUsd,
+        defaultMinAmount: d.defaultMinAmount, defaultMaxUsdValue: d.defaultMaxUsdValue,
         isActive: d.isActive, readinessState: d.readinessState, displayOrder: d.displayOrder,
       },
     })
@@ -2349,6 +2352,8 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('platformFeeUsdt' in body) updateData.platformFeeUsdt = Math.max(0, Number(body.platformFeeUsdt) || 0)
     if ('alertThresholdUsd' in body) updateData.alertThresholdUsd = body.alertThresholdUsd != null ? Math.max(0, Number(body.alertThresholdUsd)) : null
     if ('pauseThresholdUsd' in body) updateData.pauseThresholdUsd = body.pauseThresholdUsd != null ? Math.max(0, Number(body.pauseThresholdUsd)) : null
+    if ('defaultMinAmount' in body) updateData.defaultMinAmount = body.defaultMinAmount != null ? Math.max(0, Number(body.defaultMinAmount)) : null
+    if ('defaultMaxUsdValue' in body) updateData.defaultMaxUsdValue = body.defaultMaxUsdValue != null ? Math.max(0, Number(body.defaultMaxUsdValue)) : null
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
     if ('readinessState' in body) {
@@ -2467,8 +2472,9 @@ export async function adminRoutes(app: FastifyInstance) {
       contractAddress: z.string().nullable().default(null),
       logoUrl:         z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
       priceSymbol:     z.string().min(1),
-      minAmount:       z.number().positive().default(0.1),
-      maxUsdValue:     z.number().positive().default(10),
+      platformFeeUsdt: z.number().min(0).nullable().default(null), // null = inherit from chain
+      minAmount:       z.number().positive().nullable().default(null), // null = inherit from chain
+      maxUsdValue:     z.number().positive().nullable().default(null), // null = inherit from chain
       presetAmounts:   z.array(z.number().positive()).min(1),
       isActive:        z.boolean().default(true),
       displayOrder:    z.number().int().default(0),
@@ -2481,7 +2487,10 @@ export async function adminRoutes(app: FastifyInstance) {
       data: {
         chainConfigId: d.chainConfigId, name: d.name, symbol: d.symbol,
         tokenType: d.tokenType, contractAddress: d.contractAddress, logoUrl: d.logoUrl,
-        priceSymbol: d.priceSymbol, minAmount: d.minAmount, maxUsdValue: d.maxUsdValue,
+        priceSymbol: d.priceSymbol,
+        platformFeeUsdt: d.platformFeeUsdt,
+        minAmount: d.minAmount,
+        maxUsdValue: d.maxUsdValue,
         presetAmounts: d.presetAmounts, isActive: d.isActive, displayOrder: d.displayOrder,
       },
     })
@@ -2510,8 +2519,9 @@ export async function adminRoutes(app: FastifyInstance) {
       updateData.logoUrl = rawLogo
     }
     if ('priceSymbol' in body) updateData.priceSymbol = body.priceSymbol
-    if ('minAmount' in body) updateData.minAmount = Number(body.minAmount)
-    if ('maxUsdValue' in body) updateData.maxUsdValue = Number(body.maxUsdValue)
+    if ('platformFeeUsdt' in body) updateData.platformFeeUsdt = body.platformFeeUsdt != null ? Math.max(0, Number(body.platformFeeUsdt)) : null
+    if ('minAmount' in body) updateData.minAmount = body.minAmount != null ? Number(body.minAmount) : null
+    if ('maxUsdValue' in body) updateData.maxUsdValue = body.maxUsdValue != null ? Number(body.maxUsdValue) : null
     if ('presetAmounts' in body) updateData.presetAmounts = body.presetAmounts
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0

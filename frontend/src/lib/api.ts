@@ -1081,6 +1081,8 @@ export interface AdminGasChain {
   platformFeeUsdt: number
   alertThresholdUsd: number | null
   pauseThresholdUsd: number | null
+  defaultMinAmount: number | null
+  defaultMaxUsdValue: number | null
   isActive: boolean
   readinessState: string
   displayOrder: number
@@ -1099,8 +1101,9 @@ export interface AdminGasToken {
   contractAddress: string | null
   logoUrl: string | null
   priceSymbol: string
-  minAmount: string | number
-  maxUsdValue: string | number
+  platformFeeUsdt: number | null  // null = inherit from parent chain
+  minAmount: string | number | null  // null = inherit from parent chain
+  maxUsdValue: string | number | null  // null = inherit from parent chain
   presetAmounts: number[]
   isActive: boolean
   displayOrder: number
