@@ -37,6 +37,7 @@ const STRUCTURED_KEYS = new Set([
   'gas_pkr_easypaisa_name', 'gas_pkr_easypaisa_number',
   'gas_pkr_bank_name', 'gas_pkr_bank_account_name', 'gas_pkr_bank_iban', 'gas_pkr_bank_account_number',
   'gas_usdt_bep20_address', 'gas_usdt_aptos_address',
+  'gas_bep20_logo_url', 'gas_aptos_logo_url',
 ])
 
 // ── Keys shown in the raw "Other Settings" table ──────────────────────────────
@@ -131,8 +132,10 @@ export default function ConfigPage() {
   const [bkSaving, setBkSaving]   = useState(false)
 
   // ── Form state: Crypto ────────────────────────────────────────────────────
-  const [bep20Addr, setBep20Addr] = useState('')
-  const [aptosAddr, setAptosAddr] = useState('')
+  const [bep20Addr, setBep20Addr]       = useState('')
+  const [aptosAddr, setAptosAddr]       = useState('')
+  const [bep20Logo, setBep20Logo]       = useState('')
+  const [aptosLogo, setAptosLogo]       = useState('')
   const [cryptoSaving, setCryptoSaving] = useState(false)
 
   // ── Raw table edit ────────────────────────────────────────────────────────
@@ -164,6 +167,8 @@ export default function ConfigPage() {
       setBkAccNo(m['gas_pkr_bank_account_number'] ?? '')
       setBep20Addr(m['gas_usdt_bep20_address'] ?? '')
       setAptosAddr(m['gas_usdt_aptos_address'] ?? '')
+      setBep20Logo(m['gas_bep20_logo_url'] ?? '')
+      setAptosLogo(m['gas_aptos_logo_url'] ?? '')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -240,6 +245,8 @@ export default function ConfigPage() {
       const pairs: Array<{ key: string; value: string }> = []
       if (bep20Addr.trim()) pairs.push({ key: 'gas_usdt_bep20_address', value: bep20Addr.trim() })
       if (aptosAddr.trim()) pairs.push({ key: 'gas_usdt_aptos_address', value: aptosAddr.trim() })
+      if (bep20Logo.trim()) pairs.push({ key: 'gas_bep20_logo_url', value: bep20Logo.trim() })
+      if (aptosLogo.trim()) pairs.push({ key: 'gas_aptos_logo_url', value: aptosLogo.trim() })
       if (pairs.length === 0) { showToast('Enter at least one address.', false); return }
       await saveKeys(pairs)
       showToast('Crypto deposit addresses saved.')
@@ -401,6 +408,18 @@ export default function ConfigPage() {
               />
             </Field>
 
+            <Field label="BEP20 Logo URL" hint="Image URL shown on the payment network card (e.g. BNB logo)">
+              <div className="flex items-center gap-2">
+                {bep20Logo && <img src={bep20Logo} alt="BEP20 logo" className="w-8 h-8 rounded-full object-contain border border-border flex-shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />}
+                <input
+                  className={inputCls + ' flex-1'}
+                  placeholder="https://… (PNG/SVG image URL)"
+                  value={bep20Logo}
+                  onChange={(e) => setBep20Logo(e.target.value)}
+                />
+              </div>
+            </Field>
+
             <Field
               label="USDT Aptos"
               hint="Must be set to enable Aptos as a payment option"
@@ -411,6 +430,18 @@ export default function ConfigPage() {
                 value={aptosAddr}
                 onChange={(e) => setAptosAddr(e.target.value)}
               />
+            </Field>
+
+            <Field label="Aptos Logo URL" hint="Image URL shown on the payment network card (e.g. APT logo)">
+              <div className="flex items-center gap-2">
+                {aptosLogo && <img src={aptosLogo} alt="Aptos logo" className="w-8 h-8 rounded-full object-contain border border-border flex-shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />}
+                <input
+                  className={inputCls + ' flex-1'}
+                  placeholder="https://… (PNG/SVG image URL)"
+                  value={aptosLogo}
+                  onChange={(e) => setAptosLogo(e.target.value)}
+                />
+              </div>
             </Field>
 
             <div className="flex justify-end">

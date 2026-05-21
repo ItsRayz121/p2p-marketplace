@@ -1315,7 +1315,10 @@ export default function GasPage() {
                               : 'border-gray-100 bg-white hover:border-purple-200'
                           }`}
                         >
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">BNB</div>
+                          {cryptoMethods?.bep20?.logoUrl
+                            ? <img src={cryptoMethods.bep20.logoUrl} alt="BEP20" className="w-12 h-12 rounded-xl object-contain flex-shrink-0" />
+                            : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">BNB</div>
+                          }
                           <div className="flex-1">
                             <p className="text-sm font-bold text-gray-900">USDT BEP20</p>
                             <p className="text-xs text-gray-400">
@@ -1347,7 +1350,10 @@ export default function GasPage() {
                               : 'border-gray-100 bg-white hover:border-purple-200'
                           }`}
                         >
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">APT</div>
+                          {cryptoMethods?.aptos?.logoUrl
+                            ? <img src={cryptoMethods.aptos.logoUrl} alt="Aptos" className="w-12 h-12 rounded-xl object-contain flex-shrink-0" />
+                            : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">APT</div>
+                          }
                           <div className="flex-1">
                             <p className="text-sm font-bold text-gray-900">USDT Aptos</p>
                             <p className="text-xs text-gray-400">Aptos Network · ~$0.01 network fee</p>

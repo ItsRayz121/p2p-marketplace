@@ -805,6 +805,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             'gas_bep20_network_fee_usdt',
             'gas_erc20_network_fee_usdt',
             'gas_aptos_network_fee_usdt',
+            'gas_bep20_logo_url',
+            'gas_aptos_logo_url',
           ],
         },
       },
@@ -867,6 +869,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           feeNativeDisplay: bep20Fee.feeNativeDisplay,
           feeUsd:           bep20Fee.feeUsd,
           feeIsLive:        bep20Fee.isLive,
+          logoUrl:          map['gas_bep20_logo_url'] ?? null,
         },
         erc20: {
           address:          erc20Address,
@@ -883,6 +886,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           feeNativeDisplay: aptosFee.feeNativeDisplay,
           feeUsd:           aptosFee.feeUsd,
           feeIsLive:        aptosFee.isLive,
+          logoUrl:          map['gas_aptos_logo_url'] ?? null,
         },
       },
     })

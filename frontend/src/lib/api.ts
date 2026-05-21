@@ -1001,6 +1001,7 @@ export interface GasCryptoNetworkMethod {
   feeNativeDisplay?: string
   feeUsd: number
   feeIsLive?: boolean
+  logoUrl?: string | null
 }
 
 export interface GasCryptoMethods {
