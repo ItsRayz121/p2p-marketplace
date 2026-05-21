@@ -423,7 +423,7 @@ export default function GasPage() {
   const [proofError, setProofError]   = useState('')
 
   // ── Crypto sub-flow ─────────────────────────────────────────────────────────
-  const [selectedCryptoNetwork, setSelectedCryptoNetwork] = useState<'TRC20' | 'BEP20' | 'ERC20' | 'APTOS' | null>(null)
+  const [selectedCryptoNetwork, setSelectedCryptoNetwork] = useState<'BEP20' | 'APTOS' | null>(null)
   const [creatingCrypto, setCreatingCrypto] = useState(false)
   const [cryptoError, setCryptoError]       = useState('')
   const [qrFailed, setQrFailed]             = useState(false)
@@ -1299,49 +1299,6 @@ export default function GasPage() {
                   <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Select Payment Network" sub="Choose a network to send your payment" />
 
                   <div className="space-y-3">
-                    {/* TRC20 card — recommended (lowest fee) */}
-                    {(() => {
-                      const trcConfigured = !!cryptoMethods?.trc20?.address
-                      const trcAddr = cryptoMethods?.trc20?.address
-                      const trcFee = cryptoMethods?.trc20?.feeNativeDisplay ?? cryptoMethods?.trc20?.fee ?? '~$1'
-                      return (
-                        <button
-                          onClick={() => trcConfigured && setSelectedCryptoNetwork('TRC20')}
-                          disabled={!trcConfigured}
-                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                            !trcConfigured
-                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
-                              : selectedCryptoNetwork === 'TRC20'
-                              ? 'border-purple-400 bg-purple-50'
-                              : 'border-gray-100 bg-white hover:border-purple-200'
-                          }`}
-                        >
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">TRX</div>
-                          <div className="flex-1">
-                            <p className="text-sm font-bold text-gray-900">USDT TRC20</p>
-                            <p className="text-xs text-gray-400">
-                              {trcConfigured ? `TRON Network · est. ${trcFee} network fee` : 'Coming soon — not yet configured'}
-                            </p>
-                            {trcAddr && (
-                              <p className="text-xs font-mono text-gray-400 mt-0.5">{trcAddr.slice(0, 8)}...{trcAddr.slice(-6)}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {trcConfigured
-                              ? <>
-                                  <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Recommended</span>
-                                  {selectedCryptoNetwork === 'TRC20'
-                                    ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                                    : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
-                                  }
-                                </>
-                              : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full">Soon</span>
-                            }
-                          </div>
-                        </button>
-                      )
-                    })()}
-
                     {/* BEP20 card */}
                     {(() => {
                       const bepConfigured = !!cryptoMethods?.bep20?.address
@@ -1378,75 +1335,31 @@ export default function GasPage() {
                       )
                     })()}
 
-                    {/* ERC20 card */}
+                    {/* Aptos card */}
                     {(() => {
-                      const ercConfigured = !!cryptoMethods?.erc20?.address
-                      const ercAddr = cryptoMethods?.erc20?.address
-                      const ercFee = cryptoMethods?.erc20?.feeNativeDisplay ?? cryptoMethods?.erc20?.fee ?? '~$2'
+                      const aptosAddr = cryptoMethods?.aptos?.address
                       return (
                         <button
-                          onClick={() => ercConfigured && setSelectedCryptoNetwork('ERC20')}
-                          disabled={!ercConfigured}
+                          onClick={() => setSelectedCryptoNetwork('APTOS')}
                           className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                            !ercConfigured
-                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
-                              : selectedCryptoNetwork === 'ERC20'
+                            selectedCryptoNetwork === 'APTOS'
                               ? 'border-purple-400 bg-purple-50'
                               : 'border-gray-100 bg-white hover:border-purple-200'
                           }`}
                         >
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">ETH</div>
-                          <div className="flex-1">
-                            <p className="text-sm font-bold text-gray-900">USDT ERC20</p>
-                            <p className="text-xs text-gray-400">
-                              {ercConfigured ? `Ethereum Network · est. ${ercFee} network fee` : 'Coming soon — not yet configured'}
-                            </p>
-                            {ercAddr && (
-                              <p className="text-xs font-mono text-gray-400 mt-0.5">{ercAddr.slice(0, 8)}...{ercAddr.slice(-6)}</p>
-                            )}
-                          </div>
-                          {ercConfigured
-                            ? selectedCryptoNetwork === 'ERC20'
-                              ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                              : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 flex-shrink-0">Select</span>
-                            : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full flex-shrink-0">Soon</span>
-                          }
-                        </button>
-                      )
-                    })()}
-
-                    {/* Aptos card — disabled until address is configured */}
-                    {(() => {
-                      const aptosConfigured = !!cryptoMethods?.aptos?.address
-                      return (
-                        <button
-                          onClick={() => aptosConfigured && setSelectedCryptoNetwork('APTOS')}
-                          disabled={!aptosConfigured}
-                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                            !aptosConfigured
-                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
-                              : selectedCryptoNetwork === 'APTOS'
-                              ? 'border-purple-400 bg-purple-50'
-                              : 'border-gray-100 bg-white hover:border-purple-200'
-                          }`}
-                        >
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">APT</div>
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">APT</div>
                           <div className="flex-1">
                             <p className="text-sm font-bold text-gray-900">USDT Aptos</p>
-                            <p className="text-xs text-gray-400">
-                              {aptosConfigured ? 'Aptos Network · ~$0.01 fee' : 'Coming soon — not yet configured'}
-                            </p>
+                            <p className="text-xs text-gray-400">Aptos Network · ~$0.01 network fee</p>
+                            {aptosAddr && (
+                              <p className="text-xs font-mono text-gray-400 mt-0.5">{aptosAddr.slice(0, 8)}...{aptosAddr.slice(-6)}</p>
+                            )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {aptosConfigured
-                              ? <>
-                                  <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Lowest Fee</span>
-                                  {selectedCryptoNetwork === 'APTOS'
-                                    ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                                    : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
-                                  }
-                                </>
-                              : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full">Soon</span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Lowest Fee</span>
+                            {selectedCryptoNetwork === 'APTOS'
+                              ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                              : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
                             }
                           </div>
                         </button>
