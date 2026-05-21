@@ -13,6 +13,7 @@ import { GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
 import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { flagIfRisky } from '../lib/gas/gas.risk'
 import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
+import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 
 // ── Guest tracking token validator ────────────────────────────────────────────
 
@@ -817,7 +818,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const trc20Address = map['gas_usdt_trc20_address'] ?? GAS_CHAINS.TRON.getDepositAddress() ?? null
     const bep20Address = map['gas_usdt_bep20_address'] ?? GAS_CHAINS.BSC.getDepositAddress() ?? null
     const erc20Address = map['gas_usdt_erc20_address'] ?? GAS_CHAINS.ETHEREUM.getDepositAddress() ?? null
-    const aptosAddress = map['gas_usdt_aptos_address'] ?? null
+    const aptosAddress = map['gas_usdt_aptos_address'] ?? getAptosHotWalletAddress() ?? null
 
     // TRC20 fee: admin override → live via gas.fees.ts
     let trc20Fee = await getUsdtNetworkFeeUsd('TRON')
@@ -1037,6 +1038,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       paymentNetwork === 'TRC20' ? (GAS_CHAINS.TRON.getDepositAddress() ?? null)
       : paymentNetwork === 'BEP20' ? (GAS_CHAINS.BSC.getDepositAddress() ?? null)
       : paymentNetwork === 'ERC20' ? (GAS_CHAINS.ETHEREUM.getDepositAddress() ?? null)
+      : paymentNetwork === 'APTOS' ? (getAptosHotWalletAddress() ?? null)
       : null
     const depositAddress = depositConfig?.value ?? fallbackAddress
     if (!depositAddress) {
@@ -1299,7 +1301,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         paymentAddress = dbOverride?.value ?? GAS_CHAINS.ETHEREUM.getDepositAddress() ?? null
       } else if (order.paymentNetwork === 'APTOS') {
         const dbOverride = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_aptos_address' } })
-        paymentAddress = dbOverride?.value ?? null
+        paymentAddress = dbOverride?.value ?? getAptosHotWalletAddress() ?? null
       }
     }
 
