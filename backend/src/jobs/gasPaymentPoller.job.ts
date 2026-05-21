@@ -13,6 +13,9 @@ import { logger } from '../lib/logger'
 import { env } from '../lib/env'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { appendLedgerEntry } from '../lib/gas/gas.ledger'
+import { fromDbChain } from '../lib/gas/gas.chains'
+import type { GasChainId } from '../lib/gas/gas.chains'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
 const TRANSFER_EVENT = parseAbiItem(
@@ -166,6 +169,14 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
       })
       if (claimed.count > 0) {
         await queues.gasFee.add('deliver', { orderId: activeOrder.id }, { priority: 1 })
+        appendLedgerEntry({
+          entryType:      'order_payment',
+          chain:          fromDbChain(activeOrder.chain) as GasChainId,
+          nativeAmount:   incoming,
+          usdAmount:      incoming,
+          txHash,
+          relatedOrderId: activeOrder.id,
+        }).catch((e) => logger.warn({ err: e, orderId: activeOrder.id }, 'Failed to write order_payment ledger entry'))
         logger.info({ txHash, orderId: activeOrder.id, network: cfg.paymentNetwork, incoming }, 'gasPaymentPoller: payment detected — active order attributed')
         void createAdminNotif({
           category: 'GAS',
@@ -215,6 +226,14 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
         })
         if (claimed.count > 0) {
           await queues.gasFee.add('deliver', { orderId: expiredOrder.id }, { priority: 1 })
+          appendLedgerEntry({
+            entryType:      'order_payment',
+            chain:          fromDbChain(expiredOrder.chain) as GasChainId,
+            nativeAmount:   incoming,
+            usdAmount:      incoming,
+            txHash,
+            relatedOrderId: expiredOrder.id,
+          }).catch((e) => logger.warn({ err: e, orderId: expiredOrder.id }, 'Failed to write order_payment ledger entry'))
           logger.info(
             { txHash, orderId: expiredOrder.id, network: cfg.paymentNetwork, incoming, blockTimestampMs },
             'gasPaymentPoller: late detection — expired order resurrected (payment was on-time)',

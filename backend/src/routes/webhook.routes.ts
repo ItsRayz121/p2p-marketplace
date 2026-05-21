@@ -13,6 +13,9 @@ import {
 } from '../services/depositWatcher.service'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { getEffectiveDepositAddress } from '../lib/gas/gasWalletService'
+import { appendLedgerEntry } from '../lib/gas/gas.ledger'
+import { fromDbChain } from '../lib/gas/gas.chains'
+import type { GasChainId } from '../lib/gas/gas.chains'
 
 /**
  * Compute a candidate Moralis Streams signature.
@@ -356,6 +359,14 @@ export async function webhookRoutes(app: FastifyInstance) {
             return reply.send({ success: true })
           }
           await queues.gasFee.add('deliver', { orderId: gasOrder.id }, { priority: 1 })
+          appendLedgerEntry({
+            entryType:      'order_payment',
+            chain:          fromDbChain(gasOrder.chain) as GasChainId,
+            nativeAmount:   incoming,
+            usdAmount:      incoming,
+            txHash,
+            relatedOrderId: gasOrder.id,
+          }).catch((e) => logger.warn({ err: e, orderId: gasOrder.id }, 'Failed to write order_payment ledger entry'))
           logger.info({ txHash, orderId: gasOrder.id, paymentNetwork: matchedDeposit.network }, 'Payment detected for gas fee order')
         } else {
           // No active match — try recently-expired orders as a grace window.
@@ -381,6 +392,14 @@ export async function webhookRoutes(app: FastifyInstance) {
             })
             if (claimed.count > 0) {
               await queues.gasFee.add('deliver', { orderId: expiredOrder.id }, { priority: 1 })
+              appendLedgerEntry({
+                entryType:      'order_payment',
+                chain:          fromDbChain(expiredOrder.chain) as GasChainId,
+                nativeAmount:   incoming,
+                usdAmount:      incoming,
+                txHash,
+                relatedOrderId: expiredOrder.id,
+              }).catch((e) => logger.warn({ err: e, orderId: expiredOrder.id }, 'Failed to write order_payment ledger entry'))
               logger.info({ txHash, orderId: expiredOrder.id, paymentNetwork: matchedDeposit.network }, 'Late webhook — expired order resurrected (payment was on-time)')
               sendAdminAlertEmail(
                 `Gas Order Resurrected — Late Moralis Webhook`,
