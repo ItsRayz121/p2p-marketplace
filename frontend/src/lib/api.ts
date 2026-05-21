@@ -1004,6 +1004,20 @@ export interface GasCryptoNetworkMethod {
   logoUrl?: string | null
 }
 
+export interface GasFinancialKpi {
+  totalOrders: number
+  paymentReceivedUsdt: number
+  paymentReceivedPkr: number
+  gasSpentUsdt: number
+  gasSpentPkr: number
+  refundCostUsdt: number
+  refundCostPkr: number
+  netProfitUsdt: number
+  netProfitPkr: number
+  marginPct: number
+  usdPkrRate: number
+}
+
 export interface GasCryptoMethods {
   trc20: GasCryptoNetworkMethod
   bep20: GasCryptoNetworkMethod
@@ -1428,30 +1442,24 @@ export const adminApi = {
       refundPendingCount: number
       pendingCustomRequests: number
       wallet: {
-        chain: string
-        address: string
-        isActive: boolean
-        balance: number | null
-        balanceUsd: number | null
-        nativeSymbol: string
+        chain: string; address: string; isActive: boolean; balance: number | null
+        balanceUsd: number | null; nativeSymbol: string
         status: 'healthy' | 'low' | 'paused' | 'unavailable'
-        alertThresholdUsd: number | null
-        pauseThresholdUsd: number | null
-        lastBalanceRefreshAt: string | null
+        alertThresholdUsd: number | null; pauseThresholdUsd: number | null; lastBalanceRefreshAt: string | null
       } | null
       wallets: Array<{
-        chain: string
-        address: string
-        isActive: boolean
-        balance: number | null
-        balanceUsd: number | null
-        nativeSymbol: string
+        chain: string; address: string; isActive: boolean; balance: number | null
+        balanceUsd: number | null; nativeSymbol: string
         status: 'healthy' | 'low' | 'paused' | 'unavailable'
-        alertThresholdUsd: number | null
-        pauseThresholdUsd: number | null
-        lastBalanceRefreshAt: string | null
+        alertThresholdUsd: number | null; pauseThresholdUsd: number | null; lastBalanceRefreshAt: string | null
       }>
+      today:   GasFinancialKpi
+      allTime: GasFinancialKpi
     }>('/admin/gas/stats'),
+  getGasFinancials: (from?: string, to?: string) =>
+    apiRequest<GasFinancialKpi>(
+      '/admin/gas/financials' + (from || to ? `?from=${from ?? ''}&to=${to ?? ''}` : ''),
+    ),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>

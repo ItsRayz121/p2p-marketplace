@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback } from 'react'
 import Link from 'next/link'
-import { adminApi } from '@/lib/api'
+import { adminApi, type GasFinancialKpi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -57,6 +57,8 @@ interface GasStats {
   pendingCustomRequests: number
   wallet: GasWallet | null
   wallets: GasWallet[]
+  today:   GasFinancialKpi
+  allTime: GasFinancialKpi
 }
 
 interface RpcTestResult {
@@ -371,6 +373,56 @@ function AnalyticsPanel({ analytics }: { analytics: GasAnalytics }) {
   )
 }
 
+// ─── Financial KPI Dashboard ──────────────────────────────────────────────────
+
+function fmtUsd(n: number) { return `$${n.toFixed(2)}` }
+function fmtPkr(n: number) { return `PKR ${Math.round(n).toLocaleString()}` }
+function fmtPct(n: number) { return `${n.toFixed(1)}%` }
+
+function FinancialKpiSection({ kpi, loading }: { kpi: GasFinancialKpi | null; loading: boolean }) {
+  if (loading) return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="h-28 bg-surface rounded-xl animate-pulse" />
+      ))}
+    </div>
+  )
+  if (!kpi) return null
+
+  const margin      = kpi.marginPct
+  const marginColor = margin >= 50 ? 'text-success' : margin >= 20 ? 'text-warning' : 'text-danger'
+  const marginBg    = margin >= 50 ? 'bg-success'   : margin >= 20 ? 'bg-warning'   : 'bg-danger'
+
+  const cards = [
+    { label: 'Total Orders',         primary: kpi.totalOrders.toLocaleString(), secondary: `Rate ${fmtUsd(kpi.usdPkrRate)}/USD`, accent: 'text-text-primary' },
+    { label: 'Payment Received',     primary: fmtUsd(kpi.paymentReceivedUsdt),  secondary: fmtPkr(kpi.paymentReceivedPkr),        accent: 'text-text-primary' },
+    { label: 'Gas Delivered',        primary: fmtUsd(kpi.gasSpentUsdt),         secondary: fmtPkr(kpi.gasSpentPkr),               accent: 'text-warning' },
+    { label: 'Refunds Issued',       primary: fmtUsd(kpi.refundCostUsdt),       secondary: fmtPkr(kpi.refundCostPkr),             accent: kpi.refundCostUsdt > 0 ? 'text-danger' : 'text-text-primary' },
+    { label: 'Net Profit',           primary: fmtUsd(kpi.netProfitUsdt),        secondary: fmtPkr(kpi.netProfitPkr),              accent: kpi.netProfitUsdt >= 0 ? 'text-success' : 'text-danger' },
+  ]
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {cards.map(({ label, primary, secondary, accent }) => (
+        <div key={label} className="bg-white border border-border rounded-xl p-4">
+          <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">{label}</p>
+          <p className={`text-xl font-bold ${accent}`}>{primary}</p>
+          <p className="text-sm text-text-muted mt-0.5">{secondary}</p>
+          {label === 'Net Profit' && (
+            <>
+              <div className="mt-2 h-1.5 bg-border rounded-full overflow-hidden">
+                <div className={`h-1.5 rounded-full transition-all ${marginBg}`}
+                  style={{ width: `${Math.min(Math.max(margin, 0), 100)}%` }} />
+              </div>
+              <p className={`text-xs font-bold mt-1 ${marginColor}`}>{fmtPct(margin)} margin</p>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GasAdminPage() {
@@ -393,6 +445,13 @@ export default function GasAdminPage() {
   const [analytics, setAnalytics] = useState<GasAnalytics | null>(null)
   const [analyticsPeriod, setAnalyticsPeriod] = useState<'24h' | '7d' | '30d' | 'all'>('7d')
   const [showAnalytics, setShowAnalytics] = useState(false)
+
+  // Financial KPI state
+  const [kpiTab, setKpiTab] = useState<'today' | 'alltime' | 'custom'>('today')
+  const [kpiFrom, setKpiFrom] = useState('')
+  const [kpiTo, setKpiTo]     = useState('')
+  const [customKpi, setCustomKpi] = useState<GasFinancialKpi | null>(null)
+  const [customKpiLoading, setCustomKpiLoading] = useState(false)
 
   // Global pause state
   const [globalPaused, setGlobalPaused] = useState(false)
@@ -459,6 +518,16 @@ export default function GasAdminPage() {
       setAnalytics(data)
     } catch { /* non-critical */ }
   }, [analyticsPeriod])
+
+  const fetchCustomKpi = useCallback(async () => {
+    if (!kpiFrom && !kpiTo) return
+    setCustomKpiLoading(true)
+    try {
+      const data = await adminApi.getGasFinancials(kpiFrom || undefined, kpiTo || undefined)
+      setCustomKpi(data)
+    } catch { /* non-critical */ }
+    finally { setCustomKpiLoading(false) }
+  }, [kpiFrom, kpiTo])
 
   const refresh = useCallback(async () => {
     await Promise.all([fetchStats(), fetchOrders(), fetchGlobalPause()])
@@ -678,37 +747,90 @@ export default function GasAdminPage() {
         </div>
       )}
 
-      {/* ── Metrics Bar ─────────────────────────────────────────────────────── */}
+      {/* ── Operational Quick Stats ──────────────────────────────────────────── */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white border border-border rounded-xl p-4">
-            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Orders Today</p>
-            <p className="text-2xl font-bold text-text-primary mt-1">{stats.todayOrders}</p>
-          </div>
-          <div className="bg-white border border-border rounded-xl p-4">
-            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Revenue Today</p>
-            <p className="text-2xl font-bold text-success mt-1">
-              ${parseFloat(String(stats.todayRevenue || 0)).toFixed(2)}
-            </p>
-          </div>
           <div className="bg-white border border-border rounded-xl p-4">
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Active Orders</p>
             <p className="text-2xl font-bold text-warning mt-1">{stats.pendingCount}</p>
           </div>
           <div className="bg-white border border-border rounded-xl p-4">
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Failed Orders</p>
-            <p className={`text-2xl font-bold mt-1 ${stats.failedCount > 0 ? 'text-danger' : 'text-text-primary'}`}>
-              {stats.failedCount}
-            </p>
+            <p className={`text-2xl font-bold mt-1 ${stats.failedCount > 0 ? 'text-danger' : 'text-text-primary'}`}>{stats.failedCount}</p>
           </div>
-          {(stats.refundPendingCount ?? 0) > 0 && (
-            <div className="bg-white border border-warning/40 rounded-xl p-4 col-span-2 md:col-span-1">
+          {(stats.refundPendingCount ?? 0) > 0 ? (
+            <div className="bg-white border border-warning/40 rounded-xl p-4">
               <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
               <p className="text-2xl font-bold mt-1 text-warning">{stats.refundPendingCount}</p>
             </div>
+          ) : (
+            <div className="bg-white border border-border rounded-xl p-4">
+              <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
+              <p className="text-2xl font-bold mt-1 text-text-primary">0</p>
+            </div>
           )}
+          <div className="bg-white border border-border rounded-xl p-4">
+            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Custom Requests</p>
+            <p className={`text-2xl font-bold mt-1 ${(stats.pendingCustomRequests ?? 0) > 0 ? 'text-warning' : 'text-text-primary'}`}>{stats.pendingCustomRequests ?? 0}</p>
+          </div>
         </div>
       )}
+
+      {/* ── Financial KPI Dashboard ──────────────────────────────────────────── */}
+      <div className="bg-white border border-border rounded-xl overflow-hidden">
+        {/* Tab bar */}
+        <div className="flex items-center gap-0 border-b border-border">
+          {(['today', 'alltime', 'custom'] as const).map((tab) => (
+            <button key={tab} onClick={() => setKpiTab(tab)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                kpiTab === tab ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {tab === 'today' ? 'Today' : tab === 'alltime' ? 'All Time' : 'Date Range'}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Custom date range picker */}
+          {kpiTab === 'custom' && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-text-muted font-medium">From</label>
+                <input type="date" value={kpiFrom} onChange={e => setKpiFrom(e.target.value)}
+                  className="border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-text-muted font-medium">To</label>
+                <input type="date" value={kpiTo} onChange={e => setKpiTo(e.target.value)}
+                  className="border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <button onClick={fetchCustomKpi} disabled={customKpiLoading || (!kpiFrom && !kpiTo)}
+                className="px-3 py-1.5 bg-primary text-white text-sm rounded-lg font-medium disabled:opacity-50 hover:opacity-90 transition-opacity">
+                {customKpiLoading ? 'Loading…' : 'Apply'}
+              </button>
+              {customKpi && (
+                <button onClick={() => { setCustomKpi(null); setKpiFrom(''); setKpiTo('') }}
+                  className="text-xs text-text-muted hover:text-danger underline">Clear</button>
+              )}
+            </div>
+          )}
+
+          {/* KPI cards */}
+          {kpiTab === 'today' && (
+            <FinancialKpiSection kpi={stats?.today ?? null} loading={!stats} />
+          )}
+          {kpiTab === 'alltime' && (
+            <FinancialKpiSection kpi={stats?.allTime ?? null} loading={!stats} />
+          )}
+          {kpiTab === 'custom' && (
+            <FinancialKpiSection kpi={customKpi} loading={customKpiLoading} />
+          )}
+          {kpiTab === 'custom' && !customKpi && !customKpiLoading && (
+            <p className="text-sm text-text-muted text-center py-4">Select a date range and click Apply</p>
+          )}
+        </div>
+      </div>
 
       {/* ── Analytics Panel ──────────────────────────────────────────────────── */}
       {showAnalytics && (

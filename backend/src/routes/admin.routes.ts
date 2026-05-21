@@ -2103,6 +2103,59 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: order })
   })
 
+  // ── Financial aggregation helper ─────────────────────────────────────────────
+  async function gasFinancialAgg(from?: Date, to?: Date) {
+    const { redis: redisForFinancials } = await import('../lib/redis')
+    const dateFilter = from || to
+      ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
+      : {}
+    const deliveredFilter = { ...dateFilter, status: 'delivered' as const }
+    const refundedFilter  = { ...dateFilter, status: { in: ['refunded', 'refund_pending'] as ('refunded' | 'refund_pending')[] } }
+
+    const [totalOrders, paymentAgg, gasAgg, refundAgg, usdtPkrRaw] = await Promise.all([
+      db.gasFeeOrder.count({ where: dateFilter }),
+      db.gasFeeOrder.aggregate({ where: deliveredFilter, _sum: { paymentAmount: true } }),
+      db.gasFeeOrder.aggregate({ where: deliveredFilter, _sum: { gasAmountUSD: true } }),
+      db.gasFeeOrder.aggregate({ where: refundedFilter, _sum: { refundAmount: true } }),
+      redisForFinancials.get('rate:USDT'),
+    ])
+
+    const usdPkr = usdtPkrRaw
+      ? (() => { try { return (JSON.parse(usdtPkrRaw) as { rate?: number }).rate ?? 278.5 } catch { return 278.5 } })()
+      : 278.5
+
+    const paymentReceivedUsdt = Number(paymentAgg._sum.paymentAmount ?? 0)
+    const gasSpentUsdt        = Number(gasAgg._sum.gasAmountUSD ?? 0)
+    const refundCostUsdt      = Number(refundAgg._sum?.refundAmount ?? 0)
+    const netProfitUsdt       = paymentReceivedUsdt - gasSpentUsdt - refundCostUsdt
+    const marginPct           = paymentReceivedUsdt > 0 ? (netProfitUsdt / paymentReceivedUsdt) * 100 : 0
+
+    return {
+      totalOrders,
+      paymentReceivedUsdt,
+      paymentReceivedPkr:  paymentReceivedUsdt * usdPkr,
+      gasSpentUsdt,
+      gasSpentPkr:         gasSpentUsdt * usdPkr,
+      refundCostUsdt,
+      refundCostPkr:       refundCostUsdt * usdPkr,
+      netProfitUsdt,
+      netProfitPkr:        netProfitUsdt * usdPkr,
+      marginPct,
+      usdPkrRate:          usdPkr,
+    }
+  }
+
+  // GET /admin/gas/financials?from=ISO&to=ISO — date-range financial KPIs
+  app.get('/admin/gas/financials', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const q = req.query as { from?: string; to?: string }
+    const from = q.from ? new Date(q.from) : undefined
+    const to   = q.to   ? new Date(q.to)   : undefined
+    if (from && isNaN(from.getTime())) return reply.status(400).send({ success: false, error: 'Invalid from date' })
+    if (to   && isNaN(to.getTime()))   return reply.status(400).send({ success: false, error: 'Invalid to date' })
+    const data = await gasFinancialAgg(from, to)
+    return reply.send({ success: true, data })
+  })
+
   // GET /admin/gas/stats — today's metrics + all hot wallet statuses
   app.get('/admin/gas/stats', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { redis: redisClient } = await import('../lib/redis')
@@ -2111,7 +2164,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const [todayOrders, todayRevenue, pendingCount, failedCount, refundPendingCount, pendingCustomRequests, allWallets] = await Promise.all([
+    const [todayOrders, todayRevenue, pendingCount, failedCount, refundPendingCount, pendingCustomRequests, allWallets,
+           todayFinancials, allTimeFinancials] = await Promise.all([
       db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
       db.gasFeeOrder.aggregate({
         where: { status: 'delivered', deliveredAt: { gte: today } },
@@ -2122,6 +2176,8 @@ export async function adminRoutes(app: FastifyInstance) {
       db.gasFeeOrder.count({ where: { status: 'refund_pending' } }),
       db.gasCustomRequest.count({ where: { status: 'pending' } }),
       db.gasHotWallet.findMany(),
+      gasFinancialAgg(today),
+      gasFinancialAgg(),
     ])
 
     const statsThresholds = await db.gasChainConfig.findMany({
@@ -2180,6 +2236,8 @@ export async function adminRoutes(app: FastifyInstance) {
         pendingCustomRequests,
         wallet: tronWallet,
         wallets,
+        today:   todayFinancials,
+        allTime: allTimeFinancials,
       },
     })
   })
