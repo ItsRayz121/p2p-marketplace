@@ -964,7 +964,9 @@ export interface GasTokensResponse {
 
 export interface GasOrder {
   id?: string
+  userId?: string | null
   orderRef: string
+  trackingToken?: string | null
   status: 'payment_pending' | 'payment_uploaded' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
   toAddress: string
   tier?: string | null
@@ -976,9 +978,11 @@ export interface GasOrder {
   pkrAmount?: string | null
   pkrPaymentMethod?: string | null
   paymentProofUrl?: string | null
+  paymentTxHash?: string | null
   gasAmountNative: string
   nativeSymbol?: string
   deliveryTxHash?: string
+  refundTxHash?: string | null
   expiresAt: string
   createdAt?: string
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null
@@ -1052,8 +1056,8 @@ export const gasApi = {
   submitProof: (orderRef: string, proofUrl: string) =>
     apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/proof`, { method: 'POST', body: JSON.stringify({ proofUrl }) }),
 
-  getOrder: (orderRef: string) =>
-    apiRequest<GasOrder>(`/gas-fee/orders/${orderRef}`),
+  getOrder: (orderRef: string, trackingToken?: string) =>
+    apiRequest<GasOrder>(`/gas-fee/orders/${orderRef}${trackingToken ? `?token=${encodeURIComponent(trackingToken)}` : ''}`),
 
   getPkrMethods: () =>
     apiRequest<GasPkrMethods>('/gas-fee/pkr-methods'),

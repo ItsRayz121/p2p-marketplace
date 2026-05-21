@@ -49,6 +49,11 @@ export function generateReferralCode(): string {
 
 export function generateOrderRef(prefix: string): string {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const suffix = randomBytes(3).toString('hex').toUpperCase()
+  const suffix = randomBytes(6).toString('hex').toUpperCase()  // 48 bits of entropy
   return `${prefix}-${date}-${suffix}`
+}
+
+// 192-bit cryptographically random token for guest order privacy
+export function generateTrackingToken(): string {
+  return randomBytes(24).toString('hex')
 }

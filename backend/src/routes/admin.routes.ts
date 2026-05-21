@@ -2987,7 +2987,13 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('CONFLICT', 'Order was already processed by another admin', 409)
     }
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_PKR_APPROVED', 'GasFeeOrder', id, {})
+    await createAuditLog(req.user!.id, 'GAS_PKR_APPROVED', 'GasFeeOrder', id, {
+      orderRef:   order.orderRef,
+      oldStatus:  'payment_uploaded',
+      newStatus:  'payment_detected',
+      paymentCoin: order.paymentCoin,
+      pkrAmount:  order.pkrAmount?.toString() ?? null,
+    })
     return reply.send({ success: true, data: { status: 'payment_detected' } })
   })
 

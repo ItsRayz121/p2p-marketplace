@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   gasApi,
@@ -377,6 +378,7 @@ type PkrMethodKey = keyof typeof PKR_METHOD_META
 
 export default function GasPage() {
   const { user }  = useAuth()
+  const router    = useRouter()
 
   // ── Navigation phase ────────────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>(PHASE.CHAINS)
@@ -557,8 +559,8 @@ export default function GasPage() {
     setSubmittingProof(true); setProofError('')
     try {
       await gasApi.submitProof(order.orderRef, proofUrl)
-      setOrder(o => o ? { ...o, status: 'payment_uploaded' } : o)
-      setPhase(PHASE.PKR_REVIEW)
+      const token = order.trackingToken ? `?token=${encodeURIComponent(order.trackingToken)}` : ''
+      router.push(`/gas/orders/${order.orderRef}${token}`)
     } catch (e: unknown) { setProofError(e instanceof Error ? e.message : 'Failed to submit proof') }
     finally { setSubmittingProof(false) }
   }
@@ -595,6 +597,8 @@ export default function GasPage() {
       setOrder(prev => prev ? { ...prev, status: res.status as GasOrder['status'] } : prev)
       setVerifyOpen(false)
       setVerifyTxHash('')
+      const token = order.trackingToken ? `?token=${encodeURIComponent(order.trackingToken)}` : ''
+      router.push(`/gas/orders/${order.orderRef}${token}`)
     } catch (e: unknown) {
       setVerifyError(e instanceof Error ? e.message : 'Verification failed. Please check your transaction hash and try again.')
     } finally {
@@ -607,15 +611,17 @@ export default function GasPage() {
   const pollOrder = useCallback(async () => {
     if (!order?.orderRef) return
     try {
-      const o = await gasApi.getOrder(order.orderRef)
-      // paymentAddress is re-derived server-side; keep prev value as safety net
-      // in case the backend hasn't been deployed yet
+      const o = await gasApi.getOrder(order.orderRef, order.trackingToken ?? undefined)
       setOrder(prev => ({ ...o, paymentAddress: o.paymentAddress || prev?.paymentAddress || '' }))
       setPollErrCount(0)
       if (o.status === 'delivered')        setPhase(PHASE.COMPLETE)
       else if (o.status === 'payment_detected' || o.status === 'sending') setPhase(PHASE.PROCESSING)
+      else if (o.status === 'payment_uploaded') {
+        const token = o.trackingToken ? `?token=${encodeURIComponent(o.trackingToken)}` : ''
+        router.push(`/gas/orders/${o.orderRef}${token}`)
+      }
     } catch { setPollErrCount(c => c + 1) }
-  }, [order?.orderRef])
+  }, [order?.orderRef, order?.trackingToken, router])
 
   const isTerminal = order && ['delivered', 'failed', 'expired', 'refunded'].includes(order.status)
   usePolling(pollOrder, 8_000, !!(order?.orderRef) && !isTerminal && ([PHASE.CRYPTO_QR, PHASE.PKR_REVIEW, PHASE.PROCESSING] as Phase[]).includes(phase))
@@ -888,9 +894,17 @@ export default function GasPage() {
                       onBlur={() => { if (amount) validateAmountField(amount) }} min={minAmount} step="any" />
                     {amountError && <p className="text-xs text-red-500 mt-1">{amountError}</p>}
                     {amountNum > 0 && !amountError && (
-                      <div className={`text-xs mt-1 flex gap-3 ${usdExceeded ? 'text-red-500' : 'text-gray-500'}`}>
-                        <span>≈ ${computedUsd.toFixed(2)} USDT</span>
-                        <span>≈ PKR {computedPkr.toFixed(0)}</span>
+                      <div className={`text-xs mt-1.5 space-y-0.5 ${usdExceeded ? 'text-red-500' : 'text-gray-500'}`}>
+                        <div className="flex gap-1">
+                          <span>≈ <span className="font-semibold">${gasValueUsd.toFixed(4)}</span> market value</span>
+                          <span className="text-gray-400">+ ${platformFeeUsdt.toFixed(2)} service fee</span>
+                        </div>
+                        <div className="flex gap-2 font-semibold">
+                          <span className={usdExceeded ? 'text-red-500' : 'text-purple-600'}>
+                            Total: ${computedUsd.toFixed(2)} USDT
+                          </span>
+                          <span className="text-gray-400 font-normal">≈ PKR {computedPkr.toFixed(0)}</span>
+                        </div>
                         {usdExceeded && <span className="font-semibold">— exceeds ${maxUsd} limit</span>}
                       </div>
                     )}

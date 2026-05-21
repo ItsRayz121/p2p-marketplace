@@ -1098,7 +1098,8 @@ model GasFeeOrder {
   paymentCoin          String            @default("USDT")
   paymentNetwork       String
   paymentAmount        Decimal           @db.Decimal(10, 4)
-  paymentTxHash        String?
+  trackingToken        String?           @unique  // guest order privacy token (192-bit hex)
+  paymentTxHash        String?           @unique
   paymentSenderAddress String?
   paymentProofUrl      String?
   pkrPaymentMethod     String?
@@ -1128,7 +1129,6 @@ model GasFeeOrder {
   @@index([status, expiresAt])
   @@index([userId])
   @@index([orderRef])
-  @@index([paymentTxHash])
 }
 
 model GasHotWallet {

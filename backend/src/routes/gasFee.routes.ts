@@ -4,7 +4,8 @@ import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError, Errors } from '../lib/errors'
-import { generateOrderRef } from '../lib/hash'
+import { generateOrderRef, generateTrackingToken } from '../lib/hash'
+import { timingSafeEqual } from 'node:crypto'
 import { env } from '../lib/env'
 import { queues } from '../queues/definitions'
 import { logger } from '../lib/logger'
@@ -12,6 +13,16 @@ import { GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
 import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { flagIfRisky } from '../lib/gas/gas.risk'
 import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
+
+// ── Guest tracking token validator ────────────────────────────────────────────
+
+function isTrackingTokenValid(candidate: string | undefined, stored: string | null): boolean {
+  if (!stored || !candidate) return false
+  const a = Buffer.from(candidate, 'utf8')
+  const b = Buffer.from(stored, 'utf8')
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
 
 // ── Token config resolution (token override → chain default → system fallback) ─
 
@@ -510,12 +521,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     // Create order — use chain enum from backendChainId
     const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
-    const orderRef  = generateOrderRef('GF')
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
+    const orderRef      = generateOrderRef('GF')
+    const trackingToken = generateTrackingToken()
+    const expiresAt     = new Date(Date.now() + 5 * 60 * 1000)
 
     const order = await db.gasFeeOrder.create({
       data: {
         orderRef,
+        trackingToken,
         ...(userId ? { userId } : {}),
         ipAddress:       clientIp,
         chain:           dbChainEnum,
@@ -553,6 +566,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       success: true,
       data: {
         orderRef:        order.orderRef,
+        trackingToken:   order.trackingToken,
         paymentAddress:  depositAddress,
         paymentAmount:   order.paymentAmount.toString(),
         paymentNetwork:  order.paymentNetwork,
@@ -641,12 +655,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       if (destCount >= 2) throw new AppError('DEST_LIMIT_EXCEEDED', 'Maximum 2 gas orders to the same destination per day for guest users.', 400)
     }
 
-    const orderRef  = generateOrderRef('GF')
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
+    const orderRef      = generateOrderRef('GF')
+    const trackingToken = generateTrackingToken()
+    const expiresAt     = new Date(Date.now() + 5 * 60 * 1000)
 
     const order = await db.gasFeeOrder.create({
       data: {
         orderRef,
+        trackingToken,
         ...(userId ? { userId } : {}),
         ipAddress:      clientIp,
         chain:          toDbChain(chain),
@@ -682,6 +698,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       success: true,
       data: {
         orderRef:        order.orderRef,
+        trackingToken:   order.trackingToken,
         paymentAddress:  depositAddress,
         paymentAmount:   order.paymentAmount.toString(),
         paymentNetwork:  order.paymentNetwork,
@@ -931,13 +948,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       }
     }
 
-    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
-    const orderRef   = generateOrderRef('GF')
-    const expiresAt  = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const dbChainEnum   = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
+    const orderRef      = generateOrderRef('GF')
+    const trackingToken = generateTrackingToken()
+    const expiresAt     = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
     const order = await db.gasFeeOrder.create({
       data: {
         orderRef,
+        trackingToken,
         userId,
         ipAddress:        req.ip ?? 'unknown',
         chain:            dbChainEnum,
@@ -967,6 +986,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       success: true,
       data: {
         orderRef:        order.orderRef,
+        trackingToken:   order.trackingToken,
         paymentCoin:     'PKR',
         paymentNetwork:  pkrPaymentMethod,
         paymentAmount:   paymentAmountUsd.toFixed(2),
@@ -976,6 +996,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         chain:           order.chain,
         status:          order.status,
         expiresAt:       order.expiresAt.toISOString(),
+        // Transparent price breakdown (consistent with USDT orders)
+        gasValueUsd:     gasAmountUSD.toFixed(4),
+        platformFeeUsdt: platformFeeUsdt.toFixed(4),
+        priceAtOrder:    nativeUsdRate.toFixed(4),
       },
     })
   })
@@ -1074,13 +1098,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       if (destCount >= 2) throw new AppError('DEST_LIMIT_EXCEEDED', 'Maximum 2 gas orders to the same destination per day for guest users.', 400)
     }
 
-    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
-    const orderRef   = generateOrderRef('GF')
-    const expiresAt  = new Date(Date.now() + 15 * 60 * 1000)
+    const dbChainEnum   = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
+    const orderRef      = generateOrderRef('GF')
+    const trackingToken = generateTrackingToken()
+    const expiresAt     = new Date(Date.now() + 15 * 60 * 1000)
 
     const order = await db.gasFeeOrder.create({
       data: {
         orderRef,
+        trackingToken,
         ...(userId ? { userId } : {}),
         ipAddress:        clientIp,
         chain:            dbChainEnum,
@@ -1114,6 +1140,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       success: true,
       data: {
         orderRef:        order.orderRef,
+        trackingToken:   order.trackingToken,
         paymentAddress:  depositAddress,
         paymentAmount:   order.paymentAmount.toString(),
         paymentNetwork,
@@ -1228,17 +1255,32 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     return reply.code(201).send({ success: true, data: { message: 'Request received. Our team will review and contact you within 24 hours.' } })
   })
 
-  // ── GET /api/gas-fee/orders/:orderRef — no auth ───────────────────────────
-  // paymentAddress is not stored in the DB — re-derive it on every fetch so
-  // the QR screen keeps showing it correctly after polling overwrites state.
+  // ── GET /api/gas-fee/orders/:orderRef ────────────────────────────────────
+  // Access control:
+  //   - Admin/super_admin          → full data
+  //   - Authenticated owner        → full data
+  //   - Valid guest trackingToken  → order data minus internal fields
+  //   - Otherwise                  → 403 FORBIDDEN
+  //
+  // paymentAddress is re-derived on every fetch so the QR screen stays correct.
 
-  app.get('/gas-fee/orders/:orderRef', async (req, reply) => {
+  app.get('/gas-fee/orders/:orderRef', { preHandler: [optionalAuth] }, async (req, reply) => {
     const { orderRef } = req.params as { orderRef: string }
+    const { token }    = req.query as { token?: string }
+
     const order = await db.gasFeeOrder.findUnique({
       where: { orderRef },
       include: { gasTokenConfig: { select: { name: true, symbol: true, logoUrl: true } } },
     })
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    const isAdmin  = req.user?.role === 'admin' || req.user?.role === 'super_admin'
+    const isOwner  = !!(req.user && order.userId && req.user.id === order.userId)
+    const hasToken = isTrackingTokenValid(token, order.trackingToken)
+
+    if (!isAdmin && !isOwner && !hasToken) {
+      throw new AppError('FORBIDDEN', 'Access denied. Use the original order tracking link.', 403)
+    }
 
     let paymentAddress: string | null = null
     if (order.paymentCoin === 'USDT') {
@@ -1257,7 +1299,22 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       }
     }
 
-    return reply.send({ success: true, data: { ...order, paymentAddress } })
+    if (isAdmin) {
+      return reply.send({ success: true, data: { ...order, paymentAddress } })
+    }
+
+    // Strip internal fields from non-admin responses
+    const {
+      userId: _userId,
+      ipAddress: _ip,
+      riskScore: _risk,
+      fromHotWallet: _hot,
+      merchantApiKeyId: _merchant,
+      trackingToken: _token,
+      ...publicOrder
+    } = order
+
+    return reply.send({ success: true, data: { ...publicOrder, paymentAddress } })
   })
 
   // ── GET /api/gas-fee/orders/:orderRef/refund-status — no auth ─────────────
@@ -1289,6 +1346,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
   const verifyPaymentSchema = z.object({ txHash: z.string().min(10).max(100) })
 
+  // EVM tx hash: 0x followed by 64 hex chars
+  const EVM_TX_REGEX = /^0x[0-9a-fA-F]{64}$/
+  const EVM_NETWORKS = new Set(['BEP20', 'ERC20'])
+
   app.post('/gas-fee/orders/:orderRef/verify-payment', async (req, reply) => {
     const { orderRef } = req.params as { orderRef: string }
     const parsed = verifyPaymentSchema.safeParse(req.body)
@@ -1308,6 +1369,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // Only allow verification for USDT crypto orders (not PKR fiat orders)
     if (order.paymentCoin !== 'USDT') {
       throw new AppError('INVALID_STATUS', 'Manual verification is only available for USDT payment orders', 400)
+    }
+
+    // Validate tx hash format for EVM chains
+    if (EVM_NETWORKS.has(order.paymentNetwork) && !EVM_TX_REGEX.test(txHash)) {
+      throw new AppError('VALIDATION_ERROR', `Invalid transaction hash format for ${order.paymentNetwork}. Expected a 0x-prefixed 64-character hex string.`, 400)
     }
 
     // Accept payment_pending or recently-expired orders (15-min grace window)

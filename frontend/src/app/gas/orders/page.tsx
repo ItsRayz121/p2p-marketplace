@@ -109,14 +109,14 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
   })
 
   return (
-    <div className="border-b border-border last:border-0">
+    <Link href={`/gas/orders/${order.orderRef}`} className="block border-b border-border last:border-0 cursor-pointer hover:bg-surface transition-colors">
       {order.status === 'payment_uploaded' && (
         <div className="mx-4 mt-3 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-50 border border-purple-200">
           <svg className="w-4 h-4 text-purple-500 shrink-0 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <p className="text-xs text-purple-700 font-medium">
-            Your payment is under review. An admin will verify and release your gas shortly.
+            Payment under review — tap to track your order
           </p>
         </div>
       )}
@@ -130,7 +130,7 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
           </p>
         </div>
       )}
-    <div className="grid grid-cols-[1fr_auto_auto_auto] sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center p-4 hover:bg-surface transition-colors">
+    <div className="grid grid-cols-[1fr_auto_auto_auto] sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center p-4">
       {/* Date + ref + address */}
       <div className="min-w-0">
         <p className="text-xs text-text-muted">{date}</p>
@@ -157,37 +157,36 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
         </Badge>
       </div>
 
-      {/* Tx links */}
+      {/* Arrow / tx links */}
       <div className="flex flex-col gap-1 items-end">
         {order.deliveryTxHash && (
-          <a
-            href={explorerTxUrl(order.chain, order.deliveryTxHash)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-primary hover:underline flex items-center gap-1"
+          <span
+            onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(explorerTxUrl(order.chain, order.deliveryTxHash!), '_blank') }}
+            className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer"
           >
             TX
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-          </a>
+          </span>
         )}
         {order.refundTxHash && (
-          <a
-            href={explorerTxUrl(order.chain, order.refundTxHash)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-success hover:underline flex items-center gap-1"
+          <span
+            onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(explorerTxUrl(order.chain, order.refundTxHash!), '_blank') }}
+            className="text-xs text-success hover:underline flex items-center gap-1 cursor-pointer"
           >
             Refund TX
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-          </a>
+          </span>
         )}
+        <svg className="w-4 h-4 text-gray-300 mt-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
       </div>
     </div>
-    </div>
+    </Link>
   )
 }
 
