@@ -895,15 +895,9 @@ export default function GasPage() {
                     {amountError && <p className="text-xs text-red-500 mt-1">{amountError}</p>}
                     {amountNum > 0 && !amountError && (
                       <div className={`text-xs mt-1.5 space-y-0.5 ${usdExceeded ? 'text-red-500' : 'text-gray-500'}`}>
-                        <div className="flex gap-1">
+                        <div className="flex gap-2">
                           <span>≈ <span className="font-semibold">${gasValueUsd.toFixed(4)}</span> market value</span>
-                          <span className="text-gray-400">+ ${platformFeeUsdt.toFixed(2)} service fee</span>
-                        </div>
-                        <div className="flex gap-2 font-semibold">
-                          <span className={usdExceeded ? 'text-red-500' : 'text-purple-600'}>
-                            Total: ${computedUsd.toFixed(2)} USDT
-                          </span>
-                          <span className="text-gray-400 font-normal">≈ PKR {computedPkr.toFixed(0)}</span>
+                          <span className="text-gray-400">≈ PKR {(gasValueUsd * usdPkrRate).toFixed(0)}</span>
                         </div>
                         {usdExceeded && <span className="font-semibold">— exceeds ${maxUsd} limit</span>}
                       </div>
