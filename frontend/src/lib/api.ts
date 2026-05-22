@@ -1428,6 +1428,33 @@ export const adminApi = {
       pagination: { total: number; page: number; limit: number; pages: number }
     }>('/admin/gas/wallet-activity' + buildQs(params)),
 
+  getHotWalletLiveBalances: () =>
+    apiRequest<{
+      balances: Array<{
+        chain: string
+        address: string
+        balance: number | null
+        balanceUsd: number | null
+        nativeSymbol: string
+        fetchedAt: string
+        error: string | null
+      }>
+      fetchedAt: string
+    }>('/admin/gas/hot-wallet-balances'),
+
+  logManualDeposit: (body: {
+    chain: string
+    nativeAmount: number
+    txHash?: string
+    fromAddress?: string
+    toAddress?: string
+    notes?: string
+  }) =>
+    apiRequest<{ id: string }>('/admin/gas/wallet-activity/manual', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   // Gas Orders
   getGasOrders: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ orders: unknown[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/gas/orders' + buildQs(params)),

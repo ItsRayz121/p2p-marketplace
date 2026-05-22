@@ -8,6 +8,9 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth.store'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type LedgerEntry = {
   id: string
@@ -23,6 +26,18 @@ type LedgerEntry = {
   createdAt: string
   relatedOrder: { orderRef: string; status: string; paymentCoin: string; paymentNetwork: string } | null
 }
+
+type LiveBalance = {
+  chain: string
+  address: string
+  balance: number | null
+  balanceUsd: number | null
+  nativeSymbol: string
+  fetchedAt: string
+  error: string | null
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const ENTRY_TYPE_LABELS: Record<string, string> = {
   order_payment:               'User Payment',
@@ -45,8 +60,21 @@ const ENTRY_TYPE_COLORS: Record<string, string> = {
 }
 
 const CHAINS = ['TRON', 'BSC', 'ETH', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'APT']
-
 const ENTRY_TYPES = Object.keys(ENTRY_TYPE_LABELS)
+
+const EXPLORER_URL: Record<string, string> = {
+  TRON:  'https://tronscan.org/#/address/',
+  BSC:   'https://bscscan.com/address/',
+  ETH:   'https://etherscan.io/address/',
+  BASE:  'https://basescan.org/address/',
+  ARB:   'https://arbiscan.io/address/',
+  OP:    'https://optimistic.etherscan.io/address/',
+  MATIC: 'https://polygonscan.com/address/',
+  AVAX:  'https://snowtrace.io/address/',
+  APT:   'https://explorer.aptoslabs.com/account/',
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function shortHash(h: string) {
   if (h.length <= 16) return h
@@ -61,7 +89,285 @@ function isInflow(entryType: string) {
   return ['order_payment', 'refill_hot_from_treasury', 'external_hot_wallet_deposit'].includes(entryType)
 }
 
+// ─── Live Balances Panel ──────────────────────────────────────────────────────
+
+function LiveBalancesPanel() {
+  const [balances, setBalances]   = useState<LiveBalance[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState<string | null>(null)
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const fetchBalances = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
+    setError(null)
+    try {
+      const res = await adminApi.getHotWalletLiveBalances()
+      setBalances(res.balances)
+      setFetchedAt(res.fetchedAt)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch live balances')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => { void fetchBalances() }, [fetchBalances])
+
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const id = setInterval(() => void fetchBalances(true), 60_000)
+    return () => clearInterval(id)
+  }, [fetchBalances])
+
+  return (
+    <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+        <div>
+          <h2 className="text-sm font-semibold text-text-primary">Live Hot Wallet Balances</h2>
+          {fetchedAt && (
+            <p className="text-xs text-text-muted mt-0.5">
+              Fetched from chain · {fmt(fetchedAt)} · auto-refreshes every 60s
+            </p>
+          )}
+        </div>
+        <Button size="sm" variant="ghost" onClick={() => fetchBalances(true)} disabled={refreshing || loading}>
+          {refreshing ? 'Refreshing…' : 'Refresh Now'}
+        </Button>
+      </div>
+
+      {loading && <div className="p-5"><LoadingState message="Fetching live balances from blockchain…" /></div>}
+      {!loading && error && (
+        <div className="px-5 py-4 text-danger text-sm">{error}</div>
+      )}
+      {!loading && !error && balances.length === 0 && (
+        <div className="px-5 py-4 text-text-muted text-sm">No active hot wallets found.</div>
+      )}
+
+      {!loading && balances.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-border">
+          {balances.map((w) => {
+            const explorerBase = EXPLORER_URL[w.chain]
+            const explorerLink = explorerBase ? `${explorerBase}${w.address}` : null
+
+            return (
+              <div key={w.chain} className="p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'w-2 h-2 rounded-full',
+                      w.error ? 'bg-danger' : w.balance === null ? 'bg-gray-300' : w.balance === 0 ? 'bg-warning' : 'bg-success',
+                    )} />
+                    <span className="font-semibold text-sm text-text-primary">{w.chain}</span>
+                    <Badge variant="default" size="sm">{w.nativeSymbol}</Badge>
+                  </div>
+                  {explorerLink && (
+                    <a
+                      href={explorerLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                    >
+                      Explorer ↗
+                    </a>
+                  )}
+                </div>
+
+                <div>
+                  {w.error ? (
+                    <p className="text-xs text-danger">{w.error}</p>
+                  ) : (
+                    <>
+                      <p className={cn(
+                        'text-xl font-bold',
+                        w.balance === null ? 'text-text-muted'
+                        : w.balance === 0 ? 'text-warning'
+                        : 'text-success',
+                      )}>
+                        {w.balance !== null ? `${w.balance.toFixed(4)} ${w.nativeSymbol}` : '—'}
+                      </p>
+                      {w.balanceUsd !== null && w.balanceUsd > 0 && (
+                        <p className="text-xs text-text-muted">≈ ${w.balanceUsd.toFixed(2)} USD</p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <p className="font-mono text-[10px] text-text-muted truncate" title={w.address}>
+                  {w.address}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Manual Deposit Form ──────────────────────────────────────────────────────
+
+function ManualDepositForm({ onSuccess }: { onSuccess: () => void }) {
+  const [open, setOpen]           = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+  const [success, setSuccess]     = useState<string | null>(null)
+
+  const [chain, setChain]               = useState('')
+  const [nativeAmount, setNativeAmount] = useState('')
+  const [txHash, setTxHash]             = useState('')
+  const [fromAddress, setFromAddress]   = useState('')
+  const [toAddress, setToAddress]       = useState('')
+  const [notes, setNotes]               = useState('')
+
+  function reset() {
+    setChain(''); setNativeAmount(''); setTxHash('')
+    setFromAddress(''); setToAddress(''); setNotes('')
+    setError(null)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const amt = parseFloat(nativeAmount)
+    if (!chain || isNaN(amt) || amt <= 0) {
+      setError('Chain and a valid amount > 0 are required.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await adminApi.logManualDeposit({
+        chain,
+        nativeAmount: amt,
+        ...(txHash      ? { txHash }      : {}),
+        ...(fromAddress ? { fromAddress } : {}),
+        ...(toAddress   ? { toAddress }   : {}),
+        ...(notes       ? { notes }       : {}),
+      })
+      setSuccess(`Manual deposit logged for ${amt} on ${chain}.`)
+      setTimeout(() => setSuccess(null), 4000)
+      reset()
+      setOpen(false)
+      onSuccess()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to log deposit')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div>
+      {success && (
+        <div className="px-4 py-3 bg-success/10 border border-success/20 rounded-xl text-success text-sm mb-3">{success}</div>
+      )}
+
+      {!open ? (
+        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+          + Log Manual Deposit
+        </Button>
+      ) : (
+        <div className="bg-white rounded-xl border border-border p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-text-primary">Log Manual Deposit</h3>
+            <button onClick={() => { setOpen(false); reset() }} className="text-text-muted hover:text-text-primary text-xl leading-none">&times;</button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Chain *</label>
+                <select
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                  value={chain}
+                  onChange={(e) => setChain(e.target.value)}
+                  required
+                >
+                  <option value="">Select chain…</option>
+                  {CHAINS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Amount (native) *</label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                  placeholder="e.g. 11.5"
+                  value={nativeAmount}
+                  onChange={(e) => setNativeAmount(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Tx Hash</label>
+              <input
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono"
+                placeholder="0x… or transaction hash"
+                value={txHash}
+                onChange={(e) => setTxHash(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">From Address</label>
+                <input
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono"
+                  placeholder="Sender address"
+                  value={fromAddress}
+                  onChange={(e) => setFromAddress(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">To Address (hot wallet)</label>
+                <input
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono"
+                  placeholder="Hot wallet address"
+                  value={toAddress}
+                  onChange={(e) => setToAddress(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Notes</label>
+              <input
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="e.g. Manual POL top-up from OKX on 2026-05-22"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+
+            {error && <p className="text-danger text-sm">{error}</p>}
+
+            <div className="flex gap-2 pt-1">
+              <Button type="submit" size="sm" disabled={submitting}>
+                {submitting ? 'Saving…' : 'Log Deposit'}
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setOpen(false); reset() }}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function GasWalletActivityPage() {
+  const user = useAuthStore((s) => s.user)
+  const isSuperAdmin = user?.role === 'super_admin'
+
   const [items, setItems]     = useState<LedgerEntry[]>([])
   const [total, setTotal]     = useState(0)
   const [page, setPage]       = useState(1)
@@ -110,15 +416,24 @@ export default function GasWalletActivityPage() {
 
   return (
     <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Gas Wallet Activity</h1>
           <p className="text-text-muted text-sm mt-0.5">
-            All hot-wallet financial movements — deposits, deliveries, refills, and top-ups.
+            Live balances + all hot-wallet financial movements.
           </p>
         </div>
-        <p className="text-sm text-text-muted">{total.toLocaleString()} records</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-text-muted">{total.toLocaleString()} records</p>
+          {isSuperAdmin && (
+            <ManualDepositForm onSuccess={() => fetchActivity(1)} />
+          )}
+        </div>
       </div>
+
+      {/* Live balances */}
+      <LiveBalancesPanel />
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-border p-4">
@@ -209,7 +524,6 @@ export default function GasWalletActivityPage() {
 
                   return (
                     <tr key={entry.id} className="hover:bg-surface/50 transition-colors">
-                      {/* Type */}
                       <td className="px-4 py-3">
                         <span className={cn(
                           'inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
@@ -219,12 +533,10 @@ export default function GasWalletActivityPage() {
                         </span>
                       </td>
 
-                      {/* Chain */}
                       <td className="px-4 py-3">
                         <Badge variant="default" size="sm">{entry.chain}</Badge>
                       </td>
 
-                      {/* Amount */}
                       <td className="px-4 py-3">
                         <p className={cn(
                           'text-sm font-semibold',
@@ -237,18 +549,33 @@ export default function GasWalletActivityPage() {
                         )}
                       </td>
 
-                      {/* Tx Hash */}
                       <td className="px-4 py-3">
                         {entry.txHash ? (
-                          <span className="font-mono text-[11px] text-text-secondary" title={entry.txHash}>
-                            {shortHash(entry.txHash)}
-                          </span>
+                          (() => {
+                            const explorerBase = EXPLORER_URL[entry.chain]
+                            const txExplorer = explorerBase
+                              ? (entry.chain === 'TRON'
+                                  ? `https://tronscan.org/#/transaction/${entry.txHash}`
+                                  : entry.chain === 'APT'
+                                    ? `https://explorer.aptoslabs.com/txn/${entry.txHash}`
+                                    : `${explorerBase.replace('/address/', '/tx/')}${entry.txHash}`)
+                              : null
+                            return txExplorer ? (
+                              <a href={txExplorer} target="_blank" rel="noopener noreferrer"
+                                className="font-mono text-[11px] text-primary hover:underline" title={entry.txHash}>
+                                {shortHash(entry.txHash)}
+                              </a>
+                            ) : (
+                              <span className="font-mono text-[11px] text-text-secondary" title={entry.txHash}>
+                                {shortHash(entry.txHash)}
+                              </span>
+                            )
+                          })()
                         ) : (
                           <span className="text-text-muted text-xs">—</span>
                         )}
                       </td>
 
-                      {/* From / To */}
                       <td className="px-4 py-3 max-w-[180px]">
                         {entry.fromAddress && (
                           <p className="font-mono text-[10px] text-text-muted truncate" title={entry.fromAddress}>
@@ -265,7 +592,6 @@ export default function GasWalletActivityPage() {
                         )}
                       </td>
 
-                      {/* Related order */}
                       <td className="px-4 py-3">
                         {entry.relatedOrder ? (
                           <Link
@@ -279,7 +605,6 @@ export default function GasWalletActivityPage() {
                         )}
                       </td>
 
-                      {/* Time */}
                       <td className="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
                         {fmt(entry.createdAt)}
                       </td>

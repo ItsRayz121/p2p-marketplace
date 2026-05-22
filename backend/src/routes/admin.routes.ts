@@ -18,7 +18,7 @@ import { Prisma } from '@prisma/client'
 import { getWithdrawalTierConfig, upsertWithdrawalTierConfig } from '../services/withdrawal-risk.service'
 import { getNativeUsdPrice, testRpcHealth, getHotWalletBalance } from '../lib/gas/gas.balance'
 import { getAllTreasuryAddresses, getTreasuryBalance } from '../lib/gas/gas.treasury'
-import { getLedgerEntries, getLedgerSummary } from '../lib/gas/gas.ledger'
+import { getLedgerEntries, getLedgerSummary, appendLedgerEntry, nativeSymbol } from '../lib/gas/gas.ledger'
 import { getAllThresholds, getThreshold, upsertThreshold, setThresholdEnabled, validateThreshold } from '../lib/gas/gas.thresholds'
 import { approveRefill, cancelRefill, checkAndQueueRefills, processApprovedRefills } from '../lib/gas/gas.refill'
 import { getTronHotWalletAddress, getEvmHotWalletAddress, getTronTreasuryAddress, getEvmTreasuryAddress } from '../lib/gas/gasWalletService'
@@ -2096,6 +2096,89 @@ export async function adminRoutes(app: FastifyInstance) {
       success: true,
       data: { activity: entries, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
+  })
+
+  // GET /admin/gas/hot-wallet-balances — live on-chain balance for every active hot wallet
+  app.get('/admin/gas/hot-wallet-balances', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { getHotWalletBalance, getNativeUsdPrice } = await import('../lib/gas/gas.balance')
+    const { fromDbChain } = await import('../lib/gas/gas.chains')
+
+    const wallets = await db.gasHotWallet.findMany({
+      where: { isActive: true },
+      select: { chain: true, address: true },
+      orderBy: { chain: 'asc' },
+    })
+
+    const results = await Promise.allSettled(
+      wallets.map(async (w) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chainId = fromDbChain(w.chain) as any
+        const [balance, usdPrice] = await Promise.all([
+          getHotWalletBalance(chainId, w.address),
+          getNativeUsdPrice(chainId).catch(() => 0),
+        ])
+        return {
+          chain: w.chain as string,
+          address: w.address,
+          balance,
+          balanceUsd: balance * usdPrice,
+          nativeSymbol: nativeSymbol(chainId as string),
+          fetchedAt: new Date().toISOString(),
+          error: null as string | null,
+        }
+      }),
+    )
+
+    const balances = results.map((r, i) => {
+      if (r.status === 'fulfilled') return r.value
+      return {
+        chain: wallets[i]!.chain as string,
+        address: wallets[i]!.address,
+        balance: null as number | null,
+        balanceUsd: null as number | null,
+        nativeSymbol: wallets[i]!.chain as string,
+        fetchedAt: new Date().toISOString(),
+        error: r.reason instanceof Error ? r.reason.message : 'Failed to fetch',
+      }
+    })
+
+    return reply.send({ success: true, data: { balances, fetchedAt: new Date().toISOString() } })
+  })
+
+  // POST /admin/gas/wallet-activity/manual — super_admin creates a manual ledger entry for a missed deposit
+  app.post('/admin/gas/wallet-activity/manual', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const body = req.body as {
+      chain: string
+      nativeAmount: number
+      txHash?: string
+      fromAddress?: string
+      toAddress?: string
+      notes?: string
+    }
+
+    if (!body.chain || !body.nativeAmount || body.nativeAmount <= 0) {
+      return reply.code(400).send({ success: false, error: 'chain and nativeAmount (> 0) are required' })
+    }
+
+    const { fromDbChain } = await import('../lib/gas/gas.chains')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chainId = fromDbChain(body.chain as any) as any
+
+    const entry = await appendLedgerEntry({
+      entryType:   'external_hot_wallet_deposit',
+      chain:       chainId,
+      nativeAmount: body.nativeAmount,
+      ...(body.txHash      ? { txHash:      body.txHash }      : {}),
+      ...(body.fromAddress ? { fromAddress: body.fromAddress } : {}),
+      ...(body.toAddress   ? { toAddress:   body.toAddress }   : {}),
+      notes: body.notes ?? 'Manual entry by admin',
+    })
+
+    await createAuditLog(req.user!.id, 'GAS_MANUAL_LEDGER_ENTRY', 'GasLedgerEntry', entry.id, {
+      chain: body.chain, nativeAmount: body.nativeAmount, txHash: body.txHash ?? null,
+    })
+
+    return reply.code(201).send({ success: true, data: entry })
   })
 
   app.post('/admin/gas/orders/:id/retry', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
