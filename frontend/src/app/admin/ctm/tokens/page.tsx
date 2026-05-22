@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { invalidateLogoCache } from '@/hooks/useLogoRegistry'
 
 const STATUS_COLORS: Record<string, string> = {
   approved: 'bg-green-100 text-green-700',
@@ -131,6 +132,7 @@ export default function AdminCtmTokensPage() {
       if (addForm.minTradeAmountPkr) payload.minTradeAmountPkr = parseFloat(addForm.minTradeAmountPkr)
 
       await ctmApi.adminCreateToken(payload)
+      invalidateLogoCache()
       setShowAdd(false)
       setAddForm(EMPTY_ADD)
       await fetchTokens()

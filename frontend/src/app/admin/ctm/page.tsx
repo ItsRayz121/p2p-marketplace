@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 interface CtmStats {
   trades: { total: number; completed: number; active: number; disputed: number; expired: number }
@@ -126,11 +127,7 @@ export default function AdminCtmDashboardPage() {
                   <tr key={t.id} className="hover:bg-surface/50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {t.logoUrl ? (
-                          <img src={t.logoUrl} alt={t.name} className="w-6 h-6 rounded-full object-cover" />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">{t.symbol.charAt(0)}</div>
-                        )}
+                        <EntityLogo type="token" slug={t.symbol} size="sm" logoUrl={t.logoUrl} />
                         <span className="font-medium text-text-primary">{t.name}</span>
                         <span className="text-text-muted text-xs">{t.symbol}</span>
                       </div>

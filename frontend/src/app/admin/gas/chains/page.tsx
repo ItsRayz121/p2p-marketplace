@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { adminApi, type AdminGasChain, type AdminGasToken, type TokenLookupResult, type GasChainLookupResult, type TokenAddressLookupResult } from '@/lib/api'
 import { CHAIN_META, CHAIN_CATEGORIES, ADDRESS_TYPES } from '@/lib/chainTokenStandards'
 import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
+import { invalidateLogoCache } from '@/hooks/useLogoRegistry'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -993,6 +994,7 @@ export default function GasChainsAdminPage() {
         await adminApi.createGasChain(payload)
         flash('Chain created.')
       }
+      invalidateLogoCache()
       setShowChainModal(false)
       fetchChains()
     } catch (e: unknown) {
@@ -1081,6 +1083,7 @@ export default function GasChainsAdminPage() {
         await adminApi.createGasToken(payload)
         flash('Token created.')
       }
+      invalidateLogoCache()
       setShowTokenModal(false)
       fetchTokens()
     } catch (e: unknown) {
