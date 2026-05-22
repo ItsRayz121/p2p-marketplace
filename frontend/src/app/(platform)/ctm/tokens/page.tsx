@@ -6,6 +6,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
@@ -96,13 +97,7 @@ export default function CtmTokensPage() {
           {tokens.map((token) => (
             <Link key={token.id} href={`/ctm/tokens/${token.slug}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-3">
-                {token.logoUrl ? (
-                  <img src={token.logoUrl} alt={token.name} className="w-10 h-10 rounded-full object-cover" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold text-sm flex items-center justify-center flex-shrink-0">
-                    {token.symbol.charAt(0)}
-                  </div>
-                )}
+                <EntityLogo type="token" slug={token.symbol} size="xl" logoUrl={token.logoUrl} />
                 <div className="min-w-0">
                   <p className="font-semibold text-text-primary truncate">{token.name}</p>
                   <p className="text-xs text-text-muted">{token.symbol}</p>

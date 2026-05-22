@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuthStore } from '@/store/auth.store'
 
 function timeLeft(expiresAt: string): string {
@@ -117,11 +118,7 @@ export default function RequestBoardPage() {
               <div key={r.id} className="bg-white border border-border rounded-xl p-5">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    {r.token.logoUrl ? (
-                      <img src={r.token.logoUrl} alt={r.token.name} className="w-10 h-10 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm">{r.token.symbol.charAt(0)}</div>
-                    )}
+                    <EntityLogo type="token" slug={r.token.symbol} size="xl" logoUrl={r.token.logoUrl} />
                     <div>
                       <p className="font-semibold text-text-primary">{r.amount} {r.token.symbol}</p>
                       <p className="text-xs text-text-muted">by {r.user.username} · {timeLeft(r.expiresAt)} left</p>

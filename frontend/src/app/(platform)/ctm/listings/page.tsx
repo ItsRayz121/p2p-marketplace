@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'Bank Transfer', 'SadaPay', 'NayaPay']
 
@@ -83,11 +84,7 @@ export default function BrowseListingsPage() {
             <div key={l.id} className="bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                 <div className="flex items-center gap-3 sm:w-44">
-                  {l.token.logoUrl ? (
-                    <img src={l.token.logoUrl} alt={l.token.name} className="w-9 h-9 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-primary/10 text-primary font-bold text-sm flex items-center justify-center">{l.token.symbol.charAt(0)}</div>
-                  )}
+                  <EntityLogo type="token" slug={l.token.symbol} size="lg" logoUrl={l.token.logoUrl} />
                   <div>
                     <p className="font-semibold text-text-primary text-sm">{l.token.name}</p>
                     <p className="text-xs text-text-muted">{l.token.symbol}</p>

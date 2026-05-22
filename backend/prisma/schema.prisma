@@ -1875,3 +1875,27 @@ model DepositToken {
   @@index([symbol])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GLOBAL LOGO REGISTRY
+// Stores admin-uploaded logos for any entity type that doesn't have its own
+// logoUrl field (payment methods, banks, wallet providers, etc.).
+// Chains and tokens upload directly to GasChainConfig / GasTokenConfig / CtmToken;
+// this table covers everything else and acts as an override layer for all types.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LogoRegistry {
+  id        String   @id @default(cuid())
+  // "chain" | "token" | "payment_method" | "bank" | "wallet_provider"
+  type      String
+  // Normalized slug: uppercase for chain/token (e.g. "BSC", "USDT"),
+  // lowercase for payment_method/bank/wallet_provider (e.g. "jazzcash", "hbl")
+  slug      String
+  logoUrl   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, slug])
+  @@index([type])
+}
+
+

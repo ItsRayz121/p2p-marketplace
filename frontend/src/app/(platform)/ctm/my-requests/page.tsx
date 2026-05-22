@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 function timeLeft(expiresAt: string): string {
   const diff = new Date(expiresAt).getTime() - Date.now()
@@ -100,9 +101,12 @@ export default function MyRequestsPage() {
             {requests.map((r) => (
               <div key={r.id} className="bg-white border border-border rounded-xl p-5">
                 <div className="flex items-start justify-between gap-3 mb-4">
-                  <div>
-                    <p className="font-semibold text-text-primary">{r.side === 'buy' ? 'Buying' : 'Selling'} {r.amount} {r.token.symbol}</p>
-                    <p className="text-xs text-text-muted">{r.status} · {timeLeft(r.expiresAt)} left</p>
+                  <div className="flex items-center gap-2.5">
+                    <EntityLogo type="token" slug={r.token.symbol} size="md" logoUrl={r.token.logoUrl} />
+                    <div>
+                      <p className="font-semibold text-text-primary">{r.side === 'buy' ? 'Buying' : 'Selling'} {r.amount} {r.token.symbol}</p>
+                      <p className="text-xs text-text-muted">{r.status} · {timeLeft(r.expiresAt)} left</p>
+                    </div>
                   </div>
                   {r.status === 'open' && (
                     <button onClick={() => handleCancel(r.id)} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Cancel</button>

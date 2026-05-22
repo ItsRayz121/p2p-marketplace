@@ -5,6 +5,7 @@ import { ctmApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
@@ -30,13 +31,7 @@ function TokenCard({ token }: { token: CtmToken }) {
   return (
     <Link href={`/ctm/tokens/${token.slug}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
       <div className="flex items-center gap-3 mb-3">
-        {token.logoUrl ? (
-          <img src={token.logoUrl} alt={token.name} className="w-10 h-10 rounded-full object-cover" />
-        ) : (
-          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold text-sm flex items-center justify-center flex-shrink-0">
-            {token.symbol.charAt(0)}
-          </div>
-        )}
+        <EntityLogo type="token" slug={token.symbol} size="xl" logoUrl={token.logoUrl} />
         <div className="min-w-0">
           <p className="font-semibold text-text-primary truncate">{token.name}</p>
           <p className="text-xs text-text-muted">{token.symbol}</p>

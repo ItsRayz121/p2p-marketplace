@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const STATUS_COLORS: Record<string, string> = {
   approved: 'bg-green-100 text-green-700',
@@ -196,7 +197,7 @@ export default function AdminCtmTokensPage() {
                 <tr key={t.id} className="hover:bg-surface/50">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {t.logoUrl ? <img src={t.logoUrl} alt={t.name} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center">{t.symbol.charAt(0)}</div>}
+                      <EntityLogo type="token" slug={t.symbol} size="md" logoUrl={t.logoUrl} />
                       <div><p className="font-medium text-text-primary">{t.name}</p><p className="text-xs text-text-muted">{t.symbol} · {t.slug}</p></div>
                     </div>
                   </td>

@@ -6,6 +6,7 @@ import { ctmApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
@@ -60,13 +61,7 @@ export default function CtmTokenDetailPage() {
       {/* Header */}
       <div className="bg-white border border-border rounded-xl p-6">
         <div className="flex items-start gap-4">
-          {token.logoUrl ? (
-            <img src={token.logoUrl} alt={token.name} className="w-16 h-16 rounded-full object-cover flex-shrink-0" />
-          ) : (
-            <div className="w-16 h-16 rounded-full bg-primary/10 text-primary text-2xl font-bold flex items-center justify-center flex-shrink-0">
-              {token.symbol.charAt(0)}
-            </div>
-          )}
+          <EntityLogo type="token" slug={token.symbol} size="2xl" logoUrl={token.logoUrl} className="w-16 h-16" />
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-bold text-text-primary">{token.name}</h1>
             <p className="text-text-muted">{token.symbol}</p>

@@ -3,6 +3,7 @@ import { useState, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuthStore } from '@/store/auth.store'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
@@ -85,11 +86,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       <div className="bg-white border border-border rounded-xl p-6">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex items-center gap-4">
-            {listing.token.logoUrl ? (
-              <img src={listing.token.logoUrl} alt={listing.token.name} className="w-14 h-14 rounded-full object-cover" />
-            ) : (
-              <div className="w-14 h-14 rounded-full bg-primary/10 text-primary font-bold text-xl flex items-center justify-center">{listing.token.symbol.charAt(0)}</div>
-            )}
+            <EntityLogo type="token" slug={listing.token.symbol} size="2xl" logoUrl={listing.token.logoUrl} />
             <div>
               <h1 className="text-xl font-bold text-text-primary">{listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}</h1>
               <p className="text-text-muted text-sm">{listing.token.symbol} · {listing.token.settlementType}</p>

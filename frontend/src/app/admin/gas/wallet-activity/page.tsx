@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -192,9 +193,12 @@ function LiveBalancesPanel() {
 
             return (
               <div key={w.chain} className="p-3 flex flex-col gap-1.5 min-w-0">
-                {/* Header row: status dot + chain + explorer */}
+                {/* Header row: chain logo + chain name + status dot + explorer */}
                 <div className="flex items-center justify-between gap-1 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
+                    <EntityLogo type="chain" slug={w.chain} size="sm" />
+                    <span className="font-bold text-xs text-text-primary truncate">{w.chain}</span>
+                    <span className="text-[10px] text-text-muted shrink-0">{w.nativeSymbol}</span>
                     <span className={cn(
                       'w-1.5 h-1.5 rounded-full shrink-0',
                       w.error        ? 'bg-danger'
@@ -202,8 +206,6 @@ function LiveBalancesPanel() {
                       : w.balance === 0    ? 'bg-warning'
                       : 'bg-success',
                     )} />
-                    <span className="font-bold text-xs text-text-primary truncate">{w.chain}</span>
-                    <span className="text-[10px] text-text-muted shrink-0">{w.nativeSymbol}</span>
                   </div>
                   {explorerLink && (
                     <a href={explorerLink} target="_blank" rel="noopener noreferrer"
@@ -582,7 +584,10 @@ export default function GasWalletActivityPage() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <Badge variant="default" size="sm">{entry.chain}</Badge>
+                        <div className="flex items-center gap-1.5">
+                          <EntityLogo type="chain" slug={entry.chain} size="xs" />
+                          <Badge variant="default" size="sm">{entry.chain}</Badge>
+                        </div>
                       </td>
 
                       <td className="px-4 py-3">

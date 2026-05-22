@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const STATUS_COLORS: Record<string, string> = {
   awaiting_payment: 'bg-yellow-100 text-yellow-800',
@@ -83,11 +84,7 @@ export default function MyCtmTradesPage() {
             <Link key={t.id} href={`/ctm/trade/${t.tradeRef}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  {t.token.logoUrl ? (
-                    <img src={t.token.logoUrl} alt={t.token.name} className="w-10 h-10 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm">{t.token.symbol.charAt(0)}</div>
-                  )}
+                  <EntityLogo type="token" slug={t.token.symbol} size="xl" logoUrl={t.token.logoUrl} />
                   <div>
                     <p className="font-semibold text-text-primary">{t.tokenAmount} {t.token.symbol}</p>
                     <p className="text-xs text-text-muted">PKR {Number(t.fiatAmount).toLocaleString()} · #{t.tradeRef.slice(-8)}</p>

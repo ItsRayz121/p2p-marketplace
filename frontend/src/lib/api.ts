@@ -1744,6 +1744,42 @@ export const ctmApi = {
   getEscrowInfo: (ref: string) => apiRequest<unknown>(`/ctm/trades/${ref}/escrow-info`),
 }
 
+// ─── Logo Registry ────────────────────────────────────────────────────────────
+
+export interface LogoRegistryEntry {
+  id:        string
+  type:      string
+  slug:      string
+  logoUrl:   string
+  createdAt: string
+  updatedAt: string
+}
+
+export const logoApi = {
+  /** Public: get all logos merged from GasChainConfig, GasTokenConfig, CtmToken, LogoRegistry */
+  getAll: () => apiRequest<{
+    chain:           Record<string, string>
+    token:           Record<string, string>
+    payment_method:  Record<string, string>
+    bank:            Record<string, string>
+    wallet_provider: Record<string, string>
+  }>('/logos'),
+
+  /** Admin: list all LogoRegistry rows */
+  adminList: () => apiRequest<LogoRegistryEntry[]>('/admin/logos'),
+
+  /** Admin: upsert a logo registry entry */
+  adminUpsert: (body: { type: string; slug: string; logoUrl: string }) =>
+    apiRequest<LogoRegistryEntry>('/admin/logos', {
+      method: 'POST',
+      body:   JSON.stringify(body),
+    }),
+
+  /** Admin: delete a logo registry entry */
+  adminDelete: (id: string) =>
+    apiRequest<void>(`/admin/logos/${id}`, { method: 'DELETE' }),
+}
+
 // ─── Health Check ─────────────────────────────────────────────────────────────
 
 export type HealthCheckResponse = {
