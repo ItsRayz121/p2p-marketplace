@@ -1,4 +1,4 @@
-﻿// PakSwap â€” Complete Prisma Schema
+// PakSwap â€” Complete Prisma Schema
 // Source: FULL_SPEC.md Section 18 + GAS_FEE_SPEC.md Section 7
 
 generator client {
