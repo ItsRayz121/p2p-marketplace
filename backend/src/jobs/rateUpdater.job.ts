@@ -35,7 +35,9 @@
 // BNB    │ BNB Smart Chain (BSC), opBNB
 // TRX    │ TRON (also has dedicated CoinPaprika/CryptoCompare fallback)
 // AVAX   │ Avalanche C-Chain
-// MATIC  │ Polygon (priceSymbol stays 'MATIC' even though token renamed to POL)
+// MATIC  │ Polygon legacy alias — kept for backward compat; same price as POL
+// POL    │ Polygon native token (renamed from MATIC, Sept 2024). Both rate:MATIC
+//          and rate:POL are written every cycle so all lookup paths resolve.
 // SOL    │ Solana
 // TON    │ TON
 // SUI    │ SUI
@@ -57,6 +59,7 @@ const COINGECKO_IDS: Record<string, string> = {
   TRX:  'tron',
   AVAX: 'avalanche-2',
   MATIC: 'matic-network',
+  POL:   'matic-network',  // POL = renamed MATIC (same CoinGecko slug, backward-compat)
   TON:  'the-open-network',
   SUI:  'sui',
   APT:  'aptos',
@@ -71,7 +74,8 @@ const BINANCE_SYMBOLS: Record<string, string> = {
   SOL:  'SOLUSDT',
   TRX:  'TRXUSDT',
   AVAX: 'AVAXUSDT',
-  MATIC: 'MATICUSDT',
+  MATIC: 'MATICUSDT',  // legacy — may be delisted; POL below is primary
+  POL:   'POLUSDT',    // Polygon native renamed MATIC→POL (Sept 2024)
   TON:  'TONUSDT',
   SUI:  'SUIUSDT',
   APT:  'APTUSDT',
@@ -101,7 +105,8 @@ const BYBIT_SYMBOLS: Record<string, string> = {
   SOL:  'SOLUSDT',
   TRX:  'TRXUSDT',
   AVAX: 'AVAXUSDT',
-  MATIC: 'MATICUSDT',
+  MATIC: 'MATICUSDT',  // legacy — may be delisted; POL below is primary
+  POL:   'POLUSDT',    // Polygon native renamed MATIC→POL (Sept 2024)
   TON:  'TONUSDT',
   SUI:  'SUIUSDT',
   APT:  'APTUSDT',
@@ -121,6 +126,7 @@ const FREECRYPTOAPI_SYMBOLS: Record<string, string> = {
   TRX:  'TRX',
   AVAX: 'AVAX',
   MATIC: 'MATIC',
+  POL:   'POL',   // Polygon native renamed MATIC→POL (Sept 2024)
   TON:  'TON',
   SUI:  'SUI',
   APT:  'APT',
@@ -157,7 +163,7 @@ async function fetchPricesFromFreeCryptoApi(): Promise<Record<string, number>> {
 // Auth: X-API-KEY header
 // Response: { coins: [{ symbol: string, price: number }] }
 // Free tier: 20,000 requests/month. At 288 runs/day × 30 = 8,640/month — well within.
-const COINSTATS_SYMBOLS = new Set(['BTC','ETH','BNB','SOL','TRX','AVAX','MATIC','TON','SUI','APT','NEAR','USDC'])
+const COINSTATS_SYMBOLS = new Set(['BTC','ETH','BNB','SOL','TRX','AVAX','MATIC','POL','TON','SUI','APT','NEAR','USDC'])
 
 async function fetchPricesFromCoinStats(): Promise<Record<string, number>> {
   if (!env.COINSTATS_API_KEY) throw new Error('COINSTATS_API_KEY not set — skipping')
@@ -190,7 +196,7 @@ async function fetchPricesFromCoinStats(): Promise<Record<string, number>> {
 // Endpoint: GET https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC,ETH,...
 // Auth: X-CMC_PRO_API_KEY header
 // Response: { data: { BTC: { quote: { USD: { price: number } } } } }
-const CMC_SYMBOLS = ['BTC','ETH','BNB','SOL','TRX','AVAX','MATIC','TON','SUI','APT','NEAR','USDC']
+const CMC_SYMBOLS = ['BTC','ETH','BNB','SOL','TRX','AVAX','MATIC','POL','TON','SUI','APT','NEAR','USDC']
 
 async function fetchPricesFromCoinMarketCap(): Promise<Record<string, number>> {
   if (!env.CMC_API_KEY) throw new Error('CMC_API_KEY not set — skipping')
@@ -459,6 +465,7 @@ async function fetchMissingCoins(
   // Attempt 3: CoinPaprika individual calls for any still-missing coins
   const PAPRIKA_IDS: Record<string, string> = {
     MATIC: 'matic-network',
+    POL:   'matic-network',  // POL = renamed MATIC; same CoinPaprika ID
     TON:   'ton-the-open-network',
     SUI:   'sui-sui',
     APT:   'apt-aptos',
@@ -623,6 +630,17 @@ export async function updateRates(): Promise<void> {
         coinSources[sym] = patchedSources[sym] ?? 'fallback'
       }
     }
+
+    // 2d. POL ↔ MATIC alias: Polygon renamed its native token from MATIC to POL in
+    // Sept 2024. Exchanges are migrating from MATICUSDT to POLUSDT. Mirror prices
+    // between the two keys so all lookup paths resolve regardless of which symbol the
+    // winning source returned.
+    const polOrMatic = priceMap['POL'] ?? priceMap['MATIC']
+    if (polOrMatic !== undefined) {
+      if (!priceMap['POL'])   { priceMap['POL']   = polOrMatic; coinSources['POL']   = coinSources['MATIC'] ?? 'matic-pol-alias' }
+      if (!priceMap['MATIC']) { priceMap['MATIC'] = polOrMatic; coinSources['MATIC'] = coinSources['POL']   ?? 'matic-pol-alias' }
+    }
+    logger.debug({ polPrice: priceMap['POL'], maticPrice: priceMap['MATIC'] }, '[POL/MATIC] alias mirror applied')
 
     // 3. Calculate PKR rates and write to Redis + DB
     const now = new Date().toISOString()

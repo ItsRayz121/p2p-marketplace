@@ -3,6 +3,7 @@ import { createPublicClient, http, formatEther } from 'viem'
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
 import { redis } from '../redis'
 import { env } from '../env'
+import { logger } from '../logger'
 import type { GasChainId } from './gas.chains'
 import { getSolanaBalance, checkSolanaRpc } from './solanaWalletService'
 import { getTonBalance, checkTonRpc } from './tonWalletService'
@@ -21,6 +22,10 @@ export interface RpcHealthResult {
 
 // ── Native → USD price ────────────────────────────────────────────────────────
 
+// Polygon renamed its native token from MATIC to POL in September 2024.
+// rate:POL and rate:MATIC are both written by the rate updater every cycle.
+// The lookup tries the primary symbol first; if price is 0 it falls back to
+// the alias so the pipeline is resilient to any single source being stale.
 const CHAIN_PRICE_SYMBOL: Record<GasChainId, string> = {
   TRON:     'TRX',
   BSC:      'BNB',
@@ -28,22 +33,57 @@ const CHAIN_PRICE_SYMBOL: Record<GasChainId, string> = {
   BASE:     'ETH',
   ARB:      'ETH',
   OP:       'ETH',
-  MATIC:    'MATIC',
+  MATIC:    'POL',   // display symbol = POL; rate:POL written by rate updater
   AVAX:     'AVAX',
   SOL:      'SOL',
   TON:      'TON',
   SUI:      'SUI',
 }
 
+// POL ↔ MATIC legacy compatibility: if either Redis key is missing, try the other.
+// Accepted legacy aliases for Polygon: MATIC, WMATIC → resolved to POL.
+const PRICE_SYMBOL_ALIASES: Record<string, string> = {
+  POL:   'MATIC',
+  MATIC: 'POL',
+}
+
+async function readPkrRate(symbol: string): Promise<number> {
+  const raw = await redis.get(`rate:${symbol}`)
+  if (!raw) return 0
+  return (JSON.parse(raw) as { rate: number }).rate
+}
+
 export async function getNativeUsdPrice(chain: GasChainId): Promise<number> {
-  const symbol = CHAIN_PRICE_SYMBOL[chain]
-  const [usdPkrStr, symbolStr] = await Promise.all([
-    redis.get('rate:USD_PKR'),
-    redis.get(`rate:${symbol}`),
-  ])
-  const usdPkr   = usdPkrStr ? parseFloat(usdPkrStr) : 0
-  const pkrRate  = symbolStr ? (JSON.parse(symbolStr) as { rate: number }).rate : 0
-  return usdPkr > 0 && pkrRate > 0 ? pkrRate / usdPkr : 0
+  const symbol   = CHAIN_PRICE_SYMBOL[chain]
+  const usdPkrStr = await redis.get('rate:USD_PKR')
+  const usdPkr    = usdPkrStr ? parseFloat(usdPkrStr) : 0
+
+  let pkrRate = await readPkrRate(symbol)
+
+  // Fallback: if primary symbol has no cached price, try the alias (POL↔MATIC)
+  if (pkrRate === 0) {
+    const alias = PRICE_SYMBOL_ALIASES[symbol]
+    if (alias) {
+      pkrRate = await readPkrRate(alias)
+      if (pkrRate > 0) {
+        logger.debug({ chain, primarySymbol: symbol, fallbackAlias: alias },
+          '[POL/MATIC] resolved price via alias fallback')
+      }
+    }
+  }
+
+  const usdPrice = usdPkr > 0 && pkrRate > 0 ? pkrRate / usdPkr : 0
+
+  logger.debug({
+    chain,
+    detectedNativeSymbol: symbol,    // display symbol used for price lookup
+    resolvedPricingSymbol: pkrRate > 0 ? symbol : (PRICE_SYMBOL_ALIASES[symbol] ?? symbol),
+    fetchedUsdPrice: usdPrice,
+    usdPkr,
+    pkrRate,
+  }, '[debug] getNativeUsdPrice')
+
+  return usdPrice
 }
 
 // ── TRON balance ──────────────────────────────────────────────────────────────

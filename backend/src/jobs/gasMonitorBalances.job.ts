@@ -80,6 +80,19 @@ async function monitorChain(
   const usdPrice = await getNativeUsdPrice(chain)
   const balanceUsd = usdPrice > 0 ? balance * usdPrice : null
 
+  logger.debug({
+    chain,
+    nativeBalance: balance,
+    usdPrice,
+    computedBalanceUsd: balanceUsd,
+    alertThresholdUsd: thresholds.alertThresholdUsd,
+    pauseThresholdUsd: thresholds.pauseThresholdUsd,
+    thresholdResult: balanceUsd === null ? 'no-usd-price'
+      : thresholds.pauseThresholdUsd !== null && balanceUsd <= thresholds.pauseThresholdUsd ? 'PAUSED'
+      : thresholds.alertThresholdUsd !== null && balanceUsd <= thresholds.alertThresholdUsd ? 'ALERT'
+      : 'ok',
+  }, '[gas-monitor] balance & threshold check')
+
   // Detect inbound top-up: if balance increased by more than dust since last check, notify admin
   const prevBalanceStr = await redis.get(balanceKey)
   if (prevBalanceStr !== null) {
@@ -130,7 +143,8 @@ async function monitorChain(
 
   if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) {
     await redis.set(pausedKey, '1', 'EX', PAUSED_TTL_S)
-    logger.error({ balanceUsd, pauseThresholdUsd, chain }, 'Gas hot wallet CRITICAL — below pause threshold (USD)')
+    logger.error({ balanceUsd, pauseThresholdUsd, chain, usdPrice },
+      'Gas hot wallet CRITICAL — below pause threshold (USD); verify rate:POL / rate:MATIC in Redis')
     void createAdminNotif({
       category: 'GAS',
       title:    `CRITICAL: ${chain} Hot Wallet Below Pause Threshold`,

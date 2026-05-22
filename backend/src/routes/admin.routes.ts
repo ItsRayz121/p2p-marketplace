@@ -3548,7 +3548,8 @@ export async function adminRoutes(app: FastifyInstance) {
     )
 
     // ── 7. Stale rate detection ───────────────────────────────────────────────
-    const rateSymbols = ['TRX', 'BNB', 'ETH', 'MATIC', 'AVAX', 'SOL', 'TON', 'SUI']
+    // POL is the renamed MATIC — check both so the dashboard flags either as stale
+    const rateSymbols = ['TRX', 'BNB', 'ETH', 'MATIC', 'POL', 'AVAX', 'SOL', 'TON', 'SUI']
     const rateChecks = await Promise.all(
       rateSymbols.map(async (sym) => {
         const v = await redisClient.get(`rate:${sym}`)
