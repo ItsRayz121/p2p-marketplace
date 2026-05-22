@@ -81,23 +81,21 @@ export async function runHotWalletDepositPoller(): Promise<void> {
             'Hot wallet deposit detected by balance-diff poller',
           )
 
-          const entry = await appendLedgerEntry({
-            entryType:    'external_hot_wallet_deposit',
-            chain:        chainId,
-            nativeAmount: diff,
-            toAddress:    w.address,
-            sourceKey,
-            notes: `source:BALANCE_DIFF chain:${w.chain} symbol:${sym} prev:${prevBalance.toFixed(6)} now:${currentBalance.toFixed(6)}`,
-          }).catch((err) => {
-            logger.warn({ err, chain: w.chain }, 'Balance-diff poller: failed to write ledger entry')
-            return null
-          })
-
-          if (entry === null) {
-            logger.info(
-              { sourceKey, chain: w.chain },
-              'Balance-diff poller: duplicate skipped — sourceKey already recorded',
-            )
+          // appendLedgerEntry returns null for P2002 (duplicate sourceKey) and
+          // re-throws all other errors — use try/catch so we don't conflate a
+          // real DB error with a "duplicate skipped" log.
+          try {
+            await appendLedgerEntry({
+              entryType:    'external_hot_wallet_deposit',
+              chain:        chainId,
+              nativeAmount: diff,
+              toAddress:    w.address,
+              sourceKey,
+              notes: `source:BALANCE_DIFF chain:${w.chain} symbol:${sym} prev:${prevBalance.toFixed(6)} now:${currentBalance.toFixed(6)}`,
+            })
+            // null return is logged inside appendLedgerEntry; no extra log needed here.
+          } catch (ledgerErr) {
+            logger.warn({ err: ledgerErr, chain: w.chain, sourceKey }, 'Balance-diff poller: failed to write ledger entry')
           }
         } else if (diff < -DUST_THRESHOLD) {
           // Balance decreased (outflow already recorded elsewhere — delivery, drain, etc.)
