@@ -1436,6 +1436,7 @@ export const adminApi = {
         balance: number | null
         balanceUsd: number | null
         nativeSymbol: string
+        tokens: Array<{ symbol: string; name: string; balanceFormatted: number; tokenAddress: string }>
         fetchedAt: string
         error: string | null
       }>

@@ -20,6 +20,7 @@ import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor } from '../ctm/ctm.jobs'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
+import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -224,6 +225,16 @@ export function startWorkers() {
     .catch((err) => logger.error({ err }, 'Failed to schedule gas payment poller'))
 
   createWorker(QUEUE_NAMES.GAS_PAYMENT_POLLER, async () => { await runGasPaymentPoller() }, { max: 1, duration: 60_000 })
+
+  // Hot-wallet deposit poller — runs every 2 minutes, detects direct balance
+  // increases (top-ups) even when Moralis webhooks don't fire.
+  queues.gasHotWalletDepositPoll
+    .add('poll', {}, { repeat: { every: 2 * 60_000 }, jobId: 'gas-hw-deposit-poll-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule hot-wallet deposit poller'))
+
+  createWorker(QUEUE_NAMES.GAS_HOT_WALLET_DEPOSIT_POLL, async () => {
+    await runHotWalletDepositPoller()
+  }, { max: 1, duration: 60_000 })
 
   logger.info('BullMQ workers ready')
 }

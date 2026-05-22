@@ -19,6 +19,7 @@ import { getWithdrawalTierConfig, upsertWithdrawalTierConfig } from '../services
 import { getNativeUsdPrice, testRpcHealth, getHotWalletBalance } from '../lib/gas/gas.balance'
 import { getAllTreasuryAddresses, getTreasuryBalance } from '../lib/gas/gas.treasury'
 import { getLedgerEntries, getLedgerSummary, appendLedgerEntry, nativeSymbol } from '../lib/gas/gas.ledger'
+import { getWalletTokenBalances } from '../lib/moralisClient'
 import { getAllThresholds, getThreshold, upsertThreshold, setThresholdEnabled, validateThreshold } from '../lib/gas/gas.thresholds'
 import { approveRefill, cancelRefill, checkAndQueueRefills, processApprovedRefills } from '../lib/gas/gas.refill'
 import { getTronHotWalletAddress, getEvmHotWalletAddress, getTronTreasuryAddress, getEvmTreasuryAddress } from '../lib/gas/gasWalletService'
@@ -2113,9 +2114,10 @@ export async function adminRoutes(app: FastifyInstance) {
       wallets.map(async (w) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const chainId = fromDbChain(w.chain) as any
-        const [balance, usdPrice] = await Promise.all([
+        const [balance, usdPrice, tokens] = await Promise.all([
           getHotWalletBalance(chainId, w.address),
           getNativeUsdPrice(chainId).catch(() => 0),
+          getWalletTokenBalances(w.chain as string, w.address).catch(() => []),
         ])
         return {
           chain: w.chain as string,
@@ -2123,6 +2125,7 @@ export async function adminRoutes(app: FastifyInstance) {
           balance,
           balanceUsd: balance * usdPrice,
           nativeSymbol: nativeSymbol(chainId as string),
+          tokens,
           fetchedAt: new Date().toISOString(),
           error: null as string | null,
         }
@@ -2137,6 +2140,7 @@ export async function adminRoutes(app: FastifyInstance) {
         balance: null as number | null,
         balanceUsd: null as number | null,
         nativeSymbol: wallets[i]!.chain as string,
+        tokens: [] as Array<{ symbol: string; name: string; balanceFormatted: number; tokenAddress: string }>,
         fetchedAt: new Date().toISOString(),
         error: r.reason instanceof Error ? r.reason.message : 'Failed to fetch',
       }

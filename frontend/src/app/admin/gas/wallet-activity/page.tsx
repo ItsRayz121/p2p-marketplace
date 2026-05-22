@@ -33,6 +33,7 @@ type LiveBalance = {
   balance: number | null
   balanceUsd: number | null
   nativeSymbol: string
+  tokens: Array<{ symbol: string; name: string; balanceFormatted: number; tokenAddress: string }>
   fetchedAt: string
   error: string | null
 }
@@ -198,6 +199,26 @@ function LiveBalancesPanel() {
                 <p className="font-mono text-[10px] text-text-muted truncate" title={w.address}>
                   {w.address}
                 </p>
+
+                {/* ERC-20 token balances */}
+                {w.tokens && w.tokens.length > 0 && (
+                  <div className="mt-2 space-y-0.5">
+                    {w.tokens
+                      .filter((t) => t.balanceFormatted > 0)
+                      .sort((a, b) => b.balanceFormatted - a.balanceFormatted)
+                      .slice(0, 5)
+                      .map((t) => (
+                        <div key={t.tokenAddress} className="flex items-center justify-between text-[11px]">
+                          <span className="text-text-muted font-medium">{t.symbol}</span>
+                          <span className="text-text-primary font-semibold">
+                            {t.balanceFormatted >= 1000
+                              ? t.balanceFormatted.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                              : t.balanceFormatted.toFixed(4)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
             )
           })}

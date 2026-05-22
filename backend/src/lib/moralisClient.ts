@@ -91,3 +91,59 @@ export async function getStreamMetadata(streamId: string): Promise<unknown | nul
   }
   return res.json().catch(() => null)
 }
+
+// ── Moralis Web3 Data API (separate base URL from Streams) ───────────────────
+
+const WEB3_BASE = 'https://deep-index.moralis.io/api/v2.2'
+
+// EVM chain hex IDs recognised by Moralis Web3 Data API
+const CHAIN_HEX: Record<string, string> = {
+  BSC:  '0x38',
+  ETH:  '0x1',
+  MATIC:'0x89',
+  ARB:  '0xa4b1',
+  OP:   '0xa',
+  BASE: '0x2105',
+  AVAX: '0xa86a',
+}
+
+export interface MoralisTokenBalance {
+  symbol: string
+  name: string
+  rawBalance: string  // raw integer string from chain
+  decimals: number
+  tokenAddress: string
+  balanceFormatted: number  // rawBalance / 10^decimals
+}
+
+/**
+ * Fetch all ERC-20 token balances for a hot wallet address.
+ * Uses the Moralis Web3 Data API (deep-index), not the Streams API.
+ * Returns [] if chain is not EVM or API key is missing.
+ */
+export async function getWalletTokenBalances(chain: string, address: string): Promise<MoralisTokenBalance[]> {
+  const hexChain = CHAIN_HEX[chain.toUpperCase()]
+  if (!hexChain || !env.MORALIS_API_KEY) return []
+
+  try {
+    const url = `${WEB3_BASE}/${encodeURIComponent(address)}/erc20?chain=${hexChain}`
+    const res = await fetch(url, {
+      headers: { 'x-api-key': env.MORALIS_API_KEY, accept: 'application/json' },
+      signal: AbortSignal.timeout(12_000),
+    })
+    if (!res.ok) return []
+
+    const data = await res.json() as Array<{
+      symbol: string; name: string; balance: string; decimals: string | number; token_address: string
+    }>
+
+    return data.map((t) => {
+      const decimals = Number(t.decimals)
+      const rawBalance = t.balance
+      const balanceFormatted = parseFloat(rawBalance) / Math.pow(10, decimals)
+      return { symbol: t.symbol, name: t.name, rawBalance, decimals, tokenAddress: t.token_address, balanceFormatted }
+    })
+  } catch {
+    return []
+  }
+}
