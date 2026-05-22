@@ -126,7 +126,7 @@ export default function GasReconciliationPage() {
       setResolveNote('')
       if (selectedRun) {
         const res = await adminApi.getReconciliationRun(selectedRun.id)
-        setSelectedRun(res.run as RunDetail)
+        setSelectedRun(res as RunDetail)
       }
       flash('Discrepancy resolved.')
     } catch (e: unknown) {
