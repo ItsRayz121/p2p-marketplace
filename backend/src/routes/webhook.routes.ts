@@ -265,7 +265,7 @@ export async function webhookRoutes(app: FastifyInstance) {
                   chain:       fromDbChain(hw.chain) as GasChainId,
                   nativeAmount,
                   txHash:      event.txHash,
-                  fromAddress: event.fromAddress || undefined,
+                  ...(event.fromAddress ? { fromAddress: event.fromAddress } : {}),
                   toAddress:   event.toAddress,
                   notes:       'Direct hot-wallet top-up detected via Moralis',
                 }).catch((e) => logger.warn({ err: e, txHash: event.txHash }, 'Failed to write external_hot_wallet_deposit ledger entry'))
