@@ -14,9 +14,22 @@ import {
 import { sendAdminAlertEmail } from '../services/email.service'
 import { getEffectiveDepositAddress } from '../lib/gas/gasWalletService'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
-import { fromDbChain } from '../lib/gas/gas.chains'
+import { fromDbChain, toDbChain, GAS_CHAINS } from '../lib/gas/gas.chains'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { getHotWalletBalance } from '../lib/gas/gas.balance'
+
+// Map from the EVM numeric chainId (decoded from Moralis payload.chainId hex)
+// to the GasChainId used internally.  All EVM chains share the same hot-wallet
+// address so we MUST resolve by chainId, not just by address.
+const EVM_CHAIN_ID_TO_GAS_CHAIN: Record<number, GasChainId> = {
+  1:     'ETHEREUM',
+  56:    'BSC',
+  137:   'MATIC',
+  42161: 'ARB',
+  10:    'OP',
+  8453:  'BASE',
+  43114: 'AVAX',
+}
 
 /**
  * Compute a candidate Moralis Streams signature.
@@ -273,9 +286,35 @@ export async function webhookRoutes(app: FastifyInstance) {
           // Record it as an external_hot_wallet_deposit ledger entry so it appears
           // in Gas Wallet Activity.
           if (r.status === 'ignored' && hotWalletSet.has(event.toAddress.toLowerCase())) {
-            const hw = hotWallets.find((w) => w.address.toLowerCase() === event.toAddress.toLowerCase())
+            // Resolve which chain this deposit is actually on using event.chainId
+            // (from payload.chainId hex). All EVM chains share one address, so we
+            // MUST NOT pick by address alone — that would record BNB-on-BSC as ETH.
+            const eventGasChain = EVM_CHAIN_ID_TO_GAS_CHAIN[event.chainId]
+            const eventDbChain  = eventGasChain ? toDbChain(eventGasChain) : undefined
+
+            // Find wallet matching address + exact chain; fall back to address-only
+            // for unknown chain IDs (non-EVM future chains, testnet, etc.).
+            const hw = (
+              eventDbChain
+                ? hotWallets.find((w) =>
+                    w.address.toLowerCase() === event.toAddress.toLowerCase() &&
+                    w.chain === eventDbChain,
+                  )
+                : undefined
+            ) ?? hotWallets.find((w) => w.address.toLowerCase() === event.toAddress.toLowerCase())
+
+            if (!eventGasChain) {
+              logger.warn(
+                { eventChainId: event.chainId, toAddress: event.toAddress },
+                'Webhook: unknown EVM chainId — falling back to first address match for hot-wallet ledger entry',
+              )
+            }
+
             if (hw) {
-              // Convert raw wei amount to native units (all native tokens use 18 decimals)
+              const hwChainId = fromDbChain(hw.chain) as GasChainId
+              const sym = GAS_CHAINS[hwChainId]?.nativeSymbol ?? hw.chain
+
+              // Convert raw wei amount to native units (all EVM native tokens use 18 decimals)
               let nativeAmount: number
               try {
                 const { formatUnits } = await import('viem')
@@ -285,27 +324,41 @@ export async function webhookRoutes(app: FastifyInstance) {
               }
 
               if (nativeAmount > 0) {
+                // Idempotency key: chain + txHash + toAddress.  The same tx on the
+                // same chain can only produce one ledger entry.
+                const sourceKey = `MORALIS:${hw.chain}:${event.txHash}:${event.toAddress.toLowerCase()}`
+
+                logger.info(
+                  {
+                    source:    'MORALIS_WEBHOOK',
+                    chain:     hw.chain,
+                    txHash:    event.txHash,
+                    address:   event.toAddress,
+                    symbol:    sym,
+                    amount:    nativeAmount,
+                    sourceKey,
+                  },
+                  'External hot-wallet deposit detected via Moralis webhook',
+                )
+
                 appendLedgerEntry({
                   entryType:   'external_hot_wallet_deposit',
-                  chain:       fromDbChain(hw.chain) as GasChainId,
+                  chain:       hwChainId,
                   nativeAmount,
                   txHash:      event.txHash,
+                  sourceKey,
                   ...(event.fromAddress ? { fromAddress: event.fromAddress } : {}),
                   toAddress:   event.toAddress,
-                  notes:       'Direct hot-wallet top-up detected via Moralis',
+                  notes:       `source:MORALIS_WEBHOOK chain:${hw.chain} symbol:${sym}`,
                 }).catch((e) => logger.warn({ err: e, txHash: event.txHash }, 'Failed to write external_hot_wallet_deposit ledger entry'))
 
                 // Refresh the balance-diff poller's Redis baseline so the next
-                // 2-minute tick sees no change and doesn't write a duplicate entry.
-                const pollerKey = `gas_hw_poll_balance:${hw.chain}:${hw.address.toLowerCase()}`
-                getHotWalletBalance(fromDbChain(hw.chain) as GasChainId, hw.address)
+                // 2-minute tick sees diff=0 and doesn't create a duplicate entry.
+                // Key format matches gasHotWalletDepositPoller: chain:address:symbol
+                const pollerKey = `gas_hw_poll_balance:${hw.chain}:${hw.address.toLowerCase()}:${sym}`
+                getHotWalletBalance(hwChainId, hw.address)
                   .then((bal) => redis.set(pollerKey, String(bal), 'EX', 3600))
-                  .catch(() => {}) // best-effort; poller will self-correct next tick
-
-                logger.info(
-                  { txHash: event.txHash, chain: hw.chain, amount: nativeAmount },
-                  'External hot-wallet deposit detected',
-                )
+                  .catch(() => {}) // best-effort; poller self-corrects next tick
               }
             }
           }

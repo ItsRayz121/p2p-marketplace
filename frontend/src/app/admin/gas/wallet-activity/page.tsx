@@ -92,11 +92,45 @@ function isInflow(entryType: string) {
 
 // ─── Live Balances Panel ──────────────────────────────────────────────────────
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  function copy() {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+  return (
+    <button
+      onClick={copy}
+      title="Copy address"
+      className="ml-1 shrink-0 text-text-muted hover:text-text-primary transition-colors"
+    >
+      {copied ? (
+        <svg className="w-3 h-3 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-4 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
+function fmtTokenAmount(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`
+  if (n >= 1)         return n.toFixed(2)
+  return n.toFixed(4)
+}
+
 function LiveBalancesPanel() {
-  const [balances, setBalances]   = useState<LiveBalance[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState<string | null>(null)
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  const [balances, setBalances]     = useState<LiveBalance[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
+  const [fetchedAt, setFetchedAt]   = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchBalances = useCallback(async (isRefresh = false) => {
@@ -116,8 +150,6 @@ function LiveBalancesPanel() {
   }, [])
 
   useEffect(() => { void fetchBalances() }, [fetchBalances])
-
-  // Auto-refresh every 60 seconds
   useEffect(() => {
     const id = setInterval(() => void fetchBalances(true), 60_000)
     return () => clearInterval(id)
@@ -125,99 +157,94 @@ function LiveBalancesPanel() {
 
   return (
     <div className="bg-white rounded-xl border border-border overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
         <div>
           <h2 className="text-sm font-semibold text-text-primary">Live Hot Wallet Balances</h2>
           {fetchedAt && (
-            <p className="text-xs text-text-muted mt-0.5">
-              Fetched from chain · {fmt(fetchedAt)} · auto-refreshes every 60s
+            <p className="text-[11px] text-text-muted mt-0.5">
+              {fmt(fetchedAt)} · auto-refreshes every 60s
             </p>
           )}
         </div>
         <Button size="sm" variant="ghost" onClick={() => fetchBalances(true)} disabled={refreshing || loading}>
-          {refreshing ? 'Refreshing…' : 'Refresh Now'}
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </Button>
       </div>
 
-      {loading && <div className="p-5"><LoadingState message="Fetching live balances from blockchain…" /></div>}
-      {!loading && error && (
-        <div className="px-5 py-4 text-danger text-sm">{error}</div>
-      )}
+      {loading && <div className="p-4"><LoadingState message="Fetching live balances…" /></div>}
+      {!loading && error && <div className="px-4 py-3 text-danger text-sm">{error}</div>}
       {!loading && !error && balances.length === 0 && (
-        <div className="px-5 py-4 text-text-muted text-sm">No active hot wallets found.</div>
+        <div className="px-4 py-3 text-text-muted text-sm">No active hot wallets found.</div>
       )}
 
       {!loading && balances.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-border">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 divide-x divide-y divide-border">
           {balances.map((w) => {
             const explorerBase = EXPLORER_URL[w.chain]
             const explorerLink = explorerBase ? `${explorerBase}${w.address}` : null
+            const visibleTokens = (w.tokens ?? [])
+              .filter((t) => t.balanceFormatted > 0)
+              .sort((a, b) => b.balanceFormatted - a.balanceFormatted)
+              .slice(0, 6)
+            const shortAddr = w.address.length > 14
+              ? `${w.address.slice(0, 6)}…${w.address.slice(-4)}`
+              : w.address
 
             return (
-              <div key={w.chain} className="p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+              <div key={w.chain} className="p-3 flex flex-col gap-1.5 min-w-0">
+                {/* Header row: status dot + chain + explorer */}
+                <div className="flex items-center justify-between gap-1 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span className={cn(
-                      'w-2 h-2 rounded-full',
-                      w.error ? 'bg-danger' : w.balance === null ? 'bg-gray-300' : w.balance === 0 ? 'bg-warning' : 'bg-success',
+                      'w-1.5 h-1.5 rounded-full shrink-0',
+                      w.error        ? 'bg-danger'
+                      : w.balance === null ? 'bg-gray-300'
+                      : w.balance === 0    ? 'bg-warning'
+                      : 'bg-success',
                     )} />
-                    <span className="font-semibold text-sm text-text-primary">{w.chain}</span>
-                    <Badge variant="default" size="sm">{w.nativeSymbol}</Badge>
+                    <span className="font-bold text-xs text-text-primary truncate">{w.chain}</span>
+                    <span className="text-[10px] text-text-muted shrink-0">{w.nativeSymbol}</span>
                   </div>
                   {explorerLink && (
-                    <a
-                      href={explorerLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary hover:underline flex items-center gap-1"
-                    >
-                      Explorer ↗
-                    </a>
+                    <a href={explorerLink} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] text-primary hover:underline shrink-0">↗</a>
                   )}
                 </div>
 
-                <div>
-                  {w.error ? (
-                    <p className="text-xs text-danger">{w.error}</p>
-                  ) : (
-                    <>
-                      <p className={cn(
-                        'text-xl font-bold',
-                        w.balance === null ? 'text-text-muted'
-                        : w.balance === 0 ? 'text-warning'
-                        : 'text-success',
-                      )}>
-                        {w.balance !== null ? `${w.balance.toFixed(4)} ${w.nativeSymbol}` : '—'}
-                      </p>
-                      {w.balanceUsd !== null && w.balanceUsd > 0 && (
-                        <p className="text-xs text-text-muted">≈ ${w.balanceUsd.toFixed(2)} USD</p>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <p className="font-mono text-[10px] text-text-muted truncate" title={w.address}>
-                  {w.address}
-                </p>
-
-                {/* ERC-20 token balances */}
-                {w.tokens && w.tokens.length > 0 && (
-                  <div className="mt-2 space-y-0.5">
-                    {w.tokens
-                      .filter((t) => t.balanceFormatted > 0)
-                      .sort((a, b) => b.balanceFormatted - a.balanceFormatted)
-                      .slice(0, 5)
-                      .map((t) => (
-                        <div key={t.tokenAddress} className="flex items-center justify-between text-[11px]">
-                          <span className="text-text-muted font-medium">{t.symbol}</span>
-                          <span className="text-text-primary font-semibold">
-                            {t.balanceFormatted >= 1000
-                              ? t.balanceFormatted.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                              : t.balanceFormatted.toFixed(4)}
-                          </span>
-                        </div>
-                      ))}
+                {/* Balance */}
+                {w.error ? (
+                  <p className="text-[10px] text-danger leading-tight truncate">{w.error}</p>
+                ) : (
+                  <div>
+                    <p className={cn(
+                      'text-sm font-bold leading-tight',
+                      w.balance === null ? 'text-text-muted'
+                      : w.balance === 0  ? 'text-warning'
+                      : 'text-success',
+                    )}>
+                      {w.balance !== null ? w.balance.toFixed(4) : '—'}
+                    </p>
+                    {w.balanceUsd !== null && w.balanceUsd > 0 && (
+                      <p className="text-[10px] text-text-muted">${w.balanceUsd.toFixed(2)}</p>
+                    )}
                   </div>
+                )}
+
+                {/* Address + copy */}
+                <div className="flex items-center min-w-0">
+                  <span className="font-mono text-[9px] text-text-muted truncate" title={w.address}>
+                    {shortAddr}
+                  </span>
+                  <CopyButton text={w.address} />
+                </div>
+
+                {/* Token chip summary — single line, no rows */}
+                {visibleTokens.length > 0 && (
+                  <p className="text-[9px] text-text-muted leading-tight truncate" title={
+                    visibleTokens.map((t) => `${t.symbol} ${fmtTokenAmount(t.balanceFormatted)}`).join(' · ')
+                  }>
+                    {visibleTokens.map((t) => `${t.symbol} ${fmtTokenAmount(t.balanceFormatted)}`).join(' · ')}
+                  </p>
                 )}
               </div>
             )

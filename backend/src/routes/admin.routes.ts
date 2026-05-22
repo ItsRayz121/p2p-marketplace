@@ -2177,6 +2177,7 @@ export async function adminRoutes(app: FastifyInstance) {
       ...(body.toAddress   ? { toAddress:   body.toAddress }   : {}),
       notes: body.notes ?? 'Manual entry by admin',
     })
+    if (!entry) throw new Error('appendLedgerEntry returned null unexpectedly for manual entry')
 
     await createAuditLog(req.user!.id, 'GAS_MANUAL_LEDGER_ENTRY', 'GasLedgerEntry', entry.id, {
       chain: body.chain, nativeAmount: body.nativeAmount, txHash: body.txHash ?? null,

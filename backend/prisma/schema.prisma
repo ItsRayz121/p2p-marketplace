@@ -1365,6 +1365,7 @@ model GasLedgerEntry {
   txHash         String?
   fromAddress    String?
   toAddress      String?
+  sourceKey      String?              @unique
   relatedOrderId String?
   relatedOrder   GasFeeOrder?         @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull)
   relatedRefillId String?
@@ -1373,6 +1374,7 @@ model GasLedgerEntry {
   createdAt      DateTime             @default(now())
 
   @@index([chain, entryType])
+  @@index([txHash])
   @@index([relatedOrderId])
   @@index([relatedRefillId])
   @@index([createdAt])

@@ -10,6 +10,7 @@
 
 import type { GasChain, GasLedgerEntryType, Prisma } from '@prisma/client'
 import { db } from '../prisma'
+import { logger } from '../logger'
 import type { GasChainId } from './gas.chains'
 import { toDbChain } from './gas.chains'
 import { getNativeUsdPrice } from './gas.balance'
@@ -37,6 +38,9 @@ export interface LedgerEntryInput {
   txHash?: string
   fromAddress?: string
   toAddress?: string
+  /** Idempotency key. If set and a row with this key already exists, the call
+   *  is silently skipped and returns null. Use for webhook and poller entries. */
+  sourceKey?: string
   relatedOrderId?: string
   relatedRefillId?: string
   notes?: string
@@ -52,21 +56,34 @@ export async function appendLedgerEntry(input: LedgerEntryInput) {
     usdAmount = Math.abs(input.nativeAmount) * price
   }
 
-  return db.gasLedgerEntry.create({
-    data: {
-      entryType:      input.entryType,
-      chain:          dbChain,
-      nativeAmount:   input.nativeAmount,
-      nativeSymbol:   symbol,
-      usdAmount,
-      txHash:         input.txHash         ?? null,
-      fromAddress:    input.fromAddress    ?? null,
-      toAddress:      input.toAddress      ?? null,
-      relatedOrderId: input.relatedOrderId ?? null,
-      relatedRefillId:input.relatedRefillId ?? null,
-      notes:          input.notes          ?? null,
-    },
-  })
+  try {
+    return await db.gasLedgerEntry.create({
+      data: {
+        entryType:       input.entryType,
+        chain:           dbChain,
+        nativeAmount:    input.nativeAmount,
+        nativeSymbol:    symbol,
+        usdAmount,
+        txHash:          input.txHash          ?? null,
+        fromAddress:     input.fromAddress     ?? null,
+        toAddress:       input.toAddress       ?? null,
+        sourceKey:       input.sourceKey       ?? null,
+        relatedOrderId:  input.relatedOrderId  ?? null,
+        relatedRefillId: input.relatedRefillId ?? null,
+        notes:           input.notes           ?? null,
+      },
+    })
+  } catch (err) {
+    // P2002 = unique constraint violation — sourceKey already exists, skip silently
+    if ((err as { code?: string }).code === 'P2002' && input.sourceKey) {
+      logger.info(
+        { sourceKey: input.sourceKey, chain: input.chain, entryType: input.entryType },
+        'Ledger entry skipped — duplicate sourceKey (already recorded)',
+      )
+      return null
+    }
+    throw err
+  }
 }
 
 // ── Query helpers ──────────────────────────────────────────────────────────────
