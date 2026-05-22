@@ -1408,6 +1408,20 @@ export const adminApi = {
   getPendingPayouts: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ withdrawals: Array<{ id: string; userId: string; user?: { email: string; username: string }; coin: string; amount: string; address: string; network: string; status: string; createdAt: string }>; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/wallet/pending-payouts' + buildQs(params)),
 
+  // Gas Wallet Activity
+  getGasWalletActivity: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{
+      activity: Array<{
+        id: string; orderRef: string; chain: string
+        paymentAmount: string; paymentCoin: string | null; paymentNetwork: string | null
+        paymentTxHash: string | null; paymentSenderAddress: string | null
+        deliveryTxHash: string | null; gasAmountNative: string
+        toAddress: string; fromHotWallet: string | null
+        status: string; createdAt: string; updatedAt: string; deliveredAt: string | null
+      }>
+      pagination: { total: number; page: number; limit: number; pages: number }
+    }>('/admin/gas/wallet-activity' + buildQs(params)),
+
   // Gas Orders
   getGasOrders: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ orders: unknown[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/gas/orders' + buildQs(params)),
@@ -1540,7 +1554,7 @@ export const adminApi = {
   listReconciliationRuns: (page = 1, limit = 20) =>
     apiRequest<{ runs: Array<{ id: string; ranAt: string; chain: string | null; totalOrders: number; ordersChecked: number; discrepancyCount: number; status: string; notes: string | null }>; total: number; page: number; limit: number }>(`/admin/gas/reconciliation?page=${page}&limit=${limit}`),
   getReconciliationRun: (runId: string) =>
-    apiRequest<{ run: { id: string; ranAt: string; chain: string | null; totalOrders: number; ordersChecked: number; discrepancyCount: number; status: string; notes: string | null; discrepancies: Array<{ id: string; orderId: string | null; type: string; description: string; resolvedAt: string | null; resolvedBy: string | null; adminNote: string | null; createdAt: string }> } }>(`/admin/gas/reconciliation/${runId}`),
+    apiRequest<{ id: string; ranAt: string; chain: string | null; totalOrders: number; ordersChecked: number; discrepancyCount: number; status: string; notes: string | null; discrepancies: Array<{ id: string; orderId: string | null; type: string; description: string; resolvedAt: string | null; resolvedBy: string | null; adminNote: string | null; createdAt: string }> }>(`/admin/gas/reconciliation/${runId}`),
   triggerReconciliation: (chain?: string) =>
     apiRequest<{ queued: boolean; message: string }>('/admin/gas/reconciliation/trigger', { method: 'POST', body: JSON.stringify({ chain }) }),
   resolveDiscrepancy: (id: string, adminNote?: string) =>

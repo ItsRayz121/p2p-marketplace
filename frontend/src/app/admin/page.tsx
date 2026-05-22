@@ -361,7 +361,7 @@ export default function AdminDashboardPage() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Gas Wallet Activity</h2>
-          <Link href="/admin/gas" className="text-xs text-primary hover:underline font-medium">View all →</Link>
+          <Link href="/admin/gas/wallet-activity" className="text-xs text-primary hover:underline font-medium">View all →</Link>
         </div>
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           {(stats?.recentGasActivity ?? []).length === 0 ? (

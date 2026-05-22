@@ -2045,6 +2045,55 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /admin/gas/wallet-activity — paginated hot-wallet deposit + delivery feed
+  app.get('/admin/gas/wallet-activity', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+
+    const andClauses: Record<string, unknown>[] = [
+      { OR: [{ paymentTxHash: { not: null } }, { deliveryTxHash: { not: null } }, { status: 'payment_detected' }] },
+    ]
+    if (query.chain) andClauses.push({ chain: query.chain })
+    if (query.status) andClauses.push({ status: query.status })
+    if (query.from)   andClauses.push({ updatedAt: { gte: new Date(query.from) } })
+    if (query.to)     andClauses.push({ updatedAt: { lte: new Date(query.to) } })
+    if (query.search) {
+      andClauses.push({
+        OR: [
+          { orderRef: { contains: query.search, mode: 'insensitive' } },
+          { paymentTxHash: { contains: query.search, mode: 'insensitive' } },
+          { deliveryTxHash: { contains: query.search, mode: 'insensitive' } },
+          { toAddress: { contains: query.search, mode: 'insensitive' } },
+        ],
+      })
+    }
+
+    const where = { AND: andClauses }
+
+    const [activity, total] = await Promise.all([
+      db.gasFeeOrder.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          id: true, orderRef: true, chain: true,
+          paymentAmount: true, paymentCoin: true, paymentNetwork: true,
+          paymentTxHash: true, paymentSenderAddress: true,
+          deliveryTxHash: true, gasAmountNative: true,
+          toAddress: true, fromHotWallet: true,
+          status: true, createdAt: true, updatedAt: true, deliveredAt: true,
+        },
+      }),
+      db.gasFeeOrder.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      data: { activity, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
+
   app.post('/admin/gas/orders/:id/retry', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
 

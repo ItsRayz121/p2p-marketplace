@@ -94,7 +94,7 @@ export default function GasReconciliationPage() {
     setSelectedRun(null)
     try {
       const res = await adminApi.getReconciliationRun(id)
-      setSelectedRun(res.run as RunDetail)
+      setSelectedRun(res as RunDetail)
     } catch (e: unknown) {
       setRunError(e instanceof Error ? e.message : 'Failed to load run details')
     } finally {
