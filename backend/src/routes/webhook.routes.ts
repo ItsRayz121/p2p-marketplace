@@ -16,6 +16,7 @@ import { getEffectiveDepositAddress } from '../lib/gas/gasWalletService'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 import { fromDbChain } from '../lib/gas/gas.chains'
 import type { GasChainId } from '../lib/gas/gas.chains'
+import { getHotWalletBalance } from '../lib/gas/gas.balance'
 
 /**
  * Compute a candidate Moralis Streams signature.
@@ -227,6 +228,30 @@ export async function webhookRoutes(app: FastifyInstance) {
     )
 
     if (looksLikeMoralis) {
+      // Warn when the incoming streamId doesn't match any configured stream.
+      // A single Moralis stream can cover multiple chains (multi-chain stream),
+      // so the same ID in several MORALIS_STREAM_ID_* vars is intentional.
+      // A mismatch usually means a stale stream or wrong webhook URL in the dashboard.
+      if (payload.streamId) {
+        const configuredIds = new Set(
+          [
+            env.MORALIS_STREAM_ID_ETHEREUM,
+            env.MORALIS_STREAM_ID_BSC,
+            env.MORALIS_STREAM_ID_POLYGON,
+            env.MORALIS_STREAM_ID_ARBITRUM,
+            env.MORALIS_STREAM_ID_OPTIMISM,
+            env.MORALIS_STREAM_ID_BASE,
+          ].filter(Boolean),
+        )
+        if (!configuredIds.has(payload.streamId)) {
+          logger.warn(
+            { incomingStreamId: payload.streamId },
+            'Webhook streamId does not match any configured MORALIS_STREAM_ID_* — ' +
+            'check the dashboard or set the matching env var (note: one multi-chain stream ID can appear in multiple vars)',
+          )
+        }
+      }
+
       const events = await normalizeMoralisEvent(payload)
 
       // Pre-load all active hot wallet addresses once for this batch so we can
@@ -269,6 +294,13 @@ export async function webhookRoutes(app: FastifyInstance) {
                   toAddress:   event.toAddress,
                   notes:       'Direct hot-wallet top-up detected via Moralis',
                 }).catch((e) => logger.warn({ err: e, txHash: event.txHash }, 'Failed to write external_hot_wallet_deposit ledger entry'))
+
+                // Refresh the balance-diff poller's Redis baseline so the next
+                // 2-minute tick sees no change and doesn't write a duplicate entry.
+                const pollerKey = `gas_hw_poll_balance:${hw.chain}:${hw.address.toLowerCase()}`
+                getHotWalletBalance(fromDbChain(hw.chain) as GasChainId, hw.address)
+                  .then((bal) => redis.set(pollerKey, String(bal), 'EX', 3600))
+                  .catch(() => {}) // best-effort; poller will self-correct next tick
 
                 logger.info(
                   { txHash: event.txHash, chain: hw.chain, amount: nativeAmount },

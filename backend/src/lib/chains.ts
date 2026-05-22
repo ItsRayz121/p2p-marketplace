@@ -170,15 +170,3 @@ export function getRpcUrl(chainId: string): string | undefined {
     default: return undefined
   }
 }
-
-export function getMoralisStreamId(chainId: string): string | undefined {
-  switch (chainId) {
-    case 'ethereum': return env.MORALIS_STREAM_ID_ETHEREUM || undefined
-    case 'bsc': return env.MORALIS_STREAM_ID_BSC || undefined
-    case 'polygon': return env.MORALIS_STREAM_ID_POLYGON || undefined
-    case 'arbitrum': return env.MORALIS_STREAM_ID_ARBITRUM || undefined
-    case 'optimism': return env.MORALIS_STREAM_ID_OPTIMISM || undefined
-    case 'base': return env.MORALIS_STREAM_ID_BASE || undefined
-    default: return undefined
-  }
-}

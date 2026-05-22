@@ -230,6 +230,7 @@ export function startWorkers() {
   // increases (top-ups) even when Moralis webhooks don't fire.
   queues.gasHotWalletDepositPoll
     .add('poll', {}, { repeat: { every: 2 * 60_000 }, jobId: 'gas-hw-deposit-poll-repeatable' })
+    .then(() => logger.info({ intervalMs: 2 * 60_000 }, 'Balance-diff poller registered (hot-wallet deposit fallback)'))
     .catch((err) => logger.error({ err }, 'Failed to schedule hot-wallet deposit poller'))
 
   createWorker(QUEUE_NAMES.GAS_HOT_WALLET_DEPOSIT_POLL, async () => {
