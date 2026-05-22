@@ -108,63 +108,63 @@ export const TOKEN_LOGO_STATIC: Record<string, string> = {
   WBTC:  'https://assets.trustwallet.com/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png',
 }
 
-// ── Core resolver ─────────────────────────────────────────────────────────────
-// Priority: 1. DB map  2. Static CDN map  3. null (→ initials in component)
+// ── DB-only resolver (no static CDN fallback) ────────────────────────────────
+// Used by EntityLogo to build a deduped candidate list, so each URL tier is
+// tried independently rather than merged into one opaque string.
+
+export function resolveLogoDbOnly(
+  type: EntityType,
+  slug: string,
+  dbMap: LogoMap,
+): string | null {
+  switch (type) {
+    case 'chain': {
+      const key = normalizeChain(slug)
+      return dbMap.chain[key] ?? dbMap.chain[slug.toUpperCase()] ?? null
+    }
+    case 'token': {
+      const key = normalizeToken(slug)
+      return dbMap.token[key] ?? dbMap.token[slug.toUpperCase()] ?? null
+    }
+    case 'payment_method': {
+      const key = normalizePaymentMethod(slug)
+      return dbMap.payment_method[key] ?? dbMap.payment_method[slug.toLowerCase()] ?? null
+    }
+    case 'bank':           return dbMap.bank[slug.toLowerCase()] ?? null
+    case 'wallet_provider': return dbMap.wallet_provider[slug.toLowerCase()] ?? null
+    default: return null
+  }
+}
+
+// ── Static-only resolver (no DB) ─────────────────────────────────────────────
+// Returns TrustWallet CDN URL for known chains/tokens; null for everything else.
+
+export function resolveLogoStatic(type: EntityType, slug: string): string | null {
+  switch (type) {
+    case 'chain': {
+      const key = normalizeChain(slug)
+      return CHAIN_LOGO_STATIC[key] ?? CHAIN_LOGO_STATIC[slug.toUpperCase()] ?? null
+    }
+    case 'token': {
+      const key = normalizeToken(slug)
+      return TOKEN_LOGO_STATIC[key] ?? TOKEN_LOGO_STATIC[slug.toUpperCase()] ?? null
+    }
+    default: return null
+  }
+}
+
+// ── Combined resolver (DB → static) — kept for convenience ───────────────────
 
 export function resolveLogo(
   type: EntityType,
   slug: string,
   dbMap: LogoMap | null,
 ): string | null {
-  switch (type) {
-    case 'chain': {
-      const key = normalizeChain(slug)
-      // DB first (admin-uploaded)
-      if (dbMap) {
-        const url = dbMap.chain[key] ?? dbMap.chain[slug.toUpperCase()]
-        if (url) return url
-      }
-      return CHAIN_LOGO_STATIC[key] ?? CHAIN_LOGO_STATIC[slug.toUpperCase()] ?? null
-    }
-
-    case 'token': {
-      const key = normalizeToken(slug)
-      if (dbMap) {
-        const url = dbMap.token[key] ?? dbMap.token[slug.toUpperCase()]
-        if (url) return url
-      }
-      return TOKEN_LOGO_STATIC[key] ?? TOKEN_LOGO_STATIC[slug.toUpperCase()] ?? null
-    }
-
-    case 'payment_method': {
-      const key = normalizePaymentMethod(slug)
-      if (dbMap) {
-        const url = dbMap.payment_method[key] ?? dbMap.payment_method[slug.toLowerCase()]
-        if (url) return url
-      }
-      return null
-    }
-
-    case 'bank': {
-      const key = slug.toLowerCase()
-      if (dbMap) {
-        const url = dbMap.bank[key]
-        if (url) return url
-      }
-      return null
-    }
-
-    case 'wallet_provider': {
-      const key = slug.toLowerCase()
-      if (dbMap) {
-        const url = dbMap.wallet_provider[key]
-        if (url) return url
-      }
-      return null
-    }
-
-    default: return null
+  if (dbMap) {
+    const dbUrl = resolveLogoDbOnly(type, slug, dbMap)
+    if (dbUrl) return dbUrl
   }
+  return resolveLogoStatic(type, slug)
 }
 
 // ── Initials avatar helpers ───────────────────────────────────────────────────

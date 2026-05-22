@@ -1,6 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
-import { adminApi, logoApi } from '@/lib/api'
+import { logoApi } from '@/lib/api'
 import type { LogoRegistryEntry } from '@/lib/api'
 import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
 import { EntityLogo } from '@/components/ui/EntityLogo'
