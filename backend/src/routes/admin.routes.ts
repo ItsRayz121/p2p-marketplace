@@ -2045,52 +2045,56 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
-  // GET /admin/gas/wallet-activity — paginated hot-wallet deposit + delivery feed
+  // GET /admin/gas/wallet-activity — paginated ledger-based hot-wallet activity feed
+  // Queries GasLedgerEntry (the authoritative financial record) which covers:
+  //   order_payment            — user USDT payment received
+  //   gas_delivery             — gas sent to user
+  //   delivery_refund          — refund to user
+  //   refill_hot_from_treasury — treasury top-up
+  //   drain_hot_to_treasury    — emergency drain
+  //   external_hot_wallet_deposit — direct admin top-up (e.g. manual POL send)
   app.get('/admin/gas/wallet-activity', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
 
-    const andClauses: Record<string, unknown>[] = [
-      { OR: [{ paymentTxHash: { not: null } }, { deliveryTxHash: { not: null } }, { status: 'payment_detected' }] },
-    ]
-    if (query.chain) andClauses.push({ chain: query.chain })
-    if (query.status) andClauses.push({ status: query.status })
-    if (query.from)   andClauses.push({ updatedAt: { gte: new Date(query.from) } })
-    if (query.to)     andClauses.push({ updatedAt: { lte: new Date(query.to) } })
+    const andClauses: Record<string, unknown>[] = []
+    if (query.chain)      andClauses.push({ chain: query.chain })
+    if (query.entryType)  andClauses.push({ entryType: query.entryType })
+    if (query.from)       andClauses.push({ createdAt: { gte: new Date(query.from) } })
+    if (query.to)         andClauses.push({ createdAt: { lte: new Date(query.to) } })
     if (query.search) {
       andClauses.push({
         OR: [
-          { orderRef: { contains: query.search, mode: 'insensitive' } },
-          { paymentTxHash: { contains: query.search, mode: 'insensitive' } },
-          { deliveryTxHash: { contains: query.search, mode: 'insensitive' } },
-          { toAddress: { contains: query.search, mode: 'insensitive' } },
+          { txHash:      { contains: query.search, mode: 'insensitive' } },
+          { fromAddress: { contains: query.search, mode: 'insensitive' } },
+          { toAddress:   { contains: query.search, mode: 'insensitive' } },
+          { notes:       { contains: query.search, mode: 'insensitive' } },
         ],
       })
     }
 
-    const where = { AND: andClauses }
+    const where = andClauses.length > 0 ? { AND: andClauses } : {}
 
-    const [activity, total] = await Promise.all([
-      db.gasFeeOrder.findMany({
+    const [entries, total] = await Promise.all([
+      db.gasLedgerEntry.findMany({
         where,
-        orderBy: { updatedAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
         select: {
-          id: true, orderRef: true, chain: true,
-          paymentAmount: true, paymentCoin: true, paymentNetwork: true,
-          paymentTxHash: true, paymentSenderAddress: true,
-          deliveryTxHash: true, gasAmountNative: true,
-          toAddress: true, fromHotWallet: true,
-          status: true, createdAt: true, updatedAt: true, deliveredAt: true,
+          id: true, entryType: true, chain: true,
+          nativeAmount: true, nativeSymbol: true, usdAmount: true,
+          txHash: true, fromAddress: true, toAddress: true,
+          notes: true, createdAt: true,
+          relatedOrder: { select: { orderRef: true, status: true, paymentCoin: true, paymentNetwork: true } },
         },
       }),
-      db.gasFeeOrder.count({ where }),
+      db.gasLedgerEntry.count({ where }),
     ])
 
     return reply.send({
       success: true,
-      data: { activity, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      data: { activity: entries, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
   })
 

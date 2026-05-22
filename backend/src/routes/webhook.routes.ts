@@ -228,11 +228,55 @@ export async function webhookRoutes(app: FastifyInstance) {
 
     if (looksLikeMoralis) {
       const events = await normalizeMoralisEvent(payload)
+
+      // Pre-load all active hot wallet addresses once for this batch so we can
+      // detect direct sends to the hot wallet without an extra DB hit per event.
+      const hotWallets = await db.gasHotWallet.findMany({
+        where: { isActive: true },
+        select: { address: true, chain: true },
+      })
+      const hotWalletSet = new Set(hotWallets.map((w) => w.address.toLowerCase()))
+
       const results = []
       for (const event of events) {
         try {
           const r = await processDepositEvent(event)
           results.push({ txHash: event.txHash, asset: event.asset, result: r })
+
+          // If this event was ignored AND the destination is a hot wallet address,
+          // it is a direct top-up (e.g. admin sends native tokens to fund the wallet).
+          // Record it as an external_hot_wallet_deposit ledger entry so it appears
+          // in Gas Wallet Activity.
+          if (r.status === 'ignored' && hotWalletSet.has(event.toAddress.toLowerCase())) {
+            const hw = hotWallets.find((w) => w.address.toLowerCase() === event.toAddress.toLowerCase())
+            if (hw) {
+              // Convert raw wei amount to native units (all native tokens use 18 decimals)
+              let nativeAmount: number
+              try {
+                const { formatUnits } = await import('viem')
+                nativeAmount = parseFloat(formatUnits(BigInt(event.amount), 18))
+              } catch {
+                nativeAmount = parseFloat(event.amount)
+              }
+
+              if (nativeAmount > 0) {
+                appendLedgerEntry({
+                  entryType:   'external_hot_wallet_deposit',
+                  chain:       fromDbChain(hw.chain) as GasChainId,
+                  nativeAmount,
+                  txHash:      event.txHash,
+                  fromAddress: event.fromAddress || undefined,
+                  toAddress:   event.toAddress,
+                  notes:       'Direct hot-wallet top-up detected via Moralis',
+                }).catch((e) => logger.warn({ err: e, txHash: event.txHash }, 'Failed to write external_hot_wallet_deposit ledger entry'))
+
+                logger.info(
+                  { txHash: event.txHash, chain: hw.chain, amount: nativeAmount },
+                  'External hot-wallet deposit detected',
+                )
+              }
+            }
+          }
         } catch (err) {
           logger.error({ err, txHash: event.txHash }, 'Deposit watcher failed')
           results.push({ txHash: event.txHash, asset: event.asset, error: 'processing_failed' })

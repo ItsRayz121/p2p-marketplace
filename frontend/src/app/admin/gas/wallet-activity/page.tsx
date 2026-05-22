@@ -9,50 +9,47 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 
-type Activity = {
+type LedgerEntry = {
   id: string
-  orderRef: string
+  entryType: string
   chain: string
-  paymentAmount: string
-  paymentCoin: string | null
-  paymentNetwork: string | null
-  paymentTxHash: string | null
-  paymentSenderAddress: string | null
-  deliveryTxHash: string | null
-  gasAmountNative: string
-  toAddress: string
-  fromHotWallet: string | null
-  status: string
+  nativeAmount: string
+  nativeSymbol: string
+  usdAmount: string
+  txHash: string | null
+  fromAddress: string | null
+  toAddress: string | null
+  notes: string | null
   createdAt: string
-  updatedAt: string
-  deliveredAt: string | null
+  relatedOrder: { orderRef: string; status: string; paymentCoin: string; paymentNetwork: string } | null
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  delivered:        'text-success',
-  payment_detected: 'text-blue-600',
-  payment_pending:  'text-amber-600',
-  payment_uploaded: 'text-amber-600',
-  sending:          'text-blue-600',
-  failed:           'text-danger',
-  expired:          'text-text-muted',
-  refunded:         'text-warning',
+const ENTRY_TYPE_LABELS: Record<string, string> = {
+  order_payment:               'User Payment',
+  gas_delivery:                'Gas Delivery',
+  delivery_refund:             'Refund',
+  refill_hot_from_treasury:    'Treasury Refill',
+  drain_hot_to_treasury:       'Drain to Treasury',
+  platform_fee:                'Platform Fee',
+  external_hot_wallet_deposit: 'Hot Wallet Deposit',
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  delivered:        'Delivered',
-  payment_detected: 'Payment Detected',
-  payment_pending:  'Awaiting Payment',
-  payment_uploaded: 'Proof Submitted',
-  sending:          'Sending Gas',
-  failed:           'Failed',
-  expired:          'Expired',
-  refunded:         'Refunded',
+const ENTRY_TYPE_COLORS: Record<string, string> = {
+  order_payment:               'text-blue-700 bg-blue-50',
+  gas_delivery:                'text-orange-700 bg-orange-50',
+  delivery_refund:             'text-warning bg-warning/10',
+  refill_hot_from_treasury:    'text-success bg-success/10',
+  drain_hot_to_treasury:       'text-danger bg-danger/10',
+  platform_fee:                'text-text-muted bg-surface',
+  external_hot_wallet_deposit: 'text-purple-700 bg-purple-50',
 }
 
 const CHAINS = ['TRON', 'BSC', 'ETH', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'APT']
 
+const ENTRY_TYPES = Object.keys(ENTRY_TYPE_LABELS)
+
 function shortHash(h: string) {
+  if (h.length <= 16) return h
   return `${h.slice(0, 8)}…${h.slice(-6)}`
 }
 
@@ -60,19 +57,23 @@ function fmt(iso: string) {
   return new Date(iso).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })
 }
 
+function isInflow(entryType: string) {
+  return ['order_payment', 'refill_hot_from_treasury', 'external_hot_wallet_deposit'].includes(entryType)
+}
+
 export default function GasWalletActivityPage() {
-  const [items, setItems]     = useState<Activity[]>([])
+  const [items, setItems]     = useState<LedgerEntry[]>([])
   const [total, setTotal]     = useState(0)
   const [page, setPage]       = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
 
+  const [draftSearch, setDraftSearch] = useState('')
   const [search, setSearch]     = useState('')
   const [chain, setChain]       = useState('')
-  const [status, setStatus]     = useState('')
+  const [entryType, setEntryType] = useState('')
   const [from, setFrom]         = useState('')
   const [to, setTo]             = useState('')
-  const [draftSearch, setDraftSearch] = useState('')
 
   const LIMIT = 25
 
@@ -81,11 +82,11 @@ export default function GasWalletActivityPage() {
     setError(null)
     try {
       const params: Record<string, string | number> = { page: p, limit: LIMIT }
-      if (search)  params.search = search
-      if (chain)   params.chain  = chain
-      if (status)  params.status = status
-      if (from)    params.from   = from
-      if (to)      params.to     = to
+      if (search)    params.search    = search
+      if (chain)     params.chain     = chain
+      if (entryType) params.entryType = entryType
+      if (from)      params.from      = from
+      if (to)        params.to        = to
       const res = await adminApi.getGasWalletActivity(params)
       setItems(res.activity)
       setTotal(res.pagination.total)
@@ -95,16 +96,14 @@ export default function GasWalletActivityPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, chain, status, from, to])
+  }, [search, chain, entryType, from, to])
 
   useEffect(() => { void fetchActivity(1) }, [fetchActivity])
 
-  function applySearch() {
-    setSearch(draftSearch)
-  }
+  function applySearch() { setSearch(draftSearch) }
 
   function clearFilters() {
-    setSearch(''); setDraftSearch(''); setChain(''); setStatus(''); setFrom(''); setTo('')
+    setSearch(''); setDraftSearch(''); setChain(''); setEntryType(''); setFrom(''); setTo('')
   }
 
   const totalPages = Math.ceil(total / LIMIT)
@@ -115,7 +114,7 @@ export default function GasWalletActivityPage() {
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Gas Wallet Activity</h1>
           <p className="text-text-muted text-sm mt-0.5">
-            All incoming hot-wallet deposits and outgoing gas deliveries.
+            All hot-wallet financial movements — deposits, deliveries, refills, and top-ups.
           </p>
         </div>
         <p className="text-sm text-text-muted">{total.toLocaleString()} records</p>
@@ -127,7 +126,7 @@ export default function GasWalletActivityPage() {
           <div className="lg:col-span-2 flex gap-2">
             <input
               className="flex-1 border border-border rounded-lg px-3 py-2 text-sm"
-              placeholder="Search order ref, tx hash, address…"
+              placeholder="Search tx hash, address, notes…"
               value={draftSearch}
               onChange={(e) => setDraftSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && applySearch()}
@@ -144,12 +143,12 @@ export default function GasWalletActivityPage() {
           </select>
           <select
             className="border border-border rounded-lg px-3 py-2 text-sm"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
+            value={entryType}
+            onChange={(e) => setEntryType(e.target.value)}
           >
-            <option value="">All statuses</option>
-            {Object.entries(STATUS_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
+            <option value="">All types</option>
+            {ENTRY_TYPES.map((t) => (
+              <option key={t} value={t}>{ENTRY_TYPE_LABELS[t]}</option>
             ))}
           </select>
           <div className="flex gap-2">
@@ -169,11 +168,8 @@ export default function GasWalletActivityPage() {
             />
           </div>
         </div>
-        {(search || chain || status || from || to) && (
-          <button
-            onClick={clearFilters}
-            className="mt-2 text-xs text-primary hover:underline"
-          >
+        {(search || chain || entryType || from || to) && (
+          <button onClick={clearFilters} className="mt-2 text-xs text-primary hover:underline">
             Clear filters
           </button>
         )}
@@ -186,7 +182,7 @@ export default function GasWalletActivityPage() {
       {loading && <LoadingState message="Loading wallet activity…" />}
       {!loading && error && <ErrorState title={error} onRetry={() => fetchActivity(page)} />}
       {!loading && !error && items.length === 0 && (
-        <EmptyState title="No wallet activity" description="No matching transactions found. Try adjusting filters." />
+        <EmptyState title="No wallet activity" description="No matching ledger entries found. Try adjusting filters." />
       )}
 
       {!loading && items.length > 0 && (
@@ -195,74 +191,97 @@ export default function GasWalletActivityPage() {
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Order</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Type</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Chain</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Deposit (In)</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Delivery (Out)</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Updated</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Amount</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Tx Hash</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">From / To</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Order</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {items.map((tx) => {
-                  const hasDeposit  = !!tx.paymentTxHash
-                  const hasDelivery = !!tx.deliveryTxHash
+                {items.map((entry) => {
+                  const amount    = parseFloat(entry.nativeAmount)
+                  const inflow    = isInflow(entry.entryType)
+                  const amountAbs = Math.abs(amount)
+                  const usd       = parseFloat(entry.usdAmount)
 
                   return (
-                    <tr key={tx.id} className="hover:bg-surface/50 transition-colors">
+                    <tr key={entry.id} className="hover:bg-surface/50 transition-colors">
+                      {/* Type */}
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/admin/gas/orders/${tx.orderRef}`}
-                          className="font-mono text-xs text-primary hover:underline font-semibold"
-                        >
-                          {tx.orderRef}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant="default" size="sm">{tx.chain}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        {hasDeposit ? (
-                          <div className="space-y-0.5">
-                            <p className="text-xs font-semibold text-blue-700">
-                              ↓ {parseFloat(tx.paymentAmount).toFixed(4)} {tx.paymentCoin ?? 'USDT'}
-                              {tx.paymentNetwork && (
-                                <span className="ml-1 text-text-muted font-normal">({tx.paymentNetwork})</span>
-                              )}
-                            </p>
-                            <p className="font-mono text-[10px] text-text-muted">{shortHash(tx.paymentTxHash!)}</p>
-                            {tx.paymentSenderAddress && (
-                              <p className="font-mono text-[10px] text-text-muted truncate max-w-[160px]" title={tx.paymentSenderAddress}>
-                                from {shortHash(tx.paymentSenderAddress)}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-text-muted text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {hasDelivery ? (
-                          <div className="space-y-0.5">
-                            <p className="text-xs font-semibold text-orange-700">
-                              ↑ {parseFloat(tx.gasAmountNative).toFixed(6)} {tx.chain}
-                            </p>
-                            <p className="font-mono text-[10px] text-text-muted">{shortHash(tx.deliveryTxHash!)}</p>
-                            <p className="font-mono text-[10px] text-text-muted truncate max-w-[160px]" title={tx.toAddress}>
-                              to {shortHash(tx.toAddress)}
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="text-text-muted text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn('text-xs font-semibold', STATUS_COLORS[tx.status] ?? 'text-text-muted')}>
-                          {STATUS_LABELS[tx.status] ?? tx.status}
+                        <span className={cn(
+                          'inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
+                          ENTRY_TYPE_COLORS[entry.entryType] ?? 'text-text-muted bg-surface',
+                        )}>
+                          {ENTRY_TYPE_LABELS[entry.entryType] ?? entry.entryType}
                         </span>
                       </td>
+
+                      {/* Chain */}
+                      <td className="px-4 py-3">
+                        <Badge variant="default" size="sm">{entry.chain}</Badge>
+                      </td>
+
+                      {/* Amount */}
+                      <td className="px-4 py-3">
+                        <p className={cn(
+                          'text-sm font-semibold',
+                          inflow ? 'text-success' : 'text-danger',
+                        )}>
+                          {inflow ? '+' : '−'}{amountAbs.toFixed(6)} {entry.nativeSymbol}
+                        </p>
+                        {usd > 0 && (
+                          <p className="text-[10px] text-text-muted">${usd.toFixed(4)}</p>
+                        )}
+                      </td>
+
+                      {/* Tx Hash */}
+                      <td className="px-4 py-3">
+                        {entry.txHash ? (
+                          <span className="font-mono text-[11px] text-text-secondary" title={entry.txHash}>
+                            {shortHash(entry.txHash)}
+                          </span>
+                        ) : (
+                          <span className="text-text-muted text-xs">—</span>
+                        )}
+                      </td>
+
+                      {/* From / To */}
+                      <td className="px-4 py-3 max-w-[180px]">
+                        {entry.fromAddress && (
+                          <p className="font-mono text-[10px] text-text-muted truncate" title={entry.fromAddress}>
+                            from {shortHash(entry.fromAddress)}
+                          </p>
+                        )}
+                        {entry.toAddress && (
+                          <p className="font-mono text-[10px] text-text-muted truncate" title={entry.toAddress}>
+                            to {shortHash(entry.toAddress)}
+                          </p>
+                        )}
+                        {!entry.fromAddress && !entry.toAddress && (
+                          <span className="text-text-muted text-xs">—</span>
+                        )}
+                      </td>
+
+                      {/* Related order */}
+                      <td className="px-4 py-3">
+                        {entry.relatedOrder ? (
+                          <Link
+                            href={`/admin/gas/orders/${entry.relatedOrder.orderRef}`}
+                            className="font-mono text-xs text-primary hover:underline font-semibold"
+                          >
+                            {entry.relatedOrder.orderRef}
+                          </Link>
+                        ) : (
+                          <span className="text-text-muted text-xs">—</span>
+                        )}
+                      </td>
+
+                      {/* Time */}
                       <td className="px-4 py-3 text-xs text-text-muted whitespace-nowrap">
-                        {fmt(tx.updatedAt)}
+                        {fmt(entry.createdAt)}
                       </td>
                     </tr>
                   )

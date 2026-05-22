@@ -1412,12 +1412,18 @@ export const adminApi = {
   getGasWalletActivity: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{
       activity: Array<{
-        id: string; orderRef: string; chain: string
-        paymentAmount: string; paymentCoin: string | null; paymentNetwork: string | null
-        paymentTxHash: string | null; paymentSenderAddress: string | null
-        deliveryTxHash: string | null; gasAmountNative: string
-        toAddress: string; fromHotWallet: string | null
-        status: string; createdAt: string; updatedAt: string; deliveredAt: string | null
+        id: string
+        entryType: string
+        chain: string
+        nativeAmount: string
+        nativeSymbol: string
+        usdAmount: string
+        txHash: string | null
+        fromAddress: string | null
+        toAddress: string | null
+        notes: string | null
+        createdAt: string
+        relatedOrder: { orderRef: string; status: string; paymentCoin: string; paymentNetwork: string } | null
       }>
       pagination: { total: number; page: number; limit: number; pages: number }
     }>('/admin/gas/wallet-activity' + buildQs(params)),
