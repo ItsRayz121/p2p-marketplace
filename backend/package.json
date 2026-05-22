@@ -8,7 +8,7 @@
     "start": "prisma migrate deploy && node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "db:migrate": "prisma migrate resolve --rolled-back 20260515190000_gas_treasury_ledger_refill 2>/dev/null || true && prisma migrate deploy",
+    "db:migrate": "prisma migrate resolve --rolled-back 20260515190000_gas_treasury_ledger_refill 2>/dev/null || true && prisma migrate resolve --rolled-back 20260522090000_gas_ledger_external_deposit 2>/dev/null || true && prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
