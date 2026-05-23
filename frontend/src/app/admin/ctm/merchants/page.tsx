@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { Modal } from '@/components/ui/Modal'
 
 const TIER_COLORS: Record<string, string> = {
   new: 'bg-gray-100 text-gray-600',
@@ -190,57 +191,63 @@ export default function AdminCtmMerchantsPage() {
       )}
 
       {/* Suspend modal */}
-      {suspendModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="font-bold text-lg text-text-primary">Suspend: {suspendModal.user.username}</h3>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Suspend Duration</label>
-              <select value={suspendDays} onChange={(e) => setSuspendDays(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
-                <option value="1">1 day</option>
-                <option value="3">3 days</option>
-                <option value="7">7 days</option>
-                <option value="30">30 days</option>
-                <option value="90">90 days</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Reason *</label>
-              <textarea rows={3} value={suspendReason} onChange={(e) => setSuspendReason(e.target.value)} placeholder="Reason for suspension…" className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none" />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setSuspendModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleSuspend} disabled={submitting || !suspendReason.trim()} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {submitting ? 'Suspending…' : 'Suspend'}
-              </button>
-            </div>
+      <Modal
+        isOpen={!!suspendModal}
+        onClose={() => setSuspendModal(null)}
+        title={suspendModal ? `Suspend: ${suspendModal.user.username}` : 'Suspend Merchant'}
+        size="md"
+        footer={
+          <div className="flex gap-3">
+            <button onClick={() => setSuspendModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
+            <button onClick={handleSuspend} disabled={submitting || !suspendReason.trim()} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+              {submitting ? 'Suspending…' : 'Suspend'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Suspend Duration</label>
+            <select value={suspendDays} onChange={(e) => setSuspendDays(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+              <option value="1">1 day</option>
+              <option value="3">3 days</option>
+              <option value="7">7 days</option>
+              <option value="30">30 days</option>
+              <option value="90">90 days</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Reason *</label>
+            <textarea rows={3} value={suspendReason} onChange={(e) => setSuspendReason(e.target.value)} placeholder="Reason for suspension…" className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none" />
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Change tier modal */}
-      {tierModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="font-bold text-lg text-text-primary">Change Tier: {tierModal.user.username}</h3>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">New Tier</label>
-              <select value={newTier} onChange={(e) => setNewTier(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
-                <option value="new">New</option>
-                <option value="basic">Basic</option>
-                <option value="verified">Verified</option>
-                <option value="elite">Elite</option>
-              </select>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setTierModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleChangeTier} disabled={submitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {submitting ? 'Saving…' : 'Save'}
-              </button>
-            </div>
+      <Modal
+        isOpen={!!tierModal}
+        onClose={() => setTierModal(null)}
+        title={tierModal ? `Change Tier: ${tierModal.user.username}` : 'Change Tier'}
+        size="sm"
+        footer={
+          <div className="flex gap-3">
+            <button onClick={() => setTierModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
+            <button onClick={handleChangeTier} disabled={submitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+              {submitting ? 'Saving…' : 'Save'}
+            </button>
           </div>
+        }
+      >
+        <div>
+          <label className="block text-sm font-medium text-text-primary mb-1.5">New Tier</label>
+          <select value={newTier} onChange={(e) => setNewTier(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+            <option value="new">New</option>
+            <option value="basic">Basic</option>
+            <option value="verified">Verified</option>
+            <option value="elite">Elite</option>
+          </select>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { Modal } from '@/components/ui/Modal'
 
 const STATUS_COLORS: Record<string, string> = {
   awaiting_payment: 'bg-yellow-100 text-yellow-700',
@@ -145,16 +146,32 @@ export default function AdminCtmTradesPage() {
       )}
 
       {/* Trade detail modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 space-y-5 my-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-bold text-lg text-text-primary">Trade #{selected.tradeRef.slice(-10)}</h3>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[selected.status] ?? 'bg-gray-100 text-gray-600'}`}>{selected.status.replace(/_/g, ' ')}</span>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-text-muted hover:text-text-primary text-xl">×</button>
+      <Modal
+        isOpen={!!selected}
+        onClose={() => setSelected(null)}
+        title={selected ? `Trade #${selected.tradeRef.slice(-10)}` : 'Trade Detail'}
+        size="lg"
+        footer={
+          selected && (
+            <div className="flex flex-wrap gap-2">
+              {selected.status === 'payment_uploaded' && (
+                <button onClick={() => adminAction('confirm-payment', selected.tradeRef)} disabled={actionSubmitting} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-60">
+                  {actionSubmitting ? '…' : 'Confirm Payment'}
+                </button>
+              )}
+              {['payment_confirmed','seller_transferring','proof_submitted'].includes(selected.status) && (
+                <button onClick={() => adminAction('release', selected.tradeRef)} disabled={actionSubmitting} className="bg-green-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-60">
+                  {actionSubmitting ? '…' : 'Force Complete'}
+                </button>
+              )}
+              <button onClick={() => setSelected(null)} className="border border-border text-sm px-4 py-2 rounded-lg">Close</button>
             </div>
+          )
+        }
+      >
+        {selected && (
+          <div className="space-y-5">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[selected.status] ?? 'bg-gray-100 text-gray-600'}`}>{selected.status.replace(/_/g, ' ')}</span>
 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="bg-surface rounded-xl p-3 space-y-1">
@@ -211,23 +228,9 @@ export default function AdminCtmTradesPage() {
                 <p className="text-red-600 text-xs">Status: {selected.dispute.status}</p>
               </div>
             )}
-
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-              {selected.status === 'payment_uploaded' && (
-                <button onClick={() => adminAction('confirm-payment', selected.tradeRef)} disabled={actionSubmitting} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-60">
-                  {actionSubmitting ? '…' : 'Confirm Payment'}
-                </button>
-              )}
-              {['payment_confirmed','seller_transferring','proof_submitted'].includes(selected.status) && (
-                <button onClick={() => adminAction('release', selected.tradeRef)} disabled={actionSubmitting} className="bg-green-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-60">
-                  {actionSubmitting ? '…' : 'Force Complete'}
-                </button>
-              )}
-              <button onClick={() => setSelected(null)} className="border border-border text-sm px-4 py-2 rounded-lg">Close</button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   )
 }

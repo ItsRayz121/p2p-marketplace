@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { Modal } from '@/components/ui/Modal'
 import { useAuthStore } from '@/store/auth.store'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -264,12 +265,21 @@ function ChainModal({
   function setLogoUrl(url: string) { setForm({ ...form, logoUrl: url }) }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6 space-y-4">
-          <h2 className="text-lg font-bold text-text-primary">
-            {editing ? `Edit: ${editing.name}` : 'Add New Chain'}
-          </h2>
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={editing ? `Edit: ${editing.name}` : 'Add New Chain'}
+      size="lg"
+      footer={
+        <div className="flex gap-3">
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button className="flex-1" onClick={onSave} disabled={saving || !form.name || !form.slug || !form.symbol}>
+            {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Chain'}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
 
           {/* ── Auto-fill search (new chain only) ── */}
           {!editing && (
@@ -511,16 +521,8 @@ function ChainModal({
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <Button variant="secondary" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button className="flex-1" onClick={onSave} disabled={saving || !form.name || !form.slug || !form.symbol}>
-              {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Chain'}
-            </Button>
-          </div>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -636,13 +638,21 @@ function TokenModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6 space-y-4">
-          <h2 className="text-lg font-bold text-text-primary">
-            {editing ? `Edit: ${editing.name}` : 'Add New Token'}
-          </h2>
-
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={editing ? `Edit: ${editing.name}` : 'Add New Token'}
+      size="lg"
+      footer={
+        <div className="flex gap-3">
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button className="flex-1" onClick={onSave} disabled={saving || !form.name || !form.chainConfigId || !form.priceSymbol}>
+            {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Token'}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
           {/* Inheritance info banner */}
           {selectedChain && (
             <div className="px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg text-xs text-text-muted">
@@ -848,16 +858,8 @@ function TokenModal({
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <Button variant="secondary" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button className="flex-1" onClick={onSave} disabled={saving || !form.name || !form.chainConfigId || !form.priceSymbol}>
-              {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Token'}
-            </Button>
-          </div>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 

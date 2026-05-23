@@ -9,13 +9,14 @@ import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ALL_PAYMENT_METHODS } from '@/lib/pkPaymentMethods'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
   { value: 'BEP20', label: 'BNB Chain (BEP20)' },
   { value: 'Aptos', label: 'Aptos' },
 ]
-const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'Bank Transfer', 'SadaPay', 'NayaPay']
+const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const PAGE_SIZE = 10
 
 interface Filters {

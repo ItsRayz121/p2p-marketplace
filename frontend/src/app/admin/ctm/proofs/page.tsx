@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { Modal } from '@/components/ui/Modal'
 
 interface CtmProof {
   id: string; tradeId: string; proofType: string; fileUrl?: string; fileHash?: string; txHash?: string
@@ -95,14 +96,26 @@ export default function AdminCtmProofsPage() {
       )}
 
       {/* Proof detail modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 space-y-5 my-4">
-            <div className="flex items-start justify-between">
-              <h3 className="font-bold text-lg text-text-primary">Proof Review</h3>
-              <button onClick={() => setSelected(null)} className="text-text-muted hover:text-text-primary text-xl">×</button>
+      <Modal
+        isOpen={!!selected}
+        onClose={() => setSelected(null)}
+        title="Proof Review"
+        size="lg"
+        footer={
+          selected && (
+            <div className="flex gap-3">
+              <button onClick={() => handleAction('ok')} disabled={submitting} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+                {submitting ? '…' : '✓ Mark OK'}
+              </button>
+              <button onClick={() => handleAction('flag')} disabled={submitting} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+                {submitting ? '…' : '⚑ Flag Suspicious'}
+              </button>
             </div>
-
+          )
+        }
+      >
+        {selected && (
+          <div className="space-y-5">
             {selected.fileUrl && (
               <a href={selected.fileUrl} target="_blank" rel="noopener noreferrer">
                 <img src={selected.fileUrl} alt="proof" className="w-full rounded-xl border border-border" />
@@ -148,18 +161,9 @@ export default function AdminCtmProofsPage() {
               <label className="block text-sm font-medium text-text-primary mb-1.5">Admin Note (optional)</label>
               <textarea rows={2} value={adminNote} onChange={(e) => setAdminNote(e.target.value)} placeholder="Internal note about this proof…" className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => handleAction('ok')} disabled={submitting} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {submitting ? '…' : '✓ Mark OK'}
-              </button>
-              <button onClick={() => handleAction('flag')} disabled={submitting} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {submitting ? '…' : '⚑ Flag Suspicious'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   )
 }

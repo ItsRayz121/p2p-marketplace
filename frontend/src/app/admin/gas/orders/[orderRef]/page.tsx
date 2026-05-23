@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { Modal } from '@/components/ui/Modal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -577,13 +578,23 @@ export default function GasOrderDetailPage() {
       />
 
       {/* Mark Payment Received modal */}
-      {markPaymentOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-card rounded-2xl border border-border shadow-xl w-full max-w-md p-6">
-            <h3 className="text-base font-semibold text-text-primary mb-1">Mark Payment Received</h3>
-            <p className="text-sm text-text-muted mb-4">
-              Confirm you have received payment for order <span className="font-mono font-medium">{order.orderRef}</span>. Gas delivery will be queued immediately.
-            </p>
+      <Modal
+        isOpen={markPaymentOpen}
+        onClose={() => { setMarkPaymentOpen(false); setMarkPaymentTxHash('') }}
+        title="Mark Payment Received"
+        size="sm"
+        footer={
+          <div className="flex gap-3 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => { setMarkPaymentOpen(false); setMarkPaymentTxHash('') }}>Cancel</Button>
+            <Button variant="primary" size="sm" onClick={handleMarkPayment}>Confirm &amp; Release Gas</Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            Confirm you have received payment for order <span className="font-mono font-medium">{order.orderRef}</span>. Gas delivery will be queued immediately.
+          </p>
+          <div>
             <label className="block text-xs font-medium text-text-muted mb-1">
               Transaction Hash <span className="text-text-muted font-normal">(optional)</span>
             </label>
@@ -592,24 +603,30 @@ export default function GasOrderDetailPage() {
               placeholder="0x... or TRON tx hash"
               value={markPaymentTxHash}
               onChange={e => setMarkPaymentTxHash(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-primary font-mono placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary mb-5"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-primary font-mono placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            <div className="flex gap-3 justify-end">
-              <Button variant="ghost" size="sm" onClick={() => { setMarkPaymentOpen(false); setMarkPaymentTxHash('') }}>Cancel</Button>
-              <Button variant="primary" size="sm" onClick={handleMarkPayment}>Confirm &amp; Release Gas</Button>
-            </div>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Cancel Order modal */}
-      {cancelOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-card rounded-2xl border border-border shadow-xl w-full max-w-md p-6">
-            <h3 className="text-base font-semibold text-text-primary mb-1">Cancel Order</h3>
-            <p className="text-sm text-text-muted mb-4">
-              Cancel order <span className="font-mono font-medium">{order.orderRef}</span>. The order will be marked as failed.
-            </p>
+      <Modal
+        isOpen={cancelOpen}
+        onClose={() => { setCancelOpen(false); setCancelReason('') }}
+        title="Cancel Order"
+        size="sm"
+        footer={
+          <div className="flex gap-3 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => { setCancelOpen(false); setCancelReason('') }}>Back</Button>
+            <Button variant="danger" size="sm" onClick={handleCancel}>Cancel Order</Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            Cancel order <span className="font-mono font-medium">{order.orderRef}</span>. The order will be marked as failed.
+          </p>
+          <div>
             <label className="block text-xs font-medium text-text-muted mb-1">
               Reason <span className="text-text-muted font-normal">(optional)</span>
             </label>
@@ -618,15 +635,11 @@ export default function GasOrderDetailPage() {
               placeholder="e.g. Expired, fraud suspected, user request…"
               value={cancelReason}
               onChange={e => setCancelReason(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-danger mb-5"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-danger"
             />
-            <div className="flex gap-3 justify-end">
-              <Button variant="ghost" size="sm" onClick={() => { setCancelOpen(false); setCancelReason('') }}>Back</Button>
-              <Button variant="danger" size="sm" onClick={handleCancel}>Cancel Order</Button>
-            </div>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

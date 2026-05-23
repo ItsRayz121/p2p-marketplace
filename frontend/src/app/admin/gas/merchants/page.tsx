@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/store/auth.store'
+import { Modal } from '@/components/ui/Modal'
 
 type Merchant = {
   id: string
@@ -289,67 +290,58 @@ export default function GasMerchantsPage() {
       )}
 
       {/* Merchant form modal */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="p-6 space-y-4">
-              <h2 className="text-lg font-bold text-text-primary">
-                {editingId ? 'Edit Merchant' : 'Add Merchant Account'}
-              </h2>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-text-muted block mb-1">Name *</label>
-                  <Input placeholder="e.g. Partner Exchange" value={form.name} onChange={field('name')} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-text-muted block mb-1">API Key ID *</label>
-                  <Input placeholder="MerchantApiKey ID" value={form.apiKeyId} onChange={field('apiKeyId')} disabled={!!editingId} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-text-muted block mb-1">Commission Rate (0–1)</label>
-                  <Input type="number" step="0.01" min="0" max="1" value={form.commissionRate} onChange={field('commissionRate')} />
-                  <p className="text-xs text-text-muted mt-0.5">e.g. 0.3 = 30% of revenue goes to merchant</p>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-text-muted block mb-1">Settlement Cycle</label>
-                  <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.settlementCycle} onChange={field('settlementCycle')}>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-text-muted block mb-1">Payout Address (USDT TRC20)</label>
-                  <Input placeholder="T..." value={form.payoutAddress} onChange={field('payoutAddress')} />
-                </div>
-              </div>
-
-              {formError && <p className="text-danger text-sm">{formError}</p>}
-
-              <div className="flex gap-3">
-                <Button variant="secondary" className="flex-1" onClick={() => setShowForm(false)} disabled={formSaving}>Cancel</Button>
-                <Button className="flex-1" onClick={saveForm} disabled={formSaving || !form.name || !form.apiKeyId}>
-                  {formSaving ? 'Saving...' : editingId ? 'Save Changes' : 'Create'}
-                </Button>
-              </div>
-            </div>
+      <Modal
+        isOpen={showForm}
+        onClose={() => setShowForm(false)}
+        title={editingId ? 'Edit Merchant' : 'Add Merchant Account'}
+        size="md"
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" className="flex-1" onClick={() => setShowForm(false)} disabled={formSaving}>Cancel</Button>
+            <Button className="flex-1" onClick={saveForm} disabled={formSaving || !form.name || !form.apiKeyId}>
+              {formSaving ? 'Saving...' : editingId ? 'Save Changes' : 'Create'}
+            </Button>
           </div>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-text-muted block mb-1">Name *</label>
+            <Input placeholder="e.g. Partner Exchange" value={form.name} onChange={field('name')} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-text-muted block mb-1">API Key ID *</label>
+            <Input placeholder="MerchantApiKey ID" value={form.apiKeyId} onChange={field('apiKeyId')} disabled={!!editingId} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-text-muted block mb-1">Commission Rate (0–1)</label>
+            <Input type="number" step="0.01" min="0" max="1" value={form.commissionRate} onChange={field('commissionRate')} />
+            <p className="text-xs text-text-muted mt-0.5">e.g. 0.3 = 30% of revenue goes to merchant</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-text-muted block mb-1">Settlement Cycle</label>
+            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.settlementCycle} onChange={field('settlementCycle')}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-text-muted block mb-1">Payout Address (USDT TRC20)</label>
+            <Input placeholder="T..." value={form.payoutAddress} onChange={field('payoutAddress')} />
+          </div>
+          {formError && <p className="text-danger text-sm">{formError}</p>}
         </div>
-      )}
+      </Modal>
 
       {/* Settlements panel */}
-      {selectedMerchant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto">
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-text-primary">
-                  Settlements — {selectedMerchant.name}
-                </h2>
-                <button onClick={() => setSelectedMerchant(null)} className="text-text-muted hover:text-text-primary text-xl leading-none">&times;</button>
-              </div>
-
+      <Modal
+        isOpen={!!selectedMerchant}
+        onClose={() => setSelectedMerchant(null)}
+        title={selectedMerchant ? `Settlements — ${selectedMerchant.name}` : 'Settlements'}
+        size="xl"
+      >
+        <div className="space-y-4">
               {settlementsLoading && <LoadingState message="Loading settlements..." />}
 
               {!settlementsLoading && settlements.length === 0 && (
@@ -415,10 +407,8 @@ export default function GasMerchantsPage() {
                   <Button size="sm" variant="secondary" disabled={settlementsPage >= settlementTotalPages} onClick={() => loadMoreSettlements(settlementsPage + 1)}>Next</Button>
                 </div>
               )}
-            </div>
-          </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

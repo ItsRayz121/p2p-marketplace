@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { useAuthStore } from '@/store/auth.store'
+import { Modal } from '@/components/ui/Modal'
 
 type Run = {
   id: string
@@ -228,15 +229,13 @@ export default function GasReconciliationPage() {
       )}
 
       {/* Run detail modal */}
-      {(runLoading || selectedRun || runError) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-text-primary">Run Detail</h2>
-                <button onClick={() => { setSelectedRun(null); setRunError(null) }} className="text-text-muted hover:text-text-primary text-xl leading-none">&times;</button>
-              </div>
-
+      <Modal
+        isOpen={!!(runLoading || selectedRun || runError)}
+        onClose={() => { setSelectedRun(null); setRunError(null) }}
+        title="Run Detail"
+        size="lg"
+      >
+        <div className="space-y-4">
               {runLoading && <LoadingState message="Loading..." />}
               {runError && <p className="text-danger text-sm">{runError}</p>}
 
@@ -306,10 +305,8 @@ export default function GasReconciliationPage() {
                   )}
                 </div>
               )}
-            </div>
-          </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

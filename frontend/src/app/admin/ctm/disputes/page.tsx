@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { Modal } from '@/components/ui/Modal'
 
 interface Dispute {
   id: string; reason: string; description: string; status: string
@@ -94,17 +95,27 @@ export default function AdminCtmDisputesPage() {
       )}
 
       {/* Resolve modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 space-y-5 my-4">
-            <h3 className="font-bold text-lg text-text-primary">Resolve Dispute — #{selected.trade.tradeRef.slice(-8)}</h3>
-
+      <Modal
+        isOpen={!!selected}
+        onClose={() => setSelected(null)}
+        title={selected ? `Resolve Dispute — #${selected.trade.tradeRef.slice(-8)}` : 'Resolve Dispute'}
+        size="lg"
+        footer={
+          <div className="flex gap-3">
+            <button onClick={() => setSelected(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
+            <button onClick={handleResolve} disabled={submitting || !resolution.trim()} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+              {submitting ? 'Resolving…' : 'Resolve Dispute'}
+            </button>
+          </div>
+        }
+      >
+        {selected && (
+          <div className="space-y-5">
             <div className="bg-surface rounded-xl p-4 text-sm space-y-1">
               <p className="font-medium text-text-primary">{selected.reason.replace(/_/g, ' ')}</p>
               <p className="text-text-muted">{selected.description}</p>
             </div>
 
-            {/* Proofs */}
             {selected.trade.proofs?.length > 0 && (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-text-primary">Evidence</p>
@@ -137,16 +148,9 @@ export default function AdminCtmDisputesPage() {
               <label className="block text-sm font-medium text-text-primary mb-1.5">Resolution Note *</label>
               <textarea rows={4} value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="Explain the resolution decision…" className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none" />
             </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setSelected(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleResolve} disabled={submitting || !resolution.trim()} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {submitting ? 'Resolving…' : 'Resolve Dispute'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   )
 }

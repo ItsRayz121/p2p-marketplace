@@ -55,7 +55,9 @@ export default function AdminCtmTokensPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState(EMPTY_ADD)
   const [addError, setAddError] = useState('')
+  const [addDuplicateSlug, setAddDuplicateSlug] = useState('')
   const [adding, setAdding] = useState(false)
+  const [addSuccess, setAddSuccess] = useState('')
 
   const fetchTokens = async () => {
     try {
@@ -139,14 +141,22 @@ export default function AdminCtmTokensPage() {
 
       await ctmApi.adminCreateToken(payload)
       invalidateLogoCache()
+      const createdName = addForm.name
+      const createdSymbol = addForm.symbol.toUpperCase()
       setShowAdd(false)
       setAddForm(EMPTY_ADD)
+      setAddError('')
+      setAddDuplicateSlug('')
       await fetchTokens()
+      setAddSuccess(`${createdName} (${createdSymbol}) added successfully.`)
+      setTimeout(() => setAddSuccess(''), 6000)
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'Failed to create token'
       if (msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('conflict')) {
-        setAddError(`A token with slug "${addForm.slug}" already exists. It may be hidden — check the token list above or try a different slug.`)
+        setAddDuplicateSlug(addForm.slug)
+        setAddError(`A token with slug "${addForm.slug}" already exists.`)
       } else {
+        setAddDuplicateSlug('')
         setAddError(msg)
       }
     } finally {
@@ -189,6 +199,14 @@ export default function AdminCtmTokensPage() {
           </button>
         </div>
       </div>
+
+      {addSuccess && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-800 rounded-xl px-4 py-3 text-sm">
+          <svg className="w-4 h-4 flex-shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          {addSuccess}
+          <button onClick={() => setAddSuccess('')} className="ml-auto text-green-600 hover:text-green-800">✕</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-16 animate-pulse" />)}</div>
@@ -282,14 +300,27 @@ export default function AdminCtmTokensPage() {
       {/* Add Token modal */}
       <Modal
         isOpen={showAdd}
-        onClose={() => { setShowAdd(false); setAddForm(EMPTY_ADD); setAddError('') }}
+        onClose={() => { setShowAdd(false); setAddForm(EMPTY_ADD); setAddError(''); setAddDuplicateSlug('') }}
         title="Add Token (Admin)"
         size="xl"
         footer={
           <div className="space-y-3">
-            {addError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{addError}</p>}
+            {addError && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {addError}
+                {addDuplicateSlug && (
+                  <button
+                    type="button"
+                    className="ml-2 underline font-medium"
+                    onClick={() => { setShowAdd(false); setAddForm(EMPTY_ADD); setAddError(''); setAddDuplicateSlug(''); setSearch(addDuplicateSlug) }}
+                  >
+                    Find it in the list →
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex gap-3">
-              <Button variant="secondary" size="md" onClick={() => { setShowAdd(false); setAddForm(EMPTY_ADD); setAddError('') }} disabled={adding} className="flex-1">Cancel</Button>
+              <Button variant="secondary" size="md" onClick={() => { setShowAdd(false); setAddForm(EMPTY_ADD); setAddError(''); setAddDuplicateSlug('') }} disabled={adding} className="flex-1">Cancel</Button>
               <Button variant="primary" size="md" loading={adding} onClick={handleAddToken} className="flex-1">Add Token</Button>
             </div>
           </div>

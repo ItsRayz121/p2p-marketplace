@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { useAuthStore } from '@/store/auth.store'
+import { Modal } from '@/components/ui/Modal'
 
 type FlaggedOrder = {
   id: string
@@ -223,99 +224,82 @@ export default function GasFlaggedPage() {
       )}
 
       {/* Review Modal */}
-      {reviewing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-text-primary">Review Flagged Order</h2>
-                <button onClick={() => setReviewing(null)} className="text-text-muted hover:text-text-primary text-xl leading-none">&times;</button>
+      <Modal
+        isOpen={!!reviewing}
+        onClose={() => setReviewing(null)}
+        title="Review Flagged Order"
+        size="md"
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" className="flex-1" onClick={() => setReviewing(null)} disabled={reviewSaving}>Cancel</Button>
+            <Button className="flex-1" onClick={submitReview} disabled={reviewSaving}>
+              {reviewSaving ? 'Saving...' : 'Submit Review'}
+            </Button>
+          </div>
+        }
+      >
+        {reviewing && (
+          <div className="space-y-4">
+            <div className="bg-surface rounded-xl p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Order Ref</span>
+                <span className="font-medium">{reviewing.order.orderRef}</span>
               </div>
-
-              <div className="bg-surface rounded-xl p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Order Ref</span>
-                  <span className="font-medium">{reviewing.order.orderRef}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Chain</span>
-                  <span className="font-medium">{reviewing.order.chain}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Amount</span>
-                  <span className="font-medium">{usd(reviewing.order.gasAmountUSD)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Risk Score</span>
-                  <span className={riskColor(reviewing.riskScore)}>{reviewing.riskScore} / 100</span>
-                </div>
-                <div>
-                  <span className="text-text-muted block mb-1">Reasons</span>
-                  <div className="flex flex-wrap gap-1">
-                    {parseReasons(reviewing.reasons).map((r) => (
-                      <span key={r} className="px-1.5 py-0.5 bg-warning/10 text-warning text-xs rounded font-medium">{r}</span>
-                    ))}
-                  </div>
-                </div>
-                {reviewing.order.ipAddress && (
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">IP</span>
-                    <code className="text-xs bg-white px-1 rounded">{reviewing.order.ipAddress}</code>
-                  </div>
-                )}
+              <div className="flex justify-between">
+                <span className="text-text-muted">Chain</span>
+                <span className="font-medium">{reviewing.order.chain}</span>
               </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-text-muted block">Decision</label>
-                <div className="flex gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      value="reviewed_ok"
-                      checked={reviewAction === 'reviewed_ok'}
-                      onChange={() => setReviewAction('reviewed_ok')}
-                      className="accent-success"
-                    />
-                    <span className="text-sm text-success font-medium">Approve (OK)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      value="reviewed_blocked"
-                      checked={reviewAction === 'reviewed_blocked'}
-                      onChange={() => setReviewAction('reviewed_blocked')}
-                      className="accent-danger"
-                    />
-                    <span className="text-sm text-danger font-medium">Block</span>
-                  </label>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Amount</span>
+                <span className="font-medium">{usd(reviewing.order.gasAmountUSD)}</span>
               </div>
-
+              <div className="flex justify-between">
+                <span className="text-text-muted">Risk Score</span>
+                <span className={riskColor(reviewing.riskScore)}>{reviewing.riskScore} / 100</span>
+              </div>
               <div>
-                <label className="text-xs font-medium text-text-muted block mb-1">Admin Note (optional)</label>
-                <textarea
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm resize-none"
-                  rows={2}
-                  value={reviewNote}
-                  onChange={(e) => setReviewNote(e.target.value)}
-                  placeholder="Internal note..."
-                />
+                <span className="text-text-muted block mb-1">Reasons</span>
+                <div className="flex flex-wrap gap-1">
+                  {parseReasons(reviewing.reasons).map((r) => (
+                    <span key={r} className="px-1.5 py-0.5 bg-warning/10 text-warning text-xs rounded font-medium">{r}</span>
+                  ))}
+                </div>
               </div>
+              {reviewing.order.ipAddress && (
+                <div className="flex justify-between">
+                  <span className="text-text-muted">IP</span>
+                  <code className="text-xs bg-white px-1 rounded">{reviewing.order.ipAddress}</code>
+                </div>
+              )}
+            </div>
 
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-text-muted block">Decision</label>
               <div className="flex gap-3">
-                <Button variant="secondary" className="flex-1" onClick={() => setReviewing(null)} disabled={reviewSaving}>Cancel</Button>
-                <Button
-                  className="flex-1"
-                  onClick={submitReview}
-                  disabled={reviewSaving}
-                >
-                  {reviewSaving ? 'Saving...' : 'Submit Review'}
-                </Button>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="reviewed_ok" checked={reviewAction === 'reviewed_ok'} onChange={() => setReviewAction('reviewed_ok')} className="accent-success" />
+                  <span className="text-sm text-success font-medium">Approve (OK)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="reviewed_blocked" checked={reviewAction === 'reviewed_blocked'} onChange={() => setReviewAction('reviewed_blocked')} className="accent-danger" />
+                  <span className="text-sm text-danger font-medium">Block</span>
+                </label>
               </div>
             </div>
+
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Admin Note (optional)</label>
+              <textarea
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm resize-none"
+                rows={2}
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                placeholder="Internal note..."
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   )
 }

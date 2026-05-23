@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
+import { Modal } from '@/components/ui/Modal'
 
 interface TokenRequest {
   id: string; tokenName: string; tokenSymbol: string; description: string
@@ -126,70 +127,74 @@ export default function AdminTokenQueuePage() {
       )}
 
       {/* Approve modal */}
-      {approveModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 space-y-4 my-4">
-            <h3 className="font-bold text-lg text-text-primary">Create Token: {approveModal.tokenName}</h3>
-            <div className="grid grid-cols-2 gap-4">
-              {[['slug', 'Slug (URL-safe)*'], ['symbol', 'Symbol*'], ['name', 'Name*']].map(([key, label]) => (
-                <div key={key} className={key === 'name' ? 'col-span-2' : ''}>
-                  <label className="block text-xs font-medium text-text-primary mb-1">{label}</label>
-                  <input type="text" value={(form as Record<string, string>)[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none" />
-                </div>
-              ))}
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-text-primary mb-1">Description*</label>
-                <textarea rows={3} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-text-primary mb-1">Settlement Type</label>
-                <select value={form.settlementType} onChange={(e) => setForm((f) => ({ ...f, settlementType: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
-                  {SETTLEMENT_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-text-primary mb-1">Risk Tier</label>
-                <select value={form.riskTier} onChange={(e) => setForm((f) => ({ ...f, riskTier: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
-                  {RISK_TIERS.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-text-primary mb-1">Network</label>
-                <input type="text" value={form.network} onChange={(e) => setForm((f) => ({ ...f, network: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none" placeholder="e.g. Pi Mainnet" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-text-primary mb-1">Logo URL</label>
-                <input type="url" value={form.logoUrl} onChange={(e) => setForm((f) => ({ ...f, logoUrl: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none" />
-              </div>
+      <Modal
+        isOpen={!!approveModal}
+        onClose={() => setApproveModal(null)}
+        title={approveModal ? `Create Token: ${approveModal.tokenName}` : 'Create Token'}
+        size="lg"
+        footer={
+          <div className="flex gap-3">
+            <button onClick={() => setApproveModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
+            <button onClick={handleApprove} disabled={submitting} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+              {submitting ? 'Creating…' : 'Create & Approve'}
+            </button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          {[['slug', 'Slug (URL-safe)*'], ['symbol', 'Symbol*'], ['name', 'Name*']].map(([key, label]) => (
+            <div key={key} className={key === 'name' ? 'col-span-2' : ''}>
+              <label className="block text-xs font-medium text-text-primary mb-1">{label}</label>
+              <input type="text" value={(form as Record<string, string>)[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none" />
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setApproveModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleApprove} disabled={submitting} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {submitting ? 'Creating…' : 'Create & Approve'}
-              </button>
-            </div>
+          ))}
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-text-primary mb-1">Description*</label>
+            <textarea rows={3} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-primary mb-1">Settlement Type</label>
+            <select value={form.settlementType} onChange={(e) => setForm((f) => ({ ...f, settlementType: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+              {SETTLEMENT_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-primary mb-1">Risk Tier</label>
+            <select value={form.riskTier} onChange={(e) => setForm((f) => ({ ...f, riskTier: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+              {RISK_TIERS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-primary mb-1">Network</label>
+            <input type="text" value={form.network} onChange={(e) => setForm((f) => ({ ...f, network: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none" placeholder="e.g. Pi Mainnet" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-primary mb-1">Logo URL</label>
+            <input type="url" value={form.logoUrl} onChange={(e) => setForm((f) => ({ ...f, logoUrl: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none" />
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Reject modal */}
-      {rejectModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="font-bold text-lg text-text-primary">Reject: {rejectModal.tokenName}</h3>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Admin Note *</label>
-              <textarea rows={3} value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} placeholder="Reason for rejection…" className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none" />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setRejectModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleReject} disabled={submitting || !rejectNote.trim()} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {submitting ? 'Rejecting…' : 'Reject Request'}
-              </button>
-            </div>
+      <Modal
+        isOpen={!!rejectModal}
+        onClose={() => setRejectModal(null)}
+        title={rejectModal ? `Reject: ${rejectModal.tokenName}` : 'Reject Request'}
+        size="md"
+        footer={
+          <div className="flex gap-3">
+            <button onClick={() => setRejectModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
+            <button onClick={handleReject} disabled={submitting || !rejectNote.trim()} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
+              {submitting ? 'Rejecting…' : 'Reject Request'}
+            </button>
           </div>
+        }
+      >
+        <div>
+          <label className="block text-sm font-medium text-text-primary mb-1.5">Admin Note *</label>
+          <textarea rows={3} value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} placeholder="Reason for rejection…" className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none" />
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

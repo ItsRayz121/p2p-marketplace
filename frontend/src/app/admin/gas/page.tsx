@@ -168,29 +168,26 @@ function RpcTestModal({ result, onClose }: { result: RpcTestResult; onClose: () 
   )
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-        <div className={`px-5 py-4 border-b rounded-t-2xl ${result.allClear ? 'bg-success/10' : 'bg-danger/10'}`}>
-          <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full ${result.allClear ? 'bg-success' : 'bg-danger'}`} />
-            <h2 className="font-semibold text-text-primary">RPC Health: {result.chain}</h2>
-            <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${result.allClear ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
-              {result.allClear ? 'All Clear' : 'Issues Found'}
-            </span>
-          </div>
-        </div>
-        <div className="p-5 space-y-1">
-          {row('RPC Reachable', result.rpc.reachable, result.rpc.reachable ? `Block #${result.rpc.blockNumber?.toLocaleString()} · ${result.rpc.latencyMs}ms` : (result.rpc.error ?? 'Unreachable'))}
-          {result.rpc.isStale && row('Stale Node', false, 'Block number has not advanced in 5+ minutes')}
-          {row('Signer Available', result.signer.ok, result.signer.ok ? 'Private key or mnemonic is accessible' : (result.signer.error ?? 'No key found'))}
-          {row('Address Derivation', result.signer.addressMatch, result.signer.derivedAddress ? `Derived: ${result.signer.derivedAddress.slice(0, 10)}… matches DB` : 'Legacy key — no derivation check')}
-          {row('Latest Block Reachable', result.rpc.reachable && result.rpc.blockNumber !== null, result.rpc.blockNumber !== null ? `Block #${result.rpc.blockNumber.toLocaleString()}` : 'N/A')}
-        </div>
-        <div className="px-5 pb-5">
-          <Button variant="secondary" onClick={onClose} className="w-full">Close</Button>
-        </div>
+    <Modal
+      isOpen={!!result}
+      onClose={onClose}
+      title={`RPC Health: ${result.chain}`}
+      size="md"
+      footer={<Button variant="secondary" onClick={onClose} className="w-full">Close</Button>}
+    >
+      <div className={`-mx-6 -mt-5 px-6 py-3 mb-4 ${result.allClear ? 'bg-success/10' : 'bg-danger/10'}`}>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${result.allClear ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
+          {result.allClear ? 'All Clear' : 'Issues Found'}
+        </span>
       </div>
-    </div>
+      <div className="space-y-1">
+        {row('RPC Reachable', result.rpc.reachable, result.rpc.reachable ? `Block #${result.rpc.blockNumber?.toLocaleString()} · ${result.rpc.latencyMs}ms` : (result.rpc.error ?? 'Unreachable'))}
+        {result.rpc.isStale && row('Stale Node', false, 'Block number has not advanced in 5+ minutes')}
+        {row('Signer Available', result.signer.ok, result.signer.ok ? 'Private key or mnemonic is accessible' : (result.signer.error ?? 'No key found'))}
+        {row('Address Derivation', result.signer.addressMatch, result.signer.derivedAddress ? `Derived: ${result.signer.derivedAddress.slice(0, 10)}… matches DB` : 'Legacy key — no derivation check')}
+        {row('Latest Block Reachable', result.rpc.reachable && result.rpc.blockNumber !== null, result.rpc.blockNumber !== null ? `Block #${result.rpc.blockNumber.toLocaleString()}` : 'N/A')}
+      </div>
+    </Modal>
   )
 }
 
@@ -1233,45 +1230,47 @@ export default function GasAdminPage() {
       })()}
 
       {/* Global pause confirm modal */}
-      {confirmGlobalPause !== null && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <h2 className="text-lg font-bold text-text-primary">
-              {confirmGlobalPause ? 'Emergency Global Pause' : 'Resume Gas Delivery'}
-            </h2>
-            <p className="text-sm text-text-secondary">
-              {confirmGlobalPause
-                ? 'This will immediately halt ALL gas deliveries across all chains. Queued jobs will retry when the pause is lifted.'
-                : 'Gas delivery will resume across all chains. Queued orders will begin processing immediately.'}
-            </p>
-            {confirmGlobalPause && (
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Reason (optional)</label>
-                <input
-                  type="text"
-                  value={globalPauseReasonInput}
-                  onChange={(e) => setGlobalPauseReasonInput(e.target.value)}
-                  placeholder="e.g. Hot wallet drained — investigating"
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-danger/40"
-                />
-              </div>
-            )}
-            <div className="flex gap-2 pt-1">
-              <Button variant="secondary" onClick={() => { setConfirmGlobalPause(null); setGlobalPauseReasonInput('') }} className="flex-1">
-                Cancel
-              </Button>
-              <Button
-                variant={confirmGlobalPause ? 'danger' : 'primary'}
-                onClick={handleGlobalPauseToggle}
-                disabled={togglingGlobalPause}
-                className="flex-1"
-              >
-                {togglingGlobalPause ? 'Saving…' : confirmGlobalPause ? 'Pause All' : 'Resume All'}
-              </Button>
-            </div>
+      <Modal
+        isOpen={confirmGlobalPause !== null}
+        onClose={() => { setConfirmGlobalPause(null); setGlobalPauseReasonInput('') }}
+        title={confirmGlobalPause ? 'Emergency Global Pause' : 'Resume Gas Delivery'}
+        size="sm"
+        footer={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => { setConfirmGlobalPause(null); setGlobalPauseReasonInput('') }} className="flex-1">
+              Cancel
+            </Button>
+            <Button
+              variant={confirmGlobalPause ? 'danger' : 'primary'}
+              onClick={handleGlobalPauseToggle}
+              disabled={togglingGlobalPause}
+              className="flex-1"
+            >
+              {togglingGlobalPause ? 'Saving…' : confirmGlobalPause ? 'Pause All' : 'Resume All'}
+            </Button>
           </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">
+            {confirmGlobalPause
+              ? 'This will immediately halt ALL gas deliveries across all chains. Queued jobs will retry when the pause is lifted.'
+              : 'Gas delivery will resume across all chains. Queued orders will begin processing immediately.'}
+          </p>
+          {confirmGlobalPause && (
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Reason (optional)</label>
+              <input
+                type="text"
+                value={globalPauseReasonInput}
+                onChange={(e) => setGlobalPauseReasonInput(e.target.value)}
+                placeholder="e.g. Hot wallet drained — investigating"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-danger/40"
+              />
+            </div>
+          )}
         </div>
-      )}
+      </Modal>
 
       {/* RPC test result modal */}
       {rpcTestResult && <RpcTestModal result={rpcTestResult} onClose={() => setRpcTestResult(null)} />}
