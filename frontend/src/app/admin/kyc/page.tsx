@@ -336,8 +336,6 @@ export default function KycQueuePage() {
                   {actionError}
                 </div>
               )}
-            </div>
-
           </div>
         )}
       </Modal>

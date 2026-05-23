@@ -967,7 +967,7 @@ export interface GasOrder {
   userId?: string | null
   orderRef: string
   trackingToken?: string | null
-  status: 'payment_pending' | 'payment_uploaded' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
   toAddress: string
   tier?: string | null
   chain: string
@@ -1417,6 +1417,8 @@ export const adminApi = {
         chain: string
         nativeAmount: string
         nativeSymbol: string
+        tokenSymbol: string | null
+        tokenAmount: string | null
         usdAmount: string
         txHash: string | null
         fromAddress: string | null
