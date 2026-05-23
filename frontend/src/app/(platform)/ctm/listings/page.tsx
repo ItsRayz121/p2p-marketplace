@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { ALL_PAYMENT_METHODS } from '@/lib/pkPaymentMethods'
+import { ALL_PAYMENT_METHODS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 
@@ -109,6 +109,24 @@ export default function BrowseListingsPage() {
                     {tierBadge(l.merchantProfile.tier)}
                   </div>
                 </div>
+
+                {l.paymentMethods.length > 0 && (
+                  <div className="sm:w-36">
+                    <p className="text-xs text-text-muted mb-1">Payment</p>
+                    <div className="flex flex-wrap gap-1">
+                      {l.paymentMethods.slice(0, 3).map((pm) => (
+                        <span key={pm} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
+                          {pm}
+                        </span>
+                      ))}
+                      {l.paymentMethods.length > 3 && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface text-text-secondary">
+                          +{l.paymentMethods.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <Link href={`/ctm/listings/${l.id}`} className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${l.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
                   {l.side === 'sell' ? 'Buy' : 'Sell'}

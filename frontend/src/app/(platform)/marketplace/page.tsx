@@ -4,12 +4,11 @@ import Link from 'next/link'
 import { marketplaceApi } from '@/lib/api'
 import type { MarketplaceAd } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
-import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { ALL_PAYMENT_METHODS } from '@/lib/pkPaymentMethods'
+import { ALL_PAYMENT_METHODS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -67,11 +66,15 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
         <div className="sm:w-40">
           <p className="text-xs text-text-muted mb-1">Payment</p>
           <div className="flex flex-wrap gap-1">
-            {methods.slice(0, 2).map((pm) => (
-              <Badge key={pm} variant="default" size="sm">{pm}</Badge>
+            {methods.slice(0, 3).map((pm) => (
+              <span key={pm} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
+                {pm}
+              </span>
             ))}
-            {methods.length > 2 && (
-              <Badge variant="default" size="sm">+{methods.length - 2}</Badge>
+            {methods.length > 3 && (
+              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface text-text-secondary">
+                +{methods.length - 3}
+              </span>
             )}
           </div>
         </div>

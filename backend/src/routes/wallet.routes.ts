@@ -44,7 +44,7 @@ const lockCollateralSchema = z.object({
 })
 
 const paymentMethodSchema = z.object({
-  type: z.enum(['jazzcash', 'easypaisa', 'bank_transfer']),
+  type: z.enum(['jazzcash', 'easypaisa', 'sadapay', 'nayapay', 'bank_transfer']),
   displayName: z.string().min(1).max(100),
   accountName: z.string().min(1).max(100),
   mobileNumber: z.string().optional(),

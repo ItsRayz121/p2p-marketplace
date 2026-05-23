@@ -111,6 +111,8 @@ enum DisputeResolutionType {
 enum PaymentMethodType {
   jazzcash
   easypaisa
+  sadapay
+  nayapay
   bank_transfer
 }
 

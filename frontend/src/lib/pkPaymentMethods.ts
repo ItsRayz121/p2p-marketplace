@@ -60,3 +60,12 @@ export const PK_BANK_PILLS = [
 ]
 
 export const ALL_PAYMENT_METHODS = [...PK_MOBILE_METHODS, ...PK_BANK_PILLS]
+
+// Returns a Tailwind className string for a payment method badge chip
+export function getPaymentMethodColor(method: string): string {
+  if (method === 'JazzCash') return 'bg-orange-100 text-orange-700'
+  if (method === 'Easypaisa') return 'bg-green-100 text-green-700'
+  if (method === 'SadaPay') return 'bg-teal-100 text-teal-700'
+  if (method === 'NayaPay') return 'bg-indigo-100 text-indigo-700'
+  return 'bg-blue-50 text-blue-700' // banks
+}
