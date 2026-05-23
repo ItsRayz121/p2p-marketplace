@@ -130,7 +130,7 @@ export async function adminRoutes(app: FastifyInstance) {
           select: { id: true, category: true, title: true, body: true, href: true, isRead: true, createdAt: true },
         }),
         // Gas fee stats
-        db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_detected', 'sending'] } } }),
+        db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] } } }),
         db.gasFeeOrder.count({ where: { status: 'payment_uploaded', paymentCoin: 'PKR' } }),
         db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
         db.gasFeeOrder.aggregate({
@@ -2313,7 +2313,7 @@ export async function adminRoutes(app: FastifyInstance) {
         where: { status: 'delivered', deliveredAt: { gte: today } },
         _sum: { paymentAmount: true },
       }),
-      db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_detected', 'sending'] } } }),
+      db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] } } }),
       db.gasFeeOrder.count({ where: { status: 'failed' } }),
       db.gasFeeOrder.count({ where: { status: 'refund_pending' } }),
       db.gasCustomRequest.count({ where: { status: 'pending' } }),
@@ -3256,13 +3256,13 @@ export async function adminRoutes(app: FastifyInstance) {
     const reason = body?.reason?.trim() || 'Cancelled by admin'
 
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: { in: ['payment_pending', 'payment_uploaded'] } },
+      where: { id, status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified'] } },
       data:  { status: 'failed', failureReason: reason },
     })
     if (claimed.count === 0) {
       const order = await db.gasFeeOrder.findUnique({ where: { id } })
       if (!order) throw Errors.NOT_FOUND('Gas fee order')
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only cancel payment_pending or payment_uploaded orders`, 409)
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only cancel pending, uploaded, or verified orders`, 409)
     }
     await createAuditLog(req.user!.id, 'GAS_ORDER_CANCELLED', 'GasFeeOrder', id, { reason })
     return reply.send({ success: true, data: { status: 'failed' } })

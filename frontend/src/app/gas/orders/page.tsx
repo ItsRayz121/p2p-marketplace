@@ -44,13 +44,14 @@ function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' 
   if (s === 'delivered') return 'success'
   if (s === 'refunded') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
-  if (s === 'payment_uploaded' || s === 'payment_detected' || s === 'sending' || s === 'refund_pending') return 'warning'
+  if (s === 'payment_uploaded' || s === 'payment_verified' || s === 'payment_detected' || s === 'sending' || s === 'refund_pending') return 'warning'
   return 'default'
 }
 
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
   payment_uploaded: 'Payment Under Review',
+  payment_verified: 'Payment Verified',
   payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Delivered',

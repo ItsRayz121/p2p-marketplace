@@ -156,8 +156,15 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     const incoming = Number(rawValue) / Math.pow(10, cfg.usdtDecimals)
     if (!(incoming > 0)) continue
 
-    // Duplicate guard: skip if already attributed to any gas order.
-    const alreadyUsed = await db.gasFeeOrder.findFirst({ where: { paymentTxHash: txHash } })
+    // Duplicate guard: skip if already attributed to a gas order that is past the
+    // verification stage. We must NOT skip payment_uploaded orders whose paymentTxHash
+    // was set by the user submitting proof — those are exactly what Pass 1 handles.
+    const alreadyUsed = await db.gasFeeOrder.findFirst({
+      where: {
+        paymentTxHash: txHash,
+        status: { notIn: ['payment_uploaded'] },
+      },
+    })
     if (alreadyUsed) continue
 
     const senderAddress = log.args.from ?? undefined

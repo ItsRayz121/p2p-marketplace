@@ -78,6 +78,7 @@ function explorerUrl(chain: string, explorerBase: string | null, txHash: string)
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
   payment_uploaded: 'Proof Submitted',
+  payment_verified: 'Payment Verified',
   payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Completed',
@@ -90,7 +91,7 @@ const STATUS_LABELS: Record<string, string> = {
 function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' {
   if (s === 'delivered' || s === 'refunded') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
-  if (['payment_detected', 'sending', 'refund_pending', 'payment_uploaded'].includes(s)) return 'warning'
+  if (['payment_verified', 'payment_detected', 'sending', 'refund_pending', 'payment_uploaded'].includes(s)) return 'warning'
   return 'default'
 }
 
@@ -132,6 +133,7 @@ const STEPS_PKR    = ['Order Created', 'Proof Submitted', 'Payment Verified', 'R
 function getActiveStep(status: string): number {
   if (status === 'payment_pending')  return 0
   if (status === 'payment_uploaded') return 1
+  if (status === 'payment_verified') return 2
   if (status === 'payment_detected') return 2
   if (status === 'sending')          return 3
   if (status === 'delivered')        return 4
@@ -616,6 +618,7 @@ export default function GasPage() {
       setPollErrCount(0)
       if (o.status === 'delivered')        setPhase(PHASE.COMPLETE)
       else if (o.status === 'payment_detected' || o.status === 'sending') setPhase(PHASE.PROCESSING)
+      else if (o.status === 'payment_verified') setPhase(PHASE.PROCESSING)
       else if (o.status === 'payment_uploaded') {
         const token = o.trackingToken ? `?token=${encodeURIComponent(o.trackingToken)}` : ''
         router.push(`/gas/orders/${o.orderRef}${token}`)
@@ -1535,6 +1538,14 @@ export default function GasPage() {
                         </div>
                       )}
                     </>
+                  )}
+
+                  {/* Payment verified — awaiting admin release */}
+                  {order.status === 'payment_verified' && (
+                    <div className="text-center py-4">
+                      <p className="text-sm font-bold text-green-700 mb-1">Payment Verified</p>
+                      <p className="text-xs text-gray-500">Your payment has been confirmed on-chain. Gas will be released shortly.</p>
+                    </div>
                   )}
 
                   {/* Payment detected / sending → move to processing */}

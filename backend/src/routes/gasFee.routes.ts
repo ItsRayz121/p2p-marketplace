@@ -1540,10 +1540,17 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       }
     }
 
-    // ── Attribute order ───────────────────────────────────────────────────────
+    // ── Attribute order — set payment_verified (admin must Release Gas) ─────────
     const claimed = await db.gasFeeOrder.updateMany({
       where: { id: order.id, status: order.status === 'expired' ? 'expired' : 'payment_pending', paymentTxHash: null },
-      data:  { status: 'payment_detected', paymentTxHash: txHash },
+      data:  {
+        status:               'payment_verified',
+        paymentTxHash:        txHash,
+        paymentVerifiedAt:    new Date(),
+        verifiedAmount:       matchedAmount,
+        verifiedAsset:        'USDT',
+        verifiedConfirmations: confirmations,
+      },
     })
 
     if (claimed.count === 0) {
@@ -1552,9 +1559,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       return reply.send({ success: true, data: { status: fresh?.status ?? order.status, message: 'Payment already detected.' } })
     }
 
-    await queues.gasFee.add('deliver', { orderId: order.id }, { priority: 1 })
-    logger.info({ orderRef, txHash, amount: matchedAmount, network: order.paymentNetwork }, 'verify-payment: user self-reported — payment verified and delivery queued')
+    logger.info({ orderRef, txHash, amount: matchedAmount, network: order.paymentNetwork, confirmations }, 'verify-payment: user self-reported — payment_verified, awaiting admin release')
 
-    return reply.send({ success: true, data: { status: 'payment_detected', message: 'Payment verified! Your gas is being delivered.' } })
+    return reply.send({ success: true, data: { status: 'payment_verified', message: 'Payment verified! An admin will release your gas shortly.' } })
   })
 }

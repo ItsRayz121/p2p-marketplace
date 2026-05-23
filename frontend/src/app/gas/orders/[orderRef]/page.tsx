@@ -40,6 +40,7 @@ const NATIVE_SYMBOLS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
   payment_uploaded: 'Proof Submitted',
+  payment_verified: 'Payment Verified',
   payment_detected: 'Payment Confirmed',
   sending:          'Delivering Gas...',
   delivered:        'Completed',
@@ -73,17 +74,18 @@ function truncateHash(hash: string): string {
 function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' {
   if (s === 'delivered' || s === 'refunded') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
-  if (['payment_uploaded', 'payment_detected', 'sending', 'refund_pending'].includes(s)) return 'warning'
+  if (['payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'refund_pending'].includes(s)) return 'warning'
   return 'default'
 }
 
 function isActiveStatus(s: string): boolean {
-  return ['payment_pending', 'payment_uploaded', 'payment_detected', 'sending', 'refund_pending'].includes(s)
+  return ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'refund_pending'].includes(s)
 }
 
 function getTimelineStep(status: string): number {
   if (status === 'payment_pending') return 0
   if (status === 'payment_uploaded') return 1
+  if (status === 'payment_verified') return 2
   if (status === 'payment_detected') return 2
   if (status === 'sending') return 3
   if (status === 'delivered') return 4
