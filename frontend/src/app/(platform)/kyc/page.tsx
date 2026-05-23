@@ -4,10 +4,12 @@ import { kycApi } from '@/lib/api'
 import type { KycDocument } from '@/lib/api'
 import { analytics } from '@/lib/analytics'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { usePolling } from '@/hooks/usePolling'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -240,6 +242,9 @@ export default function KycPage() {
 
   useEffect(() => { fetchStatus() }, [fetchStatus])
 
+  // Poll every 20s while pending so the approved state appears without a manual refresh
+  usePolling(fetchStatus, 20000, uiState === 'pending')
+
   const handleSelectTier = (tier: KycTier) => {
     setSelectedTier(tier)
     setUiState('submitting')
@@ -318,89 +323,63 @@ export default function KycPage() {
       <p className="text-sm text-text-muted mb-6">Complete identity verification to increase your trading limits.</p>
 
       {/* ── Approved ── */}
-      {uiState === 'approved' && kycLevel === 'enhanced' && (
+      {/* ── Approved ── */}
+      {uiState === 'approved' && (
         <div className="space-y-4">
+          {/* Status banner */}
           <div className="bg-success/10 border border-success/20 rounded-xl p-6 text-center space-y-3">
             <div className="w-14 h-14 bg-success/20 rounded-full flex items-center justify-center mx-auto text-2xl">✓</div>
-            <h2 className="text-lg font-bold text-success">Level 2 Verified</h2>
-            <Badge variant="success">Enhanced KYC</Badge>
+            <h2 className="text-lg font-bold text-success">
+              {kycLevel === 'enhanced' ? 'Level 2 Verified' : 'Level 1 Verified'}
+            </h2>
+            <Badge variant={kycLevel === 'enhanced' ? 'gold' : 'success'}>
+              {kycLevel === 'enhanced' ? 'Enhanced KYC' : 'Basic KYC'}
+            </Badge>
             <p className="text-sm text-text-secondary">
-              Full identity verification complete. You have access to higher trading limits and advanced features.
+              {kycLevel === 'enhanced'
+                ? 'Full verification complete. You have access to all platform features and higher limits.'
+                : 'Identity verified. You have full access to all platform features.'}
             </p>
           </div>
-          <div className="bg-white border border-border rounded-xl p-5 space-y-3">
-            <p className="text-sm font-semibold text-text-primary">Benefits Unlocked</p>
-            {[
-              'Daily trading limit: PKR 200,000',
-              'Trader Verified badge on profile',
-              'Priority support',
-              'Eligible for featured trader status',
-              'Access to advanced CTM tools',
-            ].map((b) => (
-              <div key={b} className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-success/10 text-success flex items-center justify-center flex-shrink-0">
-                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+
+          {/* Trader progress card */}
+          <TraderLevelCard
+            kycStatus={kycStatus}
+            kycLevel={kycLevel}
+            completedTrades={0}
+          />
+
+          {/* Level 2 upgrade CTA — only shown for basic */}
+          {kycLevel === 'basic' && (
+            <div className="bg-white border-2 border-primary/30 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-base font-bold text-text-primary">Upgrade to Level 2</p>
+                  <p className="text-sm text-text-muted">Enhanced KYC — higher limits + better trust score</p>
                 </div>
-                <p className="text-sm text-text-muted">{b}</p>
+                <Badge variant="gold" size="sm">Optional</Badge>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {uiState === 'approved' && kycLevel === 'basic' && (
-        <div className="space-y-4">
-          <div className="bg-success/10 border border-success/20 rounded-xl p-6 text-center space-y-3">
-            <div className="w-14 h-14 bg-success/20 rounded-full flex items-center justify-center mx-auto text-2xl">✓</div>
-            <h2 className="text-lg font-bold text-success">Level 1 Verified</h2>
-            <Badge variant="success">Basic KYC</Badge>
-            <p className="text-sm text-text-secondary">
-              Your identity has been verified. Daily trading limit: PKR 50,000.
-            </p>
-          </div>
-
-          {/* Level 2 upgrade card */}
-          <div className="bg-white border-2 border-primary/30 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-base font-bold text-text-primary">Upgrade to Level 2</p>
-                <p className="text-sm text-text-muted">Enhanced KYC — unlock higher limits</p>
-              </div>
-              <Badge variant="gold" size="sm">Level 2</Badge>
-            </div>
-            <div className="space-y-2">
-              {[
-                'Daily limit increases to PKR 200,000',
-                'Trader Verified badge on profile',
-                'Priority customer support',
-                'Featured trader eligibility',
-              ].map((b) => (
-                <div key={b} className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+              <div className="space-y-2">
+                {[
+                  'Daily limit increases to PKR 200,000',
+                  'Trader Verified badge on your profile',
+                  'Priority customer support',
+                  'Featured trader eligibility',
+                ].map((b) => (
+                  <div key={b} className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                    <p className="text-sm text-text-muted">{b}</p>
                   </div>
-                  <p className="text-sm text-text-muted">{b}</p>
-                </div>
-              ))}
+                ))}
+              </div>
+              <p className="text-xs text-text-muted">Requires: 2+ social media profile links</p>
+              <Button fullWidth onClick={() => handleSelectTier('enhanced')}>
+                Upgrade Verification →
+              </Button>
             </div>
-            <p className="text-xs text-text-muted">Requires: 2+ social media profile links</p>
-            <Button fullWidth onClick={() => handleSelectTier('enhanced')}>
-              Upgrade Verification →
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {uiState === 'approved' && kycLevel !== 'basic' && kycLevel !== 'enhanced' && (
-        <div className="bg-success/10 border border-success/20 rounded-xl p-6 text-center space-y-3">
-          <div className="w-14 h-14 bg-success/20 rounded-full flex items-center justify-center mx-auto text-2xl">✓</div>
-          <h2 className="text-lg font-bold text-success">KYC Approved</h2>
-          <Badge variant="success">
-            {kycLevel.charAt(0).toUpperCase() + kycLevel.slice(1)} KYC
-          </Badge>
-          <p className="text-sm text-text-secondary">
-            Your identity has been verified. Enjoy increased trading limits.
-          </p>
+          )}
         </div>
       )}
 

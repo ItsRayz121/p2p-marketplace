@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -383,15 +382,36 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── 7. Trader Level ── */}
-      <section>
-        <h2 className="text-base font-semibold text-text-primary mb-3">Trader Progress</h2>
-        <TraderLevelCard
-          kycStatus={user?.kycStatus ?? 'none'}
-          kycLevel={user?.kycLevel ?? 'none'}
-          completedTrades={summary?.tradeStats?.completedTrades ?? 0}
-        />
-      </section>
+      {/* ── 7. Trade Stats ── */}
+      {summary?.tradeStats && (
+        <section>
+          <div className="bg-white rounded-xl border border-border p-5">
+            <h2 className="text-base font-semibold text-text-primary mb-3">Trade Statistics</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-text-primary">{summary.tradeStats.completedTrades}</p>
+                <p className="text-xs text-text-muted mt-0.5">Completed</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-text-primary">{summary.tradeStats.totalTrades}</p>
+                <p className="text-xs text-text-muted mt-0.5">Total Trades</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-text-primary">
+                  {summary.tradeStats.completionRate != null ? `${Math.round(summary.tradeStats.completionRate)}%` : '—'}
+                </p>
+                <p className="text-xs text-text-muted mt-0.5">Completion Rate</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-text-primary truncate">
+                  {summary.tradeStats.badgeLabel ?? 'New'}
+                </p>
+                <p className="text-xs text-text-muted mt-0.5">Trader Badge</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── 8. Notifications ── */}
       {(notifications ?? []).length > 0 && (

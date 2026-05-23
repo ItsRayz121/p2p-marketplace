@@ -108,7 +108,7 @@ export default function MerchantKycPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Merchant KYC</h1>
+        <h1 className="text-2xl font-bold text-text-primary">Trader Verification</h1>
         <p className="text-text-muted text-sm mt-0.5">{total} merchant applications</p>
       </div>
 
@@ -193,7 +193,7 @@ export default function MerchantKycPage() {
       )}
 
       {/* Review Modal */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Merchant KYC Review" size="lg">
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Trader Verification Review" size="lg">
         {selected && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-4 p-4 bg-surface rounded-xl text-sm">
