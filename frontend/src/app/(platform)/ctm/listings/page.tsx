@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { ALL_PAYMENT_METHODS } from '@/lib/pkPaymentMethods'
 
-const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'Bank Transfer', 'SadaPay', 'NayaPay']
+const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 
 interface Listing {
   id: string

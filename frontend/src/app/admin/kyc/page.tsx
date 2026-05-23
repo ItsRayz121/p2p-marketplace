@@ -215,11 +215,36 @@ export default function KycQueuePage() {
       )}
 
       {/* Review Modal */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="KYC Review" size="lg">
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="KYC Review"
+        size="lg"
+        footer={
+          selected && (
+            <div className="flex gap-3">
+              <Button
+                variant="danger"
+                onClick={() => { if (rejectReason.trim()) setConfirmReject(true) }}
+                disabled={!rejectReason.trim() || actionLoading}
+                className="flex-1"
+              >
+                Reject
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => setConfirmApprove(true)}
+                disabled={actionLoading}
+                className="flex-1"
+              >
+                Approve
+              </Button>
+            </div>
+          )
+        }
+      >
         {selected && (
-          <div className="flex flex-col max-h-[75vh]">
-            {/* Scrollable body */}
-            <div className="overflow-y-auto flex-1 space-y-5 pr-1">
+          <div className="space-y-5">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-text-muted">User</p>
@@ -313,25 +338,6 @@ export default function KycQueuePage() {
               )}
             </div>
 
-            {/* Sticky footer with action buttons */}
-            <div className="flex gap-3 pt-4 mt-2 border-t border-border bg-white">
-              <Button
-                variant="danger"
-                onClick={() => { if (rejectReason.trim()) setConfirmReject(true) }}
-                disabled={!rejectReason.trim() || actionLoading}
-                className="flex-1"
-              >
-                Reject
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => setConfirmApprove(true)}
-                disabled={actionLoading}
-                className="flex-1"
-              >
-                Approve
-              </Button>
-            </div>
           </div>
         )}
       </Modal>
