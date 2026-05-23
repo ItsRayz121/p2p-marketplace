@@ -1,7 +1,7 @@
 'use client'
 import { useState, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { ctmApi } from '@/lib/api'
+import { ctmApi, ApiError } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuthStore } from '@/store/auth.store'
@@ -52,24 +52,19 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   const handleStartTrade = async () => {
     if (!paymentMethod) { setError('Select a payment method'); return }
-    if (!buyerSettlementId.trim()) { setError('Enter your settlement ID (e.g., your Pi UID)'); return }
+    if (!buyerSettlementId.trim()) { setError('Enter your token address'); return }
     setError('')
     setSubmitting(true)
     try {
       if (!listing) return
-      // Create a trade from this listing by calling the listing's trade endpoint
-      // This endpoint is handled by ctm.trade.routes via listing → trade creation path
-      const res = await fetch(`/api/v1/ctm/listings/${id}/trade`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ paymentMethod, buyerSettlementId }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.message ?? 'Failed to start trade')
-      router.push(`/ctm/trade/${data.data.tradeRef}`)
+      const res = await ctmApi.startListingTrade(id, { paymentMethod, buyerSettlementId })
+      router.push(`/ctm/trade/${res.tradeRef}`)
     } catch (err: unknown) {
-      setError((err as Error).message ?? 'Failed to start trade')
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError((err as Error).message ?? 'Failed to start trade. Please try again.')
+      }
     } finally {
       setSubmitting(false)
     }

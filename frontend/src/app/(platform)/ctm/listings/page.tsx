@@ -24,18 +24,20 @@ export default function BrowseListingsPage() {
   const [listings, setListings] = useState<Listing[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [side, setSide] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('')
   const [page, setPage] = useState(1)
 
   const fetchListings = async () => {
+    setError('')
     try {
       const res = await ctmApi.getListings({ side: side || undefined, paymentMethod: paymentMethod || undefined, page, limit: 20 })
       const data = res as { listings: Listing[]; total: number }
       setListings(data.listings ?? [])
       setTotal(data.total ?? 0)
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load listings')
     } finally {
       setLoading(false)
     }
@@ -76,6 +78,11 @@ export default function BrowseListingsPage() {
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />)}
+        </div>
+      ) : error ? (
+        <div className="text-center py-16">
+          <p className="text-danger text-sm mb-3">{error}</p>
+          <button onClick={fetchListings} className="text-sm text-primary underline hover:no-underline">Try again</button>
         </div>
       ) : listings.length === 0 ? (
         <div className="text-center py-16 text-text-muted">No listings found.</div>

@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
-import { authApi } from '@/lib/api'
+import { authApi, ApiError } from '@/lib/api'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { analytics } from '@/lib/analytics'
@@ -31,6 +31,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  const [conflictEmail, setConflictEmail] = useState<string | null>(null)
 
   const {
     register,
@@ -48,6 +49,7 @@ export default function RegisterPage() {
 
   async function onSubmit(values: FormValues) {
     setServerError(null)
+    setConflictEmail(null)
     try {
       await authApi.register({
         email: values.email,
@@ -58,7 +60,11 @@ export default function RegisterPage() {
       analytics.userRegistered()
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}`)
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Registration failed. Please try again.')
+      if (err instanceof ApiError && err.code === 'CONFLICT') {
+        setConflictEmail(values.email)
+      } else {
+        setServerError(err instanceof Error ? err.message : 'Registration failed. Please try again.')
+      }
     }
   }
 
@@ -178,6 +184,31 @@ export default function RegisterPage() {
           <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">
             {serverError}
           </p>
+        )}
+
+        {conflictEmail && (
+          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 space-y-2">
+            <p className="font-medium">An account with this email already exists.</p>
+            <p>If you haven&apos;t verified your email yet, check your inbox or resend the verification email.</p>
+            <div className="flex flex-wrap gap-3 pt-1">
+              <Link href="/login" className="font-medium underline hover:no-underline">Sign in</Link>
+              <button
+                type="button"
+                className="font-medium underline hover:no-underline"
+                onClick={async () => {
+                  try {
+                    await authApi.resendOtp(conflictEmail)
+                    router.push(`/verify-email?email=${encodeURIComponent(conflictEmail)}`)
+                  } catch {
+                    setServerError('Could not resend verification email. Try logging in instead.')
+                    setConflictEmail(null)
+                  }
+                }}
+              >
+                Resend verification email
+              </button>
+            </div>
+          </div>
         )}
 
         <Button type="submit" fullWidth size="lg" loading={isSubmitting}>
