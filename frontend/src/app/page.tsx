@@ -13,7 +13,7 @@ interface MarketStats {
   totalUsers: number
   totalTrades: number
   totalVolume: string
-  activeMerchants: number
+  verifiedTraders: number
 }
 
 interface TopAds {
@@ -310,9 +310,9 @@ export default function HomePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  <AnimatedNumber value={stats.activeMerchants} />
+                  <AnimatedNumber value={stats.verifiedTraders} />
                 </p>
-                <p className="text-sm text-white/70 mt-1">Active Merchants</p>
+                <p className="text-sm text-white/70 mt-1">Verified Traders</p>
               </div>
             </div>
           </div>

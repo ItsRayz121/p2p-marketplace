@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { TraderLevelCard, BadgeChip } from '@/components/ui/TraderLevelCard'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -27,6 +29,7 @@ interface DashboardSummary {
     totalVolumePKR: string | null
     badge: string | null
     badgeLabel: string | null
+    trustScore: number | null
   } | null
 }
 
@@ -186,7 +189,7 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-text-primary">{greeting}, {displayName}!</h1>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <Link href="/kyc">
                 <Badge variant={kycBadgeVariant(kycStatus)} size="sm">
                   {kycStatus === 'approved'
@@ -194,6 +197,9 @@ export default function DashboardPage() {
                     : `KYC: ${kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}`}
                 </Badge>
               </Link>
+              {user?.tradeStats && (
+                <BadgeChip badge={user.tradeStats.badge as TraderBadge} badgeLabel={user.tradeStats.badgeLabel ?? undefined} />
+              )}
             </div>
           </div>
           {kycStatus !== 'approved' && (
@@ -382,36 +388,17 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── 7. Trade Stats ── */}
-      {summary?.tradeStats && (
-        <section>
-          <div className="bg-white rounded-xl border border-border p-5">
-            <h2 className="text-base font-semibold text-text-primary mb-3">Trade Statistics</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-text-primary">{summary.tradeStats.completedTrades}</p>
-                <p className="text-xs text-text-muted mt-0.5">Completed</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-text-primary">{summary.tradeStats.totalTrades}</p>
-                <p className="text-xs text-text-muted mt-0.5">Total Trades</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-text-primary">
-                  {summary.tradeStats.completionRate != null ? `${Math.round(summary.tradeStats.completionRate)}%` : '—'}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5">Completion Rate</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-text-primary truncate">
-                  {summary.tradeStats.badgeLabel ?? 'New'}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5">Trader Badge</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+      {/* ── 7. Trader Badge ── */}
+      <section>
+        <TraderLevelCard
+          badge={(user?.tradeStats?.badge ?? summary?.tradeStats?.badge ?? 'new') as TraderBadge}
+          badgeLabel={user?.tradeStats?.badgeLabel ?? summary?.tradeStats?.badgeLabel ?? undefined}
+          trustScore={user?.tradeStats?.trustScore ?? summary?.tradeStats?.trustScore ?? 0}
+          completedTrades={user?.tradeStats?.completedTrades ?? summary?.tradeStats?.completedTrades ?? 0}
+          completionRate={user?.tradeStats?.completionRate ?? summary?.tradeStats?.completionRate ?? 0}
+          kycStatus={kycStatus}
+        />
+      </section>
 
       {/* ── 8. Notifications ── */}
       {(notifications ?? []).length > 0 && (

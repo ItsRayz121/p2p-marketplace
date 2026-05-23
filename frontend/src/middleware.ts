@@ -7,7 +7,6 @@ const AUTH_REQUIRED = [
   '/wallet',
   '/profile',
   '/settings',
-  '/merchant',
   '/instant-buy',
   '/setup-username',
   '/kyc',

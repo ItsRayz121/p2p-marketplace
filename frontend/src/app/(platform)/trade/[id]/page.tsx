@@ -16,6 +16,8 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { BadgeChip } from '@/components/ui/TraderLevelCard'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -348,9 +350,10 @@ export default function TradePage() {
   const currentStep = stepIndex(trade.status)
   const canCancel = isUserBuyer && trade.status === 'payment_pending'
   const canDispute = ['payment_uploaded', 'payment_confirmed'].includes(trade.status)
-  const counterparty = isUserBuyer
-    ? (trade.seller?.username || 'Seller')
-    : (trade.buyer?.username || 'Buyer')
+  const counterpartyUser = isUserBuyer ? trade.seller : trade.buyer
+  const counterparty = counterpartyUser?.username || (isUserBuyer ? 'Seller' : 'Buyer')
+  const counterpartyBadge = (counterpartyUser?.tradeStats?.badge ?? 'new') as TraderBadge
+  const counterpartyStats = counterpartyUser?.tradeStats
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6">
@@ -367,10 +370,20 @@ export default function TradePage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl font-bold text-text-primary">
-            Trade with {counterparty}
-          </h1>
-          <p className="text-xs text-text-muted font-mono mt-0.5">{trade.id}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-xl font-bold text-text-primary">
+              Trade with {counterparty}
+            </h1>
+            <BadgeChip badge={counterpartyBadge} />
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-xs text-text-muted font-mono">{trade.id}</p>
+            {counterpartyStats && (
+              <span className="text-xs text-text-muted">
+                {counterpartyStats.completedTrades} trades · {((Number(counterpartyStats.completionRate) ?? 0) * 100).toFixed(0)}% completion
+              </span>
+            )}
+          </div>
         </div>
         <Badge variant={statusVariant(trade.status)}>
           {statusLabel(trade.status)}

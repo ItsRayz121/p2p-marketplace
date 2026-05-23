@@ -1054,6 +1054,7 @@ model TradeStats {
   trustScore       Int         @default(0)
   badge            TraderBadge @default(new)
   badgeLabel       String      @default("New Trader")
+  badgeOverride    Boolean     @default(false)
   lastUpdated      DateTime    @updatedAt
 }
 

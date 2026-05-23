@@ -22,13 +22,16 @@ function computeTrustScore(
   completionRate: number,
   avgRating: number,
   totalTrades: number,
+  accountAgeDays: number,
 ): number {
   const cr = Number(completionRate)
   const ar = Number(avgRating)
+  const ageFactor = Math.min(accountAgeDays / 90, 1) // ramps 0→1 over first 90 days
   const score =
-    cr * 0.5 +
-    (ar / 5) * 0.3 +
-    (Math.log10(totalTrades + 1) / Math.log10(1001)) * 0.2
+    cr * 0.50 +
+    (ar / 5) * 0.30 +
+    (Math.log10(totalTrades + 1) / Math.log10(1001)) * 0.15 +
+    ageFactor * 0.05
   return Math.round(score * 100) // 0-100 integer
 }
 
@@ -36,11 +39,17 @@ const BADGE_ORDER = ['new', 'active', 'trusted', 'top', 'elite']
 
 export async function recalculateUserBadge(userId: string): Promise<void> {
   try {
-    // Get all completed/cancelled trades for this user
-    const trades = await db.trade.findMany({
-      where: { OR: [{ buyerId: userId }, { sellerId: userId }] },
-      select: { status: true },
-    })
+    const [trades, userRow] = await Promise.all([
+      db.trade.findMany({
+        where: { OR: [{ buyerId: userId }, { sellerId: userId }] },
+        select: { status: true },
+      }),
+      db.user.findUnique({ where: { id: userId }, select: { createdAt: true } }),
+    ])
+
+    const accountAgeDays = userRow
+      ? (Date.now() - userRow.createdAt.getTime()) / 86_400_000
+      : 0
 
     const total = trades.length
     const completed = trades.filter((t) => t.status === 'crypto_released').length
@@ -67,45 +76,44 @@ export async function recalculateUserBadge(userId: string): Promise<void> {
     const totalVolumePKR = volumeAgg._sum.fiatAmount ?? new Prisma.Decimal(0)
 
     const { badge, badgeLabel } = computeBadge(completed, completionRate)
-    const trustScore = computeTrustScore(completionRate, avgRating, completed)
+    const trustScore = computeTrustScore(completionRate, avgRating, completed, accountAgeDays)
 
-    // Get current badge to check for change
+    // Get current stats to check for badge change and respect admin override
     const current = await db.tradeStats.findUnique({
       where: { userId },
-      select: { badge: true },
+      select: { badge: true, badgeOverride: true },
     })
+
+    const statsUpdate = {
+      totalTrades: total,
+      completedTrades: completed,
+      cancelledTrades: cancelled,
+      completionRate: new Prisma.Decimal(completionRate),
+      avgRating: new Prisma.Decimal(avgRating),
+      totalReviews,
+      totalVolumePKR,
+      trustScore,
+      // Only write computed badge if no admin override is active
+      ...(current?.badgeOverride ? {} : {
+        badge: badge as 'new' | 'active' | 'trusted' | 'top' | 'elite',
+        badgeLabel,
+      }),
+    }
 
     await db.tradeStats.upsert({
       where: { userId },
       create: {
         userId,
-        totalTrades: total,
-        completedTrades: completed,
-        cancelledTrades: cancelled,
-        completionRate: new Prisma.Decimal(completionRate),
-        avgRating: new Prisma.Decimal(avgRating),
-        totalReviews,
-        totalVolumePKR,
-        trustScore,
+        ...statsUpdate,
+        // New rows always start with computed badge
         badge: badge as 'new' | 'active' | 'trusted' | 'top' | 'elite',
         badgeLabel,
       },
-      update: {
-        totalTrades: total,
-        completedTrades: completed,
-        cancelledTrades: cancelled,
-        completionRate: new Prisma.Decimal(completionRate),
-        avgRating: new Prisma.Decimal(avgRating),
-        totalReviews,
-        totalVolumePKR,
-        trustScore,
-        badge: badge as 'new' | 'active' | 'trusted' | 'top' | 'elite',
-        badgeLabel,
-      },
+      update: statsUpdate,
     })
 
-    // Notify on badge change
-    if (current && current.badge !== badge) {
+    // Notify on badge change (skip if admin has locked the badge)
+    if (current && !current.badgeOverride && current.badge !== badge) {
       const direction =
         BADGE_ORDER.indexOf(badge) > BADGE_ORDER.indexOf(current.badge) ? 'upgraded' : 'downgraded'
 

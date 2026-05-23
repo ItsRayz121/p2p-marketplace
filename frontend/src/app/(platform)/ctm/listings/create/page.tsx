@@ -11,7 +11,6 @@ export default function CreateListingPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const [tokens, setTokens] = useState<CtmToken[]>([])
-  const [profile, setProfile] = useState<unknown>(null)
   const [loadingInit, setLoadingInit] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -34,12 +33,8 @@ export default function CreateListingPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [tokensRes, profileRes] = await Promise.all([
-          ctmApi.getTokens({ limit: 100 }),
-          ctmApi.getMyCtmProfile().catch(() => null),
-        ])
+        const tokensRes = await ctmApi.getTokens({ limit: 100 })
         setTokens((tokensRes as { tokens: CtmToken[] }).tokens ?? [])
-        setProfile(profileRes)
       } finally {
         setLoadingInit(false)
       }
@@ -74,12 +69,12 @@ export default function CreateListingPage() {
 
   if (loadingInit) return <div className="max-w-2xl mx-auto px-4 py-12 text-center text-text-muted">Loading…</div>
 
-  if (!profile) {
+  if (user?.kycStatus !== 'approved') {
     return (
       <div className="max-w-2xl mx-auto px-4 py-12 text-center">
-        <h1 className="text-xl font-bold text-text-primary mb-3">CTM Merchant Setup Required</h1>
-        <p className="text-text-muted mb-6">You need to set up a CTM merchant profile before creating listings.</p>
-        <a href="/ctm/merchant-setup" className="bg-primary text-white px-5 py-2.5 rounded-lg font-semibold">Set Up CTM Profile</a>
+        <h1 className="text-xl font-bold text-text-primary mb-3">KYC Required</h1>
+        <p className="text-text-muted mb-6">Complete KYC verification to create CTM listings.</p>
+        <a href="/kyc" className="bg-primary text-white px-5 py-2.5 rounded-lg font-semibold">Complete KYC</a>
       </div>
     )
   }

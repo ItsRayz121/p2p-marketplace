@@ -5,6 +5,7 @@ import type { KycDocument } from '@/lib/api'
 import { analytics } from '@/lib/analytics'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { usePolling } from '@/hooks/usePolling'
+import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -66,6 +67,7 @@ function TierCard({
           <>
             <li className="flex gap-2"><span className="text-success">✓</span> CNIC Front &amp; Back photos</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Selfie with CNIC</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> Unlocks trading, wallet, ads, CTM &amp; gas</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Daily limit: PKR 50,000</li>
           </>
         ) : (
@@ -73,7 +75,7 @@ function TierCard({
             <li className="flex gap-2"><span className="text-success">✓</span> Everything in Basic</li>
             <li className="flex gap-2"><span className="text-success">✓</span> 2+ social media profiles</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Daily limit: PKR 200,000</li>
-            <li className="flex gap-2"><span className="text-success">✓</span> Merchant eligibility</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> Higher trust score + faster badge progression</li>
           </>
         )}
       </ul>
@@ -204,6 +206,7 @@ function FileUploadField({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function KycPage() {
+  const { user } = useAuth()
   const [uiState, setUiState] = useState<UIState>('loading')
   const [kycStatus, setKycStatus] = useState<string>('none')
   const [kycLevel, setKycLevel] = useState<string>('none')
@@ -320,7 +323,7 @@ export default function KycPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24 lg:pb-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">KYC Verification</h1>
-      <p className="text-sm text-text-muted mb-6">Complete identity verification to increase your trading limits.</p>
+      <p className="text-sm text-text-muted mb-6">Complete identity verification to unlock trading, wallet, ads, and all platform features.</p>
 
       {/* ── Approved ── */}
       {/* ── Approved ── */}
@@ -344,9 +347,12 @@ export default function KycPage() {
 
           {/* Trader progress card */}
           <TraderLevelCard
+            badge={user?.tradeStats?.badge ?? 'new'}
+            badgeLabel={user?.tradeStats?.badgeLabel}
+            trustScore={user?.tradeStats?.trustScore ?? 0}
+            completedTrades={user?.tradeStats?.completedTrades ?? 0}
+            completionRate={user?.tradeStats?.completionRate ?? 0}
             kycStatus={kycStatus}
-            kycLevel={kycLevel}
-            completedTrades={0}
           />
 
           {/* Level 2 upgrade CTA — only shown for basic */}
@@ -362,7 +368,7 @@ export default function KycPage() {
               <div className="space-y-2">
                 {[
                   'Daily limit increases to PKR 200,000',
-                  'Trader Verified badge on your profile',
+                  'Higher trust score + faster badge progression',
                   'Priority customer support',
                   'Featured trader eligibility',
                 ].map((b) => (

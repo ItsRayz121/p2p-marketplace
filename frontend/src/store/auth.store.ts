@@ -18,6 +18,15 @@ export interface AuthUser {
   createdAt: string
   withdrawalLockedUntil: string | null
   withdrawalLockReason: string | null
+  tradeStats: {
+    badge: 'new' | 'active' | 'trusted' | 'top' | 'elite'
+    badgeLabel: string
+    trustScore: number
+    completedTrades: number
+    completionRate: number
+    avgRating: number
+    totalTrades: number
+  } | null
 }
 
 interface AuthStore {

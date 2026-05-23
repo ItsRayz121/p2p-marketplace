@@ -21,7 +21,7 @@ export interface PlatformStats {
   totalUsers: number
   totalTrades: number
   totalVolume: string
-  activeMerchants: number
+  verifiedTraders: number
 }
 
 export interface SellerInfo {
@@ -178,18 +178,18 @@ export async function getStats(): Promise<PlatformStats> {
     }
   }
 
-  const [users, trades, volume, merchants] = await Promise.all([
+  const [users, trades, volume, verifiedTraders] = await Promise.all([
     db.user.count({ where: { isEmailVerified: true } }),
     db.trade.count({ where: { status: { in: ['crypto_released'] } } }),
     db.trade.aggregate({ _sum: { fiatAmount: true }, where: { status: 'crypto_released' } }),
-    db.merchant.count({ where: { status: 'approved' } }),
+    db.user.count({ where: { kycStatus: 'approved' } }),
   ])
 
   const result: PlatformStats = {
     totalUsers: users,
     totalTrades: trades,
     totalVolume: (volume._sum.fiatAmount ?? new Prisma.Decimal(0)).toString(),
-    activeMerchants: merchants,
+    verifiedTraders,
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 300)

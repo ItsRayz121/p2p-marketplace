@@ -50,8 +50,6 @@ export default function LoginPage() {
         const role = res.user.role
         if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent') {
           router.push('/admin')
-        } else if (role === 'merchant') {
-          router.push('/merchant/dashboard')
         } else {
           router.push('/dashboard')
         }

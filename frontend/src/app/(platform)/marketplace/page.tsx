@@ -9,6 +9,8 @@ import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
+import { BadgeChip } from '@/components/ui/TraderLevelCard'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -32,7 +34,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
     <div className="bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         {/* Seller info */}
-        <div className="flex items-center gap-3 sm:w-48">
+        <div className="flex items-center gap-3 sm:w-52">
           <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center flex-shrink-0">
             {(ad.seller?.username || 'U').charAt(0).toUpperCase()}
           </div>
@@ -40,9 +42,14 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             <p className="text-sm font-semibold text-text-primary truncate">
               {ad.seller?.username || 'Anonymous'}
             </p>
-            {ad.network && (
-              <p className="text-xs text-text-muted">{ad.network}</p>
-            )}
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <BadgeChip badge={(ad.seller?.badge ?? 'new') as TraderBadge} />
+              {ad.seller?.tradeStats && (
+                <span className="text-xs text-text-muted">
+                  {ad.seller.tradeStats.totalTrades} trades
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

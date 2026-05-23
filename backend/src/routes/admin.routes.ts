@@ -220,7 +220,7 @@ export async function adminRoutes(app: FastifyInstance) {
           isBanned: true,
           isSuspended: true,
           createdAt: true,
-          tradeStats: { select: { totalTrades: true, completedTrades: true, totalVolumePKR: true } },
+          tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true, totalVolumePKR: true, badge: true, badgeLabel: true, trustScore: true, badgeOverride: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -316,6 +316,49 @@ export async function adminRoutes(app: FastifyInstance) {
     })
 
     await createAuditLog(req.user!.id, 'COLLATERAL_SEIZED', 'User', id, { reason: parsed.data.reason })
+    return reply.send({ success: true })
+  })
+
+  app.post('/admin/users/:id/badge', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({
+      badge: z.enum(['new', 'active', 'trusted', 'top', 'elite']),
+      badgeLabel: z.string().min(1).max(100).optional(),
+      reason: z.string().max(500).optional(),
+      clearOverride: z.boolean().optional(),
+    })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const user = await db.user.findUnique({ where: { id }, select: { id: true } })
+    if (!user) throw Errors.NOT_FOUND('User')
+
+    const BADGE_LABELS: Record<string, string> = {
+      new: 'New Trader', active: 'Active Trader', trusted: 'Trusted Trader',
+      top: 'Top Trader', elite: 'Elite Trader',
+    }
+
+    await db.tradeStats.upsert({
+      where: { userId: id },
+      create: {
+        userId: id,
+        badge: parsed.data.badge,
+        badgeLabel: parsed.data.badgeLabel ?? BADGE_LABELS[parsed.data.badge],
+        badgeOverride: !parsed.data.clearOverride,
+      },
+      update: {
+        badge: parsed.data.badge,
+        badgeLabel: parsed.data.badgeLabel ?? BADGE_LABELS[parsed.data.badge],
+        badgeOverride: !parsed.data.clearOverride,
+      },
+    })
+
+    await createAuditLog(req.user!.id, 'BADGE_OVERRIDE', 'User', id, {
+      badge: parsed.data.badge,
+      reason: parsed.data.reason ?? null,
+      clearOverride: parsed.data.clearOverride ?? false,
+    })
+
     return reply.send({ success: true })
   })
 

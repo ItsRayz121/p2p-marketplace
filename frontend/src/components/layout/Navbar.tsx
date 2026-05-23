@@ -24,7 +24,14 @@ export default function Navbar() {
 
   usePolling(fetchUnread, 60_000, !!user)
 
-  const isMerchant = user?.role === 'merchant'
+  const kycBadge =
+    user?.kycStatus === 'approved' && user?.kycLevel === 'enhanced'
+      ? { label: 'Level 2 · Enhanced', cls: 'text-yellow-700 bg-yellow-50' }
+      : user?.kycStatus === 'approved' && user?.kycLevel === 'basic'
+      ? { label: 'Level 1 · Verified', cls: 'text-primary bg-primary/10' }
+      : user?.kycStatus === 'pending'
+      ? { label: 'KYC Pending', cls: 'text-yellow-600 bg-yellow-50' }
+      : null
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-border">
@@ -95,11 +102,6 @@ export default function Navbar() {
                       <span className="hidden sm:block text-sm font-medium text-text-primary max-w-[100px] truncate">
                         {user.username || user.email}
                       </span>
-                      {isMerchant && (
-                        <span className="hidden sm:inline-flex items-center text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full leading-none">
-                          Trader Verified
-                        </span>
-                      )}
                       <svg className="w-4 h-4 text-text-muted hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
@@ -118,9 +120,9 @@ export default function Navbar() {
                           <p className="text-sm font-semibold text-text-primary truncate">
                             {user.username || 'No username'}
                           </p>
-                          {isMerchant && (
-                            <span className="shrink-0 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full leading-none">
-                              Trader Verified
+                          {kycBadge && (
+                            <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none ${kycBadge.cls}`}>
+                              {kycBadge.label}
                             </span>
                           )}
                         </div>
@@ -148,34 +150,6 @@ export default function Navbar() {
                       <DropdownMenu.Item asChild>
                         <Link href="/referral" className={dropdownItemCls}>Referral</Link>
                       </DropdownMenu.Item>
-
-                      {/* Trader mode switch */}
-                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
-                      {isMerchant ? (
-                        <DropdownMenu.Item asChild>
-                          <Link
-                            href="/merchant/dashboard"
-                            className={cn(dropdownItemCls, 'gap-2 font-medium text-primary focus:text-primary focus:bg-primary/5')}
-                          >
-                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-                            </svg>
-                            Trader Dashboard
-                          </Link>
-                        </DropdownMenu.Item>
-                      ) : (
-                        <DropdownMenu.Item asChild>
-                          <Link
-                            href="/merchant-apply"
-                            className={cn(dropdownItemCls, 'gap-2 text-text-secondary focus:text-text-primary')}
-                          >
-                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                            Trader Verification
-                          </Link>
-                        </DropdownMenu.Item>
-                      )}
 
                       <DropdownMenu.Separator className="my-1 h-px bg-border" />
 

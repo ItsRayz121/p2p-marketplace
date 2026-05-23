@@ -2,7 +2,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { useAuthStore } from '@/store/auth.store'
 
 interface NavItem {
   href: string
@@ -70,18 +69,6 @@ const baseNavItems: NavItem[] = [
   },
 ]
 
-const merchantNavItem: NavItem = {
-  href: '/merchant/dashboard',
-  label: 'Trader',
-  icon: (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-      />
-    </svg>
-  ),
-}
-
 const ctmNavItem: NavItem = {
   href: '/ctm',
   label: 'CTM',
@@ -96,14 +83,8 @@ const ctmNavItem: NavItem = {
 
 export default function BottomNav() {
   const pathname = usePathname()
-  const user = useAuthStore((s) => s.user)
-  const isMerchant = user?.role === 'merchant'
 
-  // Merchants get: Home, Market, Gas (primary), Wallet, Merchant
-  // Regular users get: Home, Market, Gas (primary), Wallet, CTM, Orders
-  const navItems = isMerchant
-    ? [...baseNavItems.slice(0, 4), merchantNavItem]
-    : [...baseNavItems.slice(0, 4), ctmNavItem, baseNavItems[4]]
+  const navItems = [...baseNavItems.slice(0, 4), ctmNavItem, baseNavItems[4]]
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'

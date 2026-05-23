@@ -39,27 +39,14 @@ export interface GetUserAdsParams {
 // ─── Service Functions ────────────────────────────────────────────────────────
 
 export async function createAd(userId: string, data: CreateAdInput) {
-  // Validate KYC status
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { kycStatus: true, completedSellTrades: true, collateralLocks: { where: { status: 'locked' }, take: 1 } },
+    select: { kycStatus: true },
   })
 
   if (!user) throw new AppError('NOT_FOUND', 'User not found', 404)
   if (user.kycStatus !== 'approved') {
     throw new AppError('KYC_REQUIRED', 'KYC approval required to post ads', 403)
-  }
-
-  // Sell ads require either 3+ completed sell trades OR active collateral
-  if (data.side === 'sell') {
-    const hasCollateral = user.collateralLocks.length > 0
-    if (!hasCollateral && user.completedSellTrades < 3) {
-      throw new AppError(
-        'SELL_ELIGIBILITY',
-        'You must complete 3 sell trades or lock collateral before posting sell ads',
-        403,
-      )
-    }
   }
 
   if (data.minOrder > data.maxOrder) {

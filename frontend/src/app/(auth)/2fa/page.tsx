@@ -12,7 +12,6 @@ function getRoleRedirect(role: string | undefined): string {
   if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent') {
     return '/admin'
   }
-  if (role === 'merchant') return '/merchant/dashboard'
   return '/dashboard'
 }
 

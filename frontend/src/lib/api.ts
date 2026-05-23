@@ -574,7 +574,7 @@ export const marketplaceApi = {
   getRates: () =>
     apiRequest<{ rates: Record<string, number>; updatedAt: string; source: string }>('/marketplace/rates'),
   getStats: () =>
-    apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; activeMerchants: number }>('/marketplace/stats'),
+    apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; verifiedTraders: number }>('/marketplace/stats'),
   getTopAds: () =>
     apiRequest<{ buys: Ad[]; sells: Ad[] }>('/marketplace/top-ads'),
   getConfig: () =>
@@ -1305,6 +1305,8 @@ export const adminApi = {
     apiRequest<void>(`/admin/users/${id}/suspend`, { method: 'POST', body: JSON.stringify(data) }),
   seizeCollateral: (id: string) =>
     apiRequest<void>(`/admin/users/${id}/seize-collateral`, { method: 'POST' }),
+  overrideBadge: (id: string, data: { badge: string; badgeLabel?: string; reason?: string; clearOverride?: boolean }) =>
+    apiRequest<void>(`/admin/users/${id}/badge`, { method: 'POST', body: JSON.stringify(data) }),
 
   // KYC
   getKycQueue: (params?: Record<string, string | number | undefined>) =>

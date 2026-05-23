@@ -12,8 +12,20 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Input } from '@/components/ui/Input'
+import { BadgeChip } from '@/components/ui/TraderLevelCard'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 
-interface AdminUser extends AuthUser {
+interface AdminTradeStats {
+  badge: TraderBadge
+  badgeLabel: string
+  trustScore: number
+  completedTrades: number
+  completionRate: number
+  totalTrades: number
+  badgeOverride: boolean
+}
+
+interface AdminUser extends Omit<AuthUser, 'tradeStats'> {
   isBanned?: boolean
   isSuspended?: boolean
   tradeCount?: number
@@ -21,6 +33,7 @@ interface AdminUser extends AuthUser {
   suspendReason?: string
   trades?: Array<{ id: string; coin: string; amount: string; status: string; createdAt: string }>
   kycSubmissions?: Array<{ id: string; level: string; status: string; createdAt: string }>
+  tradeStats?: AdminTradeStats | null
 }
 
 interface UsersResponse {
@@ -49,6 +62,9 @@ export default function UsersPage() {
   const [confirmSeize, setConfirmSeize] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const [badgeOverrideValue, setBadgeOverrideValue] = useState<TraderBadge>('new')
+  const [badgeOverrideReason, setBadgeOverrideReason] = useState('')
+  const [badgeOverriding, setBadgeOverriding] = useState(false)
 
   const limit = 20
 
@@ -77,6 +93,8 @@ export default function UsersPage() {
     setActionReason('')
     setActionError(null)
     setActionSuccess(null)
+    setBadgeOverrideValue((u.tradeStats?.badge ?? 'new') as TraderBadge)
+    setBadgeOverrideReason('')
     setModalOpen(true)
   }
 
@@ -119,6 +137,42 @@ export default function UsersPage() {
     }
   }
 
+  async function handleBadgeOverride() {
+    if (!selected) return
+    setBadgeOverriding(true)
+    setActionError(null)
+    try {
+      await adminApi.overrideBadge(selected.id, {
+        badge: badgeOverrideValue,
+        reason: badgeOverrideReason || undefined,
+      })
+      setActionSuccess(`Badge overridden to "${badgeOverrideValue}". Auto-recalculation paused.`)
+      fetchUsers()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to override badge')
+    } finally {
+      setBadgeOverriding(false)
+    }
+  }
+
+  async function handleClearBadgeOverride() {
+    if (!selected) return
+    setBadgeOverriding(true)
+    setActionError(null)
+    try {
+      await adminApi.overrideBadge(selected.id, {
+        badge: badgeOverrideValue,
+        clearOverride: true,
+      })
+      setActionSuccess('Badge override cleared. Auto-recalculation resumed.')
+      fetchUsers()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to clear override')
+    } finally {
+      setBadgeOverriding(false)
+    }
+  }
+
   const totalPages = Math.ceil(total / limit)
 
   const kycVariant = (s: string) => {
@@ -154,7 +208,6 @@ export default function UsersPage() {
         >
           <option value="">All Roles</option>
           <option value="user">User</option>
-          <option value="merchant">Merchant</option>
           <option value="kyc_reviewer">KYC Reviewer</option>
           <option value="admin">Admin</option>
           <option value="super_admin">Super Admin</option>
@@ -184,6 +237,7 @@ export default function UsersPage() {
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Role</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">KYC</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Badge</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Trades</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Joined</th>
                   <th className="px-4 py-3" />
@@ -209,6 +263,16 @@ export default function UsersPage() {
                         <Badge variant="warning" size="sm">Suspended</Badge>
                       ) : (
                         <Badge variant="success" size="sm">Active</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.tradeStats ? (
+                        <div className="flex items-center gap-1">
+                          <BadgeChip badge={u.tradeStats.badge as TraderBadge} />
+                          {u.tradeStats.badgeOverride && <span className="text-xs text-warning">★</span>}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-text-muted">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{u.tradeCount ?? 0}</td>
@@ -301,6 +365,60 @@ export default function UsersPage() {
                       <Badge variant="warning">Suspended â€” {selected.suspendReason}</Badge>
                     ) : (
                       <Badge variant="success">Active</Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Trader Badge */}
+                <div className="bg-surface rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-text-primary">Trader Badge</p>
+                    {selected.tradeStats?.badgeOverride && (
+                      <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full font-medium">Admin Override Active</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {selected.tradeStats ? (
+                      <>
+                        <BadgeChip badge={selected.tradeStats.badge as TraderBadge} badgeLabel={selected.tradeStats.badgeLabel} />
+                        <span className="text-sm text-text-muted">Trust Score: <strong>{selected.tradeStats.trustScore}/100</strong></span>
+                        <span className="text-sm text-text-muted">{selected.tradeStats.completedTrades} completed trades</span>
+                        <span className="text-sm text-text-muted">{(Number(selected.tradeStats.completionRate) * 100).toFixed(1)}% completion</span>
+                      </>
+                    ) : (
+                      <span className="text-sm text-text-muted">No trade stats yet</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-end">
+                    <div>
+                      <p className="text-xs text-text-muted mb-1">Override badge</p>
+                      <select
+                        value={badgeOverrideValue}
+                        onChange={(e) => setBadgeOverrideValue(e.target.value as TraderBadge)}
+                        className="px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        {(['new', 'active', 'trusted', 'top', 'elite'] as TraderBadge[]).map((b) => (
+                          <option key={b} value={b}>{b.charAt(0).toUpperCase() + b.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-32">
+                      <p className="text-xs text-text-muted mb-1">Reason (optional)</p>
+                      <input
+                        type="text"
+                        placeholder="e.g. manual review"
+                        value={badgeOverrideReason}
+                        onChange={(e) => setBadgeOverrideReason(e.target.value)}
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <Button size="sm" loading={badgeOverriding} onClick={handleBadgeOverride}>
+                      Set Badge
+                    </Button>
+                    {selected.tradeStats?.badgeOverride && (
+                      <Button size="sm" variant="ghost" loading={badgeOverriding} onClick={handleClearBadgeOverride}>
+                        Clear Override
+                      </Button>
                     )}
                   </div>
                 </div>
