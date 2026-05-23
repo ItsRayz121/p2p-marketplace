@@ -173,7 +173,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             <h2 className="font-semibold text-text-primary mb-3">Settlement Info</h2>
             <div className="text-sm space-y-2 text-text-muted">
               <div className="flex justify-between"><span>Payment via:</span><span className="text-text-primary font-medium">{trade.paymentMethod}</span></div>
-              <div className="flex justify-between"><span>Settlement method:</span><span className="text-text-primary font-medium">{trade.settlementMethod}</span></div>
+              <div className="flex justify-between"><span>Token address:</span><span className="text-text-primary font-medium">{trade.settlementMethod}</span></div>
               {trade.buyerSettlementId && <div className="flex justify-between"><span>Buyer&apos;s ID:</span><span className="text-text-primary font-medium">{trade.buyerSettlementId}</span></div>}
             </div>
             <div className="mt-3 bg-surface rounded-xl p-3 text-sm text-text-muted">{trade.settlementNote}</div>

@@ -182,7 +182,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             <div className="bg-surface rounded-xl p-3 text-sm">
-              <p className="font-medium text-text-primary mb-1">Settlement instructions from merchant:</p>
+              <p className="font-medium text-text-primary mb-1">Transfer instructions from merchant:</p>
               <p className="text-text-muted">{listing.settlementNote}</p>
             </div>
 

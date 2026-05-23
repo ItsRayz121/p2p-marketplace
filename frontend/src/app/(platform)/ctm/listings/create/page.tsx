@@ -134,11 +134,11 @@ export default function CreateListingPage() {
 
         {/* Settlement */}
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Settlement method *</label>
-          <input type="text" placeholder="e.g. Pi UID, Sidra Account ID" value={form.settlementMethod} onChange={(e) => setForm((f) => ({ ...f, settlementMethod: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+          <label className="block text-sm font-medium text-text-primary mb-1.5">Token address *</label>
+          <input type="text" placeholder="Your address on the token's platform" value={form.settlementMethod} onChange={(e) => setForm((f) => ({ ...f, settlementMethod: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
         </div>
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Settlement instructions *</label>
+          <label className="block text-sm font-medium text-text-primary mb-1.5">Transfer instructions *</label>
           <textarea rows={3} placeholder="Instructions shown to the other party at trade start" value={form.settlementNote} onChange={(e) => setForm((f) => ({ ...f, settlementNote: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" required />
         </div>
 
