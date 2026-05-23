@@ -323,7 +323,7 @@ async function recordVerifiedPayment(
       tokenSymbol:    'USDT',
       tokenAmount:    incoming,
       txHash,
-      fromAddress:    senderAddress,
+      ...(senderAddress !== undefined ? { fromAddress: senderAddress } : {}),
       relatedOrderId: orderId,
     }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write order_payment ledger entry'))
 
