@@ -794,6 +794,7 @@ export const dashboardApi = {
         totalVolumePKR: string | null
         badge: string | null
         badgeLabel: string | null
+        trustScore: number | null
       } | null
     }>('/dashboard/summary'),
   getRecentActivity: () =>
