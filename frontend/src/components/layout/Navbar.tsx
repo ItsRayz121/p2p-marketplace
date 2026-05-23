@@ -47,6 +47,7 @@ export default function Navbar() {
             <NavLink href="/marketplace">USDT Marketplace</NavLink>
             <NavLink href="/ctm">Community Tokens</NavLink>
             <NavLink href="/gas">Crypto Gas Fees</NavLink>
+            <NavLink href="/leaderboard">Leaderboard</NavLink>
             <NavLink href="/dashboard">Dashboard</NavLink>
           </nav>
 
@@ -146,6 +147,9 @@ export default function Navbar() {
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
                         <Link href="/settings" className={dropdownItemCls}>Settings</Link>
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item asChild>
+                        <Link href="/leaderboard" className={dropdownItemCls}>Leaderboard</Link>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
                         <Link href="/referral" className={dropdownItemCls}>Referral</Link>
