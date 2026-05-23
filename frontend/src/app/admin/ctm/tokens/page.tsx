@@ -4,6 +4,8 @@ import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { invalidateLogoCache } from '@/hooks/useLogoRegistry'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
 
 const STATUS_COLORS: Record<string, string> = {
   approved: 'bg-green-100 text-green-700',
@@ -230,53 +232,66 @@ export default function AdminCtmTokensPage() {
       )}
 
       {/* Edit modal */}
-      {editToken && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="font-bold text-lg text-text-primary">Edit: {editToken.name}</h3>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Status</label>
-              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
-                <option value="approved">Approved</option>
-                <option value="pending_review">Pending Review</option>
-                <option value="rejected">Rejected</option>
-                <option value="restricted">Restricted</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Risk Tier</label>
-              <select value={editRisk} onChange={(e) => setEditRisk(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="extreme">Extreme</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id="listingEnabled" checked={editListingEnabled} onChange={(e) => setEditListingEnabled(e.target.checked)} className="w-4 h-4 rounded" />
-              <label htmlFor="listingEnabled" className="text-sm text-text-primary">Listing Enabled</label>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setEditToken(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleSaveEdit} disabled={saving} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            </div>
+      <Modal
+        isOpen={!!editToken}
+        onClose={() => setEditToken(null)}
+        title={editToken ? `Edit: ${editToken.name}` : 'Edit Token'}
+        size="sm"
+        footer={
+          <div className="flex gap-3">
+            <Button variant="secondary" size="md" onClick={() => setEditToken(null)} disabled={saving} className="flex-1">Cancel</Button>
+            <Button variant="primary" size="md" loading={saving} onClick={handleSaveEdit} className="flex-1">Save Changes</Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Status</label>
+            <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
+              <option value="approved">Approved</option>
+              <option value="pending_review">Pending Review</option>
+              <option value="rejected">Rejected</option>
+              <option value="restricted">Restricted</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Risk Tier</label>
+            <select value={editRisk} onChange={(e) => setEditRisk(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="extreme">Extreme</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <input type="checkbox" id="listingEnabled" checked={editListingEnabled} onChange={(e) => setEditListingEnabled(e.target.checked)} className="w-4 h-4 rounded" />
+            <label htmlFor="listingEnabled" className="text-sm text-text-primary">Listing Enabled</label>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Add Token modal */}
-      {showAdd && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 space-y-5 my-8">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-lg text-text-primary">Add Token (Admin)</h3>
-              <button onClick={() => setShowAdd(false)} className="text-text-muted hover:text-text-primary text-xl leading-none">&times;</button>
+      <Modal
+        isOpen={showAdd}
+        onClose={() => { setShowAdd(false); setAddForm(EMPTY_ADD); setAddError('') }}
+        title="Add Token (Admin)"
+        size="xl"
+        footer={
+          <div className="space-y-3">
+            {addError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{addError}</p>}
+            <div className="flex gap-3">
+              <Button variant="secondary" size="md" onClick={() => { setShowAdd(false); setAddForm(EMPTY_ADD); setAddError('') }} disabled={adding} className="flex-1">Cancel</Button>
+              <Button variant="primary" size="md" loading={adding} onClick={handleAddToken} className="flex-1">Add Token</Button>
             </div>
-            <p className="text-xs text-text-muted">Tokens added here are immediately <span className="font-semibold text-green-600">approved</span> and visible on the marketplace. Queue submissions still go through the review process.</p>
+          </div>
+        }
+      >
+        <div className="space-y-6">
+          <p className="text-xs text-text-muted">Tokens added here are immediately <span className="font-semibold text-green-600">approved</span> and visible on the marketplace. Queue submissions still go through the review process.</p>
 
-            {/* Required fields */}
+          {/* Section: Basic Info */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Basic Info</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {field('Slug', 'slug', { placeholder: 'e.g. bitcoin', required: true })}
               {field('Symbol', 'symbol', { placeholder: 'e.g. BTC', required: true })}
@@ -292,8 +307,11 @@ export default function AdminCtmTokensPage() {
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
               />
             </div>
+          </div>
 
-            {/* Settlement & Risk */}
+          {/* Section: Trading Settings */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Trading Settings</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Settlement Type<span className="text-red-500 ml-0.5">*</span></label>
@@ -312,23 +330,37 @@ export default function AdminCtmTokensPage() {
                   <option value="extreme">Extreme</option>
                 </select>
               </div>
+              {field('Max Listing Amount', 'maxListingAmount', { placeholder: 'e.g. 100000' })}
+              {field('Min Trade Amount (PKR)', 'minTradeAmountPkr', { placeholder: 'e.g. 1000' })}
             </div>
+          </div>
 
-            {/* Optional fields */}
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">Optional Details</p>
+          {/* Section: Blockchain Info */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Blockchain Info</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {field('Logo URL', 'logoUrl', { placeholder: 'https://…' })}
-              {field('Banner URL', 'bannerUrl', { placeholder: 'https://…' })}
               {field('Network', 'network', { placeholder: 'e.g. Ethereum' })}
               {field('Contract Address', 'contractAddress', { placeholder: '0x…' })}
               {field('Explorer URL', 'explorerUrl', { placeholder: 'https://etherscan.io/…' })}
+            </div>
+          </div>
+
+          {/* Section: Branding */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Branding</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {field('Logo URL', 'logoUrl', { placeholder: 'https://…' })}
+              {field('Banner URL', 'bannerUrl', { placeholder: 'https://…' })}
               {field('Official Website', 'officialWebsite', { placeholder: 'https://…' })}
               {field('Twitter', 'officialTwitter', { placeholder: 'https://twitter.com/…' })}
               {field('Telegram', 'officialTelegram', { placeholder: 'https://t.me/…' })}
               {field('Whitepaper URL', 'whitePaperUrl', { placeholder: 'https://…' })}
-              {field('Max Listing Amount', 'maxListingAmount', { placeholder: 'e.g. 100000' })}
-              {field('Min Trade Amount (PKR)', 'minTradeAmountPkr', { placeholder: 'e.g. 1000' })}
             </div>
+          </div>
+
+          {/* Section: Admin / Internal */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Internal / Admin</p>
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Risk Notes</label>
               <textarea
@@ -339,18 +371,9 @@ export default function AdminCtmTokensPage() {
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
               />
             </div>
-
-            {addError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{addError}</p>}
-
-            <div className="flex gap-3 pt-1">
-              <button onClick={() => setShowAdd(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleAddToken} disabled={adding} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-                {adding ? 'Adding…' : 'Add Token'}
-              </button>
-            </div>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

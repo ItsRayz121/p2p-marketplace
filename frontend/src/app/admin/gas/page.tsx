@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { Modal } from '@/components/ui/Modal'
 import { useAuthStore } from '@/store/auth.store'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -424,6 +425,115 @@ function FinancialKpiSection({ kpi, loading }: { kpi: GasFinancialKpi | null; lo
   )
 }
 
+// ─── Gas Payment Confirm Modal ────────────────────────────────────────────────
+
+function GasPaymentConfirmModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  order,
+  type,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  onConfirm: () => Promise<void>
+  order: GasOrder | null
+  type: 'usdt' | 'pkr'
+}) {
+  const [loading, setLoading] = useState(false)
+
+  async function handleConfirm() {
+    setLoading(true)
+    try { await onConfirm() } finally { setLoading(false) }
+  }
+
+  const title = type === 'pkr' ? 'Approve PKR Payment' : 'Confirm Payment & Release Gas'
+
+  const CHAIN_EXPLORER: Record<string, string> = {
+    BSC: 'https://bscscan.com/tx/',
+    TRON: 'https://tronscan.org/#/transaction/',
+    ETHEREUM: 'https://etherscan.io/tx/',
+    ETH: 'https://etherscan.io/tx/',
+  }
+
+  const explorerBase = order ? (CHAIN_EXPLORER[order.chain] ?? null) : null
+
+  function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+      <div className="flex items-start justify-between gap-3 py-2.5 border-b border-border last:border-0">
+        <span className="text-xs font-medium text-text-muted flex-shrink-0 mt-0.5">{label}</span>
+        <span className="text-sm text-text-primary text-right">{children}</span>
+      </div>
+    )
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={title}
+      size="sm"
+      footer={
+        <div className="flex gap-3">
+          <Button variant="secondary" size="md" onClick={onClose} disabled={loading} className="flex-1">Cancel</Button>
+          <Button variant="primary" size="md" loading={loading} onClick={handleConfirm} className="flex-1">
+            {type === 'pkr' ? 'Approve & Release Gas' : 'Confirm & Release Gas'}
+          </Button>
+        </div>
+      }
+    >
+      {!order ? (
+        <p className="text-sm text-text-muted">Loading order details…</p>
+      ) : (
+        <div className="space-y-1">
+          <InfoRow label="Order">
+            <span className="font-mono text-xs bg-surface px-1.5 py-0.5 rounded">{order.orderRef}</span>
+          </InfoRow>
+          <InfoRow label="Chain">
+            <span className="font-medium">{order.chain}</span>
+            {order.tier && <span className="ml-1 text-xs text-text-muted">· {order.tier}</span>}
+          </InfoRow>
+          <InfoRow label="Gas Amount">
+            {order.gasAmountNative} {CHAIN_SYMBOL[order.chain] ?? order.chain}
+          </InfoRow>
+          {type === 'pkr' ? (
+            <InfoRow label="PKR Amount">
+              <span className="font-semibold text-primary">PKR {Number(order.pkrAmount ?? 0).toLocaleString()}</span>
+            </InfoRow>
+          ) : (
+            <InfoRow label="Payment">
+              <span className="font-semibold text-primary">
+                {order.paymentAmount} {order.paymentCoin ?? 'USDT'}
+              </span>
+            </InfoRow>
+          )}
+          <InfoRow label="Deliver To">
+            <span className="font-mono text-xs break-all">{order.toAddress}</span>
+          </InfoRow>
+          {order.deliveryTxHash && (
+            <InfoRow label="Tx Hash">
+              <span className="flex items-center gap-1">
+                <span className="font-mono text-xs">{order.deliveryTxHash.slice(0, 12)}…</span>
+                {explorerBase && (
+                  <a
+                    href={`${explorerBase}${order.deliveryTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline text-xs ml-1"
+                  >
+                    View ↗
+                  </a>
+                )}
+              </span>
+            </InfoRow>
+          )}
+          <p className="pt-3 text-xs text-text-muted">Gas delivery will be queued immediately after confirmation.</p>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GasAdminPage() {
@@ -473,6 +583,7 @@ export default function GasAdminPage() {
   const [confirmApprovePkr, setConfirmApprovePkr] = useState(false)
   const [confirmRejectPkr, setConfirmRejectPkr] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedOrder, setSelectedOrder] = useState<GasOrder | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
@@ -986,14 +1097,14 @@ export default function GasAdminPage() {
                             <Button
                               size="sm"
                               variant="primary"
-                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmApprovePkr(true) }}
+                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmApprovePkr(true) }}
                             >
                               Approve PKR
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRejectPkr(true) }}
+                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRejectPkr(true) }}
                             >
                               Reject
                             </Button>
@@ -1004,14 +1115,14 @@ export default function GasAdminPage() {
                             <Button
                               size="sm"
                               variant="primary"
-                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmMarkPayment(true) }}
+                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmMarkPayment(true) }}
                             >
                               Confirm Payment
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRejectPkr(true) }}
+                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRejectPkr(true) }}
                             >
                               Reject
                             </Button>
@@ -1022,14 +1133,14 @@ export default function GasAdminPage() {
                             <Button
                               size="sm"
                               variant="secondary"
-                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRetry(true) }}
+                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRetry(true) }}
                             >
                               Retry
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => { setSelectedId(o.id); setActionError(null); setConfirmRefund(true) }}
+                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRefund(true) }}
                             >
                               Refund
                             </Button>
@@ -1056,23 +1167,19 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Modals ───────────────────────────────────────────────────────────── */}
-      <ConfirmModal
+      <GasPaymentConfirmModal
         isOpen={confirmMarkPayment}
         onClose={() => setConfirmMarkPayment(false)}
         onConfirm={handleMarkPayment}
-        title="Confirm Payment Received"
-        description="Confirm you have verified this USDT payment. Gas delivery will be queued immediately."
-        confirmLabel="Confirm & Release Gas"
-        confirmVariant="primary"
+        order={selectedOrder}
+        type="usdt"
       />
-      <ConfirmModal
+      <GasPaymentConfirmModal
         isOpen={confirmApprovePkr}
         onClose={() => setConfirmApprovePkr(false)}
         onConfirm={handleApprovePkr}
-        title="Approve PKR Payment"
-        description="Confirm you have received the PKR payment and approve this order. Gas delivery will be queued immediately."
-        confirmLabel="Approve & Release Gas"
-        confirmVariant="primary"
+        order={selectedOrder}
+        type="pkr"
       />
 
       <ConfirmModal

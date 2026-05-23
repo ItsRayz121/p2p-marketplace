@@ -6,17 +6,19 @@ interface ModalProps {
   isOpen: boolean
   onClose: () => void
   title?: string
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   children: React.ReactNode
+  footer?: React.ReactNode
 }
 
-const sizeClasses: Record<'sm' | 'md' | 'lg', string> = {
+const sizeClasses: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
   sm: 'md:max-w-sm',
   md: 'md:max-w-md',
   lg: 'md:max-w-lg',
+  xl: 'md:max-w-2xl',
 }
 
-export function Modal({ isOpen, onClose, title, size = 'md', children }: ModalProps) {
+export function Modal({ isOpen, onClose, title, size = 'md', children, footer }: ModalProps) {
   return (
     <Dialog.Root open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
       <Dialog.Portal>
@@ -29,10 +31,10 @@ export function Modal({ isOpen, onClose, title, size = 'md', children }: ModalPr
         />
         <Dialog.Content
           className={cn(
-            'fixed z-50 bg-white shadow-xl',
+            'fixed z-50 bg-white shadow-xl flex flex-col',
             'focus:outline-none',
-            // Mobile: bottom sheet
-            'bottom-0 inset-x-0 rounded-t-2xl',
+            // Mobile: bottom sheet capped at 90vh
+            'bottom-0 inset-x-0 rounded-t-2xl max-h-[90vh]',
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
             // Desktop: centered dialog
@@ -42,7 +44,8 @@ export function Modal({ isOpen, onClose, title, size = 'md', children }: ModalPr
             'duration-200',
           )}
         >
-          <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border">
+          {/* Fixed header */}
+          <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
             {title ? (
               <Dialog.Title className="text-lg font-semibold text-text-primary">
                 {title}
@@ -63,9 +66,18 @@ export function Modal({ isOpen, onClose, title, size = 'md', children }: ModalPr
               </svg>
             </Dialog.Close>
           </div>
-          <div className="px-6 py-6">
+
+          {/* Scrollable body */}
+          <div className="px-6 py-5 overflow-y-auto flex-1">
             {children}
           </div>
+
+          {/* Sticky footer — only rendered when provided */}
+          {footer && (
+            <div className="px-6 pb-6 pt-4 border-t border-border flex-shrink-0">
+              {footer}
+            </div>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
