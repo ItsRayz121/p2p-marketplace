@@ -1457,8 +1457,9 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }
 
-    // status === 'first_approved' — always requires a different admin
-    if (withdrawal.firstApprovedBy === adminId) {
+    // status === 'first_approved' — requires a different admin unless the approver is super_admin (solo-admin deployments)
+    const isSuperAdmin = req.user!.role === 'super_admin'
+    if (withdrawal.firstApprovedBy === adminId && !isSuperAdmin) {
       throw new AppError('SAME_ADMIN', 'A different admin must provide the second approval', 403)
     }
     // Optimistic lock: re-validate status is still first_approved when we commit.
