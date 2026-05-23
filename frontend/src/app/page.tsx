@@ -221,10 +221,10 @@ export default function HomePage() {
                   Start Trading
                 </Link>
                 <Link
-                  href="/instant-buy"
+                  href="/gas"
                   className="px-6 py-3 bg-white text-primary font-semibold rounded-lg border-2 border-primary hover:bg-primary/5 transition-colors"
                 >
-                  Buy Crypto
+                  Crypto Gas Fees
                 </Link>
               </div>
             </div>
@@ -390,10 +390,10 @@ export default function HomePage() {
               description="Browse buy and sell offers from verified traders"
             />
             <QuickActionCard
-              href="/instant-buy"
-              icon="⚡"
-              title="Buy Crypto Instantly"
-              description="Get crypto at market rate with instant processing"
+              href="/gas"
+              icon="⛽"
+              title="Crypto Gas Fees"
+              description="Top up gas fees on any chain instantly"
             />
             <QuickActionCard
               href="/fees"

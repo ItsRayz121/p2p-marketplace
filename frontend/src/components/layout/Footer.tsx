@@ -9,6 +9,7 @@ export default function Footer() {
             &copy; {new Date().getFullYear()} PakSwap. All rights reserved.
           </p>
           <nav className="flex items-center gap-4 flex-wrap justify-center">
+            <FooterLink href="/leaderboard">Leaderboard</FooterLink>
             <FooterLink href="/about">About</FooterLink>
             <FooterLink href="/terms">Terms</FooterLink>
             <FooterLink href="/privacy">Privacy</FooterLink>

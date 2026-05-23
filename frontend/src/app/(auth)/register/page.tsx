@@ -80,14 +80,19 @@ export default function RegisterPage() {
       <p className="text-text-muted text-sm mb-6">Join PakSwap to buy and sell crypto peer-to-peer</p>
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
-        <Input
-          label="Full name"
-          type="text"
-          autoComplete="name"
-          placeholder="Your full name"
-          error={errors.fullName?.message}
-          {...register('fullName')}
-        />
+        <div>
+          <Input
+            label="Full name"
+            type="text"
+            autoComplete="name"
+            placeholder="Your full name"
+            error={errors.fullName?.message}
+            {...register('fullName')}
+          />
+          <p className="text-xs text-text-muted mt-1.5">
+            Use your real CNIC name — required for KYC, withdrawals, disputes, and account recovery.
+          </p>
+        </div>
 
         <Input
           label="Email address"

@@ -128,7 +128,7 @@ function FileUploadField({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="Preview" className="h-24 object-cover rounded-lg mx-auto" />
             {uploaded ? (
-              <p className="text-xs text-success font-medium">Uploaded successfully</p>
+              <p className="text-xs text-success font-medium">Uploaded — pending admin review</p>
             ) : error ? (
               <p className="text-xs text-danger font-medium">Upload failed — tap to choose a different file</p>
             ) : (

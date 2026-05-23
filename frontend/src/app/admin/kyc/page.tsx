@@ -18,7 +18,7 @@ interface KycSubmission {
   user?: { email: string; username: string }
   level: 'basic' | 'enhanced'
   status: 'pending' | 'approved' | 'rejected'
-  cnicHash?: string
+  cnicNumberHash?: string
   frontUrl?: string
   backUrl?: string
   selfieUrl?: string
@@ -217,98 +217,104 @@ export default function KycQueuePage() {
       {/* Review Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="KYC Review" size="lg">
         {selected && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-text-muted">User</p>
-                <p className="font-medium text-text-primary">{selected.user?.username}</p>
-                <p className="text-text-secondary">{selected.user?.email}</p>
+          <div className="flex flex-col max-h-[75vh]">
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 space-y-5 pr-1">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-text-muted">User</p>
+                  <p className="font-medium text-text-primary">{selected.user?.username}</p>
+                  <p className="text-text-secondary">{selected.user?.email}</p>
+                </div>
+                <div>
+                  <p className="text-text-muted">Tier</p>
+                  <Badge variant={selected.level === 'enhanced' ? 'gold' : 'default'}>{selected.level}</Badge>
+                </div>
+                <div>
+                  <p className="text-text-muted">Submitted</p>
+                  <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-text-muted">CNIC Hash (partial)</p>
+                  <p className="font-mono text-xs text-text-secondary break-all">
+                    {selected.cnicNumberHash
+                      ? '*****' + selected.cnicNumberHash.slice(-4)
+                      : 'N/A'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-text-muted">Tier</p>
-                <Badge variant={selected.level === 'enhanced' ? 'gold' : 'default'}>{selected.level}</Badge>
+
+              {/* Document previews */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-text-primary">Documents</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {selected.frontUrl && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-text-muted">CNIC Front</p>
+                      <a href={selected.frontUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={selected.frontUrl} alt="CNIC Front" className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
+                      </a>
+                    </div>
+                  )}
+                  {selected.backUrl && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-text-muted">CNIC Back</p>
+                      <a href={selected.backUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={selected.backUrl} alt="CNIC Back" className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
+                      </a>
+                    </div>
+                  )}
+                  {selected.selfieUrl && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-text-muted">Selfie</p>
+                      <a href={selected.selfieUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={selected.selfieUrl} alt="Selfie" className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
+                      </a>
+                    </div>
+                  )}
+                  {!selected.frontUrl && !selected.backUrl && !selected.selfieUrl && (
+                    <p className="text-sm text-text-muted col-span-3">No documents uploaded</p>
+                  )}
+                </div>
               </div>
+
+              {/* Notes for approval */}
               <div>
-                <p className="text-text-muted">Submitted</p>
-                <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">
+                  Approval Notes <span className="text-text-muted font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Add notes for the user..."
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
               </div>
+
+              {/* Reject reason */}
               <div>
-                <p className="text-text-muted">CNIC Hash (partial)</p>
-                <p className="font-mono text-xs text-text-secondary break-all">
-                  {selected.cnicHash ? selected.cnicHash.slice(0, 16) + '...' : 'N/A'}
-                </p>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">
+                  Rejection Reason <span className="text-text-muted font-normal">(required if rejecting)</span>
+                </label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows={2}
+                  placeholder="Explain why the submission is being rejected..."
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
               </div>
+
+              {actionError && (
+                <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
+                  {actionError}
+                </div>
+              )}
             </div>
 
-            {/* Document previews */}
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-text-primary">Documents</p>
-              <div className="grid grid-cols-3 gap-3">
-                {selected.frontUrl && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-text-muted">CNIC Front</p>
-                    <a href={selected.frontUrl} target="_blank" rel="noopener noreferrer">
-                      <img src={selected.frontUrl} alt="CNIC Front" className="rounded-lg w-full object-cover border border-border hover:opacity-80 transition-opacity" />
-                    </a>
-                  </div>
-                )}
-                {selected.backUrl && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-text-muted">CNIC Back</p>
-                    <a href={selected.backUrl} target="_blank" rel="noopener noreferrer">
-                      <img src={selected.backUrl} alt="CNIC Back" className="rounded-lg w-full object-cover border border-border hover:opacity-80 transition-opacity" />
-                    </a>
-                  </div>
-                )}
-                {selected.selfieUrl && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-text-muted">Selfie</p>
-                    <a href={selected.selfieUrl} target="_blank" rel="noopener noreferrer">
-                      <img src={selected.selfieUrl} alt="Selfie" className="rounded-lg w-full object-cover border border-border hover:opacity-80 transition-opacity" />
-                    </a>
-                  </div>
-                )}
-                {!selected.frontUrl && !selected.backUrl && !selected.selfieUrl && (
-                  <p className="text-sm text-text-muted col-span-3">No documents uploaded</p>
-                )}
-              </div>
-            </div>
-
-            {/* Notes for approval */}
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
-                Approval Notes (optional)
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                placeholder="Add notes for the user..."
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-              />
-            </div>
-
-            {/* Reject reason */}
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
-                Rejection Reason <span className="text-text-muted">(required if rejecting)</span>
-              </label>
-              <textarea
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                rows={2}
-                placeholder="Explain why the submission is being rejected..."
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-              />
-            </div>
-
-            {actionError && (
-              <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
-                {actionError}
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-2">
+            {/* Sticky footer with action buttons */}
+            <div className="flex gap-3 pt-4 mt-2 border-t border-border bg-white">
               <Button
                 variant="danger"
                 onClick={() => { if (rejectReason.trim()) setConfirmReject(true) }}

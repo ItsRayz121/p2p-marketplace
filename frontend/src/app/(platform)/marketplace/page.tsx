@@ -240,7 +240,22 @@ export default function MarketplacePage() {
       ) : error ? (
         <ErrorState title={error} onRetry={() => fetchAds(1, false)} />
       ) : ads.length === 0 ? (
-        <EmptyState title="No offers found" description="Try adjusting your filters or check back later" />
+        <div className="py-4">
+          {filters.side === 'sell' ? (
+            <div className="flex flex-col items-center gap-4 py-12 text-center">
+              <p className="text-2xl">📭</p>
+              <div>
+                <p className="text-base font-semibold text-text-primary">No sell offers yet</p>
+                <p className="text-sm text-text-muted mt-1">List your USDT for sale and start earning</p>
+              </div>
+              <Link href="/create-ad">
+                <Button>List USDT for Sale</Button>
+              </Link>
+            </div>
+          ) : (
+            <EmptyState title="No buy offers found" description="Try adjusting your filters or check back later" />
+          )}
+        </div>
       ) : (
         <div className="space-y-3">
           {ads.map((ad) => (

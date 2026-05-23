@@ -185,9 +185,13 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-xl font-bold text-text-primary">{greeting}, {displayName}!</h1>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant={kycBadgeVariant(kycStatus)} size="sm">
-                KYC: {kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}
-              </Badge>
+              <Link href="/kyc">
+                <Badge variant={kycBadgeVariant(kycStatus)} size="sm">
+                  {kycStatus === 'approved'
+                    ? `KYC LV${user?.kycLevel === 'enhanced' ? 2 : 1}: Approved`
+                    : `KYC: ${kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}`}
+                </Badge>
+              </Link>
             </div>
           </div>
           {kycStatus !== 'approved' && (
@@ -199,7 +203,7 @@ export default function DashboardPage() {
         {dailyLimit > 0 && (
           <div className="mt-4">
             <div className="flex justify-between text-xs text-text-muted mb-1">
-              <span>Daily Buy Used</span>
+              <span>Daily trading used</span>
               <span>PKR {dailyUsed.toLocaleString()} / {dailyLimit.toLocaleString()}</span>
             </div>
             <div className="h-2 bg-surface rounded-full overflow-hidden">
@@ -225,27 +229,36 @@ export default function DashboardPage() {
                   </div>
                   <span className="text-sm font-medium text-text-primary">{b.coin}</span>
                 </div>
-                <p className="text-lg font-bold text-text-primary">{parseFloat(b.available).toFixed(4)}</p>
-                {usdtRate > 0 && b.coin === 'USDT' && (
-                  <div className="mt-0.5">
-                    <p className="text-xs text-text-muted">
-                      ≈ PKR {(parseFloat(b.available) * usdtRate).toLocaleString()}
-                    </p>
-                    {SOURCE_LABELS[usdtRateSource] && (
-                      <a
-                        href={SOURCE_LABELS[usdtRateSource].url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-text-muted hover:text-primary"
-                      >
-                        via {SOURCE_LABELS[usdtRateSource].label}
-                      </a>
-                    )}
-                  </div>
-                )}
-                <p className="text-xs text-text-muted mt-0.5">
-                  Locked: {parseFloat(b.locked).toFixed(4)}
-                </p>
+                {(() => {
+                  const avail = parseFloat(b.available ?? '0') || 0
+                  const locked = parseFloat(b.locked ?? '0') || 0
+                  const pkr = avail * usdtRate
+                  return (
+                    <>
+                      <p className="text-lg font-bold text-text-primary">{avail.toFixed(4)}</p>
+                      {usdtRate > 0 && b.coin === 'USDT' && (
+                        <div className="mt-0.5">
+                          <p className="text-xs text-text-muted">
+                            ≈ PKR {pkr.toLocaleString()}
+                          </p>
+                          {SOURCE_LABELS[usdtRateSource] && (
+                            <a
+                              href={SOURCE_LABELS[usdtRateSource].url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-text-muted hover:text-primary"
+                            >
+                              via {SOURCE_LABELS[usdtRateSource].label}
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-xs text-text-muted mt-0.5">
+                        Locked: {locked.toFixed(4)}
+                      </p>
+                    </>
+                  )
+                })()}
                 <Link href="/wallet">
                   <Button size="sm" variant="secondary" className="w-full mt-3">Deposit</Button>
                 </Link>
@@ -264,12 +277,12 @@ export default function DashboardPage() {
         <h2 className="text-base font-semibold text-text-primary mb-3">Quick Actions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           {[
-            { href: '/instant-buy', label: 'Buy Crypto', icon: '⚡' },
-            { href: '/marketplace', label: 'Marketplace', icon: '🏪' },
-            { href: '/gas', label: 'Gas Fees', icon: '⛽' },
-            { href: '/ctm', label: 'Community Tokens', icon: '🪙' },
-            { href: '/my-ads', label: 'My Ads', icon: '📢' },
-            { href: '/referral', label: 'Referral', icon: '🎁' },
+            { href: '/gas',         label: 'Crypto Gas Fees',  icon: '⛽' },
+            { href: '/marketplace', label: 'USDT Marketplace', icon: '🏪' },
+            { href: '/ctm',         label: 'Community Tokens', icon: '🪙' },
+            { href: '/orders',      label: 'My Trades',        icon: '📋' },
+            { href: '/wallet',      label: 'Wallet',           icon: '💰' },
+            { href: '/referral',    label: 'Referral',         icon: '🎁' },
           ].map((item) => (
             <Link
               key={item.href}
@@ -351,7 +364,7 @@ export default function DashboardPage() {
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold text-text-primary">Recent Instant Buy</h2>
-            <Link href="/instant-buy" className="text-xs text-primary hover:underline">Buy again</Link>
+            <Link href="/instant-buy" className="text-xs text-primary hover:underline">View all</Link>
           </div>
           <div className="bg-white rounded-xl border border-border divide-y divide-border">
             {(instantOrders ?? []).slice(0, 3).map((o) => (
