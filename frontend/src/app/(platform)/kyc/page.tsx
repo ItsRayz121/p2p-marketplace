@@ -9,6 +9,21 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatCnic(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 13)
+  if (digits.length <= 5) return digits
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`
+}
+
+function isValidCnic(cnic: string): boolean {
+  return /^\d{5}-\d{7}-\d$/.test(cnic)
+}
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type KycTier = 'basic' | 'enhanced'
@@ -81,6 +96,7 @@ function FileUploadField({
   const [preview, setPreview] = useState<string | null>(null)
   const [uploaded, setUploaded] = useState(false)
   const [lastFile, setLastFile] = useState<File | null>(null)
+  const [sizeError, setSizeError] = useState<string | null>(null)
 
   const doUpload = async (file: File) => {
     setUploaded(false)
@@ -94,6 +110,23 @@ function FileUploadField({
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (file.size > MAX_FILE_SIZE) {
+      setPreview(null)
+      setUploaded(false)
+      // surface the error through the hook's error display path by calling doUpload
+      // which will set error — but here we can shortcut with a direct state set
+      // We don't have direct access to setError in the hook, so we re-use the
+      // existing error rendering path via a fake failed upload approach.
+      // Instead: just show a local validation message via the existing error area.
+      Object.defineProperty(e.target, 'value', { writable: true, value: '' })
+      e.target.value = ''
+      // Trigger upload with oversized file so hook surfaces error, OR handle locally:
+      // We'll use a simple approach: call doUpload which will fail at the server.
+      // Better: track local size error separately.
+      setSizeError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 10 MB.`)
+      return
+    }
+    setSizeError(null)
     setPreview(URL.createObjectURL(file))
     setLastFile(file)
     await doUpload(file)
@@ -107,7 +140,7 @@ function FileUploadField({
 
   const borderClass = uploaded
     ? 'border-success/40 bg-success/5'
-    : error
+    : (error || sizeError)
     ? 'border-danger/40 bg-danger/5'
     : preview
     ? 'border-primary/40 bg-primary/5'
@@ -147,10 +180,10 @@ function FileUploadField({
         )}
         <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleChange} />
       </label>
-      {error && (
+      {(sizeError || error) && (
         <div className="mt-1 flex items-center justify-between gap-2">
-          <p className="text-xs text-danger">{error}</p>
-          {lastFile && (
+          <p className="text-xs text-danger">{sizeError ?? error}</p>
+          {!sizeError && lastFile && (
             <button
               type="button"
               onClick={handleRetry}
@@ -239,6 +272,10 @@ export default function KycPage() {
     }
     if (!frontUrl || !backUrl || !selfieUrl || !cnicNumber) {
       setSubmitError('Please fill all required fields and upload all documents.')
+      return
+    }
+    if (!isValidCnic(cnicNumber)) {
+      setSubmitError('CNIC format must be XXXXX-XXXXXXX-X (e.g. 42201-1234567-8).')
       return
     }
     if (selectedTier === 'enhanced') {
@@ -380,12 +417,18 @@ export default function KycPage() {
             <input
               type="text"
               value={cnicNumber}
-              onChange={(e) => setCnicNumber(e.target.value)}
+              onChange={(e) => setCnicNumber(formatCnic(e.target.value))}
               placeholder="XXXXX-XXXXXXX-X"
               maxLength={15}
-              className="w-full px-4 py-3 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+              className={`w-full px-4 py-3 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary ${
+                cnicNumber && !isValidCnic(cnicNumber) ? 'border-danger/60 bg-danger/5' : 'border-border'
+              }`}
             />
-            <p className="text-xs text-text-muted mt-1">Your CNIC number will be securely hashed on our servers.</p>
+            {cnicNumber && !isValidCnic(cnicNumber) ? (
+              <p className="text-xs text-danger mt-1">Format: XXXXX-XXXXXXX-X (e.g. 42201-1234567-8)</p>
+            ) : (
+              <p className="text-xs text-text-muted mt-1">Your CNIC number will be securely hashed on our servers.</p>
+            )}
           </div>
 
           {/* Document uploads */}

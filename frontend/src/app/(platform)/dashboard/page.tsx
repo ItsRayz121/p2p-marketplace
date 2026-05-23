@@ -57,19 +57,21 @@ const GAS_NATIVE_SYMBOL: Record<string, string> = {
 function gasStatusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
   if (s === 'delivered' || s === 'refunded') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
-  if (s === 'payment_detected' || s === 'sending') return 'warning'
+  if (s === 'payment_verified' || s === 'payment_detected' || s === 'sending') return 'warning'
   return 'default'
 }
 
 const GAS_STATUS_LABELS: Record<string, string> = {
-  payment_pending:  'Awaiting',
-  payment_uploaded: 'Proof Sent',
-  payment_detected: 'Confirmed',
-  sending:          'Sending',
-  delivered:        'Delivered',
-  failed:           'Failed',
-  expired:          'Expired',
-  refunded:         'Refunded',
+  payment_pending:   'Awaiting',
+  payment_uploaded:  'Proof Sent',
+  payment_verified:  'Verified',
+  payment_detected:  'Confirmed',
+  sending:           'Sending',
+  delivered:         'Delivered',
+  failed:            'Failed',
+  expired:           'Expired',
+  refund_pending:    'Refund Pending',
+  refunded:          'Refunded',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
