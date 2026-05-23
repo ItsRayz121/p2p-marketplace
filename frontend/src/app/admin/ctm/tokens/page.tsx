@@ -59,10 +59,14 @@ export default function AdminCtmTokensPage() {
 
   const fetchTokens = async () => {
     try {
-      const r2 = await fetch(`/api/v1/ctm/tokens?adminView=true&page=${page}&limit=20${search ? `&search=${search}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}`, { credentials: 'include' })
-      const data = await r2.json()
-      setTokens(data.data?.tokens ?? [])
-      setTotal(data.data?.total ?? 0)
+      const result = await ctmApi.adminListTokens({
+        page,
+        limit: 20,
+        ...(search ? { search } : {}),
+        ...(statusFilter ? { status: statusFilter } : {}),
+      })
+      setTokens((result as { tokens: Token[] }).tokens ?? [])
+      setTotal((result as { total: number }).total ?? 0)
     } catch {
       // ignore
     } finally {
@@ -139,7 +143,12 @@ export default function AdminCtmTokensPage() {
       setAddForm(EMPTY_ADD)
       await fetchTokens()
     } catch (err: unknown) {
-      setAddError((err as Error).message ?? 'Failed to create token')
+      const msg = (err as Error).message ?? 'Failed to create token'
+      if (msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('conflict')) {
+        setAddError(`A token with slug "${addForm.slug}" already exists. It may be hidden — check the token list above or try a different slug.`)
+      } else {
+        setAddError(msg)
+      }
     } finally {
       setAdding(false)
     }

@@ -2,8 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
-
-const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'SadaPay', 'NayaPay', 'HBL', 'MCB', 'UBL', 'Allied Bank', 'Bank Alfalah', 'Meezan Bank', 'NBP', 'Standard Chartered', 'Askari Bank', 'Faysal Bank', 'JS Bank', 'Bank of Punjab', 'Silk Bank', 'Soneri Bank']
+import { PaymentMethodPicker } from '@/components/ui/PaymentMethodPicker'
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string }
 
@@ -29,9 +28,6 @@ export default function CreateRequestPage() {
       setTokens((res as { tokens: CtmToken[] }).tokens ?? [])
     }).finally(() => setLoading(false))
   }, [])
-
-  const togglePayment = (m: string) =>
-    setForm((f) => ({ ...f, paymentMethods: f.paymentMethods.includes(m) ? f.paymentMethods.filter((x) => x !== m) : [...f.paymentMethods, m] }))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -102,14 +98,10 @@ export default function CreateRequestPage() {
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Payment methods *</label>
-          <div className="flex flex-wrap gap-2">
-            {PAYMENT_METHODS.map((m) => (
-              <button type="button" key={m} onClick={() => togglePayment(m)}
-                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${form.paymentMethods.includes(m) ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary hover:bg-surface'}`}>
-                {m}
-              </button>
-            ))}
-          </div>
+          <PaymentMethodPicker
+            selected={form.paymentMethods}
+            onChange={(methods) => setForm((f) => ({ ...f, paymentMethods: methods }))}
+          />
         </div>
 
         <div>

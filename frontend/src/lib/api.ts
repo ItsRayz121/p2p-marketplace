@@ -1665,6 +1665,10 @@ export const ctmApi = {
     apiRequest<{ tokens: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/tokens' + buildQs(params)),
   getToken: (slug: string) => apiRequest<unknown>(`/ctm/tokens/${slug}`),
   suggestToken: (data: object) => apiRequest<unknown>('/ctm/tokens/suggest', { method: 'POST', body: JSON.stringify(data) }),
+  adminListTokens: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ tokens: unknown[]; total: number; page: number; limit: number; totalPages: number }>(
+      '/ctm/tokens' + buildQs({ adminView: 'true', ...params })
+    ),
   adminGetTokenQueue: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ requests: unknown[]; total: number; page: number; limit: number }>('/ctm/tokens/admin/queue' + buildQs(params)),
   adminCreateToken: (data: object) => apiRequest<unknown>('/ctm/tokens/admin', { method: 'POST', body: JSON.stringify(data) }),

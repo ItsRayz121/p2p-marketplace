@@ -7,6 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
+import { PaymentMethodPicker } from '@/components/ui/PaymentMethodPicker'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -39,7 +40,6 @@ const NETWORK_LABELS: Record<string, string> = {
   Aptos: 'Aptos',
 }
 
-const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'SadaPay', 'NayaPay', 'HBL', 'MCB', 'UBL', 'Allied Bank', 'Bank Alfalah', 'Meezan Bank', 'NBP', 'Standard Chartered', 'Askari Bank', 'Faysal Bank', 'JS Bank', 'Bank of Punjab', 'Silk Bank', 'Soneri Bank']
 
 const TRADE_WINDOWS = [
   { value: 15, label: '15 minutes' },
@@ -155,15 +155,6 @@ function CreateAdPageContent() {
     setErrors((prev) => ({ ...prev, [key]: '' }))
   }
 
-  const togglePaymentMethod = (pm: string) => {
-    setForm((prev) => ({
-      ...prev,
-      paymentMethods: prev.paymentMethods.includes(pm)
-        ? prev.paymentMethods.filter((p) => p !== pm)
-        : [...prev.paymentMethods, pm],
-    }))
-    setErrors((prev) => ({ ...prev, paymentMethods: '' }))
-  }
 
   const calculatedPrice =
     marketRate > 0 && form.priceType === 'float'
@@ -384,21 +375,10 @@ function CreateAdPageContent() {
       {/* Payment Methods */}
       <div className="bg-white border border-border rounded-xl p-5 space-y-3">
         <p className="text-sm font-semibold text-text-primary">Payment Methods</p>
-        <div className="flex flex-wrap gap-2">
-          {PAYMENT_METHODS.map((pm) => (
-            <button
-              key={pm}
-              onClick={() => togglePaymentMethod(pm)}
-              className={`px-3 py-1.5 rounded-full border text-sm font-medium transition-colors ${
-                form.paymentMethods.includes(pm)
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border text-text-muted hover:border-primary/40'
-              }`}
-            >
-              {pm}
-            </button>
-          ))}
-        </div>
+        <PaymentMethodPicker
+          selected={form.paymentMethods}
+          onChange={(methods) => setField('paymentMethods', methods)}
+        />
         {errors.paymentMethods && <p className="text-sm text-danger">{errors.paymentMethods}</p>}
       </div>
 

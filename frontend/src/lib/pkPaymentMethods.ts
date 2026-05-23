@@ -1,5 +1,23 @@
 // Shared Pakistani payment method constants used across create-ad, CTM, and payment-method forms.
 
+export interface PaymentMethodGroup {
+  label: string
+  methods: string[]
+}
+
+export const PAYMENT_METHOD_GROUPS: PaymentMethodGroup[] = [
+  { label: 'Branchless Wallets', methods: ['JazzCash', 'Easypaisa'] },
+  { label: 'Fintech / EMIs', methods: ['SadaPay', 'NayaPay'] },
+  {
+    label: 'Commercial Banks',
+    methods: [
+      'HBL', 'MCB', 'UBL', 'Allied Bank', 'Bank Alfalah', 'Meezan Bank',
+      'NBP', 'Standard Chartered', 'Askari Bank', 'Faysal Bank', 'JS Bank',
+      'Bank of Punjab', 'Silk Bank', 'Soneri Bank',
+    ],
+  },
+]
+
 export const PK_BANKS = [
   'HBL — Habib Bank Limited',
   'MCB — Muslim Commercial Bank',

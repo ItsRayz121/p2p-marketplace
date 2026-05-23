@@ -69,6 +69,7 @@ export async function ctmTokenRoutes(app: FastifyInstance) {
       ...(q.search ? { search: q.search } : {}),
       ...(q.settlementType ? { settlementType: q.settlementType as never } : {}),
       ...(q.riskTier ? { riskTier: q.riskTier as never } : {}),
+      ...(q.status && adminView ? { status: q.status as never } : {}),
       page: q.page ? parseInt(q.page, 10) : 1,
       limit: q.limit ? parseInt(q.limit, 10) : 20,
       adminView,

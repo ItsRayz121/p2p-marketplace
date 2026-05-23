@@ -6,13 +6,14 @@ export interface ListTokensFilters {
   search?: string
   settlementType?: CtmSettlementType
   riskTier?: CtmTokenRiskTier
+  status?: CtmTokenStatus
   page?: number
   limit?: number
   adminView?: boolean
 }
 
 export async function listApprovedTokens(filters: ListTokensFilters = {}) {
-  const { search, settlementType, riskTier, page = 1, limit = 20, adminView = false } = filters
+  const { search, settlementType, riskTier, status, page = 1, limit = 20, adminView = false } = filters
   const skip = (page - 1) * limit
 
   const where: Record<string, unknown> = adminView ? {} : { status: 'approved', isListingEnabled: true }
@@ -22,6 +23,7 @@ export async function listApprovedTokens(filters: ListTokensFilters = {}) {
   ]
   if (settlementType) where.settlementType = settlementType
   if (riskTier) where.riskTier = riskTier
+  if (status && adminView) where.status = status
 
   const [tokens, total] = await Promise.all([
     db.ctmToken.findMany({
