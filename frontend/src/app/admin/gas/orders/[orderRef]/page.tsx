@@ -27,6 +27,10 @@ interface GasOrderDetail {
   pkrAmount: string | null
   pkrPaymentMethod: string | null
   paymentProofUrl: string | null
+  paymentVerifiedAt: string | null
+  verifiedAmount: string | null
+  verifiedAsset: string | null
+  verifiedConfirmations: number | null
   toAddress: string
   fromHotWallet: string | null
   deliveryTxHash: string | null
@@ -75,6 +79,7 @@ function explorerTxUrl(chain: string, hash: string): string {
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
   payment_uploaded: 'Proof Submitted',
+  payment_verified: 'Payment Verified',
   payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Delivered',
@@ -84,7 +89,7 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' | 'outline' {
-  if (s === 'delivered') return 'success'
+  if (s === 'delivered' || s === 'payment_verified') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
   if (s === 'refunded') return 'warning'
   if (s === 'payment_uploaded') return 'warning'
@@ -262,6 +267,7 @@ export default function GasOrderDetailPage() {
 
   const isFailed = order.status === 'failed'
   const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
+  const isPaymentVerified = order.status === 'payment_verified'
   // USDT payment_uploaded = user submitted tx hash but deposit address wasn't configured for auto-verify
   const isUsdtProofPending = order.status === 'payment_uploaded' && order.paymentCoin !== 'PKR'
   const isAwaitingPayment = order.status === 'payment_pending' || order.status === 'expired' || isUsdtProofPending
@@ -320,6 +326,39 @@ export default function GasOrderDetailPage() {
             </div>
             <Button variant="primary" size="sm" onClick={() => setApprovePkrOpen(true)} disabled={isOrderExpired}>Approve</Button>
             <Button variant="danger" size="sm" onClick={() => setRejectPkrOpen(true)}>Reject</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Actions — payment auto-verified by poller, awaiting admin release */}
+      {isPaymentVerified && (
+        <div className="mb-6 p-4 rounded-xl border bg-green-50 border-green-200">
+          <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-green-100 border border-green-200">
+            <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-xs font-semibold text-green-800">
+              Payment auto-verified on-chain by the payment poller.{' '}
+              {order.verifiedAmount && order.verifiedAsset && (
+                <span>{parseFloat(order.verifiedAmount).toFixed(4)} {order.verifiedAsset} confirmed</span>
+              )}
+              {order.verifiedConfirmations != null && (
+                <span> · {order.verifiedConfirmations} block confirmations</span>
+              )}
+              . Click <strong>Release Gas</strong> to queue delivery.
+            </p>
+          </div>
+          <div className="flex gap-3 items-start">
+            <div className="flex-1">
+              <p className="text-sm font-semibold mb-0.5 text-green-900">Payment Verified — Ready to Release Gas</p>
+              {order.paymentTxHash && (
+                <p className="text-xs font-mono text-green-700">
+                  {order.paymentTxHash.slice(0, 20)}…{order.paymentTxHash.slice(-10)}
+                </p>
+              )}
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setMarkPaymentOpen(true)}>Release Gas</Button>
+            <Button variant="danger" size="sm" onClick={() => setCancelOpen(true)}>Cancel Order</Button>
           </div>
         </div>
       )}
@@ -429,6 +468,17 @@ export default function GasOrderDetailPage() {
                 View Screenshot ↗
               </a>
             </InfoRow>
+          )}
+          {order.verifiedAmount && order.verifiedAsset && (
+            <InfoRow label="Verified Amount">
+              <span className="text-green-700 font-semibold">{parseFloat(order.verifiedAmount).toFixed(4)} {order.verifiedAsset}</span>
+            </InfoRow>
+          )}
+          {order.verifiedConfirmations != null && (
+            <InfoRow label="Confirmations">{order.verifiedConfirmations} blocks</InfoRow>
+          )}
+          {order.paymentVerifiedAt && (
+            <InfoRow label="Verified At">{fmtDateTime(order.paymentVerifiedAt)}</InfoRow>
           )}
         </div>
 

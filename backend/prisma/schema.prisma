@@ -207,6 +207,7 @@ enum GasFeeOrderStatus {
   created
   payment_pending
   payment_uploaded
+  payment_verified
   payment_detected
   sending
   delivered
@@ -1103,6 +1104,10 @@ model GasFeeOrder {
   paymentTxHash        String?           @unique
   paymentSenderAddress String?
   paymentProofUrl      String?
+  paymentVerifiedAt    DateTime?
+  verifiedAmount       Decimal?          @db.Decimal(10, 4)
+  verifiedAsset        String?
+  verifiedConfirmations Int?
   pkrPaymentMethod     String?
   pkrAmount            Decimal?          @db.Decimal(12, 2)
 
@@ -1361,6 +1366,8 @@ model GasLedgerEntry {
   // nativeAmount: positive = inflow to hot wallet; negative = outflow
   nativeAmount   Decimal              @db.Decimal(28, 10)
   nativeSymbol   String               // "TRX", "BNB", "ETH", etc.
+  tokenSymbol    String?              // "USDT" for ERC20 payments; null for native-only entries
+  tokenAmount    Decimal?             @db.Decimal(28, 10)
   usdAmount      Decimal              @db.Decimal(18, 6)
   txHash         String?
   fromAddress    String?

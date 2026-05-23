@@ -19,6 +19,8 @@ type LedgerEntry = {
   chain: string
   nativeAmount: string
   nativeSymbol: string
+  tokenSymbol: string | null
+  tokenAmount: string | null
   usdAmount: string
   txHash: string | null
   fromAddress: string | null
@@ -567,10 +569,13 @@ export default function GasWalletActivityPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {items.map((entry) => {
-                  const amount    = parseFloat(entry.nativeAmount)
                   const inflow    = isInflow(entry.entryType)
-                  const amountAbs = Math.abs(amount)
                   const usd       = parseFloat(entry.usdAmount)
+                  // For ERC20 token payments (e.g. USDT), show tokenAmount + tokenSymbol instead of native
+                  const hasToken  = entry.tokenSymbol && entry.tokenAmount
+                  const amount    = hasToken ? parseFloat(entry.tokenAmount!) : parseFloat(entry.nativeAmount)
+                  const symbol    = hasToken ? entry.tokenSymbol! : entry.nativeSymbol
+                  const amountAbs = Math.abs(amount)
 
                   return (
                     <tr key={entry.id} className="hover:bg-surface/50 transition-colors">
@@ -595,7 +600,7 @@ export default function GasWalletActivityPage() {
                           'text-sm font-semibold',
                           inflow ? 'text-success' : 'text-danger',
                         )}>
-                          {inflow ? '+' : '−'}{amountAbs.toFixed(6)} {entry.nativeSymbol}
+                          {inflow ? '+' : '−'}{amountAbs.toFixed(6)} {symbol}
                         </p>
                         {usd > 0 && (
                           <p className="text-[10px] text-text-muted">${usd.toFixed(4)}</p>

@@ -3226,22 +3226,25 @@ export async function adminRoutes(app: FastifyInstance) {
     const order = await db.gasFeeOrder.findUnique({ where: { id } })
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
 
-    // Admins can mark payment on any non-terminal status — including expired orders
-    // where the user paid after the timer ran out.
-    const allowedStatuses = ['payment_pending', 'payment_uploaded', 'expired']
+    // Admins can confirm payment on any non-terminal status — including:
+    //   payment_verified: auto-verified by poller, admin clicks "Release Gas"
+    //   payment_pending/payment_uploaded: manual confirmation (no auto-detection)
+    //   expired: user paid after the timer ran out
+    const allowedStatuses = ['payment_pending', 'payment_uploaded', 'payment_verified', 'expired']
     if (!allowedStatuses.includes(order.status)) {
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only confirm payment for pending, uploaded, or expired orders`, 409)
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only confirm payment for pending, uploaded, verified, or expired orders`, 409)
     }
 
+    const wasAutoVerified = order.status === 'payment_verified'
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: { in: ['payment_pending', 'payment_uploaded', 'expired'] } },
+      where: { id, status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'expired'] } },
       data:  { status: 'payment_detected', ...(txHash ? { paymentTxHash: txHash } : {}) },
     })
     if (claimed.count === 0) {
       throw new AppError('CONFLICT', 'Order was already processed by another admin', 409)
     }
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_PAYMENT_MANUALLY_CONFIRMED', 'GasFeeOrder', id, { txHash })
+    await createAuditLog(req.user!.id, 'GAS_PAYMENT_MANUALLY_CONFIRMED', 'GasFeeOrder', id, { txHash, wasAutoVerified })
     return reply.send({ success: true, data: { status: 'payment_detected' } })
   })
 

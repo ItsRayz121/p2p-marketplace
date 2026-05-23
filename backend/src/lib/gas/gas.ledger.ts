@@ -35,6 +35,10 @@ export interface LedgerEntryInput {
   /** Positive = into hot wallet; negative = out of hot wallet */
   nativeAmount: number
   usdAmount?: number           // if omitted, derived from live price
+  /** ERC20/TRC20 token symbol (e.g. "USDT"). Null for native-only entries. */
+  tokenSymbol?: string
+  /** Human-decimal token amount matching tokenSymbol. */
+  tokenAmount?: number
   txHash?: string
   fromAddress?: string
   toAddress?: string
@@ -63,6 +67,8 @@ export async function appendLedgerEntry(input: LedgerEntryInput) {
         chain:           dbChain,
         nativeAmount:    input.nativeAmount,
         nativeSymbol:    symbol,
+        tokenSymbol:     input.tokenSymbol     ?? null,
+        tokenAmount:     input.tokenAmount     ?? null,
         usdAmount,
         txHash:          input.txHash          ?? null,
         fromAddress:     input.fromAddress     ?? null,

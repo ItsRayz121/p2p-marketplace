@@ -3,12 +3,14 @@
 // USDT Transfer events to the gas deposit address, then applies the same matching
 // logic as webhook.routes.ts. Also catches payments that arrived before a gas
 // order expired but were never attributed (e.g. Moralis fired late or not at all).
+//
+// Status written on match: payment_verified (awaiting admin "Release Gas" action).
+// Delivery is NOT queued automatically — admin must click Release Gas.
 
 import { createPublicClient, http, parseAbiItem } from 'viem'
 import { bsc, mainnet } from 'viem/chains'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
-import { queues } from '../queues/definitions'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
 import { sendAdminAlertEmail } from '../services/email.service'
@@ -38,6 +40,8 @@ interface NetworkConfig {
   // BSC  ~3 s/block → 100 blocks ≈ 5 min
   // ETH ~12 s/block →  30 blocks ≈ 6 min
   scanBlocks: number
+  // Minimum block confirmations required before marking payment_verified.
+  minConfirmations: number
 }
 
 const NETWORK_CONFIGS: NetworkConfig[] = [
@@ -50,6 +54,7 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     depositAddressDbKey: 'gas_usdt_bep20_address',
     depositAddressEnvFn: () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
     scanBlocks:          100,
+    minConfirmations:    3,
   },
   {
     paymentNetwork:      'ERC20',
@@ -60,6 +65,7 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     depositAddressDbKey: 'gas_usdt_erc20_address',
     depositAddressEnvFn: () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
     scanBlocks:          30,
+    minConfirmations:    6,
   },
 ]
 
@@ -74,12 +80,12 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   const depositAddress = await resolveDepositAddress(cfg)
   if (!depositAddress) return  // network not configured
 
-  // Skip if no payment_pending orders or recently-expired orders for this network.
+  // Skip if no actionable orders (payment_pending, payment_uploaded, or recently-expired).
   const graceCutoff = new Date(Date.now() - GRACE_WINDOW_MS)
   const activeOrExpired = await db.gasFeeOrder.count({
     where: {
       paymentNetwork: cfg.paymentNetwork,
-      status: { in: ['payment_pending', 'expired'] },
+      status: { in: ['payment_pending', 'payment_uploaded', 'expired'] },
       expiresAt: { gte: graceCutoff },
     },
   })
@@ -140,6 +146,12 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     const rawValue = log.args.value
     if (rawValue === undefined || rawValue === null) continue
 
+    // Confirmation check — only verify payments with enough block depth.
+    const confirmations = log.blockNumber != null
+      ? Number(currentBlock) - Number(log.blockNumber)
+      : 0
+    if (confirmations < cfg.minConfirmations) continue
+
     // Convert raw token units to USDT decimal amount.
     const incoming = Number(rawValue) / Math.pow(10, cfg.usdtDecimals)
     if (!(incoming > 0)) continue
@@ -148,15 +160,45 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     const alreadyUsed = await db.gasFeeOrder.findFirst({ where: { paymentTxHash: txHash } })
     if (alreadyUsed) continue
 
+    const senderAddress = log.args.from ?? undefined
+
     const lo = (incoming * 0.99).toFixed(4)
     const hi = (incoming * 1.01).toFixed(4)
 
-    // ── Primary match: active payment_pending orders ──────────────────────────
+    // ── Pass 1: payment_uploaded orders where user submitted this exact tx hash ─
+    // Strongest signal — user explicitly provided the hash; skip amount tolerance.
+    const txHashUploadedOrder = await db.gasFeeOrder.findFirst({
+      where: {
+        status:         'payment_uploaded',
+        paymentNetwork: cfg.paymentNetwork,
+        paymentTxHash:  txHash,
+      },
+    })
+
+    if (txHashUploadedOrder) {
+      const claimed = await db.gasFeeOrder.updateMany({
+        where: { id: txHashUploadedOrder.id, status: 'payment_uploaded' },
+        data: {
+          status:               'payment_verified',
+          paymentVerifiedAt:    new Date(),
+          verifiedAmount:       incoming,
+          verifiedAsset:        'USDT',
+          verifiedConfirmations: confirmations,
+        },
+      })
+      if (claimed.count > 0) {
+        void recordVerifiedPayment(txHashUploadedOrder.id, txHashUploadedOrder.orderRef, txHashUploadedOrder.chain, txHash, incoming, confirmations, cfg, senderAddress)
+      }
+      continue
+    }
+
+    // ── Pass 2: amount-based match — payment_pending OR payment_uploaded (no hash yet) ──
     const activeOrder = await db.gasFeeOrder.findFirst({
       where: {
-        status:         'payment_pending',
+        status:         { in: ['payment_pending', 'payment_uploaded'] },
         paymentNetwork: cfg.paymentNetwork,
         paymentAmount:  { gte: lo, lte: hi },
+        paymentTxHash:  null,
         expiresAt:      { gt: new Date() },
       },
       orderBy: { createdAt: 'asc' },
@@ -164,33 +206,23 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
 
     if (activeOrder) {
       const claimed = await db.gasFeeOrder.updateMany({
-        where: { id: activeOrder.id, status: 'payment_pending' },
-        data:  { status: 'payment_detected', paymentTxHash: txHash },
+        where: { id: activeOrder.id, status: { in: ['payment_pending', 'payment_uploaded'] }, paymentTxHash: null },
+        data: {
+          status:               'payment_verified',
+          paymentTxHash:        txHash,
+          paymentVerifiedAt:    new Date(),
+          verifiedAmount:       incoming,
+          verifiedAsset:        'USDT',
+          verifiedConfirmations: confirmations,
+        },
       })
       if (claimed.count > 0) {
-        await queues.gasFee.add('deliver', { orderId: activeOrder.id }, { priority: 1 })
-        appendLedgerEntry({
-          entryType:      'order_payment',
-          chain:          fromDbChain(activeOrder.chain) as GasChainId,
-          nativeAmount:   incoming,
-          usdAmount:      incoming,
-          txHash,
-          relatedOrderId: activeOrder.id,
-        }).catch((e) => logger.warn({ err: e, orderId: activeOrder.id }, 'Failed to write order_payment ledger entry'))
-        logger.info({ txHash, orderId: activeOrder.id, network: cfg.paymentNetwork, incoming }, 'gasPaymentPoller: payment detected — active order attributed')
-        void createAdminNotif({
-          category: 'GAS',
-          title: `Deposit Received — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
-          body: `Order ${activeOrder.orderRef} payment detected. Gas delivery queued. Tx: ${txHash.slice(0, 12)}…`,
-          href: `/admin/gas/orders/${activeOrder.orderRef}`,
-          metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork, orderId: activeOrder.id },
-        })
+        void recordVerifiedPayment(activeOrder.id, activeOrder.orderRef, activeOrder.chain, txHash, incoming, confirmations, cfg, senderAddress)
       }
       continue
     }
 
-    // ── Grace match: recently-expired orders where payment arrived on time ────
-    // Only attribute if the block timestamp shows the transfer happened before expiry.
+    // ── Pass 3: grace match — recently-expired orders where payment arrived on time ──
     const expiredOrder = await db.gasFeeOrder.findFirst({
       where: {
         status:         'expired',
@@ -219,42 +251,29 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
         blockTimestampMs < expiredOrder.expiresAt.getTime()
 
       if (paidBeforeExpiry) {
-        // Payment arrived before order expired — attribute it despite expiry status.
         const claimed = await db.gasFeeOrder.updateMany({
           where: { id: expiredOrder.id, status: 'expired', paymentTxHash: null },
-          data:  { status: 'payment_detected', paymentTxHash: txHash },
+          data: {
+            status:               'payment_verified',
+            paymentTxHash:        txHash,
+            paymentVerifiedAt:    new Date(),
+            verifiedAmount:       incoming,
+            verifiedAsset:        'USDT',
+            verifiedConfirmations: confirmations,
+          },
         })
         if (claimed.count > 0) {
-          await queues.gasFee.add('deliver', { orderId: expiredOrder.id }, { priority: 1 })
-          appendLedgerEntry({
-            entryType:      'order_payment',
-            chain:          fromDbChain(expiredOrder.chain) as GasChainId,
-            nativeAmount:   incoming,
-            usdAmount:      incoming,
-            txHash,
-            relatedOrderId: expiredOrder.id,
-          }).catch((e) => logger.warn({ err: e, orderId: expiredOrder.id }, 'Failed to write order_payment ledger entry'))
-          logger.info(
-            { txHash, orderId: expiredOrder.id, network: cfg.paymentNetwork, incoming, blockTimestampMs },
-            'gasPaymentPoller: late detection — expired order resurrected (payment was on-time)',
-          )
+          void recordVerifiedPayment(expiredOrder.id, expiredOrder.orderRef, expiredOrder.chain, txHash, incoming, confirmations, cfg, senderAddress)
           sendAdminAlertEmail(
             `Gas Order Resurrected — Late Payment Detection`,
-            `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${cfg.paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but Moralis never fired. The poller detected and attributed it.`,
+            `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${cfg.paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but Moralis never fired. The poller detected and attributed it. Admin must release gas manually.`,
           ).catch(() => {})
-          void createAdminNotif({
-            category: 'GAS',
-            title: `Late Deposit Detected — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
-            body: `Expired order ${expiredOrder.orderRef} resurrected. Payment was on-chain before expiry. Delivery queued. Tx: ${txHash.slice(0, 12)}…`,
-            href: `/admin/gas/orders/${expiredOrder.orderRef}`,
-            metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork, orderId: expiredOrder.id },
-          })
         }
         continue
       }
     }
 
-    // ── No match — record as unattributed for admin review ───────────────────
+    // ── No match — record as unattributed for admin review ──────────────────────
     const member = JSON.stringify({
       txHash,
       amount: incoming.toFixed(4),
@@ -273,6 +292,45 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
       href: '/admin/gas/flagged',
       metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork },
     })
+  }
+}
+
+// Shared post-match logic: write ledger entry + admin notification.
+// Runs fire-and-forget (void) so errors never block the poller loop.
+async function recordVerifiedPayment(
+  orderId: string,
+  orderRef: string,
+  orderChain: string,
+  txHash: string,
+  incoming: number,
+  confirmations: number,
+  cfg: NetworkConfig,
+  senderAddress: string | undefined,
+): Promise<void> {
+  try {
+    appendLedgerEntry({
+      entryType:      'order_payment',
+      chain:          fromDbChain(orderChain) as GasChainId,
+      nativeAmount:   0,          // USDT is ERC20 — no native token moved
+      usdAmount:      incoming,   // USDT ≈ USD 1:1
+      tokenSymbol:    'USDT',
+      tokenAmount:    incoming,
+      txHash,
+      fromAddress:    senderAddress,
+      relatedOrderId: orderId,
+    }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write order_payment ledger entry'))
+
+    void createAdminNotif({
+      category: 'GAS',
+      title: `Payment Verified — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
+      body: `Order ${orderRef} payment verified on-chain (${confirmations} confirmations). Ready to release gas. Tx: ${txHash.slice(0, 12)}…`,
+      href: `/admin/gas/orders/${orderRef}`,
+      metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork, orderId, confirmations },
+    })
+
+    logger.info({ txHash, orderId, network: cfg.paymentNetwork, incoming, confirmations }, 'gasPaymentPoller: payment verified — awaiting admin release')
+  } catch (err) {
+    logger.warn({ err, orderId, txHash }, 'gasPaymentPoller: recordVerifiedPayment failed')
   }
 }
 

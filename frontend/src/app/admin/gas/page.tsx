@@ -24,7 +24,7 @@ interface GasOrder {
   paymentCoin?: string | null
   pkrAmount?: string | null
   toAddress: string
-  status: 'payment_pending' | 'payment_uploaded' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded'
   deliveryTxHash?: string
   failureReason?: string
   createdAt: string
@@ -103,6 +103,7 @@ function fmtRelativeTime(iso: string | null): string {
 const STATUS_LABELS: Record<string, string> = {
   payment_pending:  'Awaiting Payment',
   payment_uploaded: 'Proof Submitted',
+  payment_verified: 'Payment Verified',
   payment_detected: 'Payment Confirmed',
   sending:          'Delivering...',
   delivered:        'Delivered',
@@ -112,7 +113,7 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' | 'outline' {
-  if (s === 'delivered') return 'success'
+  if (s === 'delivered' || s === 'payment_verified') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
   if (s === 'refunded') return 'warning'
   if (s === 'payment_uploaded') return 'warning'
@@ -909,7 +910,7 @@ export default function GasAdminPage() {
 
       {/* ── Status Filters ───────────────────────────────────────────────────── */}
       <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-2">
-        {['all', 'payment_pending', 'payment_uploaded', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
+        {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
           <button
             key={s}
             onClick={() => { setStatusFilter(s); setPage(1) }}
