@@ -89,14 +89,25 @@ export async function adminCreateToken(adminId: string, data: {
 
 export async function adminUpdateToken(adminId: string, tokenId: string, data: {
   status?: CtmTokenStatus
+  name?: string
+  symbol?: string
+  description?: string
+  logoUrl?: string
+  bannerUrl?: string
+  settlementType?: CtmSettlementType
+  network?: string
+  contractAddress?: string
+  explorerUrl?: string
+  officialWebsite?: string
+  officialTwitter?: string
+  officialTelegram?: string
+  whitePaperUrl?: string
   riskTier?: CtmTokenRiskTier
   riskNotes?: string
   riskLabels?: string[]
   isListingEnabled?: boolean
-  logoUrl?: string
   maxListingAmount?: number
   minTradeAmountPkr?: number
-  description?: string
 }) {
   const token = await db.ctmToken.findUnique({ where: { id: tokenId } })
   if (!token) throw new AppError('NOT_FOUND', 'Token not found', 404)

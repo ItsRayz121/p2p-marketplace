@@ -35,7 +35,7 @@ export default function MerchantApplyPage() {
         </div>
         <h1 className="text-xl font-bold text-text-primary">KYC Required</h1>
         <p className="text-text-muted text-sm">
-          You must complete KYC verification before applying for a merchant account.
+          You must complete KYC verification before applying for Trader Verification.
           Your current KYC status is <strong>{user?.kycStatus ?? 'not started'}</strong>.
         </p>
         <Link href="/kyc">
@@ -55,8 +55,8 @@ export default function MerchantApplyPage() {
         </div>
         <h1 className="text-xl font-bold text-success">Application Submitted!</h1>
         <p className="text-text-muted text-sm">
-          Your merchant application has been received. Our team will review it within 24–48 hours.
-          You'll be notified via email once a decision is made.
+          Your Trader Verification application has been received. Our team will review it within 24–48 hours.
+          You&apos;ll be notified via email once a decision is made.
         </p>
         <Link href="/dashboard">
           <Button variant="secondary" className="mt-2">Back to Dashboard</Button>
@@ -100,16 +100,16 @@ export default function MerchantApplyPage() {
   return (
     <div className="max-w-lg mx-auto px-4 py-6 pb-24 lg:pb-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Apply for Merchant Account</h1>
-        <p className="text-sm text-text-muted">Unlock higher limits and a verified merchant badge</p>
+        <h1 className="text-2xl font-bold text-text-primary">Trader Verification</h1>
+        <p className="text-sm text-text-muted">Unlock higher limits and a Trader Verified badge</p>
       </div>
 
       {/* Benefits */}
       <div className="bg-primary/5 border border-primary/20 rounded-xl p-5 space-y-2">
-        <p className="text-sm font-semibold text-text-primary">Merchant Benefits</p>
+        <p className="text-sm font-semibold text-text-primary">Trader Benefits</p>
         {[
           'Higher daily trading limits',
-          'Verified Merchant badge on your profile',
+          'Trader Verified badge on your profile',
           'Priority customer support',
           'Featured placement in marketplace',
         ].map((b) => (

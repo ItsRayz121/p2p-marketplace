@@ -97,7 +97,7 @@ export default function Navbar() {
                       </span>
                       {isMerchant && (
                         <span className="hidden sm:inline-flex items-center text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full leading-none">
-                          Merchant
+                          Trader Verified
                         </span>
                       )}
                       <svg className="w-4 h-4 text-text-muted hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -120,7 +120,7 @@ export default function Navbar() {
                           </p>
                           {isMerchant && (
                             <span className="shrink-0 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full leading-none">
-                              Merchant
+                              Trader Verified
                             </span>
                           )}
                         </div>
@@ -149,7 +149,7 @@ export default function Navbar() {
                         <Link href="/referral" className={dropdownItemCls}>Referral</Link>
                       </DropdownMenu.Item>
 
-                      {/* Merchant mode switch */}
+                      {/* Trader mode switch */}
                       <DropdownMenu.Separator className="my-1 h-px bg-border" />
                       {isMerchant ? (
                         <DropdownMenu.Item asChild>
@@ -160,7 +160,7 @@ export default function Navbar() {
                             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
-                            Merchant Dashboard
+                            Trader Dashboard
                           </Link>
                         </DropdownMenu.Item>
                       ) : (
@@ -172,7 +172,7 @@ export default function Navbar() {
                             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                             </svg>
-                            Become a Merchant
+                            Trader Verification
                           </Link>
                         </DropdownMenu.Item>
                       )}

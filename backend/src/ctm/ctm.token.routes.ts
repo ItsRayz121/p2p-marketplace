@@ -47,14 +47,25 @@ const adminCreateSchema = z.object({
 
 const adminUpdateSchema = z.object({
   status: z.enum(['pending_review', 'approved', 'rejected', 'delisted', 'restricted']).optional(),
+  name: z.string().min(1).max(100).optional(),
+  symbol: z.string().min(1).max(20).optional(),
+  description: z.string().max(2000).optional(),
+  logoUrl: z.string().url().optional(),
+  bannerUrl: z.string().url().optional(),
+  settlementType: z.enum(['MANUAL', 'ON_CHAIN', 'HYBRID']).optional(),
+  network: z.string().max(100).optional(),
+  contractAddress: z.string().max(200).optional(),
+  explorerUrl: z.string().url().optional(),
+  officialWebsite: z.string().url().optional(),
+  officialTwitter: z.string().url().optional(),
+  officialTelegram: z.string().url().optional(),
+  whitePaperUrl: z.string().url().optional(),
   riskTier: z.enum(['low', 'medium', 'high', 'extreme']).optional(),
   riskNotes: z.string().max(1000).optional(),
   riskLabels: z.array(z.string()).optional(),
   isListingEnabled: z.boolean().optional(),
-  logoUrl: z.string().url().optional(),
   maxListingAmount: z.number().positive().optional(),
   minTradeAmountPkr: z.number().positive().optional(),
-  description: z.string().max(2000).optional(),
 })
 
 const rejectSchema = z.object({ adminNote: z.string().min(1).max(500) })

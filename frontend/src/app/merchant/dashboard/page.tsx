@@ -337,7 +337,7 @@ export default function MerchantDashboardPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <LoadingState message="Loading merchant dashboard..." />
+        <LoadingState message="Loading trader dashboard..." />
       </div>
     )
   }
@@ -371,7 +371,7 @@ export default function MerchantDashboardPage() {
                   {profile.isActive ? 'Active' : 'Inactive'}
                 </Badge>
               </div>
-              <p className="text-sm text-text-muted">Merchant Dashboard</p>
+              <p className="text-sm text-text-muted">Trader Dashboard</p>
             </div>
             <button
               onClick={() => load(true)}

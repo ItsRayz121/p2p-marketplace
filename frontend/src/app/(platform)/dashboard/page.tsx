@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -382,22 +383,14 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── 7. Trader Badge ── */}
+      {/* ── 7. Trader Level ── */}
       <section>
-        <div className="bg-white rounded-xl border border-border p-5">
-          <h2 className="text-base font-semibold text-text-primary mb-3">Trader Badge</h2>
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-gold/10 text-gold text-lg font-bold flex items-center justify-center border-2 border-gold/30">
-              {summary?.tradeStats?.badge === 'elite' ? '💎' : summary?.tradeStats?.badge === 'top' ? '🥇' : summary?.tradeStats?.badge === 'trusted' ? '🥈' : '🥉'}
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-text-primary">
-                {summary?.tradeStats?.badgeLabel ?? 'Bronze'} Trader
-              </p>
-              <p className="text-xs text-text-muted">{summary?.tradeStats?.completedTrades ?? 0} completed trades</p>
-            </div>
-          </div>
-        </div>
+        <h2 className="text-base font-semibold text-text-primary mb-3">Trader Progress</h2>
+        <TraderLevelCard
+          kycStatus={user?.kycStatus ?? 'none'}
+          kycLevel={user?.kycLevel ?? 'none'}
+          completedTrades={summary?.tradeStats?.completedTrades ?? 0}
+        />
       </section>
 
       {/* ── 8. Notifications ── */}

@@ -24,6 +24,10 @@ const RISK_COLORS: Record<string, string> = {
 
 interface Token {
   id: string; slug: string; name: string; symbol: string; logoUrl?: string
+  bannerUrl?: string; description?: string; settlementType?: string; network?: string
+  contractAddress?: string; explorerUrl?: string; officialWebsite?: string
+  officialTwitter?: string; officialTelegram?: string; whitePaperUrl?: string
+  riskNotes?: string; maxListingAmount?: string | null; minTradeAmountPkr?: string | null
   status: string; riskTier: string; isListingEnabled: boolean; totalTrades: number; totalVolumePkr: string
 }
 
@@ -44,11 +48,11 @@ export default function AdminCtmTokensPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [page, setPage] = useState(1)
 
-  // Edit state
+  // Edit state — full form matching Add Token fields
   const [editToken, setEditToken] = useState<Token | null>(null)
-  const [editStatus, setEditStatus] = useState('')
-  const [editRisk, setEditRisk] = useState('')
-  const [editListingEnabled, setEditListingEnabled] = useState(true)
+  const [editForm, setEditForm] = useState<typeof EMPTY_ADD & { status: string; isListingEnabled: boolean }>({
+    ...EMPTY_ADD, status: 'approved', isListingEnabled: true,
+  })
   const [saving, setSaving] = useState(false)
 
   // Add token state
@@ -82,11 +86,29 @@ export default function AdminCtmTokensPage() {
     if (!editToken) return
     setSaving(true)
     try {
-      await ctmApi.adminUpdateToken(editToken.id, {
-        status: editStatus || undefined,
-        riskTier: editRisk || undefined,
-        isListingEnabled: editListingEnabled,
-      })
+      const payload: Record<string, unknown> = {
+        status: editForm.status || undefined,
+        name: editForm.name || undefined,
+        symbol: editForm.symbol ? editForm.symbol.toUpperCase() : undefined,
+        description: editForm.description || undefined,
+        riskTier: editForm.riskTier || undefined,
+        riskNotes: editForm.riskNotes || undefined,
+        settlementType: editForm.settlementType || undefined,
+        isListingEnabled: editForm.isListingEnabled,
+      }
+      if (editForm.logoUrl) payload.logoUrl = editForm.logoUrl
+      if (editForm.bannerUrl) payload.bannerUrl = editForm.bannerUrl
+      if (editForm.network) payload.network = editForm.network
+      if (editForm.contractAddress) payload.contractAddress = editForm.contractAddress
+      if (editForm.explorerUrl) payload.explorerUrl = editForm.explorerUrl
+      if (editForm.officialWebsite) payload.officialWebsite = editForm.officialWebsite
+      if (editForm.officialTwitter) payload.officialTwitter = editForm.officialTwitter
+      if (editForm.officialTelegram) payload.officialTelegram = editForm.officialTelegram
+      if (editForm.whitePaperUrl) payload.whitePaperUrl = editForm.whitePaperUrl
+      if (editForm.maxListingAmount) payload.maxListingAmount = parseFloat(editForm.maxListingAmount)
+      if (editForm.minTradeAmountPkr) payload.minTradeAmountPkr = parseFloat(editForm.minTradeAmountPkr)
+
+      await ctmApi.adminUpdateToken(editToken.id, payload)
       setEditToken(null)
       await fetchTokens()
     } catch (err: unknown) {
@@ -238,7 +260,31 @@ export default function AdminCtmTokensPage() {
                   <td className="px-4 py-3"><span className={`text-xs font-medium ${t.isListingEnabled ? 'text-green-600' : 'text-red-500'}`}>{t.isListingEnabled ? 'Enabled' : 'Disabled'}</span></td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => { setEditToken(t); setEditStatus(t.status); setEditRisk(t.riskTier); setEditListingEnabled(t.isListingEnabled) }} className="text-xs border border-border px-2 py-1 rounded-lg hover:bg-surface">Edit</button>
+                      <button onClick={() => {
+                        setEditToken(t)
+                        setEditForm({
+                          slug: t.slug,
+                          symbol: t.symbol,
+                          name: t.name,
+                          description: t.description ?? '',
+                          logoUrl: t.logoUrl ?? '',
+                          bannerUrl: t.bannerUrl ?? '',
+                          settlementType: (t.settlementType ?? 'MANUAL') as 'MANUAL' | 'ON_CHAIN' | 'HYBRID',
+                          network: t.network ?? '',
+                          contractAddress: t.contractAddress ?? '',
+                          explorerUrl: t.explorerUrl ?? '',
+                          officialWebsite: t.officialWebsite ?? '',
+                          officialTwitter: t.officialTwitter ?? '',
+                          officialTelegram: t.officialTelegram ?? '',
+                          whitePaperUrl: t.whitePaperUrl ?? '',
+                          riskTier: (t.riskTier ?? 'medium') as 'low' | 'medium' | 'high' | 'extreme',
+                          riskNotes: t.riskNotes ?? '',
+                          maxListingAmount: t.maxListingAmount ? String(t.maxListingAmount) : '',
+                          minTradeAmountPkr: t.minTradeAmountPkr ? String(t.minTradeAmountPkr) : '',
+                          status: t.status,
+                          isListingEnabled: t.isListingEnabled,
+                        } as typeof EMPTY_ADD & { status: string; isListingEnabled: boolean })
+                      }} className="text-xs border border-border px-2 py-1 rounded-lg hover:bg-surface">Edit</button>
                       {t.status !== 'delisted' && <button onClick={() => handleDelist(t.id)} className="text-xs border border-red-200 text-red-600 px-2 py-1 rounded-lg hover:bg-red-50">Delist</button>}
                     </div>
                   </td>
@@ -258,12 +304,12 @@ export default function AdminCtmTokensPage() {
         </div>
       )}
 
-      {/* Edit modal */}
+      {/* Edit modal — full form matching Add Token */}
       <Modal
         isOpen={!!editToken}
         onClose={() => setEditToken(null)}
-        title={editToken ? `Edit: ${editToken.name}` : 'Edit Token'}
-        size="sm"
+        title={editToken ? `Edit Token: ${editToken.name}` : 'Edit Token'}
+        size="xl"
         footer={
           <div className="flex gap-3">
             <Button variant="secondary" size="md" onClick={() => setEditToken(null)} disabled={saving} className="flex-1">Cancel</Button>
@@ -271,28 +317,164 @@ export default function AdminCtmTokensPage() {
           </div>
         }
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Status</label>
-            <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
-              <option value="approved">Approved</option>
-              <option value="pending_review">Pending Review</option>
-              <option value="rejected">Rejected</option>
-              <option value="restricted">Restricted</option>
-            </select>
+        <div className="space-y-6">
+          {/* Status & Listing Controls — admin-only top section */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Admin Controls</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Status</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="approved">Approved</option>
+                  <option value="pending_review">Pending Review</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="restricted">Restricted</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Risk Tier</label>
+                <select
+                  value={editForm.riskTier}
+                  onChange={(e) => setEditForm((f) => ({ ...f, riskTier: e.target.value as typeof editForm.riskTier }))}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="extreme">Extreme</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="editListingEnabled"
+                checked={editForm.isListingEnabled}
+                onChange={(e) => setEditForm((f) => ({ ...f, isListingEnabled: e.target.checked }))}
+                className="w-4 h-4 rounded"
+              />
+              <label htmlFor="editListingEnabled" className="text-sm text-text-primary">Listing Enabled</label>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Risk Tier</label>
-            <select value={editRisk} onChange={(e) => setEditRisk(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="extreme">Extreme</option>
-            </select>
+
+          {/* Basic Info */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Basic Info</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Slug (read-only)</label>
+                <input type="text" value={editForm.slug} disabled className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-muted cursor-not-allowed" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Symbol</label>
+                <input type="text" value={editForm.symbol} onChange={(e) => setEditForm((f) => ({ ...f, symbol: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-text-muted mb-1">Name</label>
+                <input type="text" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Description</label>
+              <textarea
+                rows={3}
+                value={editForm.description}
+                onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <input type="checkbox" id="listingEnabled" checked={editListingEnabled} onChange={(e) => setEditListingEnabled(e.target.checked)} className="w-4 h-4 rounded" />
-            <label htmlFor="listingEnabled" className="text-sm text-text-primary">Listing Enabled</label>
+
+          {/* Trading Settings */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Trading Settings</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Settlement Type</label>
+                <select value={editForm.settlementType} onChange={(e) => setEditForm((f) => ({ ...f, settlementType: e.target.value as typeof f.settlementType }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                  <option value="MANUAL">Manual</option>
+                  <option value="ON_CHAIN">On-Chain</option>
+                  <option value="HYBRID">Hybrid</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Max Listing Amount</label>
+                <input type="text" placeholder="e.g. 100000" value={editForm.maxListingAmount} onChange={(e) => setEditForm((f) => ({ ...f, maxListingAmount: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Min Trade Amount (PKR)</label>
+                <input type="text" placeholder="e.g. 1000" value={editForm.minTradeAmountPkr} onChange={(e) => setEditForm((f) => ({ ...f, minTradeAmountPkr: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+            </div>
+          </div>
+
+          {/* Blockchain Info */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Blockchain Info</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Network</label>
+                <input type="text" placeholder="e.g. Ethereum" value={editForm.network} onChange={(e) => setEditForm((f) => ({ ...f, network: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Contract Address</label>
+                <input type="text" placeholder="0x…" value={editForm.contractAddress} onChange={(e) => setEditForm((f) => ({ ...f, contractAddress: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-text-muted mb-1">Explorer URL</label>
+                <input type="text" placeholder="https://etherscan.io/…" value={editForm.explorerUrl} onChange={(e) => setEditForm((f) => ({ ...f, explorerUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+            </div>
+          </div>
+
+          {/* Branding */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Branding</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Logo URL</label>
+                <input type="text" placeholder="https://…" value={editForm.logoUrl} onChange={(e) => setEditForm((f) => ({ ...f, logoUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Banner URL</label>
+                <input type="text" placeholder="https://…" value={editForm.bannerUrl} onChange={(e) => setEditForm((f) => ({ ...f, bannerUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Official Website</label>
+                <input type="text" placeholder="https://…" value={editForm.officialWebsite} onChange={(e) => setEditForm((f) => ({ ...f, officialWebsite: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Twitter</label>
+                <input type="text" placeholder="https://twitter.com/…" value={editForm.officialTwitter} onChange={(e) => setEditForm((f) => ({ ...f, officialTwitter: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Telegram</label>
+                <input type="text" placeholder="https://t.me/…" value={editForm.officialTelegram} onChange={(e) => setEditForm((f) => ({ ...f, officialTelegram: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Whitepaper URL</label>
+                <input type="text" placeholder="https://…" value={editForm.whitePaperUrl} onChange={(e) => setEditForm((f) => ({ ...f, whitePaperUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+            </div>
+          </div>
+
+          {/* Admin / Internal */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Internal / Admin</p>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Risk Notes</label>
+              <textarea
+                rows={2}
+                placeholder="Internal risk notes…"
+                value={editForm.riskNotes}
+                onChange={(e) => setEditForm((f) => ({ ...f, riskNotes: e.target.value }))}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
           </div>
         </div>
       </Modal>
