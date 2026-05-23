@@ -343,12 +343,12 @@ export async function adminRoutes(app: FastifyInstance) {
       create: {
         userId: id,
         badge: parsed.data.badge,
-        badgeLabel: parsed.data.badgeLabel ?? BADGE_LABELS[parsed.data.badge],
+        badgeLabel: parsed.data.badgeLabel ?? BADGE_LABELS[parsed.data.badge] ?? parsed.data.badge,
         badgeOverride: !parsed.data.clearOverride,
       },
       update: {
         badge: parsed.data.badge,
-        badgeLabel: parsed.data.badgeLabel ?? BADGE_LABELS[parsed.data.badge],
+        badgeLabel: parsed.data.badgeLabel ?? BADGE_LABELS[parsed.data.badge] ?? parsed.data.badge,
         badgeOverride: !parsed.data.clearOverride,
       },
     })
