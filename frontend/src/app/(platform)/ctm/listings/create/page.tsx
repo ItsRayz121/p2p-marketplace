@@ -63,10 +63,10 @@ export default function CreateListingPage() {
       try {
         const [tokensRes, methodsRes] = await Promise.all([
           ctmApi.getTokens({ limit: 100 }),
-          apiRequest<{ paymentMethods: SavedPaymentMethod[] }>('/wallet/payment-methods'),
+          apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods'),
         ])
         setTokens((tokensRes as { tokens: CtmToken[] }).tokens ?? [])
-        setSavedMethods(methodsRes.paymentMethods ?? [])
+        setSavedMethods(Array.isArray(methodsRes) ? methodsRes : [])
       } finally {
         setLoadingInit(false)
       }

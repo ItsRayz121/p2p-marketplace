@@ -224,8 +224,8 @@ export default function PaymentMethodsPage() {
 
   const fetchMethods = useCallback(async () => {
     try {
-      const res = await apiRequest<{ paymentMethods: PaymentMethod[] }>('/wallet/payment-methods')
-      setMethods(res.paymentMethods)
+      const res = await apiRequest<PaymentMethod[]>('/wallet/payment-methods')
+      setMethods(Array.isArray(res) ? res : [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load payment methods')
     } finally {
