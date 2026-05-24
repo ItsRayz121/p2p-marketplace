@@ -1737,11 +1737,12 @@ model CtmTrade {
   tokenAmount       Decimal           @db.Decimal(28, 8)
   pricePerUnit      Decimal           @db.Decimal(14, 2)
   fiatAmount        Decimal           @db.Decimal(14, 2)
-  paymentMethod     String
-  paymentProofUrl   String?
-  paymentProofHash  String?
-  settlementMethod  String            @db.VarChar(100)
-  buyerSettlementId String?           @db.VarChar(500)
+  paymentMethod          String
+  paymentProofUrl        String?
+  paymentProofHash       String?
+  settlementMethod       String            @db.VarChar(100)
+  buyerSettlementId      String?           @db.VarChar(500)
+  sellerPaymentSnapshot  Json?
   status            CtmTradeStatus    @default(awaiting_payment)
   proofDeadlineAt   DateTime?
   confirmDeadlineAt DateTime?

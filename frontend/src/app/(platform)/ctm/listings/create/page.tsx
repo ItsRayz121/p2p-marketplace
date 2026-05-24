@@ -1,16 +1,43 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ctmApi } from '@/lib/api'
+import { ctmApi, apiRequest } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
-import { PaymentMethodPicker } from '@/components/ui/PaymentMethodPicker'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string; settlementType: string }
+
+interface SavedPaymentMethod {
+  id: string
+  type: string
+  displayName: string
+  accountName: string
+  mobileNumber?: string
+  bankName?: string
+  ibanNumber?: string
+  accountNumber?: string
+}
+
+const METHOD_LABELS: Record<string, string> = {
+  jazzcash: 'JazzCash',
+  easypaisa: 'Easypaisa',
+  sadapay: 'SadaPay',
+  nayapay: 'NayaPay',
+  bank_transfer: 'Bank Transfer',
+}
+
+function methodSubline(m: SavedPaymentMethod): string {
+  if (m.mobileNumber) return m.mobileNumber
+  if (m.ibanNumber) return m.ibanNumber
+  if (m.accountNumber) return m.accountNumber
+  return m.accountName
+}
 
 export default function CreateListingPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const [tokens, setTokens] = useState<CtmToken[]>([])
+  const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
   const [loadingInit, setLoadingInit] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -34,8 +61,12 @@ export default function CreateListingPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const tokensRes = await ctmApi.getTokens({ limit: 100 })
+        const [tokensRes, methodsRes] = await Promise.all([
+          ctmApi.getTokens({ limit: 100 }),
+          apiRequest<{ paymentMethods: SavedPaymentMethod[] }>('/wallet/payment-methods'),
+        ])
         setTokens((tokensRes as { tokens: CtmToken[] }).tokens ?? [])
+        setSavedMethods(methodsRes.paymentMethods ?? [])
       } finally {
         setLoadingInit(false)
       }
@@ -43,15 +74,24 @@ export default function CreateListingPage() {
     init()
   }, [])
 
+  function togglePaymentMethod(id: string) {
+    setForm((f) => ({
+      ...f,
+      paymentMethods: f.paymentMethods.includes(id)
+        ? f.paymentMethods.filter((x) => x !== id)
+        : [...f.paymentMethods, id],
+    }))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     if (!form.tokenId) { setError('Please select a token'); return }
     if (form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
-
     if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
-    if (!form.settlementMethod.trim()) { setError('Please enter your delivery address/identifier'); return }
+    if (form.side === 'buy' && !form.settlementMethod.trim()) {
+      setError('Enter your token receiving address so sellers know where to send tokens'); return
+    }
 
     setSubmitting(true)
     try {
@@ -63,6 +103,7 @@ export default function CreateListingPage() {
         totalAmount: parseFloat(form.totalAmount),
         minOrderPkr: parseFloat(form.minOrderPkr),
         maxOrderPkr: parseFloat(form.maxOrderPkr),
+        ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod } : {}),
       })
       router.push(`/ctm/listings/${(res as { id: string }).id}`)
     } catch (err: unknown) {
@@ -139,28 +180,41 @@ export default function CreateListingPage() {
 
         {/* Token delivery method */}
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">How will you deliver tokens? *</label>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {(['blockchain', 'email', 'username'] as const).map((m) => (
+          <label className="block text-sm font-medium text-text-primary mb-0.5">Token Delivery Method *</label>
+          <p className="text-xs text-text-muted mb-2">
+            {form.side === 'sell'
+              ? 'How will you send tokens to buyers after payment is confirmed?'
+              : 'How should sellers send tokens to you?'}
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { value: 'blockchain', label: 'Wallet / Blockchain' },
+              { value: 'email', label: 'Email' },
+              { value: 'username', label: 'Username' },
+            ] as const).map((m) => (
               <button
                 type="button"
-                key={m}
-                onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: m, settlementMethod: '' }))}
-                className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+                key={m.value}
+                onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: m.value, settlementMethod: '' }))}
+                className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m.value ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
               >
-                {m === 'blockchain' ? 'Wallet Address' : m === 'email' ? 'Email' : 'Username'}
+                {m.label}
               </button>
             ))}
           </div>
-          {form.tokenDeliveryType && (
-            <div>
+
+          {/* Only BUY listings need the seller's own receiving address */}
+          {form.side === 'buy' && form.tokenDeliveryType && (
+            <div className="mt-3">
               <label className="block text-xs font-medium text-text-muted mb-1">
-                {form.tokenDeliveryType === 'blockchain' ? 'Your wallet address' : form.tokenDeliveryType === 'email' ? 'Your email address' : 'Your username on the platform'}
+                {form.tokenDeliveryType === 'blockchain' ? 'Your token receiving wallet address' :
+                 form.tokenDeliveryType === 'email' ? 'Your email address (where tokens will be sent)' :
+                 'Your username on the token platform'}
               </label>
               <input
                 type={form.tokenDeliveryType === 'email' ? 'email' : 'text'}
                 placeholder={
-                  form.tokenDeliveryType === 'blockchain' ? '0x... or your token wallet address' :
+                  form.tokenDeliveryType === 'blockchain' ? '0x… or your token wallet address' :
                   form.tokenDeliveryType === 'email' ? 'you@example.com' :
                   'Your username'
                 }
@@ -168,22 +222,69 @@ export default function CreateListingPage() {
                 onChange={(e) => setForm((f) => ({ ...f, settlementMethod: e.target.value }))}
                 className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
-              <p className="mt-1 text-xs text-text-muted">Buyers will use this to send you tokens after trade completion.</p>
+              <p className="mt-1 text-xs text-text-muted">Sellers will send tokens here when they take your listing.</p>
             </div>
           )}
+
+          {form.side === 'sell' && form.tokenDeliveryType && (
+            <p className="mt-2 text-xs text-primary bg-primary/5 rounded-lg px-3 py-2">
+              Buyers will provide their receiving address when they start the trade — you do not need to enter it here.
+            </p>
+          )}
         </div>
+
+        {/* Transfer instructions */}
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Transfer instructions *</label>
           <textarea rows={3} placeholder="Step-by-step instructions shown to the buyer at trade start" value={form.settlementNote} onChange={(e) => setForm((f) => ({ ...f, settlementNote: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" required />
         </div>
 
-        {/* Payment methods */}
+        {/* Payment methods — from wallet only */}
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Payment methods *</label>
-          <PaymentMethodPicker
-            selected={form.paymentMethods}
-            onChange={(methods) => setForm((f) => ({ ...f, paymentMethods: methods }))}
-          />
+          <label className="block text-sm font-medium text-text-primary mb-0.5">Payment methods *</label>
+          <p className="text-xs text-text-muted mb-2">Select which of your saved payment accounts buyers can use.</p>
+
+          {savedMethods.length === 0 ? (
+            <div className="border border-border rounded-xl p-4 text-center">
+              <p className="text-sm text-text-muted mb-2">No payment methods saved yet.</p>
+              <a href="/payment-methods" className="text-sm text-primary font-medium hover:underline">
+                Add payment methods in Wallet →
+              </a>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {savedMethods.map((m) => {
+                const selected = form.paymentMethods.includes(m.id)
+                const isMobile = m.type !== 'bank_transfer'
+                return (
+                  <button
+                    type="button"
+                    key={m.id}
+                    onClick={() => togglePaymentMethod(m.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
+                      selected ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'
+                    }`}
+                  >
+                    <EntityLogo
+                      type={isMobile ? 'payment_method' : 'bank'}
+                      slug={isMobile ? (METHOD_LABELS[m.type] ?? m.type) : (m.bankName ?? 'bank')}
+                      size="sm"
+                      className="flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-text-primary">
+                        {m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type)}
+                      </p>
+                      <p className="text-xs text-text-muted truncate">{m.accountName} · {methodSubline(m)}</p>
+                    </div>
+                    <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>
+                      {selected && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12"><path d="M10 3L5 8.5 2 5.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* Trade window */}
@@ -194,7 +295,7 @@ export default function CreateListingPage() {
           </select>
         </div>
 
-        {/* Optional fields */}
+        {/* Terms */}
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Terms (optional)</label>
           <textarea rows={2} placeholder="Any additional terms for this listing" value={form.terms} onChange={(e) => setForm((f) => ({ ...f, terms: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />

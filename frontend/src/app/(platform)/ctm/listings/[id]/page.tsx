@@ -9,6 +9,8 @@ import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
 
+interface ResolvedPaymentMethod { id: string; type: string; label: string }
+
 interface Listing {
   id: string
   side: string
@@ -17,6 +19,8 @@ interface Listing {
   minOrderPkr: string
   maxOrderPkr: string
   paymentMethods: string[]
+  resolvedPaymentMethods: ResolvedPaymentMethod[]
+  tokenDeliveryType?: string
   settlementMethod: string
   settlementNote: string
   tradeWindowMins: number
@@ -26,6 +30,26 @@ interface Listing {
   merchantProfile: { id: string; tier: string; totalCtmTrades: number; completedCtmTrades: number; ctmAvgRating: string; user: { id: string; username: string } }
 }
 
+const DELIVERY_LABELS: Record<string, string> = {
+  blockchain: 'Wallet / Blockchain',
+  email: 'Email',
+  username: 'Username',
+}
+
+function buyerAddressLabel(tokenDeliveryType: string | undefined, tokenName: string): string {
+  if (tokenDeliveryType === 'blockchain') return `Your ${tokenName} wallet address`
+  if (tokenDeliveryType === 'email') return 'Your email address (to receive the token)'
+  if (tokenDeliveryType === 'username') return `Your username on the ${tokenName} platform`
+  return 'Your receiving address / identifier'
+}
+
+function buyerAddressPlaceholder(tokenDeliveryType: string | undefined, tokenSymbol: string): string {
+  if (tokenDeliveryType === 'blockchain') return `0x… or your ${tokenSymbol} wallet address`
+  if (tokenDeliveryType === 'email') return 'you@example.com'
+  if (tokenDeliveryType === 'username') return `Your ${tokenSymbol} username`
+  return 'Your receiving address'
+}
+
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -33,7 +57,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentMethodId, setPaymentMethodId] = useState('')
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -52,13 +76,19 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   usePolling(fetchListing, 30000)
 
   const handleStartTrade = async () => {
-    if (!paymentMethod) { setError('Select a payment method'); return }
-    if (!buyerSettlementId.trim()) { setError('Enter your token address'); return }
+    if (!paymentMethodId) { setError('Select a payment method'); return }
+    // Sell listings require buyer to provide their receiving address
+    if (listing?.side === 'sell' && !buyerSettlementId.trim()) {
+      setError('Enter your token receiving address'); return
+    }
     setError('')
     setSubmitting(true)
     try {
       if (!listing) return
-      const res = await ctmApi.startListingTrade(id, { paymentMethod, buyerSettlementId })
+      const res = await ctmApi.startListingTrade(id, {
+        paymentMethod: paymentMethodId,
+        buyerSettlementId: buyerSettlementId.trim() || undefined,
+      })
       router.push(`/ctm/trade/${res.tradeRef}`)
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -75,6 +105,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   if (!listing) return <div className="max-w-3xl mx-auto px-4 py-12 text-center text-text-muted">Listing not found.</div>
 
   const isMine = user?.id === listing.merchantProfile.user.id
+  const resolvedMethods = listing.resolvedPaymentMethods ?? listing.paymentMethods.map((m) => ({
+    id: m,
+    type: PK_MOBILE_METHODS.includes(m) ? m : 'bank_transfer',
+    label: m,
+  }))
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
@@ -128,16 +163,28 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Payment methods */}
       <div className="bg-white border border-border rounded-xl p-5">
-        <h2 className="font-semibold text-text-primary mb-3">Payment Methods</h2>
+        <h2 className="font-semibold text-text-primary mb-3">Accepted Payment Methods</h2>
         <div className="flex flex-wrap gap-2">
-          {listing.paymentMethods.map((m) => (
-            <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
-              <EntityLogo type={PK_MOBILE_METHODS.includes(m) ? 'payment_method' : 'bank'} slug={m} size="xs" className="flex-shrink-0" />
-              {m}
+          {resolvedMethods.map((m) => (
+            <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+              <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+              {m.label}
             </span>
           ))}
         </div>
       </div>
+
+      {/* Delivery method */}
+      {listing.tokenDeliveryType && (
+        <div className="bg-white border border-border rounded-xl p-5">
+          <h2 className="font-semibold text-text-primary mb-1">Token Delivery Method</h2>
+          <p className="text-sm text-text-muted">
+            {listing.side === 'sell'
+              ? `Seller will send tokens via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
+              : `Buyer should send tokens via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`}
+          </p>
+        </div>
+      )}
 
       {/* Terms */}
       {listing.terms && (
@@ -161,28 +208,44 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
             {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
 
+            {/* Payment method selection */}
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Payment method</label>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">How will you pay?</label>
               <div className="flex flex-wrap gap-2">
-                {listing.paymentMethods.map((m) => (
-                  <button type="button" key={m} onClick={() => setPaymentMethod(m)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}>
-                    <EntityLogo type={PK_MOBILE_METHODS.includes(m) ? 'payment_method' : 'bank'} slug={m} size="xs" className="flex-shrink-0" />
-                    {m}
+                {resolvedMethods.map((m) => (
+                  <button
+                    type="button"
+                    key={m.id}
+                    onClick={() => setPaymentMethodId(m.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                  >
+                    <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                    {m.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
-                Your {listing.merchantProfile.user.username} will send tokens to your {listing.token.symbol} address/UID
-              </label>
-              <input type="text" placeholder={`Your ${listing.token.name} UID / Address`} value={buyerSettlementId} onChange={(e) => setBuyerSettlementId(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            </div>
+            {/* Buyer's token receiving address — only for sell listings (buyer is receiving tokens) */}
+            {listing.side === 'sell' && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">
+                  {buyerAddressLabel(listing.tokenDeliveryType, listing.token.name)}
+                </label>
+                <input
+                  type={listing.tokenDeliveryType === 'email' ? 'email' : 'text'}
+                  placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol)}
+                  value={buyerSettlementId}
+                  onChange={(e) => setBuyerSettlementId(e.target.value)}
+                  className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <p className="mt-1 text-xs text-text-muted">The seller will send tokens here after your payment is confirmed.</p>
+              </div>
+            )}
 
+            {/* Transfer instructions */}
             <div className="bg-surface rounded-xl p-3 text-sm">
-              <p className="font-medium text-text-primary mb-1">Transfer instructions from merchant:</p>
+              <p className="font-medium text-text-primary mb-1">Instructions from merchant:</p>
               <p className="text-text-muted">{listing.settlementNote}</p>
             </div>
 

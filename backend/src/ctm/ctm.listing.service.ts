@@ -20,7 +20,7 @@ export interface CreateListingInput {
   totalAmount: number
   minOrderPkr: number
   maxOrderPkr: number
-  settlementMethod: string
+  settlementMethod?: string
   tokenDeliveryType?: 'blockchain' | 'email' | 'username'
   settlementNote: string
   paymentMethods: string[]
@@ -29,6 +29,28 @@ export interface CreateListingInput {
   requiresProof?: boolean
   proofInstructions?: string
   expiresAt?: Date
+}
+
+const PM_LABELS: Record<string, string> = {
+  jazzcash: 'JazzCash',
+  easypaisa: 'Easypaisa',
+  sadapay: 'SadaPay',
+  nayapay: 'NayaPay',
+  bank_transfer: 'Bank Transfer',
+}
+
+async function resolvePaymentMethods(ids: string[]) {
+  if (ids.length === 0) return []
+  const methods = await db.paymentMethod.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, type: true, accountName: true, bankName: true },
+  })
+  return ids.map((id) => {
+    const m = methods.find((x) => x.id === id)
+    if (!m) return { id, type: 'unknown', label: 'Unknown' }
+    const label = m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (PM_LABELS[m.type] ?? m.type)
+    return { id, type: m.type as string, label }
+  })
 }
 
 export interface ListingsFilter {
@@ -66,6 +88,15 @@ export async function createListing(userId: string, data: CreateListingInput) {
     throw new AppError('VALIDATION_ERROR', `Total amount exceeds token max listing amount of ${token.maxListingAmount}`, 400)
   }
 
+  // Validate payment method IDs — all must belong to this seller
+  const savedMethods = await db.paymentMethod.findMany({
+    where: { id: { in: data.paymentMethods }, userId },
+    select: { id: true },
+  })
+  if (savedMethods.length !== data.paymentMethods.length) {
+    throw new AppError('VALIDATION_ERROR', 'One or more payment methods not found or not yours', 400)
+  }
+
   return db.ctmListing.create({
     data: {
       merchantProfileId: merchantProfile.id,
@@ -78,7 +109,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
       availableAmount: new Prisma.Decimal(data.totalAmount),
       minOrderPkr: new Prisma.Decimal(data.minOrderPkr),
       maxOrderPkr: new Prisma.Decimal(data.maxOrderPkr),
-      settlementMethod: data.settlementMethod,
+      settlementMethod: data.settlementMethod ?? '',
       ...(data.tokenDeliveryType ? { tokenDeliveryType: data.tokenDeliveryType } : {}),
       settlementNote: data.settlementNote,
       paymentMethods: data.paymentMethods,
@@ -127,7 +158,23 @@ export async function getListings(filters: ListingsFilter = {}) {
     db.ctmListing.count({ where }),
   ])
 
-  return { listings, total, page, limit, totalPages: Math.ceil(total / limit) }
+  // Resolve all payment method IDs across all listings in one query
+  const allIds = [...new Set(listings.flatMap((l) => l.paymentMethods))]
+  const allMethods = await db.paymentMethod.findMany({
+    where: { id: { in: allIds } },
+    select: { id: true, type: true, accountName: true, bankName: true },
+  })
+  const resolvedListings = listings.map((l) => ({
+    ...l,
+    resolvedPaymentMethods: l.paymentMethods.map((id) => {
+      const m = allMethods.find((x) => x.id === id)
+      if (!m) return { id, type: 'unknown', label: 'Unknown' }
+      const label = m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (PM_LABELS[m.type] ?? m.type)
+      return { id, type: m.type as string, label }
+    }),
+  }))
+
+  return { listings: resolvedListings, total, page, limit, totalPages: Math.ceil(total / limit) }
 }
 
 export async function getListingById(id: string) {
@@ -143,7 +190,8 @@ export async function getListingById(id: string) {
     },
   })
   if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
-  return listing
+  const resolvedPaymentMethods = await resolvePaymentMethods(listing.paymentMethods)
+  return { ...listing, resolvedPaymentMethods }
 }
 
 export async function updateListing(userId: string, listingId: string, data: {

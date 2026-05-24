@@ -21,7 +21,7 @@ const createListingSchema = z.object({
   totalAmount: z.number().positive(),
   minOrderPkr: z.number().positive(),
   maxOrderPkr: z.number().positive(),
-  settlementMethod: z.string().min(1).max(100),
+  settlementMethod: z.string().max(100).optional(),
   tokenDeliveryType: z.enum(['blockchain', 'email', 'username']).optional(),
   settlementNote: z.string().min(1).max(1000),
   paymentMethods: z.array(z.string()).min(1),

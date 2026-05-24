@@ -21,10 +21,22 @@ const STATUS_LABELS: Record<string, string> = {
 
 const DISPUTE_REASONS = ['proof_fake', 'not_received', 'amount_mismatch', 'wrong_token', 'seller_unresponsive', 'buyer_unresponsive', 'other']
 
+interface SellerPaymentSnapshot {
+  type: string
+  label: string
+  accountName: string
+  mobileNumber?: string
+  bankName?: string
+  ibanNumber?: string
+  accountNumber?: string
+}
+
 interface Trade {
   id: string; tradeRef: string; status: string
   tokenAmount: string; fiatAmount: string; pricePerUnit: string; paymentMethod: string
   settlementMethod: string; settlementNote: string; buyerSettlementId?: string
+  sellerPaymentSnapshot?: SellerPaymentSnapshot
+  tokenDeliveryType?: string
   settlementType: string
   expiresAt: string; confirmDeadlineAt?: string; proofDeadlineAt?: string
   escrowAddress?: string; escrowAmount?: string; escrowCurrency?: string
@@ -169,14 +181,77 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           </div>
 
           {/* Settlement info */}
-          <div className="bg-white border border-border rounded-xl p-5">
-            <h2 className="font-semibold text-text-primary mb-3">Settlement Info</h2>
-            <div className="text-sm space-y-2 text-text-muted">
-              <div className="flex justify-between"><span>Payment via:</span><span className="text-text-primary font-medium">{trade.paymentMethod}</span></div>
-              <div className="flex justify-between"><span>Token address:</span><span className="text-text-primary font-medium">{trade.settlementMethod}</span></div>
-              {trade.buyerSettlementId && <div className="flex justify-between"><span>Buyer&apos;s ID:</span><span className="text-text-primary font-medium">{trade.buyerSettlementId}</span></div>}
+          <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+            {/* Payment details — how buyer pays seller */}
+            <div>
+              <h2 className="font-semibold text-text-primary mb-2">Payment Details</h2>
+              <p className="text-xs text-text-muted mb-2">Send PKR {Number(trade.fiatAmount).toLocaleString()} to the following account:</p>
+              {trade.sellerPaymentSnapshot ? (
+                <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Method</span>
+                    <span className="text-text-primary font-medium">{trade.sellerPaymentSnapshot.label}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Account Name</span>
+                    <span className="text-text-primary font-medium">{trade.sellerPaymentSnapshot.accountName}</span>
+                  </div>
+                  {trade.sellerPaymentSnapshot.mobileNumber && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Mobile Number</span>
+                      <span className="text-text-primary font-mono font-medium">{trade.sellerPaymentSnapshot.mobileNumber}</span>
+                    </div>
+                  )}
+                  {trade.sellerPaymentSnapshot.bankName && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Bank</span>
+                      <span className="text-text-primary font-medium">{trade.sellerPaymentSnapshot.bankName}</span>
+                    </div>
+                  )}
+                  {trade.sellerPaymentSnapshot.ibanNumber && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-text-muted flex-shrink-0">IBAN</span>
+                      <span className="text-text-primary font-mono font-medium text-right break-all">{trade.sellerPaymentSnapshot.ibanNumber}</span>
+                    </div>
+                  )}
+                  {trade.sellerPaymentSnapshot.accountNumber && !trade.sellerPaymentSnapshot.ibanNumber && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Account No.</span>
+                      <span className="text-text-primary font-mono font-medium">{trade.sellerPaymentSnapshot.accountNumber}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
+                  Payment via: <span className="font-medium text-text-primary">{trade.paymentMethod}</span>
+                </div>
+              )}
             </div>
-            <div className="mt-3 bg-surface rounded-xl p-3 text-sm text-text-muted">{trade.settlementNote}</div>
+
+            {/* Token delivery details */}
+            <div className="border-t border-border pt-4">
+              <h2 className="font-semibold text-text-primary mb-2">Token Delivery</h2>
+              <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                {trade.buyerSettlementId && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-text-muted flex-shrink-0">Send tokens to</span>
+                    <span className="text-text-primary font-mono font-medium text-right break-all">{trade.buyerSettlementId}</span>
+                  </div>
+                )}
+                {trade.settlementMethod && trade.settlementMethod !== '' && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-text-muted flex-shrink-0">Receiving address</span>
+                    <span className="text-text-primary font-mono font-medium text-right break-all">{trade.settlementMethod}</span>
+                  </div>
+                )}
+              </div>
+              {trade.settlementNote && (
+                <div className="mt-2 bg-surface rounded-xl p-3 text-sm text-text-muted">
+                  <p className="font-medium text-text-primary mb-1">Transfer instructions:</p>
+                  {trade.settlementNote}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Proofs */}

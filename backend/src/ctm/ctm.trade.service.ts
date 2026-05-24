@@ -331,6 +331,23 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (!listing.paymentMethods.includes(data.paymentMethod)) throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
   if (listing.availableAmount.lte(0)) throw new AppError('CONFLICT', 'Listing has no available tokens', 409)
 
+  // Fetch and snapshot seller's payment account details
+  const sellerPaymentMethod = await db.paymentMethod.findFirst({
+    where: { id: data.paymentMethod, userId: listing.merchantProfile.userId },
+  })
+  if (!sellerPaymentMethod) throw new AppError('CONFLICT', 'Seller payment method no longer available', 409)
+
+  const PM_LABELS: Record<string, string> = { jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer' }
+  const sellerPaymentSnapshot = {
+    type: sellerPaymentMethod.type as string,
+    label: sellerPaymentMethod.type === 'bank_transfer' ? (sellerPaymentMethod.bankName ?? 'Bank Transfer') : (PM_LABELS[sellerPaymentMethod.type] ?? sellerPaymentMethod.type),
+    accountName: sellerPaymentMethod.accountName,
+    ...(sellerPaymentMethod.mobileNumber ? { mobileNumber: sellerPaymentMethod.mobileNumber } : {}),
+    ...(sellerPaymentMethod.bankName ? { bankName: sellerPaymentMethod.bankName } : {}),
+    ...(sellerPaymentMethod.ibanNumber ? { ibanNumber: sellerPaymentMethod.ibanNumber } : {}),
+    ...(sellerPaymentMethod.accountNumber ? { accountNumber: sellerPaymentMethod.accountNumber } : {}),
+  }
+
   const expiresAt = new Date(Date.now() + (listing.tradeWindowMins ?? 45) * 60 * 1000)
 
   return db.$transaction(async (tx: Tx) => {
@@ -363,6 +380,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         paymentMethod: data.paymentMethod,
         settlementMethod: listing.settlementMethod,
         buyerSettlementId: data.buyerSettlementId ?? null,
+        sellerPaymentSnapshot: sellerPaymentSnapshot as never,
         status: 'awaiting_payment',
         expiresAt,
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
