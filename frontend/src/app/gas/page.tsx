@@ -369,12 +369,46 @@ function CustomGasRequest() {
 // ─── PKR payment method details ───────────────────────────────────────────────
 
 const PKR_METHOD_META = {
-  bank_transfer: { icon: '🏦', label: 'Bank Transfer',  color: 'blue',   desc: 'Direct bank account transfer' },
-  easypaisa:     { icon: '📱', label: 'Easypaisa',      color: 'green',  desc: 'Pay via Easypaisa mobile wallet' },
-  jazzcash:      { icon: '📲', label: 'JazzCash',       color: 'red',    desc: 'Pay via JazzCash mobile wallet' },
+  bank_transfer: { icon: '🏦', label: 'Bank Transfer', desc: 'Direct bank account transfer' },
+  easypaisa:     { icon: '📱', label: 'Easypaisa',     desc: 'Pay via Easypaisa mobile wallet' },
+  jazzcash:      { icon: '📲', label: 'JazzCash',      desc: 'Pay via JazzCash mobile wallet' },
+  nayapay:       { icon: '📱', label: 'NayaPay',       desc: 'Pay via NayaPay digital bank' },
+  sadapay:       { icon: '📱', label: 'SadaPay',       desc: 'Pay via SadaPay digital bank' },
 } as const
 
 type PkrMethodKey = keyof typeof PKR_METHOD_META
+
+function pkrLogoFor(key: PkrMethodKey, pkrMethods: GasPkrMethods | null): string | null {
+  if (!pkrMethods) return null
+  if (key === 'bank_transfer') return pkrMethods.bank.logoUrl
+  return pkrMethods[key]?.logoUrl ?? null
+}
+
+function pkrIsConfigured(key: PkrMethodKey, pkrMethods: GasPkrMethods | null): boolean {
+  if (!pkrMethods) return true
+  if (key === 'bank_transfer') return !!(pkrMethods.bank.bankName || pkrMethods.bank.iban)
+  return !!(pkrMethods[key]?.number)
+}
+
+function PkrMethodIcon({ methodKey, pkrMethods, sizeCls = 'w-12 h-12' }: {
+  methodKey: PkrMethodKey
+  pkrMethods: GasPkrMethods | null
+  sizeCls?: string
+}) {
+  const logoUrl = pkrLogoFor(methodKey, pkrMethods)
+  const meta = PKR_METHOD_META[methodKey]
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt={meta.label}
+        className={`${sizeCls} rounded-xl object-contain flex-shrink-0`}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+      />
+    )
+  }
+  return <span className="text-2xl flex-shrink-0">{meta.icon}</span>
+}
 
 // ─── Main Page Component ──────────────────────────────────────────────────────
 
@@ -658,17 +692,11 @@ export default function GasPage() {
         { label: 'Account Number',  value: b.accountNumber },
       ].filter(r => r.value)
     }
-    if (selectedPkrMethod === 'easypaisa') {
-      const e = pkrMethods.easypaisa
-      return [
-        { label: 'Account Name',   value: e.name },
-        { label: 'Mobile Number',  value: e.number },
-      ].filter(r => r.value)
-    }
-    const j = pkrMethods.jazzcash
+    // all mobile methods share the same shape
+    const m = pkrMethods[selectedPkrMethod as 'jazzcash' | 'easypaisa' | 'nayapay' | 'sadapay']
     return [
-      { label: 'Account Name',   value: j.name },
-      { label: 'Mobile Number',  value: j.number },
+      { label: 'Account Name',  value: m.name },
+      { label: 'Mobile Number', value: m.number },
     ].filter(r => r.value)
   }
 
@@ -1090,16 +1118,9 @@ export default function GasPage() {
                   {/* PKR method cards */}
                   <div className="space-y-2">
                     {(Object.keys(PKR_METHOD_META) as PkrMethodKey[]).map(key => {
-                      const meta = PKR_METHOD_META[key]
-                      const sel  = selectedPkrMethod === key
-                      // Check if method is configured
-                      const configured = pkrMethods ? (
-                        key === 'bank_transfer'
-                          ? !!(pkrMethods.bank.bankName || pkrMethods.bank.iban)
-                          : key === 'easypaisa'
-                          ? !!pkrMethods.easypaisa.number
-                          : !!pkrMethods.jazzcash.number
-                      ) : true
+                      const meta       = PKR_METHOD_META[key]
+                      const sel        = selectedPkrMethod === key
+                      const configured = pkrIsConfigured(key, pkrMethods)
                       return (
                         <button key={key} onClick={() => configured && setSelectedPkrMethod(key)} disabled={!configured}
                           className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
@@ -1107,7 +1128,7 @@ export default function GasPage() {
                             : sel ? 'border-purple-400 bg-purple-50'
                             : 'border-gray-100 bg-white hover:border-purple-200'
                           }`}>
-                          <span className="text-2xl">{meta.icon}</span>
+                          <PkrMethodIcon methodKey={key} pkrMethods={pkrMethods} sizeCls="w-12 h-12" />
                           <div className="flex-1">
                             <p className="text-sm font-bold text-gray-900">{meta.label}</p>
                             <p className="text-xs text-gray-400">{configured ? meta.desc : 'Currently unavailable'}</p>
@@ -1181,7 +1202,7 @@ export default function GasPage() {
                   {/* How to pay */}
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-xl">{PKR_METHOD_META[selectedPkrMethod].icon}</span>
+                      <PkrMethodIcon methodKey={selectedPkrMethod} pkrMethods={pkrMethods} sizeCls="w-8 h-8" />
                       <p className="text-sm font-bold text-gray-900">Send via {PKR_METHOD_META[selectedPkrMethod].label}</p>
                     </div>
 

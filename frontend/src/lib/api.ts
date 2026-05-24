@@ -1031,9 +1031,11 @@ export interface GasOrder {
 }
 
 export interface GasPkrMethods {
-  bank: { bankName: string | null; accountName: string | null; iban: string | null; accountNumber: string | null }
-  easypaisa: { number: string | null; name: string | null }
-  jazzcash: { number: string | null; name: string | null }
+  bank:      { bankName: string | null; accountName: string | null; iban: string | null; accountNumber: string | null; logoUrl: string | null }
+  easypaisa: { number: string | null; name: string | null; logoUrl: string | null }
+  jazzcash:  { number: string | null; name: string | null; logoUrl: string | null }
+  nayapay:   { number: string | null; name: string | null; logoUrl: string | null }
+  sadapay:   { number: string | null; name: string | null; logoUrl: string | null }
 }
 
 export interface GasCryptoNetworkMethod {
@@ -1104,7 +1106,7 @@ export const gasApi = {
   createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders', { method: 'POST', body: JSON.stringify(data) }),
 
-  createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash'; idempotencyKey?: string }) =>
+  createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash' | 'nayapay' | 'sadapay'; idempotencyKey?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/pkr', { method: 'POST', body: JSON.stringify(data) }),
 
   createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'TRC20' | 'BEP20' | 'ERC20' | 'APTOS'; idempotencyKey?: string }) =>

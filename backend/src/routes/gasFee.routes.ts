@@ -761,9 +761,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
   app.get('/gas-fee/pkr-methods', async (_req, reply) => {
     const keys = [
-      'gas_pkr_bank_name', 'gas_pkr_bank_account_name', 'gas_pkr_bank_iban', 'gas_pkr_bank_account_number',
-      'gas_pkr_easypaisa_number', 'gas_pkr_easypaisa_name',
-      'gas_pkr_jazzcash_number', 'gas_pkr_jazzcash_name',
+      'gas_pkr_bank_name', 'gas_pkr_bank_account_name', 'gas_pkr_bank_iban', 'gas_pkr_bank_account_number', 'gas_pkr_bank_logo',
+      'gas_pkr_easypaisa_number', 'gas_pkr_easypaisa_name', 'gas_pkr_easypaisa_logo',
+      'gas_pkr_jazzcash_number', 'gas_pkr_jazzcash_name', 'gas_pkr_jazzcash_logo',
+      'gas_pkr_nayapay_number', 'gas_pkr_nayapay_name', 'gas_pkr_nayapay_logo',
+      'gas_pkr_sadapay_number', 'gas_pkr_sadapay_name', 'gas_pkr_sadapay_logo',
     ]
     const configs = await db.platformConfig.findMany({ where: { key: { in: keys } } })
     const map: Record<string, string> = {}
@@ -776,14 +778,27 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           accountName:   map['gas_pkr_bank_account_name'] ?? null,
           iban:          map['gas_pkr_bank_iban'] ?? null,
           accountNumber: map['gas_pkr_bank_account_number'] ?? null,
+          logoUrl:       map['gas_pkr_bank_logo'] || null,
         },
         easypaisa: {
-          number: map['gas_pkr_easypaisa_number'] ?? null,
-          name:   map['gas_pkr_easypaisa_name'] ?? null,
+          number:  map['gas_pkr_easypaisa_number'] ?? null,
+          name:    map['gas_pkr_easypaisa_name'] ?? null,
+          logoUrl: map['gas_pkr_easypaisa_logo'] || null,
         },
         jazzcash: {
-          number: map['gas_pkr_jazzcash_number'] ?? null,
-          name:   map['gas_pkr_jazzcash_name'] ?? null,
+          number:  map['gas_pkr_jazzcash_number'] ?? null,
+          name:    map['gas_pkr_jazzcash_name'] ?? null,
+          logoUrl: map['gas_pkr_jazzcash_logo'] || null,
+        },
+        nayapay: {
+          number:  map['gas_pkr_nayapay_number'] ?? null,
+          name:    map['gas_pkr_nayapay_name'] ?? null,
+          logoUrl: map['gas_pkr_nayapay_logo'] || null,
+        },
+        sadapay: {
+          number:  map['gas_pkr_sadapay_number'] ?? null,
+          name:    map['gas_pkr_sadapay_name'] ?? null,
+          logoUrl: map['gas_pkr_sadapay_logo'] || null,
         },
       },
     })
@@ -899,7 +914,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     tokenConfigId:    z.string().min(1),
     amount:           z.number().positive(),
     toAddress:        z.string().min(1),
-    pkrPaymentMethod: z.enum(['bank_transfer', 'easypaisa', 'jazzcash']),
+    pkrPaymentMethod: z.enum(['bank_transfer', 'easypaisa', 'jazzcash', 'nayapay', 'sadapay']),
     idempotencyKey:   z.string().optional(),
   })
 
