@@ -18,6 +18,7 @@ import { ConnectedBalances } from '@/components/wallet/ConnectedBalances'
 import { RecentDeposits } from '@/components/wallet/RecentDeposits'
 import { UI_CHAINS } from '@/lib/web3/chains'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAccount } from 'wagmi'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -827,12 +828,13 @@ function PaymentMethodsSection() {
                     <button
                       key={m}
                       onClick={() => setSelectedMethod(m)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
                         selectedMethod === m
                           ? 'border-primary bg-primary text-white'
                           : `border-border ${getPaymentMethodColor(m)} hover:border-primary/50`
                       }`}
                     >
+                      <EntityLogo type="payment_method" slug={m} size="xs" className="flex-shrink-0" />
                       {m}
                     </button>
                   ))}
@@ -845,6 +847,12 @@ function PaymentMethodsSection() {
           {selectedMethod && (
             <div className="space-y-3 pt-1 border-t border-border">
               <div className="flex items-center gap-2">
+                <EntityLogo
+                  type={isBankCategory ? 'bank' : 'payment_method'}
+                  slug={selectedMethod}
+                  size="sm"
+                  className="flex-shrink-0"
+                />
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getPaymentMethodColor(isBankCategory ? '' : selectedMethod)}`}>
                   {selectedMethod}
                 </span>
@@ -929,6 +937,12 @@ function PaymentMethodsSection() {
         <div className="bg-white rounded-xl border border-border divide-y divide-border overflow-hidden">
           {methods.map((m) => (
             <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+              <EntityLogo
+                type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'}
+                slug={m.type === 'bank_transfer' ? (m.bankName ?? 'bank') : pmTypeLabel(m.type)}
+                size="sm"
+                className="flex-shrink-0"
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium text-text-primary">{m.displayName}</span>

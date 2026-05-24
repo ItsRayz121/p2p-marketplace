@@ -5,6 +5,7 @@ import { ctmApi, ApiError } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuthStore } from '@/store/auth.store'
+import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
 
@@ -130,7 +131,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         <h2 className="font-semibold text-text-primary mb-3">Payment Methods</h2>
         <div className="flex flex-wrap gap-2">
           {listing.paymentMethods.map((m) => (
-            <span key={m} className="bg-surface border border-border px-3 py-1 rounded-full text-sm">{m}</span>
+            <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+              <EntityLogo type={PK_MOBILE_METHODS.includes(m) ? 'payment_method' : 'bank'} slug={m} size="xs" className="flex-shrink-0" />
+              {m}
+            </span>
           ))}
         </div>
       </div>
@@ -162,7 +166,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <div className="flex flex-wrap gap-2">
                 {listing.paymentMethods.map((m) => (
                   <button type="button" key={m} onClick={() => setPaymentMethod(m)}
-                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}>
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}>
+                    <EntityLogo type={PK_MOBILE_METHODS.includes(m) ? 'payment_method' : 'bank'} slug={m} size="xs" className="flex-shrink-0" />
                     {m}
                   </button>
                 ))}

@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { EntityLogo } from '@/components/ui/EntityLogo'
+import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 const PAYMENT_METHODS = ['JazzCash', 'Easypaisa', 'Bank Transfer', 'SadaPay', 'NayaPay']
 
@@ -170,7 +172,15 @@ function NewTradePageContent() {
 
         <div className="mt-3 flex flex-wrap gap-1">
           {ad.paymentMethods.map((pm) => (
-            <Badge key={pm} variant="default" size="sm">{pm}</Badge>
+            <Badge key={pm} variant="default" size="sm">
+              <EntityLogo
+                type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
+                slug={pm}
+                size="xs"
+                className="flex-shrink-0 mr-1"
+              />
+              {pm}
+            </Badge>
           ))}
         </div>
       </div>
@@ -212,12 +222,18 @@ function NewTradePageContent() {
                 key={pm}
                 type="button"
                 onClick={() => setPaymentMethod(pm)}
-                className={`px-3 py-2.5 text-sm rounded-lg border transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-2.5 text-sm rounded-lg border transition-colors ${
                   paymentMethod === pm
                     ? 'bg-primary/10 border-primary text-primary font-medium'
                     : 'border-border text-text-secondary hover:border-primary/40 bg-white'
                 }`}
               >
+                <EntityLogo
+                  type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
+                  slug={pm}
+                  size="xs"
+                  className="flex-shrink-0"
+                />
                 {pm}
               </button>
             ))}

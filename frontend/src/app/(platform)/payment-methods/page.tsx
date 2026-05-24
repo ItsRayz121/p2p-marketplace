@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Spinner } from '@/components/ui/Spinner'
 import { PK_BANKS } from '@/lib/pkPaymentMethods'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,12 +129,13 @@ function AddMethodForm({ onSuccess, onCancel }: { onSuccess: (m: PaymentMethod) 
             <button
               key={value}
               onClick={() => { setType(value); setError('') }}
-              className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
                 type === value
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border text-text-muted hover:border-primary/40'
               }`}
             >
+              <EntityLogo type="payment_method" slug={label} size="xs" className="flex-shrink-0" />
               {label}
             </button>
           ))}
@@ -283,9 +285,12 @@ export default function PaymentMethodsPage() {
           {methods.map((method) => (
             <div key={method.id} className="bg-white border border-border rounded-xl p-4 flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${TYPE_COLORS[method.type] ?? 'bg-surface text-text-muted'}`}>
-                  {TYPE_ICONS[method.type] ?? '??'}
-                </div>
+                <EntityLogo
+                  type={method.type === 'bank_transfer' ? 'bank' : 'payment_method'}
+                  slug={method.type === 'bank_transfer' ? (method.bankName ?? 'bank') : TYPE_LABELS[method.type]}
+                  size="md"
+                  className="flex-shrink-0"
+                />
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-text-primary">{method.accountName}</p>

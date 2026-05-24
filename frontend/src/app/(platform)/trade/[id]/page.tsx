@@ -18,6 +18,8 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
+import { EntityLogo } from '@/components/ui/EntityLogo'
+import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -455,7 +457,18 @@ export default function TradePage() {
               <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
               <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
               <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} />
-              <DetailRow label="Pay via" value={trade.paymentMethod} />
+              <div className="flex justify-between">
+                <span className="text-text-muted">Pay via</span>
+                <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                  <EntityLogo
+                    type={PK_MOBILE_METHODS.includes(trade.paymentMethod) ? 'payment_method' : 'bank'}
+                    slug={trade.paymentMethod}
+                    size="xs"
+                    className="flex-shrink-0"
+                  />
+                  {trade.paymentMethod}
+                </span>
+              </div>
             </div>
             {/* Payment proof thumbnail */}
             {trade.paymentProofUrl && (

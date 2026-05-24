@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Spinner } from '@/components/ui/Spinner'
+import { EntityLogo } from '@/components/ui/EntityLogo'
+import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -180,7 +182,10 @@ export default function MyAdsPage() {
                       <p className="text-text-muted text-xs mb-1">Payment Methods</p>
                       <div className="flex flex-wrap gap-1">
                         {ad.paymentMethods.map((pm) => (
-                          <span key={pm} className="text-xs bg-surface border border-border px-2 py-0.5 rounded-full text-text-muted">{pm}</span>
+                          <span key={pm} className="inline-flex items-center gap-1 text-xs bg-surface border border-border px-2 py-0.5 rounded-full text-text-muted">
+                            <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
+                            {pm}
+                          </span>
                         ))}
                       </div>
                     </div>

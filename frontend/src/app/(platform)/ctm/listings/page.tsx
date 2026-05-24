@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { ALL_PAYMENT_METHODS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
+import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 
@@ -131,7 +131,8 @@ export default function BrowseListingsPage() {
                     <p className="text-xs text-text-muted mb-1">Payment</p>
                     <div className="flex flex-wrap gap-1">
                       {l.paymentMethods.slice(0, 3).map((pm) => (
-                        <span key={pm} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
+                        <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
+                          <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
                           {pm}
                         </span>
                       ))}

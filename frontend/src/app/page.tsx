@@ -6,6 +6,8 @@ import type { Ad } from '@/lib/api'
 import { StalenessBadge } from '@/components/ui/StalenessBadge'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
+import { EntityLogo } from '@/components/ui/EntityLogo'
+import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -112,7 +114,15 @@ function AdCard({ ad }: { ad: Ad }) {
           </p>
           <div className="flex flex-wrap gap-1 mt-2">
             {ad.paymentMethods.map((pm) => (
-              <Badge key={pm} variant="default" size="sm">{pm}</Badge>
+              <Badge key={pm} variant="default" size="sm">
+                <EntityLogo
+                  type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
+                  slug={pm}
+                  size="xs"
+                  className="flex-shrink-0 mr-1"
+                />
+                {pm}
+              </Badge>
             ))}
           </div>
         </div>
