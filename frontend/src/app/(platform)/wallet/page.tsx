@@ -17,6 +17,7 @@ import { ChainSwitcher } from '@/components/wallet/ChainSwitcher'
 import { ConnectedBalances } from '@/components/wallet/ConnectedBalances'
 import { RecentDeposits } from '@/components/wallet/RecentDeposits'
 import { UI_CHAINS } from '@/lib/web3/chains'
+import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { useAccount } from 'wagmi'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -485,7 +486,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
   const [addresses, setAddresses] = useState<TrustedAddress[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
-  const [form, setForm] = useState({ coin: 'USDT', network: 'TRC20', address: '', label: '' })
+  const [form, setForm] = useState({ coin: 'USDT', network: 'ERC20', address: '', label: '' })
   const [totpCode, setTotpCode] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -507,7 +508,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
     try {
       await walletApi.addTrustedAddress({ ...form, ...(twoFaEnabled ? { totpCode } : {}) })
       setShowForm(false)
-      setForm({ coin: 'USDT', network: 'TRC20', address: '', label: '' })
+      setForm({ coin: 'USDT', network: 'ERC20', address: '', label: '' })
       setTotpCode('')
       await load()
     } catch (err) {
@@ -547,13 +548,27 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Coin</label>
-              <select value={form.coin} onChange={(e) => setForm((f) => ({ ...f, coin: e.target.value }))} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white">
-                {['USDT', 'USDC', 'ETH', 'BNB', 'BTC'].map((c) => <option key={c}>{c}</option>)}
+              <select
+                value={form.coin}
+                onChange={(e) => {
+                  const coin = e.target.value
+                  const firstNetwork = networksFor(coin)[0] ?? 'ERC20'
+                  setForm((f) => ({ ...f, coin, network: firstNetwork }))
+                }}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {Object.keys(COIN_NETWORKS).map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Network</label>
-              <input value={form.network} onChange={(e) => setForm((f) => ({ ...f, network: e.target.value }))} placeholder="e.g. TRC20" className="w-full px-3 py-2 text-sm border border-border rounded-lg" />
+              <select
+                value={form.network}
+                onChange={(e) => setForm((f) => ({ ...f, network: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {networksFor(form.coin).map((n) => <option key={n}>{n}</option>)}
+              </select>
             </div>
           </div>
           <div>
@@ -623,15 +638,41 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
 
 // ─── Payment Methods Section ──────────────────────────────────────────────────
 
-const PM_TYPES = [
-  { value: 'jazzcash', label: 'JazzCash' },
-  { value: 'easypaisa', label: 'Easypaisa' },
-  { value: 'sadapay', label: 'SadaPay' },
-  { value: 'nayapay', label: 'NayaPay' },
-  { value: 'bank_transfer', label: 'Bank Transfer' },
+const MOBILE_TYPE_MAP: Record<string, string> = {
+  JazzCash: 'jazzcash',
+  Easypaisa: 'easypaisa',
+  SadaPay: 'sadapay',
+  NayaPay: 'nayapay',
+}
+
+const PM_CATEGORIES = [
+  {
+    key: 'branchless',
+    label: 'Branchless Wallets',
+    description: 'Mobile wallet accounts',
+    methods: ['JazzCash', 'Easypaisa'],
+  },
+  {
+    key: 'emis',
+    label: 'EMIs / Fintechs',
+    description: 'Digital banking apps',
+    methods: ['SadaPay', 'NayaPay'],
+  },
+  {
+    key: 'banks',
+    label: 'Commercial Banks',
+    description: 'Bank account & IBAN',
+    methods: PK_BANKS,
+  },
 ] as const
 
-type PmType = typeof PM_TYPES[number]['value']
+type PmCategory = typeof PM_CATEGORIES[number]['key']
+
+function pmTypeLabel(type: string, bankName?: string | null): string {
+  if (type === 'bank_transfer') return bankName ?? 'Bank Transfer'
+  const entry = Object.entries(MOBILE_TYPE_MAP).find(([, v]) => v === type)
+  return entry ? entry[0] : type
+}
 
 function PaymentMethodsSection() {
   const [methods, setMethods] = useState<UserPaymentMethod[]>([])
@@ -641,15 +682,19 @@ function PaymentMethodsSection() {
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const [pmType, setPmType] = useState<PmType>('jazzcash')
+  // Step 1: category, Step 2: selected method within category, Step 3: fields
+  const [category, setCategory] = useState<PmCategory | null>(null)
+  const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState('')
   const [accountName, setAccountName] = useState('')
   const [mobileNumber, setMobileNumber] = useState('')
-  const [bankName, setBankName] = useState('')
   const [ibanNumber, setIbanNumber] = useState('')
+  const [accountNumber, setAccountNumber] = useState('')
 
-  const isBankTransfer = pmType === 'bank_transfer'
-  const needsMobile = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay'].includes(pmType)
+  const isBankCategory = category === 'banks'
+  const pmType = selectedMethod
+    ? (MOBILE_TYPE_MAP[selectedMethod] ?? 'bank_transfer')
+    : null
 
   useEffect(() => {
     userPaymentMethodsApi.getAll()
@@ -659,39 +704,42 @@ function PaymentMethodsSection() {
   }, [])
 
   const resetForm = () => {
-    setPmType('jazzcash')
+    setCategory(null)
+    setSelectedMethod(null)
     setDisplayName('')
     setAccountName('')
     setMobileNumber('')
-    setBankName('')
     setIbanNumber('')
+    setAccountNumber('')
     setFormError(null)
     setShowForm(false)
   }
 
   const handleAdd = async () => {
+    if (!pmType || !selectedMethod) { setFormError('Select a payment method'); return }
     if (!displayName.trim() || !accountName.trim()) {
       setFormError('Display name and account name are required')
       return
     }
-    if (needsMobile && !mobileNumber.trim()) {
-      setFormError('Mobile number is required for this payment type')
+    if (!isBankCategory && !mobileNumber.trim()) {
+      setFormError('Mobile number is required')
       return
     }
-    if (isBankTransfer && (!bankName.trim() || !ibanNumber.trim())) {
-      setFormError('Bank name and IBAN are required for bank transfer')
+    if (isBankCategory && !ibanNumber.trim()) {
+      setFormError('IBAN is required for bank transfer')
       return
     }
     setAdding(true)
     setFormError(null)
     try {
       const method = await userPaymentMethodsApi.add({
-        type: pmType,
+        type: pmType as UserPaymentMethod['type'],
         displayName: displayName.trim(),
         accountName: accountName.trim(),
         ...(mobileNumber.trim() ? { mobileNumber: mobileNumber.trim() } : {}),
-        ...(bankName.trim() ? { bankName: bankName.trim() } : {}),
+        ...(isBankCategory ? { bankName: selectedMethod } : {}),
         ...(ibanNumber.trim() ? { ibanNumber: ibanNumber.trim() } : {}),
+        ...(accountNumber.trim() ? { accountNumber: accountNumber.trim() } : {}),
       })
       setMethods((prev) => [method, ...prev])
       resetForm()
@@ -710,8 +758,6 @@ function PaymentMethodsSection() {
     finally { setRemoveId(null) }
   }
 
-  const pmLabel = (type: string) => PM_TYPES.find((p) => p.value === type)?.label ?? type
-
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
@@ -727,8 +773,11 @@ function PaymentMethodsSection() {
       </div>
 
       {showForm && (
-        <div className="bg-white border border-border rounded-xl p-4 mb-4 space-y-3">
-          <h3 className="text-sm font-semibold text-text-primary">Add Payment Method</h3>
+        <div className="bg-white border border-border rounded-xl p-4 mb-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary">Add Payment Method</h3>
+            <button onClick={resetForm} className="text-xs text-text-muted hover:text-text-primary">Cancel</button>
+          </div>
 
           {formError && (
             <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
@@ -736,82 +785,136 @@ function PaymentMethodsSection() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-muted mb-1">Type</label>
-              <select
-                value={pmType}
-                onChange={(e) => setPmType(e.target.value as PmType)}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {PM_TYPES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-text-muted mb-1">Display Name</label>
-              <input
-                type="text"
-                placeholder="e.g. My JazzCash"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-          </div>
-
+          {/* Step 1: Category */}
           <div>
-            <label className="block text-xs text-text-muted mb-1">Account Name</label>
-            <input
-              type="text"
-              placeholder="Name on the account"
-              value={accountName}
-              onChange={(e) => setAccountName(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+            <p className="text-xs font-medium text-text-muted mb-2">Select category</p>
+            <div className="grid grid-cols-3 gap-2">
+              {PM_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.key}
+                  onClick={() => { setCategory(cat.key as PmCategory); setSelectedMethod(null) }}
+                  className={`text-left px-3 py-2.5 rounded-lg border text-sm transition-colors ${
+                    category === cat.key
+                      ? 'border-primary bg-primary/5 text-primary font-medium'
+                      : 'border-border bg-white text-text-primary hover:border-primary/50'
+                  }`}
+                >
+                  <div className="font-medium text-xs leading-tight">{cat.label}</div>
+                  <div className="text-xs text-text-muted mt-0.5 leading-tight">{cat.description}</div>
+                </button>
+              ))}
+            </div>
           </div>
 
-          {needsMobile && (
+          {/* Step 2: Method picker within category */}
+          {category && (
             <div>
-              <label className="block text-xs text-text-muted mb-1">Mobile Number</label>
-              <input
-                type="tel"
-                placeholder="03xx-xxxxxxx"
-                value={mobileNumber}
-                onChange={(e) => setMobileNumber(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <p className="text-xs font-medium text-text-muted mb-2">
+                {isBankCategory ? 'Select bank' : 'Select method'}
+              </p>
+              {isBankCategory ? (
+                <select
+                  value={selectedMethod ?? ''}
+                  onChange={(e) => setSelectedMethod(e.target.value || null)}
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">— Choose a bank —</option>
+                  {PK_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {PM_CATEGORIES.find((c) => c.key === category)!.methods.map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setSelectedMethod(m)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                        selectedMethod === m
+                          ? 'border-primary bg-primary text-white'
+                          : `border-border ${getPaymentMethodColor(m)} hover:border-primary/50`
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {isBankTransfer && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-text-muted mb-1">Bank Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. HBL"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+          {/* Step 3: Fields — shown once a method is selected */}
+          {selectedMethod && (
+            <div className="space-y-3 pt-1 border-t border-border">
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getPaymentMethodColor(isBankCategory ? '' : selectedMethod)}`}>
+                  {selectedMethod}
+                </span>
+                <span className="text-xs text-text-muted">account details</span>
               </div>
-              <div>
-                <label className="block text-xs text-text-muted mb-1">IBAN</label>
-                <input
-                  type="text"
-                  placeholder="PK00XXXX..."
-                  value={ibanNumber}
-                  onChange={(e) => setIbanNumber(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">Display Name</label>
+                  <input
+                    type="text"
+                    placeholder={`e.g. My ${selectedMethod}`}
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">Account Name</label>
+                  <input
+                    type="text"
+                    placeholder="Name on the account"
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
               </div>
+
+              {!isBankCategory && (
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">Mobile Number</label>
+                  <input
+                    type="tel"
+                    placeholder="03xx-xxxxxxx"
+                    value={mobileNumber}
+                    onChange={(e) => setMobileNumber(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {isBankCategory && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1">IBAN</label>
+                    <input
+                      type="text"
+                      placeholder="PK00XXXX..."
+                      value={ibanNumber}
+                      onChange={(e) => setIbanNumber(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1">Account Number <span className="text-text-muted">(optional)</span></label>
+                    <input
+                      type="text"
+                      placeholder="Account number"
+                      value={accountNumber}
+                      onChange={(e) => setAccountNumber(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <Button size="sm" loading={adding} onClick={handleAdd}>Save Payment Method</Button>
             </div>
           )}
-
-          <div className="flex gap-2 pt-1">
-            <Button size="sm" loading={adding} onClick={handleAdd}>Save</Button>
-            <Button size="sm" variant="ghost" onClick={resetForm}>Cancel</Button>
-          </div>
         </div>
       )}
 
@@ -829,7 +932,9 @@ function PaymentMethodsSection() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium text-text-primary">{m.displayName}</span>
-                  <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full">{pmLabel(m.type)}</span>
+                  <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPaymentMethodColor(pmTypeLabel(m.type))}`}>
+                    {pmTypeLabel(m.type, m.bankName)}
+                  </span>
                 </div>
                 <p className="text-xs text-text-muted mt-0.5">
                   {m.accountName}
