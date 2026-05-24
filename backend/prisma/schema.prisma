@@ -1662,6 +1662,7 @@ model CtmListing {
   minOrderPkr       Decimal            @db.Decimal(14, 2)
   maxOrderPkr       Decimal            @db.Decimal(14, 2)
   settlementMethod  String             @db.VarChar(100)
+  tokenDeliveryType String?            @db.VarChar(20)
   settlementNote    String             @db.VarChar(1000)
   paymentMethods    String[]
   tradeWindowMins   Int                @default(45)

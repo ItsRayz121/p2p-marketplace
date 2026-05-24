@@ -22,6 +22,7 @@ export default function CreateListingPage() {
     totalAmount: '',
     minOrderPkr: '',
     maxOrderPkr: '',
+    tokenDeliveryType: '' as 'blockchain' | 'email' | 'username' | '',
     settlementMethod: '',
     settlementNote: '',
     paymentMethods: [] as string[],
@@ -49,11 +50,15 @@ export default function CreateListingPage() {
     if (!form.tokenId) { setError('Please select a token'); return }
     if (form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
 
+    if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
+    if (!form.settlementMethod.trim()) { setError('Please enter your delivery address/identifier'); return }
+
     setSubmitting(true)
     try {
       const res = await ctmApi.createListing({
         ...form,
         settlementType: 'MANUAL',
+        tokenDeliveryType: form.tokenDeliveryType as 'blockchain' | 'email' | 'username',
         pricePerUnit: parseFloat(form.pricePerUnit),
         totalAmount: parseFloat(form.totalAmount),
         minOrderPkr: parseFloat(form.minOrderPkr),
@@ -132,14 +137,44 @@ export default function CreateListingPage() {
           </div>
         </div>
 
-        {/* Settlement */}
+        {/* Token delivery method */}
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Token address *</label>
-          <input type="text" placeholder="Your address on the token's platform" value={form.settlementMethod} onChange={(e) => setForm((f) => ({ ...f, settlementMethod: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+          <label className="block text-sm font-medium text-text-primary mb-1.5">How will you deliver tokens? *</label>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {(['blockchain', 'email', 'username'] as const).map((m) => (
+              <button
+                type="button"
+                key={m}
+                onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: m, settlementMethod: '' }))}
+                className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+              >
+                {m === 'blockchain' ? 'Wallet Address' : m === 'email' ? 'Email' : 'Username'}
+              </button>
+            ))}
+          </div>
+          {form.tokenDeliveryType && (
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">
+                {form.tokenDeliveryType === 'blockchain' ? 'Your wallet address' : form.tokenDeliveryType === 'email' ? 'Your email address' : 'Your username on the platform'}
+              </label>
+              <input
+                type={form.tokenDeliveryType === 'email' ? 'email' : 'text'}
+                placeholder={
+                  form.tokenDeliveryType === 'blockchain' ? '0x... or your token wallet address' :
+                  form.tokenDeliveryType === 'email' ? 'you@example.com' :
+                  'Your username'
+                }
+                value={form.settlementMethod}
+                onChange={(e) => setForm((f) => ({ ...f, settlementMethod: e.target.value }))}
+                className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <p className="mt-1 text-xs text-text-muted">Buyers will use this to send you tokens after trade completion.</p>
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Transfer instructions *</label>
-          <textarea rows={3} placeholder="Instructions shown to the other party at trade start" value={form.settlementNote} onChange={(e) => setForm((f) => ({ ...f, settlementNote: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" required />
+          <textarea rows={3} placeholder="Step-by-step instructions shown to the buyer at trade start" value={form.settlementNote} onChange={(e) => setForm((f) => ({ ...f, settlementNote: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" required />
         </div>
 
         {/* Payment methods */}

@@ -1075,7 +1075,9 @@ export default function WalletPage() {
       <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
 
       {/* ── PKR Payment Methods ── */}
-      <PaymentMethodsSection />
+      <div id="payment-methods">
+        <PaymentMethodsSection />
+      </div>
 
       {/* Deposit modal */}
       {depositCoin && (

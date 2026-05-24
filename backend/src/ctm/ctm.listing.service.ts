@@ -21,6 +21,7 @@ export interface CreateListingInput {
   minOrderPkr: number
   maxOrderPkr: number
   settlementMethod: string
+  tokenDeliveryType?: 'blockchain' | 'email' | 'username'
   settlementNote: string
   paymentMethods: string[]
   tradeWindowMins?: number
@@ -78,6 +79,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
       minOrderPkr: new Prisma.Decimal(data.minOrderPkr),
       maxOrderPkr: new Prisma.Decimal(data.maxOrderPkr),
       settlementMethod: data.settlementMethod,
+      ...(data.tokenDeliveryType ? { tokenDeliveryType: data.tokenDeliveryType } : {}),
       settlementNote: data.settlementNote,
       paymentMethods: data.paymentMethods,
       tradeWindowMins: data.tradeWindowMins ?? 45,
