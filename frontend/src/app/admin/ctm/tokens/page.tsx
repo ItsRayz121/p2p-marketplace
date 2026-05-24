@@ -485,7 +485,10 @@ export default function AdminCtmTokensPage() {
               </div>
               <div className="sm:col-span-2">
                 <label className="block text-xs font-medium text-text-muted mb-1">Explorer URL</label>
-                <input type="text" placeholder="https://etherscan.io/…" value={editForm.explorerUrl} onChange={(e) => setEditForm((f) => ({ ...f, explorerUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="https://explorer.sidrachain.com/tx/{hash}" value={editForm.explorerUrl} onChange={(e) => setEditForm((f) => ({ ...f, explorerUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <p className="text-xs text-text-muted mt-1">
+                  Use <code className="bg-surface px-1 py-0.5 rounded text-text-primary">{'{hash}'}</code> as placeholder, e.g. <span className="font-mono">https://tronscan.org/#/transaction/{'{hash}'}</span>. If omitted, hash is appended automatically.
+                </p>
               </div>
             </div>
           </div>
@@ -624,7 +627,19 @@ export default function AdminCtmTokensPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {field('Network', 'network', { placeholder: 'e.g. Ethereum' })}
               {field('Contract Address', 'contractAddress', { placeholder: '0x…' })}
-              {field('Explorer URL', 'explorerUrl', { placeholder: 'https://etherscan.io/…' })}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-text-muted mb-1">Explorer URL</label>
+                <input
+                  type="text"
+                  placeholder="https://explorer.sidrachain.com/tx/{hash}"
+                  value={addForm.explorerUrl}
+                  onChange={(e) => setAddForm((f) => ({ ...f, explorerUrl: e.target.value }))}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="text-xs text-text-muted mt-1">
+                  Use <code className="bg-surface px-1 py-0.5 rounded text-text-primary">{'{hash}'}</code> as placeholder, e.g. <span className="font-mono">https://tronscan.org/#/transaction/{'{hash}'}</span>. If omitted, hash is appended automatically.
+                </p>
+              </div>
             </div>
           </div>
 
