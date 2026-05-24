@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
+import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import cookie from '@fastify/cookie'
 import { Prisma } from '@prisma/client'
@@ -46,6 +47,9 @@ export async function buildApp() {
   await app.register(cookie, {
     secret: env.CSRF_SECRET,
   })
+
+  // Multipart — required for file uploads (payment proof, token proof)
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } })
 
   // Global rate limiting — per-route limits are set in route files
   await app.register(rateLimit, {
