@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -308,9 +309,19 @@ function GasOrderTrackingPageInner() {
           />
           <DetailRow
             label="Payment Method"
-            value={isPkr
-              ? `PKR · ${(order.pkrPaymentMethod ?? '').replace(/_/g, ' ')}`
-              : `USDT · ${order.paymentNetwork ?? order.chain}`}
+            value={
+              <span className="inline-flex items-center gap-1.5">
+                {isPkr && order.pkrPaymentMethod ? (
+                  <EntityLogo type="payment_method" slug={order.pkrPaymentMethod} size="xs" />
+                ) : !isPkr ? (
+                  <EntityLogo type="chain" slug={order.chain} size="xs" />
+                ) : null}
+                <span>{isPkr
+                  ? `PKR · ${(order.pkrPaymentMethod ?? '').replace(/_/g, ' ')}`
+                  : `USDT · ${order.paymentNetwork ?? order.chain}`}
+                </span>
+              </span>
+            }
           />
           <DetailRow
             label="Amount Paid"

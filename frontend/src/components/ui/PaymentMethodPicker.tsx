@@ -1,7 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { PAYMENT_METHOD_GROUPS } from '@/lib/pkPaymentMethods'
+import { PAYMENT_METHOD_GROUPS, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 interface PaymentMethodPickerProps {
   selected: string[]
@@ -69,21 +70,30 @@ export function PaymentMethodPicker({ selected, onChange, className }: PaymentMe
             {/* Methods */}
             {!isCollapsed && (
               <div className="px-4 py-3 flex flex-wrap gap-2 border-t border-border bg-white">
-                {group.methods.map((m) => (
-                  <button
-                    type="button"
-                    key={m}
-                    onClick={() => toggle(m)}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors',
-                      selected.includes(m)
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-white text-text-primary hover:bg-surface',
-                    )}
-                  >
-                    {m}
-                  </button>
-                ))}
+                {group.methods.map((m) => {
+                  const isMobile = PK_MOBILE_METHODS.includes(m)
+                  return (
+                    <button
+                      type="button"
+                      key={m}
+                      onClick={() => toggle(m)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors',
+                        selected.includes(m)
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-white text-text-primary hover:bg-surface',
+                      )}
+                    >
+                      <EntityLogo
+                        type={isMobile ? 'payment_method' : 'bank'}
+                        slug={m}
+                        size="xs"
+                        className="flex-shrink-0"
+                      />
+                      {m}
+                    </button>
+                  )
+                })}
               </div>
             )}
 
