@@ -64,7 +64,13 @@ export async function tradeRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const { adId, amount, paymentMethod, buyerWalletAddress, buyerDeliveryMethod, buyerDeliveryAddress } = parsed.data
-    const trade = await createTrade(userId, adId, { amount, paymentMethod, buyerWalletAddress: buyerWalletAddress ?? '', buyerDeliveryMethod, buyerDeliveryAddress })
+    const trade = await createTrade(userId, adId, {
+      amount,
+      paymentMethod,
+      buyerWalletAddress: buyerWalletAddress ?? '',
+      ...(buyerDeliveryMethod !== undefined ? { buyerDeliveryMethod } : {}),
+      ...(buyerDeliveryAddress !== undefined ? { buyerDeliveryAddress } : {}),
+    })
     return reply.code(201).send({ success: true, data: trade })
   })
 
