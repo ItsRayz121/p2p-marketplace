@@ -362,12 +362,19 @@ export interface Trade {
   buyerId: string
   sellerId: string
   coin: string
+  network?: string
   amount: string
   price: string
+  /** Alias for fiatAmount — backend may return either */
   totalPkr: string
+  fiatAmount?: string
   status: 'payment_pending' | 'payment_uploaded' | 'payment_confirmed' | 'crypto_sent' | 'crypto_released' | 'cancelled' | 'disputed' | 'expired'
   paymentMethod: string
   paymentProofUrl?: string
+  buyerWalletAddress?: string
+  buyerDeliveryMethod?: string
+  buyerDeliveryAddress?: string
+  sellerTxHash?: string
   txHash?: string
   buyerRated?: boolean
   sellerRated?: boolean
@@ -681,8 +688,8 @@ export const walletApi = {
 }
 
 export const tradesApi = {
-  createTrade: (data: { adId: string; amount: string; paymentMethod: string }) =>
-    apiRequest<Trade>('/trades', { method: 'POST', body: JSON.stringify(data) }),
+  createTrade: (data: { adId: string; amount: string; paymentMethod: string; buyerDeliveryMethod?: string; buyerDeliveryAddress?: string }) =>
+    apiRequest<Trade>('/trades', { method: 'POST', body: JSON.stringify({ ...data, amount: parseFloat(data.amount) }) }),
   getTrade: (id: string) =>
     apiRequest<Trade>(`/trades/${id}`),
   getMyTrades: (params?: { page?: number; limit?: number; status?: string; role?: 'buyer' | 'seller' }) => {
@@ -709,7 +716,7 @@ export const tradesApi = {
     apiRequest<Trade>(`/trades/${id}/release`, { method: 'POST' }),
   cancelTrade: (id: string, reason: string) =>
     apiRequest<Trade>(`/trades/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
-  openDispute: (id: string, data: { reason: string }) =>
+  openDispute: (id: string, data: { reason: string; description: string }) =>
     apiRequest<Trade>(`/trades/${id}/dispute`, { method: 'POST', body: JSON.stringify(data) }),
   rateTrade: (id: string, data: { rating: number; comment?: string; tags?: string[] }) =>
     apiRequest<void>(`/trades/${id}/rate`, { method: 'POST', body: JSON.stringify(data) }),
@@ -742,6 +749,40 @@ export const adsApi = {
     apiRequest<Ad>(`/ads/${id}/pause`, { method: 'POST' }),
   activateAd: (id: string) =>
     apiRequest<Ad>(`/ads/${id}/activate`, { method: 'POST' }),
+}
+
+export interface UserPaymentMethod {
+  id: string
+  userId: string
+  type: 'jazzcash' | 'easypaisa' | 'sadapay' | 'nayapay' | 'bank_transfer'
+  displayName: string
+  accountName: string
+  mobileNumber?: string | null
+  bankName?: string | null
+  ibanNumber?: string | null
+  accountNumber?: string | null
+  isActive: boolean
+  createdAt: string
+}
+
+export const userPaymentMethodsApi = {
+  getAll: () =>
+    apiRequest<UserPaymentMethod[]>('/users/me/payment-methods'),
+  add: (data: {
+    type: UserPaymentMethod['type']
+    displayName: string
+    accountName: string
+    mobileNumber?: string
+    bankName?: string
+    ibanNumber?: string
+    accountNumber?: string
+  }) =>
+    apiRequest<UserPaymentMethod>('/users/me/payment-methods', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  remove: (id: string) =>
+    apiRequest<void>(`/users/me/payment-methods/${id}`, { method: 'DELETE' }),
 }
 
 export const kycApi = {

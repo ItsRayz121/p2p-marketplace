@@ -164,10 +164,17 @@ export default function LoginPage() {
         )}
 
         {unverifiedEmail && (
-          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex flex-col gap-2">
+          <div className="text-sm bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex flex-col gap-3">
             <div>
-              <p className="font-medium mb-0.5">Email verification required</p>
-              <p className="text-amber-600 text-xs">If you already verified your email, try refreshing your status below.</p>
+              <p className="font-semibold text-amber-800 mb-1">Email verification required</p>
+              <p className="text-amber-700 text-xs leading-relaxed">
+                Verification status could not be confirmed. Possible reasons:
+              </p>
+              <ul className="text-amber-700 text-xs mt-1 ml-3 list-disc space-y-0.5">
+                <li>Sync delay after recent verification</li>
+                <li>Verification link/code expired</li>
+                <li>Previous verification was incomplete</li>
+              </ul>
             </div>
             <div className="flex flex-wrap gap-2">
               <button

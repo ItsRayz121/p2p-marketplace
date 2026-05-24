@@ -39,9 +39,9 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             {(ad.seller?.username || 'U').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-text-primary truncate">
+            <Link href={`/profile/${encodeURIComponent(ad.seller?.username || '')}`} className="text-sm font-semibold text-text-primary truncate hover:text-primary transition-colors block">
               {ad.seller?.username || 'Anonymous'}
-            </p>
+            </Link>
             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               <BadgeChip badge={(ad.seller?.badge ?? 'new') as TraderBadge} />
               {ad.seller?.tradeStats && (
@@ -87,9 +87,15 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
         </div>
 
         {/* CTA */}
-        <Link href={`/trade/new?adId=${ad.id}`} className="flex-shrink-0">
-          <Button size="sm">{ad.side === 'sell' ? 'Buy' : 'Sell'}</Button>
-        </Link>
+        {parseFloat(ad.availableAmount) > 0 ? (
+          <Link href={`/trade/new?adId=${ad.id}`} className="flex-shrink-0">
+            <Button size="sm">{ad.side === 'sell' ? 'Buy' : 'Sell'}</Button>
+          </Link>
+        ) : (
+          <span className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-surface text-text-muted border border-border">
+            Sold Out
+          </span>
+        )}
       </div>
     </div>
   )
@@ -186,12 +192,15 @@ export default function MarketplacePage() {
             {(['buy', 'sell'] as const).map((s) => (
               <button
                 key={s}
-                onClick={() => setFilters((f) => ({ ...f, side: s }))}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                onClick={() => { setFilters((f) => ({ ...f, side: s })); setPage(1) }}
+                className={`px-4 py-2.5 text-sm font-medium transition-colors leading-tight ${
                   filters.side === s ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface'
                 }`}
               >
-                {s === 'buy' ? 'Buy USDT' : 'Sell USDT'}
+                <span className="block">{s === 'buy' ? 'Buy USDT' : 'Sell USDT'}</span>
+                <span className={`block text-xs font-normal ${filters.side === s ? 'text-white/75' : 'text-text-muted'}`}>
+                  {s === 'buy' ? 'Find sellers' : 'Find buyers'}
+                </span>
               </button>
             ))}
           </div>
@@ -252,19 +261,27 @@ export default function MarketplacePage() {
         <ErrorState title={error} onRetry={() => fetchAds(1, false)} />
       ) : ads.length === 0 ? (
         <div className="py-4">
-          {filters.side === 'sell' ? (
+          {filters.side === 'buy' ? (
+            // User wants to buy — no sell ads available
             <div className="flex flex-col items-center gap-4 py-12 text-center">
               <p className="text-2xl">📭</p>
               <div>
-                <p className="text-base font-semibold text-text-primary">No sell offers yet</p>
-                <p className="text-sm text-text-muted mt-1">List your USDT for sale and start earning</p>
+                <p className="text-base font-semibold text-text-primary">No sellers found</p>
+                <p className="text-sm text-text-muted mt-1">No one is selling USDT right now. Try adjusting your filters or check back soon.</p>
               </div>
-              <Link href="/create-ad">
-                <Button>List USDT for Sale</Button>
-              </Link>
             </div>
           ) : (
-            <EmptyState title="No buy offers found" description="Try adjusting your filters or check back later" />
+            // User wants to sell — no buy ads (buyers) available
+            <div className="flex flex-col items-center gap-4 py-12 text-center">
+              <p className="text-2xl">📭</p>
+              <div>
+                <p className="text-base font-semibold text-text-primary">No buyers yet</p>
+                <p className="text-sm text-text-muted mt-1">No buy orders match your filters. You can also create a sell listing so buyers find you.</p>
+              </div>
+              <Link href="/create-ad">
+                <Button>Create a Sell Listing</Button>
+              </Link>
+            </div>
           )}
         </div>
       ) : (

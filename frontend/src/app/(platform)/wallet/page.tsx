@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { walletApi, marketplaceApi } from '@/lib/api'
-import type { WalletBalance, Transaction, TrustedAddress } from '@/lib/api'
+import { walletApi, marketplaceApi, userPaymentMethodsApi } from '@/lib/api'
+import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { CopyButton } from '@/components/ui/CopyButton'
@@ -61,12 +61,6 @@ interface WithdrawState {
   feePkr: string
   loadingFee: boolean
   feeError: string | null
-}
-
-interface PaymentMethod {
-  id: string
-  type: string
-  details: string
 }
 
 function timeAgo(dateStr: string): string {
@@ -627,6 +621,250 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
   )
 }
 
+// ─── Payment Methods Section ──────────────────────────────────────────────────
+
+const PM_TYPES = [
+  { value: 'jazzcash', label: 'JazzCash' },
+  { value: 'easypaisa', label: 'Easypaisa' },
+  { value: 'sadapay', label: 'SadaPay' },
+  { value: 'nayapay', label: 'NayaPay' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+] as const
+
+type PmType = typeof PM_TYPES[number]['value']
+
+function PaymentMethodsSection() {
+  const [methods, setMethods] = useState<UserPaymentMethod[]>([])
+  const [pmLoading, setPmLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [removeId, setRemoveId] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const [pmType, setPmType] = useState<PmType>('jazzcash')
+  const [displayName, setDisplayName] = useState('')
+  const [accountName, setAccountName] = useState('')
+  const [mobileNumber, setMobileNumber] = useState('')
+  const [bankName, setBankName] = useState('')
+  const [ibanNumber, setIbanNumber] = useState('')
+
+  const isBankTransfer = pmType === 'bank_transfer'
+  const needsMobile = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay'].includes(pmType)
+
+  useEffect(() => {
+    userPaymentMethodsApi.getAll()
+      .then(setMethods)
+      .catch(() => {})
+      .finally(() => setPmLoading(false))
+  }, [])
+
+  const resetForm = () => {
+    setPmType('jazzcash')
+    setDisplayName('')
+    setAccountName('')
+    setMobileNumber('')
+    setBankName('')
+    setIbanNumber('')
+    setFormError(null)
+    setShowForm(false)
+  }
+
+  const handleAdd = async () => {
+    if (!displayName.trim() || !accountName.trim()) {
+      setFormError('Display name and account name are required')
+      return
+    }
+    if (needsMobile && !mobileNumber.trim()) {
+      setFormError('Mobile number is required for this payment type')
+      return
+    }
+    if (isBankTransfer && (!bankName.trim() || !ibanNumber.trim())) {
+      setFormError('Bank name and IBAN are required for bank transfer')
+      return
+    }
+    setAdding(true)
+    setFormError(null)
+    try {
+      const method = await userPaymentMethodsApi.add({
+        type: pmType,
+        displayName: displayName.trim(),
+        accountName: accountName.trim(),
+        ...(mobileNumber.trim() ? { mobileNumber: mobileNumber.trim() } : {}),
+        ...(bankName.trim() ? { bankName: bankName.trim() } : {}),
+        ...(ibanNumber.trim() ? { ibanNumber: ibanNumber.trim() } : {}),
+      })
+      setMethods((prev) => [method, ...prev])
+      resetForm()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to add payment method')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const handleRemove = async (id: string) => {
+    try {
+      await userPaymentMethodsApi.remove(id)
+      setMethods((prev) => prev.filter((m) => m.id !== id))
+    } catch { /* silently fail */ }
+    finally { setRemoveId(null) }
+  }
+
+  const pmLabel = (type: string) => PM_TYPES.find((p) => p.value === type)?.label ?? type
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h2 className="text-base font-semibold text-text-primary">PKR Payment Methods</h2>
+          <p className="text-xs text-text-muted mt-0.5">Saved accounts used when receiving PKR in trades</p>
+        </div>
+        {!showForm && (
+          <Button size="sm" variant="secondary" onClick={() => setShowForm(true)}>
+            + Add Method
+          </Button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="bg-white border border-border rounded-xl p-4 mb-4 space-y-3">
+          <h3 className="text-sm font-semibold text-text-primary">Add Payment Method</h3>
+
+          {formError && (
+            <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">
+              {formError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Type</label>
+              <select
+                value={pmType}
+                onChange={(e) => setPmType(e.target.value as PmType)}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {PM_TYPES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Display Name</label>
+              <input
+                type="text"
+                placeholder="e.g. My JazzCash"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Account Name</label>
+            <input
+              type="text"
+              placeholder="Name on the account"
+              value={accountName}
+              onChange={(e) => setAccountName(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          {needsMobile && (
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Mobile Number</label>
+              <input
+                type="tel"
+                placeholder="03xx-xxxxxxx"
+                value={mobileNumber}
+                onChange={(e) => setMobileNumber(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          )}
+
+          {isBankTransfer && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. HBL"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">IBAN</label>
+                <input
+                  type="text"
+                  placeholder="PK00XXXX..."
+                  value={ibanNumber}
+                  onChange={(e) => setIbanNumber(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" loading={adding} onClick={handleAdd}>Save</Button>
+            <Button size="sm" variant="ghost" onClick={resetForm}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {pmLoading ? (
+        <div className="text-sm text-text-muted py-4 text-center">Loading...</div>
+      ) : methods.length === 0 ? (
+        <div className="bg-white border border-border rounded-xl px-4 py-8 text-center">
+          <p className="text-sm text-text-muted">No payment methods saved yet.</p>
+          <p className="text-xs text-text-muted mt-1">Add your JazzCash, Easypaisa, or bank account so buyers know how to pay you.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-border divide-y divide-border overflow-hidden">
+          {methods.map((m) => (
+            <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-text-primary">{m.displayName}</span>
+                  <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full">{pmLabel(m.type)}</span>
+                </div>
+                <p className="text-xs text-text-muted mt-0.5">
+                  {m.accountName}
+                  {m.mobileNumber ? ` · ${m.mobileNumber}` : ''}
+                  {m.ibanNumber ? ` · ${m.ibanNumber}` : ''}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setRemoveId(m.id)}
+                className="text-danger hover:text-danger flex-shrink-0"
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {removeId && (
+        <ConfirmModal
+          isOpen
+          title="Remove payment method"
+          description="This will remove the payment method from your profile. Active trades using it are unaffected."
+          confirmLabel="Remove"
+          confirmVariant="danger"
+          onConfirm={() => handleRemove(removeId)}
+          onClose={() => setRemoveId(null)}
+        />
+      )}
+    </section>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
@@ -835,6 +1073,9 @@ export default function WalletPage() {
 
       {/* ── Trusted addresses ── */}
       <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
+
+      {/* ── PKR Payment Methods ── */}
+      <PaymentMethodsSection />
 
       {/* Deposit modal */}
       {depositCoin && (

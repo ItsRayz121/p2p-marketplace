@@ -586,11 +586,13 @@ model Trade {
   amount             Decimal     @db.Decimal(18, 8)
   price              Decimal     @db.Decimal(14, 2)
   fiatAmount         Decimal     @db.Decimal(14, 2)
-  paymentMethod      String
-  status             TradeStatus @default(payment_pending)
-  paymentProofUrl    String?
-  buyerWalletAddress String
-  sellerTxHash       String?
+  paymentMethod        String
+  status               TradeStatus @default(payment_pending)
+  paymentProofUrl      String?
+  buyerWalletAddress   String      @default("")
+  buyerDeliveryMethod  String?     // 'blockchain' | 'email' | 'username' | 'internal'
+  buyerDeliveryAddress String?     // the receiving address / email / username
+  sellerTxHash         String?
   escrowReleased     Boolean     @default(false)
   cancelledBy        String?
   cancelReason       String?

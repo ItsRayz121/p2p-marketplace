@@ -24,6 +24,8 @@ function NewTradePageContent() {
 
   const [amount, setAmount] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('')
+  const [deliveryMethod, setDeliveryMethod] = useState<'blockchain' | 'email' | 'username' | ''>('')
+  const [deliveryAddress, setDeliveryAddress] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [amountError, setAmountError] = useState<string | null>(null)
@@ -68,10 +70,27 @@ function NewTradePageContent() {
     setAmountError(validateAmount(val))
   }
 
+  const deliveryLabel = (method: string) => {
+    if (method === 'blockchain') return 'Wallet Address'
+    if (method === 'email') return 'Email Address'
+    if (method === 'username') return 'Username'
+    return 'Delivery Address'
+  }
+
+  const deliveryPlaceholder = (method: string) => {
+    if (method === 'blockchain') return '0x... or your wallet address'
+    if (method === 'email') return 'you@example.com'
+    if (method === 'username') return 'Your username on the platform'
+    return ''
+  }
+
   const handleSubmit = async () => {
     if (!ad || !amount || !paymentMethod) return
     const err = validateAmount(amount)
     if (err) { setAmountError(err); return }
+
+    if (!deliveryMethod) { setSubmitError('Please select how you want to receive the tokens'); return }
+    if (!deliveryAddress.trim()) { setSubmitError('Please enter your receiving address'); return }
 
     setSubmitting(true)
     setSubmitError(null)
@@ -80,6 +99,8 @@ function NewTradePageContent() {
         adId: ad.id,
         amount,
         paymentMethod,
+        buyerDeliveryMethod: deliveryMethod,
+        buyerDeliveryAddress: deliveryAddress.trim(),
       })
       analytics.tradeInitiated({
         tradeId: trade.id,
@@ -203,6 +224,46 @@ function NewTradePageContent() {
           </div>
         </div>
 
+        {/* Token delivery method */}
+        <div>
+          <label className="block text-sm font-medium text-text-primary mb-2">
+            How will you receive {ad.coin}?
+          </label>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {(['blockchain', 'email', 'username'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setDeliveryMethod(m); setDeliveryAddress('') }}
+                className={`px-2 py-2.5 text-xs rounded-lg border transition-colors ${
+                  deliveryMethod === m
+                    ? 'bg-primary/10 border-primary text-primary font-medium'
+                    : 'border-border text-text-secondary hover:border-primary/40 bg-white'
+                }`}
+              >
+                {m === 'blockchain' ? 'Wallet Address' : m === 'email' ? 'Email' : 'Username'}
+              </button>
+            ))}
+          </div>
+          {deliveryMethod && (
+            <div>
+              <label className="block text-xs font-medium text-text-primary mb-1">
+                {deliveryLabel(deliveryMethod)}
+              </label>
+              <input
+                type={deliveryMethod === 'email' ? 'email' : 'text'}
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                placeholder={deliveryPlaceholder(deliveryMethod)}
+                className="w-full px-3 py-2.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+              />
+              <p className="mt-1 text-xs text-text-muted">
+                The seller will send {ad.coin} to this address after confirming your payment.
+              </p>
+            </div>
+          )}
+        </div>
+
         {submitError && (
           <div className="bg-danger/10 border border-danger/20 rounded-lg px-4 py-3 text-sm text-danger">
             {submitError}
@@ -213,7 +274,7 @@ function NewTradePageContent() {
           fullWidth
           size="lg"
           loading={submitting}
-          disabled={!amount || !paymentMethod || !!amountError}
+          disabled={!amount || !paymentMethod || !!amountError || !deliveryMethod || !deliveryAddress.trim()}
           onClick={handleSubmit}
         >
           Start Trade

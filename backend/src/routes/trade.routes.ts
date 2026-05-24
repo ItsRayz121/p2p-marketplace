@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { randomUUID } from 'node:crypto'
 import { authenticate } from '../middleware/auth.middleware'
 import { createAdminNotif } from '../services/adminNotification.service'
 import {
@@ -17,7 +16,6 @@ import {
   getMessages,
   rateTrade,
 } from '../services/trade.service'
-import { cloudinary, CLOUDINARY_FOLDERS, UPLOAD_LIMITS } from '../lib/cloudinary'
 import { AppError } from '../lib/errors'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
@@ -26,7 +24,9 @@ const createTradeSchema = z.object({
   adId: z.string().min(1),
   amount: z.number().positive(),
   paymentMethod: z.string().min(1),
-  buyerWalletAddress: z.string().min(1),
+  buyerWalletAddress: z.string().optional().default(''),
+  buyerDeliveryMethod: z.enum(['blockchain', 'email', 'username', 'internal']).optional(),
+  buyerDeliveryAddress: z.string().max(500).optional(),
 })
 
 const cryptoSentSchema = z.object({
@@ -53,30 +53,6 @@ const rateSchema = z.object({
   tags: z.array(z.string()).optional().default([]),
 })
 
-// ─── Magic-byte MIME validation ───────────────────────────────────────────────
-
-function detectImageMime(buf: Buffer): string | null {
-  if (buf.length < 4) return null
-  // JPEG: FF D8 FF
-  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg'
-  // PNG: 89 50 4E 47
-  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png'
-  // WebP: 52 49 46 46 .. .. .. .. 57 45 42 50
-  if (
-    buf[0] === 0x52 &&
-    buf[1] === 0x49 &&
-    buf[2] === 0x46 &&
-    buf[3] === 0x46 &&
-    buf.length >= 12 &&
-    buf[8] === 0x57 &&
-    buf[9] === 0x45 &&
-    buf[10] === 0x42 &&
-    buf[11] === 0x50
-  )
-    return 'image/webp'
-  return null
-}
-
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export async function tradeRoutes(app: FastifyInstance) {
@@ -87,8 +63,8 @@ export async function tradeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { adId, amount, paymentMethod, buyerWalletAddress } = parsed.data
-    const trade = await createTrade(userId, adId, { amount, paymentMethod, buyerWalletAddress })
+    const { adId, amount, paymentMethod, buyerWalletAddress, buyerDeliveryMethod, buyerDeliveryAddress } = parsed.data
+    const trade = await createTrade(userId, adId, { amount, paymentMethod, buyerWalletAddress: buyerWalletAddress ?? '', buyerDeliveryMethod, buyerDeliveryAddress })
     return reply.code(201).send({ success: true, data: trade })
   })
 
@@ -119,52 +95,20 @@ export async function tradeRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: trade })
   })
 
-  // POST /api/trades/:id/payment-proof — multipart file upload
+  // POST /api/trades/:id/payment-proof — accepts JSON { paymentProofUrl } from presign+Cloudinary upload
   app.post('/trades/:id/payment-proof', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
     const { id } = req.params as { id: string }
 
-    // Get multipart file
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const file = await (req as any).file()
-    if (!file) throw new AppError('VALIDATION_ERROR', 'No file uploaded', 400)
-
-    // Read file into buffer for magic-byte check
-    const chunks: Buffer[] = []
-    let totalSize = 0
-    for await (const chunk of file.file) {
-      totalSize += chunk.length
-      if (totalSize > UPLOAD_LIMITS.PAYMENT_PROOF) {
-        throw new AppError('FILE_TOO_LARGE', 'File exceeds 10MB limit', 400)
-      }
-      chunks.push(chunk)
-    }
-    const buffer = Buffer.concat(chunks)
-
-    // Validate MIME via magic bytes
-    const mime = detectImageMime(buffer)
-    if (!mime) {
-      throw new AppError('INVALID_FILE_TYPE', 'Only JPEG, PNG, and WebP images are allowed', 400)
-    }
-
-    // Upload to Cloudinary
-    const publicId = randomUUID()
-    const uploadResult = await new Promise<{ secure_url: string }>((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: CLOUDINARY_FOLDERS.PAYMENT_PROOF,
-          public_id: publicId,
-          resource_type: 'image',
-        },
-        (error, result) => {
-          if (error || !result) return reject(error instanceof Error ? error : new Error('Upload failed'))
-          resolve(result as { secure_url: string })
-        },
-      )
-      uploadStream.end(buffer)
+    const proofSchema = z.object({
+      paymentProofUrl: z.string().url('Invalid proof URL'),
     })
+    const parsed = proofSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
 
-    const updated = await uploadPaymentProof(id, userId, uploadResult.secure_url)
+    const updated = await uploadPaymentProof(id, userId, parsed.data.paymentProofUrl)
     return reply.send({ success: true, data: updated })
   })
 

@@ -34,6 +34,8 @@ interface ExtendedTrade extends Trade {
   txHash?: string
   buyerRated?: boolean
   sellerRated?: boolean
+  buyerDeliveryMethod?: string
+  buyerDeliveryAddress?: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -181,6 +183,7 @@ export default function TradePage() {
 
   const [showDisputeForm, setShowDisputeForm] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
+  const [disputeDescription, setDisputeDescription] = useState('')
   const [showCryptoSentForm, setShowCryptoSentForm] = useState(false)
   const [txHash, setTxHash] = useState('')
 
@@ -311,13 +314,18 @@ export default function TradePage() {
 
   const handleOpenDispute = async () => {
     if (!disputeReason.trim()) return
+    if (disputeDescription.trim().length < 10) {
+      setActionError('Please describe the issue in at least 10 characters')
+      return
+    }
     setActionLoading(true)
     setActionError(null)
     try {
-      await tradesApi.openDispute(id, { reason: disputeReason })
+      await tradesApi.openDispute(id, { reason: disputeReason, description: disputeDescription.trim() })
       await fetchTrade()
       setShowDisputeForm(false)
       setDisputeReason('')
+      setDisputeDescription('')
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Dispute failed')
     } finally {
@@ -327,13 +335,21 @@ export default function TradePage() {
 
   const handleSendMessage = async () => {
     if (!messageInput.trim() || sendingMsg) return
+    const text = messageInput.trim()
     setSendingMsg(true)
+    setMessageInput('')
     try {
-      await tradesApi.sendMessage(id, messageInput.trim())
-      setMessageInput('')
-      await fetchTrade()
-    } catch { /* silently fail */ }
-    finally { setSendingMsg(false) }
+      const msg = await tradesApi.sendMessage(id, text)
+      setMessages((prev) => [
+        ...prev,
+        { id: msg.id, senderId: user?.id ?? '', message: text, createdAt: msg.createdAt },
+      ])
+    } catch (err) {
+      setMessageInput(text) // restore so user can retry
+      setActionError(err instanceof Error ? err.message : 'Failed to send message')
+    } finally {
+      setSendingMsg(false)
+    }
   }
 
   const handleRatingSubmit = async (rating: number, comment: string, tags: string[]) => {
@@ -429,14 +445,76 @@ export default function TradePage() {
             </div>
           </div>
 
-          {/* Trade details */}
+          {/* Payment Settlement */}
           <div className="bg-white rounded-xl border border-border p-5">
-            <h2 className="text-sm font-semibold text-text-primary mb-3">Trade Details</h2>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">💳</span>
+              <h2 className="text-sm font-semibold text-text-primary">Payment Settlement</h2>
+            </div>
             <div className="space-y-2 text-sm">
-              <DetailRow label="Coin" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
+              <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
               <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
-              <DetailRow label="Total PKR" value={`PKR ${Number(trade.totalPkr).toLocaleString()}`} />
-              <DetailRow label="Payment" value={trade.paymentMethod} />
+              <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} />
+              <DetailRow label="Pay via" value={trade.paymentMethod} />
+            </div>
+            {/* Payment proof thumbnail */}
+            {trade.paymentProofUrl && (
+              <div className="mt-3 pt-3 border-t border-border">
+                <p className="text-xs text-text-muted mb-2">Payment Proof</p>
+                <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={trade.paymentProofUrl}
+                    alt="Payment proof"
+                    className="w-full max-w-xs rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer"
+                  />
+                </a>
+              </div>
+            )}
+          </div>
+
+          {/* Token Delivery */}
+          <div className="bg-white rounded-xl border border-border p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">📦</span>
+              <h2 className="text-sm font-semibold text-text-primary">Token Delivery</h2>
+            </div>
+            <div className="space-y-2 text-sm">
+              <DetailRow label="Network" value={trade.network ?? trade.coin} />
+              {trade.buyerDeliveryMethod ? (
+                <>
+                  <DetailRow
+                    label="Method"
+                    value={
+                      trade.buyerDeliveryMethod === 'blockchain' ? 'Wallet Address'
+                      : trade.buyerDeliveryMethod === 'email' ? 'Email Transfer'
+                      : trade.buyerDeliveryMethod === 'username' ? 'Username Transfer'
+                      : 'Internal Wallet'
+                    }
+                  />
+                  {trade.buyerDeliveryAddress && (
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-text-muted flex-shrink-0">Address</span>
+                      <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Legacy: show buyerWalletAddress if delivery fields not set */
+                trade.buyerWalletAddress ? (
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="text-text-muted flex-shrink-0">Wallet</span>
+                    <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-text-muted">Delivery details not specified.</p>
+                )
+              )}
+              {trade.sellerTxHash && (
+                <div className="flex justify-between items-start gap-2">
+                  <span className="text-text-muted flex-shrink-0">Tx Hash</span>
+                  <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -513,16 +591,35 @@ export default function TradePage() {
 
             {showDisputeForm && (
               <div className="space-y-3">
-                <textarea
-                  value={disputeReason}
-                  onChange={(e) => setDisputeReason(e.target.value)}
-                  placeholder="Describe the issue..."
-                  rows={3}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+                <div>
+                  <label className="block text-xs font-medium text-text-primary mb-1">Reason</label>
+                  <select
+                    value={disputeReason}
+                    onChange={(e) => setDisputeReason(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-danger"
+                  >
+                    <option value="">Select a reason…</option>
+                    <option value="payment_not_received">Payment not received</option>
+                    <option value="crypto_not_sent">Crypto not sent</option>
+                    <option value="wrong_amount">Wrong amount</option>
+                    <option value="fake_proof">Fake payment proof</option>
+                    <option value="counterparty_unresponsive">Counterparty unresponsive</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-primary mb-1">Details <span className="text-text-muted">(min 10 characters)</span></label>
+                  <textarea
+                    value={disputeDescription}
+                    onChange={(e) => setDisputeDescription(e.target.value)}
+                    placeholder="Explain what happened in detail. Include any evidence or timeline of events..."
+                    rows={4}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-danger"
+                  />
+                </div>
                 <div className="flex gap-2">
-                  <Button variant="secondary" fullWidth onClick={() => setShowDisputeForm(false)}>Cancel</Button>
-                  <Button variant="danger" fullWidth loading={actionLoading} onClick={handleOpenDispute}>
+                  <Button variant="secondary" fullWidth onClick={() => { setShowDisputeForm(false); setDisputeReason(''); setDisputeDescription('') }}>Cancel</Button>
+                  <Button variant="danger" fullWidth loading={actionLoading} disabled={!disputeReason || disputeDescription.trim().length < 10} onClick={handleOpenDispute}>
                     Submit Dispute
                   </Button>
                 </div>

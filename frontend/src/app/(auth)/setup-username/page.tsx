@@ -139,12 +139,24 @@ export default function SetupUsernamePage() {
       </p>
 
       <form onSubmit={handleSave} noValidate className="flex flex-col gap-4">
+        {/* Trust guidance callout */}
+        <div className="bg-primary/5 border border-primary/15 rounded-lg px-4 py-3 text-sm">
+          <p className="font-medium text-primary mb-1">Build trust from the start</p>
+          <ul className="text-text-secondary text-xs space-y-0.5 list-disc ml-3">
+            <li>Use your real name or CNIC name</li>
+            <li>Or a username close to your real or exchange identity</li>
+          </ul>
+          <p className="text-text-muted text-xs mt-1.5">
+            Recognizable identities earn more trust and complete more trades.
+          </p>
+        </div>
+
         <div className="flex flex-col gap-1.5">
           <Input
             label="Username"
             type="text"
             autoComplete="username"
-            placeholder="e.g. crypto_trader"
+            placeholder="e.g. AhmedKhan or ahmed_trader"
             value={username}
             onChange={handleUsernameChange}
             rightElement={<AvailabilityIcon />}

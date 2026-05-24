@@ -15,6 +15,8 @@ export interface CreateTradeInput {
   amount: number
   paymentMethod: string
   buyerWalletAddress: string
+  buyerDeliveryMethod?: string
+  buyerDeliveryAddress?: string
 }
 
 export interface GetTradesParams {
@@ -173,6 +175,8 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
         fiatAmount,
         paymentMethod: data.paymentMethod,
         buyerWalletAddress: data.buyerWalletAddress,
+        ...(data.buyerDeliveryMethod ? { buyerDeliveryMethod: data.buyerDeliveryMethod } : {}),
+        ...(data.buyerDeliveryAddress ? { buyerDeliveryAddress: data.buyerDeliveryAddress } : {}),
         status: 'payment_pending',
         expiresAt,
       },
@@ -473,14 +477,17 @@ export async function sendMessage(
   content: string,
   attachmentUrl?: string,
 ) {
-  const trade = await db.trade.findUnique({ where: { id: tradeId } })
+  const [trade, sender] = await Promise.all([
+    db.trade.findUnique({ where: { id: tradeId } }),
+    db.user.findUnique({ where: { id: senderId }, select: { username: true } }),
+  ])
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
   // Sender must be buyer, seller — admin check done via role in route
   const isParticipant = trade.buyerId === senderId || trade.sellerId === senderId
   if (!isParticipant) throw new AppError('FORBIDDEN', 'Not a participant in this trade', 403)
 
-  return db.tradeMessage.create({
+  const msg = await db.tradeMessage.create({
     data: {
       tradeId,
       senderId,
@@ -488,6 +495,14 @@ export async function sendMessage(
       attachmentUrl: attachmentUrl ?? null,
     },
   })
+
+  // Notify the other party so their SSE feed fires immediately
+  const recipientId = trade.buyerId === senderId ? trade.sellerId : trade.buyerId
+  const senderLabel = sender?.username ?? 'Someone'
+  const preview = content.length > 60 ? content.slice(0, 57) + '…' : content
+  notify(recipientId, 'trade', 'New Message', `${senderLabel}: ${preview}`, { tradeId }, tradeId)
+
+  return msg
 }
 
 export async function sendMessageAsAdmin(

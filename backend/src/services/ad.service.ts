@@ -56,6 +56,24 @@ export async function createAd(userId: string, data: CreateAdInput) {
     throw new AppError('VALIDATION_ERROR', 'Amounts must be positive', 400)
   }
 
+  // For sell ads: verify the user has enough balance in their wallet
+  if (data.side === 'sell') {
+    const wallet = await db.wallet.findFirst({
+      where: { userId, coin: data.coin.toUpperCase() },
+      select: { balance: true, lockedBalance: true },
+    })
+    const available = wallet
+      ? new Prisma.Decimal(wallet.balance).sub(new Prisma.Decimal(wallet.lockedBalance))
+      : new Prisma.Decimal(0)
+    if (new Prisma.Decimal(data.totalAmount).gt(available)) {
+      throw new AppError(
+        'INSUFFICIENT_BALANCE',
+        `Insufficient ${data.coin} balance. Available: ${available.toFixed(8)}, Required: ${data.totalAmount}`,
+        400,
+      )
+    }
+  }
+
   const ad = await db.ad.create({
     data: {
       userId,
