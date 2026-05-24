@@ -384,7 +384,34 @@ export async function authRoutes(app: FastifyInstance) {
   // so we must reply directly for every shape we care about — re-throwing
   // turns AppError(401) into a generic 500.
   app.setErrorHandler((err, req, reply) => {
-    // @fastify/rate-limit and FastifyError (body parsing) carry statusCode, not instanceof Error
+    // AppError FIRST — it has a statusCode property that would otherwise be caught
+    // by the generic httpStatus >= 400 fallback, losing the specific error.code.
+    if (err instanceof AppError) {
+      return reply.status(err.statusCode).send({
+        success: false,
+        error: err.code,
+        message: err.message,
+      })
+    }
+
+    if (err instanceof z.ZodError) {
+      return reply.status(400).send({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '),
+      })
+    }
+
+    if ((err as { validation?: unknown }).validation) {
+      return reply.status(400).send({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Invalid request data',
+      })
+    }
+
+    // @fastify/rate-limit and FastifyError (body parsing) carry statusCode but are not
+    // AppError instances — handle them here after all instanceof checks.
     const httpStatus = (err as { statusCode?: number }).statusCode
     if (httpStatus === 429) {
       return reply.status(429).send({
@@ -401,27 +428,6 @@ export async function authRoutes(app: FastifyInstance) {
       })
     }
 
-    if (err instanceof z.ZodError) {
-      return reply.status(400).send({
-        success: false,
-        error: 'VALIDATION_ERROR',
-        message: err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '),
-      })
-    }
-    if (err instanceof AppError) {
-      return reply.status(err.statusCode).send({
-        success: false,
-        error: err.code,
-        message: err.message,
-      })
-    }
-    if ((err as { validation?: unknown }).validation) {
-      return reply.status(400).send({
-        success: false,
-        error: 'VALIDATION_ERROR',
-        message: 'Invalid request data',
-      })
-    }
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       if (err.code === 'P2025') {
         return reply.status(404).send({ success: false, error: 'NOT_FOUND', message: 'Record not found' })

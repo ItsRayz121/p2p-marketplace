@@ -24,6 +24,9 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  const [savedCredentials, setSavedCredentials] = useState<FormValues | null>(null)
+  const [alreadyVerified, setAlreadyVerified] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const {
     register,
@@ -34,11 +37,11 @@ export default function LoginPage() {
   async function onSubmit(values: FormValues) {
     setServerError(null)
     setUnverifiedEmail(null)
+    setAlreadyVerified(false)
     try {
       const res = await authApi.login(values)
 
       if (res.preAuthToken) {
-        // 2FA required — store preAuthToken in sessionStorage for 2fa page
         sessionStorage.setItem('preAuthToken', res.preAuthToken)
         router.push('/2fa')
         return
@@ -59,8 +62,39 @@ export default function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
         setUnverifiedEmail(values.email)
+        setSavedCredentials(values)
       } else {
         setServerError(err instanceof Error ? err.message : 'Login failed. Please try again.')
+      }
+    }
+  }
+
+  async function handleRefreshStatus() {
+    if (!savedCredentials) return
+    setRefreshing(true)
+    setServerError(null)
+    try {
+      await onSubmit(savedCredentials)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  async function handleResend() {
+    if (!unverifiedEmail) return
+    try {
+      await authApi.resendOtp(unverifiedEmail)
+      setServerError(null)
+      setUnverifiedEmail(null)
+      setSavedCredentials(null)
+      router.push(`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`)
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'ALREADY_VERIFIED') {
+        setAlreadyVerified(true)
+        setUnverifiedEmail(null)
+        setSavedCredentials(null)
+      } else {
+        setServerError('Failed to resend verification email. Please try again.')
       }
     }
   }
@@ -122,32 +156,42 @@ export default function LoginPage() {
           </p>
         )}
 
+        {alreadyVerified && (
+          <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            <p className="font-medium mb-0.5">Your email is already verified.</p>
+            <p>You can sign in now using the form above.</p>
+          </div>
+        )}
+
         {unverifiedEmail && (
-          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            <p>Your email is not verified yet.</p>
-            <Link
-              href={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
-              className="font-medium underline hover:no-underline"
-            >
-              Verify your email
-            </Link>
-            {' or '}
-            <button
-              type="button"
-              className="font-medium underline hover:no-underline"
-              onClick={async () => {
-                try {
-                  await authApi.resendOtp(unverifiedEmail)
-                  setServerError(null)
-                  setUnverifiedEmail(null)
-                  router.push(`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`)
-                } catch {
-                  setServerError('Failed to resend verification email. Please try again.')
-                }
-              }}
-            >
-              resend verification email
-            </button>
+          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex flex-col gap-2">
+            <div>
+              <p className="font-medium mb-0.5">Email verification required</p>
+              <p className="text-amber-600 text-xs">If you already verified your email, try refreshing your status below.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="px-3 py-1.5 bg-amber-700 text-white text-xs font-semibold rounded-md hover:bg-amber-800 transition-colors disabled:opacity-60"
+                onClick={handleRefreshStatus}
+                disabled={refreshing}
+              >
+                {refreshing ? 'Checking…' : 'Refresh Verification Status'}
+              </button>
+              <Link
+                href={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+                className="px-3 py-1.5 bg-white border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
+              >
+                Enter verification code
+              </Link>
+              <button
+                type="button"
+                className="px-3 py-1.5 bg-white border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
+                onClick={handleResend}
+              >
+                Resend verification email
+              </button>
+            </div>
           </div>
         )}
 

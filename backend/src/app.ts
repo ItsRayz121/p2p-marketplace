@@ -79,25 +79,9 @@ export async function buildApp() {
   // Catch-all hook — fires for every error regardless of which error handler runs.
   // Global error handler
   app.setErrorHandler((error, _req, reply) => {
-    // @fastify/rate-limit throws either a plain object or an HTTP error with statusCode.
-    // FastifyError (e.g. empty body with Content-Type: application/json) also has statusCode.
-    // Handle both before any instanceof checks which only work on real Error instances.
-    const httpStatus = (error as { statusCode?: number }).statusCode
-    if (httpStatus === 429) {
-      return reply.status(429).send({
-        success: false,
-        error: 'TOO_MANY_REQUESTS',
-        message: (error as { message?: string }).message ?? 'Too many requests. Please wait before retrying.',
-      })
-    }
-    if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
-      return reply.status(httpStatus).send({
-        success: false,
-        error: 'REQUEST_ERROR',
-        message: (error as { message?: string }).message ?? 'Invalid request',
-      })
-    }
-
+    // AppError must be checked FIRST — it has a statusCode property that would
+    // otherwise be caught by the generic httpStatus >= 400 fallback below,
+    // causing the specific error.code (e.g. EMAIL_NOT_VERIFIED) to be lost.
     if (error instanceof AppError) {
       return reply.status(error.statusCode).send({
         success: false,
@@ -113,6 +97,24 @@ export async function buildApp() {
         error: 'VALIDATION_ERROR',
         message: 'Invalid request data',
         details: error.validation,
+      })
+    }
+
+    // @fastify/rate-limit and FastifyError (body parsing) carry statusCode but are not
+    // AppError instances — handle them here as a fallback after all instanceof checks.
+    const httpStatus = (error as { statusCode?: number }).statusCode
+    if (httpStatus === 429) {
+      return reply.status(429).send({
+        success: false,
+        error: 'TOO_MANY_REQUESTS',
+        message: (error as { message?: string }).message ?? 'Too many requests. Please wait before retrying.',
+      })
+    }
+    if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+      return reply.status(httpStatus).send({
+        success: false,
+        error: 'REQUEST_ERROR',
+        message: (error as { message?: string }).message ?? 'Invalid request',
       })
     }
 

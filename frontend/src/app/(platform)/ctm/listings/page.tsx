@@ -1,8 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
-import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 
@@ -29,7 +28,8 @@ export default function BrowseListingsPage() {
   const [paymentMethod, setPaymentMethod] = useState('')
   const [page, setPage] = useState(1)
 
-  const fetchListings = async () => {
+  const fetchListings = useCallback(async () => {
+    setLoading(true)
     setError('')
     try {
       const res = await ctmApi.getListings({ side: side || undefined, paymentMethod: paymentMethod || undefined, page, limit: 20 })
@@ -41,9 +41,18 @@ export default function BrowseListingsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [side, paymentMethod, page])
 
-  usePolling(fetchListings, 30000)
+  // Re-fetch immediately on any filter or page change
+  useEffect(() => {
+    fetchListings()
+  }, [fetchListings])
+
+  // Background refresh every 30s
+  useEffect(() => {
+    const id = setInterval(fetchListings, 30_000)
+    return () => clearInterval(id)
+  }, [fetchListings])
 
   const tierBadge = (tier: string) => {
     const colors: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
