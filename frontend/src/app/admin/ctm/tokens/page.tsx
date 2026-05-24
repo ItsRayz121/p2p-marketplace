@@ -1,11 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { invalidateLogoCache } from '@/hooks/useLogoRegistry'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
 
 const STATUS_COLORS: Record<string, string> = {
   approved: 'bg-green-100 text-green-700',
@@ -38,6 +39,64 @@ const EMPTY_ADD = {
   officialWebsite: '', officialTwitter: '', officialTelegram: '', whitePaperUrl: '',
   riskTier: 'medium' as 'low' | 'medium' | 'high' | 'extreme',
   riskNotes: '', maxListingAmount: '', minTradeAmountPkr: '',
+}
+
+function ImageUploadField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (url: string) => void
+}) {
+  const { upload, uploading, error: uploadError } = useAdminLogoUpload()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const url = await upload(file)
+      onChange(url)
+    } catch { /* error shown via uploadError */ }
+    e.target.value = ''
+  }
+
+  return (
+    <div>
+      <label className="block text-xs font-medium text-text-muted mb-1">{label}</label>
+      <div className="flex gap-2 items-center">
+        <input
+          type="text"
+          placeholder="https://…"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary min-w-0"
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="shrink-0 text-xs border border-border px-2 py-2 rounded-lg hover:bg-surface disabled:opacity-40 transition-colors whitespace-nowrap"
+        >
+          {uploading ? 'Uploading…' : 'Upload'}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          onChange={handleFile}
+          className="hidden"
+        />
+      </div>
+      {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
+      {value && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={value} alt="" className="mt-2 h-10 w-10 rounded object-contain border border-border bg-surface" />
+      )}
+    </div>
+  )
 }
 
 export default function AdminCtmTokensPage() {
@@ -435,14 +494,16 @@ export default function AdminCtmTokensPage() {
           <div className="space-y-4">
             <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Branding</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Logo URL</label>
-                <input type="text" placeholder="https://…" value={editForm.logoUrl} onChange={(e) => setEditForm((f) => ({ ...f, logoUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Banner URL</label>
-                <input type="text" placeholder="https://…" value={editForm.bannerUrl} onChange={(e) => setEditForm((f) => ({ ...f, bannerUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
-              </div>
+              <ImageUploadField
+                label="Logo URL"
+                value={editForm.logoUrl}
+                onChange={(url) => setEditForm((f) => ({ ...f, logoUrl: url }))}
+              />
+              <ImageUploadField
+                label="Banner URL"
+                value={editForm.bannerUrl}
+                onChange={(url) => setEditForm((f) => ({ ...f, bannerUrl: url }))}
+              />
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Official Website</label>
                 <input type="text" placeholder="https://…" value={editForm.officialWebsite} onChange={(e) => setEditForm((f) => ({ ...f, officialWebsite: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
@@ -571,8 +632,16 @@ export default function AdminCtmTokensPage() {
           <div className="space-y-4">
             <p className="text-xs font-semibold text-text-muted uppercase tracking-wide border-b border-border pb-1">Branding</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {field('Logo URL', 'logoUrl', { placeholder: 'https://…' })}
-              {field('Banner URL', 'bannerUrl', { placeholder: 'https://…' })}
+              <ImageUploadField
+                label="Logo URL"
+                value={addForm.logoUrl}
+                onChange={(url) => setAddForm((f) => ({ ...f, logoUrl: url }))}
+              />
+              <ImageUploadField
+                label="Banner URL"
+                value={addForm.bannerUrl}
+                onChange={(url) => setAddForm((f) => ({ ...f, bannerUrl: url }))}
+              />
               {field('Official Website', 'officialWebsite', { placeholder: 'https://…' })}
               {field('Twitter', 'officialTwitter', { placeholder: 'https://twitter.com/…' })}
               {field('Telegram', 'officialTelegram', { placeholder: 'https://t.me/…' })}
