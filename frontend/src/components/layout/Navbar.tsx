@@ -143,9 +143,6 @@ export default function Navbar() {
                         <Link href="/wallet" className={dropdownItemCls}>Wallet</Link>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
-                        <Link href="/wallet#payment-methods" className={dropdownItemCls}>Payment Methods</Link>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item asChild>
                         <Link href="/my-ads" className={dropdownItemCls}>My Ads</Link>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item asChild>
