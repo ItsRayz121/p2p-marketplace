@@ -106,8 +106,9 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   const headers: Record<string, string> = {
     ...(options?.headers as Record<string, string>),
   }
-  // Only set Content-Type when there is a body — Fastify rejects empty bodies with this header
-  if (options?.body !== undefined && options.body !== null) {
+  // Only set Content-Type for JSON bodies — let the browser set it automatically for FormData
+  // (FormData needs multipart/form-data with boundary, which the browser generates)
+  if (options?.body !== undefined && options.body !== null && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
   }
 
