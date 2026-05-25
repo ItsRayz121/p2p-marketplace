@@ -1,8 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
-import { usePolling } from '@/hooks/usePolling'
+import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -19,7 +19,21 @@ const STATUS_COLORS: Record<string, string> = {
   expired: 'bg-gray-100 text-gray-500',
 }
 
-const ACTIVE_STATUSES = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming']
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'awaiting_payment', label: 'Awaiting Payment' },
+  { value: 'payment_uploaded', label: 'Proof Uploaded' },
+  { value: 'payment_confirmed', label: 'Confirmed' },
+  { value: 'seller_transferring', label: 'Crypto Sent' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'disputed', label: 'Disputed' },
+  { value: 'cancelled', label: 'Cancelled' },
+] as const
+
+const ROLE_OPTIONS = ['all', 'buyer', 'seller'] as const
+
+type StatusFilter = typeof STATUS_OPTIONS[number]['value']
+type RoleFilter = typeof ROLE_OPTIONS[number]
 
 interface Trade {
   id: string
@@ -35,37 +49,42 @@ interface Trade {
 }
 
 export default function MyCtmTradesPage() {
+  const { user } = useAuth()
   const [trades, setTrades] = useState<Trade[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'active' | 'completed' | 'disputed'>('active')
+  const [status, setStatus] = useState<StatusFilter>('all')
+  const [role, setRole] = useState<RoleFilter>('all')
   const [page, setPage] = useState(1)
 
-  const statusFilter = tab === 'active' ? undefined : tab === 'completed' ? 'completed' : 'disputed'
-
-  const fetchTrades = async () => {
+  const fetchTrades = useCallback(async () => {
     try {
-      const res = await ctmApi.getMyTrades({ status: statusFilter, page, limit: 20 })
+      const res = await ctmApi.getMyTrades({
+        ...(status !== 'all' ? { status } : {}),
+        ...(role !== 'all' ? { role } : {}),
+        page,
+        limit: 20,
+      })
       const data = res as { trades: Trade[]; total: number }
-      // Filter active client-side when no status filter
-      const all = data.trades ?? []
-      const filtered = tab === 'active' ? all.filter((t) => ACTIVE_STATUSES.includes(t.status)) : all
-      setTrades(filtered)
+      setTrades(data.trades ?? [])
       setTotal(data.total ?? 0)
     } catch {
       // ignore
     } finally {
       setLoading(false)
     }
-  }
+  }, [status, role, page])
 
-  usePolling(fetchTrades, 15000)
+  useEffect(() => {
+    setLoading(true)
+    void fetchTrades()
+  }, [fetchTrades])
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-text-primary mb-4">My CTM Trades</h1>
 
-      {/* Market segmented control — switch between USDT P2P trades and CTM trades */}
+      {/* Market segmented control */}
       <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-fit">
         <Link
           href="/orders"
@@ -78,40 +97,74 @@ export default function MyCtmTradesPage() {
         </button>
       </div>
 
-      <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 mb-6 w-fit">
-        {(['active', 'completed', 'disputed'] as const).map((t) => (
-          <button key={t} onClick={() => { setTab(t); setPage(1) }}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${tab === t ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
-            {t}
-          </button>
-        ))}
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        {/* Status chips */}
+        <div className="flex flex-wrap gap-1">
+          {STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { setStatus(opt.value); setPage(1) }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                status === opt.value
+                  ? 'bg-primary text-white'
+                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-px bg-border hidden sm:block" />
+
+        {/* Role chips */}
+        <div className="flex gap-1">
+          {ROLE_OPTIONS.map((r) => (
+            <button
+              key={r}
+              onClick={() => { setRole(r); setPage(1) }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                role === r
+                  ? 'bg-primary/10 text-primary border border-primary/30'
+                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+              }`}
+            >
+              {r.charAt(0).toUpperCase() + r.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : trades.length === 0 ? (
-        <div className="text-center py-16 text-text-muted">No {tab} trades yet.</div>
+        <div className="text-center py-16 text-text-muted">No trades matching the current filters.</div>
       ) : (
         <div className="space-y-3">
-          {trades.map((t) => (
-            <Link key={t.id} href={`/ctm/trade/${t.tradeRef}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <EntityLogo type="token" slug={t.token.symbol} size="xl" logoUrl={t.token.logoUrl} />
-                  <div>
-                    <p className="font-semibold text-text-primary">{t.tokenAmount} {t.token.symbol}</p>
-                    <p className="text-xs text-text-muted">PKR {Number(t.fiatAmount).toLocaleString()} · #{t.tradeRef.slice(-8)}</p>
+          {trades.map((t) => {
+            const isBuyer = user?.id === t.buyer.id
+            return (
+              <Link key={t.id} href={`/ctm/trade/${t.tradeRef}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <EntityLogo type="token" slug={t.token.symbol} size="xl" logoUrl={t.token.logoUrl} />
+                    <div>
+                      <p className="font-semibold text-text-primary">{t.tokenAmount} {t.token.symbol}</p>
+                      <p className="text-xs text-text-muted">PKR {Number(t.fiatAmount).toLocaleString()} · #{t.tradeRef.slice(-8)}</p>
+                      <p className="text-xs text-text-muted">{isBuyer ? 'Buyer' : 'Seller'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {t.status.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-xs text-text-muted">{new Date(t.createdAt).toLocaleDateString()}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                    {t.status.replace(/_/g, ' ')}
-                  </span>
-                  <span className="text-xs text-text-muted">{new Date(t.createdAt).toLocaleDateString()}</span>
-                </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            )
+          })}
         </div>
       )}
 

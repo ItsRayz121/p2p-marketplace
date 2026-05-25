@@ -31,6 +31,7 @@ interface DashboardSummary {
     badgeLabel: string | null
     trustScore: number | null
   } | null
+  ctmCompletedTrades?: number
 }
 
 interface InstantOrder {
@@ -171,7 +172,8 @@ export default function DashboardPage() {
   const emailVerified = user?.isEmailVerified ?? false
   const kycApproved = kycStatus === 'approved'
   const hasBalance = (summary?.wallets ?? []).some((b) => parseFloat(b.available) > 0)
-  const hasCompletedTrade = (summary?.tradeStats?.completedTrades ?? 0) > 0
+  const hasCompletedTrade =
+    (summary?.tradeStats?.completedTrades ?? 0) + (summary?.ctmCompletedTrades ?? 0) > 0
 
   const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
 

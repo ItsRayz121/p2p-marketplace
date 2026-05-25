@@ -110,8 +110,10 @@ interface Trade {
   token: { name: string; symbol: string; logoUrl?: string; riskTier: string; explorerUrl?: string }
   buyer: { id: string; username: string }
   seller: { id: string; username: string }
+  listing?: { side: string }
   proofs: Array<{ id: string; proofType: string; fileUrl?: string; txHash?: string; uploadedBy: string; description?: string; createdAt: string }>
   dispute?: { id: string; reason: string; description: string; status: string; resolution?: string; winner?: string }
+  ratings: Array<{ ratedByUserId: string; ratedUserId: string; rating: number; comment?: string | null }>
   ratedByMe?: boolean
 }
 
@@ -145,7 +147,6 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const [ratingOpen, setRatingOpen] = useState(false)
   const [rating, setRating] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
-  const [ratedAlready, setRatedAlready] = useState(false)
   const [ratingError, setRatingError] = useState('')
   const [error, setError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -154,8 +155,9 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const fetchTrade = useCallback(async () => {
     try {
       const res = await ctmApi.getTrade(ref) as Trade
+      if (!Array.isArray(res.ratings)) res.ratings = []
       setTrade(res)
-      if (res.ratedByMe) setRatedAlready(true)
+      // ratedByMe is reflected in trade.ratings after fetch
     } catch { /* ignore */ } finally { setLoading(false) }
   }, [ref])
 
@@ -256,7 +258,6 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
     setRatingError('')
     try {
       await ctmApi.rateTrade(ref, { rating, comment: ratingComment || undefined })
-      setRatedAlready(true)
       setRatingOpen(false)
     } catch (e: unknown) {
       setRatingError((e as Error).message ?? 'Failed to submit rating')
@@ -323,19 +324,16 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             const totalPkr = Number(trade.fiatAmount)
             const price = Number(trade.pricePerUnit)
             const tokens = Number(trade.tokenAmount)
-            const fee = totalPkr * 0.005
+            // TODO: platform fee is stored (platformFeePkr) but not yet auto-deducted; hidden from UI until collection is automated
             return (
               <div className="bg-white border border-border rounded-xl p-5">
                 <h2 className="font-semibold text-text-primary mb-3">Order Summary</h2>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${price.toLocaleString()}`} />
                   <Row label="Token quantity" value={`${tokens.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
-                  <Row label="Total PKR" value={`PKR ${totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
-                  <Row label="Platform fee (0.5%)" value={`PKR ${fee.toFixed(2)}`} />
-                  <Row label="Seller receives" value={`PKR ${(totalPkr - fee).toFixed(2)}`} />
                   <Row label="Payment method" value={trade.sellerPaymentSnapshot?.label ?? trade.paymentMethod} />
                   <div className="border-t border-border pt-1.5 mt-1">
-                    <Row label={isBuyer ? 'Final payable' : 'You receive'} value={`PKR ${(isBuyer ? totalPkr : totalPkr - fee).toFixed(2)}`} />
+                    <Row label={isBuyer ? 'Total payable' : 'Total receivable'} value={`PKR ${totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
                   </div>
                 </div>
               </div>
@@ -344,7 +342,9 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
 
           {/* ── Payment Details ── */}
           <div className="bg-white border border-border rounded-xl p-5">
-            <h2 className="font-semibold text-text-primary mb-3">Payment Details</h2>
+            <h2 className="font-semibold text-text-primary mb-3">
+              {isBuyer ? 'Seller Payment Details' : 'Buyer Payment Details'}
+            </h2>
             <p className="text-xs text-text-muted mb-2">
               {isBuyer ? 'Send' : 'Receive'} PKR {Number(trade.fiatAmount).toLocaleString()} {isBuyer ? 'to' : 'from'} the following account:
             </p>
@@ -382,7 +382,9 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           {/* ── Token Delivery ── */}
           <div className="bg-white border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-text-primary">Token Delivery</h2>
+              <h2 className="font-semibold text-text-primary">
+                {isBuyer ? 'Buyer Token Delivery' : 'Seller Token Delivery'}
+              </h2>
               <span className="text-xs px-2 py-0.5 rounded-full bg-surface text-text-muted font-medium">
                 {settlementLabel(trade.settlementType)}
               </span>
@@ -575,8 +577,8 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             {isBuyer && trade.status === 'completed' && !ratingOpen && (
               <CompletedSummary
                 trade={trade}
+                userId={user?.id ?? ''}
                 counterparty={trade.seller.username}
-                ratedAlready={ratedAlready}
                 ratingError={ratingError}
                 onOpenRating={() => setRatingOpen(true)}
               />
@@ -685,8 +687,8 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             {isSeller && trade.status === 'completed' && !ratingOpen && (
               <CompletedSummary
                 trade={trade}
+                userId={user?.id ?? ''}
                 counterparty={trade.buyer.username}
-                ratedAlready={ratedAlready}
                 ratingError={ratingError}
                 onOpenRating={() => setRatingOpen(true)}
               />
@@ -778,17 +780,25 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
 // Completed trade summary card with rate prompt
 function CompletedSummary({
   trade,
+  userId,
   counterparty,
-  ratedAlready,
   ratingError,
   onOpenRating,
 }: {
   trade: Trade
+  userId: string
   counterparty: string
-  ratedAlready: boolean
   ratingError: string
   onOpenRating: () => void
 }) {
+  const myRating = trade.ratings?.find((r) => r.ratedByUserId === userId)
+  const theirRating = trade.ratings?.find((r) => r.ratedUserId === userId)
+
+  const starRow = (rating: number) =>
+    Array.from({ length: 5 }, (_, i) => (
+      <span key={i} className={i < rating ? 'text-yellow-400' : 'text-gray-300'}>★</span>
+    ))
+
   return (
     <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -813,12 +823,22 @@ function CompletedSummary({
           <p className="font-semibold text-text-primary">@{counterparty}</p>
         </div>
       </div>
-      <div className="border-t border-green-200 pt-3">
-        {ratedAlready ? (
-          <p className="text-sm text-green-700 text-center">You already rated this trade.</p>
-        ) : (
+      <div className="border-t border-green-200 pt-3 space-y-2">
+        {myRating && (
+          <p className="text-sm text-green-700 flex items-center gap-1.5">
+            <span>You rated @{counterparty}:</span>
+            <span className="flex">{starRow(myRating.rating)}</span>
+          </p>
+        )}
+        {theirRating && (
+          <p className="text-sm text-green-700 flex items-center gap-1.5">
+            <span>@{counterparty} rated you:</span>
+            <span className="flex">{starRow(theirRating.rating)}</span>
+          </p>
+        )}
+        {!myRating && (
           <>
-            {ratingError && <p className="text-xs text-red-600 mb-2">{ratingError}</p>}
+            {ratingError && <p className="text-xs text-red-600">{ratingError}</p>}
             <button
               onClick={onOpenRating}
               className="w-full border border-green-600 text-green-700 py-2 rounded-xl text-sm font-semibold hover:bg-green-100 transition-colors"

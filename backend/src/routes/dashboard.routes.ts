@@ -8,7 +8,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
   app.get('/dashboard/summary', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
 
-    const [user, wallets, recentTrades, recentOrders, usdtRate, notifications, tradeStats] =
+    const [user, wallets, recentTrades, recentOrders, usdtRate, notifications, tradeStats, ctmCompletedTrades] =
       await Promise.all([
         db.user.findUnique({
           where: { id: userId },
@@ -60,6 +60,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
         }),
 
         db.tradeStats.findUnique({ where: { userId } }),
+
+        db.ctmTrade.count({
+          where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'completed' },
+        }),
       ])
 
     return reply.send({
@@ -72,6 +76,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         usdtRate,
         notifications,
         tradeStats,
+        ctmCompletedTrades,
       },
     })
   })

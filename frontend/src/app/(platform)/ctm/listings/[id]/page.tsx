@@ -1,7 +1,7 @@
 'use client'
-import { useState, use } from 'react'
+import { useState, use, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ctmApi, ApiError } from '@/lib/api'
+import { ctmApi, apiRequest, ApiError } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuth } from '@/hooks/useAuth'
@@ -9,7 +9,26 @@ import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
 
+const METHOD_LABELS: Record<string, string> = {
+  jazzcash: 'JazzCash',
+  easypaisa: 'Easypaisa',
+  sadapay: 'SadaPay',
+  nayapay: 'NayaPay',
+  bank_transfer: 'Bank Transfer',
+}
+
 interface ResolvedPaymentMethod { id: string; type: string; label: string }
+
+interface SavedPaymentMethod {
+  id: string
+  type: string
+  displayName: string
+  accountName: string
+  mobileNumber?: string
+  bankName?: string
+  ibanNumber?: string
+  accountNumber?: string
+}
 
 interface Listing {
   id: string
@@ -62,6 +81,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [tokenAmount, setTokenAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  // Seller's own payment methods — needed when taking a BUY listing
+  const [myMethods, setMyMethods] = useState<ResolvedPaymentMethod[]>([])
 
   const fetchListing = async () => {
     try {
@@ -76,10 +97,24 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   usePolling(fetchListing, 30000)
 
+  // For BUY listings the trade taker is the seller — they select from their own payment accounts
+  useEffect(() => {
+    if (listing?.side === 'buy' && user) {
+      apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods').then((methods) => {
+        const resolved: ResolvedPaymentMethod[] = (Array.isArray(methods) ? methods : []).map((m) => ({
+          id: m.id,
+          type: m.type,
+          label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
+        }))
+        setMyMethods(resolved)
+      }).catch(() => {})
+    }
+  }, [listing?.side, user])
+
   const handleStartTrade = async () => {
     if (!paymentMethodId) { setError('Select a payment method'); return }
     if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setError('Enter a token amount'); return }
-    // Sell listings require buyer to provide their receiving address
+    // SELL listings: buyer must provide their token receiving address
     if (listing?.side === 'sell' && !buyerSettlementId.trim()) {
       setError('Enter your token receiving address'); return
     }
@@ -89,7 +124,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       if (!listing) return
       const res = await ctmApi.startListingTrade(id, {
         paymentMethod: paymentMethodId,
-        buyerSettlementId: buyerSettlementId.trim() || undefined,
+        // For SELL listings: buyer provides their address. For BUY listings: address is on the listing.
+        buyerSettlementId: listing.side === 'sell' ? (buyerSettlementId.trim() || undefined) : undefined,
         tokenAmount: parseFloat(tokenAmount),
       })
       router.push(`/ctm/trade/${res.tradeRef}`)
@@ -108,11 +144,15 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   if (!listing) return <div className="max-w-3xl mx-auto px-4 py-12 text-center text-text-muted">Listing not found.</div>
 
   const isMine = user?.id === listing.merchantProfile.user.id
+  const isBuyListing = listing.side === 'buy'
   const resolvedMethods = listing.resolvedPaymentMethods ?? listing.paymentMethods.map((m) => ({
     id: m,
     type: PK_MOBILE_METHODS.includes(m) ? m : 'bank_transfer',
     label: m,
   }))
+
+  // For BUY listings show taker's own methods; for SELL listings show listing's accepted methods
+  const modalPaymentMethods = isBuyListing ? myMethods : resolvedMethods
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
@@ -166,7 +206,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Payment methods */}
       <div className="bg-white border border-border rounded-xl p-5">
-        <h2 className="font-semibold text-text-primary mb-3">Accepted Payment Methods</h2>
+        <h2 className="font-semibold text-text-primary mb-1">
+          {isBuyListing ? 'Buyer Payment Methods' : 'Accepted Payment Methods'}
+        </h2>
+        <p className="text-xs text-text-muted mb-3">
+          {isBuyListing
+            ? 'The buyer will use one of these methods to pay you.'
+            : 'Select one of these methods to pay the seller.'}
+        </p>
         <div className="flex flex-wrap gap-2">
           {resolvedMethods.map((m) => (
             <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
@@ -214,9 +261,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             {/* Token-quantity input */}
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
-                {listing.side === 'sell'
-                  ? `How many ${listing.token.symbol} do you want to buy?`
-                  : `How many ${listing.token.symbol} do you want to sell?`}
+                {isBuyListing
+                  ? `How many ${listing.token.symbol} will you send to the buyer?`
+                  : `How many ${listing.token.symbol} do you want to buy?`}
               </label>
               <div className="relative">
                 <input
@@ -236,12 +283,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </p>
             </div>
 
-            {/* Order summary — built from token amount */}
+            {/* Order summary */}
             {(() => {
               const tokenAmt = tokenAmount ? parseFloat(tokenAmount) : 0
               const price = Number(listing.pricePerUnit)
               const totalPkr = tokenAmt * price
-              const platformFee = totalPkr * 0.005
               return (
                 <div className="bg-surface rounded-xl border border-border p-4 space-y-2 text-sm">
                   <p className="font-semibold text-text-primary mb-2">Order Summary</p>
@@ -253,21 +299,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <span className="text-text-muted">Token amount</span>
                     <span className="font-medium text-text-primary">{tokenAmt > 0 ? tokenAmt.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'} {listing.token.symbol}</span>
                   </div>
-                  <div className="flex justify-between border-t border-border pt-2">
-                    <span className="text-text-muted">Total PKR</span>
-                    <span className="font-bold text-text-primary">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-text-muted">
-                    <span>Platform fee (0.5%)</span>
-                    <span>PKR {platformFee.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-text-muted">
-                    <span>{listing.side === 'sell' ? 'Seller receives' : 'You receive'}</span>
-                    <span>PKR {(totalPkr - platformFee).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-semibold text-text-primary border-t border-border pt-2">
-                    <span>{listing.side === 'sell' ? 'Final payable' : 'Final received'}</span>
-                    <span>PKR {(listing.side === 'sell' ? totalPkr : totalPkr - platformFee).toFixed(2)}</span>
+                  <div className="flex justify-between border-t border-border pt-2 font-semibold">
+                    <span className="text-text-muted">{isBuyListing ? 'Total you will receive' : 'Total payable'}</span>
+                    <span className="text-text-primary">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               )
@@ -275,9 +309,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
             {/* Payment method selection */}
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">How will you pay?</label>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                {isBuyListing
+                  ? 'Select your payment receiving account (buyer will send payment here)'
+                  : 'How will you pay?'}
+              </label>
+              {isBuyListing && myMethods.length === 0 && (
+                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                  No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
-                {resolvedMethods.map((m) => (
+                {modalPaymentMethods.map((m) => (
                   <button
                     type="button"
                     key={m.id}
@@ -291,8 +334,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
 
-            {/* Buyer's token receiving address — only for sell listings (buyer is receiving tokens) */}
-            {listing.side === 'sell' && (
+            {/* Buyer's token receiving address — only for SELL listings (buyer receives tokens) */}
+            {!isBuyListing && (
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1.5">
                   {buyerAddressLabel(listing.tokenDeliveryType, listing.token.name)}
@@ -309,10 +352,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             )}
 
             {/* Transfer instructions */}
-            <div className="bg-surface rounded-xl p-3 text-sm">
-              <p className="font-medium text-text-primary mb-1">Instructions from merchant:</p>
-              <p className="text-text-muted">{listing.settlementNote}</p>
-            </div>
+            {listing.settlementNote && (
+              <div className="bg-surface rounded-xl p-3 text-sm">
+                <p className="font-medium text-text-primary mb-1">Instructions from merchant:</p>
+                <p className="text-text-muted">{listing.settlementNote}</p>
+              </div>
+            )}
 
             <div className="flex gap-3">
               <button onClick={() => setShowModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>

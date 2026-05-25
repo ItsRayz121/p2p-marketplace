@@ -330,8 +330,20 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (listing.status !== 'active') throw new AppError('CONFLICT', 'Listing is not active', 409)
   if (!listing.merchantProfile.isActive) throw new AppError('CONFLICT', 'Merchant is not active', 409)
   if (listing.merchantProfile.userId === buyerId) throw new AppError('CONFLICT', 'Cannot trade with yourself', 409)
-  if (!listing.paymentMethods.includes(data.paymentMethod)) throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
   if (listing.availableAmount.lte(0)) throw new AppError('CONFLICT', 'Listing has no available tokens', 409)
+
+  // BUY listings: listing creator = buyer (pays PKR), trade taker = seller (sends tokens, receives PKR).
+  // SELL listings: listing creator = seller (sends tokens), trade taker = buyer (pays PKR).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isBuyListing = (listing as any).side === 'buy'
+  const actualBuyerId = isBuyListing ? listing.merchantProfile.userId : buyerId
+  const actualSellerId = isBuyListing ? buyerId : listing.merchantProfile.userId
+
+  // For SELL listings the taker picks from the listing's accepted payment methods.
+  // For BUY listings the taker is the seller and provides their own receiving account.
+  if (!isBuyListing && !listing.paymentMethods.includes(data.paymentMethod)) {
+    throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
+  }
 
   // Token amount is required — takers always specify quantity in tokens.
   if (data.tokenAmount === undefined) throw new AppError('VALIDATION_ERROR', 'tokenAmount is required', 400)
@@ -341,11 +353,14 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (tradeTokenAmount.lt(listing.minOrderTokens)) throw new AppError('VALIDATION_ERROR', `Minimum order is ${listing.minOrderTokens.toString()} ${listing.token.symbol}`, 400)
   if (tradeTokenAmount.gt(listing.maxOrderTokens)) throw new AppError('VALIDATION_ERROR', `Maximum order is ${listing.maxOrderTokens.toString()} ${listing.token.symbol}`, 400)
 
-  // Fetch and snapshot seller's payment account details
+  // Snapshot the payment account that will RECEIVE the PKR payment (always the seller).
+  // For SELL listings: seller = listing creator — look up their saved method.
+  // For BUY listings: seller = trade taker (buyerId param) — look up their saved method.
+  const paymentMethodOwnerId = isBuyListing ? buyerId : listing.merchantProfile.userId
   const sellerPaymentMethod = await db.paymentMethod.findFirst({
-    where: { id: data.paymentMethod, userId: listing.merchantProfile.userId },
+    where: { id: data.paymentMethod, userId: paymentMethodOwnerId },
   })
-  if (!sellerPaymentMethod) throw new AppError('CONFLICT', 'Seller payment method no longer available', 409)
+  if (!sellerPaymentMethod) throw new AppError('CONFLICT', 'Payment method not found or does not belong to you', 409)
 
   const PM_LABELS: Record<string, string> = { jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer' }
   const sellerPaymentSnapshot = {
@@ -357,6 +372,12 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     ...(sellerPaymentMethod.ibanNumber ? { ibanNumber: sellerPaymentMethod.ibanNumber } : {}),
     ...(sellerPaymentMethod.accountNumber ? { accountNumber: sellerPaymentMethod.accountNumber } : {}),
   }
+
+  // Buyer's token receiving address:
+  // For SELL listings: provided by trade taker (buyer) at trade start.
+  // For BUY listings: already stored on the listing (listing creator's address).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const actualBuyerSettlementId = isBuyListing ? ((listing as any).settlementMethod ?? null) : (data.buyerSettlementId ?? null)
 
   const expiresAt = new Date(Date.now() + (listing.tradeWindowMins ?? 45) * 60 * 1000)
 
@@ -384,8 +405,8 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     const trade = await tx.ctmTrade.create({
       data: {
         listingId: listing.id,
-        buyerId,
-        sellerId: listing.merchantProfile.userId,
+        buyerId: actualBuyerId,
+        sellerId: actualSellerId,
         tokenId: listing.tokenId,
         settlementType: listing.settlementType,
         tokenAmount: tradeTokenAmount,
@@ -393,7 +414,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         fiatAmount,
         paymentMethod: data.paymentMethod,
         settlementMethod: listing.settlementMethod,
-        buyerSettlementId: data.buyerSettlementId ?? null,
+        buyerSettlementId: actualBuyerSettlementId,
         sellerPaymentSnapshot: sellerPaymentSnapshot as never,
         status: 'awaiting_payment',
         expiresAt,
@@ -402,6 +423,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
       },
     })
 
+    // Notify the listing creator (buyer for BUY listings, seller for SELL listings)
     notify(listing.merchantProfile.userId, 'ctm_trade_created', 'New CTM Trade', `New trade for your ${listing.token.symbol} listing`, { tradeRef: trade.tradeRef })
 
     return trade
