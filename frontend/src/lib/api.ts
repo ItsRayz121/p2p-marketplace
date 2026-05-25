@@ -1381,11 +1381,15 @@ export const adminApi = {
 
   // Disputes
   getDisputes: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ disputes: Trade[]; total: number }>('/admin/disputes' + buildQs(params)),
+    apiRequest<{ disputes: Trade[]; total: number; pagination?: unknown }>('/admin/disputes' + buildQs(params)),
   getDispute: (id: string) =>
     apiRequest<Trade>(`/admin/disputes/${id}`),
-  resolveDispute: (tradeId: string, data: { winner: 'buyer' | 'seller'; resolution: string; resolutionNote?: string }) =>
-    apiRequest<Trade>(`/admin/disputes/${tradeId}/resolve`, { method: 'POST', body: JSON.stringify(data) }),
+  resolveDispute: (disputeId: string, data: { winner: 'buyer' | 'seller'; resolution: string; resolutionNote?: string }) =>
+    apiRequest<Trade>(`/admin/disputes/${disputeId}/resolve`, { method: 'POST', body: JSON.stringify(data) }),
+  closeDispute: (id: string, data: { note: string }) =>
+    apiRequest<void>(`/admin/disputes/${id}/close`, { method: 'POST', body: JSON.stringify(data) }),
+  addDisputeNote: (id: string, data: { note: string }) =>
+    apiRequest<void>(`/admin/disputes/${id}/note`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Instant Buy
   getInstantBuyOrders: (params?: Record<string, string | number | undefined>) =>
@@ -1413,10 +1417,20 @@ export const adminApi = {
     apiRequest<void>(`/admin/withdrawals/${id}/release-hold`, { method: 'POST' }),
   overrideWithdrawalRisk: (id: string, data: { note: string; overrideTier?: number }) =>
     apiRequest<void>(`/admin/withdrawals/${id}/risk-override`, { method: 'POST', body: JSON.stringify(data) }),
+  markWithdrawalResolved: (id: string, data: { note: string }) =>
+    apiRequest<void>(`/admin/withdrawals/${id}/mark-resolved`, { method: 'POST', body: JSON.stringify(data) }),
   getWithdrawalTiers: () =>
     apiRequest<{ tier1MaxUsd: number; tier2MaxUsd: number; tier3MaxUsd: number; autoApproveEnabled: boolean; firstWithdrawalReview: boolean; newWalletReview: boolean; velocityWindowMins: number; velocityMaxCount: number; coinPricesUsd: Record<string, number> }>('/admin/withdrawal-tiers'),
   updateWithdrawalTiers: (data: Record<string, unknown>) =>
     apiRequest<void>('/admin/withdrawal-tiers', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Ratings
+  getAdminRatings: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ ratings: unknown[]; pagination: { page: number; limit: number; total: number; pages: number } }>('/admin/ratings' + buildQs(params)),
+  hideRating: (id: string) =>
+    apiRequest<void>(`/admin/ratings/${id}/hide`, { method: 'POST' }),
+  unhideRating: (id: string) =>
+    apiRequest<void>(`/admin/ratings/${id}/unhide`, { method: 'POST' }),
 
   // Config
   getConfig: () =>

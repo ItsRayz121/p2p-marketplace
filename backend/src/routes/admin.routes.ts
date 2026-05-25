@@ -607,7 +607,13 @@ export async function adminRoutes(app: FastifyInstance) {
     const { page, limit, skip } = paginationParams(query)
 
     const where: Record<string, unknown> = {}
-    if (query.status) where.status = query.status
+    if (query.status && query.status !== 'all') {
+      if (query.status === 'open') {
+        where.status = { in: ['open', 'escalated'] }
+      } else {
+        where.status = query.status
+      }
+    }
 
     const [disputes, total] = await Promise.all([
       db.dispute.findMany({
@@ -618,19 +624,34 @@ export async function adminRoutes(app: FastifyInstance) {
         include: {
           trade: {
             include: {
-              buyer: { select: { username: true, email: true } },
-              seller: { select: { username: true, email: true } },
+              buyer: { select: { id: true, username: true, email: true } },
+              seller: { select: { id: true, username: true, email: true } },
+              messages: { orderBy: { createdAt: 'asc' }, select: { id: true, senderId: true, message: true, createdAt: true } },
+              ad: { select: { side: true } },
             },
           },
+          messages: { orderBy: { createdAt: 'asc' } },
           _count: { select: { messages: true } },
         },
       }),
       db.dispute.count({ where }),
     ])
 
+    // Resolve openedBy user for each dispute
+    const openedByIds = [...new Set(disputes.map((d) => d.openedById).filter(Boolean))]
+    const openedByUsers = openedByIds.length > 0
+      ? await db.user.findMany({ where: { id: { in: openedByIds as string[] } }, select: { id: true, username: true, email: true } })
+      : []
+    const openedByMap = Object.fromEntries(openedByUsers.map((u) => [u.id, u]))
+
+    const enriched = disputes.map((d) => ({
+      ...d,
+      openedBy: openedByMap[d.openedById] ?? null,
+    }))
+
     return reply.send({
       success: true,
-      data: { disputes, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      data: { disputes: enriched, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
   })
 
@@ -643,13 +664,54 @@ export async function adminRoutes(app: FastifyInstance) {
           include: {
             buyer: { select: { id: true, username: true, email: true } },
             seller: { select: { id: true, username: true, email: true } },
+            messages: { orderBy: { createdAt: 'asc' }, select: { id: true, senderId: true, message: true, createdAt: true } },
+            ad: { select: { side: true } },
           },
         },
         messages: { orderBy: { createdAt: 'asc' } },
       },
     })
     if (!dispute) throw Errors.NOT_FOUND('Dispute')
-    return reply.send({ success: true, data: dispute })
+    const openedBy = dispute.openedById
+      ? await db.user.findUnique({ where: { id: dispute.openedById }, select: { id: true, username: true, email: true } })
+      : null
+    return reply.send({ success: true, data: { ...dispute, openedBy } })
+  })
+
+  // Close a dispute without picking a winner
+  app.post('/admin/disputes/:id/close', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ note: z.string().min(1).max(2000) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const dispute = await db.dispute.findUnique({ where: { id } })
+    if (!dispute) throw Errors.NOT_FOUND('Dispute')
+    if (dispute.status === 'resolved') throw new AppError('ALREADY_RESOLVED', 'Dispute is already resolved', 400)
+
+    await db.dispute.update({
+      where: { id },
+      data: { status: 'resolved', resolution: parsed.data.note, resolvedAt: new Date(), resolvedBy: req.user!.id },
+    })
+    await createAuditLog(req.user!.id, 'DISPUTE_CLOSED', 'Dispute', id, { note: parsed.data.note })
+    return reply.send({ success: true })
+  })
+
+  // Add admin note to dispute (as a DisputeMessage from the admin)
+  app.post('/admin/disputes/:id/note', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ note: z.string().min(1).max(2000) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const dispute = await db.dispute.findUnique({ where: { id } })
+    if (!dispute) throw Errors.NOT_FOUND('Dispute')
+
+    await db.disputeMessage.create({
+      data: { disputeId: id, senderId: req.user!.id, message: `[Admin Note] ${parsed.data.note}` },
+    })
+    await createAuditLog(req.user!.id, 'DISPUTE_NOTE_ADDED', 'Dispute', id, { note: parsed.data.note })
+    return reply.send({ success: true })
   })
 
   app.post('/admin/disputes/:id/resolve', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
@@ -1626,6 +1688,30 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     await createAuditLog(req.user!.id, 'WITHDRAWAL_HOLD_RELEASED', 'Withdrawal', id, {})
     return reply.send({ success: true, message: 'Hold released. Withdrawal returned to pending.' })
+  })
+
+  // Mark a withdrawal as manually resolved/refunded (for withdrawals handled outside platform).
+  app.post('/admin/withdrawals/:id/mark-resolved', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ note: z.string().min(1).max(500) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const withdrawal = await db.withdrawal.findUnique({ where: { id } })
+    if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
+    if (['sent', 'completed', 'rejected', 'cancelled'].includes(withdrawal.status)) {
+      throw new AppError('INVALID_STATUS', `Withdrawal is already in terminal status '${withdrawal.status}'`, 400)
+    }
+
+    await db.withdrawal.update({
+      where: { id },
+      data: { status: 'completed', completedAt: new Date(), adminNote: parsed.data.note },
+    })
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_MANUALLY_RESOLVED', 'Withdrawal', id, {
+      note: parsed.data.note,
+      previousStatus: withdrawal.status,
+    })
+    return reply.send({ success: true, message: 'Withdrawal marked as resolved.' })
   })
 
   // Admin risk override: acknowledge risk flags and reduce effective tier.
@@ -4697,5 +4783,63 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ success: true, data: result })
+  })
+
+  // ── Admin: Trade Ratings ────────────────────────────────────────────────────
+
+  app.get('/admin/ratings', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const page = Math.max(1, parseInt(query.page ?? '1'))
+    const limit = Math.min(50, parseInt(query.limit ?? '50'))
+    const skip = (page - 1) * limit
+
+    const [ratings, total] = await Promise.all([
+      db.tradeRating.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          trade: { select: { orderRef: true } },
+        },
+      }),
+      db.tradeRating.count(),
+    ])
+
+    // Resolve reviewer and reviewed user names
+    const userIds = [...new Set(ratings.flatMap((r) => [r.ratedByUserId, r.ratedUserId]))]
+    const users = await db.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, username: true, email: true },
+    })
+    const userMap = Object.fromEntries(users.map((u) => [u.id, u]))
+
+    const enriched = ratings.map((r) => ({
+      ...r,
+      reviewer: userMap[r.ratedByUserId] ?? null,
+      reviewedUser: userMap[r.ratedUserId] ?? null,
+    }))
+
+    return reply.send({
+      success: true,
+      data: { ratings: enriched, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
+
+  app.post('/admin/ratings/:id/hide', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const rating = await db.tradeRating.findUnique({ where: { id } })
+    if (!rating) throw Errors.NOT_FOUND('Rating')
+    await db.tradeRating.update({ where: { id }, data: { hidden: true } })
+    await createAuditLog(req.user!.id, 'RATING_HIDDEN', 'TradeRating', id, {})
+    return reply.send({ success: true })
+  })
+
+  app.post('/admin/ratings/:id/unhide', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const rating = await db.tradeRating.findUnique({ where: { id } })
+    if (!rating) throw Errors.NOT_FOUND('Rating')
+    await db.tradeRating.update({ where: { id }, data: { hidden: false } })
+    await createAuditLog(req.user!.id, 'RATING_UNHIDDEN', 'TradeRating', id, {})
+    return reply.send({ success: true })
   })
 }

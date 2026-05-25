@@ -132,7 +132,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             <p className="font-bold text-text-primary">PKR {Number(listing.pricePerUnit).toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-text-muted">Available</p>
+            <p className="text-xs text-text-muted">{listing.side === 'buy' ? 'Wanted' : 'Available'}</p>
             <p className="font-bold text-text-primary">{Number(listing.availableAmount).toLocaleString()} {listing.token.symbol}</p>
           </div>
           <div>
@@ -207,6 +207,37 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
             {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
+
+            {/* Order summary */}
+            {(() => {
+              const totalPkr = Number(listing.pricePerUnit) * Number(listing.availableAmount)
+              const platformFee = totalPkr * 0.005
+              return (
+                <div className="bg-surface rounded-xl border border-border p-4 space-y-2 text-sm">
+                  <p className="font-semibold text-text-primary mb-2">Order Summary</p>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Price per {listing.token.symbol}</span>
+                    <span className="font-medium text-text-primary">PKR {Number(listing.pricePerUnit).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Amount</span>
+                    <span className="font-medium text-text-primary">{Number(listing.availableAmount).toFixed(4)} {listing.token.symbol}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-2">
+                    <span className="text-text-muted">Total PKR</span>
+                    <span className="font-bold text-text-primary">PKR {totalPkr.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-text-muted">
+                    <span>Platform fee (0.5%)</span>
+                    <span>PKR {platformFee.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-text-muted">
+                    <span>Seller receives</span>
+                    <span>PKR {(totalPkr - platformFee).toFixed(2)}</span>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Payment method selection */}
             <div>

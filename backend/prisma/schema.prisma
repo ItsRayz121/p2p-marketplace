@@ -667,6 +667,7 @@ model TradeRating {
   rating        Int
   comment       String?  @db.VarChar(500)
   tags          String[]
+  hidden        Boolean  @default(false)
   createdAt     DateTime @default(now())
 
   @@unique([tradeId, ratedByUserId])
@@ -1756,6 +1757,8 @@ model CtmTrade {
   escrowCurrency    String?           @db.VarChar(20)
   escrowTxHash      String?           @db.VarChar(200)
   escrowConfirmedAt DateTime?
+  platformFeePkr    Decimal?          @db.Decimal(14, 4)
+  platformFeeUsdt   Decimal?          @db.Decimal(14, 6)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   proofs            CtmTradeProof[]

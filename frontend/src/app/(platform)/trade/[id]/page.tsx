@@ -38,6 +38,7 @@ interface ExtendedTrade extends Trade {
   sellerRated?: boolean
   buyerDeliveryMethod?: string
   buyerDeliveryAddress?: string
+  ratedByMe?: boolean
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -80,16 +81,13 @@ function statusLabel(status: string): string {
   return labels[status] ?? status
 }
 
-// ─── Rating Modal ─────────────────────────────────────────────────────────────
+// ─── Rating Tags & Inline Rating Form ─────────────────────────────────────────
 
 const RATING_TAGS = ['Fast Payment', 'Good Communication', 'Smooth Trade', 'Trustworthy', 'Patient']
 
-function RatingModal({
-  isOpen, onClose, onSubmit,
-}: {
-  isOpen: boolean
-  onClose: () => void
+function InlineRatingForm({ onSubmit, actionError }: {
   onSubmit: (rating: number, comment: string, tags: string[]) => Promise<void>
+  actionError: string | null
 }) {
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState('')
@@ -110,53 +108,101 @@ function RatingModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Rate this Trade">
-      <div className="space-y-5">
-        <div>
-          <p className="text-sm text-text-muted mb-2">How was your experience?</p>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                onClick={() => setRating(star)}
-                className={`text-2xl transition-transform hover:scale-110 ${star <= rating ? 'text-gold' : 'text-text-muted/30'}`}
-              >
-                ★
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {RATING_TAGS.map((tag) => (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm text-text-muted mb-2">How was your experience?</p>
+        <div className="flex gap-2">
+          {[1, 2, 3, 4, 5].map((star) => (
             <button
-              key={tag}
-              onClick={() => toggleTag(tag)}
-              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
-                tags.includes(tag)
-                  ? 'bg-primary text-white border-primary'
-                  : 'border-border text-text-secondary hover:border-primary/40'
-              }`}
+              key={star}
+              onClick={() => setRating(star)}
+              className={`text-2xl transition-transform hover:scale-110 ${star <= rating ? 'text-gold' : 'text-text-muted/30'}`}
             >
-              {tag}
+              ★
             </button>
           ))}
         </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {RATING_TAGS.map((tag) => (
+          <button
+            key={tag}
+            onClick={() => toggleTag(tag)}
+            className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+              tags.includes(tag)
+                ? 'bg-primary text-white border-primary'
+                : 'border-border text-text-secondary hover:border-primary/40'
+            }`}
+          >
+            {tag}
+          </button>
+        ))}
+      </div>
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Add a comment (optional)"
+        rows={3}
+        className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+      />
+      {actionError && (
+        <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{actionError}</p>
+      )}
+      <Button fullWidth loading={submitting} onClick={handleSubmit}>Submit Rating</Button>
+    </div>
+  )
+}
 
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="Add a comment (optional)"
-          rows={3}
-          className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-        />
+// ─── Completed Trade Card ──────────────────────────────────────────────────────
 
-        <div className="flex gap-3">
-          <Button variant="secondary" fullWidth onClick={onClose}>Skip</Button>
-          <Button fullWidth loading={submitting} onClick={handleSubmit}>Submit Rating</Button>
+function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, onRatingSubmit, actionError }: {
+  trade: ExtendedTrade
+  isUserBuyer: boolean
+  counterparty: string
+  ratedAlready: boolean
+  onRatingSubmit: (rating: number, comment: string, tags: string[]) => Promise<void>
+  actionError: string | null
+}) {
+  return (
+    <div className="bg-success/5 border border-success/20 rounded-xl p-6 mb-6 space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-xl">✅</div>
+        <div>
+          <h2 className="text-lg font-bold text-success">Trade Completed!</h2>
+          <p className="text-sm text-text-muted">Thank you for using PakSwap.</p>
         </div>
       </div>
-    </Modal>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="bg-white rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">Token</p>
+          <p className="font-semibold text-text-primary">{parseFloat(trade.amount).toFixed(4)} {trade.coin}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">Total PKR</p>
+          <p className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">Payment Method</p>
+          <p className="font-semibold text-text-primary">{trade.paymentMethod}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">{isUserBuyer ? 'Seller' : 'Buyer'}</p>
+          <p className="font-semibold text-text-primary">{counterparty}</p>
+        </div>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        {ratedAlready ? (
+          <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-text-primary mb-3">Rate your experience with {counterparty}</p>
+            <InlineRatingForm onSubmit={onRatingSubmit} actionError={actionError} />
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -180,7 +226,6 @@ export default function TradePage() {
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [showReleaseModal, setShowReleaseModal] = useState(false)
-  const [showRatingModal, setShowRatingModal] = useState(false)
   const [ratedAlready, setRatedAlready] = useState(false)
 
   const [showDisputeForm, setShowDisputeForm] = useState(false)
@@ -191,6 +236,7 @@ export default function TradePage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const prevMsgCountRef = useRef(0)
   const { upload, uploading } = useFileUpload('payment-proof')
 
   const fetchTrade = useCallback(async () => {
@@ -199,7 +245,9 @@ export default function TradePage() {
         tradesApi.getTrade(id),
         tradesApi.getMessages(id),
       ])
-      setTrade(tradeData as ExtendedTrade)
+      const extended = tradeData as ExtendedTrade
+      setTrade(extended)
+      if (extended.ratedByMe) setRatedAlready(true)
       setMessages(messagesData.messages)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load trade')
@@ -219,18 +267,13 @@ export default function TradePage() {
     }
   })
 
-  // Scroll chat to bottom
+  // Scroll chat to bottom only when new messages arrive
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  // Show rating modal after trade completes
-  useEffect(() => {
-    if (trade?.status === 'crypto_released' && !ratedAlready) {
-      const timeout = setTimeout(() => setShowRatingModal(true), 1000)
-      return () => clearTimeout(timeout)
+    if (messages.length > prevMsgCountRef.current) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [trade?.status, ratedAlready])
+    prevMsgCountRef.current = messages.length
+  }, [messages])
 
   const isUserBuyer = trade?.buyerId === user?.id
 
@@ -355,11 +398,13 @@ export default function TradePage() {
   }
 
   const handleRatingSubmit = async (rating: number, comment: string, tags: string[]) => {
+    setActionError(null)
     try {
       await tradesApi.rateTrade(id, { rating, comment: comment.trim() || undefined, tags: tags.length ? tags : undefined })
-    } catch { /* non-critical */ }
-    setRatedAlready(true)
-    setShowRatingModal(false)
+      setRatedAlready(true)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to submit rating')
+    }
   }
 
   if (loading) return <LoadingState message="Loading trade..." />
@@ -408,6 +453,18 @@ export default function TradePage() {
         </Badge>
       </div>
 
+      {/* Completed card */}
+      {trade.status === 'crypto_released' && (
+        <CompletedTradeCard
+          trade={trade}
+          isUserBuyer={isUserBuyer}
+          counterparty={counterparty}
+          ratedAlready={ratedAlready}
+          onRatingSubmit={handleRatingSubmit}
+          actionError={actionError}
+        />
+      )}
+
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Left: status + actions */}
         <div className="space-y-5">
@@ -451,7 +508,9 @@ export default function TradePage() {
           <div className="bg-white rounded-xl border border-border p-5">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-base">💳</span>
-              <h2 className="text-sm font-semibold text-text-primary">Payment Settlement</h2>
+              <h2 className="text-sm font-semibold text-text-primary">
+                {isUserBuyer ? 'You are sending PKR payment' : 'Awaiting PKR payment from buyer'}
+              </h2>
             </div>
             <div className="space-y-2 text-sm">
               <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
@@ -506,7 +565,9 @@ export default function TradePage() {
                   />
                   {trade.buyerDeliveryAddress && (
                     <div className="flex justify-between items-start gap-2">
-                      <span className="text-text-muted flex-shrink-0">Address</span>
+                      <span className="text-text-muted flex-shrink-0">
+                        {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
+                      </span>
                       <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
                     </div>
                   )}
@@ -515,7 +576,9 @@ export default function TradePage() {
                 /* Legacy: show buyerWalletAddress if delivery fields not set */
                 trade.buyerWalletAddress ? (
                   <div className="flex justify-between items-start gap-2">
-                    <span className="text-text-muted flex-shrink-0">Wallet</span>
+                    <span className="text-text-muted flex-shrink-0">
+                      {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
+                    </span>
                     <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
                   </div>
                 ) : (
@@ -524,14 +587,15 @@ export default function TradePage() {
               )}
               {trade.sellerTxHash && (
                 <div className="flex justify-between items-start gap-2">
-                  <span className="text-text-muted flex-shrink-0">Tx Hash</span>
+                  <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
                   <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions — hidden for completed trades (CompletedTradeCard handles the final state) */}
+          {trade.status !== 'crypto_released' && (
           <div className="bg-white rounded-xl border border-border p-5 space-y-3">
             <h2 className="text-sm font-semibold text-text-primary mb-1">Actions</h2>
 
@@ -576,7 +640,7 @@ export default function TradePage() {
                   type="text"
                   value={txHash}
                   onChange={(e) => setTxHash(e.target.value)}
-                  placeholder="Enter transaction hash (txHash)"
+                  placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)"
                   className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
                 />
                 <div className="flex gap-2">
@@ -650,6 +714,7 @@ export default function TradePage() {
               <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{actionError}</p>
             )}
           </div>
+          )}
         </div>
 
         {/* Right: Chat */}
@@ -731,11 +796,6 @@ export default function TradePage() {
         confirmVariant="primary"
       />
 
-      <RatingModal
-        isOpen={showRatingModal}
-        onClose={() => setShowRatingModal(false)}
-        onSubmit={handleRatingSubmit}
-      />
     </div>
   )
 }

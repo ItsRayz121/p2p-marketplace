@@ -15,6 +15,7 @@ interface Listing {
   minOrderPkr: string
   maxOrderPkr: string
   paymentMethods: string[]
+  resolvedPaymentMethods?: { id: string; type: string; label: string }[]
   token: { id: string; slug: string; name: string; symbol: string; logoUrl?: string; riskTier: string }
   merchantProfile: { tier: string; totalCtmTrades: number; user: { id: string; username: string } }
 }
@@ -111,6 +112,10 @@ export default function BrowseListingsPage() {
                 <div className="sm:flex-1">
                   <p className="text-xl font-bold text-text-primary">PKR {Number(l.pricePerUnit).toLocaleString()}</p>
                   <p className="text-xs text-text-muted">per {l.token.symbol}</p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    <span className="font-medium">{l.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
+                    {Number(l.availableAmount).toFixed(4)} {l.token.symbol}
+                  </p>
                 </div>
 
                 <div className="sm:w-44">
@@ -126,27 +131,32 @@ export default function BrowseListingsPage() {
                   </div>
                 </div>
 
-                {l.paymentMethods.length > 0 && (
-                  <div className="sm:w-36">
-                    <p className="text-xs text-text-muted mb-1">Payment</p>
-                    <div className="flex flex-wrap gap-1">
-                      {l.paymentMethods.slice(0, 3).map((pm) => (
-                        <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
-                          <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
-                          {pm}
-                        </span>
-                      ))}
-                      {l.paymentMethods.length > 3 && (
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface text-text-secondary">
-                          +{l.paymentMethods.length - 3}
-                        </span>
-                      )}
+                {(() => {
+                  const methods = l.resolvedPaymentMethods?.length
+                    ? l.resolvedPaymentMethods
+                    : l.paymentMethods.map((pm) => ({ id: pm, type: 'other', label: pm }))
+                  return methods.length > 0 ? (
+                    <div className="sm:w-36">
+                      <p className="text-xs text-text-muted mb-1">Payment</p>
+                      <div className="flex flex-wrap gap-1">
+                        {methods.slice(0, 3).map((pm) => (
+                          <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm.label)}`}>
+                            <EntityLogo type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'} slug={pm.label} size="xs" className="flex-shrink-0" />
+                            {pm.label}
+                          </span>
+                        ))}
+                        {methods.length > 3 && (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface text-text-secondary">
+                            +{methods.length - 3}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : null
+                })()}
 
                 <Link href={`/ctm/listings/${l.id}`} className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${l.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-                  {l.side === 'sell' ? 'Buy' : 'Sell'}
+                  {l.side === 'sell' ? `Buy ${l.token.symbol}` : `Sell ${l.token.symbol}`}
                 </Link>
               </div>
             </div>

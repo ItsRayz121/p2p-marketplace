@@ -44,15 +44,15 @@ function settlementLabel(type?: string): string {
 }
 
 function proofHashPlaceholder(settlementType?: string): string {
-  if (settlementType === 'ON_CHAIN') return '0xabc123… or transaction ID'
+  if (settlementType === 'ON_CHAIN') return 'Paste the blockchain transaction hash (e.g. 0xabc123…)'
   if (settlementType === 'HYBRID') return '0xabc123… or transfer reference'
   return 'Transfer reference / ID'
 }
 
 function proofHashLabel(settlementType?: string): string {
   if (settlementType === 'ON_CHAIN') return 'Transaction Hash'
-  if (settlementType === 'HYBRID') return 'Transaction Hash or Reference'
-  return 'Transfer Reference / ID'
+  if (settlementType === 'HYBRID') return 'Transaction Hash / Reference'
+  return 'Transaction ID / Reference'
 }
 
 function isHashRequired(settlementType?: string): boolean {
@@ -542,9 +542,9 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                     placeholder={proofHashPlaceholder(trade.settlementType)}
                     className="w-full border border-border rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
-                  {trade.token.explorerUrl && (
+                  {(trade.settlementType === 'ON_CHAIN' || trade.token.explorerUrl) && (
                     <p className="text-xs text-text-muted mt-1">
-                      Buyer will verify this on the blockchain explorer. Make sure you copy the correct hash.
+                      Paste the blockchain transaction hash so the buyer can verify it on the explorer.
                     </p>
                   )}
                   {trade.settlementType === 'MANUAL' && (

@@ -59,7 +59,11 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           <p className="text-xl font-bold text-text-primary">
             PKR {Number(ad.price).toLocaleString()}
           </p>
-          <p className="text-xs text-text-muted">per USDT</p>
+          <p className="text-xs text-text-muted">per {ad.coin}</p>
+          <p className="text-xs text-text-muted mt-0.5">
+            <span className="font-medium">{ad.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
+            {Number(ad.availableAmount).toFixed(4)} {ad.coin}
+          </p>
         </div>
 
         {/* Limits */}
@@ -99,7 +103,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
         {/* CTA */}
         {parseFloat(ad.availableAmount) > 0 ? (
           <Link href={`/trade/new?adId=${ad.id}`} className="flex-shrink-0">
-            <Button size="sm">{ad.side === 'sell' ? 'Buy' : 'Sell'}</Button>
+            <Button size="sm">{ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}</Button>
           </Link>
         ) : (
           <span className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-surface text-text-muted border border-border">

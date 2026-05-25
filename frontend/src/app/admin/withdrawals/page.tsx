@@ -148,6 +148,11 @@ export default function WithdrawalsPage() {
   const [adminNote, setAdminNote] = useState('')
   const [confirmMarkSent, setConfirmMarkSent] = useState(false)
 
+  // mark-resolved modal
+  const [resolvedOpen, setResolvedOpen] = useState(false)
+  const [resolvedNote, setResolvedNote] = useState('')
+  const [confirmResolved, setConfirmResolved] = useState(false)
+
   const limit = 20
 
   const fetchWithdrawals = useCallback(async () => {
@@ -183,6 +188,26 @@ export default function WithdrawalsPage() {
     setAdminNote('')
     setActionError(null)
     setMarkSentOpen(true)
+  }
+
+  function openMarkResolved(w: Withdrawal) {
+    setSelected(w)
+    setResolvedNote('')
+    setActionError(null)
+    setResolvedOpen(true)
+  }
+
+  async function handleMarkResolved() {
+    if (!selected || !resolvedNote.trim()) return
+    setActionError(null)
+    try {
+      await adminApi.markWithdrawalResolved(selected.id, { note: resolvedNote.trim() })
+      setConfirmResolved(false)
+      setResolvedOpen(false)
+      fetchWithdrawals()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to mark as resolved')
+    }
   }
 
   async function handleApprove() {
@@ -640,6 +665,20 @@ export default function WithdrawalsPage() {
             {['rejected', 'cancelled', 'sent', 'completed'].includes(selected.status) && (
               <p className="text-text-muted text-sm text-center">This withdrawal has been finalised.</p>
             )}
+
+            {/* Mark as Resolved — for manually handled withdrawals stuck in pending/first_approved */}
+            {['pending', 'first_approved', 'on_hold'].includes(selected.status) && (
+              <div className="pt-2 border-t border-border">
+                <p className="text-xs text-text-muted mb-2">If this withdrawal was already handled manually outside the platform:</p>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => { setModalOpen(false); openMarkResolved(selected) }}
+                >
+                  Mark as Resolved (Manually Refunded)
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -762,6 +801,59 @@ export default function WithdrawalsPage() {
         title="Confirm Mark as Sent"
         description={`Mark ${selected?.amount} ${selected?.coin} withdrawal as sent with tx ${txHash.slice(0, 16)}...? This cannot be undone.`}
         confirmLabel="Mark as Sent"
+        confirmVariant="primary"
+      />
+
+      {/* ── Mark Resolved Modal ─────────────────────────────────────────────── */}
+      <Modal isOpen={resolvedOpen} onClose={() => setResolvedOpen(false)} title="Mark as Resolved (Manually Refunded)" size="lg">
+        {selected && (
+          <div className="space-y-5">
+            <div className="p-4 bg-warning/5 border border-warning/20 rounded-xl text-sm">
+              <p className="font-medium text-warning mb-1">Use this only if the withdrawal was handled manually</p>
+              <p className="text-text-secondary">
+                This will mark <span className="font-bold">{selected.amount} {selected.coin}</span> as resolved
+                and remove it from the pending counter. An audit log will be created.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                Resolution Note <span className="text-danger">*</span>
+              </label>
+              <textarea
+                value={resolvedNote}
+                onChange={(e) => setResolvedNote(e.target.value)}
+                rows={3}
+                placeholder="e.g. Manually refunded via bank transfer. Ref #12345. Confirmed with user via WhatsApp."
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+              />
+            </div>
+            {actionError && (
+              <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
+                {actionError}
+              </div>
+            )}
+            <div className="flex gap-3 pt-2">
+              <Button variant="secondary" onClick={() => setResolvedOpen(false)} className="flex-1">Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => { if (resolvedNote.trim()) setConfirmResolved(true) }}
+                disabled={!resolvedNote.trim()}
+                className="flex-1"
+              >
+                Confirm Resolution
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmModal
+        isOpen={confirmResolved}
+        onClose={() => setConfirmResolved(false)}
+        onConfirm={handleMarkResolved}
+        title="Confirm Mark as Resolved"
+        description={`Mark this ${selected?.amount} ${selected?.coin} withdrawal as manually resolved? Dashboard counter will update immediately.`}
+        confirmLabel="Mark as Resolved"
         confirmVariant="primary"
       />
     </div>

@@ -366,6 +366,12 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     const escrowCurrency = isOnChain ? (process.env.PLATFORM_ESCROW_CURRENCY ?? 'USDT_TRC20') : null
     // escrowAmount mirrors fiatAmount but represents USDT; rate bridging is handled off-chain for Phase 2
     const escrowAmount = isOnChain ? listing.pricePerUnit.mul(listing.availableAmount) : null
+    // fiatAmount computed below (need it for fee calculation)
+
+    const fiatAmount = listing.pricePerUnit.mul(listing.availableAmount)
+    // Platform fee: configurable via env (default 0.5% of PKR amount)
+    const feePct = parseFloat(process.env.CTM_PLATFORM_FEE_PCT ?? '0.5') / 100
+    const platformFeePkr = fiatAmount.mul(feePct)
 
     const trade = await tx.ctmTrade.create({
       data: {
@@ -376,13 +382,14 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         settlementType: listing.settlementType,
         tokenAmount: listing.availableAmount,
         pricePerUnit: listing.pricePerUnit,
-        fiatAmount: listing.pricePerUnit.mul(listing.availableAmount),
+        fiatAmount,
         paymentMethod: data.paymentMethod,
         settlementMethod: listing.settlementMethod,
         buyerSettlementId: data.buyerSettlementId ?? null,
         sellerPaymentSnapshot: sellerPaymentSnapshot as never,
         status: 'awaiting_payment',
         expiresAt,
+        platformFeePkr,
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
       },
     })

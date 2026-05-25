@@ -195,6 +195,7 @@ export default function AdminDashboardPage() {
     { label: 'KYC Queue',     href: '/admin/kyc' },
     { label: 'Merchant KYC',  href: '/admin/merchant-kyc' },
     { label: 'Withdrawals',   href: '/admin/withdrawals' },
+    { label: 'Ratings',      href: '/admin/ratings' },
     { label: 'Instant Buy',   href: '/admin/instant-buy' },
     { label: 'Wallet',        href: '/admin/wallet' },
     { label: 'Gas Fee',       href: '/admin/gas' },

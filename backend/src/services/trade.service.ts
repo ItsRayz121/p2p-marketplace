@@ -8,6 +8,7 @@ import { sendTradeEmail } from './email.service'
 import { queues } from '../queues/definitions'
 import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
+import { createAdminNotif } from './adminNotification.service'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +228,7 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
   const updated = await db.trade.findUniqueOrThrow({ where: { id: tradeId } })
 
   notify(tradeForEmail.sellerId, 'trade', 'Payment Proof Uploaded', 'The buyer has uploaded payment proof. Please review and confirm.', { tradeId }, tradeId)
+  createAdminNotif({ category: 'TRADE', title: 'Payment Proof Uploaded', body: `Trade #${tradeForEmail.orderRef} — buyer uploaded payment proof.`, href: `/admin/trades/${tradeId}` })
 
   // Notify seller via email
   await sendTradeEmail(
@@ -288,6 +290,7 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
   })
 
   notify(updated.buyerId, 'trade', 'Crypto Is on the Way', 'The seller has sent the crypto. Please verify and release once received.', { tradeId }, tradeId)
+  createAdminNotif({ category: 'TRADE', title: 'Token Transfer Proof Submitted', body: `Trade #${updated.orderRef} — seller submitted token transfer hash.`, href: `/admin/trades/${tradeId}` })
   return updated
 }
 
@@ -344,6 +347,7 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
   }
 
   notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId }, tradeId)
+  createAdminNotif({ category: 'TRADE', title: 'Trade Completed', body: `Trade #${tradeDetails.orderRef} has been completed.`, href: `/admin/trades/${tradeId}` })
 
   // Send completion emails
   await sendTradeEmail(
@@ -465,8 +469,8 @@ export async function openDispute(
 
   const otherPartyId = openedById === trade.buyerId ? trade.sellerId : trade.buyerId
   notify(otherPartyId, 'dispute', 'Dispute Opened', `A dispute has been opened on your trade. Reason: ${reason}`, { tradeId, disputeId: dispute.id }, tradeId)
-  // Notify admins via a system user placeholder — admin panel polls disputes directly
   notify(openedById, 'dispute', 'Dispute Submitted', 'Your dispute has been submitted and will be reviewed by an admin.', { tradeId, disputeId: dispute.id }, tradeId)
+  createAdminNotif({ category: 'DISPUTE', title: 'New Dispute Opened', body: `Dispute on Trade #${trade.orderRef}: ${reason}`, href: `/admin/disputes` })
 
   return dispute
 }
@@ -603,6 +607,18 @@ export async function rateTrade(
     },
   })
 
+  // Resolve usernames for admin notification
+  const [rater, ratee] = await Promise.all([
+    db.user.findUnique({ where: { id: raterId }, select: { username: true } }),
+    db.user.findUnique({ where: { id: rateeId }, select: { username: true } }),
+  ])
+  createAdminNotif({
+    category: 'TRADE',
+    title: 'Rating Submitted',
+    body: `${rater?.username ?? raterId} rated ${ratee?.username ?? rateeId} ${rating}★ on Trade #${trade.orderRef}${comment ? `: "${comment}"` : ''}`,
+    href: `/admin/ratings`,
+  })
+
   return tradeRating
 }
 
@@ -675,5 +691,11 @@ export async function getTradeById(tradeId: string, userId: string, role: string
     throw new AppError('FORBIDDEN', 'Not authorized to view this trade', 403)
   }
 
-  return trade
+  // Check if the requesting user has already rated this trade
+  const ratedByMeRecord = await db.tradeRating.findUnique({
+    where: { tradeId_ratedByUserId: { tradeId, ratedByUserId: userId } },
+    select: { id: true },
+  })
+
+  return { ...trade, ratedByMe: !!ratedByMeRecord }
 }
