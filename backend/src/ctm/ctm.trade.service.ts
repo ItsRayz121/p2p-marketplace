@@ -341,8 +341,10 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (tradeTokenAmount.gt(listing.availableAmount)) throw new AppError('VALIDATION_ERROR', 'Requested amount exceeds available listing amount', 400)
 
   const fiatRequired = listing.pricePerUnit.mul(tradeTokenAmount)
-  if (fiatRequired.lt(listing.minOrderPkr)) throw new AppError('VALIDATION_ERROR', `Minimum order is PKR ${listing.minOrderPkr}`, 400)
-  if (fiatRequired.gt(listing.maxOrderPkr)) throw new AppError('VALIDATION_ERROR', `Maximum order is PKR ${listing.maxOrderPkr}`, 400)
+  if (data.tokenAmount !== undefined) {
+    if (fiatRequired.lt(listing.minOrderPkr)) throw new AppError('VALIDATION_ERROR', `Minimum order is PKR ${listing.minOrderPkr}`, 400)
+    if (fiatRequired.gt(listing.maxOrderPkr)) throw new AppError('VALIDATION_ERROR', `Maximum order is PKR ${listing.maxOrderPkr}`, 400)
+  }
 
   // Fetch and snapshot seller's payment account details
   const sellerPaymentMethod = await db.paymentMethod.findFirst({

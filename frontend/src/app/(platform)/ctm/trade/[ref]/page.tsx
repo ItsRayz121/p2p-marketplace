@@ -115,6 +115,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const [ratingError, setRatingError] = useState('')
   const [error, setError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const prevMsgCountRef = useRef(0)
 
   const fetchTrade = async () => {
     try {
@@ -127,8 +128,12 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const fetchMessages = async () => {
     try {
       const res = await ctmApi.getMessages(ref)
-      setMessages(res as Message[])
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      const msgs = res as Message[]
+      setMessages(msgs)
+      if (msgs.length > prevMsgCountRef.current) {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        prevMsgCountRef.current = msgs.length
+      }
     } catch { /* ignore */ }
   }
 

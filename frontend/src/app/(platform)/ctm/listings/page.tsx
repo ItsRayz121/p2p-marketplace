@@ -28,12 +28,10 @@ interface Listing {
 }
 
 function StarRating({ rating, size = 'sm' }: { rating: number; size?: 'sm' | 'xs' }) {
-  const r = Math.round(rating * 2) / 2
+  const full = Math.round(rating)
   return (
     <span className={`text-yellow-400 ${size === 'xs' ? 'text-xs' : 'text-sm'}`} title={`${rating.toFixed(1)} / 5`}>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <span key={i}>{r >= i ? '★' : r >= i - 0.5 ? '⭐' : '☆'}</span>
-      ))}
+      {'★'.repeat(full)}{'☆'.repeat(5 - full)}
     </span>
   )
 }
