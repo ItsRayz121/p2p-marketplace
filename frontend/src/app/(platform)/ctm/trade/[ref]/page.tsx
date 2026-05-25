@@ -148,6 +148,10 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const [rating, setRating] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
   const [ratingError, setRatingError] = useState('')
+  const [platformRating, setPlatformRating] = useState(5)
+  const [platformComment, setPlatformComment] = useState('')
+  const [platformRatingDone, setPlatformRatingDone] = useState(false)
+  const [traderRatingDone, setTraderRatingDone] = useState(false)
   const [error, setError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
   const prevMsgCountRef = useRef(0)
@@ -258,10 +262,15 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
     setRatingError('')
     try {
       await ctmApi.rateTrade(ref, { rating, comment: ratingComment || undefined })
-      setRatingOpen(false)
+      setTraderRatingDone(true)
+      // Keep panel open so user can also rate the platform
     } catch (e: unknown) {
       setRatingError((e as Error).message ?? 'Failed to submit rating')
     }
+  }
+
+  const handlePlatformRate = () => {
+    setPlatformRatingDone(true)
   }
 
   return (
@@ -343,10 +352,12 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           {/* ── Payment Details ── */}
           <div className="bg-white border border-border rounded-xl p-5">
             <h2 className="font-semibold text-text-primary mb-3">
-              {isBuyer ? 'Seller Payment Details' : 'Buyer Payment Details'}
+              {isBuyer ? 'Seller Payment Details' : 'Your Payment Details'}
             </h2>
             <p className="text-xs text-text-muted mb-2">
-              {isBuyer ? 'Send' : 'Receive'} PKR {Number(trade.fiatAmount).toLocaleString()} {isBuyer ? 'to' : 'from'} the following account:
+              {isBuyer
+                ? `Send PKR ${Number(trade.fiatAmount).toLocaleString()} to the following seller account.`
+                : `You will receive PKR ${Number(trade.fiatAmount).toLocaleString()} from the buyer to this account.`}
             </p>
             {trade.sellerPaymentSnapshot ? (
               <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
@@ -383,7 +394,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           <div className="bg-white border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-text-primary">
-                {isBuyer ? 'Buyer Token Delivery' : 'Seller Token Delivery'}
+                {isBuyer ? 'Your Token Receiving Details' : 'Token Delivery Required'}
               </h2>
               <span className="text-xs px-2 py-0.5 rounded-full bg-surface text-text-muted font-medium">
                 {settlementLabel(trade.settlementType)}
@@ -702,19 +713,63 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
 
           {/* ── Rating ── */}
           {ratingOpen && (
-            <div className="bg-white border border-border rounded-xl p-5 space-y-3">
-              <h2 className="font-semibold text-text-primary">Rate this trade</h2>
-              {ratingError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{ratingError}</div>}
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <button key={s} onClick={() => setRating(s)} className={`text-2xl ${s <= rating ? 'text-yellow-400' : 'text-gray-200'}`}>★</button>
-                ))}
+            <div className="bg-white border border-border rounded-xl p-5 space-y-5">
+              <h2 className="font-semibold text-text-primary">Leave a Review</h2>
+
+              {/* Trader rating */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">Rate this trader</p>
+                  <p className="text-xs text-text-muted">How was your experience with @{isBuyer ? trade.seller.username : trade.buyer.username}?</p>
+                </div>
+                {traderRatingDone ? (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">
+                    ✓ Trader rating submitted.
+                  </div>
+                ) : (
+                  <>
+                    {ratingError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{ratingError}</div>}
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <button key={s} onClick={() => setRating(s)} className={`text-2xl ${s <= rating ? 'text-yellow-400' : 'text-gray-200'}`}>★</button>
+                      ))}
+                    </div>
+                    <textarea rows={2} placeholder="Trader feedback (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
+                    <div className="flex gap-2">
+                      <button onClick={() => setRatingOpen(false)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
+                      <button onClick={handleRate} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold">Submit Trader Rating</button>
+                    </div>
+                  </>
+                )}
               </div>
-              <textarea rows={2} placeholder="Comment (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
-              <div className="flex gap-2">
-                <button onClick={() => setRatingOpen(false)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
-                <button onClick={handleRate} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold">Submit</button>
+
+              {/* Platform rating */}
+              <div className="border-t border-border pt-4 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">Rate PakSwap platform</p>
+                  <p className="text-xs text-text-muted">Share suggestions to improve PakSwap.</p>
+                </div>
+                {platformRatingDone ? (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">
+                    ✓ Platform feedback received. Thank you!
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <button key={s} onClick={() => setPlatformRating(s)} className={`text-2xl ${s <= platformRating ? 'text-yellow-400' : 'text-gray-200'}`}>★</button>
+                      ))}
+                    </div>
+                    <textarea rows={2} placeholder="Suggestions (optional)" value={platformComment} onChange={(e) => setPlatformComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
+                    <button onClick={handlePlatformRate} className="w-full border border-border py-2 rounded-xl text-sm font-medium hover:bg-surface transition-colors">Submit Platform Feedback</button>
+                  </>
+                )}
               </div>
+
+              {/* Close button — always available at the bottom */}
+              <button onClick={() => setRatingOpen(false)} className="w-full border border-border py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors">
+                Close
+              </button>
             </div>
           )}
         </div>
@@ -754,7 +809,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
             <h3 className="font-bold text-lg text-text-primary">Open Dispute</h3>
-            <p className="text-sm text-text-muted">Try messaging the seller first using the chat. If unresolved, open a dispute and an admin will review.</p>
+            <p className="text-sm text-text-muted">Try messaging the {isBuyer ? 'seller' : 'buyer'} first using the chat. If unresolved, open a dispute and an admin will review.</p>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Reason</label>
               <select value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">

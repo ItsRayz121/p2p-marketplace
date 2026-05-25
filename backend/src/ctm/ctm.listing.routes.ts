@@ -23,13 +23,17 @@ const createListingSchema = z.object({
   maxOrderTokens: z.number().positive(),
   settlementMethod: z.string().max(100).optional(),
   tokenDeliveryType: z.enum(['blockchain', 'email', 'username']).optional(),
-  settlementNote: z.string().min(1).max(1000),
-  paymentMethods: z.array(z.string()).min(1),
+  settlementNote: z.string().max(1000).optional().default(''),
+  paymentMethods: z.array(z.string()).default([]),
   tradeWindowMins: z.number().int().min(15).max(240).optional(),
   terms: z.string().max(2000).optional(),
   requiresProof: z.boolean().optional(),
   proofInstructions: z.string().max(500).optional(),
   expiresAt: z.string().datetime().optional(),
+}).superRefine((data, ctx) => {
+  if (data.side === 'sell' && data.paymentMethods.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select at least one payment method', path: ['paymentMethods'] })
+  }
 })
 
 const updateListingSchema = z.object({

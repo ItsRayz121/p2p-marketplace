@@ -97,43 +97,37 @@ export default function MyCtmTradesPage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        {/* Status chips */}
-        <div className="flex flex-wrap gap-1">
-          {STATUS_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => { setStatus(opt.value); setPage(1) }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                status === opt.value
-                  ? 'bg-primary text-white'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+      {/* Filters — all chips on a single wrapping row */}
+      <div className="flex flex-wrap gap-1 mb-6">
+        {STATUS_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => { setStatus(opt.value); setPage(1) }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              status === opt.value
+                ? 'bg-primary text-white'
+                : 'bg-white border border-border text-text-secondary hover:bg-surface'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
 
-        <div className="w-px bg-border hidden sm:block" />
+        <div className="w-px bg-border self-stretch mx-0.5" />
 
-        {/* Role chips */}
-        <div className="flex gap-1">
-          {ROLE_OPTIONS.map((r) => (
-            <button
-              key={r}
-              onClick={() => { setRole(r); setPage(1) }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                role === r
-                  ? 'bg-primary/10 text-primary border border-primary/30'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
-              }`}
-            >
-              {r.charAt(0).toUpperCase() + r.slice(1)}
-            </button>
-          ))}
-        </div>
+        {ROLE_OPTIONS.map((r) => (
+          <button
+            key={r}
+            onClick={() => { setRole(r); setPage(1) }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              role === r
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'bg-white border border-border text-text-secondary hover:bg-surface'
+            }`}
+          >
+            {r.charAt(0).toUpperCase() + r.slice(1)}
+          </button>
+        ))}
       </div>
 
       {loading ? (

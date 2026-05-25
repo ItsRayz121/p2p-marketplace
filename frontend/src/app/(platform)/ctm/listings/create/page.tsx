@@ -88,7 +88,7 @@ export default function CreateListingPage() {
     e.preventDefault()
     setError('')
     if (!form.tokenId) { setError('Please select a token'); return }
-    if (form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
+    if (form.side === 'sell' && form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
     if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
     if (form.side === 'buy' && !form.settlementMethod.trim()) {
       setError('Enter your token receiving address so sellers know where to send tokens'); return
@@ -98,13 +98,14 @@ export default function CreateListingPage() {
     try {
       const res = await ctmApi.createListing({
         ...form,
+        settlementNote: form.settlementNote.trim() || undefined,
         settlementType: 'MANUAL',
         tokenDeliveryType: form.tokenDeliveryType as 'blockchain' | 'email' | 'username',
         pricePerUnit: parseFloat(form.pricePerUnit),
         totalAmount: parseFloat(form.totalAmount),
         minOrderTokens: parseFloat(form.minOrderTokens),
         maxOrderTokens: parseFloat(form.maxOrderTokens),
-        ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod } : {}),
+        ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod, paymentMethods: [] } : {}),
       })
       router.push(`/ctm/listings/${(res as { id: string }).id}`)
     } catch (err: unknown) {
@@ -254,57 +255,62 @@ export default function CreateListingPage() {
           <textarea rows={3} placeholder="Step-by-step instructions shown to the buyer at trade start" value={form.settlementNote} onChange={(e) => setForm((f) => ({ ...f, settlementNote: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
         </div>
 
-        {/* Payment methods — from wallet only */}
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-0.5">Payment methods *</label>
-          <p className="text-xs text-text-muted mb-2">
-            {form.side === 'sell'
-              ? 'Select which of your saved payment accounts buyers can use.'
-              : 'Select which payment accounts you will use to pay sellers.'}
-          </p>
+        {/* Payment methods — only required for sell listings */}
+        {form.side === 'sell' && (
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-0.5">Payment methods *</label>
+            <p className="text-xs text-text-muted mb-2">Select which of your saved payment accounts buyers can use to pay you.</p>
 
-          {savedMethods.length === 0 ? (
-            <div className="border border-border rounded-xl p-4 text-center">
-              <p className="text-sm text-text-muted mb-2">No payment methods saved yet.</p>
-              <a href="/payment-methods" className="text-sm text-primary font-medium hover:underline">
-                Add payment methods in Wallet →
-              </a>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {savedMethods.map((m) => {
-                const selected = form.paymentMethods.includes(m.id)
-                const isMobile = m.type !== 'bank_transfer'
-                return (
-                  <button
-                    type="button"
-                    key={m.id}
-                    onClick={() => togglePaymentMethod(m.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
-                      selected ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'
-                    }`}
-                  >
-                    <EntityLogo
-                      type={isMobile ? 'payment_method' : 'bank'}
-                      slug={isMobile ? (METHOD_LABELS[m.type] ?? m.type) : (m.bankName ?? 'bank')}
-                      size="sm"
-                      className="flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text-primary">
-                        {m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type)}
-                      </p>
-                      <p className="text-xs text-text-muted truncate">{m.accountName} · {methodSubline(m)}</p>
-                    </div>
-                    <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>
-                      {selected && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12"><path d="M10 3L5 8.5 2 5.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
+            {savedMethods.length === 0 ? (
+              <div className="border border-border rounded-xl p-4 text-center">
+                <p className="text-sm text-text-muted mb-2">No payment methods saved yet.</p>
+                <a href="/payment-methods" className="text-sm text-primary font-medium hover:underline">
+                  Add payment methods in Wallet →
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {savedMethods.map((m) => {
+                  const selected = form.paymentMethods.includes(m.id)
+                  const isMobile = m.type !== 'bank_transfer'
+                  return (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => togglePaymentMethod(m.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
+                        selected ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'
+                      }`}
+                    >
+                      <EntityLogo
+                        type={isMobile ? 'payment_method' : 'bank'}
+                        slug={isMobile ? (METHOD_LABELS[m.type] ?? m.type) : (m.bankName ?? 'bank')}
+                        size="sm"
+                        className="flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-text-primary">
+                          {m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type)}
+                        </p>
+                        <p className="text-xs text-text-muted truncate">{m.accountName} · {methodSubline(m)}</p>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>
+                        {selected && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 12 12"><path d="M10 3L5 8.5 2 5.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Buy listing info note — seller provides payment details when accepting */}
+        {form.side === 'buy' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">
+            Payment details are not required on a buy listing. The seller will provide their payment receiving account when they accept your trade.
+          </div>
+        )}
 
         {/* Trade window */}
         <div>

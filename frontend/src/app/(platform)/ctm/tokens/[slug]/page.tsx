@@ -110,15 +110,22 @@ export default function CtmTokenDetailPage() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Total Trades', value: token.totalTrades.toLocaleString() },
-          { label: 'Volume (PKR)', value: `PKR ${Number(token.totalVolumePkr).toLocaleString()}` },
-          { label: 'Active Listings', value: (token._count?.listings ?? 0).toString() },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-white border border-border rounded-xl p-4 text-center">
-            <p className="text-xl font-bold text-text-primary">{stat.value}</p>
-            <p className="text-xs text-text-muted">{stat.label}</p>
-          </div>
-        ))}
+          { label: 'Total Trades', value: token.totalTrades.toLocaleString(), href: undefined },
+          { label: 'Volume (PKR)', value: `PKR ${Number(token.totalVolumePkr).toLocaleString()}`, href: undefined },
+          { label: 'Active Listings', value: (token._count?.listings ?? 0).toString(), href: `/ctm/listings?tokenId=${token.id}` },
+        ].map((stat) =>
+          stat.href ? (
+            <Link key={stat.label} href={stat.href} className="bg-white border border-border rounded-xl p-4 text-center block hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer group">
+              <p className="text-xl font-bold text-text-primary group-hover:text-primary">{stat.value}</p>
+              <p className="text-xs text-text-muted group-hover:text-primary/80">{stat.label} →</p>
+            </Link>
+          ) : (
+            <div key={stat.label} className="bg-white border border-border rounded-xl p-4 text-center">
+              <p className="text-xl font-bold text-text-primary">{stat.value}</p>
+              <p className="text-xs text-text-muted">{stat.label}</p>
+            </div>
+          )
+        )}
       </div>
 
       {/* Actions */}

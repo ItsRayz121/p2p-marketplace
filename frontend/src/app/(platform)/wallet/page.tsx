@@ -686,7 +686,6 @@ function PaymentMethodsSection() {
   // Step 1: category, Step 2: selected method within category, Step 3: fields
   const [category, setCategory] = useState<PmCategory | null>(null)
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
-  const [displayName, setDisplayName] = useState('')
   const [accountName, setAccountName] = useState('')
   const [mobileNumber, setMobileNumber] = useState('')
   const [ibanNumber, setIbanNumber] = useState('')
@@ -707,7 +706,6 @@ function PaymentMethodsSection() {
   const resetForm = () => {
     setCategory(null)
     setSelectedMethod(null)
-    setDisplayName('')
     setAccountName('')
     setMobileNumber('')
     setIbanNumber('')
@@ -718,8 +716,8 @@ function PaymentMethodsSection() {
 
   const handleAdd = async () => {
     if (!pmType || !selectedMethod) { setFormError('Select a payment method'); return }
-    if (!displayName.trim() || !accountName.trim()) {
-      setFormError('Display name and account name are required')
+    if (!accountName.trim()) {
+      setFormError('Account name is required')
       return
     }
     if (!isBankCategory && !mobileNumber.trim()) {
@@ -732,10 +730,11 @@ function PaymentMethodsSection() {
     }
     setAdding(true)
     setFormError(null)
+    const autoDisplayName = `${selectedMethod} — ${accountName.trim()}`
     try {
       const method = await userPaymentMethodsApi.add({
         type: pmType as UserPaymentMethod['type'],
-        displayName: displayName.trim(),
+        displayName: autoDisplayName,
         accountName: accountName.trim(),
         ...(mobileNumber.trim() ? { mobileNumber: mobileNumber.trim() } : {}),
         ...(isBankCategory ? { bankName: selectedMethod } : {}),
@@ -859,27 +858,15 @@ function PaymentMethodsSection() {
                 <span className="text-xs text-text-muted">account details</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-text-muted mb-1">Display Name</label>
-                  <input
-                    type="text"
-                    placeholder={`e.g. My ${selectedMethod}`}
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-text-muted mb-1">Account Name</label>
-                  <input
-                    type="text"
-                    placeholder="Name on the account"
-                    value={accountName}
-                    onChange={(e) => setAccountName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Account Name</label>
+                <input
+                  type="text"
+                  placeholder="Full name on the account"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                />
               </div>
 
               {!isBankCategory && (
@@ -945,15 +932,13 @@ function PaymentMethodsSection() {
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-text-primary">{m.displayName}</span>
+                  <span className="text-sm font-medium text-text-primary">{m.accountName}</span>
                   <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPaymentMethodColor(pmTypeLabel(m.type))}`}>
                     {pmTypeLabel(m.type, m.bankName)}
                   </span>
                 </div>
                 <p className="text-xs text-text-muted mt-0.5">
-                  {m.accountName}
-                  {m.mobileNumber ? ` · ${m.mobileNumber}` : ''}
-                  {m.ibanNumber ? ` · ${m.ibanNumber}` : ''}
+                  {m.mobileNumber ?? m.ibanNumber ?? m.accountNumber ?? ''}
                 </p>
               </div>
               <Button

@@ -231,7 +231,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           <p className="text-sm text-text-muted">
             {listing.side === 'sell'
               ? `Seller will send tokens via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
-              : `Buyer should send tokens via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`}
+              : `Seller will send tokens to buyer via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`}
           </p>
         </div>
       )}
