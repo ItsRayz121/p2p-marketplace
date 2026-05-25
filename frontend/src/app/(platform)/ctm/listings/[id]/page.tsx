@@ -97,9 +97,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   usePolling(fetchListing, 30000)
 
-  // For BUY listings the trade taker is the seller — they select from their own payment accounts
+  // Always load the current user's own saved payment methods:
+  // BUY listings: user is the seller-taker, picks their own receiving account
+  // SELL listings: user is the buyer, picks which of their accounts they'll pay from
   useEffect(() => {
-    if (listing?.side === 'buy' && user) {
+    if (user) {
       apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods').then((methods) => {
         const resolved: ResolvedPaymentMethod[] = (Array.isArray(methods) ? methods : []).map((m) => ({
           id: m.id,
@@ -109,7 +111,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         setMyMethods(resolved)
       }).catch(() => {})
     }
-  }, [listing?.side, user])
+  }, [user])
 
   const handleStartTrade = async () => {
     if (!paymentMethodId) { setError('Select a payment method'); return }
@@ -151,8 +153,21 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     label: m,
   }))
 
-  // For BUY listings show taker's own methods; for SELL listings show listing's accepted methods
-  const modalPaymentMethods = isBuyListing ? myMethods : resolvedMethods
+  // BUY listings: taker is seller, show their own saved methods (they'll receive payment here).
+  // SELL listings: taker is buyer, show buyer's own methods filtered+mapped to seller's accepted types.
+  //   We keep the SELLER's method ID as the value submitted (backend validates ownership by seller),
+  //   but display the buyer's account label so the buyer recognises their own method.
+  const sellMethodByType = new Map(resolvedMethods.map((m) => [m.type, m]))
+  const modalPaymentMethods: ResolvedPaymentMethod[] = isBuyListing
+    ? myMethods
+    : myMethods
+        .filter((m) => sellMethodByType.has(m.type))
+        .map((m) => ({
+          // Use the seller's method ID so the backend can snapshot the seller's receiving account
+          id: sellMethodByType.get(m.type)!.id,
+          type: m.type,
+          label: m.label, // show buyer's own account label
+        }))
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
@@ -207,12 +222,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Payment methods */}
       <div className="bg-white border border-border rounded-xl p-5">
         <h2 className="font-semibold text-text-primary mb-1">
-          {isBuyListing ? 'Buyer Payment Methods' : 'Accepted Payment Methods'}
+          {isBuyListing ? 'Buyer Payment Methods' : 'Seller Accepted Payment Methods'}
         </h2>
         <p className="text-xs text-text-muted mb-3">
           {isBuyListing
             ? 'The buyer will use one of these methods to pay you.'
-            : 'Select one of these methods to pay the seller.'}
+            : 'These are the methods this seller accepts from buyers.'}
         </p>
         <div className="flex flex-wrap gap-2">
           {resolvedMethods.map((m) => (
@@ -314,6 +329,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   ? 'Select your payment receiving account (buyer will send payment here)'
                   : 'How will you pay?'}
               </label>
+              {!isBuyListing && myMethods.length === 0 && (
+                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                  No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
+                </p>
+              )}
+              {!isBuyListing && myMethods.length > 0 && modalPaymentMethods.length === 0 && (
+                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                  None of your saved payment methods match what this seller accepts. <a href="/payment-methods" className="text-primary underline">Add a matching method →</a>
+                </p>
+              )}
               {isBuyListing && myMethods.length === 0 && (
                 <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
                   No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>

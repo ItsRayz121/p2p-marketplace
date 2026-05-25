@@ -25,12 +25,20 @@ interface LeaderboardEntry {
 }
 
 type Period = 'daily' | 'weekly' | 'monthly' | 'all-time'
+type TradeType = 'all' | 'usdt' | 'ctm' | 'gas'
 
 const PERIODS: { id: Period; label: string }[] = [
   { id: 'all-time', label: 'All Time' },
   { id: 'monthly', label: 'This Month' },
   { id: 'weekly', label: 'This Week' },
   { id: 'daily', label: 'Today' },
+]
+
+const TRADE_TYPES: { id: TradeType; label: string }[] = [
+  { id: 'all', label: 'Overall' },
+  { id: 'usdt', label: 'USDT Trades' },
+  { id: 'ctm', label: 'Community Token Trades' },
+  { id: 'gas', label: 'Crypto Gas Trades' },
 ]
 
 // Map frontend period labels to backend query params
@@ -53,6 +61,7 @@ function RankDisplay({ rank }: { rank: number }) {
 export default function LeaderboardPage() {
   const { user } = useAuth()
   const [period, setPeriod] = useState<Period>('all-time')
+  const [tradeType, setTradeType] = useState<TradeType>('all')
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -61,14 +70,14 @@ export default function LeaderboardPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await leaderboardApi.getTop({ period: PERIOD_MAP[period] as never, limit: 50 })
+      const res = await leaderboardApi.getTop({ period: PERIOD_MAP[period] as never, limit: 50, tradeType })
       setEntries((res.entries ?? []) as LeaderboardEntry[])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load leaderboard')
     } finally {
       setLoading(false)
     }
-  }, [period])
+  }, [period, tradeType])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -77,6 +86,21 @@ export default function LeaderboardPage() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Leaderboard</h1>
         <p className="text-sm text-text-muted">Top traders on PakSwap</p>
+      </div>
+
+      {/* Trade Type Filter */}
+      <div className="flex gap-1 bg-surface rounded-xl p-1 overflow-x-auto">
+        {TRADE_TYPES.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTradeType(t.id)}
+            className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+              tradeType === t.id ? 'bg-white text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Period Filter */}

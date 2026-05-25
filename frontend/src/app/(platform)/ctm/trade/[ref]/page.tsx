@@ -394,7 +394,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           <div className="bg-white border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-text-primary">
-                {isBuyer ? 'Your Token Receiving Details' : 'Token Delivery Required'}
+                {isBuyer ? 'Your Token Receiving Details' : 'Buyer Receiving Address'}
               </h2>
               <span className="text-xs px-2 py-0.5 rounded-full bg-surface text-text-muted font-medium">
                 {settlementLabel(trade.settlementType)}
@@ -624,7 +624,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 <div className="bg-surface rounded-xl p-3 text-sm space-y-1.5">
                   <p className="text-xs font-medium text-text-muted mb-1">Send tokens to buyer</p>
                   {(trade.buyerSettlementId || trade.settlementMethod) && (
-                    <Row label="Buyer address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll />
+                    <Row label="Buyer address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll copyable />
                   )}
                   <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
                 </div>
@@ -640,7 +640,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 <div className="bg-surface rounded-xl p-3 text-sm space-y-1.5 mb-1">
                   <p className="text-xs font-medium text-text-muted mb-1">Sending to</p>
                   {(trade.buyerSettlementId || trade.settlementMethod) && (
-                    <Row label="Buyer address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll />
+                    <Row label="Buyer address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll copyable />
                   )}
                   <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
                 </div>

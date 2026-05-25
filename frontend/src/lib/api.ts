@@ -898,7 +898,7 @@ export const referralApi = {
 }
 
 export const leaderboardApi = {
-  getTop: (params?: { period?: string; limit?: number }) => {
+  getTop: (params?: { period?: string; limit?: number; tradeType?: string }) => {
     const qs = params
       ? '?' + new URLSearchParams(
           Object.entries(params)

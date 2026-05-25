@@ -188,6 +188,34 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
         completedCtmTrades: { increment: 1 },
       },
     })
+
+    // Update global TradeStats for buyer and seller so leaderboard reflects CTM trades
+    for (const userId of [buyerId, trade.sellerId]) {
+      const existing = await tx.tradeStats.findUnique({ where: { userId } })
+      if (!existing) {
+        await tx.tradeStats.create({
+          data: {
+            userId,
+            totalTrades: 1,
+            completedTrades: 1,
+            completionRate: new Prisma.Decimal(1),
+            totalVolumePKR: trade.fiatAmount,
+          },
+        })
+      } else {
+        const newTotal = existing.totalTrades + 1
+        const newCompleted = existing.completedTrades + 1
+        await tx.tradeStats.update({
+          where: { userId },
+          data: {
+            totalTrades: newTotal,
+            completedTrades: newCompleted,
+            completionRate: new Prisma.Decimal(newCompleted).div(new Prisma.Decimal(newTotal)),
+            totalVolumePKR: { increment: trade.fiatAmount },
+          },
+        })
+      }
+    }
   })
 
   queues.badgeRecalculate.add('recalc', { userId: buyerId }).catch(() => {})
