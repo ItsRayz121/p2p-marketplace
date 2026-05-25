@@ -4,41 +4,45 @@ import { db } from '../lib/prisma'
 type Period = 'all' | 'month' | 'week'
 type TradeType = 'all' | 'usdt' | 'ctm' | 'gas'
 
-function dateFilter(period: Period): Date | undefined {
+function dateSince(period: Period): Date | undefined {
   if (period === 'week') return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
   if (period === 'month') return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   return undefined
 }
 
-// Aggregate completed trades from a raw user-id array into ranked entries
-function rankEntries(
-  rows: { userId: string; username: string; completedTrades: number; totalVolumePKR: number }[],
-  skip: number,
-) {
-  // Merge buyer + seller rows for the same user
-  const map = new Map<string, { userId: string; username: string; completedTrades: number; totalVolumePKR: number }>()
-  for (const r of rows) {
-    const existing = map.get(r.userId)
-    if (existing) {
-      existing.completedTrades += r.completedTrades
-      existing.totalVolumePKR += r.totalVolumePKR
-    } else {
-      map.set(r.userId, { ...r })
-    }
+interface UserAccum {
+  userId: string
+  username: string
+  completedTrades: number
+  totalVolumePKR: number
+}
+
+function accumulate(map: Map<string, UserAccum>, userId: string, username: string, vol: number) {
+  const e = map.get(userId)
+  if (e) {
+    e.completedTrades += 1
+    e.totalVolumePKR += vol
+  } else {
+    map.set(userId, { userId, username, completedTrades: 1, totalVolumePKR: vol })
   }
-  return [...map.values()]
-    .sort((a, b) => b.totalVolumePKR - a.totalVolumePKR || b.completedTrades - a.completedTrades)
-    .map((e, i) => ({
-      rank: skip + i + 1,
-      userId: e.userId,
-      username: e.username,
-      completedTrades: e.completedTrades,
-      totalVolumePKR: e.totalVolumePKR.toFixed(2),
-    }))
+}
+
+function sortAndPage(map: Map<string, UserAccum>, skip: number, limit: number) {
+  const sorted = [...map.values()].sort(
+    (a, b) => b.totalVolumePKR - a.totalVolumePKR || b.completedTrades - a.completedTrades,
+  )
+  const total = sorted.length
+  const page = sorted.slice(skip, skip + limit).map((e, i) => ({
+    rank: skip + i + 1,
+    userId: e.userId,
+    username: e.username,
+    completedTrades: e.completedTrades,
+    totalVolumePKR: e.totalVolumePKR.toFixed(2),
+  }))
+  return { total, entries: page }
 }
 
 export async function leaderboardRoutes(app: FastifyInstance) {
-  // GET /api/leaderboard
   app.get('/leaderboard', async (req, reply) => {
     const query = req.query as Record<string, string>
     const type = (query.type as 'traders' | 'merchants') ?? 'traders'
@@ -47,113 +51,158 @@ export async function leaderboardRoutes(app: FastifyInstance) {
     const page = query.page ? parseInt(query.page, 10) : 1
     const limit = Math.min(query.limit ? parseInt(query.limit, 10) : 20, 100)
     const skip = (page - 1) * limit
-    const since = dateFilter(period)
+    const since = dateSince(period)
 
     let entries: unknown[]
     let total: number
 
     if (type === 'traders') {
       if (tradeType === 'all') {
-        // Default: use the pre-computed TradeStats table (covers USDT + CTM once confirmReceipt updates it)
-        const where = since ? { lastUpdated: { gte: since } } : {}
-        const [stats, count] = await Promise.all([
-          db.tradeStats.findMany({
-            where,
-            orderBy: [{ totalVolumePKR: 'desc' }, { completedTrades: 'desc' }],
-            skip,
-            take: limit,
-            include: { user: { select: { id: true, username: true, createdAt: true } } },
+        // Overall: union of all three trade sources queried live.
+        // TradeStats is NOT used here — it only has USDT history and would miss CTM/Gas trades.
+        const [ctmTrades, usdtTrades, gasOrders] = await Promise.all([
+          db.ctmTrade.findMany({
+            where: {
+              status: 'completed',
+              ...(since ? { completedAt: { gte: since } } : {}),
+            },
+            select: {
+              buyerId: true, sellerId: true, fiatAmount: true,
+              buyer: { select: { id: true, username: true } },
+              seller: { select: { id: true, username: true } },
+            },
           }),
-          db.tradeStats.count({ where }),
+          db.trade.findMany({
+            where: {
+              status: 'crypto_released',
+              ...(since ? { updatedAt: { gte: since } } : {}),
+            },
+            select: {
+              buyerId: true, sellerId: true, fiatAmount: true,
+              buyer: { select: { id: true, username: true } },
+              seller: { select: { id: true, username: true } },
+            },
+          }),
+          db.gasFeeOrder.findMany({
+            where: {
+              status: 'delivered',
+              userId: { not: null },
+              ...(since ? { deliveredAt: { gte: since } } : {}),
+            },
+            select: {
+              userId: true, pkrAmount: true, paymentAmount: true,
+              user: { select: { id: true, username: true } },
+            },
+          }),
         ])
-        entries = stats.map((s, i) => ({
-          rank: skip + i + 1,
-          userId: s.userId,
-          username: s.user.username,
-          badge: s.badge,
-          badgeLabel: s.badgeLabel,
-          totalTrades: s.totalTrades,
-          completedTrades: s.completedTrades,
-          completionRate: s.completionRate,
-          avgRating: s.avgRating,
-          totalVolumePKR: s.totalVolumePKR,
-          trustScore: s.trustScore,
-          memberSince: s.user.createdAt,
-        }))
-        total = count
+
+        const map = new Map<string, UserAccum>()
+
+        // CTM: both buyer and seller participate in each trade
+        for (const t of ctmTrades) {
+          const vol = Number(t.fiatAmount)
+          accumulate(map, t.buyerId, t.buyer.username, vol)
+          accumulate(map, t.sellerId, t.seller.username, vol)
+        }
+
+        // USDT P2P: both buyer and seller participate
+        for (const t of usdtTrades) {
+          const vol = Number(t.fiatAmount)
+          accumulate(map, t.buyerId, t.buyer.username, vol)
+          accumulate(map, t.sellerId, t.seller.username, vol)
+        }
+
+        // Gas: only the ordering user (buyer side)
+        for (const o of gasOrders) {
+          if (!o.userId || !o.user) continue
+          accumulate(map, o.userId, o.user.username, Number(o.pkrAmount ?? 0))
+        }
+
+        const paged = sortAndPage(map, skip, limit)
+        total = paged.total
+
+        // Enrich with badge/rating from TradeStats (best-effort — may be absent for new users)
+        const pageUserIds = paged.entries.map((e) => e.userId)
+        const statsRows = await db.tradeStats.findMany({
+          where: { userId: { in: pageUserIds } },
+          select: { userId: true, badge: true, badgeLabel: true, avgRating: true, completionRate: true, trustScore: true },
+        })
+        const statsById = new Map(statsRows.map((s) => [s.userId, s]))
+
+        entries = paged.entries.map((e) => {
+          const s = statsById.get(e.userId)
+          return {
+            ...e,
+            badge: s?.badge ?? null,
+            badgeLabel: s?.badgeLabel ?? null,
+            avgRating: s?.avgRating ?? null,
+            completionRate: s?.completionRate ?? null,
+            trustScore: s?.trustScore ?? null,
+          }
+        })
       } else if (tradeType === 'ctm') {
-        // Query CtmTrade table directly
-        const tradeWhere = {
-          status: 'completed' as const,
-          ...(since ? { completedAt: { gte: since } } : {}),
-        }
         const ctmTrades = await db.ctmTrade.findMany({
-          where: tradeWhere,
+          where: {
+            status: 'completed',
+            ...(since ? { completedAt: { gte: since } } : {}),
+          },
           select: {
             buyerId: true, sellerId: true, fiatAmount: true,
             buyer: { select: { id: true, username: true } },
             seller: { select: { id: true, username: true } },
           },
         })
-        const raw = [
-          ...ctmTrades.map((t) => ({ userId: t.buyerId, username: t.buyer.username, completedTrades: 1, totalVolumePKR: Number(t.fiatAmount) })),
-          ...ctmTrades.map((t) => ({ userId: t.sellerId, username: t.seller.username, completedTrades: 1, totalVolumePKR: Number(t.fiatAmount) })),
-        ]
-        const allRanked = rankEntries(raw, 0)
-        total = allRanked.length
-        entries = allRanked.slice(skip, skip + limit).map((e, i) => ({ ...e, rank: skip + i + 1 }))
+        const map = new Map<string, UserAccum>()
+        for (const t of ctmTrades) {
+          const vol = Number(t.fiatAmount)
+          accumulate(map, t.buyerId, t.buyer.username, vol)
+          accumulate(map, t.sellerId, t.seller.username, vol)
+        }
+        const paged = sortAndPage(map, skip, limit)
+        total = paged.total
+        entries = paged.entries
       } else if (tradeType === 'usdt') {
-        // Query USDT Trade table — final status is crypto_released
-        const tradeWhere = {
-          status: 'crypto_released' as const,
-          ...(since ? { updatedAt: { gte: since } } : {}),
-        }
         const usdtTrades = await db.trade.findMany({
-          where: tradeWhere,
+          where: {
+            status: 'crypto_released',
+            ...(since ? { updatedAt: { gte: since } } : {}),
+          },
           select: {
             buyerId: true, sellerId: true, fiatAmount: true,
             buyer: { select: { id: true, username: true } },
             seller: { select: { id: true, username: true } },
           },
         })
-        const raw = [
-          ...usdtTrades.map((t) => ({ userId: t.buyerId, username: t.buyer.username, completedTrades: 1, totalVolumePKR: Number(t.fiatAmount) })),
-          ...usdtTrades.map((t) => ({ userId: t.sellerId, username: t.seller.username, completedTrades: 1, totalVolumePKR: Number(t.fiatAmount) })),
-        ]
-        const allRanked = rankEntries(raw, 0)
-        total = allRanked.length
-        entries = allRanked.slice(skip, skip + limit).map((e, i) => ({ ...e, rank: skip + i + 1 }))
-      } else {
-        // gas tradeType: query GasFeeOrder
-        const gasWhere = {
-          status: 'delivered' as const,
-          userId: { not: null },
-          ...(since ? { deliveredAt: { gte: since } } : {}),
+        const map = new Map<string, UserAccum>()
+        for (const t of usdtTrades) {
+          const vol = Number(t.fiatAmount)
+          accumulate(map, t.buyerId, t.buyer.username, vol)
+          accumulate(map, t.sellerId, t.seller.username, vol)
         }
+        const paged = sortAndPage(map, skip, limit)
+        total = paged.total
+        entries = paged.entries
+      } else {
+        // gas
         const gasOrders = await db.gasFeeOrder.findMany({
-          where: gasWhere,
+          where: {
+            status: 'delivered',
+            userId: { not: null },
+            ...(since ? { deliveredAt: { gte: since } } : {}),
+          },
           select: {
             userId: true, pkrAmount: true, paymentAmount: true,
             user: { select: { id: true, username: true } },
           },
         })
-        const map = new Map<string, { userId: string; username: string; completedTrades: number; totalVolumePKR: number }>()
+        const map = new Map<string, UserAccum>()
         for (const o of gasOrders) {
           if (!o.userId || !o.user) continue
-          const vol = Number(o.pkrAmount ?? o.paymentAmount ?? 0)
-          const existing = map.get(o.userId)
-          if (existing) {
-            existing.completedTrades += 1
-            existing.totalVolumePKR += vol
-          } else {
-            map.set(o.userId, { userId: o.userId, username: o.user.username, completedTrades: 1, totalVolumePKR: vol })
-          }
+          accumulate(map, o.userId, o.user.username, Number(o.pkrAmount ?? 0))
         }
-        const allRanked = [...map.values()]
-          .sort((a, b) => b.completedTrades - a.completedTrades)
-          .map((e, i) => ({ rank: i + 1, ...e, totalVolumePKR: e.totalVolumePKR.toFixed(2) }))
-        total = allRanked.length
-        entries = allRanked.slice(skip, skip + limit).map((e, i) => ({ ...e, rank: skip + i + 1 }))
+        const paged = sortAndPage(map, skip, limit)
+        total = paged.total
+        entries = paged.entries
       }
     } else {
       // Merchants leaderboard (unchanged)
@@ -185,7 +234,6 @@ export async function leaderboardRoutes(app: FastifyInstance) {
         }),
         db.merchant.count({ where: { status: 'approved' } }),
       ])
-
       entries = merchants.map((m, i) => ({
         rank: skip + i + 1,
         merchantId: m.id,
@@ -203,13 +251,7 @@ export async function leaderboardRoutes(app: FastifyInstance) {
 
     return reply.send({
       success: true,
-      data: {
-        type,
-        period,
-        tradeType,
-        entries,
-        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-      },
+      data: { type, period, tradeType, entries, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
   })
 }
