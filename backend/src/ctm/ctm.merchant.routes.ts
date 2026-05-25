@@ -73,7 +73,7 @@ export async function ctmMerchantRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: updated })
   })
 
-  // GET /ctm/merchants/:userId/public — public profile
+  // GET /ctm/merchants/:userId/public — public profile (incl. ratings)
   app.get('/ctm/merchants/:userId/public', { preHandler: [optionalAuth] }, async (req, reply) => {
     const { userId } = req.params as { userId: string }
     const profile = await db.ctmMerchantProfile.findUnique({
@@ -88,7 +88,32 @@ export async function ctmMerchantRoutes(app: FastifyInstance) {
       },
     })
     if (!profile || !profile.isActive) throw new AppError('NOT_FOUND', 'CTM merchant not found', 404)
-    return reply.send({ success: true, data: profile })
+
+    const ratings = await db.ctmTradeRating.findMany({
+      where: { ratedUserId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { trade: { select: { tradeRef: true } } },
+    })
+
+    const raterIds = [...new Set(ratings.map((r) => r.ratedByUserId))]
+    const raters = await db.user.findMany({
+      where: { id: { in: raterIds } },
+      select: { id: true, username: true },
+    })
+    const raterMap = new Map(raters.map((u) => [u.id, u.username]))
+
+    const reviews = ratings.map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      tags: r.tags,
+      createdAt: r.createdAt,
+      raterUsername: raterMap.get(r.ratedByUserId) ?? 'anonymous',
+      tradeRef: r.trade?.tradeRef ?? null,
+    }))
+
+    return reply.send({ success: true, data: { ...profile, reviews } })
   })
 
   // GET /ctm/merchants/admin/queue — pending CTM merchant approvals

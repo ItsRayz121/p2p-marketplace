@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const TIERS = ['new', 'basic', 'verified', 'elite']
@@ -13,8 +14,8 @@ interface Listing {
   side: string
   pricePerUnit: string
   availableAmount: string
-  minOrderPkr: string
-  maxOrderPkr: string
+  minOrderTokens: string
+  maxOrderTokens: string
   paymentMethods: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
   token: { id: string; slug: string; name: string; symbol: string; logoUrl?: string; riskTier: string }
@@ -54,6 +55,7 @@ export default function BrowseListingsPage() {
   const [sortBy, setSortBy] = useState('createdAt')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
+  const [profileUserId, setProfileUserId] = useState<string | null>(null)
 
   const fetchListings = useCallback(async () => {
     setLoading(true)
@@ -178,10 +180,10 @@ export default function BrowseListingsPage() {
                     </p>
                   </div>
 
-                  {/* Limits */}
+                  {/* Limits (tokens) */}
                   <div className="sm:w-44">
                     <p className="text-xs text-text-muted">Limit</p>
-                    <p className="text-sm font-medium text-text-primary">PKR {Number(l.minOrderPkr).toLocaleString()} – {Number(l.maxOrderPkr).toLocaleString()}</p>
+                    <p className="text-sm font-medium text-text-primary">{Number(l.minOrderTokens).toLocaleString()} – {Number(l.maxOrderTokens).toLocaleString()} {l.token.symbol}</p>
                   </div>
 
                   {/* Merchant */}
@@ -193,7 +195,12 @@ export default function BrowseListingsPage() {
                         {l.merchantProfile.tier}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setProfileUserId(l.merchantProfile.user.id)}
+                      className="flex items-center gap-1.5 mt-0.5 hover:underline cursor-pointer text-left"
+                      title="View merchant profile and reviews"
+                    >
                       {rating > 0 ? (
                         <>
                           <StarRating rating={rating} size="xs" />
@@ -203,7 +210,7 @@ export default function BrowseListingsPage() {
                         <span className="text-xs text-text-muted">No ratings yet</span>
                       )}
                       <span className="text-xs text-text-muted">· {trades} trades</span>
-                    </div>
+                    </button>
                   </div>
 
                   {/* Payment methods */}
@@ -235,6 +242,10 @@ export default function BrowseListingsPage() {
             )
           })}
         </div>
+      )}
+
+      {profileUserId && (
+        <MerchantProfileModal userId={profileUserId} onClose={() => setProfileUserId(null)} />
       )}
 
       {total > 20 && (

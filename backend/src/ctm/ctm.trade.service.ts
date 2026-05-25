@@ -333,18 +333,13 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (!listing.paymentMethods.includes(data.paymentMethod)) throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
   if (listing.availableAmount.lte(0)) throw new AppError('CONFLICT', 'Listing has no available tokens', 409)
 
-  // Determine the trade token amount (partial fill or full listing)
-  const tradeTokenAmount = data.tokenAmount
-    ? new Prisma.Decimal(data.tokenAmount)
-    : listing.availableAmount
+  // Token amount is required — takers always specify quantity in tokens.
+  if (data.tokenAmount === undefined) throw new AppError('VALIDATION_ERROR', 'tokenAmount is required', 400)
+  const tradeTokenAmount = new Prisma.Decimal(data.tokenAmount)
   if (tradeTokenAmount.lte(0)) throw new AppError('VALIDATION_ERROR', 'Token amount must be greater than 0', 400)
   if (tradeTokenAmount.gt(listing.availableAmount)) throw new AppError('VALIDATION_ERROR', 'Requested amount exceeds available listing amount', 400)
-
-  const fiatRequired = listing.pricePerUnit.mul(tradeTokenAmount)
-  if (data.tokenAmount !== undefined) {
-    if (fiatRequired.lt(listing.minOrderPkr)) throw new AppError('VALIDATION_ERROR', `Minimum order is PKR ${listing.minOrderPkr}`, 400)
-    if (fiatRequired.gt(listing.maxOrderPkr)) throw new AppError('VALIDATION_ERROR', `Maximum order is PKR ${listing.maxOrderPkr}`, 400)
-  }
+  if (tradeTokenAmount.lt(listing.minOrderTokens)) throw new AppError('VALIDATION_ERROR', `Minimum order is ${listing.minOrderTokens.toString()} ${listing.token.symbol}`, 400)
+  if (tradeTokenAmount.gt(listing.maxOrderTokens)) throw new AppError('VALIDATION_ERROR', `Maximum order is ${listing.maxOrderTokens.toString()} ${listing.token.symbol}`, 400)
 
   // Fetch and snapshot seller's payment account details
   const sellerPaymentMethod = await db.paymentMethod.findFirst({

@@ -96,8 +96,8 @@ export default function CreateListingPage() {
     side: 'sell' as 'buy' | 'sell',
     pricePerUnit: '',
     totalAmount: '',
-    minOrderPkr: '',
-    maxOrderPkr: '',
+    minOrderTokens: '',
+    maxOrderTokens: '',
     tokenDeliveryType: '' as 'blockchain' | 'email' | 'username' | '',
     settlementMethod: '',
     settlementNote: '',
@@ -150,8 +150,8 @@ export default function CreateListingPage() {
         tokenDeliveryType: form.tokenDeliveryType as 'blockchain' | 'email' | 'username',
         pricePerUnit: parseFloat(form.pricePerUnit),
         totalAmount: parseFloat(form.totalAmount),
-        minOrderPkr: parseFloat(form.minOrderPkr),
-        maxOrderPkr: parseFloat(form.maxOrderPkr),
+        minOrderTokens: parseFloat(form.minOrderTokens),
+        maxOrderTokens: parseFloat(form.maxOrderTokens),
         ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod } : {}),
       })
       router.push(`/ctm/listings/${(res as { id: string }).id}`)
@@ -221,15 +221,21 @@ export default function CreateListingPage() {
           return selectedToken ? <MarketRateWidget symbol={selectedToken.symbol} /> : null
         })()}
 
-        {/* Order limits */}
+        {/* Order limits (token quantity) */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Min order (PKR) *</label>
-            <input type="number" min="0" value={form.minOrderPkr} onChange={(e) => setForm((f) => ({ ...f, minOrderPkr: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Minimum tokens per order *</label>
+            <input type="number" min="0" step="0.000001" value={form.minOrderTokens} onChange={(e) => setForm((f) => ({ ...f, minOrderTokens: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+            {form.minOrderTokens && form.pricePerUnit && (
+              <p className="mt-1 text-xs text-text-muted">≈ PKR {(parseFloat(form.minOrderTokens) * parseFloat(form.pricePerUnit)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+            )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Max order (PKR) *</label>
-            <input type="number" min="0" value={form.maxOrderPkr} onChange={(e) => setForm((f) => ({ ...f, maxOrderPkr: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Maximum tokens per order *</label>
+            <input type="number" min="0" step="0.000001" value={form.maxOrderTokens} onChange={(e) => setForm((f) => ({ ...f, maxOrderTokens: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+            {form.maxOrderTokens && form.pricePerUnit && (
+              <p className="mt-1 text-xs text-text-muted">≈ PKR {(parseFloat(form.maxOrderTokens) * parseFloat(form.pricePerUnit)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+            )}
           </div>
         </div>
 

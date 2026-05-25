@@ -6,18 +6,50 @@ import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
 
 const STATUS_STEPS = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'completed']
-const STATUS_LABELS: Record<string, string> = {
-  awaiting_payment: 'Awaiting Payment',
-  payment_uploaded: 'Payment Uploaded',
-  payment_confirmed: 'Payment Confirmed',
-  seller_transferring: 'Seller Transferring',
-  proof_submitted: 'Proof Submitted',
-  buyer_confirming: 'Confirming Receipt',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
-  disputed: 'Disputed',
-  dispute_resolved: 'Dispute Resolved',
-  expired: 'Expired',
+
+type Role = 'buyer' | 'seller' | 'admin'
+
+// Role-aware status labels. Buyer and seller see actionable phrasing for the
+// same underlying state ("send payment" vs "waiting for buyer payment").
+function statusLabelForRole(status: string, role: Role): string {
+  const map: Record<string, Record<Role, string>> = {
+    awaiting_payment: {
+      buyer: 'Action required: send payment',
+      seller: 'Waiting for buyer payment',
+      admin: 'Awaiting buyer payment',
+    },
+    payment_uploaded: {
+      buyer: 'Waiting for seller to confirm',
+      seller: 'Action required: review payment proof',
+      admin: 'Awaiting seller confirmation',
+    },
+    payment_confirmed: {
+      buyer: 'Waiting for seller to send tokens',
+      seller: 'Action required: send tokens',
+      admin: 'Awaiting token transfer',
+    },
+    seller_transferring: {
+      buyer: 'Tokens being sent',
+      seller: 'Submit transfer proof',
+      admin: 'Tokens in transit',
+    },
+    proof_submitted: {
+      buyer: 'Action required: confirm receipt',
+      seller: 'Waiting for buyer confirmation',
+      admin: 'Awaiting buyer confirmation',
+    },
+    buyer_confirming: {
+      buyer: 'Action required: confirm receipt',
+      seller: 'Waiting for buyer confirmation',
+      admin: 'Awaiting buyer confirmation',
+    },
+    completed: { buyer: 'Completed', seller: 'Completed', admin: 'Completed' },
+    cancelled: { buyer: 'Cancelled', seller: 'Cancelled', admin: 'Cancelled' },
+    disputed: { buyer: 'Disputed', seller: 'Disputed', admin: 'Disputed' },
+    dispute_resolved: { buyer: 'Dispute resolved', seller: 'Dispute resolved', admin: 'Dispute resolved' },
+    expired: { buyer: 'Expired', seller: 'Expired', admin: 'Expired' },
+  }
+  return map[status]?.[role] ?? status
 }
 
 const STEP_INFO = [
@@ -31,11 +63,12 @@ const STEP_INFO = [
 
 const DISPUTE_REASONS = ['proof_fake', 'not_received', 'amount_mismatch', 'wrong_token', 'seller_unresponsive', 'buyer_unresponsive', 'other']
 
-// Supports {hash} template (e.g. https://explorer.example.com/tx/{hash})
-// or falls back to appending /{hash}
+// Supports {hash} template (e.g. https://explorer.example.com/tx/{hash}).
+// If no placeholder is provided, append /tx/{hash} (the canonical path on
+// every supported chain explorer). Appending bare /{hash} produced 404s.
 function buildExplorerUrl(baseUrl: string, txHash: string): string {
   if (baseUrl.includes('{hash}')) return baseUrl.replace('{hash}', txHash)
-  return `${baseUrl.replace(/\/$/, '')}/${txHash}`
+  return `${baseUrl.replace(/\/$/, '')}/tx/${txHash}`
 }
 
 function settlementLabel(type?: string): string {
@@ -244,7 +277,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 <p className="text-text-muted text-sm">PKR {Number(trade.fiatAmount).toLocaleString()} · #{trade.tradeRef.slice(-8)}</p>
               </div>
               <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${trade.status === 'completed' ? 'bg-green-100 text-green-700' : trade.status === 'disputed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-800'}`}>
-                {STATUS_LABELS[trade.status] ?? trade.status}
+                {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
               </span>
             </div>
 
@@ -285,6 +318,30 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             </div>
           </div>
 
+          {/* ── Order Summary ── */}
+          {(() => {
+            const totalPkr = Number(trade.fiatAmount)
+            const price = Number(trade.pricePerUnit)
+            const tokens = Number(trade.tokenAmount)
+            const fee = totalPkr * 0.005
+            return (
+              <div className="bg-white border border-border rounded-xl p-5">
+                <h2 className="font-semibold text-text-primary mb-3">Order Summary</h2>
+                <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                  <Row label="Token price" value={`PKR ${price.toLocaleString()}`} />
+                  <Row label="Token quantity" value={`${tokens.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
+                  <Row label="Total PKR" value={`PKR ${totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                  <Row label="Platform fee (0.5%)" value={`PKR ${fee.toFixed(2)}`} />
+                  <Row label="Seller receives" value={`PKR ${(totalPkr - fee).toFixed(2)}`} />
+                  <Row label="Payment method" value={trade.sellerPaymentSnapshot?.label ?? trade.paymentMethod} />
+                  <div className="border-t border-border pt-1.5 mt-1">
+                    <Row label={isBuyer ? 'Final payable' : 'You receive'} value={`PKR ${(isBuyer ? totalPkr : totalPkr - fee).toFixed(2)}`} />
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* ── Payment Details ── */}
           <div className="bg-white border border-border rounded-xl p-5">
             <h2 className="font-semibold text-text-primary mb-3">Payment Details</h2>
@@ -295,7 +352,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
               <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                 <Row label="Method" value={trade.sellerPaymentSnapshot.label} />
                 <Row label="Account Name" value={trade.sellerPaymentSnapshot.accountName} copyable />
-                {trade.sellerPaymentSnapshot.mobileNumber && <Row label="Mobile Number" value={trade.sellerPaymentSnapshot.mobileNumber} mono copyable />}
+                {trade.sellerPaymentSnapshot.mobileNumber && <Row label="Account / Payment Number" value={trade.sellerPaymentSnapshot.mobileNumber} mono copyable />}
                 {trade.sellerPaymentSnapshot.bankName && <Row label="Bank" value={trade.sellerPaymentSnapshot.bankName} />}
                 {trade.sellerPaymentSnapshot.ibanNumber && <Row label="IBAN" value={trade.sellerPaymentSnapshot.ibanNumber} mono breakAll copyable />}
                 {trade.sellerPaymentSnapshot.accountNumber && !trade.sellerPaymentSnapshot.ibanNumber && (
@@ -523,6 +580,14 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 ratingError={ratingError}
                 onOpenRating={() => setRatingOpen(true)}
               />
+            )}
+
+            {/* ─ SELLER: awaiting_payment ─ */}
+            {isSeller && trade.status === 'awaiting_payment' && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm">
+                <p className="font-semibold text-yellow-800 mb-1">Waiting for buyer payment</p>
+                <p className="text-yellow-700">The buyer is sending PKR to your account. You&apos;ll be notified when payment proof is uploaded.</p>
+              </div>
             )}
 
             {/* ─ SELLER: payment_uploaded ─ */}

@@ -18,8 +18,8 @@ export interface CreateListingInput {
   settlementType: CtmSettlementType
   pricePerUnit: number
   totalAmount: number
-  minOrderPkr: number
-  maxOrderPkr: number
+  minOrderTokens: number
+  maxOrderTokens: number
   settlementMethod?: string
   tokenDeliveryType?: 'blockchain' | 'email' | 'username'
   settlementNote: string
@@ -57,8 +57,6 @@ export interface ListingsFilter {
   tokenId?: string
   side?: string
   paymentMethod?: string
-  minPkr?: number
-  maxPkr?: number
   page?: number
   limit?: number
   merchantProfileId?: string
@@ -82,9 +80,14 @@ export async function createListing(userId: string, data: CreateListingInput) {
   if (token.status !== 'approved') throw new AppError('FORBIDDEN', 'Token is not approved for listing', 403)
   if (!token.isListingEnabled) throw new AppError('FORBIDDEN', 'Listings are disabled for this token', 403)
 
+  if (data.minOrderTokens <= 0) throw new AppError('VALIDATION_ERROR', 'Minimum tokens per order must be greater than 0', 400)
+  if (data.maxOrderTokens < data.minOrderTokens) throw new AppError('VALIDATION_ERROR', 'Maximum tokens per order must be greater than or equal to minimum', 400)
+  if (data.maxOrderTokens > data.totalAmount) throw new AppError('VALIDATION_ERROR', 'Maximum tokens per order cannot exceed total listing amount', 400)
+
   const maxPkrPerTrade = TIER_CAPS[merchantProfile.tier] ?? 5_000
-  if (data.maxOrderPkr > maxPkrPerTrade) {
-    throw new AppError('FORBIDDEN', `Your merchant tier (${merchantProfile.tier}) allows max PKR ${maxPkrPerTrade} per trade`, 403)
+  const maxOrderPkrComputed = data.maxOrderTokens * data.pricePerUnit
+  if (maxOrderPkrComputed > maxPkrPerTrade) {
+    throw new AppError('FORBIDDEN', `Your merchant tier (${merchantProfile.tier}) allows max PKR ${maxPkrPerTrade} per trade (max tokens × price = ${maxOrderPkrComputed.toFixed(2)})`, 403)
   }
 
   if (token.maxListingAmount && new Prisma.Decimal(data.totalAmount).gt(token.maxListingAmount)) {
@@ -110,8 +113,8 @@ export async function createListing(userId: string, data: CreateListingInput) {
       pricePerUnit: new Prisma.Decimal(data.pricePerUnit),
       totalAmount: new Prisma.Decimal(data.totalAmount),
       availableAmount: new Prisma.Decimal(data.totalAmount),
-      minOrderPkr: new Prisma.Decimal(data.minOrderPkr),
-      maxOrderPkr: new Prisma.Decimal(data.maxOrderPkr),
+      minOrderTokens: new Prisma.Decimal(data.minOrderTokens),
+      maxOrderTokens: new Prisma.Decimal(data.maxOrderTokens),
       settlementMethod: data.settlementMethod ?? '',
       ...(data.tokenDeliveryType ? { tokenDeliveryType: data.tokenDeliveryType } : {}),
       settlementNote: data.settlementNote,
@@ -126,7 +129,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
 }
 
 export async function getListings(filters: ListingsFilter = {}) {
-  const { tokenId, side, paymentMethod, minPkr, maxPkr, page = 1, limit = 20, merchantProfileId, status, adminView = false, tier, sortBy, sortDir = 'desc' } = filters
+  const { tokenId, side, paymentMethod, page = 1, limit = 20, merchantProfileId, status, adminView = false, tier, sortBy, sortDir = 'desc' } = filters
   const skip = (page - 1) * limit
 
   const where: Record<string, unknown> = adminView ? {} : { status: 'active' }
@@ -135,8 +138,6 @@ export async function getListings(filters: ListingsFilter = {}) {
   if (merchantProfileId) where.merchantProfileId = merchantProfileId
   if (status) where.status = status
   if (paymentMethod) where.paymentMethods = { has: paymentMethod }
-  if (minPkr) where.maxOrderPkr = { gte: new Prisma.Decimal(minPkr) }
-  if (maxPkr) where.minOrderPkr = { lte: new Prisma.Decimal(maxPkr) }
   if (tier) where.merchantProfile = { is: { tier: tier as never } }
 
   const ALLOWED_SORT_FIELDS: Record<string, object> = {
@@ -208,8 +209,8 @@ export async function getListingById(id: string) {
 
 export async function updateListing(userId: string, listingId: string, data: {
   pricePerUnit?: number
-  minOrderPkr?: number
-  maxOrderPkr?: number
+  minOrderTokens?: number
+  maxOrderTokens?: number
   terms?: string
   paymentMethods?: string[]
   settlementNote?: string
@@ -222,11 +223,15 @@ export async function updateListing(userId: string, listingId: string, data: {
   if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
   if (listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'Not your listing', 403)
 
-  if (data.maxOrderPkr) {
+  const effectivePrice = data.pricePerUnit ?? Number(listing.pricePerUnit)
+  if (data.maxOrderTokens) {
     const maxPkrPerTrade = TIER_CAPS[listing.merchantProfile.tier] ?? 5_000
-    if (data.maxOrderPkr > maxPkrPerTrade) {
+    if (data.maxOrderTokens * effectivePrice > maxPkrPerTrade) {
       throw new AppError('FORBIDDEN', `Your merchant tier allows max PKR ${maxPkrPerTrade} per trade`, 403)
     }
+  }
+  if (data.minOrderTokens !== undefined && data.maxOrderTokens !== undefined && data.maxOrderTokens < data.minOrderTokens) {
+    throw new AppError('VALIDATION_ERROR', 'Maximum tokens must be greater than or equal to minimum', 400)
   }
 
   if (data.pricePerUnit) {
@@ -240,8 +245,8 @@ export async function updateListing(userId: string, listingId: string, data: {
     where: { id: listingId },
     data: {
       ...(data.pricePerUnit !== undefined ? { pricePerUnit: new Prisma.Decimal(data.pricePerUnit) } : {}),
-      ...(data.minOrderPkr !== undefined ? { minOrderPkr: new Prisma.Decimal(data.minOrderPkr) } : {}),
-      ...(data.maxOrderPkr !== undefined ? { maxOrderPkr: new Prisma.Decimal(data.maxOrderPkr) } : {}),
+      ...(data.minOrderTokens !== undefined ? { minOrderTokens: new Prisma.Decimal(data.minOrderTokens) } : {}),
+      ...(data.maxOrderTokens !== undefined ? { maxOrderTokens: new Prisma.Decimal(data.maxOrderTokens) } : {}),
       ...(data.terms !== undefined ? { terms: data.terms } : {}),
       ...(data.paymentMethods !== undefined ? { paymentMethods: data.paymentMethods } : {}),
       ...(data.settlementNote !== undefined ? { settlementNote: data.settlementNote } : {}),

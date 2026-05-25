@@ -19,8 +19,8 @@ const createListingSchema = z.object({
   settlementType: z.enum(['MANUAL', 'ON_CHAIN', 'HYBRID']),
   pricePerUnit: z.number().positive(),
   totalAmount: z.number().positive(),
-  minOrderPkr: z.number().positive(),
-  maxOrderPkr: z.number().positive(),
+  minOrderTokens: z.number().positive(),
+  maxOrderTokens: z.number().positive(),
   settlementMethod: z.string().max(100).optional(),
   tokenDeliveryType: z.enum(['blockchain', 'email', 'username']).optional(),
   settlementNote: z.string().min(1).max(1000),
@@ -34,8 +34,8 @@ const createListingSchema = z.object({
 
 const updateListingSchema = z.object({
   pricePerUnit: z.number().positive().optional(),
-  minOrderPkr: z.number().positive().optional(),
-  maxOrderPkr: z.number().positive().optional(),
+  minOrderTokens: z.number().positive().optional(),
+  maxOrderTokens: z.number().positive().optional(),
   terms: z.string().max(2000).optional(),
   paymentMethods: z.array(z.string()).min(1).optional(),
   settlementNote: z.string().max(1000).optional(),
@@ -50,8 +50,6 @@ export async function ctmListingRoutes(app: FastifyInstance) {
       ...(q.tokenId ? { tokenId: q.tokenId } : {}),
       ...(q.side ? { side: q.side } : {}),
       ...(q.paymentMethod ? { paymentMethod: q.paymentMethod } : {}),
-      ...(q.minPkr ? { minPkr: parseFloat(q.minPkr) } : {}),
-      ...(q.maxPkr ? { maxPkr: parseFloat(q.maxPkr) } : {}),
       ...(q.tier ? { tier: q.tier } : {}),
       ...(q.sortBy ? { sortBy: q.sortBy } : {}),
       ...(q.sortDir === 'asc' || q.sortDir === 'desc' ? { sortDir: q.sortDir } : {}),
@@ -132,7 +130,7 @@ export async function ctmListingRoutes(app: FastifyInstance) {
     const parsed = z.object({
       paymentMethod: z.string().min(1),
       buyerSettlementId: z.string().max(500).optional(),
-      tokenAmount: z.number().positive().optional(),
+      tokenAmount: z.number().positive(),
     }).safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

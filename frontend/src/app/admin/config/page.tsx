@@ -452,7 +452,7 @@ export default function ConfigPage() {
             <Field label="Account Name" hint="Full name on the JazzCash account">
               <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={jcName} onChange={(e) => setJcName(e.target.value)} />
             </Field>
-            <Field label="Mobile Number" hint="Registered JazzCash number (03XXXXXXXXX)">
+            <Field label="Account / Payment Number" hint="Registered JazzCash number (03XXXXXXXXX)">
               <input className={inputCls} placeholder="e.g. 03001234567" value={jcNumber} onChange={(e) => setJcNumber(e.target.value)} />
             </Field>
             <div className="flex justify-end">
@@ -470,7 +470,7 @@ export default function ConfigPage() {
             <Field label="Account Name" hint="Full name on the Easypaisa account">
               <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={epName} onChange={(e) => setEpName(e.target.value)} />
             </Field>
-            <Field label="Mobile Number" hint="Registered Easypaisa number (03XXXXXXXXX)">
+            <Field label="Account / Payment Number" hint="Registered Easypaisa number (03XXXXXXXXX)">
               <input className={inputCls} placeholder="e.g. 03001234567" value={epNumber} onChange={(e) => setEpNumber(e.target.value)} />
             </Field>
             <div className="flex justify-end">

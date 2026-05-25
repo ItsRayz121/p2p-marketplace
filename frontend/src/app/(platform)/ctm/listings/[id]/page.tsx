@@ -16,8 +16,8 @@ interface Listing {
   side: string
   pricePerUnit: string
   availableAmount: string
-  minOrderPkr: string
-  maxOrderPkr: string
+  minOrderTokens: string
+  maxOrderTokens: string
   paymentMethods: string[]
   resolvedPaymentMethods: ResolvedPaymentMethod[]
   tokenDeliveryType?: string
@@ -59,7 +59,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [showModal, setShowModal] = useState(false)
   const [paymentMethodId, setPaymentMethodId] = useState('')
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
-  const [pkrAmount, setPkrAmount] = useState('')
+  const [tokenAmount, setTokenAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -78,6 +78,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   const handleStartTrade = async () => {
     if (!paymentMethodId) { setError('Select a payment method'); return }
+    if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setError('Enter a token amount'); return }
     // Sell listings require buyer to provide their receiving address
     if (listing?.side === 'sell' && !buyerSettlementId.trim()) {
       setError('Enter your token receiving address'); return
@@ -86,14 +87,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     setSubmitting(true)
     try {
       if (!listing) return
-      const pkrNum = pkrAmount ? parseFloat(pkrAmount) : null
-      const tokenAmountNum = pkrNum && listing.pricePerUnit
-        ? pkrNum / Number(listing.pricePerUnit)
-        : undefined
       const res = await ctmApi.startListingTrade(id, {
         paymentMethod: paymentMethodId,
         buyerSettlementId: buyerSettlementId.trim() || undefined,
-        tokenAmount: tokenAmountNum,
+        tokenAmount: parseFloat(tokenAmount),
       })
       router.push(`/ctm/trade/${res.tradeRef}`)
     } catch (err: unknown) {
@@ -143,7 +140,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <div>
             <p className="text-xs text-text-muted">Min / Max</p>
-            <p className="font-bold text-text-primary">PKR {Number(listing.minOrderPkr).toLocaleString()} – {Number(listing.maxOrderPkr).toLocaleString()}</p>
+            <p className="font-bold text-text-primary">{Number(listing.minOrderTokens).toLocaleString()} – {Number(listing.maxOrderTokens).toLocaleString()} {listing.token.symbol}</p>
           </div>
           <div>
             <p className="text-xs text-text-muted">Trade window</p>
@@ -214,47 +211,47 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
             {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
 
-            {/* Partial order — PKR input */}
+            {/* Token-quantity input */}
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
-                How much PKR do you want to spend?
-                <span className="text-text-muted font-normal ml-1">(leave blank for full listing)</span>
+                {listing.side === 'sell'
+                  ? `How many ${listing.token.symbol} do you want to buy?`
+                  : `How many ${listing.token.symbol} do you want to sell?`}
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">PKR</span>
                 <input
                   type="number"
-                  min={Number(listing.minOrderPkr)}
-                  max={Number(listing.maxOrderPkr)}
-                  placeholder={`${Number(listing.minOrderPkr).toLocaleString()} – ${Number(listing.maxOrderPkr).toLocaleString()}`}
-                  value={pkrAmount}
-                  onChange={(e) => setPkrAmount(e.target.value)}
-                  className="w-full border border-border rounded-xl pl-12 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  min={Number(listing.minOrderTokens)}
+                  max={Math.min(Number(listing.maxOrderTokens), Number(listing.availableAmount))}
+                  step="0.000001"
+                  placeholder={`${Number(listing.minOrderTokens).toLocaleString()} – ${Number(listing.maxOrderTokens).toLocaleString()}`}
+                  value={tokenAmount}
+                  onChange={(e) => setTokenAmount(e.target.value)}
+                  className="w-full border border-border rounded-xl pl-3 pr-16 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">{listing.token.symbol}</span>
               </div>
-              {pkrAmount && Number(pkrAmount) > 0 && (
-                <p className="text-xs text-text-muted mt-1">
-                  You&apos;ll receive ≈ <span className="font-semibold text-text-primary">{(Number(pkrAmount) / Number(listing.pricePerUnit)).toFixed(6)} {listing.token.symbol}</span>
-                </p>
-              )}
+              <p className="text-xs text-text-muted mt-1">
+                Min {Number(listing.minOrderTokens).toLocaleString()} · Max {Number(listing.maxOrderTokens).toLocaleString()} {listing.token.symbol}
+              </p>
             </div>
 
-            {/* Order summary */}
+            {/* Order summary — built from token amount */}
             {(() => {
-              const pkrNum = pkrAmount ? parseFloat(pkrAmount) : null
-              const tokenAmt = pkrNum ? pkrNum / Number(listing.pricePerUnit) : Number(listing.availableAmount)
-              const totalPkr = pkrNum ?? Number(listing.pricePerUnit) * Number(listing.availableAmount)
+              const tokenAmt = tokenAmount ? parseFloat(tokenAmount) : 0
+              const price = Number(listing.pricePerUnit)
+              const totalPkr = tokenAmt * price
               const platformFee = totalPkr * 0.005
               return (
                 <div className="bg-surface rounded-xl border border-border p-4 space-y-2 text-sm">
                   <p className="font-semibold text-text-primary mb-2">Order Summary</p>
                   <div className="flex justify-between">
                     <span className="text-text-muted">Price per {listing.token.symbol}</span>
-                    <span className="font-medium text-text-primary">PKR {Number(listing.pricePerUnit).toLocaleString()}</span>
+                    <span className="font-medium text-text-primary">PKR {price.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-text-muted">Amount</span>
-                    <span className="font-medium text-text-primary">{tokenAmt.toFixed(6)} {listing.token.symbol}</span>
+                    <span className="text-text-muted">Token amount</span>
+                    <span className="font-medium text-text-primary">{tokenAmt > 0 ? tokenAmt.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'} {listing.token.symbol}</span>
                   </div>
                   <div className="flex justify-between border-t border-border pt-2">
                     <span className="text-text-muted">Total PKR</span>
@@ -265,8 +262,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <span>PKR {platformFee.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-xs text-text-muted">
-                    <span>Seller receives</span>
+                    <span>{listing.side === 'sell' ? 'Seller receives' : 'You receive'}</span>
                     <span>PKR {(totalPkr - platformFee).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-semibold text-text-primary border-t border-border pt-2">
+                    <span>{listing.side === 'sell' ? 'Final payable' : 'Final received'}</span>
+                    <span>PKR {(listing.side === 'sell' ? totalPkr : totalPkr - platformFee).toFixed(2)}</span>
                   </div>
                 </div>
               )

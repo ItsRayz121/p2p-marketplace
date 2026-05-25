@@ -165,7 +165,7 @@ function AddMethodForm({ onSuccess, onCancel }: { onSuccess: (m: PaymentMethod) 
               <input className={inputCls} placeholder="e.g. Muhammad Fazal Elahi" value={accountName}
                 onChange={(e) => { setAccountName(e.target.value); setError('') }} />
             </Field>
-            <Field label="Mobile Number" hint="Registered mobile number (03XXXXXXXXX)">
+            <Field label="Account / Payment Number" hint="Registered mobile number (03XXXXXXXXX)">
               <input className={inputCls} placeholder="e.g. 03001234567" value={mobileNumber}
                 onChange={(e) => { setMobileNumber(e.target.value); setError('') }} />
             </Field>

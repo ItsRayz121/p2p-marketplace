@@ -884,7 +884,7 @@ function PaymentMethodsSection() {
 
               {!isBankCategory && (
                 <div>
-                  <label className="block text-xs text-text-muted mb-1">Mobile Number</label>
+                  <label className="block text-xs text-text-muted mb-1">Account / Payment Number</label>
                   <input
                     type="tel"
                     placeholder="03xx-xxxxxxx"

@@ -13,8 +13,8 @@ interface Listing {
   pricePerUnit: string
   availableAmount: string
   totalAmount: string
-  minOrderPkr: string
-  maxOrderPkr: string
+  minOrderTokens: string
+  maxOrderTokens: string
   paymentMethods: string[]
   createdAt: string
   token: { id: string; name: string; symbol: string; logoUrl?: string }
