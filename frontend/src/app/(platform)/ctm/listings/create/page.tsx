@@ -33,6 +33,55 @@ function methodSubline(m: SavedPaymentMethod): string {
   return m.accountName
 }
 
+function MarketRateWidget({ symbol }: { symbol: string }) {
+  const [rate, setRate] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  const fetchRate = async () => {
+    if (!symbol) return
+    setLoading(true)
+    try {
+      const slug = symbol.toLowerCase()
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(slug)},tether&vs_currencies=pkr`,
+        { signal: AbortSignal.timeout(8000) }
+      )
+      if (!res.ok) throw new Error('rate fetch failed')
+      const json = await res.json() as Record<string, { pkr?: number }>
+      const pkrRate = json[slug]?.pkr ?? json['tether']?.pkr ?? null
+      if (pkrRate) { setRate(pkrRate); setLastUpdated(new Date()) }
+    } catch {
+      // silently fail — widget is informational only
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void fetchRate() }, [symbol])
+
+  if (!symbol) return null
+  return (
+    <div className="flex items-center gap-2 text-xs text-text-muted bg-surface border border-border rounded-lg px-3 py-1.5">
+      {loading ? (
+        <span>Fetching market rate…</span>
+      ) : rate ? (
+        <>
+          <span className="text-text-secondary">CoinGecko:</span>
+          <span className="font-semibold text-text-primary">PKR {rate.toLocaleString()}</span>
+          {lastUpdated && <span>· {lastUpdated.toLocaleTimeString()}</span>}
+          <button onClick={fetchRate} className="ml-auto text-primary hover:underline">Refresh</button>
+        </>
+      ) : (
+        <>
+          <span>Market rate unavailable</span>
+          <button onClick={fetchRate} className="ml-auto text-primary hover:underline">Retry</button>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function CreateListingPage() {
   const router = useRouter()
   const { user } = useAuthStore()
@@ -165,6 +214,12 @@ export default function CreateListingPage() {
             <input type="number" min="0" step="0.000001" value={form.totalAmount} onChange={(e) => setForm((f) => ({ ...f, totalAmount: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
           </div>
         </div>
+
+        {/* Market rate reference */}
+        {form.tokenId && (() => {
+          const selectedToken = tokens.find((t) => t.id === form.tokenId)
+          return selectedToken ? <MarketRateWidget symbol={selectedToken.symbol} /> : null
+        })()}
 
         {/* Order limits */}
         <div className="grid grid-cols-2 gap-4">

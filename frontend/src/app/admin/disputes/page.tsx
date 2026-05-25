@@ -68,6 +68,21 @@ function daysAgo(date: string) {
   return Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24))
 }
 
+function slaLabel(date: string): string {
+  const ms = Date.now() - new Date(date).getTime()
+  const h = Math.floor(ms / 3600000)
+  const d = Math.floor(h / 24)
+  if (d >= 1) return `${d}d ${h % 24}h`
+  return `${h}h ${Math.floor((ms % 3600000) / 60000)}m`
+}
+
+function slaBadgeClass(date: string): string {
+  const days = daysAgo(date)
+  if (days >= 3) return 'bg-red-100 text-red-700 border-red-200'
+  if (days >= 1) return 'bg-orange-100 text-orange-700 border-orange-200'
+  return 'bg-green-100 text-green-700 border-green-200'
+}
+
 const statusVariant = (s: string): 'default' | 'success' | 'warning' | 'danger' => {
   if (s === 'disputed' || s === 'open' || s === 'escalated') return 'danger'
   if (s === 'resolved') return 'success'
@@ -224,7 +239,7 @@ export default function DisputesPage() {
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Buyer</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Seller</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Opened</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Days Open</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">SLA</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -239,8 +254,8 @@ export default function DisputesPage() {
                     <td className="px-4 py-3 text-text-primary">{d.trade?.seller?.username || d.trade?.sellerId?.slice(0, 8) || 'Unknown'}</td>
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(d.createdAt)}</td>
                     <td className="px-4 py-3">
-                      <span className={`font-medium ${daysAgo(d.createdAt) > 2 ? 'text-danger' : 'text-text-secondary'}`}>
-                        {daysAgo(d.createdAt)}d
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${slaBadgeClass(d.createdAt)}`}>
+                        {slaLabel(d.createdAt)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

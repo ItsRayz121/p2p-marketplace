@@ -78,6 +78,7 @@ interface Trade {
   seller: { id: string; username: string }
   proofs: Array<{ id: string; proofType: string; fileUrl?: string; txHash?: string; uploadedBy: string; description?: string; createdAt: string }>
   dispute?: { id: string; reason: string; description: string; status: string; resolution?: string; winner?: string }
+  ratedByMe?: boolean
 }
 
 interface Message { id: string; senderId: string; message: string; createdAt: string }
@@ -110,13 +111,16 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const [ratingOpen, setRatingOpen] = useState(false)
   const [rating, setRating] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
+  const [ratedAlready, setRatedAlready] = useState(false)
+  const [ratingError, setRatingError] = useState('')
   const [error, setError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   const fetchTrade = async () => {
     try {
-      const res = await ctmApi.getTrade(ref)
-      setTrade(res as Trade)
+      const res = await ctmApi.getTrade(ref) as Trade
+      setTrade(res)
+      if (res.ratedByMe) setRatedAlready(true)
     } catch { /* ignore */ } finally { setLoading(false) }
   }
 
@@ -194,8 +198,14 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   }
 
   const handleRate = async () => {
-    await doAction(() => ctmApi.rateTrade(ref, { rating, comment: ratingComment || undefined }))
-    setRatingOpen(false)
+    setRatingError('')
+    try {
+      await ctmApi.rateTrade(ref, { rating, comment: ratingComment || undefined })
+      setRatedAlready(true)
+      setRatingOpen(false)
+    } catch (e: unknown) {
+      setRatingError((e as Error).message ?? 'Failed to submit rating')
+    }
   }
 
   return (
@@ -262,12 +272,12 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             {trade.sellerPaymentSnapshot ? (
               <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                 <Row label="Method" value={trade.sellerPaymentSnapshot.label} />
-                <Row label="Account Name" value={trade.sellerPaymentSnapshot.accountName} />
-                {trade.sellerPaymentSnapshot.mobileNumber && <Row label="Mobile Number" value={trade.sellerPaymentSnapshot.mobileNumber} mono />}
+                <Row label="Account Name" value={trade.sellerPaymentSnapshot.accountName} copyable />
+                {trade.sellerPaymentSnapshot.mobileNumber && <Row label="Mobile Number" value={trade.sellerPaymentSnapshot.mobileNumber} mono copyable />}
                 {trade.sellerPaymentSnapshot.bankName && <Row label="Bank" value={trade.sellerPaymentSnapshot.bankName} />}
-                {trade.sellerPaymentSnapshot.ibanNumber && <Row label="IBAN" value={trade.sellerPaymentSnapshot.ibanNumber} mono breakAll />}
+                {trade.sellerPaymentSnapshot.ibanNumber && <Row label="IBAN" value={trade.sellerPaymentSnapshot.ibanNumber} mono breakAll copyable />}
                 {trade.sellerPaymentSnapshot.accountNumber && !trade.sellerPaymentSnapshot.ibanNumber && (
-                  <Row label="Account No." value={trade.sellerPaymentSnapshot.accountNumber} mono />
+                  <Row label="Account No." value={trade.sellerPaymentSnapshot.accountNumber} mono copyable />
                 )}
               </div>
             ) : (
@@ -304,7 +314,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 <Row
                   label={isSeller ? 'Send tokens to' : 'Your receiving address'}
                   value={trade.buyerSettlementId ?? trade.settlementMethod}
-                  mono breakAll
+                  mono breakAll copyable
                 />
               )}
               <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
@@ -327,7 +337,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                     {p.txHash && (
                       <div className="bg-surface rounded-lg p-2.5 space-y-1.5">
                         <p className="text-xs text-text-muted font-medium">{proofHashLabel(trade.settlementType)}</p>
-                        <p className="text-xs font-mono text-text-primary break-all">{p.txHash}</p>
+                        <CopyableText value={p.txHash} mono />
                         {trade.token.explorerUrl && (
                           <a
                             href={buildExplorerUrl(trade.token.explorerUrl, p.txHash)}
@@ -482,9 +492,15 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
               </div>
             )}
 
-            {/* ─ BUYER: completed — rating ─ */}
+            {/* ─ BUYER: completed ─ */}
             {isBuyer && trade.status === 'completed' && !ratingOpen && (
-              <button onClick={() => setRatingOpen(true)} className="w-full border border-primary text-primary py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/5">Rate This Trade</button>
+              <CompletedSummary
+                trade={trade}
+                counterparty={trade.seller.username}
+                ratedAlready={ratedAlready}
+                ratingError={ratingError}
+                onOpenRating={() => setRatingOpen(true)}
+              />
             )}
 
             {/* ─ SELLER: payment_uploaded ─ */}
@@ -580,7 +596,13 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
 
             {/* ─ SELLER: completed ─ */}
             {isSeller && trade.status === 'completed' && !ratingOpen && (
-              <button onClick={() => setRatingOpen(true)} className="w-full border border-primary text-primary py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/5">Rate This Trade</button>
+              <CompletedSummary
+                trade={trade}
+                counterparty={trade.buyer.username}
+                ratedAlready={ratedAlready}
+                ratingError={ratingError}
+                onOpenRating={() => setRatingOpen(true)}
+              />
             )}
 
             {/* ─ Dispute button ─ */}
@@ -593,6 +615,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           {ratingOpen && (
             <div className="bg-white border border-border rounded-xl p-5 space-y-3">
               <h2 className="font-semibold text-text-primary">Rate this trade</h2>
+              {ratingError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{ratingError}</div>}
               <div className="flex gap-2">
                 {[1, 2, 3, 4, 5].map((s) => (
                   <button key={s} onClick={() => setRating(s)} className={`text-2xl ${s <= rating ? 'text-yellow-400' : 'text-gray-200'}`}>★</button>
@@ -601,7 +624,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
               <textarea rows={2} placeholder="Comment (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
               <div className="flex gap-2">
                 <button onClick={() => setRatingOpen(false)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
-                <button onClick={handleRate} disabled={actionLoading} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-60">Submit</button>
+                <button onClick={handleRate} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold">Submit</button>
               </div>
             </div>
           )}
@@ -665,12 +688,122 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   )
 }
 
-// Small helper component to reduce repetition in key-value rows
-function Row({ label, value, mono, breakAll }: { label: string; value: string; mono?: boolean; breakAll?: boolean }) {
+// Completed trade summary card with rate prompt
+function CompletedSummary({
+  trade,
+  counterparty,
+  ratedAlready,
+  ratingError,
+  onOpenRating,
+}: {
+  trade: Trade
+  counterparty: string
+  ratedAlready: boolean
+  ratingError: string
+  onOpenRating: () => void
+}) {
   return (
-    <div className={`flex ${breakAll ? 'gap-4' : 'justify-between'}`}>
+    <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-green-600 text-lg">✓</span>
+        <p className="font-bold text-green-800">Trade Completed!</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p className="text-xs text-text-muted">Token</p>
+          <p className="font-semibold text-text-primary">{trade.tokenAmount} {trade.token.symbol}</p>
+        </div>
+        <div>
+          <p className="text-xs text-text-muted">Total PKR</p>
+          <p className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount).toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-xs text-text-muted">Payment</p>
+          <p className="font-semibold text-text-primary">{trade.sellerPaymentSnapshot?.label ?? trade.paymentMethod}</p>
+        </div>
+        <div>
+          <p className="text-xs text-text-muted">Counterparty</p>
+          <p className="font-semibold text-text-primary">@{counterparty}</p>
+        </div>
+      </div>
+      <div className="border-t border-green-200 pt-3">
+        {ratedAlready ? (
+          <p className="text-sm text-green-700 text-center">You already rated this trade.</p>
+        ) : (
+          <>
+            {ratingError && <p className="text-xs text-red-600 mb-2">{ratingError}</p>}
+            <button
+              onClick={onOpenRating}
+              className="w-full border border-green-600 text-green-700 py-2 rounded-xl text-sm font-semibold hover:bg-green-100 transition-colors"
+            >
+              ★ Rate This Trade
+            </button>
+          </>
+        )}
+      </div>
+      <p className="text-xs text-center text-green-700">Thank you for using PakSwap.</p>
+    </div>
+  )
+}
+
+// Inline copyable text block (used for tx hashes)
+function CopyableText({ value, mono }: { value: string; mono?: boolean }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* ignore */ }
+  }
+  return (
+    <div className="flex items-start gap-2">
+      <p className={`text-xs text-text-primary break-all flex-1 ${mono ? 'font-mono' : ''}`}>{value}</p>
+      <button onClick={handleCopy} title="Copy" className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors mt-0.5">
+        {copied ? (
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" /><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" /></svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
+// Small helper component to reduce repetition in key-value rows
+function Row({ label, value, mono, breakAll, copyable }: { label: string; value: string; mono?: boolean; breakAll?: boolean; copyable?: boolean }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // clipboard not available
+    }
+  }
+
+  return (
+    <div className={`flex items-center ${breakAll ? 'gap-4' : 'justify-between'}`}>
       <span className="text-text-muted flex-shrink-0">{label}</span>
-      <span className={`text-text-primary font-medium ${mono ? 'font-mono' : ''} ${breakAll ? 'text-right break-all' : ''}`}>{value}</span>
+      <div className={`flex items-center gap-1.5 ${breakAll ? 'text-right' : ''}`}>
+        <span className={`text-text-primary font-medium ${mono ? 'font-mono' : ''} ${breakAll ? 'break-all' : ''}`}>{value}</span>
+        {copyable && (
+          <button
+            onClick={handleCopy}
+            title="Copy"
+            className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+          >
+            {copied ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

@@ -64,6 +64,9 @@ export interface ListingsFilter {
   merchantProfileId?: string
   status?: CtmListingStatus
   adminView?: boolean
+  tier?: string
+  sortBy?: string
+  sortDir?: 'asc' | 'desc'
 }
 
 export async function createListing(userId: string, data: CreateListingInput) {
@@ -123,7 +126,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
 }
 
 export async function getListings(filters: ListingsFilter = {}) {
-  const { tokenId, side, paymentMethod, minPkr, maxPkr, page = 1, limit = 20, merchantProfileId, status, adminView = false } = filters
+  const { tokenId, side, paymentMethod, minPkr, maxPkr, page = 1, limit = 20, merchantProfileId, status, adminView = false, tier, sortBy, sortDir = 'desc' } = filters
   const skip = (page - 1) * limit
 
   const where: Record<string, unknown> = adminView ? {} : { status: 'active' }
@@ -134,13 +137,22 @@ export async function getListings(filters: ListingsFilter = {}) {
   if (paymentMethod) where.paymentMethods = { has: paymentMethod }
   if (minPkr) where.maxOrderPkr = { gte: new Prisma.Decimal(minPkr) }
   if (maxPkr) where.minOrderPkr = { lte: new Prisma.Decimal(maxPkr) }
+  if (tier) where.merchantProfile = { is: { tier: tier as never } }
+
+  const ALLOWED_SORT_FIELDS: Record<string, object> = {
+    createdAt: { createdAt: sortDir },
+    pricePerUnit: { pricePerUnit: sortDir },
+    ctmAvgRating: { merchantProfile: { ctmAvgRating: sortDir } },
+    completedCtmTrades: { merchantProfile: { completedCtmTrades: sortDir } },
+  }
+  const orderBy = ALLOWED_SORT_FIELDS[sortBy ?? 'createdAt'] ?? { createdAt: 'desc' }
 
   const [listings, total] = await Promise.all([
     db.ctmListing.findMany({
       where,
       skip,
       take: limit,
-      orderBy: [{ createdAt: 'desc' }],
+      orderBy,
       include: {
         token: { select: { id: true, slug: true, name: true, symbol: true, logoUrl: true, riskTier: true } },
         merchantProfile: {

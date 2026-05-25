@@ -18,7 +18,7 @@ import { runMerchantSettlementJob } from '../jobs/gasMerchantSettlement.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
-import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor } from '../ctm/ctm.jobs'
+import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause } from '../ctm/ctm.jobs'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { env } from '../lib/env'
@@ -217,6 +217,11 @@ export function startWorkers() {
 
   createWorker(QUEUE_NAMES.CTM_TIER_UPGRADE, async () => { await runCtmMerchantTierUpgrade() }, { max: 1, duration: 120_000 })
   createWorker(QUEUE_NAMES.CTM_ESCROW_MONITOR, async () => { await runCtmEscrowMonitor() }, { max: 1, duration: 60_000 })
+  createWorker(QUEUE_NAMES.CTM_INACTIVE_PAUSE, async () => { await runCtmInactiveMerchantPause() }, { max: 1, duration: 120_000 })
+
+  queues.ctmInactivePause
+    .add('ctm-inactive-pause', {}, { repeat: { every: 6 * 60 * 60 * 1000 }, jobId: 'ctm-inactive-pause-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule CTM inactive merchant pause job'))
 
   // Gas payment poller — fallback RPC-based detection when Moralis misses a webhook.
   // Runs every 30 s, skips quickly when no pending orders exist.

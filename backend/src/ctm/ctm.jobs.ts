@@ -251,3 +251,44 @@ export async function runCtmEscrowMonitor() {
     }
   }
 }
+
+// Auto-pause listings for merchants inactive for >7 days
+export async function runCtmInactiveMerchantPause() {
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
+
+  // Find active listings whose merchant hasn't been seen in 7 days
+  const staleListings = await db.ctmListing.findMany({
+    where: {
+      status: 'active',
+      merchantProfile: {
+        is: {
+          OR: [
+            { lastActiveAt: null },
+            { lastActiveAt: { lte: cutoff } },
+          ],
+        },
+      },
+    },
+    select: {
+      id: true,
+      listingRef: true,
+      merchantProfile: { select: { userId: true, lastActiveAt: true } },
+    },
+  })
+
+  for (const listing of staleListings) {
+    await db.ctmListing.update({ where: { id: listing.id }, data: { status: 'paused' } })
+    notify(
+      listing.merchantProfile.userId,
+      'CTM_LISTING_AUTO_PAUSED',
+      'Listing auto-paused',
+      'Your CTM listing was paused due to 7 days of inactivity. Log in and reactivate it when you are ready.',
+      { listingRef: listing.listingRef },
+    )
+    logger.info({ listingId: listing.id, userId: listing.merchantProfile.userId }, 'CTM listing auto-paused: merchant inactive')
+  }
+
+  if (staleListings.length > 0) {
+    logger.info({ count: staleListings.length }, 'CTM inactive merchant pause: listings paused')
+  }
+}

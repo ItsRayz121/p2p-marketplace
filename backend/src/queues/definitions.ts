@@ -35,6 +35,7 @@ export const QUEUE_NAMES = {
   CTM_DISPUTE_ESCALATION:   'ctm-dispute-escalation',
   CTM_TIER_UPGRADE:         'ctm-tier-upgrade',
   CTM_ESCROW_MONITOR:       'ctm-escrow-monitor',
+  CTM_INACTIVE_PAUSE:       'ctm-inactive-pause',
   GAS_PAYMENT_POLLER:           'gas-payment-poller',
   GAS_HOT_WALLET_DEPOSIT_POLL:  'gas-hot-wallet-deposit-poll',
 } as const
@@ -99,6 +100,7 @@ export const queues = {
   ctmDisputeEscalation: new Queue(QUEUE_NAMES.CTM_DISPUTE_ESCALATION, { connection, defaultJobOptions }),
   ctmTierUpgrade: new Queue(QUEUE_NAMES.CTM_TIER_UPGRADE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
   ctmEscrowMonitor: new Queue(QUEUE_NAMES.CTM_ESCROW_MONITOR, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
+  ctmInactivePause: new Queue(QUEUE_NAMES.CTM_INACTIVE_PAUSE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
   gasPaymentPoller: new Queue(QUEUE_NAMES.GAS_PAYMENT_POLLER, {
     connection,
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },

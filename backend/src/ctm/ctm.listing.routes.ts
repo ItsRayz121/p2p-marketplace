@@ -52,6 +52,9 @@ export async function ctmListingRoutes(app: FastifyInstance) {
       ...(q.paymentMethod ? { paymentMethod: q.paymentMethod } : {}),
       ...(q.minPkr ? { minPkr: parseFloat(q.minPkr) } : {}),
       ...(q.maxPkr ? { maxPkr: parseFloat(q.maxPkr) } : {}),
+      ...(q.tier ? { tier: q.tier } : {}),
+      ...(q.sortBy ? { sortBy: q.sortBy } : {}),
+      ...(q.sortDir === 'asc' || q.sortDir === 'desc' ? { sortDir: q.sortDir } : {}),
       page: q.page ? parseInt(q.page, 10) : 1,
       limit: q.limit ? parseInt(q.limit, 10) : 20,
     })
@@ -63,6 +66,8 @@ export async function ctmListingRoutes(app: FastifyInstance) {
     const { db } = await import('../lib/prisma')
     const profile = await db.ctmMerchantProfile.findUnique({ where: { userId: req.user!.id }, select: { id: true } })
     if (!profile) return reply.send({ success: true, data: { listings: [], total: 0, page: 1, limit: 20, totalPages: 0 } })
+    // Update lastActiveAt fire-and-forget
+    db.ctmMerchantProfile.update({ where: { id: profile.id }, data: { lastActiveAt: new Date() } }).catch(() => {})
     const result = await getListings({ merchantProfileId: profile.id, adminView: true })
     return reply.send({ success: true, data: result })
   })
@@ -127,6 +132,7 @@ export async function ctmListingRoutes(app: FastifyInstance) {
     const parsed = z.object({
       paymentMethod: z.string().min(1),
       buyerSettlementId: z.string().max(500).optional(),
+      tokenAmount: z.number().positive().optional(),
     }).safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -107,6 +107,7 @@ export default function CtmHomePage() {
           { href: '/ctm/listings', label: 'Buy/Sell Listings', icon: '📋' },
           { href: '/ctm/requests', label: 'Bid Board', icon: '🤝' },
           { href: '/ctm/listings/create', label: 'Post a Listing', icon: '➕' },
+          { href: '/ctm/dashboard', label: 'Merchant Dashboard', icon: '📊' },
         ].map((item) => (
           <Link key={item.href} href={item.href} className="bg-white border border-border rounded-xl p-4 text-center hover:shadow-md transition-shadow">
             <div className="text-2xl mb-1">{item.icon}</div>

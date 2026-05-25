@@ -138,6 +138,7 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
   app.post('/ctm/trades/:ref/confirm-payment', { preHandler: [authenticate] }, async (req, reply) => {
     const { ref } = req.params as { ref: string }
     await confirmPayment(ref, req.user!.id)
+    db.ctmMerchantProfile.updateMany({ where: { userId: req.user!.id }, data: { lastActiveAt: new Date() } }).catch(() => {})
     return reply.send({ success: true })
   })
 
@@ -145,6 +146,7 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
   app.post('/ctm/trades/:ref/seller-transferring', { preHandler: [authenticate] }, async (req, reply) => {
     const { ref } = req.params as { ref: string }
     await markSellerTransferring(ref, req.user!.id)
+    db.ctmMerchantProfile.updateMany({ where: { userId: req.user!.id }, data: { lastActiveAt: new Date() } }).catch(() => {})
     return reply.send({ success: true })
   })
 

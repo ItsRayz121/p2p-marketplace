@@ -59,6 +59,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [showModal, setShowModal] = useState(false)
   const [paymentMethodId, setPaymentMethodId] = useState('')
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
+  const [pkrAmount, setPkrAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -85,9 +86,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     setSubmitting(true)
     try {
       if (!listing) return
+      const pkrNum = pkrAmount ? parseFloat(pkrAmount) : null
+      const tokenAmountNum = pkrNum && listing.pricePerUnit
+        ? pkrNum / Number(listing.pricePerUnit)
+        : undefined
       const res = await ctmApi.startListingTrade(id, {
         paymentMethod: paymentMethodId,
         buyerSettlementId: buyerSettlementId.trim() || undefined,
+        tokenAmount: tokenAmountNum,
       })
       router.push(`/ctm/trade/${res.tradeRef}`)
     } catch (err: unknown) {
@@ -208,9 +214,36 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
             {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
 
+            {/* Partial order — PKR input */}
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                How much PKR do you want to spend?
+                <span className="text-text-muted font-normal ml-1">(leave blank for full listing)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">PKR</span>
+                <input
+                  type="number"
+                  min={Number(listing.minOrderPkr)}
+                  max={Number(listing.maxOrderPkr)}
+                  placeholder={`${Number(listing.minOrderPkr).toLocaleString()} – ${Number(listing.maxOrderPkr).toLocaleString()}`}
+                  value={pkrAmount}
+                  onChange={(e) => setPkrAmount(e.target.value)}
+                  className="w-full border border-border rounded-xl pl-12 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              {pkrAmount && Number(pkrAmount) > 0 && (
+                <p className="text-xs text-text-muted mt-1">
+                  You&apos;ll receive ≈ <span className="font-semibold text-text-primary">{(Number(pkrAmount) / Number(listing.pricePerUnit)).toFixed(6)} {listing.token.symbol}</span>
+                </p>
+              )}
+            </div>
+
             {/* Order summary */}
             {(() => {
-              const totalPkr = Number(listing.pricePerUnit) * Number(listing.availableAmount)
+              const pkrNum = pkrAmount ? parseFloat(pkrAmount) : null
+              const tokenAmt = pkrNum ? pkrNum / Number(listing.pricePerUnit) : Number(listing.availableAmount)
+              const totalPkr = pkrNum ?? Number(listing.pricePerUnit) * Number(listing.availableAmount)
               const platformFee = totalPkr * 0.005
               return (
                 <div className="bg-surface rounded-xl border border-border p-4 space-y-2 text-sm">
@@ -221,11 +254,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-muted">Amount</span>
-                    <span className="font-medium text-text-primary">{Number(listing.availableAmount).toFixed(4)} {listing.token.symbol}</span>
+                    <span className="font-medium text-text-primary">{tokenAmt.toFixed(6)} {listing.token.symbol}</span>
                   </div>
                   <div className="flex justify-between border-t border-border pt-2">
                     <span className="text-text-muted">Total PKR</span>
-                    <span className="font-bold text-text-primary">PKR {totalPkr.toLocaleString()}</span>
+                    <span className="font-bold text-text-primary">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-xs text-text-muted">
                     <span>Platform fee (0.5%)</span>

@@ -62,7 +62,8 @@ export async function getTradeByRef(tradeRef: string, userId: string, role: stri
   })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (!isParticipant(trade, userId, role)) throw new AppError('FORBIDDEN', 'Access denied', 403)
-  return trade
+  const ratedByMeRecord = await db.ctmTradeRating.findFirst({ where: { tradeId: trade.id, ratedByUserId: userId } })
+  return { ...trade, ratedByMe: !!ratedByMeRecord }
 }
 
 export async function uploadPaymentProof(tradeRef: string, buyerId: string, fileUrl: string, fileHash: string) {
@@ -319,6 +320,7 @@ export async function getAllTradesAdmin(filters: { status?: string; page?: numbe
 export async function createTradeFromListing(buyerId: string, listingId: string, data: {
   paymentMethod: string
   buyerSettlementId?: string
+  tokenAmount?: number
 }) {
   const listing = await db.ctmListing.findUnique({
     where: { id: listingId },
@@ -330,6 +332,17 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (listing.merchantProfile.userId === buyerId) throw new AppError('CONFLICT', 'Cannot trade with yourself', 409)
   if (!listing.paymentMethods.includes(data.paymentMethod)) throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
   if (listing.availableAmount.lte(0)) throw new AppError('CONFLICT', 'Listing has no available tokens', 409)
+
+  // Determine the trade token amount (partial fill or full listing)
+  const tradeTokenAmount = data.tokenAmount
+    ? new Prisma.Decimal(data.tokenAmount)
+    : listing.availableAmount
+  if (tradeTokenAmount.lte(0)) throw new AppError('VALIDATION_ERROR', 'Token amount must be greater than 0', 400)
+  if (tradeTokenAmount.gt(listing.availableAmount)) throw new AppError('VALIDATION_ERROR', 'Requested amount exceeds available listing amount', 400)
+
+  const fiatRequired = listing.pricePerUnit.mul(tradeTokenAmount)
+  if (fiatRequired.lt(listing.minOrderPkr)) throw new AppError('VALIDATION_ERROR', `Minimum order is PKR ${listing.minOrderPkr}`, 400)
+  if (fiatRequired.gt(listing.maxOrderPkr)) throw new AppError('VALIDATION_ERROR', `Maximum order is PKR ${listing.maxOrderPkr}`, 400)
 
   // Fetch and snapshot seller's payment account details
   const sellerPaymentMethod = await db.paymentMethod.findFirst({
@@ -351,12 +364,12 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   const expiresAt = new Date(Date.now() + (listing.tradeWindowMins ?? 45) * 60 * 1000)
 
   return db.$transaction(async (tx: Tx) => {
-    // Atomic availability check: only lock if availableAmount >= tokenAmount (prevents race condition)
+    // Atomic availability check: only lock if availableAmount >= requested amount (prevents race condition)
     const updated = await tx.ctmListing.updateMany({
-      where: { id: listing.id, availableAmount: { gte: listing.availableAmount } },
+      where: { id: listing.id, availableAmount: { gte: tradeTokenAmount } },
       data: {
-        availableAmount: { decrement: listing.availableAmount },
-        lockedAmount: { increment: listing.availableAmount },
+        availableAmount: { decrement: tradeTokenAmount },
+        lockedAmount: { increment: tradeTokenAmount },
       },
     })
     if (updated.count === 0) throw new AppError('CONFLICT', 'Listing is no longer available for trading', 409)
@@ -364,11 +377,9 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     const isOnChain = listing.settlementType === 'ON_CHAIN'
     const escrowAddress = isOnChain ? (process.env.PLATFORM_USDT_WALLET ?? null) : null
     const escrowCurrency = isOnChain ? (process.env.PLATFORM_ESCROW_CURRENCY ?? 'USDT_TRC20') : null
-    // escrowAmount mirrors fiatAmount but represents USDT; rate bridging is handled off-chain for Phase 2
-    const escrowAmount = isOnChain ? listing.pricePerUnit.mul(listing.availableAmount) : null
-    // fiatAmount computed below (need it for fee calculation)
+    const escrowAmount = isOnChain ? listing.pricePerUnit.mul(tradeTokenAmount) : null
 
-    const fiatAmount = listing.pricePerUnit.mul(listing.availableAmount)
+    const fiatAmount = listing.pricePerUnit.mul(tradeTokenAmount)
     // Platform fee: configurable via env (default 0.5% of PKR amount)
     const feePct = parseFloat(process.env.CTM_PLATFORM_FEE_PCT ?? '0.5') / 100
     const platformFeePkr = fiatAmount.mul(feePct)
@@ -380,7 +391,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         sellerId: listing.merchantProfile.userId,
         tokenId: listing.tokenId,
         settlementType: listing.settlementType,
-        tokenAmount: listing.availableAmount,
+        tokenAmount: tradeTokenAmount,
         pricePerUnit: listing.pricePerUnit,
         fiatAmount,
         paymentMethod: data.paymentMethod,
