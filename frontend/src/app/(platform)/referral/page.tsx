@@ -66,7 +66,7 @@ export default function ReferralPage() {
   )
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 pb-24 lg:pb-6 space-y-6">
+    <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Referral Program</h1>
         <p className="text-sm text-text-muted">Invite friends and earn PKR rewards</p>

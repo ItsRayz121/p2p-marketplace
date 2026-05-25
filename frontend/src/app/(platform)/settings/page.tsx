@@ -368,7 +368,7 @@ export default function SettingsPage() {
   ]
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 pb-24 lg:pb-6">
+    <div className="max-w-2xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-text-primary mb-6">Settings</h1>
 
       {/* Tabs */}

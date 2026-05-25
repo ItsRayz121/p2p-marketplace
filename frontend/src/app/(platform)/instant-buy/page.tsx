@@ -1,12 +1,39 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { isAddress } from 'viem'
 import { marketplaceApi, instantBuyApi, apiRequest } from '@/lib/api'
+import { usePolling } from '@/hooks/usePolling'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Spinner } from '@/components/ui/Spinner'
+import { StalenessBadge } from '@/components/ui/StalenessBadge'
+
+// ─── Address validation per network ──────────────────────────────────────────
+const EVM_NETWORKS = new Set(['ERC20', 'BEP20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'BASE'])
+
+function validateDestinationAddress(network: string, address: string): string | null {
+  const trimmed = address.trim()
+  if (!trimmed) return 'Address is required'
+  if (EVM_NETWORKS.has(network)) {
+    if (!isAddress(trimmed)) return 'Invalid address — expected a 0x… EVM address (42 chars)'
+    return null
+  }
+  if (network === 'TRC20') {
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(trimmed)) return 'Invalid TRON address — expected base58, starts with T, 34 chars'
+    return null
+  }
+  if (network === 'Bitcoin') {
+    const okBase58 = /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(trimmed)
+    const okBech32 = /^bc1[02-9ac-hj-np-z]{6,87}$/i.test(trimmed)
+    if (!okBase58 && !okBech32) return 'Invalid Bitcoin address'
+    return null
+  }
+  // Unknown network — accept and let the backend validate.
+  return null
+}
 
 // ─── Rate source attribution ──────────────────────────────────────────────────
 
@@ -121,9 +148,12 @@ export default function InstantBuyPage() {
   const [destAddress, setDestAddress] = useState('')
   const [rate, setRate] = useState<number>(0)
   const [rateSource, setRateSource] = useState<string>('')
+  const [rateUpdatedAt, setRateUpdatedAt] = useState<string>('')
   const [rateLoading, setRateLoading] = useState(false)
   const [dailyLimit, setDailyLimit] = useState<number>(0)
   const [dailyUsed, setDailyUsed] = useState<number>(0)
+
+  const addressError = destAddress ? validateDestinationAddress(selectedNetwork, destAddress) : null
 
   // Step 4
   const [submitting, setSubmitting] = useState(false)
@@ -150,12 +180,17 @@ export default function InstantBuyPage() {
       const r = await marketplaceApi.getRate(selectedCoin)
       setRate(r.rate)
       setRateSource(r.source ?? '')
+      setRateUpdatedAt(new Date().toISOString())
     } catch {
       // ignore
     } finally {
       setRateLoading(false)
     }
   }, [selectedCoin])
+
+  // Auto-refresh the rate every 30s while the user is in step 2 or 3 so the
+  // "you will receive" quote doesn't go stale while they're typing.
+  usePolling(fetchRate, 30_000, step >= 2 && !!selectedCoin)
 
   // Fetch daily limits
   useEffect(() => {
@@ -203,7 +238,7 @@ export default function InstantBuyPage() {
   const stepLabels = ['Choose Coin', 'Network & Payment', 'Enter Amount', 'Confirm']
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 pb-24 lg:pb-6">
+    <div className="max-w-lg mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-text-primary mb-2">Instant Buy</h1>
       <p className="text-sm text-text-muted mb-6">Buy crypto instantly with PKR or crypto deposit</p>
 
@@ -339,6 +374,7 @@ export default function InstantBuyPage() {
                       Rate: 1 {selectedCoin} = PKR {rate.toLocaleString()}
                     </p>
                     <RateSourceBadge source={rateSource} />
+                    {rateUpdatedAt && <StalenessBadge updatedAt={rateUpdatedAt} thresholdMinutes={1} />}
                   </div>
                 )}
               </div>
@@ -368,6 +404,9 @@ export default function InstantBuyPage() {
                 value={destAddress}
                 onChange={(e) => setDestAddress(e.target.value)}
               />
+              {addressError && (
+                <p className="text-xs text-danger mt-1">{addressError}</p>
+              )}
             </div>
           </div>
 
@@ -375,7 +414,7 @@ export default function InstantBuyPage() {
             <Button variant="secondary" className="flex-1" onClick={() => setStep(1)}>Back</Button>
             <Button
               className="flex-1"
-              disabled={!amount || !destAddress}
+              disabled={!amount || !destAddress || !!addressError}
               onClick={() => setStep(3)}
             >
               Proceed

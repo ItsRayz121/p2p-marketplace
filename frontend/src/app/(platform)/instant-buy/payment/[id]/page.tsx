@@ -104,7 +104,7 @@ export default function InstantBuyPaymentPage() {
   const pkrAmount = parseFloat(order.amountPkr).toLocaleString()
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 pb-24 lg:pb-6 space-y-5">
+    <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
       <div>
         <h1 className="text-xl font-bold text-text-primary">Payment Instructions</h1>
         <p className="text-sm text-text-muted">Complete payment within the time limit</p>

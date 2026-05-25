@@ -106,8 +106,21 @@ export default function OrdersPage() {
   const hasMore = trades.length < total
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6">
-      <h1 className="text-2xl font-bold text-text-primary mb-6">My Orders</h1>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <h1 className="text-2xl font-bold text-text-primary mb-4">My Orders</h1>
+
+      {/* Market segmented control — switch between USDT P2P trades and CTM trades */}
+      <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-fit">
+        <button className="px-4 py-2 text-sm font-medium bg-primary text-white">
+          USDT P2P
+        </button>
+        <Link
+          href="/ctm/my-trades"
+          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-white transition-colors"
+        >
+          Community Tokens
+        </Link>
+      </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">

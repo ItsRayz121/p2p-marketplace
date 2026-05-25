@@ -63,7 +63,20 @@ export default function MyCtmTradesPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-text-primary mb-6">My CTM Trades</h1>
+      <h1 className="text-2xl font-bold text-text-primary mb-4">My CTM Trades</h1>
+
+      {/* Market segmented control — switch between USDT P2P trades and CTM trades */}
+      <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-fit">
+        <Link
+          href="/orders"
+          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-white transition-colors"
+        >
+          USDT P2P
+        </Link>
+        <button className="px-4 py-2 text-sm font-medium bg-primary text-white">
+          Community Tokens
+        </button>
+      </div>
 
       <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 mb-6 w-fit">
         {(['active', 'completed', 'disputed'] as const).map((t) => (

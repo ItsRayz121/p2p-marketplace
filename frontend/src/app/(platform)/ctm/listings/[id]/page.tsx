@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ctmApi, ApiError } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
@@ -53,7 +53,7 @@ function buyerAddressPlaceholder(tokenDeliveryType: string | undefined, tokenSym
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)

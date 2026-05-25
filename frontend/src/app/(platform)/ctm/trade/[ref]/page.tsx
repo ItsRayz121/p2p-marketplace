@@ -1,8 +1,9 @@
 'use client'
-import { useState, use, useRef, useEffect } from 'react'
+import { useState, use, useRef, useEffect, useCallback } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
-import { useAuthStore } from '@/store/auth.store'
+import { useSSE } from '@/hooks/useSSE'
+import { useAuth } from '@/hooks/useAuth'
 
 const STATUS_STEPS = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'completed']
 const STATUS_LABELS: Record<string, string> = {
@@ -96,7 +97,7 @@ function Countdown({ deadline }: { deadline: string }) {
 
 export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: string }> }) {
   const { ref } = use(params)
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [trade, setTrade] = useState<Trade | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
@@ -117,15 +118,15 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const chatEndRef = useRef<HTMLDivElement>(null)
   const prevMsgCountRef = useRef(0)
 
-  const fetchTrade = async () => {
+  const fetchTrade = useCallback(async () => {
     try {
       const res = await ctmApi.getTrade(ref) as Trade
       setTrade(res)
       if (res.ratedByMe) setRatedAlready(true)
     } catch { /* ignore */ } finally { setLoading(false) }
-  }
+  }, [ref])
 
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     try {
       const res = await ctmApi.getMessages(ref)
       const msgs = res as Message[]
@@ -135,10 +136,26 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
         prevMsgCountRef.current = msgs.length
       }
     } catch { /* ignore */ }
-  }
+  }, [ref])
 
-  usePolling(fetchTrade, 15000)
-  usePolling(fetchMessages, 10000)
+  useEffect(() => { fetchTrade(); fetchMessages() }, [fetchTrade, fetchMessages])
+
+  // Polling as fallback; SSE triggers immediate refresh on trade events.
+  // Gated on !loading so we don't double-fetch during initial mount.
+  usePolling(fetchTrade, 30_000, !loading)
+  usePolling(fetchMessages, 15_000, !loading)
+
+  useSSE((event) => {
+    if (event.type === 'notification') {
+      const payload = event.payload as { metadata?: { tradeRef?: string; tradeId?: string } } | undefined
+      const matchesRef = payload?.metadata?.tradeRef === ref
+      const matchesId = payload?.metadata?.tradeId === ref
+      if (matchesRef || matchesId) {
+        void fetchTrade()
+        void fetchMessages()
+      }
+    }
+  })
 
   if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-white rounded-xl h-96 border border-border" /></div>
   if (!trade) return <div className="max-w-5xl mx-auto px-4 py-12 text-center text-text-muted">Trade not found.</div>

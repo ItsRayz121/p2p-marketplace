@@ -42,11 +42,21 @@ export default function Navbar() {
             <span className="text-xl font-bold text-primary">PakSwap</span>
           </Link>
 
-          {/* Center nav — desktop only */}
-          <nav className="hidden lg:flex items-center gap-1">
-            <NavLink href="/marketplace">USDT Marketplace</NavLink>
-            <NavLink href="/ctm">Community Tokens</NavLink>
-            <NavLink href="/gas">Crypto Gas Fees</NavLink>
+          {/* Center nav — visible at md+ (iPad portrait and up). Short labels
+              between md and lg so all five fit; full labels at lg+. */}
+          <nav className="hidden md:flex items-center gap-1">
+            <NavLink href="/marketplace">
+              <span className="lg:hidden">Market</span>
+              <span className="hidden lg:inline">USDT Marketplace</span>
+            </NavLink>
+            <NavLink href="/ctm">
+              <span className="lg:hidden">Tokens</span>
+              <span className="hidden lg:inline">Community Tokens</span>
+            </NavLink>
+            <NavLink href="/gas">
+              <span className="lg:hidden">Gas</span>
+              <span className="hidden lg:inline">Crypto Gas Fees</span>
+            </NavLink>
             <NavLink href="/leaderboard">Leaderboard</NavLink>
             <NavLink href="/dashboard">Dashboard</NavLink>
           </nav>

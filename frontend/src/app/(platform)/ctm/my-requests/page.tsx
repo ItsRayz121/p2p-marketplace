@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 function timeLeft(expiresAt: string): string {
   const diff = new Date(expiresAt).getTime() - Date.now()
@@ -29,6 +30,9 @@ export default function MyRequestsPage() {
   const [bids, setBids] = useState<MyBid[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'requests' | 'bids'>('requests')
+  const [actionError, setActionError] = useState('')
+  const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
+  const [confirmWithdraw, setConfirmWithdraw] = useState<{ requestId: string; bidId: string } | null>(null)
 
   const fetchData = async () => {
     try {
@@ -46,32 +50,39 @@ export default function MyRequestsPage() {
   usePolling(fetchData, 15000)
 
   const handleAcceptBid = async (requestId: string, bidId: string) => {
+    setActionError('')
     try {
       const res = await ctmApi.acceptBid(requestId, bidId)
       const trade = res as { tradeRef: string }
       window.location.href = `/ctm/trade/${trade.tradeRef}`
     } catch (err: unknown) {
-      alert((err as Error).message ?? 'Failed to accept bid')
+      setActionError((err as Error).message ?? 'Failed to accept bid')
     }
   }
 
-  const handleCancel = async (requestId: string) => {
-    if (!confirm('Cancel this request?')) return
+  const handleConfirmedCancel = async () => {
+    if (!confirmCancel) return
+    setActionError('')
     try {
-      await ctmApi.cancelRequest(requestId)
+      await ctmApi.cancelRequest(confirmCancel)
       await fetchData()
     } catch (err: unknown) {
-      alert((err as Error).message ?? 'Failed to cancel request')
+      setActionError((err as Error).message ?? 'Failed to cancel request')
+    } finally {
+      setConfirmCancel(null)
     }
   }
 
-  const handleWithdrawBid = async (requestId: string, bidId: string) => {
-    if (!confirm('Withdraw your bid?')) return
+  const handleConfirmedWithdraw = async () => {
+    if (!confirmWithdraw) return
+    setActionError('')
     try {
-      await ctmApi.withdrawBid(requestId, bidId)
+      await ctmApi.withdrawBid(confirmWithdraw.requestId, confirmWithdraw.bidId)
       await fetchData()
     } catch (err: unknown) {
-      alert((err as Error).message ?? 'Failed to withdraw bid')
+      setActionError((err as Error).message ?? 'Failed to withdraw bid')
+    } finally {
+      setConfirmWithdraw(null)
     }
   }
 
@@ -81,6 +92,32 @@ export default function MyRequestsPage() {
         <h1 className="text-2xl font-bold text-text-primary">My Requests & Bids</h1>
         <Link href="/ctm/requests/create" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">+ Post Request</Link>
       </div>
+
+      {actionError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-start justify-between gap-3">
+          <span className="flex-1">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 flex-shrink-0" aria-label="Dismiss">×</button>
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!confirmCancel}
+        onClose={() => setConfirmCancel(null)}
+        onConfirm={handleConfirmedCancel}
+        title="Cancel this request?"
+        description="Any pending bids on this request will be withdrawn."
+        confirmLabel="Cancel Request"
+        confirmVariant="danger"
+      />
+      <ConfirmModal
+        isOpen={!!confirmWithdraw}
+        onClose={() => setConfirmWithdraw(null)}
+        onConfirm={handleConfirmedWithdraw}
+        title="Withdraw your bid?"
+        description="The merchant will no longer see this bid. You can submit a new one if the request is still open."
+        confirmLabel="Withdraw Bid"
+        confirmVariant="danger"
+      />
 
       <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 mb-6 w-fit">
         {(['requests', 'bids'] as const).map((t) => (
@@ -109,7 +146,7 @@ export default function MyRequestsPage() {
                     </div>
                   </div>
                   {r.status === 'open' && (
-                    <button onClick={() => handleCancel(r.id)} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Cancel</button>
+                    <button onClick={() => setConfirmCancel(r.id)} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Cancel</button>
                   )}
                 </div>
 
@@ -147,7 +184,7 @@ export default function MyRequestsPage() {
                   <p className="text-xs text-text-muted">Your bid: PKR {Number(b.totalPkr).toLocaleString()} · {b.status}</p>
                 </div>
                 {b.status === 'pending' && (
-                  <button onClick={() => handleWithdrawBid(b.request.id, b.id)} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Withdraw</button>
+                  <button onClick={() => setConfirmWithdraw({ requestId: b.request.id, bidId: b.id })} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Withdraw</button>
                 )}
               </div>
             ))}

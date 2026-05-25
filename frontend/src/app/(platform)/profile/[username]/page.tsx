@@ -109,7 +109,7 @@ export default function TraderProfilePage() {
   const completedTrades = stats?.completedTrades ?? 0
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6 space-y-5">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
       {/* Header */}
       <div className="bg-white rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-start gap-4">

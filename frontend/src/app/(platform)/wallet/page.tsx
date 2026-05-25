@@ -4,6 +4,7 @@ import { walletApi, marketplaceApi, userPaymentMethodsApi } from '@/lib/api'
 import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
+import { QRCodeSVG } from 'qrcode.react'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -17,6 +18,8 @@ import { ChainSwitcher } from '@/components/wallet/ChainSwitcher'
 import { ConnectedBalances } from '@/components/wallet/ConnectedBalances'
 import { RecentDeposits } from '@/components/wallet/RecentDeposits'
 import { UI_CHAINS } from '@/lib/web3/chains'
+import { COIN_NETWORKS, networksFor } from '@/lib/wallet/coinNetworks'
+import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAccount } from 'wagmi'
@@ -29,20 +32,6 @@ interface DepositInfo {
   chainName?: string
   minConfirmations?: number
   memo?: string
-}
-
-// Networks PakSwap accepts for each coin. EVM networks share one HD-derived
-// address per user; TRC20 uses the legacy shared platform address.
-const COIN_NETWORKS: Record<string, string[]> = {
-  USDT: ['ERC20', 'BEP20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'TRC20'],
-  USDC: ['ERC20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'BASE'],
-  ETH: ['ERC20', 'ARBITRUM', 'OPTIMISM', 'BASE'],
-  BNB: ['BEP20'],
-  POL: ['POLYGON'],
-}
-
-function networksFor(coin: string): string[] {
-  return COIN_NETWORKS[coin.toUpperCase()] ?? ['TRC20']
 }
 
 function DisconnectedHint() {
@@ -88,7 +77,7 @@ function WithdrawModal({
   const [state, setState] = useState<WithdrawState>({
     address: '',
     amount: '',
-    network: coin === 'USDT' ? 'TRC20' : coin === 'BTC' ? 'Bitcoin' : coin === 'ETH' ? 'Ethereum' : 'BEP20',
+    network: networksFor(coin)[0] ?? 'TRC20',
     fee: '0',
     feePkr: '0',
     loadingFee: false,
@@ -192,14 +181,7 @@ function WithdrawModal({
     }
   }
 
-  const NETWORKS: Record<string, string[]> = {
-    USDT: ['TRC20', 'ERC20', 'BEP20'],
-    BTC: ['Bitcoin'],
-    ETH: ['Ethereum'],
-    BNB: ['BEP20'],
-    TRX: ['TRON'],
-  }
-  const networks = NETWORKS[coin] ?? ['Mainnet']
+  const networks = networksFor(coin)
 
   return (
     <>
@@ -322,6 +304,7 @@ function WithdrawModal({
                   type="text"
                   inputMode="numeric"
                   maxLength={6}
+                  autoComplete="one-time-code"
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="000000"
@@ -434,8 +417,17 @@ function DepositModal({
               <p className="text-xs text-text-muted mb-2">
                 Network: <span className="font-medium text-text-primary">{info.chainName ?? info.network}</span>
               </p>
-              <div className="w-32 h-32 bg-white border border-border rounded-lg flex items-center justify-center mx-auto mb-3">
-                <span className="text-xs text-text-muted text-center px-2">QR code for<br />{coin} address</span>
+              <div className="w-36 h-36 bg-white border border-border rounded-lg flex items-center justify-center mx-auto mb-3 p-2">
+                {/* Encode only the address — there's no universal URI scheme
+                    for memo/destination tags across wallets, so embedding
+                    `?memo=` would make Trust/Binance scan as a malformed
+                    address. Memo (if any) is shown separately below. */}
+                <QRCodeSVG
+                  value={info.address}
+                  size={128}
+                  level="M"
+                  includeMargin={false}
+                />
               </div>
               <p className="font-mono text-xs text-text-primary break-all">{info.address}</p>
             </div>
@@ -487,9 +479,10 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
   const [addresses, setAddresses] = useState<TrustedAddress[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
-  const [form, setForm] = useState({ coin: 'USDT', network: 'ERC20', address: '', label: '' })
+  const [form, setForm] = useState({ coin: 'USDT', network: networksFor('USDT')[0], address: '', label: '' })
   const [totpCode, setTotpCode] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
 
   const load = useCallback(async () => {
@@ -509,7 +502,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
     try {
       await walletApi.addTrustedAddress({ ...form, ...(twoFaEnabled ? { totpCode } : {}) })
       setShowForm(false)
-      setForm({ coin: 'USDT', network: 'ERC20', address: '', label: '' })
+      setForm({ coin: 'USDT', network: networksFor('USDT')[0], address: '', label: '' })
       setTotpCode('')
       await load()
     } catch (err) {
@@ -518,10 +511,13 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
   }
 
   const handleRemove = async (id: string) => {
+    setRemoveError(null)
     try {
       await walletApi.removeTrustedAddress(id)
       await load()
-    } catch { /* ignore */ }
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : 'Failed to remove address')
+    }
   }
 
   const isActive = (a: TrustedAddress) => new Date(a.activatesAt) <= new Date()
@@ -600,6 +596,10 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
           </div>
           <Button fullWidth loading={adding} onClick={handleAdd}>Add Trusted Address</Button>
         </div>
+      )}
+
+      {removeError && (
+        <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{removeError}</p>
       )}
 
       {addresses.length === 0 ? (
@@ -1059,11 +1059,11 @@ export default function WalletPage() {
     ? new Date(user.withdrawalLockedUntil) > new Date()
     : false
   const wdLockUntil = user?.withdrawalLockedUntil
-    ? new Date(user.withdrawalLockedUntil).toLocaleString()
+    ? fmtPakDateTime(user.withdrawalLockedUntil)
     : null
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6 space-y-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-2xl font-bold text-text-primary">Wallet</h1>
         <ConnectButton />

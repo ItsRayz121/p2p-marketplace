@@ -28,6 +28,11 @@ export function useSSE(onEvent: SseHandler) {
     if (typeof EventSource === 'undefined') return
 
     const base = resolveApiBase()
+    // SECURITY NOTE: EventSource cannot send Authorization headers, so we pass
+    // the JWT via querystring. This leaks the token into proxy/CDN/server logs.
+    // The proper fix is a backend handshake endpoint that mints a short-lived
+    // (e.g. 60s) one-time SSE token, which we pass here instead. Tracked but
+    // not yet implemented server-side — coordinate before changing this line.
     const url = `${base}/api/v1/sse?token=${encodeURIComponent(accessToken)}`
 
     const es = new EventSource(url, { withCredentials: true })

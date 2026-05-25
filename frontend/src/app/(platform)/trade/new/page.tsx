@@ -127,7 +127,7 @@ function NewTradePageContent() {
   const availableMethods = ad.paymentMethods.length > 0 ? ad.paymentMethods : PAYMENT_METHODS
 
   return (
-    <div className="max-w-xl mx-auto px-4 sm:px-6 py-8 pb-24 lg:pb-8">
+    <div className="max-w-xl mx-auto px-4 sm:px-6 py-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">
           {ad.side === 'sell' ? 'Buy' : 'Sell'} {ad.coin}

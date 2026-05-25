@@ -183,7 +183,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       {/* ── 1. Welcome bar ── */}
       <div className="bg-white rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">

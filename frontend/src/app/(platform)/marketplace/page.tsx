@@ -197,7 +197,7 @@ export default function MarketplacePage() {
   const hasMore = ads.length < total
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* Filters */}
       <div className="sticky top-16 z-20 bg-surface pt-2 pb-4">
         <div className="flex flex-wrap gap-3 items-center">
@@ -207,12 +207,13 @@ export default function MarketplacePage() {
               <button
                 key={s}
                 onClick={() => { setFilters((f) => ({ ...f, side: s })); setPage(1) }}
+                title={s === 'buy' ? 'Find sellers' : 'Find buyers'}
                 className={`px-4 py-2.5 text-sm font-medium transition-colors leading-tight ${
                   filters.side === s ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface'
                 }`}
               >
                 <span className="block">{s === 'buy' ? 'Buy USDT' : 'Sell USDT'}</span>
-                <span className={`block text-xs font-normal ${filters.side === s ? 'text-white/75' : 'text-text-muted'}`}>
+                <span className={`hidden sm:block text-xs font-normal ${filters.side === s ? 'text-white/75' : 'text-text-muted'}`}>
                   {s === 'buy' ? 'Find sellers' : 'Find buyers'}
                 </span>
               </button>

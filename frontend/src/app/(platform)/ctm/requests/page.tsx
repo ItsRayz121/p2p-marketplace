@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 function timeLeft(expiresAt: string): string {
@@ -32,7 +32,7 @@ interface Request {
 }
 
 export default function RequestBoardPage() {
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [requests, setRequests] = useState<Request[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -43,6 +43,7 @@ export default function RequestBoardPage() {
   const [bidMsg, setBidMsg] = useState('')
   const [bidSubmitting, setBidSubmitting] = useState(false)
   const [bidError, setBidError] = useState('')
+  const [actionError, setActionError] = useState('')
 
   const fetchRequests = async () => {
     try {
@@ -60,12 +61,13 @@ export default function RequestBoardPage() {
   usePolling(fetchRequests, 15000)
 
   const handleAcceptBid = async (requestId: string, bidId: string) => {
+    setActionError('')
     try {
       const res = await ctmApi.acceptBid(requestId, bidId)
       const trade = res as { tradeRef: string }
       window.location.href = `/ctm/trade/${trade.tradeRef}`
     } catch (err: unknown) {
-      alert((err as Error).message ?? 'Failed to accept bid')
+      setActionError((err as Error).message ?? 'Failed to accept bid')
     }
   }
 
@@ -97,6 +99,13 @@ export default function RequestBoardPage() {
           <Link href="/ctm/requests/create" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">+ Post Request</Link>
         </div>
       </div>
+
+      {actionError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-start justify-between gap-3">
+          <span className="flex-1">{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 flex-shrink-0" aria-label="Dismiss">×</button>
+        </div>
+      )}
 
       <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 mb-6 w-fit">
         {(['buy', 'sell'] as const).map((s) => (

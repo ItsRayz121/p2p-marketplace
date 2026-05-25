@@ -29,6 +29,8 @@ interface ChatMessage {
   message: string
   isSystem?: boolean
   createdAt: string
+  /** Local-only delivery state for optimistic sends. Absent on server messages. */
+  sendStatus?: 'sending' | 'failed'
 }
 
 interface ExtendedTrade extends Trade {
@@ -234,6 +236,14 @@ export default function TradePage() {
   const [showCryptoSentForm, setShowCryptoSentForm] = useState(false)
   const [txHash, setTxHash] = useState('')
 
+  // Mobile-only tab: at <lg the trade panel and chat stack vertically and the
+  // page becomes a long scroll. Segmented control lets the user swap views.
+  const [mobileTab, setMobileTab] = useState<'trade' | 'chat'>('trade')
+  // Tracks how many messages the user had seen the last time they opened the
+  // chat tab — drives the unread red dot on the Trade tab.
+  const lastSeenChatCountRef = useRef(0)
+  const [unreadChat, setUnreadChat] = useState(false)
+
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const prevMsgCountRef = useRef(0)
@@ -248,7 +258,13 @@ export default function TradePage() {
       const extended = tradeData as ExtendedTrade
       setTrade(extended)
       if (extended.ratedByMe) setRatedAlready(true)
-      setMessages(messagesData.messages)
+      // Preserve any in-flight optimistic messages (id prefix tmp-) so a
+      // poll/SSE refresh between user-send and server-ack doesn't make the
+      // user's bubble briefly vanish.
+      setMessages((prev) => {
+        const optimistic = prev.filter((m) => m.id.startsWith('tmp-'))
+        return optimistic.length ? [...messagesData.messages, ...optimistic] : messagesData.messages
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load trade')
     } finally {
@@ -274,6 +290,23 @@ export default function TradePage() {
     }
     prevMsgCountRef.current = messages.length
   }, [messages])
+
+  // Unread tracking for the mobile Chat tab. New incoming messages while the
+  // user is on the Trade tab light up the red dot; opening Chat resets it.
+  useEffect(() => {
+    if (mobileTab === 'chat') {
+      lastSeenChatCountRef.current = messages.length
+      setUnreadChat(false)
+      return
+    }
+    if (messages.length > lastSeenChatCountRef.current) {
+      const newOnes = messages.slice(lastSeenChatCountRef.current)
+      // Only count messages from the counterparty (skip system + my own).
+      if (newOnes.some((m) => !m.isSystem && m.senderId !== user?.id)) {
+        setUnreadChat(true)
+      }
+    }
+  }, [messages, mobileTab, user?.id])
 
   const isUserBuyer = trade?.buyerId === user?.id
 
@@ -381,19 +414,51 @@ export default function TradePage() {
   const handleSendMessage = async () => {
     if (!messageInput.trim() || sendingMsg) return
     const text = messageInput.trim()
-    setSendingMsg(true)
+    // Optimistic: push the message immediately with a 'sending' marker so the
+    // user sees their bubble appear without waiting for the round trip.
+    const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const optimistic: ChatMessage = {
+      id: tempId,
+      senderId: user?.id ?? '',
+      message: text,
+      createdAt: new Date().toISOString(),
+      sendStatus: 'sending',
+    }
+    setMessages((prev) => [...prev, optimistic])
     setMessageInput('')
+    setSendingMsg(true)
     try {
       const msg = await tradesApi.sendMessage(id, text)
-      setMessages((prev) => [
-        ...prev,
-        { id: msg.id, senderId: user?.id ?? '', message: text, createdAt: msg.createdAt },
-      ])
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId
+          ? { id: msg.id, senderId: user?.id ?? '', message: text, createdAt: msg.createdAt }
+          : m),
+      )
     } catch (err) {
-      setMessageInput(text) // restore so user can retry
+      // Mark the optimistic bubble as failed; user can tap retry.
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId ? { ...m, sendStatus: 'failed' } : m),
+      )
       setActionError(err instanceof Error ? err.message : 'Failed to send message')
     } finally {
       setSendingMsg(false)
+    }
+  }
+
+  const handleRetryMessage = async (failedId: string) => {
+    const failed = messages.find((m) => m.id === failedId)
+    if (!failed) return
+    setMessages((prev) => prev.map((m) => m.id === failedId ? { ...m, sendStatus: 'sending' } : m))
+    try {
+      const msg = await tradesApi.sendMessage(id, failed.message)
+      setMessages((prev) =>
+        prev.map((m) => m.id === failedId
+          ? { id: msg.id, senderId: user?.id ?? '', message: failed.message, createdAt: msg.createdAt }
+          : m),
+      )
+    } catch (err) {
+      setMessages((prev) => prev.map((m) => m.id === failedId ? { ...m, sendStatus: 'failed' } : m))
+      setActionError(err instanceof Error ? err.message : 'Failed to send message')
     }
   }
 
@@ -419,7 +484,7 @@ export default function TradePage() {
   const counterpartyStats = counterpartyUser?.tradeStats
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* L-6: Offline banner — warn user that actions won't go through */}
       {isOffline && (
         <div className="mb-4 flex items-center gap-3 rounded-lg bg-danger/10 border border-danger/30 px-4 py-3 text-sm text-danger">
@@ -465,9 +530,26 @@ export default function TradePage() {
         />
       )}
 
+      {/* Mobile tab switcher — only visible <lg. Red dot on Chat indicates
+          unread counterparty messages since the user last opened that tab. */}
+      <div className="flex bg-white border border-border rounded-lg overflow-hidden mb-4 lg:hidden">
+        {(['trade', 'chat'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setMobileTab(t)}
+            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+              mobileTab === t ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface'
+            }`}
+          >
+            {t === 'trade' ? 'Trade' : 'Chat'}
+            {t === 'chat' && unreadChat && <span className="w-2 h-2 rounded-full bg-danger" />}
+          </button>
+        ))}
+      </div>
+
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Left: status + actions */}
-        <div className="space-y-5">
+        <div className={`space-y-5 ${mobileTab === 'chat' ? 'hidden lg:block' : ''}`}>
           {/* Countdown */}
           {trade.expiresAt && trade.status === 'payment_pending' && (
             <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-center gap-3">
@@ -717,8 +799,9 @@ export default function TradePage() {
           )}
         </div>
 
-        {/* Right: Chat */}
-        <div className="bg-white rounded-xl border border-border flex flex-col" style={{ minHeight: '400px', maxHeight: '600px' }}>
+        {/* Right: Chat — display class is conditional so `flex` and `hidden`
+            never coexist in the class list (which is ambiguous in Tailwind). */}
+        <div className={`bg-white rounded-xl border border-border flex-col ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`} style={{ minHeight: '400px', maxHeight: '600px' }}>
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-semibold text-text-primary">Chat with {counterparty}</h2>
           </div>
@@ -739,10 +822,20 @@ export default function TradePage() {
               }
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${
-                    isMine ? 'bg-primary text-white rounded-br-sm' : 'bg-surface text-text-primary rounded-bl-sm'
-                  }`}>
-                    {msg.message}
+                  <div className={`max-w-[75%] flex flex-col gap-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
+                    <div className={`px-3 py-2 rounded-2xl text-sm ${
+                      isMine ? 'bg-primary text-white rounded-br-sm' : 'bg-surface text-text-primary rounded-bl-sm'
+                    } ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
+                      {msg.message}
+                    </div>
+                    {isMine && msg.sendStatus === 'sending' && (
+                      <span className="text-[10px] text-text-muted">Sending…</span>
+                    )}
+                    {isMine && msg.sendStatus === 'failed' && (
+                      <button onClick={() => handleRetryMessage(msg.id)} className="text-[10px] text-danger hover:underline">
+                        Failed — tap to retry
+                      </button>
+                    )}
                   </div>
                 </div>
               )

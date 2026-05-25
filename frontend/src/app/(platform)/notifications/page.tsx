@@ -165,7 +165,7 @@ export default function NotificationsPage() {
   if (error) return <ErrorState title={error} onRetry={() => fetchPage(1)} />
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 pb-24 lg:pb-6">
+    <div className="max-w-2xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>

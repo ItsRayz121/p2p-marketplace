@@ -256,7 +256,7 @@ export default function PaymentMethodsPage() {
   if (error) return <ErrorState title={error} onRetry={fetchMethods} />
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 pb-24 lg:pb-6 space-y-5">
+    <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Payment Methods</h1>

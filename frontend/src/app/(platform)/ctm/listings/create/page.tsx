@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ctmApi, apiRequest } from '@/lib/api'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string; settlementType: string }
@@ -84,7 +84,7 @@ function MarketRateWidget({ symbol }: { symbol: string }) {
 
 export default function CreateListingPage() {
   const router = useRouter()
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [tokens, setTokens] = useState<CtmToken[]>([])
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
   const [loadingInit, setLoadingInit] = useState(true)

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
-import { useAuthStore } from '@/store/auth.store'
+import { useAuth } from '@/hooks/useAuth'
 
 interface MerchantProfile {
   id: string
@@ -52,7 +52,7 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string 
 }
 
 export default function CtmDashboardPage() {
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [profile, setProfile] = useState<MerchantProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

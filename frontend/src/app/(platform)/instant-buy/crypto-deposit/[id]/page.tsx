@@ -85,7 +85,7 @@ export default function CryptoDepositPage() {
     order.network?.includes('BEP') ? 'https://bscscan.com/tx/' : null
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 pb-24 lg:pb-6 space-y-5">
+    <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
       <div>
         <h1 className="text-xl font-bold text-text-primary">Crypto Deposit</h1>
         <p className="text-sm text-text-muted">Send exactly the required amount to the address below</p>

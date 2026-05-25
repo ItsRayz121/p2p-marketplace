@@ -61,6 +61,25 @@ export function fmtPkr(value: string | number | null | undefined): string {
   return `PKR ${n.toLocaleString()}`
 }
 
+/**
+ * Format a date as Pakistan time (Asia/Karachi, "PKT" label). Used in
+ * security-sensitive banners (withdrawal lock, deadlines) where ambiguity
+ * about timezone changes the meaning. Falls back to '—' for invalid input.
+ */
+export function fmtPakDateTime(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (isNaN(d.getTime())) return '—'
+  return `${d.toLocaleString('en-PK', {
+    timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })} PKT`
+}
+
 /** Truncate an address/hash for display. Returns '—' if falsy. */
 export function fmtAddress(
   value: string | null | undefined,

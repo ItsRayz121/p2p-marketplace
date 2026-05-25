@@ -117,16 +117,7 @@ function FileUploadField({
     if (file.size > MAX_FILE_SIZE) {
       setPreview(null)
       setUploaded(false)
-      // surface the error through the hook's error display path by calling doUpload
-      // which will set error — but here we can shortcut with a direct state set
-      // We don't have direct access to setError in the hook, so we re-use the
-      // existing error rendering path via a fake failed upload approach.
-      // Instead: just show a local validation message via the existing error area.
-      Object.defineProperty(e.target, 'value', { writable: true, value: '' })
       e.target.value = ''
-      // Trigger upload with oversized file so hook surfaces error, OR handle locally:
-      // We'll use a simple approach: call doUpload which will fail at the server.
-      // Better: track local size error separately.
       setSizeError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 10 MB.`)
       return
     }
@@ -321,7 +312,7 @@ export default function KycPage() {
   if (uiState === 'error') return <ErrorState title={loadError ?? 'Error'} onRetry={fetchStatus} />
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24 lg:pb-8">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">KYC Verification</h1>
       <p className="text-sm text-text-muted mb-6">Complete identity verification to unlock trading, wallet, ads, and all platform features.</p>
 

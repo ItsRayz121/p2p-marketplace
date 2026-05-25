@@ -76,7 +76,7 @@ export default function InstantBuyStatusPage() {
   const stepIdx = getStepIndex(order.status)
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 pb-24 lg:pb-6 space-y-5">
+    <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
       <div>
         <h1 className="text-xl font-bold text-text-primary">Order Status</h1>
         <p className="text-sm text-text-muted">Order #{order.id.slice(0, 8)}</p>

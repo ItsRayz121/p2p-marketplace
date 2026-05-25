@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+
+const CTM_RISK_DISCLAIMER_KEY = 'ctm_risk_disclaimer_dismissed_v1'
 import { ctmApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -53,14 +55,22 @@ function TokenCard({ token }: { token: CtmToken }) {
 export default function CtmHomePage() {
   const [tokens, setTokens] = useState<CtmToken[]>([])
   const [loading, setLoading] = useState(true)
-  const [dismissed, setDismissed] = useState(false)
+  // Start dismissed=true so the banner doesn't flash for returning users; flip
+  // to false on mount only if sessionStorage doesn't have the dismiss marker.
+  const [dismissed, setDismissed] = useState(true)
 
   useEffect(() => {
+    setDismissed(sessionStorage.getItem(CTM_RISK_DISCLAIMER_KEY) === '1')
     ctmApi.getTokens({ limit: 6 })
       .then((d) => setTokens(d.tokens as CtmToken[]))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  const handleDismiss = () => {
+    sessionStorage.setItem(CTM_RISK_DISCLAIMER_KEY, '1')
+    setDismissed(true)
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -76,7 +86,7 @@ export default function CtmHomePage() {
               These tokens are community-requested and not exchange-listed. All trades are manual proof-based. PakSwap does not guarantee token value or delivery. Trade with caution.
             </p>
           </div>
-          <button onClick={() => setDismissed(true)} className="text-amber-500 hover:text-amber-700 flex-shrink-0">
+          <button onClick={handleDismiss} aria-label="Dismiss" className="text-amber-500 hover:text-amber-700 flex-shrink-0">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -106,7 +116,6 @@ export default function CtmHomePage() {
           { href: '/ctm/tokens', label: 'Token Directory', icon: '🪙' },
           { href: '/ctm/listings', label: 'Buy/Sell Listings', icon: '📋' },
           { href: '/ctm/requests', label: 'Bid Board', icon: '🤝' },
-          { href: '/ctm/listings/create', label: 'Post a Listing', icon: '➕' },
           { href: '/ctm/dashboard', label: 'Merchant Dashboard', icon: '📊' },
         ].map((item) => (
           <Link key={item.href} href={item.href} className="bg-white border border-border rounded-xl p-4 text-center hover:shadow-md transition-shadow">
