@@ -13,6 +13,7 @@ import {
   listTokenRequests,
   approveTokenRequest,
   rejectTokenRequest,
+  getTokenMarketInsight,
 } from './ctm.token.service'
 
 const suggestSchema = z.object({
@@ -122,6 +123,13 @@ export async function ctmTokenRoutes(app: FastifyInstance) {
       metadata: { userId: req.user!.id, requestId: request.id },
     })
     return reply.code(201).send({ success: true, data: request })
+  })
+
+  // GET /ctm/tokens/:tokenId/market-insight — internal marketplace price insight
+  app.get('/ctm/tokens/:tokenId/market-insight', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const { tokenId } = req.params as { tokenId: string }
+    const insight = await getTokenMarketInsight(tokenId)
+    return reply.send({ success: true, data: insight })
   })
 
   // GET /ctm/tokens/:slug — token detail

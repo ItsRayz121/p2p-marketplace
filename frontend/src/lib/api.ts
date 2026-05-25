@@ -1727,6 +1727,18 @@ export const ctmApi = {
   getTokens: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ tokens: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/tokens' + buildQs(params)),
   getToken: (slug: string) => apiRequest<unknown>(`/ctm/tokens/${slug}`),
+  getTokenMarketInsight: (tokenId: string) => apiRequest<{
+    avg12h: number | null
+    buyAvg12h: number | null
+    sellAvg12h: number | null
+    previous12hAvg: number | null
+    changePercent: number | null
+    lastTradePrice: number | null
+    lastTradedAt: string | null
+    dataSource: 'completed_trades' | 'active_listings' | 'none'
+    sampleSize: number
+    lowData: boolean
+  }>(`/ctm/tokens/${tokenId}/market-insight`),
   suggestToken: (data: object) => apiRequest<unknown>('/ctm/tokens/suggest', { method: 'POST', body: JSON.stringify(data) }),
   adminListTokens: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ tokens: unknown[]; total: number; page: number; limit: number; totalPages: number }>(

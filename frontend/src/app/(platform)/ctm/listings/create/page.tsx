@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ctmApi, apiRequest } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string; settlementType: string }
 
@@ -153,6 +154,14 @@ export default function CreateListingPage() {
             ))}
           </div>
         </div>
+
+        {/* Market insight */}
+        {form.tokenId && (() => {
+          const tok = tokens.find((t) => t.id === form.tokenId)
+          return tok ? (
+            <MarketInsightWidget tokenId={form.tokenId} tokenSymbol={tok.symbol} side={form.side} />
+          ) : null
+        })()}
 
         {/* Price & Amount */}
         <div className="grid grid-cols-2 gap-4">

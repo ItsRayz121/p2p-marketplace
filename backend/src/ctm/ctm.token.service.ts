@@ -187,3 +187,122 @@ export async function rejectTokenRequest(adminId: string, requestId: string, adm
     data: { status: 'rejected', reviewedBy: adminId, reviewedAt: new Date(), adminNote },
   })
 }
+
+export interface MarketInsight {
+  avg12h: number | null
+  buyAvg12h: number | null
+  sellAvg12h: number | null
+  previous12hAvg: number | null
+  changePercent: number | null
+  lastTradePrice: number | null
+  lastTradedAt: string | null
+  dataSource: 'completed_trades' | 'active_listings' | 'none'
+  sampleSize: number
+  lowData: boolean
+}
+
+export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsight> {
+  const now = new Date()
+  const h12ago = new Date(now.getTime() - 12 * 60 * 60 * 1000)
+  const h24ago = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+
+  // Current 12h completed trades
+  const recentTrades = await db.ctmTrade.findMany({
+    where: {
+      tokenId,
+      status: 'completed',
+      completedAt: { gte: h12ago },
+    },
+    select: {
+      pricePerUnit: true,
+      completedAt: true,
+      listing: { select: { side: true } },
+    },
+    orderBy: { completedAt: 'desc' },
+  })
+
+  // Previous 12h completed trades (for change%)
+  const prevTrades = await db.ctmTrade.findMany({
+    where: {
+      tokenId,
+      status: 'completed',
+      completedAt: { gte: h24ago, lt: h12ago },
+    },
+    select: { pricePerUnit: true },
+  })
+
+  if (recentTrades.length >= 1) {
+    const prices = recentTrades.map((t) => parseFloat(t.pricePerUnit.toString()))
+    const buyPrices = recentTrades
+      .filter((t) => t.listing?.side === 'buy')
+      .map((t) => parseFloat(t.pricePerUnit.toString()))
+    const sellPrices = recentTrades
+      .filter((t) => t.listing?.side === 'sell')
+      .map((t) => parseFloat(t.pricePerUnit.toString()))
+
+    const avg12h = prices.reduce((a, b) => a + b, 0) / prices.length
+    const buyAvg12h = buyPrices.length > 0 ? buyPrices.reduce((a, b) => a + b, 0) / buyPrices.length : null
+    const sellAvg12h = sellPrices.length > 0 ? sellPrices.reduce((a, b) => a + b, 0) / sellPrices.length : null
+
+    let previous12hAvg: number | null = null
+    let changePercent: number | null = null
+    if (prevTrades.length >= 1) {
+      const prevPrices = prevTrades.map((t) => parseFloat(t.pricePerUnit.toString()))
+      previous12hAvg = prevPrices.reduce((a, b) => a + b, 0) / prevPrices.length
+      changePercent = ((avg12h - previous12hAvg) / previous12hAvg) * 100
+    }
+
+    const lastTrade = recentTrades[0]
+    return {
+      avg12h: parseFloat(avg12h.toFixed(2)),
+      buyAvg12h: buyAvg12h !== null ? parseFloat(buyAvg12h.toFixed(2)) : null,
+      sellAvg12h: sellAvg12h !== null ? parseFloat(sellAvg12h.toFixed(2)) : null,
+      previous12hAvg: previous12hAvg !== null ? parseFloat(previous12hAvg.toFixed(2)) : null,
+      changePercent: changePercent !== null ? parseFloat(changePercent.toFixed(2)) : null,
+      lastTradePrice: parseFloat(parseFloat(lastTrade.pricePerUnit.toString()).toFixed(2)),
+      lastTradedAt: lastTrade.completedAt?.toISOString() ?? null,
+      dataSource: 'completed_trades',
+      sampleSize: recentTrades.length,
+      lowData: recentTrades.length < 3,
+    }
+  }
+
+  // Fallback: active listings
+  const activeListings = await db.ctmListing.findMany({
+    where: { tokenId, status: 'active' },
+    select: { pricePerUnit: true, side: true },
+  })
+
+  if (activeListings.length >= 1) {
+    const allPrices = activeListings.map((l) => parseFloat(l.pricePerUnit.toString()))
+    const buyPrices = activeListings.filter((l) => l.side === 'buy').map((l) => parseFloat(l.pricePerUnit.toString()))
+    const sellPrices = activeListings.filter((l) => l.side === 'sell').map((l) => parseFloat(l.pricePerUnit.toString()))
+    const avg12h = allPrices.reduce((a, b) => a + b, 0) / allPrices.length
+
+    return {
+      avg12h: parseFloat(avg12h.toFixed(2)),
+      buyAvg12h: buyPrices.length > 0 ? parseFloat((buyPrices.reduce((a, b) => a + b, 0) / buyPrices.length).toFixed(2)) : null,
+      sellAvg12h: sellPrices.length > 0 ? parseFloat((sellPrices.reduce((a, b) => a + b, 0) / sellPrices.length).toFixed(2)) : null,
+      previous12hAvg: null,
+      changePercent: null,
+      lastTradePrice: null,
+      lastTradedAt: null,
+      dataSource: 'active_listings',
+      sampleSize: activeListings.length,
+      lowData: activeListings.length < 3,
+    }
+  }
+
+  return {
+    avg12h: null,
+    buyAvg12h: null,
+    sellAvg12h: null,
+    previous12hAvg: null,
+    changePercent: null,
+    lastTradePrice: null,
+    lastTradedAt: null,
+    dataSource: 'none',
+    sampleSize: 0,
+    lowData: true,
+  }
+}
