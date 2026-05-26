@@ -448,14 +448,24 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                     {renderSingleAccount(lockedAccount)}
                   </div>
                 ) : snap ? (
-                  // Single-account (SELL listing trades or legacy)
+                  // Single-account (SELL listing trades), or multi-account viewed by admin / after expiry
                   <div>
-                    <p className="text-xs text-text-muted mb-2">
-                      {isBuyer
-                        ? `Send PKR ${Number(trade.fiatAmount).toLocaleString()} to the following account.`
-                        : `You will receive PKR ${Number(trade.fiatAmount).toLocaleString()} from the buyer.`}
-                    </p>
-                    {renderSingleAccount(snap)}
+                    {isMulti ? (
+                      // Multi-account but no selection was made (admin view, cancelled/expired trade)
+                      <div className="space-y-2">
+                        <p className="text-xs text-text-muted mb-2">Available accounts (no account was selected):</p>
+                        {snap.accounts!.map((acc, i) => <div key={i}>{renderSingleAccount(acc)}</div>)}
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-text-muted mb-2">
+                          {isBuyer
+                            ? `Send PKR ${Number(trade.fiatAmount).toLocaleString()} to the following account.`
+                            : `You will receive PKR ${Number(trade.fiatAmount).toLocaleString()} from the buyer.`}
+                        </p>
+                        {renderSingleAccount(snap)}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
