@@ -26,7 +26,7 @@ import { env } from '../lib/env'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createWorker(queueName: string, processor: Processor<any, any, string>, options?: { max?: number; duration?: number }) {
   const worker = new Worker(queueName, processor, {
-    connection: redis,
+    connection: redis as any, // bullmq bundles its own ioredis — types diverge but runtime is compatible
     limiter: { max: options?.max ?? 10, duration: options?.duration ?? 1000 },
   })
 
