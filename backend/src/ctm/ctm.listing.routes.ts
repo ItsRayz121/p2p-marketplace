@@ -6,6 +6,7 @@ import {
   createListing,
   getListings,
   getListingById,
+  getListingActivity,
   updateListing,
   pauseListing,
   activateListing,
@@ -93,6 +94,13 @@ export async function ctmListingRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const listing = await getListingById(id)
     return reply.send({ success: true, data: listing })
+  })
+
+  // GET /ctm/listings/:id/activity — public aggregate stats + owner-only full bids/trades
+  app.get('/ctm/listings/:id/activity', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const data = await getListingActivity(id, req.user?.id)
+    return reply.send({ success: true, data })
   })
 
   // POST /ctm/listings — create listing

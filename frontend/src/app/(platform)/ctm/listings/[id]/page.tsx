@@ -1,5 +1,5 @@
 'use client'
-import { useState, use, useEffect } from 'react'
+import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ctmApi, apiRequest, ApiError } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
@@ -28,6 +28,34 @@ interface SavedPaymentMethod {
   bankName?: string
   ibanNumber?: string
   accountNumber?: string
+}
+
+interface ActivityBid {
+  id: string
+  pricePerUnit: string
+  tokenAmount: string
+  fiatAmount: string
+  message?: string
+  status: string
+  expiresAt: string
+  createdAt: string
+  bidder: { id: string; username: string }
+  trade?: { tradeRef: string; status: string } | null
+}
+interface ActivityTrade {
+  tradeRef: string
+  status: string
+  tokenAmount: string
+  pricePerUnit: string
+  fiatAmount: string
+  createdAt: string
+  completedAt?: string | null
+  buyer: { username: string }
+  seller: { username: string }
+}
+interface ListingActivity {
+  bids:   { pendingCount: number; minPrice: string | null; maxPrice: string | null; items?: ActivityBid[] }
+  trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: ActivityTrade[] }
 }
 
 interface Listing {
@@ -88,6 +116,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [error, setError] = useState('')
   // Seller's own payment methods — needed when taking a BUY listing
   const [myMethods, setMyMethods] = useState<ResolvedPaymentMethod[]>([])
+  // Activity hub
+  const [activity, setActivity] = useState<ListingActivity | null>(null)
+  const [activeTab, setActiveTab] = useState<'bids' | 'trades'>('bids')
+  const [bidActionId, setBidActionId] = useState<string | null>(null)
 
   const fetchListing = async () => {
     try {
@@ -101,6 +133,38 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   }
 
   usePolling(fetchListing, 30000)
+
+  const fetchActivity = useCallback(async () => {
+    try {
+      const res = await ctmApi.getListingActivity(id)
+      setActivity(res as ListingActivity)
+    } catch { /* ignore */ }
+  }, [id])
+
+  usePolling(fetchActivity, 60000)
+
+  const handleAcceptBid = async (bidId: string) => {
+    setBidActionId(bidId)
+    try {
+      const res = await ctmApi.acceptListingBid(bidId)
+      router.push(`/ctm/trade/${(res as { tradeRef: string }).tradeRef}`)
+    } catch (err: unknown) {
+      setError((err as Error).message ?? 'Failed to accept bid')
+      setBidActionId(null)
+    }
+  }
+
+  const handleRejectBid = async (bidId: string) => {
+    setBidActionId(bidId)
+    try {
+      await ctmApi.rejectListingBid(bidId)
+      fetchActivity()
+    } catch (err: unknown) {
+      setError((err as Error).message ?? 'Failed to reject bid')
+    } finally {
+      setBidActionId(null)
+    }
+  }
 
   // Always load the current user's own saved payment methods:
   // BUY listings: user is the seller-taker, picks their own receiving account
@@ -319,6 +383,115 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         <div className="bg-white border border-border rounded-xl p-5">
           <h2 className="font-semibold text-text-primary mb-2">Terms</h2>
           <p className="text-sm text-text-muted whitespace-pre-wrap">{listing.terms}</p>
+        </div>
+      )}
+
+      {/* Activity stats bar — public */}
+      {activity && (
+        <div className="bg-white border border-border rounded-xl p-5">
+          <h2 className="font-semibold text-text-primary mb-3">Listing Activity</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+            <div>
+              <p className="text-lg font-bold text-text-primary">{activity.bids.pendingCount}</p>
+              <p className="text-xs text-text-muted">Pending Bids</p>
+            </div>
+            {activity.bids.pendingCount > 0 && activity.bids.minPrice && (
+              <div>
+                <p className="text-lg font-bold text-text-primary">
+                  PKR {Number(activity.bids.minPrice).toLocaleString()}–{Number(activity.bids.maxPrice!).toLocaleString()}
+                </p>
+                <p className="text-xs text-text-muted">Bid Price Range</p>
+              </div>
+            )}
+            <div>
+              <p className="text-lg font-bold text-text-primary">{activity.trades.activeCount}</p>
+              <p className="text-xs text-text-muted">Active Trades</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-text-primary">{activity.trades.completedCount}</p>
+              <p className="text-xs text-text-muted">Completed</p>
+            </div>
+            {activity.trades.lastTradePrice && (
+              <div>
+                <p className="text-lg font-bold text-text-primary">PKR {Number(activity.trades.lastTradePrice).toLocaleString()}</p>
+                <p className="text-xs text-text-muted">Last Trade Price</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Owner management panel — tabbed bids + trades */}
+      {isMine && activity && (
+        <div className="bg-white border border-border rounded-xl p-5">
+          <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
+            {(['bids', 'trades'] as const).map((t) => (
+              <button key={t} onClick={() => setActiveTab(t)}
+                className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+                {t === 'bids'
+                  ? `Pending Bids (${activity.bids.pendingCount})`
+                  : `Trades (${activity.trades.activeCount + activity.trades.completedCount})`}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'bids' && (
+            !activity.bids.items || activity.bids.items.length === 0
+              ? <p className="text-sm text-text-muted text-center py-6">No pending bids.</p>
+              : <div className="space-y-3">
+                  {activity.bids.items.map((bid) => (
+                    <div key={bid.id} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-text-primary">PKR {Number(bid.pricePerUnit).toLocaleString()} / {listing.token.symbol}</p>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          {bid.bidder.username} · {Number(bid.tokenAmount).toLocaleString()} {listing.token.symbol} · PKR {Number(bid.fiatAmount).toLocaleString()} total
+                        </p>
+                        {bid.message && <p className="text-xs text-text-muted italic mt-0.5">&ldquo;{bid.message}&rdquo;</p>}
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
+                          className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors">
+                          {bidActionId === bid.id ? '…' : 'Accept'}
+                        </button>
+                        <button onClick={() => handleRejectBid(bid.id)} disabled={bidActionId === bid.id}
+                          className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-white disabled:opacity-60 transition-colors">
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+          )}
+
+          {activeTab === 'trades' && (
+            !activity.trades.items || activity.trades.items.length === 0
+              ? <p className="text-sm text-text-muted text-center py-6">No trades yet.</p>
+              : <div className="space-y-3">
+                  {activity.trades.items.map((t) => (
+                    <div key={t.tradeRef} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-text-primary">
+                          {Number(t.tokenAmount).toLocaleString()} {listing.token.symbol} · PKR {Number(t.fiatAmount).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          {t.buyer.username} → {t.seller.username} · PKR {Number(t.pricePerUnit).toLocaleString()}/{listing.token.symbol}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          t.status === 'completed'  ? 'bg-green-100 text-green-700' :
+                          t.status === 'cancelled'  ? 'bg-gray-100 text-gray-600' :
+                          t.status === 'disputed'   ? 'bg-red-100 text-red-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>{t.status.replace(/_/g, ' ')}</span>
+                        <p className="text-xs text-text-muted mt-1">
+                          <a href={`/ctm/trade/${t.tradeRef}`} className="text-primary hover:underline">View →</a>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+          )}
         </div>
       )}
 

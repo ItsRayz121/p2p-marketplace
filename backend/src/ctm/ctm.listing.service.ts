@@ -1,7 +1,7 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
-import type { CtmSettlementType, CtmListingStatus } from '@prisma/client'
+import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prisma/client'
 
 type Tx = Prisma.TransactionClient
 
@@ -311,4 +311,83 @@ export async function decrementLockedAmount(listingId: string, amount: Prisma.De
       lockedAmount: { decrement: amount },
     },
   })
+}
+
+const ACTIVE_TRADE_STATUSES: CtmTradeStatus[] = [
+  'awaiting_payment', 'payment_uploaded', 'payment_confirmed',
+  'seller_transferring', 'proof_submitted', 'buyer_confirming',
+]
+
+export async function getListingActivity(listingId: string, requestingUserId?: string) {
+  const listing = await db.ctmListing.findUnique({
+    where: { id: listingId },
+    include: { merchantProfile: { select: { userId: true } } },
+  })
+  if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
+
+  const isOwner = !!requestingUserId && requestingUserId === listing.merchantProfile.userId
+
+  const [bidAgg, activeTradeCount, completedTradeCount, lastTrade] = await Promise.all([
+    db.ctmListingBid.aggregate({
+      where: { listingId, status: 'pending' },
+      _count: { id: true },
+      _min:   { pricePerUnit: true },
+      _max:   { pricePerUnit: true },
+    }),
+    db.ctmTrade.count({ where: { listingId, status: { in: ACTIVE_TRADE_STATUSES } } }),
+    db.ctmTrade.count({ where: { listingId, status: 'completed' } }),
+    db.ctmTrade.findFirst({
+      where: { listingId, status: 'completed' },
+      orderBy: { completedAt: 'desc' },
+      select: { pricePerUnit: true, completedAt: true },
+    }),
+  ])
+
+  const base = {
+    bids: {
+      pendingCount: bidAgg._count.id ?? 0,
+      minPrice:     bidAgg._min.pricePerUnit?.toString() ?? null,
+      maxPrice:     bidAgg._max.pricePerUnit?.toString() ?? null,
+    },
+    trades: {
+      activeCount:    activeTradeCount,
+      completedCount: completedTradeCount,
+      lastTradePrice: lastTrade?.pricePerUnit?.toString() ?? null,
+      lastTradeAt:    lastTrade?.completedAt ?? null,
+    },
+  }
+
+  if (!isOwner) return base
+
+  const [bidItems, tradeItems] = await Promise.all([
+    db.ctmListingBid.findMany({
+      where: { listingId, status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: {
+        id: true, pricePerUnit: true, tokenAmount: true, fiatAmount: true,
+        message: true, status: true, expiresAt: true, createdAt: true,
+        bidder: { select: { id: true, username: true } },
+        trade:  { select: { tradeRef: true, status: true } },
+      },
+    }),
+    db.ctmTrade.findMany({
+      where: { listingId },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: {
+        tradeRef: true, status: true, tokenAmount: true,
+        pricePerUnit: true, fiatAmount: true,
+        createdAt: true, completedAt: true,
+        buyer:  { select: { username: true } },
+        seller: { select: { username: true } },
+      },
+    }),
+  ])
+
+  return {
+    ...base,
+    bids:   { ...base.bids,   items: bidItems },
+    trades: { ...base.trades, items: tradeItems },
+  }
 }

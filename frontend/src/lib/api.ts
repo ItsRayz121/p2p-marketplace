@@ -1774,6 +1774,7 @@ export const ctmApi = {
   acceptListingBid: (bidId: string) => apiRequest<{ tradeRef: string }>(`/ctm/bids/${bidId}/accept`, { method: 'POST' }),
   rejectListingBid: (bidId: string) => apiRequest<void>(`/ctm/bids/${bidId}/reject`, { method: 'POST' }),
   cancelListingBid: (bidId: string) => apiRequest<void>(`/ctm/bids/${bidId}`, { method: 'DELETE' }),
+  getListingActivity: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/activity`),
 
   // Requests (bid/RFQ mode)
   getRequests: (params?: Record<string, string | number | undefined>) =>

@@ -111,11 +111,10 @@ export default function CtmHomePage() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { href: '/ctm/tokens', label: 'Token Directory', icon: '🪙' },
-          { href: '/ctm/listings', label: 'Buy/Sell Listings', icon: '📋' },
-          { href: '/ctm/requests', label: 'Bid Board', icon: '🤝' },
+          { href: '/ctm/tokens',    label: 'Token Directory',    icon: '🪙' },
+          { href: '/ctm/listings',  label: 'Buy/Sell Listings',  icon: '📋' },
           { href: '/ctm/dashboard', label: 'Merchant Dashboard', icon: '📊' },
         ].map((item) => (
           <Link key={item.href} href={item.href} className="bg-white border border-border rounded-xl p-4 text-center hover:shadow-md transition-shadow">
