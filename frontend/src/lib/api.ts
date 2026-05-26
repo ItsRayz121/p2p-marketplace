@@ -1792,6 +1792,8 @@ export const ctmApi = {
   sendMessage: (ref: string, data: object) => apiRequest<unknown>(`/ctm/trades/${ref}/messages`, { method: 'POST', body: JSON.stringify(data) }),
   getMessages: (ref: string) => apiRequest<unknown[]>(`/ctm/trades/${ref}/messages`),
   rateTrade: (ref: string, data: object) => apiRequest<unknown>(`/ctm/trades/${ref}/rate`, { method: 'POST', body: JSON.stringify(data) }),
+  selectTradePaymentAccount: (ref: string, accountIndex: number) =>
+    apiRequest<{ selectedIdx: number; selectedAccount: Record<string, string> }>(`/ctm/trades/${ref}/select-payment-account`, { method: 'POST', body: JSON.stringify({ accountIndex }) }),
 
   // Merchant profile
   getMyCtmProfile: () => apiRequest<unknown>('/ctm/merchants/me'),

@@ -22,6 +22,7 @@ import {
   sendMessage,
   getMessages,
   rateTrade,
+  selectTradePaymentAccount,
 } from './ctm.trade.service'
 import { db } from '../lib/prisma'
 
@@ -252,6 +253,15 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rating = await rateTrade(ref, req.user!.id, parsed.data as any)
     return reply.code(201).send({ success: true, data: rating })
+  })
+
+  // POST /ctm/trades/:ref/select-payment-account — buyer locks one of multiple seller payment accounts
+  app.post('/ctm/trades/:ref/select-payment-account', { preHandler: [authenticate] }, async (req, reply) => {
+    const { ref } = req.params as { ref: string }
+    const parsed = z.object({ accountIndex: z.number().int().min(0) }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const result = await selectTradePaymentAccount(ref, req.user!.id, parsed.data.accountIndex)
+    return reply.code(200).send({ success: true, data: result })
   })
 
   // GET /ctm/trades/:ref/escrow-info — escrow address for ON_CHAIN trades

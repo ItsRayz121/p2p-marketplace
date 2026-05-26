@@ -76,7 +76,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [paymentMethodId, setPaymentMethodId] = useState('')       // SELL listing: buyer picks one seller account
+  const [paymentMethodId, setPaymentMethodId] = useState('')            // SELL listing: which seller account to pay TO
+  const [buyerFromMethodId, setBuyerFromMethodId] = useState('')         // SELL listing: which buyer account to pay FROM (informational)
   const [paymentMethodIds, setPaymentMethodIds] = useState<string[]>([]) // BUY listing: seller picks multiple own accounts
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [tokenAmount, setTokenAmount] = useState('')
@@ -288,7 +289,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* CTA */}
       {!isMine && listing.status === 'active' && (
         <button
-          onClick={() => { setShowModal(true); setPaymentMethodId(''); setPaymentMethodIds([]); setTokenAmount(''); setError('') }}
+          onClick={() => { setShowModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setTokenAmount(''); setError('') }}
           className={`w-full py-3.5 rounded-xl font-bold text-white transition-colors ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
         >
           {listing.side === 'sell' ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
@@ -392,6 +393,32 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 })}
               </div>
             </div>
+
+            {/* SELL listing: show buyer's own methods so seller knows which account payment will come from */}
+            {!isBuyListing && myMethods.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-0.5">
+                  Your payment account (you&apos;ll pay from)
+                </label>
+                <p className="text-xs text-text-muted mb-2">
+                  Select which of your accounts you&apos;ll send payment from — this lets the seller know where to expect it.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {myMethods.map((m) => (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => setBuyerFromMethodId(prev => prev === m.id ? '' : m.id)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${buyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                    >
+                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                      {m.label}
+                      {buyerFromMethodId === m.id && <span className="ml-0.5 text-xs">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* BUY listing: show buyer's receiving address so seller knows where to send tokens */}
             {isBuyListing && listing.settlementMethod && (

@@ -549,3 +549,39 @@ export async function rateTrade(tradeRef: string, raterId: string, data: {
 
   return rating
 }
+
+export async function selectTradePaymentAccount(tradeRef: string, buyerId: string, accountIndex: number) {
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can select the payment account', 403)
+  if (trade.status !== 'awaiting_payment') throw new AppError('CONFLICT', 'Payment account can only be selected while awaiting payment', 409)
+
+  const snapshot = trade.sellerPaymentSnapshot as Record<string, unknown> | null
+  if (!snapshot || !Array.isArray(snapshot.accounts)) {
+    throw new AppError('CONFLICT', 'This trade does not require a payment account selection', 409)
+  }
+  if (snapshot.selectedIdx !== undefined) {
+    throw new AppError('CONFLICT', 'Payment account is already selected for this trade', 409)
+  }
+  if (accountIndex < 0 || accountIndex >= (snapshot.accounts as unknown[]).length) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid account index', 400)
+  }
+
+  const selectedAccount = (snapshot.accounts as Record<string, string>[])[accountIndex]!
+  const updatedSnapshot = { ...snapshot, selectedIdx: accountIndex }
+
+  await db.ctmTrade.update({
+    where: { tradeRef },
+    data: { sellerPaymentSnapshot: updatedSnapshot as never },
+  })
+
+  notify(
+    trade.sellerId,
+    'CTM_PAYMENT_METHOD_SELECTED',
+    'Buyer selected payment method',
+    `Buyer selected ${selectedAccount.label} for trade ${tradeRef}. You will receive payment in your ${selectedAccount.label} account.`,
+    { tradeRef },
+  )
+
+  return { selectedIdx: accountIndex, selectedAccount }
+}
