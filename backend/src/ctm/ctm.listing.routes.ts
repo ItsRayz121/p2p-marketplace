@@ -132,9 +132,12 @@ export async function ctmListingRoutes(app: FastifyInstance) {
   app.post('/ctm/listings/:id/trade', { preHandler: [authenticate] }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const parsed = z.object({
-      paymentMethod: z.string().min(1),
+      paymentMethod: z.string().min(1).optional(),
+      paymentMethods: z.array(z.string().min(1)).min(1).optional(),
       buyerSettlementId: z.string().max(500).optional(),
       tokenAmount: z.number().positive(),
+    }).refine((d) => d.paymentMethod || (d.paymentMethods && d.paymentMethods.length > 0), {
+      message: 'paymentMethod or paymentMethods is required',
     }).safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

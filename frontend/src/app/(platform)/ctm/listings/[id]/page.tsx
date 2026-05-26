@@ -76,7 +76,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [paymentMethodId, setPaymentMethodId] = useState('')
+  const [paymentMethodId, setPaymentMethodId] = useState('')       // SELL listing: buyer picks one seller account
+  const [paymentMethodIds, setPaymentMethodIds] = useState<string[]>([]) // BUY listing: seller picks multiple own accounts
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [tokenAmount, setTokenAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -114,7 +115,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   }, [user])
 
   const handleStartTrade = async () => {
-    if (!paymentMethodId) { setError('Select a payment method'); return }
+    if (isBuyListing && paymentMethodIds.length === 0) { setError('Select at least one payment receiving account'); return }
+    if (!isBuyListing && !paymentMethodId) { setError('Select a payment method'); return }
     if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setError('Enter a token amount'); return }
     // SELL listings: buyer must provide their token receiving address
     if (listing?.side === 'sell' && !buyerSettlementId.trim()) {
@@ -125,7 +127,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     try {
       if (!listing) return
       const res = await ctmApi.startListingTrade(id, {
-        paymentMethod: paymentMethodId,
+        // BUY listing: seller provides multiple receiving accounts; SELL listing: buyer picks one seller account
+        paymentMethod: isBuyListing ? undefined : paymentMethodId,
+        paymentMethods: isBuyListing ? paymentMethodIds : undefined,
         // For SELL listings: buyer provides their address. For BUY listings: address is on the listing.
         buyerSettlementId: listing.side === 'sell' ? (buyerSettlementId.trim() || undefined) : undefined,
         tokenAmount: parseFloat(tokenAmount),
@@ -169,7 +173,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           <div className="flex items-center gap-4">
             <EntityLogo type="token" slug={listing.token.symbol} size="2xl" logoUrl={listing.token.logoUrl} />
             <div>
-              <h1 className="text-xl font-bold text-text-primary">{listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}</h1>
+              <h1 className="text-xl font-bold text-text-primary">
+                {isMine
+                  ? listing.side === 'sell' ? 'Sell' : 'Buy'
+                  : listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}
+              </h1>
               <p className="text-text-muted text-sm">{listing.token.symbol} · {listing.token.settlementType}</p>
             </div>
           </div>
@@ -279,7 +287,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* CTA */}
       {!isMine && listing.status === 'active' && (
-        <button onClick={() => setShowModal(true)} className={`w-full py-3.5 rounded-xl font-bold text-white transition-colors ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+        <button
+          onClick={() => { setShowModal(true); setPaymentMethodId(''); setPaymentMethodIds([]); setTokenAmount(''); setError('') }}
+          className={`w-full py-3.5 rounded-xl font-bold text-white transition-colors ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+        >
           {listing.side === 'sell' ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
         </button>
       )}
@@ -342,28 +353,43 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
             {/* Payment method selection */}
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
+              <label className="block text-sm font-medium text-text-primary mb-0.5">
                 {isBuyListing
-                  ? 'Select your payment receiving account (buyer will send payment here)'
+                  ? 'Choose where you want to receive payment for this trade'
                   : "Select the seller's payment account you'll send payment to"}
               </label>
+              {isBuyListing && (
+                <p className="text-xs text-text-muted mb-2">Select all accounts you're happy to receive payment to — buyer will choose one.</p>
+              )}
               {isBuyListing && myMethods.length === 0 && (
                 <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
                   No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
-                {modalPaymentMethods.map((m) => (
-                  <button
-                    type="button"
-                    key={m.id}
-                    onClick={() => setPaymentMethodId(m.id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${paymentMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
-                  >
-                    <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                    {m.label}
-                  </button>
-                ))}
+                {modalPaymentMethods.map((m) => {
+                  const isSelected = isBuyListing ? paymentMethodIds.includes(m.id) : paymentMethodId === m.id
+                  return (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => {
+                        if (isBuyListing) {
+                          setPaymentMethodIds((prev) =>
+                            prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id]
+                          )
+                        } else {
+                          setPaymentMethodId(m.id)
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                    >
+                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                      {m.label}
+                      {isBuyListing && isSelected && <span className="ml-0.5 text-xs">✓</span>}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 

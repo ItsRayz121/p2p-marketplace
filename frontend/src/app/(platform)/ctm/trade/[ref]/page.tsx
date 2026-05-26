@@ -93,9 +93,12 @@ function isHashRequired(settlementType?: string): boolean {
   return settlementType === 'ON_CHAIN'
 }
 
-interface SellerPaymentSnapshot {
+interface SellerPaymentAccount {
   type: string; label: string; accountName: string
   mobileNumber?: string; bankName?: string; ibanNumber?: string; accountNumber?: string
+}
+interface SellerPaymentSnapshot extends SellerPaymentAccount {
+  accounts?: SellerPaymentAccount[]  // multi-account format (BUY listing trades)
 }
 
 interface Trade {
@@ -340,7 +343,11 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${price.toLocaleString()}`} />
                   <Row label="Token quantity" value={`${tokens.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
-                  <Row label="Payment method" value={trade.sellerPaymentSnapshot?.label ?? trade.paymentMethod} />
+                  <Row label="Payment method" value={
+                    trade.sellerPaymentSnapshot?.accounts
+                      ? trade.sellerPaymentSnapshot.accounts.map((a) => a.label).join(' / ')
+                      : (trade.sellerPaymentSnapshot?.label ?? trade.paymentMethod)
+                  } />
                   <div className="border-t border-border pt-1.5 mt-1">
                     <Row label={isBuyer ? 'Total payable' : 'Total receivable'} value={`PKR ${totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
                   </div>
@@ -360,16 +367,34 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 : `You will receive PKR ${Number(trade.fiatAmount).toLocaleString()} from the buyer to this account.`}
             </p>
             {trade.sellerPaymentSnapshot ? (
-              <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
-                <Row label="Method" value={trade.sellerPaymentSnapshot.label} />
-                <Row label="Account Name" value={trade.sellerPaymentSnapshot.accountName} copyable />
-                {trade.sellerPaymentSnapshot.mobileNumber && <Row label="Account / Payment Number" value={trade.sellerPaymentSnapshot.mobileNumber} mono copyable />}
-                {trade.sellerPaymentSnapshot.bankName && <Row label="Bank" value={trade.sellerPaymentSnapshot.bankName} />}
-                {trade.sellerPaymentSnapshot.ibanNumber && <Row label="IBAN" value={trade.sellerPaymentSnapshot.ibanNumber} mono breakAll copyable />}
-                {trade.sellerPaymentSnapshot.accountNumber && !trade.sellerPaymentSnapshot.ibanNumber && (
-                  <Row label="Account No." value={trade.sellerPaymentSnapshot.accountNumber} mono copyable />
-                )}
-              </div>
+              trade.sellerPaymentSnapshot.accounts ? (
+                // Multi-account: seller provided multiple options, buyer chooses any one to pay to
+                <div className="space-y-2">
+                  {isBuyer && <p className="text-xs text-text-muted">Pay to any one of the seller&apos;s accounts below.</p>}
+                  {trade.sellerPaymentSnapshot.accounts.map((acc, i) => (
+                    <div key={i} className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                      <Row label="Method" value={acc.label} />
+                      <Row label="Account Name" value={acc.accountName} copyable />
+                      {acc.mobileNumber && <Row label="Account / Payment Number" value={acc.mobileNumber} mono copyable />}
+                      {acc.bankName && <Row label="Bank" value={acc.bankName} />}
+                      {acc.ibanNumber && <Row label="IBAN" value={acc.ibanNumber} mono breakAll copyable />}
+                      {acc.accountNumber && !acc.ibanNumber && <Row label="Account No." value={acc.accountNumber} mono copyable />}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                // Single-account (legacy / SELL listing trades)
+                <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                  <Row label="Method" value={trade.sellerPaymentSnapshot.label} />
+                  <Row label="Account Name" value={trade.sellerPaymentSnapshot.accountName} copyable />
+                  {trade.sellerPaymentSnapshot.mobileNumber && <Row label="Account / Payment Number" value={trade.sellerPaymentSnapshot.mobileNumber} mono copyable />}
+                  {trade.sellerPaymentSnapshot.bankName && <Row label="Bank" value={trade.sellerPaymentSnapshot.bankName} />}
+                  {trade.sellerPaymentSnapshot.ibanNumber && <Row label="IBAN" value={trade.sellerPaymentSnapshot.ibanNumber} mono breakAll copyable />}
+                  {trade.sellerPaymentSnapshot.accountNumber && !trade.sellerPaymentSnapshot.ibanNumber && (
+                    <Row label="Account No." value={trade.sellerPaymentSnapshot.accountNumber} mono copyable />
+                  )}
+                </div>
+              )
             ) : (
               <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
                 Payment via: <span className="font-medium text-text-primary">{trade.paymentMethod}</span>

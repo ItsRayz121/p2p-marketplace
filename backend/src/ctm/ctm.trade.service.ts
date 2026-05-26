@@ -346,7 +346,8 @@ export async function getAllTradesAdmin(filters: { status?: string; page?: numbe
 }
 
 export async function createTradeFromListing(buyerId: string, listingId: string, data: {
-  paymentMethod: string
+  paymentMethod?: string
+  paymentMethods?: string[]  // BUY listings: seller selects multiple receiving accounts
   buyerSettlementId?: string
   tokenAmount?: number
 }) {
@@ -367,10 +368,22 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   const actualBuyerId = isBuyListing ? listing.merchantProfile.userId : buyerId
   const actualSellerId = isBuyListing ? buyerId : listing.merchantProfile.userId
 
-  // For SELL listings the taker picks from the listing's accepted payment methods.
-  // For BUY listings the taker is the seller and provides their own receiving account.
-  if (!isBuyListing && !listing.paymentMethods.includes(data.paymentMethod)) {
-    throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
+  // SELL listings: taker (buyer) picks one of the listing's accepted payment methods.
+  // BUY listings: taker (seller) provides one or more of their own receiving accounts.
+  let primaryPaymentMethodId: string
+  let resolvedPaymentMethodIds: string[]
+  if (!isBuyListing) {
+    if (!data.paymentMethod) throw new AppError('VALIDATION_ERROR', 'paymentMethod is required', 400)
+    if (!listing.paymentMethods.includes(data.paymentMethod)) {
+      throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
+    }
+    primaryPaymentMethodId = data.paymentMethod
+    resolvedPaymentMethodIds = [data.paymentMethod]
+  } else {
+    const ids = data.paymentMethods?.length ? data.paymentMethods : (data.paymentMethod ? [data.paymentMethod] : [])
+    if (ids.length === 0) throw new AppError('VALIDATION_ERROR', 'Select at least one payment receiving account', 400)
+    primaryPaymentMethodId = ids[0]!
+    resolvedPaymentMethodIds = ids
   }
 
   // Token amount is required — takers always specify quantity in tokens.
@@ -381,24 +394,41 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (tradeTokenAmount.lt(listing.minOrderTokens)) throw new AppError('VALIDATION_ERROR', `Minimum order is ${listing.minOrderTokens.toString()} ${listing.token.symbol}`, 400)
   if (tradeTokenAmount.gt(listing.maxOrderTokens)) throw new AppError('VALIDATION_ERROR', `Maximum order is ${listing.maxOrderTokens.toString()} ${listing.token.symbol}`, 400)
 
-  // Snapshot the payment account that will RECEIVE the PKR payment (always the seller).
-  // For SELL listings: seller = listing creator — look up their saved method.
-  // For BUY listings: seller = trade taker (buyerId param) — look up their saved method.
-  const paymentMethodOwnerId = isBuyListing ? buyerId : listing.merchantProfile.userId
-  const sellerPaymentMethod = await db.paymentMethod.findFirst({
-    where: { id: data.paymentMethod, userId: paymentMethodOwnerId },
-  })
-  if (!sellerPaymentMethod) throw new AppError('CONFLICT', 'Payment method not found or does not belong to you', 409)
-
+  // Snapshot the payment account(s) that will RECEIVE the PKR payment (always the seller).
+  // For SELL listings: single account — seller = listing creator.
+  // For BUY listings: one or more accounts — seller = trade taker (buyerId param).
   const PM_LABELS: Record<string, string> = { jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer' }
-  const sellerPaymentSnapshot = {
-    type: sellerPaymentMethod.type as string,
-    label: sellerPaymentMethod.type === 'bank_transfer' ? (sellerPaymentMethod.bankName ?? 'Bank Transfer') : (PM_LABELS[sellerPaymentMethod.type] ?? sellerPaymentMethod.type),
-    accountName: sellerPaymentMethod.accountName,
-    ...(sellerPaymentMethod.mobileNumber ? { mobileNumber: sellerPaymentMethod.mobileNumber } : {}),
-    ...(sellerPaymentMethod.bankName ? { bankName: sellerPaymentMethod.bankName } : {}),
-    ...(sellerPaymentMethod.ibanNumber ? { ibanNumber: sellerPaymentMethod.ibanNumber } : {}),
-    ...(sellerPaymentMethod.accountNumber ? { accountNumber: sellerPaymentMethod.accountNumber } : {}),
+  const paymentMethodOwnerId = isBuyListing ? buyerId : listing.merchantProfile.userId
+
+  function buildAccountSnapshot(pm: { type: string; accountName: string; bankName: string | null; mobileNumber: string | null; ibanNumber: string | null; accountNumber: string | null }) {
+    return {
+      type: pm.type as string,
+      label: pm.type === 'bank_transfer' ? (pm.bankName ?? 'Bank Transfer') : (PM_LABELS[pm.type] ?? pm.type),
+      accountName: pm.accountName,
+      ...(pm.mobileNumber ? { mobileNumber: pm.mobileNumber } : {}),
+      ...(pm.bankName ? { bankName: pm.bankName } : {}),
+      ...(pm.ibanNumber ? { ibanNumber: pm.ibanNumber } : {}),
+      ...(pm.accountNumber ? { accountNumber: pm.accountNumber } : {}),
+    }
+  }
+
+  let sellerPaymentSnapshot: Record<string, unknown>
+  if (isBuyListing && resolvedPaymentMethodIds.length > 1) {
+    // Multi-account: seller chose multiple receiving accounts
+    const methods = await db.paymentMethod.findMany({
+      where: { id: { in: resolvedPaymentMethodIds }, userId: paymentMethodOwnerId },
+    })
+    if (methods.length !== resolvedPaymentMethodIds.length) {
+      throw new AppError('CONFLICT', 'One or more payment methods not found or do not belong to you', 409)
+    }
+    // Store as { accounts: [...] } — trade room renders all, buyer picks one to pay to
+    sellerPaymentSnapshot = { accounts: methods.map(buildAccountSnapshot) }
+  } else {
+    const sellerPaymentMethod = await db.paymentMethod.findFirst({
+      where: { id: primaryPaymentMethodId, userId: paymentMethodOwnerId },
+    })
+    if (!sellerPaymentMethod) throw new AppError('CONFLICT', 'Payment method not found or does not belong to you', 409)
+    sellerPaymentSnapshot = buildAccountSnapshot(sellerPaymentMethod)
   }
 
   // Buyer's token receiving address:
@@ -440,7 +470,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         tokenAmount: tradeTokenAmount,
         pricePerUnit: listing.pricePerUnit,
         fiatAmount,
-        paymentMethod: data.paymentMethod,
+        paymentMethod: primaryPaymentMethodId,
         settlementMethod: listing.settlementMethod,
         buyerSettlementId: actualBuyerSettlementId,
         sellerPaymentSnapshot: sellerPaymentSnapshot as never,
