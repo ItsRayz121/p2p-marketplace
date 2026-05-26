@@ -140,16 +140,6 @@ export default function CtmTokenDetailPage() {
             Browse Buy Listings
           </button>
         </Link>
-        <Link href={`/ctm/requests?tokenId=${token.id}`}>
-          <button className="border border-border text-text-primary px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface transition-colors">
-            Open Requests
-          </button>
-        </Link>
-        <Link href="/ctm/requests/create">
-          <button className="border border-border text-text-primary px-4 py-2 rounded-lg text-sm font-medium hover:bg-surface transition-colors">
-            Post a Request
-          </button>
-        </Link>
       </div>
     </div>
   )
