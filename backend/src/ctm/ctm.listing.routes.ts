@@ -135,6 +135,7 @@ export async function ctmListingRoutes(app: FastifyInstance) {
       paymentMethod: z.string().min(1).optional(),
       paymentMethods: z.array(z.string().min(1)).min(1).optional(),
       buyerSettlementId: z.string().max(500).optional(),
+      buyerPaymentMethodId: z.string().min(1).optional(),
       tokenAmount: z.number().positive(),
     }).refine((d) => d.paymentMethod || (d.paymentMethods && d.paymentMethods.length > 0), {
       message: 'paymentMethod or paymentMethods is required',

@@ -133,6 +133,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         paymentMethods: isBuyListing ? paymentMethodIds : undefined,
         // For SELL listings: buyer provides their address. For BUY listings: address is on the listing.
         buyerSettlementId: listing.side === 'sell' ? (buyerSettlementId.trim() || undefined) : undefined,
+        // For SELL listings: snapshot which of the buyer's accounts they'll pay FROM
+        buyerPaymentMethodId: !isBuyListing && buyerFromMethodId ? buyerFromMethodId : undefined,
         tokenAmount: parseFloat(tokenAmount),
       })
       router.push(`/ctm/trade/${res.tradeRef}`)

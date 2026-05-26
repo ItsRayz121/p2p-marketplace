@@ -102,11 +102,14 @@ interface SellerPaymentSnapshot extends SellerPaymentAccount {
   selectedIdx?: number               // set by buyer in trade room to lock one account
 }
 
+type BuyerPaymentSnapshot = SellerPaymentAccount  // same shape, buyer's "pay from" account
+
 interface Trade {
   id: string; tradeRef: string; status: string
   tokenAmount: string; fiatAmount: string; pricePerUnit: string; paymentMethod: string
   settlementMethod: string; settlementNote: string; buyerSettlementId?: string
   sellerPaymentSnapshot?: SellerPaymentSnapshot
+  buyerPaymentSnapshot?: BuyerPaymentSnapshot
   tokenDeliveryType?: string; settlementType: string
   expiresAt: string; confirmDeadlineAt?: string; proofDeadlineAt?: string
   escrowAddress?: string; escrowAmount?: string; escrowCurrency?: string
@@ -487,6 +490,36 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
               </div>
             )
           })()}
+
+          {/* ── Buyer Payment Account (pay from) — SELL listing trades only ── */}
+          {trade.buyerPaymentSnapshot && (
+            <div className="bg-white border border-border rounded-xl p-5">
+              <h2 className="font-semibold text-text-primary mb-1">
+                {isBuyer ? 'Your Payment Account (Pay From)' : "Buyer's Payment Account"}
+              </h2>
+              <p className="text-xs text-text-muted mb-3">
+                {isBuyer
+                  ? 'You indicated you will send payment from this account.'
+                  : 'The buyer will send PKR from this account. Watch for incoming payment here.'}
+              </p>
+              <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                <Row label="Method" value={trade.buyerPaymentSnapshot.label} />
+                <Row label="Account Name" value={trade.buyerPaymentSnapshot.accountName} copyable />
+                {trade.buyerPaymentSnapshot.mobileNumber && (
+                  <Row label="Account / Payment Number" value={trade.buyerPaymentSnapshot.mobileNumber} mono copyable />
+                )}
+                {trade.buyerPaymentSnapshot.bankName && (
+                  <Row label="Bank" value={trade.buyerPaymentSnapshot.bankName} />
+                )}
+                {trade.buyerPaymentSnapshot.ibanNumber && (
+                  <Row label="IBAN" value={trade.buyerPaymentSnapshot.ibanNumber} mono breakAll copyable />
+                )}
+                {trade.buyerPaymentSnapshot.accountNumber && !trade.buyerPaymentSnapshot.ibanNumber && (
+                  <Row label="Account No." value={trade.buyerPaymentSnapshot.accountNumber} mono copyable />
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Token Delivery ── */}
           <div className="bg-white border border-border rounded-xl p-5">

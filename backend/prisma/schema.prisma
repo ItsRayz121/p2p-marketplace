@@ -1747,6 +1747,7 @@ model CtmTrade {
   settlementMethod       String            @db.VarChar(100)
   buyerSettlementId      String?           @db.VarChar(500)
   sellerPaymentSnapshot  Json?
+  buyerPaymentSnapshot   Json?
   status            CtmTradeStatus    @default(awaiting_payment)
   proofDeadlineAt   DateTime?
   confirmDeadlineAt DateTime?

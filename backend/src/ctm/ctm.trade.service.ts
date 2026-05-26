@@ -349,6 +349,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   paymentMethod?: string
   paymentMethods?: string[]  // BUY listings: seller selects multiple receiving accounts
   buyerSettlementId?: string
+  buyerPaymentMethodId?: string  // SELL listings: buyer's own account they'll pay FROM
   tokenAmount?: number
 }) {
   const listing = await db.ctmListing.findUnique({
@@ -431,6 +432,15 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     sellerPaymentSnapshot = buildAccountSnapshot(sellerPaymentMethod)
   }
 
+  // SELL listings only: snapshot the buyer's "pay from" account so the seller can see it in the trade room.
+  let buyerPaymentSnapshot: Record<string, unknown> | null = null
+  if (!isBuyListing && data.buyerPaymentMethodId) {
+    const buyerPm = await db.paymentMethod.findFirst({
+      where: { id: data.buyerPaymentMethodId, userId: buyerId },
+    })
+    if (buyerPm) buyerPaymentSnapshot = buildAccountSnapshot(buyerPm)
+  }
+
   // Buyer's token receiving address:
   // For SELL listings: provided by trade taker (buyer) at trade start.
   // For BUY listings: already stored on the listing (listing creator's address).
@@ -474,6 +484,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         settlementMethod: listing.settlementMethod,
         buyerSettlementId: actualBuyerSettlementId,
         sellerPaymentSnapshot: sellerPaymentSnapshot as never,
+        ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot: buyerPaymentSnapshot as never } : {}),
         status: 'awaiting_payment',
         expiresAt,
         platformFeePkr,
