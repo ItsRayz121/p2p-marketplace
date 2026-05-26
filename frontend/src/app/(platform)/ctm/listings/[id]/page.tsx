@@ -153,21 +153,13 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     label: m,
   }))
 
-  // BUY listings: taker is seller, show their own saved methods (they'll receive payment here).
-  // SELL listings: taker is buyer, show buyer's own methods filtered+mapped to seller's accepted types.
-  //   We keep the SELLER's method ID as the value submitted (backend validates ownership by seller),
-  //   but display the buyer's account label so the buyer recognises their own method.
-  const sellMethodByType = new Map(resolvedMethods.map((m) => [m.type, m]))
+  // BUY listings (lister=BUYER, taker=SELLER):
+  //   taker picks their own payment receiving account (buyer will send PKR here)
+  // SELL listings (lister=SELLER, taker=BUYER):
+  //   show all seller's accepted methods; buyer picks which account to send payment to
   const modalPaymentMethods: ResolvedPaymentMethod[] = isBuyListing
-    ? myMethods
-    : myMethods
-        .filter((m) => sellMethodByType.has(m.type))
-        .map((m) => ({
-          // Use the seller's method ID so the backend can snapshot the seller's receiving account
-          id: sellMethodByType.get(m.type)!.id,
-          type: m.type,
-          label: m.label, // show buyer's own account label
-        }))
+    ? myMethods       // taker is seller, selects their own receiving account
+    : resolvedMethods // taker is buyer, picks from all seller's accepted accounts
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
@@ -219,25 +211,47 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {/* Payment methods */}
-      <div className="bg-white border border-border rounded-xl p-5">
-        <h2 className="font-semibold text-text-primary mb-1">
-          {isBuyListing ? 'Buyer Payment Methods' : 'Seller Accepted Payment Methods'}
-        </h2>
-        <p className="text-xs text-text-muted mb-3">
-          {isBuyListing
-            ? 'The buyer will use one of these methods to pay you.'
-            : 'These are the methods this seller accepts from buyers.'}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {resolvedMethods.map((m) => (
-            <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
-              <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-              {m.label}
-            </span>
-          ))}
+      {/* Payment / receiving info section */}
+      {isBuyListing ? (
+        // BUY listing: lister is BUYER — most important info is buyer's token receiving address
+        <div className="bg-white border border-border rounded-xl p-5">
+          <h2 className="font-semibold text-text-primary mb-1">
+            {isMine ? 'Your Token Receiving Address' : "Buyer's Token Receiving Address"}
+          </h2>
+          <p className="text-xs text-text-muted mb-3">
+            {isMine
+              ? 'Sellers will send tokens to this address after you confirm payment.'
+              : 'Send tokens to this address after the buyer confirms payment.'}
+          </p>
+          {listing.settlementMethod ? (
+            <p className="text-sm font-mono bg-surface border border-border rounded-lg px-3 py-2 break-all text-text-primary">
+              {listing.settlementMethod}
+            </p>
+          ) : (
+            <p className="text-sm text-text-muted italic">No receiving address provided.</p>
+          )}
         </div>
-      </div>
+      ) : (
+        // SELL listing: lister is SELLER — show their accepted payment methods
+        <div className="bg-white border border-border rounded-xl p-5">
+          <h2 className="font-semibold text-text-primary mb-1">
+            {isMine ? 'Your Accepted Payment Methods' : 'Seller Accepted Payment Methods'}
+          </h2>
+          <p className="text-xs text-text-muted mb-3">
+            {isMine
+              ? 'These are the payment methods you accept from buyers.'
+              : 'These are the methods this seller accepts from buyers.'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {resolvedMethods.map((m) => (
+              <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+                <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                {m.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Delivery method */}
       {listing.tokenDeliveryType && (
@@ -245,8 +259,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           <h2 className="font-semibold text-text-primary mb-1">Token Delivery Method</h2>
           <p className="text-sm text-text-muted">
             {listing.side === 'sell'
-              ? `Seller will send tokens via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
-              : `Seller will send tokens to buyer via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`}
+              ? isMine
+                ? `You will send tokens to the buyer via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
+                : `Seller will send tokens to you via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
+              : isMine
+                ? `Sellers will send tokens to your address via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
+                : `Send tokens to the buyer's address via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`}
           </p>
         </div>
       )}
@@ -327,18 +345,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <label className="block text-sm font-medium text-text-primary mb-1.5">
                 {isBuyListing
                   ? 'Select your payment receiving account (buyer will send payment here)'
-                  : 'How will you pay?'}
+                  : "Select the seller's payment account you'll send payment to"}
               </label>
-              {!isBuyListing && myMethods.length === 0 && (
-                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-                  No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
-                </p>
-              )}
-              {!isBuyListing && myMethods.length > 0 && modalPaymentMethods.length === 0 && (
-                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-                  None of your saved payment methods match what this seller accepts. <a href="/payment-methods" className="text-primary underline">Add a matching method →</a>
-                </p>
-              )}
               {isBuyListing && myMethods.length === 0 && (
                 <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
                   No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
@@ -358,6 +366,21 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 ))}
               </div>
             </div>
+
+            {/* BUY listing: show buyer's receiving address so seller knows where to send tokens */}
+            {isBuyListing && listing.settlementMethod && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">
+                  Send tokens to buyer&apos;s address
+                </label>
+                <p className="text-xs font-mono bg-surface border border-border rounded-lg px-3 py-2 break-all text-text-primary">
+                  {listing.settlementMethod}
+                </p>
+                <p className="mt-1 text-xs text-text-muted">
+                  Send {listing.token.symbol} to this address after the buyer confirms payment.
+                </p>
+              </div>
+            )}
 
             {/* Buyer's token receiving address — only for SELL listings (buyer receives tokens) */}
             {!isBuyListing && (
