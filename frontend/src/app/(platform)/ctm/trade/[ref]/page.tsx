@@ -364,7 +364,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             )
           })()}
 
-          {/* ── Payment Details ── */}
+          {/* ── Payment Method For This Trade ── */}
           {(() => {
             const snap = trade.sellerPaymentSnapshot
             const isMulti = snap?.accounts && snap.accounts.length > 0
@@ -397,129 +397,129 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             )
 
             return (
-              <div className="bg-white border border-border rounded-xl p-5">
-                <div className="flex items-center justify-between mb-1">
-                  <h2 className="font-semibold text-text-primary">
-                    {isBuyer ? 'Seller Payment Details' : 'Your Payment Details'}
-                  </h2>
-                  {isLocked && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Locked</span>
-                  )}
-                </div>
+              <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+                <h2 className="font-semibold text-text-primary">Payment Method For This Trade</h2>
 
-                {needsSelection ? (
-                  // Buyer must select one account before sending payment
-                  <div>
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-                      Select the payment account you will use to send PKR {Number(trade.fiatAmount).toLocaleString()}. This will be locked for the trade.
+                {/* ── Seller Receiving Account ── */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+                    <p className="text-sm font-semibold text-text-primary">
+                      {isSeller ? 'Your Receiving Account' : 'Seller Receiving Account'}
                     </p>
-                    <div className="space-y-2">
-                      {snap!.accounts!.map((acc, i) => (
-                        <div key={i} className="border border-border rounded-xl p-3 text-sm space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-text-primary">{acc.label}</span>
-                            <button
-                              onClick={() => handleSelectAccount(i)}
-                              disabled={selectingPayment}
-                              className="text-xs bg-primary text-white px-3 py-1 rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                            >
-                              {selectingPayment ? 'Selecting…' : 'Send to this account'}
-                            </button>
-                          </div>
-                          <Row label="Account Name" value={acc.accountName} copyable />
-                          {acc.mobileNumber && <Row label="Account / Payment Number" value={acc.mobileNumber} mono copyable />}
-                          {acc.bankName && <Row label="Bank" value={acc.bankName} />}
-                          {acc.ibanNumber && <Row label="IBAN" value={acc.ibanNumber} mono breakAll copyable />}
-                          {acc.accountNumber && !acc.ibanNumber && <Row label="Account No." value={acc.accountNumber} mono copyable />}
-                        </div>
-                      ))}
-                    </div>
+                    {isLocked && (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium ml-auto">Locked</span>
+                    )}
                   </div>
-                ) : waitingForSelection ? (
-                  // Seller is waiting for buyer to pick an account
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
-                    Waiting for buyer to select a payment account. You will be notified once they choose.
-                  </div>
-                ) : lockedAccount ? (
-                  // Buyer already selected — show only locked account
-                  <div>
-                    <p className="text-xs text-text-muted mb-2">
-                      {isBuyer
-                        ? `Send PKR ${Number(trade.fiatAmount).toLocaleString()} to this account.`
-                        : `You will receive PKR ${Number(trade.fiatAmount).toLocaleString()} to this account.`}
-                    </p>
-                    {renderSingleAccount(lockedAccount)}
-                  </div>
-                ) : snap ? (
-                  // Single-account (SELL listing trades), or multi-account viewed by admin / after expiry
-                  <div>
-                    {isMulti ? (
-                      // Multi-account but no selection was made (admin view, cancelled/expired trade)
+                  <p className="text-xs text-text-muted mb-2">
+                    {isBuyer
+                      ? `Send PKR ${Number(trade.fiatAmount).toLocaleString()} to this account.`
+                      : `You will receive PKR ${Number(trade.fiatAmount).toLocaleString()} from the buyer.`}
+                  </p>
+
+                  {needsSelection ? (
+                    <div>
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                        Select the payment account you will use to send PKR {Number(trade.fiatAmount).toLocaleString()}. This will be locked for the trade.
+                      </p>
                       <div className="space-y-2">
-                        <p className="text-xs text-text-muted mb-2">Available accounts (no account was selected):</p>
+                        {snap!.accounts!.map((acc, i) => (
+                          <div key={i} className="border border-border rounded-xl p-3 text-sm space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-text-primary">{acc.label}</span>
+                              <button
+                                onClick={() => handleSelectAccount(i)}
+                                disabled={selectingPayment}
+                                className="text-xs bg-primary text-white px-3 py-1 rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                              >
+                                {selectingPayment ? 'Selecting…' : 'Send to this account'}
+                              </button>
+                            </div>
+                            <Row label="Account Name" value={acc.accountName} copyable />
+                            {acc.mobileNumber && <Row label="Account / Payment Number" value={acc.mobileNumber} mono copyable />}
+                            {acc.bankName && <Row label="Bank" value={acc.bankName} />}
+                            {acc.ibanNumber && <Row label="IBAN" value={acc.ibanNumber} mono breakAll copyable />}
+                            {acc.accountNumber && !acc.ibanNumber && <Row label="Account No." value={acc.accountNumber} mono copyable />}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : waitingForSelection ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+                      Waiting for buyer to select a payment account. You will be notified once they choose.
+                    </div>
+                  ) : lockedAccount ? (
+                    renderSingleAccount(lockedAccount)
+                  ) : snap ? (
+                    isMulti ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-text-muted mb-1">Available accounts (no account was selected):</p>
                         {snap.accounts!.map((acc, i) => <div key={i}>{renderSingleAccount(acc)}</div>)}
                       </div>
                     ) : (
-                      <>
-                        <p className="text-xs text-text-muted mb-2">
-                          {isBuyer
-                            ? `Send PKR ${Number(trade.fiatAmount).toLocaleString()} to the following account.`
-                            : `You will receive PKR ${Number(trade.fiatAmount).toLocaleString()} from the buyer.`}
-                        </p>
-                        {renderSingleAccount(snap)}
-                      </>
-                    )}
+                      renderSingleAccount(snap)
+                    )
+                  ) : (
+                    <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
+                      Payment via: <span className="font-medium text-text-primary">{trade.paymentMethod}</span>
+                    </div>
+                  )}
+
+                  {paymentProofs.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-medium text-text-muted">Payment Proof</p>
+                      {paymentProofs.map((p) => (
+                        <div key={p.id} className="border border-border rounded-xl p-3">
+                          <p className="text-xs text-text-muted mb-2">{new Date(p.createdAt).toLocaleString()}</p>
+                          {p.fileUrl && <img src={p.fileUrl} alt="payment proof" className="max-h-40 rounded-lg object-contain border border-border" />}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border" />
+
+                {/* ── Buyer Sending Account ── */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                    <p className="text-sm font-semibold text-text-primary">
+                      {isBuyer ? 'Your Sending Account' : "Buyer's Sending Account"}
+                    </p>
                   </div>
-                ) : (
-                  <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
-                    Payment via: <span className="font-medium text-text-primary">{trade.paymentMethod}</span>
-                  </div>
-                )}
-                {/* Payment proofs inline */}
-                {paymentProofs.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xs font-medium text-text-muted">Payment Proof</p>
-                    {paymentProofs.map((p) => (
-                      <div key={p.id} className="border border-border rounded-xl p-3">
-                        <p className="text-xs text-text-muted mb-2">{new Date(p.createdAt).toLocaleString()}</p>
-                        {p.fileUrl && <img src={p.fileUrl} alt="payment proof" className="max-h-40 rounded-lg object-contain border border-border" />}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  <p className="text-xs text-text-muted mb-2">
+                    {isBuyer
+                      ? 'You will send payment from this account.'
+                      : 'Buyer will send PKR from this account. Watch for incoming payment here.'}
+                  </p>
+                  {trade.buyerPaymentSnapshot ? (
+                    <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                      <Row label="Method" value={trade.buyerPaymentSnapshot.label} />
+                      <Row label="Account Name" value={trade.buyerPaymentSnapshot.accountName} copyable />
+                      {trade.buyerPaymentSnapshot.mobileNumber && (
+                        <Row label="Account / Payment Number" value={trade.buyerPaymentSnapshot.mobileNumber} mono copyable />
+                      )}
+                      {trade.buyerPaymentSnapshot.bankName && (
+                        <Row label="Bank" value={trade.buyerPaymentSnapshot.bankName} />
+                      )}
+                      {trade.buyerPaymentSnapshot.ibanNumber && (
+                        <Row label="IBAN" value={trade.buyerPaymentSnapshot.ibanNumber} mono breakAll copyable />
+                      )}
+                      {trade.buyerPaymentSnapshot.accountNumber && !trade.buyerPaymentSnapshot.ibanNumber && (
+                        <Row label="Account No." value={trade.buyerPaymentSnapshot.accountNumber} mono copyable />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
+                      Method: <span className="font-medium text-text-primary">{trade.paymentMethod}</span>
+                      <span className="ml-1">(account details not provided)</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })()}
-
-          {/* ── Buyer Payment Account (pay from) — SELL listing trades only ── */}
-          {trade.buyerPaymentSnapshot && (
-            <div className="bg-white border border-border rounded-xl p-5">
-              <h2 className="font-semibold text-text-primary mb-1">
-                {isBuyer ? 'Your Payment Account (Pay From)' : "Buyer's Payment Account"}
-              </h2>
-              <p className="text-xs text-text-muted mb-3">
-                {isBuyer
-                  ? 'You indicated you will send payment from this account.'
-                  : 'The buyer will send PKR from this account. Watch for incoming payment here.'}
-              </p>
-              <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
-                <Row label="Method" value={trade.buyerPaymentSnapshot.label} />
-                <Row label="Account Name" value={trade.buyerPaymentSnapshot.accountName} copyable />
-                {trade.buyerPaymentSnapshot.mobileNumber && (
-                  <Row label="Account / Payment Number" value={trade.buyerPaymentSnapshot.mobileNumber} mono copyable />
-                )}
-                {trade.buyerPaymentSnapshot.bankName && (
-                  <Row label="Bank" value={trade.buyerPaymentSnapshot.bankName} />
-                )}
-                {trade.buyerPaymentSnapshot.ibanNumber && (
-                  <Row label="IBAN" value={trade.buyerPaymentSnapshot.ibanNumber} mono breakAll copyable />
-                )}
-                {trade.buyerPaymentSnapshot.accountNumber && !trade.buyerPaymentSnapshot.ibanNumber && (
-                  <Row label="Account No." value={trade.buyerPaymentSnapshot.accountNumber} mono copyable />
-                )}
-              </div>
-            </div>
-          )}
 
           {/* ── Token Delivery ── */}
           <div className="bg-white border border-border rounded-xl p-5">
