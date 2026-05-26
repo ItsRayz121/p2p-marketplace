@@ -18,7 +18,7 @@ import { runMerchantSettlementJob } from '../jobs/gasMerchantSettlement.job'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
-import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause } from '../ctm/ctm.jobs'
+import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { env } from '../lib/env'
@@ -222,6 +222,11 @@ export function startWorkers() {
   queues.ctmInactivePause
     .add('ctm-inactive-pause', {}, { repeat: { every: 6 * 60 * 60 * 1000 }, jobId: 'ctm-inactive-pause-repeatable' })
     .catch((err) => logger.error({ err }, 'Failed to schedule CTM inactive merchant pause job'))
+
+  createWorker(QUEUE_NAMES.CTM_BID_EXPIRY, async () => { await runCtmBidExpiry() }, { max: 1, duration: 60_000 })
+  queues.ctmBidExpiry
+    .add('ctm-bid-expiry', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-bid-expiry-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule CTM bid expiry job'))
 
   // Gas payment poller — fallback RPC-based detection when Moralis misses a webhook.
   // Runs every 30 s, skips quickly when no pending orders exist.

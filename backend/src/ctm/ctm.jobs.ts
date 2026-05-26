@@ -292,3 +292,21 @@ export async function runCtmInactiveMerchantPause() {
     logger.info({ count: staleListings.length }, 'CTM inactive merchant pause: listings paused')
   }
 }
+
+export async function runCtmBidExpiry() {
+  const now = new Date()
+
+  const expiredBids = await db.ctmListingBid.findMany({
+    where: { status: 'pending', expiresAt: { lte: now } },
+    select: { id: true, bidderId: true, listing: { select: { token: { select: { symbol: true } } } } },
+  })
+
+  for (const bid of expiredBids) {
+    await db.ctmListingBid.update({ where: { id: bid.id }, data: { status: 'expired' } })
+    notify(bid.bidderId, 'CTM_BID_EXPIRED', 'Bid expired', `Your bid on ${bid.listing.token.symbol} expired — the merchant did not respond in time.`, { bidId: bid.id })
+  }
+
+  if (expiredBids.length > 0) {
+    logger.info({ count: expiredBids.length }, 'CTM bid expiry: expired bids')
+  }
+}

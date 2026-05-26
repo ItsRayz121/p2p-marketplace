@@ -1765,6 +1765,16 @@ export const ctmApi = {
   startListingTrade: (id: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; tokenAmount: number }) =>
     apiRequest<{ tradeRef: string }>(`/ctm/listings/${id}/trade`, { method: 'POST', body: JSON.stringify(data) }),
 
+  // Listing bids
+  placeListingBid: (listingId: string, data: { pricePerUnit: number; tokenAmount: number; message?: string; paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string }) =>
+    apiRequest<unknown>(`/ctm/listings/${listingId}/bids`, { method: 'POST', body: JSON.stringify(data) }),
+  getListingBids: (listingId: string) => apiRequest<unknown[]>(`/ctm/listings/${listingId}/bids`),
+  getMyListingBids: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ bids: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/bids/me' + buildQs(params)),
+  acceptListingBid: (bidId: string) => apiRequest<{ tradeRef: string }>(`/ctm/bids/${bidId}/accept`, { method: 'POST' }),
+  rejectListingBid: (bidId: string) => apiRequest<void>(`/ctm/bids/${bidId}/reject`, { method: 'POST' }),
+  cancelListingBid: (bidId: string) => apiRequest<void>(`/ctm/bids/${bidId}`, { method: 'DELETE' }),
+
   // Requests (bid/RFQ mode)
   getRequests: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ requests: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/requests' + buildQs(params)),

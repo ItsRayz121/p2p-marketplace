@@ -217,6 +217,8 @@ export default function CtmDashboardPage() {
         {[
           { label: 'My Trades', href: '/ctm/my-trades', desc: 'View trade history' },
           { label: 'My Listings', href: '/ctm/my-listings', desc: 'Manage all listings' },
+          { label: 'Incoming Bids', href: '/ctm/incoming-bids', desc: 'Accept or reject bids' },
+          { label: 'My Bids', href: '/ctm/my-bids', desc: 'Bids you have placed' },
           { label: 'Browse Market', href: '/ctm/listings', desc: 'See other listings' },
         ].map((l) => (
           <Link key={l.href} href={l.href} className="bg-white border border-border rounded-xl p-4 hover:shadow-sm transition-shadow">

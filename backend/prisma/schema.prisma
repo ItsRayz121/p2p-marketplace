@@ -435,6 +435,7 @@ model User {
   ctmSellTrades          CtmTrade[]            @relation("CtmTradeSeller")
   ctmRequests            CtmRequest[]          @relation("CtmRequestUser")
   ctmBids                CtmBid[]              @relation("CtmBidder")
+  ctmListingBids         CtmListingBid[]       @relation("CtmListingBidder")
 
   @@index([email])
   @@index([username])
@@ -1678,6 +1679,7 @@ model CtmListing {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   trades            CtmTrade[]
+  listingBids       CtmListingBid[]
 
   @@index([tokenId, side, status])
   @@index([merchantProfileId])
@@ -1765,6 +1767,8 @@ model CtmTrade {
   platformFeeUsdt   Decimal?          @db.Decimal(14, 6)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
+  listingBidId      String?           @unique
+  listingBid        CtmListingBid?    @relation(fields: [listingBidId], references: [id], onDelete: SetNull)
   proofs            CtmTradeProof[]
   messages          CtmTradeMessage[]
   dispute           CtmDispute?
@@ -1774,6 +1778,30 @@ model CtmTrade {
   @@index([sellerId, status])
   @@index([tradeRef])
   @@index([tokenId, status])
+}
+
+model CtmListingBid {
+  id                   String      @id @default(cuid())
+  listingId            String
+  listing              CtmListing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  bidderId             String
+  bidder               User        @relation("CtmListingBidder", fields: [bidderId], references: [id], onDelete: Restrict)
+  pricePerUnit         Decimal     @db.Decimal(14, 2)
+  tokenAmount          Decimal     @db.Decimal(28, 8)
+  fiatAmount           Decimal     @db.Decimal(14, 2)
+  message              String?     @db.VarChar(300)
+  paymentMethod        String?     @db.VarChar(100)
+  paymentMethods       String[]
+  buyerSettlementId    String?     @db.VarChar(500)
+  buyerPaymentMethodId String?     @db.VarChar(100)
+  status               String      @default("pending")
+  expiresAt            DateTime
+  trade                CtmTrade?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  @@index([listingId, status])
+  @@index([bidderId])
 }
 
 model CtmTradeProof {
