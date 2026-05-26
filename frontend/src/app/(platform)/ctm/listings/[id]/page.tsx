@@ -120,6 +120,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [activity, setActivity] = useState<ListingActivity | null>(null)
   const [activeTab, setActiveTab] = useState<'bids' | 'trades'>('bids')
   const [bidActionId, setBidActionId] = useState<string | null>(null)
+  // Collapsible cards
+  const [merchantOpen, setMerchantOpen] = useState(true)
+  const [paymentOpen, setPaymentOpen] = useState(true)
+  const [deliveryOpen, setDeliveryOpen] = useState(true)
 
   const fetchListing = async () => {
     try {
@@ -307,74 +311,106 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Merchant card */}
       <div className="bg-white border border-border rounded-xl p-5">
-        <h2 className="font-semibold text-text-primary mb-3">Merchant</h2>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center">{listing.merchantProfile.user.username.charAt(0).toUpperCase()}</div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-text-primary">{listing.merchantProfile.user.username}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-gray-100 text-gray-700'}`}>{listing.merchantProfile.tier}</span>
+        <button onClick={() => setMerchantOpen((o) => !o)} className="w-full flex items-center justify-between text-left mb-0">
+          <h2 className="font-semibold text-text-primary">Merchant</h2>
+          <svg className={`w-4 h-4 text-text-muted transition-transform ${merchantOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {merchantOpen && (
+          <div className="flex items-center gap-3 mt-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center">{listing.merchantProfile.user.username.charAt(0).toUpperCase()}</div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-text-primary">{listing.merchantProfile.user.username}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-gray-100 text-gray-700'}`}>{listing.merchantProfile.tier}</span>
+              </div>
+              <p className="text-xs text-text-muted">{listing.merchantProfile.completedCtmTrades} completed · ⭐ {Number(listing.merchantProfile.ctmAvgRating).toFixed(1)}</p>
             </div>
-            <p className="text-xs text-text-muted">{listing.merchantProfile.completedCtmTrades} completed · ⭐ {Number(listing.merchantProfile.ctmAvgRating).toFixed(1)}</p>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Payment / receiving info section */}
       {isBuyListing ? (
         // BUY listing: lister is BUYER — most important info is buyer's token receiving address
         <div className="bg-white border border-border rounded-xl p-5">
-          <h2 className="font-semibold text-text-primary mb-1">
-            {isMine ? 'Your Token Receiving Address' : "Buyer's Token Receiving Address"}
-          </h2>
-          <p className="text-xs text-text-muted mb-3">
-            {isMine
-              ? 'Sellers will send tokens to this address after you confirm payment.'
-              : 'Send tokens to this address after the buyer confirms payment.'}
-          </p>
-          {listing.settlementMethod ? (
-            <p className="text-sm font-mono bg-surface border border-border rounded-lg px-3 py-2 break-all text-text-primary">
-              {listing.settlementMethod}
-            </p>
-          ) : (
-            <p className="text-sm text-text-muted italic">No receiving address provided.</p>
+          <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">
+              {isMine ? 'Your Token Receiving Address' : "Buyer's Token Receiving Address"}
+            </h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${paymentOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {paymentOpen && (
+            <div className="mt-3">
+              <p className="text-xs text-text-muted mb-3">
+                {isMine
+                  ? 'Sellers will send tokens to this address after you confirm payment.'
+                  : 'Send tokens to this address after the buyer confirms payment.'}
+              </p>
+              {listing.settlementMethod ? (
+                <p className="text-sm font-mono bg-surface border border-border rounded-lg px-3 py-2 break-all text-text-primary">
+                  {listing.settlementMethod}
+                </p>
+              ) : (
+                <p className="text-sm text-text-muted italic">No receiving address provided.</p>
+              )}
+            </div>
           )}
         </div>
       ) : (
         // SELL listing: lister is SELLER — show their accepted payment methods
         <div className="bg-white border border-border rounded-xl p-5">
-          <h2 className="font-semibold text-text-primary mb-1">
-            {isMine ? 'Your Accepted Payment Methods' : 'Seller Accepted Payment Methods'}
-          </h2>
-          <p className="text-xs text-text-muted mb-3">
-            {isMine
-              ? 'These are the payment methods you accept from buyers.'
-              : 'These are the methods this seller accepts from buyers.'}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {resolvedMethods.map((m) => (
-              <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
-                <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                {m.label}
-              </span>
-            ))}
-          </div>
+          <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">
+              {isMine ? 'Your Accepted Payment Methods' : 'Seller Accepted Payment Methods'}
+            </h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${paymentOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {paymentOpen && (
+            <div className="mt-3">
+              <p className="text-xs text-text-muted mb-3">
+                {isMine
+                  ? 'These are the payment methods you accept from buyers.'
+                  : 'These are the methods this seller accepts from buyers.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {resolvedMethods.map((m) => (
+                  <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+                    <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Delivery method */}
       {listing.tokenDeliveryType && (
         <div className="bg-white border border-border rounded-xl p-5">
-          <h2 className="font-semibold text-text-primary mb-1">Token Delivery Method</h2>
-          <p className="text-sm text-text-muted">
-            {listing.side === 'sell'
-              ? isMine
-                ? `You will send tokens to the buyer via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
-                : `Seller will send tokens to you via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
-              : isMine
-                ? `Sellers will send tokens to your address via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
-                : `Send tokens to the buyer's address via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`}
-          </p>
+          <button onClick={() => setDeliveryOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">Token Delivery Method</h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${deliveryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {deliveryOpen && (
+            <p className="text-sm text-text-muted mt-3">
+              {listing.side === 'sell'
+                ? isMine
+                  ? `You will send tokens to the buyer via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
+                  : `Seller will send tokens to you via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
+                : isMine
+                  ? `Sellers will send tokens to your address via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`
+                  : `Send tokens to the buyer's address via ${DELIVERY_LABELS[listing.tokenDeliveryType] ?? listing.tokenDeliveryType}`}
+            </p>
+          )}
         </div>
       )}
 
