@@ -357,11 +357,21 @@ export async function getListingActivity(listingId: string, requestingUserId?: s
     },
   }
 
-  if (!isOwner) return base
+  if (!isOwner) {
+    let myBid = null
+    if (requestingUserId) {
+      myBid = await db.ctmListingBid.findFirst({
+        where: { listingId, bidderId: requestingUserId, status: { in: ['pending', 'accepted_pending_buyer'] } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, status: true, expiresAt: true, pricePerUnit: true, tokenAmount: true, fiatAmount: true },
+      })
+    }
+    return { ...base, myBid: myBid ?? null }
+  }
 
   const [bidItems, tradeItems] = await Promise.all([
     db.ctmListingBid.findMany({
-      where: { listingId, status: 'pending' },
+      where: { listingId, status: { in: ['pending', 'accepted_pending_buyer'] } },
       orderBy: { createdAt: 'desc' },
       take: 30,
       select: {

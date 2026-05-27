@@ -2,7 +2,15 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
-import { placeBid, acceptListingBid, rejectListingBid, cancelListingBid, getListingBids, getMyBids } from './ctm.bid.service'
+import { placeBid, acceptListingBid, rejectListingBid, cancelListingBid, getListingBids, getMyBids, confirmBidDetails } from './ctm.bid.service'
+
+const confirmBidDetailsSchema = z.object({
+  paymentMethod: z.string().min(1).optional(),
+  paymentMethods: z.array(z.string().min(1)).optional(),
+  buyerSettlementId: z.string().max(500).optional(),
+  buyerPaymentMethodId: z.string().min(1).optional(),
+  message: z.string().max(300).optional(),
+})
 
 const placeBidSchema = z.object({
   pricePerUnit: z.number().positive(),
@@ -51,6 +59,16 @@ export async function ctmBidRoutes(app: FastifyInstance) {
     const { bidId } = req.params as { bidId: string }
     await rejectListingBid(req.user!.id, bidId)
     return reply.send({ success: true })
+  })
+
+  // POST /ctm/bids/:bidId/confirm-details — bidder confirms payment details after merchant acceptance
+  app.post('/ctm/bids/:bidId/confirm-details', { preHandler: [authenticate] }, async (req, reply) => {
+    const { bidId } = req.params as { bidId: string }
+    const parsed = confirmBidDetailsSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const trade = await confirmBidDetails(req.user!.id, bidId, parsed.data as any)
+    return reply.code(201).send({ success: true, data: trade })
   })
 
   // DELETE /ctm/bids/:bidId — bidder cancels their own bid

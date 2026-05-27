@@ -53,7 +53,16 @@ interface ActivityTrade {
   buyer: { username: string }
   seller: { username: string }
 }
+interface MyActiveBid {
+  id: string
+  status: string
+  expiresAt: string
+  pricePerUnit: string
+  tokenAmount: string
+  fiatAmount: string
+}
 interface ListingActivity {
+  myBid?: MyActiveBid | null
   bids:   { pendingCount: number; minPrice: string | null; maxPrice: string | null; items?: ActivityBid[] }
   trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: ActivityTrade[] }
 }
@@ -111,15 +120,24 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [tokenAmount, setTokenAmount] = useState('')
   const [bidPrice, setBidPrice] = useState('')
-  const [bidMessage, setBidMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   // Seller's own payment methods — needed when taking a BUY listing
   const [myMethods, setMyMethods] = useState<ResolvedPaymentMethod[]>([])
   // Activity hub
   const [activity, setActivity] = useState<ListingActivity | null>(null)
+  const [myActiveBid, setMyActiveBid] = useState<MyActiveBid | null>(null)
   const [activeTab, setActiveTab] = useState<'bids' | 'trades'>('bids')
   const [bidActionId, setBidActionId] = useState<string | null>(null)
+  // Confirm bid details modal (shown after merchant accepts bid with no payment info)
+  const [showConfirmBidModal, setShowConfirmBidModal] = useState(false)
+  const [confirmPaymentMethodId, setConfirmPaymentMethodId] = useState('')
+  const [confirmBuyerFromMethodId, setConfirmBuyerFromMethodId] = useState('')
+  const [confirmPaymentMethodIds, setConfirmPaymentMethodIds] = useState<string[]>([])
+  const [confirmBuyerSettlementId, setConfirmBuyerSettlementId] = useState('')
+  const [confirmMessage, setConfirmMessage] = useState('')
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false)
+  const [confirmError, setConfirmError] = useState('')
   // Collapsible cards
   const [merchantOpen, setMerchantOpen] = useState(true)
   const [paymentOpen, setPaymentOpen] = useState(true)
@@ -141,7 +159,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const fetchActivity = useCallback(async () => {
     try {
       const res = await ctmApi.getListingActivity(id)
-      setActivity(res as ListingActivity)
+      const act = res as ListingActivity
+      setActivity(act)
+      if (act.myBid) setMyActiveBid(act.myBid)
+      else if (act.myBid === null) setMyActiveBid(null)
     } catch { /* ignore */ }
   }, [id])
 
@@ -151,7 +172,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     setBidActionId(bidId)
     try {
       const res = await ctmApi.acceptListingBid(bidId)
-      router.push(`/ctm/trade/${(res as { tradeRef: string }).tradeRef}`)
+      if (res.status === 'accepted_pending_buyer') {
+        fetchActivity()
+      } else if (res.tradeRef) {
+        router.push(`/ctm/trade/${res.tradeRef}`)
+      }
     } catch (err: unknown) {
       setError((err as Error).message ?? 'Failed to accept bid')
       setBidActionId(null)
@@ -223,23 +248,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const handlePlaceBid = async () => {
     if (!bidPrice.trim() || parseFloat(bidPrice) <= 0) { setError('Enter your bid price'); return }
     if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setError('Enter a token amount'); return }
-    if (isBuyListing && paymentMethodIds.length === 0) { setError('Select at least one payment receiving account'); return }
-    if (!isBuyListing && !paymentMethodId) { setError('Select a payment method'); return }
-    if (!isBuyListing && !buyerSettlementId.trim()) { setError('Enter your token receiving address'); return }
     setError('')
     setSubmitting(true)
     try {
-      await ctmApi.placeListingBid(id, {
+      const bid = await ctmApi.placeListingBid(id, {
         pricePerUnit: parseFloat(bidPrice),
         tokenAmount: parseFloat(tokenAmount),
-        message: bidMessage.trim() || undefined,
-        paymentMethod: isBuyListing ? undefined : paymentMethodId,
-        paymentMethods: isBuyListing ? paymentMethodIds : undefined,
-        buyerSettlementId: !isBuyListing ? (buyerSettlementId.trim() || undefined) : undefined,
-        buyerPaymentMethodId: !isBuyListing && buyerFromMethodId ? buyerFromMethodId : undefined,
       })
+      setMyActiveBid(bid as MyActiveBid)
       setShowBidModal(false)
-      alert('Bid placed! The merchant will be notified.')
+      fetchActivity()
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setError(err.message)
@@ -248,6 +266,34 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       }
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleConfirmBidDetails = async () => {
+    if (!myActiveBid || !listing) return
+    const isBuy = listing.side === 'buy'
+    if (isBuy && confirmPaymentMethodIds.length === 0) { setConfirmError('Select at least one payment receiving account'); return }
+    if (!isBuy && !confirmPaymentMethodId) { setConfirmError('Select a payment method'); return }
+    if (!isBuy && !confirmBuyerSettlementId.trim()) { setConfirmError('Enter your token receiving address'); return }
+    setConfirmError('')
+    setConfirmSubmitting(true)
+    try {
+      const trade = await ctmApi.confirmBidDetails(myActiveBid.id, {
+        paymentMethod: isBuy ? undefined : confirmPaymentMethodId,
+        paymentMethods: isBuy ? confirmPaymentMethodIds : undefined,
+        buyerSettlementId: !isBuy ? (confirmBuyerSettlementId.trim() || undefined) : undefined,
+        buyerPaymentMethodId: !isBuy && confirmBuyerFromMethodId ? confirmBuyerFromMethodId : undefined,
+        message: confirmMessage.trim() || undefined,
+      })
+      router.push(`/ctm/trade/${trade.tradeRef}`)
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setConfirmError(err.message)
+      } else {
+        setConfirmError((err as Error).message ?? 'Failed to confirm details. Please try again.')
+      }
+    } finally {
+      setConfirmSubmitting(false)
     }
   }
 
@@ -484,15 +530,21 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         </p>
                         {bid.message && <p className="text-xs text-text-muted italic mt-0.5">&ldquo;{bid.message}&rdquo;</p>}
                       </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
-                          className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors">
-                          {bidActionId === bid.id ? '…' : 'Accept'}
-                        </button>
-                        <button onClick={() => handleRejectBid(bid.id)} disabled={bidActionId === bid.id}
-                          className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-white disabled:opacity-60 transition-colors">
-                          Reject
-                        </button>
+                      <div className="flex gap-2 flex-shrink-0 items-start">
+                        {bid.status === 'accepted_pending_buyer' ? (
+                          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 font-medium">Awaiting buyer</span>
+                        ) : (
+                          <>
+                            <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
+                              className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors">
+                              {bidActionId === bid.id ? '…' : 'Accept'}
+                            </button>
+                            <button onClick={() => handleRejectBid(bid.id)} disabled={bidActionId === bid.id}
+                              className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-white disabled:opacity-60 transition-colors">
+                              Reject
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -531,8 +583,25 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
+      {/* Complete Trade banner — shown when buyer's bid was accepted but payment details not yet provided */}
+      {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+          <p className="font-semibold text-amber-900">Your bid was accepted!</p>
+          <p className="text-sm text-amber-700 mt-1">
+            Complete your payment details to open the trade. The window expires at{' '}
+            {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+          </p>
+          <button
+            onClick={() => { setShowConfirmBidModal(true); setConfirmPaymentMethodId(''); setConfirmBuyerFromMethodId(''); setConfirmPaymentMethodIds([]); setConfirmBuyerSettlementId(''); setConfirmMessage(''); setConfirmError('') }}
+            className="mt-3 bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-amber-700 transition-colors"
+          >
+            Complete Trade Details
+          </button>
+        </div>
+      )}
+
       {/* CTA */}
-      {!isMine && listing.status === 'active' && (
+      {!isMine && listing.status === 'active' && !myActiveBid && (
         <div className="flex gap-3">
           <button
             onClick={() => { setShowModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setTokenAmount(''); setError('') }}
@@ -541,11 +610,17 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             {listing.side === 'sell' ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
           </button>
           <button
-            onClick={() => { setShowBidModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setTokenAmount(''); setBidPrice(''); setBidMessage(''); setError('') }}
+            onClick={() => { setShowBidModal(true); setTokenAmount(''); setBidPrice(''); setError('') }}
             className="flex-1 py-3.5 rounded-xl font-bold border-2 border-primary text-primary hover:bg-primary/5 transition-colors"
           >
             Bid
           </button>
+        </div>
+      )}
+      {/* Pending bid notice */}
+      {!isMine && myActiveBid?.status === 'pending' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+          You have a pending bid on this listing. Waiting for the merchant to respond.
         </div>
       )}
 
@@ -799,68 +874,100 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               )
             })()}
 
+            <p className="text-xs text-text-muted bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+              Payment details and your wallet address will be collected after the merchant accepts your bid.
+            </p>
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowBidModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
+              <button onClick={handlePlaceBid} disabled={submitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
+                {submitting ? 'Placing…' : 'Place Bid'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Complete Bid Details modal — shown after merchant accepts bid */}
+      {showConfirmBidModal && listing && myActiveBid && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h3 className="font-bold text-lg text-text-primary">Complete Trade Details</h3>
+              <p className="text-xs text-text-muted mt-0.5">Your bid was accepted. Provide payment details to open the trade.</p>
+            </div>
+
+            {/* Bid recap */}
+            <div className="bg-surface rounded-xl border border-border p-4 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Bid price</span>
+                <span className="font-medium text-text-primary">PKR {Number(myActiveBid.pricePerUnit).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Amount</span>
+                <span className="font-medium text-text-primary">{Number(myActiveBid.tokenAmount).toLocaleString()} {listing.token.symbol}</span>
+              </div>
+              <div className="flex justify-between border-t border-border pt-1 font-semibold">
+                <span className="text-text-muted">{isBuyListing ? 'Total you receive' : 'Total payable'}</span>
+                <span className="text-text-primary">PKR {Number(myActiveBid.fiatAmount).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {confirmError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{confirmError}</div>}
+
             {/* Payment method selection */}
             <div>
               <label className="block text-sm font-medium text-text-primary mb-0.5">
-                {isBuyListing
-                  ? 'Choose where you want to receive payment'
-                  : "Select the seller's payment account you'll send to"}
+                {isBuyListing ? 'Choose where you want to receive payment' : "Select the seller's payment account you'll send to"}
               </label>
-              {isBuyListing && (
-                <p className="text-xs text-text-muted mb-2">Select all accounts you're happy to receive payment to.</p>
-              )}
               {isBuyListing && myMethods.length === 0 && (
                 <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
                   No saved payment accounts. <a href="/payment-methods" className="text-primary underline">Add one →</a>
                 </p>
               )}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 mt-1.5">
                 {modalPaymentMethods.map((m) => {
-                  const isSelected = isBuyListing ? paymentMethodIds.includes(m.id) : paymentMethodId === m.id
+                  const isSelected = isBuyListing ? confirmPaymentMethodIds.includes(m.id) : confirmPaymentMethodId === m.id
                   return (
-                    <button
-                      type="button"
-                      key={m.id}
+                    <button type="button" key={m.id}
                       onClick={() => {
                         if (isBuyListing) {
-                          setPaymentMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])
+                          setConfirmPaymentMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])
                         } else {
-                          setPaymentMethodId(m.id)
+                          setConfirmPaymentMethodId(m.id)
                         }
                       }}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
                     >
                       <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
                       {m.label}
-                      {isBuyListing && isSelected && <span className="ml-0.5 text-xs">✓</span>}
+                      {isSelected && <span className="ml-0.5 text-xs">✓</span>}
                     </button>
                   )
                 })}
               </div>
             </div>
 
-            {/* SELL listing: buyer pays from */}
+            {/* SELL listing: buyer's "pay from" account */}
             {!isBuyListing && myMethods.length > 0 && (
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-0.5">Your payment account (you&apos;ll pay from)</label>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">Your payment account (you&apos;ll pay from)</label>
                 <div className="flex flex-wrap gap-2">
                   {myMethods.map((m) => (
-                    <button
-                      type="button"
-                      key={m.id}
-                      onClick={() => setBuyerFromMethodId(prev => prev === m.id ? '' : m.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${buyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                    <button type="button" key={m.id}
+                      onClick={() => setConfirmBuyerFromMethodId(prev => prev === m.id ? '' : m.id)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${confirmBuyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
                     >
                       <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
                       {m.label}
-                      {buyerFromMethodId === m.id && <span className="ml-0.5 text-xs">✓</span>}
+                      {confirmBuyerFromMethodId === m.id && <span className="ml-0.5 text-xs">✓</span>}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* SELL listing: buyer's token receiving address */}
+            {/* SELL listing: token receiving address */}
             {!isBuyListing && (
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1.5">
@@ -869,8 +976,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 <input
                   type={listing.tokenDeliveryType === 'email' ? 'email' : 'text'}
                   placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol)}
-                  value={buyerSettlementId}
-                  onChange={(e) => setBuyerSettlementId(e.target.value)}
+                  value={confirmBuyerSettlementId}
+                  onChange={(e) => setConfirmBuyerSettlementId(e.target.value)}
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
@@ -881,8 +988,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <label className="block text-sm font-medium text-text-primary mb-1.5">Message to merchant (optional)</label>
               <textarea
                 placeholder="e.g. I can transact within 20 minutes"
-                value={bidMessage}
-                onChange={(e) => setBidMessage(e.target.value)}
+                value={confirmMessage}
+                onChange={(e) => setConfirmMessage(e.target.value)}
                 maxLength={300}
                 rows={2}
                 className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
@@ -890,9 +997,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setShowBidModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
-              <button onClick={handlePlaceBid} disabled={submitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
-                {submitting ? 'Placing…' : 'Place Bid'}
+              <button onClick={() => setShowConfirmBidModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
+              <button onClick={handleConfirmBidDetails} disabled={confirmSubmitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
+                {confirmSubmitting ? 'Opening Trade…' : 'Open Trade'}
               </button>
             </div>
           </div>

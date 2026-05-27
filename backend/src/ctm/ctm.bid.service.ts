@@ -49,18 +49,6 @@ export async function placeBid(
 
   const isBuyListing = listing.side === 'buy'
 
-  // Validate payment method(s) are provided
-  if (!isBuyListing && !data.paymentMethod) {
-    throw new AppError('VALIDATION_ERROR', 'paymentMethod is required', 400)
-  }
-  if (!isBuyListing && !listing.paymentMethods.includes(data.paymentMethod!)) {
-    throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
-  }
-  if (isBuyListing) {
-    const ids = data.paymentMethods?.length ? data.paymentMethods : (data.paymentMethod ? [data.paymentMethod] : [])
-    if (ids.length === 0) throw new AppError('VALIDATION_ERROR', 'Select at least one payment receiving account', 400)
-  }
-
   const tradeTokenAmount = new Prisma.Decimal(data.tokenAmount)
   if (tradeTokenAmount.lte(0)) throw new AppError('VALIDATION_ERROR', 'Token amount must be greater than 0', 400)
   if (tradeTokenAmount.gt(listing.availableAmount)) throw new AppError('VALIDATION_ERROR', 'Requested amount exceeds available listing amount', 400)
@@ -73,10 +61,6 @@ export async function placeBid(
   const fiatAmount = pricePerUnit.mul(tradeTokenAmount)
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 min
 
-  const resolvedPaymentMethods = isBuyListing
-    ? (data.paymentMethods?.length ? data.paymentMethods : (data.paymentMethod ? [data.paymentMethod] : []))
-    : []
-
   const bid = await db.ctmListingBid.create({
     data: {
       listingId,
@@ -85,8 +69,8 @@ export async function placeBid(
       tokenAmount: tradeTokenAmount,
       fiatAmount,
       message: data.message ?? null,
-      paymentMethod: !isBuyListing ? (data.paymentMethod ?? null) : (resolvedPaymentMethods[0] ?? null),
-      paymentMethods: isBuyListing ? resolvedPaymentMethods : [],
+      paymentMethod: !isBuyListing ? (data.paymentMethod ?? null) : null,
+      paymentMethods: isBuyListing ? (data.paymentMethods ?? []) : [],
       buyerSettlementId: !isBuyListing ? (data.buyerSettlementId ?? null) : null,
       buyerPaymentMethodId: !isBuyListing ? (data.buyerPaymentMethodId ?? null) : null,
       status: 'pending',
@@ -125,6 +109,35 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
   const isBuyListing = listing.side === 'buy'
   const actualBuyerId = isBuyListing ? listing.merchantProfile.userId : bid.bidderId
   const actualSellerId = isBuyListing ? bid.bidderId : listing.merchantProfile.userId
+
+  // Check if buyer has provided payment details yet
+  const hasBuyerPaymentDetails = isBuyListing
+    ? (bid.paymentMethods.length > 0 || !!bid.paymentMethod)
+    : !!bid.paymentMethod
+
+  if (!hasBuyerPaymentDetails) {
+    // Lock listing and set bid to accepted_pending_buyer — buyer must confirm details before trade opens
+    const newExpiry = new Date(Date.now() + 30 * 60 * 1000)
+    await db.$transaction(async (tx: Tx) => {
+      const updated = await tx.ctmListing.updateMany({
+        where: { id: listing.id, availableAmount: { gte: bid.tokenAmount } },
+        data: { availableAmount: { decrement: bid.tokenAmount }, lockedAmount: { increment: bid.tokenAmount } },
+      })
+      if (updated.count === 0) throw new AppError('CONFLICT', 'Listing no longer has enough available tokens', 409)
+      await tx.ctmListingBid.updateMany({
+        where: { listingId: listing.id, status: 'pending', id: { not: bidId } },
+        data: { status: 'rejected' },
+      })
+      await tx.ctmListingBid.update({
+        where: { id: bidId },
+        data: { status: 'accepted_pending_buyer', expiresAt: newExpiry },
+      })
+    })
+    notify(bid.bidderId, 'CTM_BID_ACCEPTED_PENDING', 'Bid accepted — action needed',
+      `Your bid was accepted! Complete your payment details within 30 minutes to open the trade.`,
+      { bidId, listingId: listing.id })
+    return { status: 'accepted_pending_buyer', bidId, expiresAt: newExpiry }
+  }
 
   // Resolve payment method IDs
   const primaryPaymentMethodId = isBuyListing
@@ -290,4 +303,116 @@ export async function getMyBids(userId: string, page = 1, limit = 20) {
   ])
 
   return { bids, total, page, limit, totalPages: Math.ceil(total / limit) }
+}
+
+export async function confirmBidDetails(
+  bidderId: string,
+  bidId: string,
+  data: {
+    paymentMethod?: string
+    paymentMethods?: string[]
+    buyerSettlementId?: string
+    buyerPaymentMethodId?: string
+    message?: string
+  },
+) {
+  const bid = await db.ctmListingBid.findUnique({
+    where: { id: bidId },
+    include: {
+      listing: { include: { token: true, merchantProfile: { include: { user: true } } } },
+      bidder: { select: { id: true, username: true } },
+    },
+  })
+  if (!bid) throw new AppError('NOT_FOUND', 'Bid not found', 404)
+  if (bid.bidderId !== bidderId) throw new AppError('FORBIDDEN', 'Access denied', 403)
+  if (bid.status !== 'accepted_pending_buyer') throw new AppError('CONFLICT', 'Bid is not awaiting your confirmation', 409)
+  if (new Date() > bid.expiresAt) throw new AppError('CONFLICT', 'Bid confirmation window has expired', 409)
+
+  const listing = bid.listing
+  const isBuyListing = listing.side === 'buy'
+
+  if (!isBuyListing && !data.paymentMethod) throw new AppError('VALIDATION_ERROR', 'Select a payment method', 400)
+  if (!isBuyListing && !listing.paymentMethods.includes(data.paymentMethod!)) throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
+  if (isBuyListing) {
+    const ids = data.paymentMethods?.length ? data.paymentMethods : (data.paymentMethod ? [data.paymentMethod] : [])
+    if (ids.length === 0) throw new AppError('VALIDATION_ERROR', 'Select at least one payment receiving account', 400)
+  }
+
+  const actualBuyerId = isBuyListing ? listing.merchantProfile.userId : bid.bidderId
+  const actualSellerId = isBuyListing ? bid.bidderId : listing.merchantProfile.userId
+
+  const primaryPaymentMethodId = isBuyListing
+    ? ((data.paymentMethods?.[0]) ?? data.paymentMethod ?? '')
+    : (data.paymentMethod ?? '')
+  const resolvedPaymentMethodIds = isBuyListing
+    ? (data.paymentMethods ?? (data.paymentMethod ? [data.paymentMethod] : []))
+    : [primaryPaymentMethodId]
+
+  const paymentMethodOwnerId = isBuyListing ? bid.bidderId : listing.merchantProfile.userId
+  let sellerPaymentSnapshot: Record<string, unknown>
+
+  if (isBuyListing && resolvedPaymentMethodIds.length > 1) {
+    const methods = await db.paymentMethod.findMany({
+      where: { id: { in: resolvedPaymentMethodIds }, userId: paymentMethodOwnerId },
+    })
+    if (methods.length !== resolvedPaymentMethodIds.length) throw new AppError('CONFLICT', 'One or more payment methods no longer exist', 409)
+    sellerPaymentSnapshot = { accounts: methods.map(buildAccountSnapshot) }
+  } else {
+    const sellerPm = await db.paymentMethod.findFirst({
+      where: { id: primaryPaymentMethodId, userId: paymentMethodOwnerId },
+    })
+    if (!sellerPm) throw new AppError('CONFLICT', 'Payment method no longer exists', 409)
+    sellerPaymentSnapshot = buildAccountSnapshot(sellerPm)
+  }
+
+  let buyerPaymentSnapshot: Record<string, unknown> | null = null
+  if (!isBuyListing && data.buyerPaymentMethodId) {
+    const buyerPm = await db.paymentMethod.findFirst({
+      where: { id: data.buyerPaymentMethodId, userId: bid.bidderId },
+    })
+    if (buyerPm) buyerPaymentSnapshot = buildAccountSnapshot(buyerPm)
+  }
+
+  const actualBuyerSettlementId = isBuyListing
+    ? (listing.settlementMethod ?? null)
+    : (data.buyerSettlementId ?? null)
+
+  const expiresAt = new Date(Date.now() + (listing.tradeWindowMins ?? 45) * 60 * 1000)
+  const fiatAmount = bid.pricePerUnit.mul(bid.tokenAmount)
+  const feePct = parseFloat(process.env.CTM_PLATFORM_FEE_PCT ?? '0.5') / 100
+  const platformFeePkr = fiatAmount.mul(feePct)
+  const isOnChain = listing.settlementType === 'ON_CHAIN'
+  const escrowAddress = isOnChain ? (process.env.PLATFORM_USDT_WALLET ?? null) : null
+  const escrowCurrency = isOnChain ? (process.env.PLATFORM_ESCROW_CURRENCY ?? 'USDT_TRC20') : null
+  const escrowAmount = isOnChain ? fiatAmount : null
+
+  return db.$transaction(async (tx: Tx) => {
+    const trade = await tx.ctmTrade.create({
+      data: {
+        listingBidId: bid.id,
+        listingId: listing.id,
+        buyerId: actualBuyerId,
+        sellerId: actualSellerId,
+        tokenId: listing.tokenId,
+        settlementType: listing.settlementType,
+        tokenAmount: bid.tokenAmount,
+        pricePerUnit: bid.pricePerUnit,
+        fiatAmount,
+        paymentMethod: primaryPaymentMethodId,
+        settlementMethod: listing.settlementMethod,
+        buyerSettlementId: actualBuyerSettlementId,
+        sellerPaymentSnapshot: sellerPaymentSnapshot as never,
+        ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot: buyerPaymentSnapshot as never } : {}),
+        status: 'awaiting_payment',
+        expiresAt,
+        platformFeePkr,
+        ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
+      },
+    })
+    await tx.ctmListingBid.update({ where: { id: bidId }, data: { status: 'accepted' } })
+    notify(listing.merchantProfile.userId, 'CTM_TRADE_READY', 'Trade is now open!',
+      `Buyer completed their details. Trade ${trade.tradeRef} is open.`,
+      { tradeRef: trade.tradeRef })
+    return trade
+  })
 }
