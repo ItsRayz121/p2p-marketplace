@@ -1,7 +1,7 @@
 'use client'
 import { useState, use, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { adsApi, ApiError } from '@/lib/api'
+import { adsApi, ApiError, apiRequest } from '@/lib/api'
 import type { AdActivity } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
@@ -42,9 +42,7 @@ interface AdDetail {
 
 async function fetchMyPaymentMethods(): Promise<ResolvedPaymentMethod[]> {
   try {
-    const res = await fetch('/api/v1/wallet/payment-methods', { headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` } })
-    if (!res.ok) return []
-    const data: SavedPaymentMethod[] = await res.json()
+    const data = await apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods')
     return (Array.isArray(data) ? data : []).map((m) => ({
       id: m.id,
       type: m.type,
@@ -364,12 +362,12 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                       </div>
                       <div className="text-right flex-shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          t.status === 'completed' ? 'bg-green-100 text-green-700' :
+                          t.status === 'crypto_released' ? 'bg-green-100 text-green-700' :
                           t.status === 'cancelled' ? 'bg-gray-100 text-gray-600' :
                           'bg-blue-100 text-blue-700'
                         }`}>{t.status.replace(/_/g, ' ')}</span>
                         <p className="text-xs text-text-muted mt-1">
-                          <a href={`/trade/${t.orderRef}`} className="text-primary hover:underline">View →</a>
+                          <a href={`/trade/${t.id}`} className="text-primary hover:underline">View →</a>
                         </p>
                       </div>
                     </div>

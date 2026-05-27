@@ -6,7 +6,8 @@ import { generateOrderRef } from '../lib/hash'
 
 type Tx = Prisma.TransactionClient
 
-const ACTIVE_TRADE_STATUSES = ['payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent'] as const
+type TradeStatusLiteral = 'payment_pending' | 'payment_uploaded' | 'payment_confirmed' | 'crypto_sent' | 'crypto_released' | 'cancelled' | 'disputed'
+const ACTIVE_TRADE_STATUSES: TradeStatusLiteral[] = ['payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent']
 
 export async function placeBid(
   bidderId: string,
@@ -60,7 +61,7 @@ export async function acceptAdBid(adOwnerUserId: string, bidId: string) {
   await db.$transaction(async (tx: Tx) => {
     const updated = await tx.ad.updateMany({
       where: { id: bid.adId, availableAmount: { gte: bid.usdtAmount } },
-      data: { availableAmount: { decrement: bid.usdtAmount }, lockedAmount: { increment: bid.usdtAmount } },
+      data: { availableAmount: { decrement: bid.usdtAmount } },
     })
     if (updated.count === 0) throw new AppError('CONFLICT', 'Listing no longer has enough available amount', 409)
 
@@ -163,7 +164,7 @@ export async function confirmBidDetails(
 
     await tx.adBid.update({ where: { id: bidId }, data: { status: 'accepted', paymentMethod: data.paymentMethod, buyerUsdtAddress: data.buyerUsdtAddress ?? null } })
 
-    const newAdStatus = ad.availableAmount.sub(bid.usdtAmount).lte(0) ? 'completed' : 'active'
+    const newAdStatus = ad.availableAmount.lte(0) ? 'completed' : 'active'
     if (newAdStatus === 'completed') {
       await tx.ad.update({ where: { id: bid.adId }, data: { status: 'completed' } })
     }
@@ -209,10 +210,10 @@ export async function getAdActivity(adId: string, requestingUserId?: string) {
       _min: { pricePerUnit: true },
       _max: { pricePerUnit: true },
     }),
-    db.trade.count({ where: { adId, status: { in: ACTIVE_TRADE_STATUSES.map((s) => s as never) } } }),
-    db.trade.count({ where: { adId, status: 'completed' as never } }),
+    db.trade.count({ where: { adId, status: { in: ACTIVE_TRADE_STATUSES as TradeStatusLiteral[] } } }),
+    db.trade.count({ where: { adId, status: 'crypto_released' as TradeStatusLiteral } }),
     db.trade.findFirst({
-      where: { adId, status: 'completed' as never },
+      where: { adId, status: 'crypto_released' as TradeStatusLiteral },
       orderBy: { updatedAt: 'desc' },
       select: { price: true, updatedAt: true },
     }),
@@ -261,7 +262,7 @@ export async function getAdActivity(adId: string, requestingUserId?: string) {
       orderBy: { createdAt: 'desc' },
       take: 30,
       select: {
-        orderRef: true, status: true, amount: true,
+        id: true, orderRef: true, status: true, amount: true,
         price: true, fiatAmount: true,
         createdAt: true, updatedAt: true,
         buyer: { select: { username: true } },
