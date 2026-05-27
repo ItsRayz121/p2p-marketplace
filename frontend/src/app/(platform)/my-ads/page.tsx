@@ -81,19 +81,19 @@ export default function MyAdsPage() {
     <div className="max-w-4xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">My Ads</h1>
-          <p className="text-sm text-text-muted">{ads.length} ad{ads.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-text-primary">My Listings</h1>
+          <p className="text-sm text-text-muted">{ads.length} listing{ads.length !== 1 ? 's' : ''}</p>
         </div>
         <Link href="/create-ad">
-          <Button size="sm">+ Create Ad</Button>
+          <Button size="sm">+ Create Listing</Button>
         </Link>
       </div>
 
       {ads.length === 0 ? (
         <EmptyState
-          title="No ads yet"
-          description="Create your first buy or sell ad to start trading on PakSwap."
-          action={{ label: 'Create Your First Ad', onClick: () => router.push('/create-ad') }}
+          title="No listings yet"
+          description="Create your first buy or sell listing to start trading on PakSwap."
+          action={{ label: 'Create Your First Listing', onClick: () => router.push('/create-ad') }}
         />
       ) : (
         <>
@@ -126,6 +126,9 @@ export default function MyAdsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        <Link href={`/marketplace/listings/${ad.id}`}>
+                          <Button size="sm" variant="secondary">View</Button>
+                        </Link>
                         <Button
                           size="sm"
                           variant="secondary"
@@ -192,6 +195,9 @@ export default function MyAdsPage() {
                   )}
                 </div>
                 <div className="flex gap-2">
+                  <Link href={`/marketplace/listings/${ad.id}`} className="flex-1">
+                    <Button size="sm" variant="secondary" className="w-full">View</Button>
+                  </Link>
                   <Button
                     size="sm"
                     variant="secondary"
@@ -201,8 +207,8 @@ export default function MyAdsPage() {
                   >
                     {toggling === ad.id ? <Spinner size="sm" /> : ad.status === 'active' ? 'Pause' : 'Activate'}
                   </Button>
-                  <Link href={`/create-ad?edit=${ad.id}`} className="flex-1">
-                    <Button size="sm" variant="secondary" className="w-full">Edit</Button>
+                  <Link href={`/create-ad?edit=${ad.id}`}>
+                    <Button size="sm" variant="secondary">Edit</Button>
                   </Link>
                   <Button
                     size="sm"

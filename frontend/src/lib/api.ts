@@ -727,6 +727,30 @@ export const tradesApi = {
     apiRequest<{ messages: Array<{ id: string; senderId: string; message: string; createdAt: string }> }>(`/trades/${id}/messages`),
 }
 
+export interface AdBid {
+  id: string
+  adId: string
+  bidderId: string
+  pricePerUnit: string
+  usdtAmount: string
+  fiatAmount: string
+  message?: string | null
+  paymentMethod?: string | null
+  buyerUsdtAddress?: string | null
+  status: string
+  expiresAt: string
+  createdAt: string
+  bidder?: { id: string; username: string }
+  trade?: { orderRef: string; status: string } | null
+  ad?: Ad & { user: { id: string; username: string } }
+}
+
+export interface AdActivity {
+  myBid?: { id: string; status: string; expiresAt: string; pricePerUnit: string; usdtAmount: string; fiatAmount: string } | null
+  bids: { pendingCount: number; minPrice: string | null; maxPrice: string | null; items?: AdBid[] }
+  trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: Array<{ orderRef: string; status: string; amount: string; price: string; fiatAmount: string; createdAt: string; buyer: { username: string }; seller: { username: string } }> }
+}
+
 export const adsApi = {
   createAd: (data: CreateAdPayload) =>
     apiRequest<Ad>('/ads', { method: 'POST', body: JSON.stringify(data) }),
@@ -735,7 +759,7 @@ export const adsApi = {
   deleteAd: (id: string) =>
     apiRequest<void>(`/ads/${id}`, { method: 'DELETE' }),
   getAd: (id: string) =>
-    apiRequest<Ad>(`/ads/${id}`),
+    apiRequest<Ad & { resolvedPaymentMethods: Array<{ id: string; type: string; label: string }>; user: { id: string; username: string; tradeStats?: { totalTrades: number; completedTrades: number; completionRate: string } | null } }>(`/ads/${id}`),
   getMyAds: (params?: { page?: number; limit?: number; status?: string }) => {
     const qs = params
       ? '?' + new URLSearchParams(
@@ -750,6 +774,28 @@ export const adsApi = {
     apiRequest<Ad>(`/ads/${id}/pause`, { method: 'POST' }),
   activateAd: (id: string) =>
     apiRequest<Ad>(`/ads/${id}/activate`, { method: 'POST' }),
+  getAdActivity: (id: string) =>
+    apiRequest<AdActivity>(`/ads/${id}/activity`),
+  placeBid: (adId: string, data: { pricePerUnit: number; usdtAmount: number; message?: string }) =>
+    apiRequest<AdBid>(`/ads/${adId}/bids`, { method: 'POST', body: JSON.stringify(data) }),
+  acceptBid: (bidId: string) =>
+    apiRequest<{ status: string; bidId: string; expiresAt: string }>(`/ads/bids/${bidId}/accept`, { method: 'POST' }),
+  rejectBid: (bidId: string) =>
+    apiRequest<void>(`/ads/bids/${bidId}/reject`, { method: 'POST' }),
+  cancelBid: (bidId: string) =>
+    apiRequest<void>(`/ads/bids/${bidId}/cancel`, { method: 'POST' }),
+  confirmBidDetails: (bidId: string, data: { paymentMethod: string; buyerUsdtAddress?: string }) =>
+    apiRequest<{ id: string; orderRef: string }>(`/ads/bids/${bidId}/confirm`, { method: 'POST', body: JSON.stringify(data) }),
+  getMyBids: (params?: { page?: number; limit?: number }) => {
+    const qs = params
+      ? '?' + new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : ''
+    return apiRequest<{ bids: AdBid[]; total: number; page: number; limit: number }>('/ads/bids/mine' + qs)
+  },
 }
 
 export interface UserPaymentMethod {

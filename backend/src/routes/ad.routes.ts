@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import {
   createAd,
   getUserAds,
@@ -10,6 +10,14 @@ import {
 } from '../services/ad.service'
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
+
+const PM_LABELS: Record<string, string> = {
+  jazzcash: 'JazzCash',
+  easypaisa: 'Easypaisa',
+  sadapay: 'SadaPay',
+  nayapay: 'NayaPay',
+  bank_transfer: 'Bank Transfer',
+}
 
 const ALLOWED_NETWORKS = ['BEP20', 'Aptos'] as const
 
@@ -56,18 +64,26 @@ export async function adRoutes(app: FastifyInstance) {
     return reply.code(201).send({ success: true, data: ad })
   })
 
-  // GET /api/ads/:id — single ad by ID (used by trade/new page)
-  app.get('/ads/:id', { preHandler: [authenticate] }, async (req, reply) => {
+  // GET /api/ads/:id — single ad by ID (listing detail — public with optional auth)
+  app.get('/ads/:id', { preHandler: [optionalAuth] }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const ad = await db.ad.findUnique({
       where: { id },
-      include: { user: { select: { id: true, username: true } } },
+      include: { user: { select: { id: true, username: true, tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true } } } } },
     })
     if (!ad) throw new AppError('NOT_FOUND', 'Ad not found', 404)
     if (ad.coin !== 'USDT' || !ALLOWED_NETWORKS.includes(ad.network as typeof ALLOWED_NETWORKS[number])) {
       throw new AppError('NOT_FOUND', 'Ad not found', 404)
     }
-    return reply.send({ success: true, data: ad })
+
+    // Resolve payment method labels for display
+    const resolvedPaymentMethods = ad.paymentMethods.map((pm) => ({
+      id: pm,
+      type: pm === 'bank_transfer' ? 'bank_transfer' : pm,
+      label: PM_LABELS[pm] ?? pm,
+    }))
+
+    return reply.send({ success: true, data: { ...ad, resolvedPaymentMethods } })
   })
 
   // GET /api/ads — user's own ads (also exposed at /ads/me for frontend convenience)

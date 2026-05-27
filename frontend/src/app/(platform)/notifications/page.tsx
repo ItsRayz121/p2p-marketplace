@@ -86,6 +86,12 @@ function getNavTarget(notif: Notification): string | null {
     return '/ctm/my-requests'
   }
 
+  // USDT marketplace bids
+  if (t === 'AD_BID_RECEIVED' && meta?.adId) return `/marketplace/listings/${meta.adId}`
+  if (t === 'AD_BID_ACCEPTED_PENDING' && meta?.adId) return `/marketplace/listings/${meta.adId}`
+  if (t === 'AD_BID_ACCEPTED' && meta?.tradeId) return `/trade/${meta.tradeId}`
+  if (t === 'AD_TRADE_READY' && meta?.tradeId) return `/trade/${meta.tradeId}`
+
   // Profile & account
   if (t === 'kyc') return '/kyc'
   if (t === 'badge') return '/dashboard'

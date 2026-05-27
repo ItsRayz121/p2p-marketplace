@@ -102,7 +102,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
 
         {/* CTA */}
         {parseFloat(ad.availableAmount) > 0 ? (
-          <Link href={`/trade/new?adId=${ad.id}`} className="flex-shrink-0">
+          <Link href={`/marketplace/listings/${ad.id}`} className="flex-shrink-0">
             <Button size="sm">{ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}</Button>
           </Link>
         ) : (
@@ -294,7 +294,7 @@ export default function MarketplacePage() {
                 <p className="text-sm text-text-muted mt-1">No buy orders match your filters. You can also create a sell listing so buyers find you.</p>
               </div>
               <Link href="/create-ad">
-                <Button>Create a Sell Listing</Button>
+                <Button>Create a Listing</Button>
               </Link>
             </div>
           )}

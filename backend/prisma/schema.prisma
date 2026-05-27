@@ -436,6 +436,7 @@ model User {
   ctmRequests            CtmRequest[]          @relation("CtmRequestUser")
   ctmBids                CtmBid[]              @relation("CtmBidder")
   ctmListingBids         CtmListingBid[]       @relation("CtmListingBidder")
+  adBids                 AdBid[]               @relation("AdBidder")
 
   @@index([email])
   @@index([username])
@@ -568,6 +569,7 @@ model Ad {
   updatedAt       DateTime  @updatedAt
 
   trades          Trade[]
+  bids            AdBid[]
 
   @@index([side, coin, status])
   @@index([userId])
@@ -601,6 +603,8 @@ model Trade {
   expiresAt          DateTime
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
+  adBidId            String?     @unique
+  adBid              AdBid?      @relation(fields: [adBidId], references: [id], onDelete: SetNull)
 
   messages           TradeMessage[]
   dispute            Dispute?
@@ -611,6 +615,27 @@ model Trade {
   @@index([orderRef])
   @@index([adId])
   @@index([status, expiresAt])
+}
+
+model AdBid {
+  id               String   @id @default(cuid())
+  adId             String
+  ad               Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  bidderId         String
+  bidder           User     @relation("AdBidder", fields: [bidderId], references: [id], onDelete: Restrict)
+  pricePerUnit     Decimal  @db.Decimal(14, 2)
+  usdtAmount       Decimal  @db.Decimal(18, 8)
+  fiatAmount       Decimal  @db.Decimal(14, 2)
+  message          String?  @db.VarChar(300)
+  paymentMethod    String?
+  buyerUsdtAddress String?  @db.VarChar(300)
+  status           String   @default("pending")
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  trade            Trade?
+
+  @@index([adId, status])
+  @@index([bidderId])
 }
 
 model TradeMessage {
