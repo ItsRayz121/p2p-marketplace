@@ -25,7 +25,7 @@ export default function GoogleSuccessPage() {
 
     // Store the access token then fetch the full user profile
     setAccessToken(token)
-    authApi.getMe().then((user) => {
+    authApi.me().then((user) => {
       setUser(user)
       // Clean token from URL then navigate
       window.history.replaceState({}, '', '/auth/google/success')
