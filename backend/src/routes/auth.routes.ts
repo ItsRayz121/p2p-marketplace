@@ -524,7 +524,7 @@ export async function authRoutes(app: FastifyInstance) {
       const { accessToken, refreshToken } = await loginOrRegisterWithGoogle(
         googleUser.id,
         googleUser.email,
-        googleUser.name ?? googleUser.email.split('@')[0],
+        googleUser.name ?? (googleUser.email.split('@')[0] ?? 'user'),
         req.headers['user-agent'],
         req.ip,
       )
