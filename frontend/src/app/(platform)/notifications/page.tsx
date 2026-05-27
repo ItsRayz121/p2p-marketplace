@@ -81,7 +81,10 @@ function getNavTarget(notif: Notification): string | null {
 
   // CTM bids
   if (t === 'CTM_BID_ACCEPTED' && meta?.tradeRef) return `/ctm/trade/${meta.tradeRef}`
-  if (t === 'CTM_BID_RECEIVED') return '/ctm/my-requests'
+  if (t === 'CTM_BID_RECEIVED') {
+    if (meta?.listingId) return `/ctm/listings/${meta.listingId}`
+    return '/ctm/my-requests'
+  }
 
   // Profile & account
   if (t === 'kyc') return '/kyc'
