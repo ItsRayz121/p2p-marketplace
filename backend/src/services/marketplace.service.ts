@@ -351,12 +351,26 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
 
   const ALLOWED_NETWORKS = ['BEP20', 'Aptos']
 
+  // Resolve payment method type filter to matching IDs
+  let paymentMethodIdFilter: string[] | undefined
+  if (params.paymentMethod) {
+    const matchingPms = await db.paymentMethod.findMany({
+      where: { type: params.paymentMethod as any },
+      select: { id: true },
+    })
+    paymentMethodIdFilter = matchingPms.map((pm) => pm.id)
+  }
+
   const where: Prisma.AdWhereInput = {
     status: 'active',
     coin: 'USDT',
     ...(params.side ? { side: params.side as 'buy' | 'sell' } : {}),
     ...(params.network && ALLOWED_NETWORKS.includes(params.network) ? { network: params.network } : {}),
-    ...(params.paymentMethod ? { paymentMethods: { has: params.paymentMethod } } : {}),
+    ...(paymentMethodIdFilter
+      ? paymentMethodIdFilter.length > 0
+        ? { paymentMethods: { hasSome: paymentMethodIdFilter } }
+        : { id: 'no-match' }
+      : {}),
     ...(params.minAmount !== undefined ? { minOrder: { lte: new Prisma.Decimal(params.minAmount) } } : {}),
     ...(params.maxAmount !== undefined ? { maxOrder: { gte: new Prisma.Decimal(params.maxAmount) } } : {}),
     ...(params.merchantId
@@ -399,9 +413,23 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     db.ad.count({ where }),
   ])
 
+  // Resolve payment method IDs to their type strings for display
+  const allPmIds = [...new Set(rawItems.flatMap((ad) => ad.paymentMethods))]
+  const pmTypeMap = new Map<string, string>()
+  if (allPmIds.length > 0) {
+    const pms = await db.paymentMethod.findMany({
+      where: { id: { in: allPmIds } },
+      select: { id: true, type: true },
+    })
+    for (const pm of pms) pmTypeMap.set(pm.id, pm.type)
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items: AdWithSeller[] = (rawItems as any[]).map((ad) => {
     const stats = ad.user.tradeStats
+    const resolvedMethods = [...new Set(
+      (ad.paymentMethods as string[]).map((id) => pmTypeMap.get(id) ?? id)
+    )]
     return {
       id: ad.id,
       side: ad.side,
@@ -413,7 +441,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       availableAmount: ad.availableAmount.toString(),
       minOrder: ad.minOrder.toString(),
       maxOrder: ad.maxOrder.toString(),
-      paymentMethods: ad.paymentMethods,
+      paymentMethods: resolvedMethods,
       tradeWindow: ad.tradeWindow,
       terms: ad.terms,
       status: ad.status,
