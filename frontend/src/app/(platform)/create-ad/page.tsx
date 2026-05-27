@@ -99,7 +99,7 @@ function validate(form: FormState): Record<string, string> {
   if (!form.maxAmount) e.maxAmount = 'Enter maximum order'
   if (form.minAmount && form.maxAmount && parseFloat(form.minAmount) >= parseFloat(form.maxAmount))
     e.maxAmount = 'Max must be greater than min'
-  if (form.side === 'sell' && !form.availableAmount) e.availableAmount = 'Enter total amount'
+  if (!form.availableAmount) e.availableAmount = form.side === 'sell' ? 'Enter total amount' : 'Enter total amount you want to buy'
   if (form.side === 'sell' && form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one payment method'
   if (form.tokenDeliveryTypes.length === 0) e.tokenDeliveryTypes = 'Select at least one delivery method'
   if (form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && !form.settlementMethod.trim())
@@ -213,7 +213,7 @@ function CreateListingPageContent() {
           priceType: form.priceType,
           price,
           floatOffset: parseFloat(form.floatOffset || '0'),
-          ...(form.side === 'sell' ? { totalAmount: parseFloat(form.availableAmount) } : {}),
+          ...(form.availableAmount ? { totalAmount: parseFloat(form.availableAmount) } : {}),
           minOrder: parseFloat(form.minAmount),
           maxOrder: parseFloat(form.maxAmount),
           paymentMethods: form.side === 'sell' ? form.paymentMethods : [],
@@ -358,16 +358,16 @@ function CreateListingPageContent() {
           </div>
         </div>
 
-        {/* Total available amount — sell only */}
-        {form.side === 'sell' && (
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Total available amount (USDT) *</label>
-            <input type="number" min="0" step="0.000001" value={form.availableAmount} onChange={(e) => set('availableAmount', e.target.value)}
-              placeholder="Total USDT you are offering in this listing"
-              className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            {errors.availableAmount && <p className="text-sm text-danger mt-1">{errors.availableAmount}</p>}
-          </div>
-        )}
+        {/* Total amount */}
+        <div>
+          <label className="block text-sm font-medium text-text-primary mb-1.5">
+            {form.side === 'sell' ? 'Total available amount (USDT) *' : 'Total USDT you want to buy *'}
+          </label>
+          <input type="number" min="0" step="0.000001" value={form.availableAmount} onChange={(e) => set('availableAmount', e.target.value)}
+            placeholder={form.side === 'sell' ? 'Total USDT you are offering in this listing' : 'Total USDT you wish to purchase'}
+            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          {errors.availableAmount && <p className="text-sm text-danger mt-1">{errors.availableAmount}</p>}
+        </div>
 
         {/* Token Delivery Method — multi-select */}
         <div>

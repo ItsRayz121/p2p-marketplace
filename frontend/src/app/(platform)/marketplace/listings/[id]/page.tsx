@@ -1,8 +1,8 @@
 'use client'
 import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { adsApi, apiRequest, ApiError, tradesApi } from '@/lib/api'
-import type { AdActivity } from '@/lib/api'
+import { adsApi, apiRequest, ApiError, tradesApi, walletApi } from '@/lib/api'
+import type { AdActivity, SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuth } from '@/hooks/useAuth'
@@ -100,6 +100,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
   // Buyer's own saved payment methods
   const [myMethods, setMyMethods] = useState<SavedPaymentMethod[]>([])
+  const [mySavedAddresses, setMySavedAddresses] = useState<SavedDeliveryAddress[]>([])
 
   const fetchAd = useCallback(async () => {
     try {
@@ -125,6 +126,9 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     if (user) {
       apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods').then((methods) => {
         setMyMethods(Array.isArray(methods) ? methods : [])
+      }).catch(() => {})
+      walletApi.getSavedAddresses().then((addrs) => {
+        setMySavedAddresses(Array.isArray(addrs) ? addrs : [])
       }).catch(() => {})
     }
   }, [user])
@@ -512,20 +516,22 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>}
 
-      {/* Two CTA buttons */}
+      {/* CTA buttons — instant trade only available on sell ads */}
       {!isMine && ad.status === 'active' && !myActiveBid && (
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => { setShowInstantModal(true); setInstantAmount(''); setInstantPaymentMethod(''); setInstantDeliveryMethod(''); setInstantDeliveryAddress(''); setInstantError('') }}
-            className={`py-3.5 rounded-xl font-bold text-white transition-colors ${isSellAd ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-          >
-            {isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
-          </button>
+        <div className={`grid gap-3 ${isSellAd ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {isSellAd && (
+            <button
+              onClick={() => { setShowInstantModal(true); setInstantAmount(''); setInstantPaymentMethod(''); setInstantDeliveryMethod(''); setInstantDeliveryAddress(''); setInstantError('') }}
+              className="py-3.5 rounded-xl font-bold text-white transition-colors bg-green-600 hover:bg-green-700"
+            >
+              {`Buy ${ad.coin}`}
+            </button>
+          )}
           <button
             onClick={() => { setShowBidModal(true); setBidPrice(''); setBidAmount(''); setError('') }}
             className="py-3.5 rounded-xl font-bold border-2 border-primary text-primary hover:bg-primary/5 transition-colors"
           >
-            Place Bid
+            {isSellAd ? 'Place Bid' : `Sell ${ad.coin} (Place Bid)`}
           </button>
         </div>
       )}
@@ -584,16 +590,41 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">How will you receive {ad.coin}?</label>
                 <p className="text-xs text-text-muted mb-1">Choose one from the seller's available methods.</p>
-                <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={setInstantDeliveryMethod} />
-                {instantDeliveryMethod && (
-                  <div className="mt-2">
-                    <input type="text"
-                      placeholder={instantDeliveryMethod === 'wallet_blockchain' ? '0x… wallet address' : `Your ${instantDeliveryMethod} deposit address or UID`}
-                      value={instantDeliveryAddress} onChange={(e) => setInstantDeliveryAddress(e.target.value)}
-                      className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                )}
+                <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={(v) => { setInstantDeliveryMethod(v); setInstantDeliveryAddress('') }} />
+                {instantDeliveryMethod && (() => {
+                  const matchNetwork = instantDeliveryMethod === 'wallet_blockchain' ? ['BEP20', 'Aptos'] : [instantDeliveryMethod]
+                  const matching = mySavedAddresses.filter((a) => matchNetwork.includes(a.network))
+                  return (
+                    <div className="mt-2 space-y-2">
+                      {matching.length > 0 && (
+                        <div>
+                          <p className="text-xs text-text-muted mb-1.5">Your saved addresses — tap to fill:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {matching.map((a) => (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => setInstantDeliveryAddress(a.address)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                                  instantDeliveryAddress === a.address
+                                    ? 'border-primary bg-primary text-white'
+                                    : 'border-border bg-white text-text-primary hover:border-primary/50'
+                                }`}
+                              >
+                                {a.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <input type="text"
+                        placeholder={instantDeliveryMethod === 'wallet_blockchain' ? '0x… wallet address' : `Your ${instantDeliveryMethod} deposit address or UID`}
+                        value={instantDeliveryAddress} onChange={(e) => setInstantDeliveryAddress(e.target.value)}
+                        className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                  )
+                })()}
               </div>
             )}
 

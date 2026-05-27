@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { walletApi, marketplaceApi, userPaymentMethodsApi } from '@/lib/api'
-import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod } from '@/lib/api'
+import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { QRCodeSVG } from 'qrcode.react'
@@ -969,6 +969,159 @@ function PaymentMethodsSection() {
   )
 }
 
+// ─── Saved Delivery Addresses Section ────────────────────────────────────────
+
+const DELIVERY_NETWORKS = [
+  { value: 'BEP20',   label: 'BEP20 Wallet',  placeholder: '0x… wallet address' },
+  { value: 'Aptos',   label: 'Aptos Wallet',   placeholder: '0x… Aptos address' },
+  { value: 'Binance', label: 'Binance UID',    placeholder: 'Your Binance UID (8 digits)' },
+  { value: 'Bitget',  label: 'Bitget UID',     placeholder: 'Your Bitget UID' },
+  { value: 'Gate',    label: 'Gate UID',       placeholder: 'Your Gate.io UID' },
+]
+
+function SavedDeliveryAddressesSection() {
+  const [addresses, setAddresses] = useState<SavedDeliveryAddress[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [form, setForm] = useState({ network: 'BEP20', address: '', label: '' })
+
+  const load = useCallback(async () => {
+    try {
+      const res = await walletApi.getSavedAddresses()
+      setAddresses(Array.isArray(res) ? res : [])
+    } catch { /* ignore */ } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const resetForm = () => {
+    setForm({ network: 'BEP20', address: '', label: '' })
+    setFormError(null)
+    setShowForm(false)
+  }
+
+  const handleAdd = async () => {
+    if (!form.address.trim()) { setFormError('Address / UID is required'); return }
+    if (!form.label.trim()) { setFormError('Label is required'); return }
+    setAdding(true)
+    setFormError(null)
+    try {
+      const saved = await walletApi.addSavedAddress({ coin: 'USDT', network: form.network, address: form.address.trim(), label: form.label.trim() })
+      setAddresses((prev) => [saved, ...prev])
+      resetForm()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save address')
+    } finally { setAdding(false) }
+  }
+
+  const handleRemove = async (id: string) => {
+    try {
+      await walletApi.deleteSavedAddress(id)
+      setAddresses((prev) => prev.filter((a) => a.id !== id))
+    } catch { /* ignore */ }
+  }
+
+  const selectedNetwork = DELIVERY_NETWORKS.find((n) => n.value === form.network)
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h2 className="text-base font-semibold text-text-primary">Saved Delivery Addresses</h2>
+          <p className="text-xs text-text-muted mt-0.5">Your wallet addresses and exchange UIDs — auto-fill when starting a trade</p>
+        </div>
+        {!showForm && (
+          <Button size="sm" variant="secondary" onClick={() => setShowForm(true)}>+ Add Address</Button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="bg-white border border-border rounded-xl p-4 mb-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary">Add Delivery Address</h3>
+            <button onClick={resetForm} className="text-xs text-text-muted hover:text-text-primary">Cancel</button>
+          </div>
+
+          {formError && <p className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">{formError}</p>}
+
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-2">Type</label>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {DELIVERY_NETWORKS.map((n) => (
+                <button
+                  key={n.value}
+                  onClick={() => setForm((f) => ({ ...f, network: n.value }))}
+                  className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                    form.network === n.value
+                      ? 'border-primary bg-primary/5 text-primary'
+                      : 'border-border bg-white text-text-primary hover:border-primary/50'
+                  }`}
+                >
+                  {n.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">
+              {selectedNetwork?.label ?? 'Address / UID'}
+            </label>
+            <input
+              type="text"
+              value={form.address}
+              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+              placeholder={selectedNetwork?.placeholder ?? 'Address or UID'}
+              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Label</label>
+            <input
+              type="text"
+              value={form.label}
+              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              placeholder='e.g. "My Main Binance" or "Trading Wallet"'
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <Button fullWidth size="sm" loading={adding} onClick={handleAdd}>Save Address</Button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-sm text-text-muted py-4 text-center">Loading...</div>
+      ) : addresses.length === 0 ? (
+        <div className="bg-white border border-border rounded-xl px-4 py-8 text-center">
+          <p className="text-sm text-text-muted">No saved addresses yet.</p>
+          <p className="text-xs text-text-muted mt-1">Save your wallet addresses and exchange UIDs once — select them instantly in every trade.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-border divide-y divide-border overflow-hidden">
+          {addresses.map((a) => (
+            <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-text-primary">{a.label}</span>
+                  <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium">{a.network}</span>
+                </div>
+                <p className="font-mono text-xs text-text-muted truncate mt-0.5">{a.address}</p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => handleRemove(a.id)} className="text-danger hover:text-danger flex-shrink-0">
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
@@ -1181,6 +1334,11 @@ export default function WalletPage() {
       {/* ── PKR Payment Methods ── */}
       <div id="payment-methods">
         <PaymentMethodsSection />
+      </div>
+
+      {/* ── Saved Delivery Addresses ── */}
+      <div id="saved-addresses">
+        <SavedDeliveryAddressesSection />
       </div>
 
       {/* Deposit modal */}

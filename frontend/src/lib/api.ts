@@ -688,6 +688,15 @@ export const walletApi = {
     apiRequest<{ networkFee: string; platformFee: string; coin: string; network: string }>(
       `/wallet/live-fee?coin=${encodeURIComponent(coin)}&network=${encodeURIComponent(network)}`,
     ),
+  getSavedAddresses: () =>
+    apiRequest<SavedDeliveryAddress[]>('/wallet/saved-addresses'),
+  addSavedAddress: (data: { coin: string; network: string; address: string; label: string }) =>
+    apiRequest<SavedDeliveryAddress>('/wallet/saved-addresses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteSavedAddress: (id: string) =>
+    apiRequest<void>(`/wallet/saved-addresses/${id}`, { method: 'DELETE' }),
 }
 
 export const tradesApi = {
@@ -832,6 +841,14 @@ export const userPaymentMethodsApi = {
     }),
   remove: (id: string) =>
     apiRequest<void>(`/users/me/payment-methods/${id}`, { method: 'DELETE' }),
+}
+
+export interface SavedDeliveryAddress {
+  id: string
+  coin: string
+  network: string   // 'BEP20' | 'Aptos' | 'Binance' | 'Bitget' | 'Gate'
+  address: string
+  label: string
 }
 
 export const kycApi = {
