@@ -588,6 +588,59 @@ export async function verify2Fa(
   }
 }
 
+// ─── Google OAuth ─────────────────────────────────────────────────────────────
+
+export async function loginOrRegisterWithGoogle(
+  googleId: string,
+  email: string,
+  fullName: string,
+  userAgent?: string,
+  ip?: string,
+): Promise<{ accessToken: string; refreshToken: string; user: SafeUser }> {
+  // Find by googleId first, fall back to email (links existing account)
+  let user = await db.user.findFirst({
+    where: { OR: [{ googleId }, { email }] },
+    select: USER_SELECT,
+  })
+
+  if (!user) {
+    // New user — auto-generate username from their Google name
+    const base = fullName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15) || 'user'
+    let username = base + Math.floor(1000 + Math.random() * 9000)
+    const taken = await db.user.findUnique({ where: { username } })
+    if (taken) username = base + Math.floor(10000 + Math.random() * 90000)
+
+    const created = await db.user.create({
+      data: {
+        email,
+        fullName,
+        username,
+        passwordHash: randomBytes(32).toString('hex'),
+        googleId,
+        isEmailVerified: true,
+        referralCode: randomBytes(8).toString('hex'),
+      },
+      select: USER_SELECT,
+    })
+    user = created
+  } else if (!user.googleId) {
+    // Existing email/password user — link their Google account
+    const updated = await db.user.update({
+      where: { id: user.id },
+      data: { googleId, isEmailVerified: true },
+      select: USER_SELECT,
+    })
+    user = updated
+  }
+
+  if (user.isSuspended || user.isBanned) {
+    throw new AppError('ACCOUNT_SUSPENDED', 'Your account has been suspended', 403)
+  }
+
+  const { accessToken, refreshToken } = await createSession(user.id, user.email, user.role, userAgent, ip)
+  return { accessToken, refreshToken, user: toSafeUser(user) }
+}
+
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
 async function createSession(

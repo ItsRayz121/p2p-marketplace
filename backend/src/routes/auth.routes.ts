@@ -21,8 +21,11 @@ import {
   enable2Fa,
   disable2Fa,
   verify2Fa,
+  loginOrRegisterWithGoogle,
   COOKIE_OPTIONS,
 } from '../services/auth.service'
+import { env } from '../lib/env'
+import { logger } from '../lib/logger'
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
 
@@ -459,5 +462,79 @@ export async function authRoutes(app: FastifyInstance) {
       error: 'INTERNAL_SERVER_ERROR',
       message: 'An unexpected error occurred',
     })
+  })
+
+  // ─── Google OAuth ──────────────────────────────────────────────────────────
+
+  // Step 1: redirect user to Google consent screen
+  app.get('/google', async (_req, reply) => {
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CALLBACK_URL) {
+      return reply.status(503).send({ success: false, error: 'GOOGLE_NOT_CONFIGURED', message: 'Google login is not configured' })
+    }
+    const params = new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      redirect_uri: env.GOOGLE_CALLBACK_URL,
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'offline',
+      prompt: 'select_account',
+    })
+    return reply.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`)
+  })
+
+  // Step 2: Google redirects back here with a code
+  app.get('/google/callback', async (req, reply) => {
+    const { code, error } = req.query as { code?: string; error?: string }
+    const frontendUrl = env.FRONTEND_URL
+
+    if (error || !code) {
+      return reply.redirect(`${frontendUrl}/login?error=google_cancelled`)
+    }
+
+    try {
+      // Exchange authorization code for access token
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: env.GOOGLE_CLIENT_ID!,
+          client_secret: env.GOOGLE_CLIENT_SECRET!,
+          redirect_uri: env.GOOGLE_CALLBACK_URL!,
+          grant_type: 'authorization_code',
+        }).toString(),
+      })
+
+      const tokenData = await tokenRes.json() as { access_token?: string; error?: string }
+      if (!tokenData.access_token) {
+        logger.warn({ tokenData }, 'Google token exchange failed')
+        return reply.redirect(`${frontendUrl}/login?error=google_failed`)
+      }
+
+      // Fetch user profile from Google
+      const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      })
+      const googleUser = await userRes.json() as { id?: string; email?: string; name?: string }
+
+      if (!googleUser.id || !googleUser.email) {
+        return reply.redirect(`${frontendUrl}/login?error=google_failed`)
+      }
+
+      const { accessToken, refreshToken } = await loginOrRegisterWithGoogle(
+        googleUser.id,
+        googleUser.email,
+        googleUser.name ?? googleUser.email.split('@')[0],
+        req.headers['user-agent'],
+        req.ip,
+      )
+
+      reply.setCookie('refresh_token', refreshToken, COOKIE_OPTIONS)
+      return reply.redirect(`${frontendUrl}/auth/google/success?token=${encodeURIComponent(accessToken)}`)
+    } catch (err) {
+      logger.error({ err }, 'Google OAuth callback error')
+      const msg = err instanceof Error && err.message.includes('suspended') ? 'account_suspended' : 'google_failed'
+      return reply.redirect(`${frontendUrl}/login?error=${msg}`)
+    }
   })
 }

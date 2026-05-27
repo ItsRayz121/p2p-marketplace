@@ -170,6 +170,11 @@ const envSchema = z.object({
   VAPID_SUBJECT: z.string().optional(),
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
 
+  // Google OAuth
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CALLBACK_URL: z.string().url().optional(),
+
   // Cloudflare Turnstile
   TURNSTILE_SECRET_KEY: z.string().optional(),
 
