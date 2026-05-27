@@ -236,6 +236,23 @@ export default function TradePage() {
   const [showCryptoSentForm, setShowCryptoSentForm] = useState(false)
   const [txHash, setTxHash] = useState('')
 
+  const [openSections, setOpenSections] = useState({ timeline: true, payment: true, delivery: true })
+  const toggleSection = (key: keyof typeof openSections) =>
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
+
+  const paymentSectionRef = useRef<HTMLDivElement>(null)
+  const deliverySectionRef = useRef<HTMLDivElement>(null)
+
+  const handleStepClick = (stepKey: string) => {
+    if (stepKey === 'payment_uploaded' || stepKey === 'payment_confirmed') {
+      setOpenSections((prev) => ({ ...prev, payment: true }))
+      setTimeout(() => paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+    } else if (stepKey === 'crypto_sent' || stepKey === 'crypto_released') {
+      setOpenSections((prev) => ({ ...prev, delivery: true }))
+      setTimeout(() => deliverySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+    }
+  }
+
   // Mobile-only tab: at <lg the trade panel and chat stack vertically and the
   // page becomes a long scroll. Segmented control lets the user swap views.
   const [mobileTab, setMobileTab] = useState<'trade' | 'chat'>('trade')
@@ -567,116 +584,154 @@ export default function TradePage() {
           )}
 
           {/* Timeline */}
-          <div className="bg-white rounded-xl border border-border p-5">
-            <h2 className="text-sm font-semibold text-text-primary mb-4">Trade Progress</h2>
-            <div className="space-y-4">
-              {TIMELINE_STEPS.map((step, idx) => {
-                const done = idx < currentStep
-                const active = idx === currentStep
-                return (
-                  <div key={step.key} className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${
-                      done ? 'bg-success text-white' : active ? 'bg-primary text-white' : 'bg-surface text-text-muted border border-border'
-                    }`}>
-                      {done ? '✓' : step.icon}
+          <div className="bg-white rounded-xl border border-border">
+            <button
+              onClick={() => toggleSection('timeline')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface/50 transition-colors rounded-xl"
+            >
+              <h2 className="text-sm font-semibold text-text-primary">Trade Progress</h2>
+              <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 ${openSections.timeline ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {openSections.timeline && (
+              <div className="px-5 pb-5 space-y-4">
+                {TIMELINE_STEPS.map((step, idx) => {
+                  const done = idx < currentStep
+                  const active = idx === currentStep
+                  const clickable = done && (step.key === 'payment_uploaded' || step.key === 'payment_confirmed' || step.key === 'crypto_sent' || step.key === 'crypto_released')
+                  return (
+                    <div
+                      key={step.key}
+                      onClick={() => done && handleStepClick(step.key)}
+                      className={`flex items-center gap-3 ${clickable ? 'cursor-pointer group' : ''}`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 transition-transform ${
+                        done ? 'bg-success text-white' : active ? 'bg-primary text-white' : 'bg-surface text-text-muted border border-border'
+                      } ${clickable ? 'group-hover:scale-110' : ''}`}>
+                        {done ? '✓' : step.icon}
+                      </div>
+                      <span className={`text-sm flex-1 ${active ? 'font-semibold text-text-primary' : done ? 'text-success' : 'text-text-muted'}`}>
+                        {step.label}
+                      </span>
+                      {clickable && (
+                        <svg className="w-3.5 h-3.5 text-success/50 group-hover:text-success transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      )}
                     </div>
-                    <span className={`text-sm ${active ? 'font-semibold text-text-primary' : done ? 'text-success' : 'text-text-muted'}`}>
-                      {step.label}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Payment Settlement */}
-          <div className="bg-white rounded-xl border border-border p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">💳</span>
-              <h2 className="text-sm font-semibold text-text-primary">
-                {isUserBuyer ? 'You are sending PKR payment' : 'Awaiting PKR payment from buyer'}
-              </h2>
-            </div>
-            <div className="space-y-2 text-sm">
-              <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
-              <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
-              <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} />
-              <div className="flex justify-between">
-                <span className="text-text-muted">Pay via</span>
-                <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
-                  <EntityLogo
-                    type={PK_MOBILE_METHODS.includes(trade.paymentMethod) ? 'payment_method' : 'bank'}
-                    slug={trade.paymentMethod}
-                    size="xs"
-                    className="flex-shrink-0"
-                  />
-                  {trade.paymentMethod}
-                </span>
+          <div ref={paymentSectionRef} className="bg-white rounded-xl border border-border">
+            <button
+              onClick={() => toggleSection('payment')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface/50 transition-colors rounded-xl"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-base">💳</span>
+                <h2 className="text-sm font-semibold text-text-primary">
+                  {isUserBuyer ? 'You are sending PKR payment' : 'Awaiting PKR payment from buyer'}
+                </h2>
               </div>
-            </div>
-            {/* Payment proof thumbnail */}
-            {trade.paymentProofUrl && (
-              <div className="mt-3 pt-3 border-t border-border">
-                <p className="text-xs text-text-muted mb-2">Payment Proof</p>
-                <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-                  <img
-                    src={trade.paymentProofUrl}
-                    alt="Payment proof"
-                    className="w-full max-w-xs rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer"
-                  />
-                </a>
+              <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 flex-shrink-0 ml-2 ${openSections.payment ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {openSections.payment && (
+              <div className="px-5 pb-5 space-y-2 text-sm">
+                <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
+                <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
+                <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} />
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Pay via</span>
+                  <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                    <EntityLogo
+                      type={PK_MOBILE_METHODS.includes(trade.paymentMethod) ? 'payment_method' : 'bank'}
+                      slug={trade.paymentMethod}
+                      size="xs"
+                      className="flex-shrink-0"
+                    />
+                    {trade.paymentMethod}
+                  </span>
+                </div>
+                {trade.paymentProofUrl && (
+                  <div className="pt-3 border-t border-border">
+                    <p className="text-xs text-text-muted mb-2">Payment Proof</p>
+                    <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
+                      <img
+                        src={trade.paymentProofUrl}
+                        alt="Payment proof"
+                        className="w-full max-w-xs rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer"
+                      />
+                    </a>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Token Delivery */}
-          <div className="bg-white rounded-xl border border-border p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">📦</span>
-              <h2 className="text-sm font-semibold text-text-primary">Token Delivery</h2>
-            </div>
-            <div className="space-y-2 text-sm">
-              <DetailRow label="Network" value={trade.network ?? trade.coin} />
-              {trade.buyerDeliveryMethod ? (
-                <>
-                  <DetailRow
-                    label="Method"
-                    value={
-                      trade.buyerDeliveryMethod === 'blockchain' ? 'Wallet Address'
-                      : trade.buyerDeliveryMethod === 'email' ? 'Email Transfer'
-                      : trade.buyerDeliveryMethod === 'username' ? 'Username Transfer'
-                      : 'Internal Wallet'
-                    }
-                  />
-                  {trade.buyerDeliveryAddress && (
+          <div ref={deliverySectionRef} className="bg-white rounded-xl border border-border">
+            <button
+              onClick={() => toggleSection('delivery')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface/50 transition-colors rounded-xl"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-base">📦</span>
+                <h2 className="text-sm font-semibold text-text-primary">Token Delivery</h2>
+              </div>
+              <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 flex-shrink-0 ml-2 ${openSections.delivery ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {openSections.delivery && (
+              <div className="px-5 pb-5 space-y-2 text-sm">
+                <DetailRow label="Network" value={trade.network ?? trade.coin} />
+                {trade.buyerDeliveryMethod ? (
+                  <>
+                    <DetailRow
+                      label="Method"
+                      value={
+                        trade.buyerDeliveryMethod === 'blockchain' ? 'Wallet Address'
+                        : trade.buyerDeliveryMethod === 'email' ? 'Email Transfer'
+                        : trade.buyerDeliveryMethod === 'username' ? 'Username Transfer'
+                        : 'Internal Wallet'
+                      }
+                    />
+                    {trade.buyerDeliveryAddress && (
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-text-muted flex-shrink-0">
+                          {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
+                        </span>
+                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  trade.buyerWalletAddress ? (
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-text-muted flex-shrink-0">
                         {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
                       </span>
-                      <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
+                      <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
                     </div>
-                  )}
-                </>
-              ) : (
-                /* Legacy: show buyerWalletAddress if delivery fields not set */
-                trade.buyerWalletAddress ? (
+                  ) : (
+                    <p className="text-xs text-text-muted">Delivery details not specified.</p>
+                  )
+                )}
+                {trade.sellerTxHash && (
                   <div className="flex justify-between items-start gap-2">
-                    <span className="text-text-muted flex-shrink-0">
-                      {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
-                    </span>
-                    <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
+                    <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
+                    <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
                   </div>
-                ) : (
-                  <p className="text-xs text-text-muted">Delivery details not specified.</p>
-                )
-              )}
-              {trade.sellerTxHash && (
-                <div className="flex justify-between items-start gap-2">
-                  <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
-                  <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Actions — hidden for completed trades (CompletedTradeCard handles the final state) */}
