@@ -74,7 +74,7 @@ export async function adRoutes(app: FastifyInstance) {
       include: { user: { select: { id: true, username: true, tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true } } } } },
     })
     if (!ad) throw new AppError('NOT_FOUND', 'Ad not found', 404)
-    if (ad.coin !== 'USDT' || !ALLOWED_NETWORKS.includes(ad.network as typeof ALLOWED_NETWORKS[number])) {
+    if (ad.coin !== 'USDT') {
       throw new AppError('NOT_FOUND', 'Ad not found', 404)
     }
 

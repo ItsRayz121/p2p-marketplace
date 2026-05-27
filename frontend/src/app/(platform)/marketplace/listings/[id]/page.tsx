@@ -57,13 +57,6 @@ interface AdDetail {
 
 type MyActiveBid = NonNullable<AdActivity['myBid']>
 
-function methodSubline(m: SavedPaymentMethod): string {
-  if (m.mobileNumber) return m.mobileNumber
-  if (m.ibanNumber) return m.ibanNumber
-  if (m.accountNumber) return m.accountNumber
-  return m.accountName
-}
-
 export default function AdListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()

@@ -152,7 +152,9 @@ export async function confirmBidDetails(
         fiatAmount: bid.fiatAmount,
         paymentMethod: data.paymentMethod,
         buyerWalletAddress: data.buyerUsdtAddress ?? '',
-        buyerDeliveryMethod: data.buyerUsdtAddress ? 'blockchain' : null,
+        buyerDeliveryMethod: data.buyerUsdtAddress
+          ? (data.buyerUsdtAddress.includes(':') ? (data.buyerUsdtAddress.split(':')[0] ?? 'wallet_blockchain') : 'wallet_blockchain')
+          : null,
         status: 'payment_pending',
         expiresAt,
       },
