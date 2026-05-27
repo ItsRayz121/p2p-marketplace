@@ -560,9 +560,9 @@ model Ad {
   lockedAmount    Decimal   @default(0) @db.Decimal(18, 8)
   minOrder        Decimal   @db.Decimal(14, 2)
   maxOrder        Decimal   @db.Decimal(14, 2)
-  paymentMethods    String[]
-  tokenDeliveryType String?   @db.VarChar(20)
-  settlementMethod  String?   @db.VarChar(500)
+  paymentMethods     String[]
+  tokenDeliveryTypes String[]
+  settlementMethod   String?   @db.VarChar(500)
   tradeWindow       Int       @default(30)
   terms             String    @default("") @db.VarChar(2000)
   status            AdStatus  @default(active)

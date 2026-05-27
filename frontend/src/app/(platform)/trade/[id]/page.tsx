@@ -263,7 +263,10 @@ export default function TradePage() {
       // user's bubble briefly vanish.
       setMessages((prev) => {
         const optimistic = prev.filter((m) => m.id.startsWith('tmp-'))
-        return optimistic.length ? [...messagesData.messages, ...optimistic] : messagesData.messages
+        const serverMessages: ChatMessage[] = Array.isArray(messagesData)
+          ? (messagesData as ChatMessage[])
+          : ((messagesData as { messages: ChatMessage[] }).messages ?? [])
+        return optimistic.length ? [...serverMessages, ...optimistic] : serverMessages
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load trade')

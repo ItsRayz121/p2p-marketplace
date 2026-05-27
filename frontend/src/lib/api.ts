@@ -420,7 +420,7 @@ export interface CreateAdPayload {
   minOrder: number
   maxOrder: number
   paymentMethods: string[]
-  tokenDeliveryType?: 'wallet_blockchain' | 'exchange'
+  tokenDeliveryTypes?: string[]
   settlementMethod?: string
   tradeWindow?: number
   terms?: string
@@ -691,8 +691,8 @@ export const walletApi = {
 }
 
 export const tradesApi = {
-  createTrade: (data: { adId: string; amount: string; paymentMethod: string; buyerDeliveryMethod?: string; buyerDeliveryAddress?: string }) =>
-    apiRequest<Trade>('/trades', { method: 'POST', body: JSON.stringify({ ...data, amount: parseFloat(data.amount) }) }),
+  createTrade: (data: { adId: string; amount: number | string; paymentMethod: string; buyerDeliveryMethod?: string; buyerDeliveryAddress?: string }) =>
+    apiRequest<Trade>('/trades', { method: 'POST', body: JSON.stringify({ ...data, amount: typeof data.amount === 'string' ? parseFloat(data.amount) : data.amount }) }),
   getTrade: (id: string) =>
     apiRequest<Trade>(`/trades/${id}`),
   getMyTrades: (params?: { page?: number; limit?: number; status?: string; role?: 'buyer' | 'seller' }) => {

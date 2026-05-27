@@ -32,7 +32,7 @@ const createAdSchema = z.object({
   minOrder: z.number().positive(),
   maxOrder: z.number().positive(),
   paymentMethods: z.array(z.string()),
-  tokenDeliveryType: z.enum(['wallet_blockchain', 'exchange']).optional(),
+  tokenDeliveryTypes: z.array(z.string().max(30)).optional(),
   settlementMethod: z.string().max(500).optional(),
   tradeWindow: z.number().int().min(5).max(720).optional(),
   terms: z.string().max(2000).optional(),
@@ -78,12 +78,21 @@ export async function adRoutes(app: FastifyInstance) {
       throw new AppError('NOT_FOUND', 'Ad not found', 404)
     }
 
-    // Resolve payment method labels for display
-    const resolvedPaymentMethods = ad.paymentMethods.map((pm) => ({
-      id: pm,
-      type: pm === 'bank_transfer' ? 'bank_transfer' : pm,
-      label: PM_LABELS[pm] ?? pm,
-    }))
+    // Resolve payment method labels by looking up DB records (stored as IDs)
+    const pmRecords = ad.paymentMethods.length > 0
+      ? await db.paymentMethod.findMany({
+          where: { id: { in: ad.paymentMethods } },
+          select: { id: true, type: true, bankName: true },
+        })
+      : []
+    const resolvedPaymentMethods = ad.paymentMethods.map((pmId) => {
+      const rec = pmRecords.find((r) => r.id === pmId)
+      if (!rec) return { id: pmId, type: 'unknown', label: pmId }
+      const label = rec.type === 'bank_transfer'
+        ? (rec.bankName ?? 'Bank Transfer')
+        : (PM_LABELS[rec.type] ?? rec.type)
+      return { id: pmId, type: rec.type, label }
+    })
 
     return reply.send({ success: true, data: { ...ad, resolvedPaymentMethods } })
   })

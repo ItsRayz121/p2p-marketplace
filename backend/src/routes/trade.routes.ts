@@ -25,7 +25,7 @@ const createTradeSchema = z.object({
   amount: z.number().positive(),
   paymentMethod: z.string().min(1),
   buyerWalletAddress: z.string().optional().default(''),
-  buyerDeliveryMethod: z.enum(['blockchain', 'email', 'username', 'internal']).optional(),
+  buyerDeliveryMethod: z.string().max(30).optional(),
   buyerDeliveryAddress: z.string().max(500).optional(),
 })
 

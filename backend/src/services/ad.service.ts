@@ -15,7 +15,7 @@ export interface CreateAdInput {
   minOrder: number
   maxOrder: number
   paymentMethods: string[]
-  tokenDeliveryType?: string
+  tokenDeliveryTypes?: string[]
   settlementMethod?: string
   tradeWindow?: number
   terms?: string
@@ -95,7 +95,7 @@ export async function createAd(userId: string, data: CreateAdInput) {
       minOrder: new Prisma.Decimal(data.minOrder),
       maxOrder: new Prisma.Decimal(data.maxOrder),
       paymentMethods: data.paymentMethods,
-      tokenDeliveryType: data.tokenDeliveryType ?? null,
+      tokenDeliveryTypes: data.tokenDeliveryTypes ?? [],
       settlementMethod: data.settlementMethod ?? null,
       tradeWindow: data.tradeWindow ?? 30,
       terms: data.terms ?? '',

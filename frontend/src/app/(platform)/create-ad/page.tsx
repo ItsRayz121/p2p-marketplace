@@ -13,7 +13,8 @@ const NETWORKS = [
   { value: 'Aptos', label: 'Aptos' },
 ]
 
-const EXCHANGES = [
+const DELIVERY_OPTIONS = [
+  { value: 'wallet_blockchain', label: 'Wallet / Blockchain' },
   { value: 'Binance', label: 'Binance' },
   { value: 'Bitget', label: 'Bitget' },
   { value: 'Gate', label: 'Gate' },
@@ -54,8 +55,7 @@ interface FormState {
   maxAmount: string
   availableAmount: string
   paymentMethods: string[]
-  tokenDeliveryType: 'wallet_blockchain' | 'exchange' | ''
-  exchangePlatform: string
+  tokenDeliveryTypes: string[]
   settlementMethod: string
   tradeWindow: number
   terms: string
@@ -71,8 +71,7 @@ const defaultForm: FormState = {
   maxAmount: '',
   availableAmount: '',
   paymentMethods: [],
-  tokenDeliveryType: '',
-  exchangePlatform: '',
+  tokenDeliveryTypes: [],
   settlementMethod: '',
   tradeWindow: 45,
   terms: '',
@@ -102,10 +101,8 @@ function validate(form: FormState): Record<string, string> {
     e.maxAmount = 'Max must be greater than min'
   if (form.side === 'sell' && !form.availableAmount) e.availableAmount = 'Enter total amount'
   if (form.side === 'sell' && form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one payment method'
-  if (!form.tokenDeliveryType) e.tokenDeliveryType = 'Select a token delivery method'
-  if (form.tokenDeliveryType === 'exchange' && !form.exchangePlatform)
-    e.exchangePlatform = 'Select an exchange'
-  if (form.side === 'buy' && form.tokenDeliveryType && !form.settlementMethod.trim())
+  if (form.tokenDeliveryTypes.length === 0) e.tokenDeliveryTypes = 'Select at least one delivery method'
+  if (form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && !form.settlementMethod.trim())
     e.settlementMethod = 'Enter your receiving address so sellers know where to send USDT'
   return e
 }
@@ -144,8 +141,7 @@ function CreateListingPageContent() {
                 maxAmount: ad.maxOrder,
                 availableAmount: '',
                 paymentMethods: ad.paymentMethods,
-                tokenDeliveryType: '' as 'wallet_blockchain' | 'exchange' | '',
-                exchangePlatform: '',
+                tokenDeliveryTypes: [],
                 settlementMethod: '',
                 tradeWindow: ad.tradeWindow ?? 45,
                 terms: ad.terms ?? '',
@@ -221,10 +217,8 @@ function CreateListingPageContent() {
           minOrder: parseFloat(form.minAmount),
           maxOrder: parseFloat(form.maxAmount),
           paymentMethods: form.side === 'sell' ? form.paymentMethods : [],
-          tokenDeliveryType: form.tokenDeliveryType as 'wallet_blockchain' | 'exchange',
-          ...(form.tokenDeliveryType === 'exchange' && form.exchangePlatform
-            ? { settlementMethod: form.settlementMethod.trim() ? `${form.exchangePlatform}:${form.settlementMethod.trim()}` : form.exchangePlatform }
-            : form.settlementMethod.trim() ? { settlementMethod: form.settlementMethod.trim() } : {}),
+          tokenDeliveryTypes: form.tokenDeliveryTypes,
+          ...(form.settlementMethod.trim() ? { settlementMethod: form.settlementMethod.trim() } : {}),
           tradeWindow: form.tradeWindow,
           terms: form.terms,
         }
@@ -375,65 +369,49 @@ function CreateListingPageContent() {
           </div>
         )}
 
-        {/* Token Delivery Method */}
+        {/* Token Delivery Method — multi-select */}
         <div>
           <label className="block text-sm font-medium text-text-primary mb-0.5">Token Delivery Method *</label>
           <p className="text-xs text-text-muted mb-2">
             {form.side === 'sell'
-              ? 'How will you send USDT to buyers after payment is confirmed?'
-              : 'How should sellers send USDT to you?'}
+              ? 'Select all methods you can use to send USDT after payment. You can pick multiple.'
+              : 'Select how sellers should send USDT to you. You can pick multiple.'}
           </p>
           <div className="grid grid-cols-2 gap-2">
-            {([
-              { value: 'wallet_blockchain', label: 'Wallet / Blockchain' },
-              { value: 'exchange', label: 'Exchange' },
-            ] as const).map((m) => (
-              <button
-                type="button"
-                key={m.value}
-                onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: m.value, exchangePlatform: '', settlementMethod: '' }))}
-                className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m.value ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
-              >
-                {m.label}
-              </button>
-            ))}
+            {DELIVERY_OPTIONS.map((opt) => {
+              const selected = form.tokenDeliveryTypes.includes(opt.value)
+              return (
+                <button
+                  type="button"
+                  key={opt.value}
+                  onClick={() => setForm((f) => ({
+                    ...f,
+                    tokenDeliveryTypes: selected
+                      ? f.tokenDeliveryTypes.filter((v) => v !== opt.value)
+                      : [...f.tokenDeliveryTypes, opt.value],
+                    settlementMethod: '',
+                  }))}
+                  className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${selected ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
           </div>
-          {errors.tokenDeliveryType && <p className="text-sm text-danger mt-1">{errors.tokenDeliveryType}</p>}
+          {errors.tokenDeliveryTypes && <p className="text-sm text-danger mt-1">{errors.tokenDeliveryTypes}</p>}
 
-          {/* Exchange sub-selector */}
-          {form.tokenDeliveryType === 'exchange' && (
-            <div className="mt-3">
-              <label className="block text-xs font-medium text-text-muted mb-1.5">Select Exchange *</label>
-              <div className="grid grid-cols-3 gap-2">
-                {EXCHANGES.map((ex) => (
-                  <button
-                    type="button"
-                    key={ex.value}
-                    onClick={() => setForm((f) => ({ ...f, exchangePlatform: ex.value }))}
-                    className={`py-2 text-sm rounded-xl border font-semibold transition-colors ${form.exchangePlatform === ex.value ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
-                  >
-                    {ex.label}
-                  </button>
-                ))}
-              </div>
-              {errors.exchangePlatform && <p className="text-sm text-danger mt-1">{errors.exchangePlatform}</p>}
-            </div>
-          )}
-
-          {/* Buy: show receiving address input */}
-          {form.side === 'buy' && form.tokenDeliveryType && (form.tokenDeliveryType === 'wallet_blockchain' || form.exchangePlatform) && (
+          {/* Buy: show receiving address (single input since lister can review which to use) */}
+          {form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && (
             <div className="mt-3">
               <label className="block text-xs font-medium text-text-muted mb-1">
-                {form.tokenDeliveryType === 'wallet_blockchain'
-                  ? 'Your USDT wallet address (sellers will send here)'
-                  : `Your ${form.exchangePlatform} deposit address or UID`}
+                Your receiving address / account — sellers will send USDT here
               </label>
               <input
                 type="text"
                 placeholder={
-                  form.tokenDeliveryType === 'wallet_blockchain'
-                    ? '0x… or your USDT wallet address'
-                    : `Your ${form.exchangePlatform} deposit address or UID`
+                  form.tokenDeliveryTypes.includes('wallet_blockchain')
+                    ? '0x… wallet address or exchange deposit address'
+                    : 'Your exchange UID or deposit address'
                 }
                 value={form.settlementMethod}
                 onChange={(e) => set('settlementMethod', e.target.value)}
@@ -444,9 +422,9 @@ function CreateListingPageContent() {
             </div>
           )}
 
-          {form.side === 'sell' && form.tokenDeliveryType && (
+          {form.side === 'sell' && form.tokenDeliveryTypes.length > 0 && (
             <p className="mt-2 text-xs text-primary bg-primary/5 rounded-lg px-3 py-2">
-              Buyers will provide their receiving {form.tokenDeliveryType === 'exchange' ? 'exchange account' : 'wallet address'} when they start the trade — you do not need to enter it here.
+              Buyers will pick one of these methods and provide their address at trade start — you do not need to enter it here.
             </p>
           )}
         </div>

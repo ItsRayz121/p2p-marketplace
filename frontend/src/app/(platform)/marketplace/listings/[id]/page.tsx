@@ -1,12 +1,11 @@
 'use client'
 import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { adsApi, apiRequest, ApiError } from '@/lib/api'
+import { adsApi, apiRequest, ApiError, tradesApi } from '@/lib/api'
 import type { AdActivity } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuth } from '@/hooks/useAuth'
-import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 
 const METHOD_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -14,6 +13,15 @@ const METHOD_LABELS: Record<string, string> = {
   sadapay: 'SadaPay',
   nayapay: 'NayaPay',
   bank_transfer: 'Bank Transfer',
+}
+
+const MOBILE_TYPES = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay']
+
+const DELIVERY_LABELS: Record<string, string> = {
+  wallet_blockchain: 'Wallet / Blockchain',
+  Binance: 'Binance',
+  Bitget: 'Bitget',
+  Gate: 'Gate',
 }
 
 interface ResolvedPaymentMethod { id: string; type: string; label: string }
@@ -40,6 +48,7 @@ interface AdDetail {
   maxOrder: string
   paymentMethods: string[]
   resolvedPaymentMethods: ResolvedPaymentMethod[]
+  tokenDeliveryTypes?: string[]
   tradeWindow: number
   terms: string
   status: string
@@ -47,6 +56,13 @@ interface AdDetail {
 }
 
 type MyActiveBid = NonNullable<AdActivity['myBid']>
+
+function methodSubline(m: SavedPaymentMethod): string {
+  if (m.mobileNumber) return m.mobileNumber
+  if (m.ibanNumber) return m.ibanNumber
+  if (m.accountNumber) return m.accountNumber
+  return m.accountName
+}
 
 export default function AdListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -61,16 +77,26 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   const [bidActionId, setBidActionId] = useState<string | null>(null)
   const [error, setError] = useState('')
 
-  // Bid modal
+  // Bid modal (negotiate price)
   const [showBidModal, setShowBidModal] = useState(false)
   const [bidPrice, setBidPrice] = useState('')
   const [bidAmount, setBidAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // Instant trade modal (at listed price)
+  const [showInstantModal, setShowInstantModal] = useState(false)
+  const [instantAmount, setInstantAmount] = useState('')
+  const [instantPaymentMethod, setInstantPaymentMethod] = useState('')
+  const [instantDeliveryMethod, setInstantDeliveryMethod] = useState('')
+  const [instantDeliveryAddress, setInstantDeliveryAddress] = useState('')
+  const [instantSubmitting, setInstantSubmitting] = useState(false)
+  const [instantError, setInstantError] = useState('')
+
   // Confirm bid details modal
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmPaymentMethod, setConfirmPaymentMethod] = useState('')
-  const [confirmUsdtAddress, setConfirmUsdtAddress] = useState('')
+  const [confirmDeliveryMethod, setConfirmDeliveryMethod] = useState('')
+  const [confirmDeliveryAddress, setConfirmDeliveryAddress] = useState('')
   const [confirmSubmitting, setConfirmSubmitting] = useState(false)
   const [confirmError, setConfirmError] = useState('')
 
@@ -80,7 +106,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   const [networkOpen, setNetworkOpen] = useState(true)
 
   // Buyer's own saved payment methods
-  const [myMethods, setMyMethods] = useState<ResolvedPaymentMethod[]>([])
+  const [myMethods, setMyMethods] = useState<SavedPaymentMethod[]>([])
 
   const fetchAd = useCallback(async () => {
     try {
@@ -105,12 +131,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   useEffect(() => {
     if (user) {
       apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods').then((methods) => {
-        const resolved: ResolvedPaymentMethod[] = (Array.isArray(methods) ? methods : []).map((m) => ({
-          id: m.id,
-          type: m.type,
-          label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
-        }))
-        setMyMethods(resolved)
+        setMyMethods(Array.isArray(methods) ? methods : [])
       }).catch(() => {})
     }
   }, [user])
@@ -156,15 +177,39 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
+  const handleInstantTrade = async () => {
+    if (!instantAmount.trim() || parseFloat(instantAmount) <= 0) { setInstantError('Enter USDT amount'); return }
+    if (!instantPaymentMethod) { setInstantError('Select a payment method'); return }
+    if (ad?.side === 'sell' && !instantDeliveryMethod) { setInstantError('Select your receiving method'); return }
+    if (ad?.side === 'sell' && instantDeliveryMethod && !instantDeliveryAddress.trim()) { setInstantError('Enter your receiving address'); return }
+    setInstantError('')
+    setInstantSubmitting(true)
+    try {
+      const trade = await tradesApi.createTrade({
+        adId: id,
+        amount: parseFloat(instantAmount),
+        paymentMethod: instantPaymentMethod,
+        buyerDeliveryMethod: instantDeliveryMethod || undefined,
+        buyerDeliveryAddress: instantDeliveryAddress.trim() || undefined,
+      })
+      router.push(`/trade/${(trade as { id: string }).id}`)
+    } catch (err: unknown) {
+      setInstantError(err instanceof ApiError ? err.message : (err as Error).message ?? 'Failed to start trade')
+    } finally {
+      setInstantSubmitting(false)
+    }
+  }
+
   const handleConfirmBidDetails = async () => {
     if (!confirmPaymentMethod) { setConfirmError('Select a payment method'); return }
-    if (ad?.side === 'sell' && !confirmUsdtAddress.trim()) { setConfirmError('Enter your USDT receiving address'); return }
+    if (ad?.side === 'sell' && !confirmDeliveryMethod) { setConfirmError('Select your receiving method'); return }
+    if (ad?.side === 'sell' && confirmDeliveryMethod && !confirmDeliveryAddress.trim()) { setConfirmError('Enter your receiving address'); return }
     setConfirmError('')
     setConfirmSubmitting(true)
     try {
       const trade = await adsApi.confirmBidDetails(myActiveBid!.id, {
         paymentMethod: confirmPaymentMethod,
-        ...(ad?.side === 'sell' ? { buyerUsdtAddress: confirmUsdtAddress.trim() } : {}),
+        ...(ad?.side === 'sell' ? { buyerUsdtAddress: `${confirmDeliveryMethod}:${confirmDeliveryAddress.trim()}` } : {}),
       })
       router.push(`/trade/${trade.id}`)
     } catch (err: unknown) {
@@ -179,11 +224,33 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
   const isMine = user?.id === ad.user.id
   const isSellAd = ad.side === 'sell'
-  const resolvedMethods = ad.resolvedPaymentMethods ?? ad.paymentMethods.map((pm) => ({ id: pm, type: pm, label: METHOD_LABELS[pm] ?? pm }))
+  const resolvedMethods = ad.resolvedPaymentMethods ?? []
+  const deliveryTypes = ad.tokenDeliveryTypes ?? []
 
-  // SELL ad: lister=SELLER, taker=BUYER → buyer picks from seller's accepted methods
-  // BUY ad: lister=BUYER, taker=SELLER → seller picks their own receiving account
-  const confirmModalMethods: ResolvedPaymentMethod[] = isSellAd ? resolvedMethods : myMethods
+  // For the confirm/instant modal: if buying from sell ad, show seller's accepted payment methods
+  // If selling to buy ad, show our own payment methods
+  const tradePaymentMethods: ResolvedPaymentMethod[] = isSellAd
+    ? resolvedMethods
+    : myMethods.map((m) => ({
+        id: m.id,
+        type: m.type,
+        label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
+      }))
+
+  const DeliveryMethodPicker = ({ selected, onSelect }: { selected: string; onSelect: (v: string) => void }) => (
+    <div className="grid grid-cols-2 gap-2 mt-1.5">
+      {deliveryTypes.map((dt) => (
+        <button
+          type="button"
+          key={dt}
+          onClick={() => onSelect(selected === dt ? '' : dt)}
+          className={`py-2 text-sm rounded-xl border font-semibold transition-colors ${selected === dt ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+        >
+          {DELIVERY_LABELS[dt] ?? dt}
+        </button>
+      ))}
+    </div>
+  )
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
@@ -225,7 +292,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      {/* Seller / Buyer card — collapsible */}
+      {/* Seller / Buyer card */}
       <div className="bg-white border border-border rounded-xl p-5">
         <button onClick={() => setSellerOpen((o) => !o)} className="w-full flex items-center justify-between text-left mb-0">
           <h2 className="font-semibold text-text-primary">{isSellAd ? 'Seller' : 'Buyer'}</h2>
@@ -250,57 +317,72 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         )}
       </div>
 
-      {/* Payment methods card — collapsible */}
-      <div className="bg-white border border-border rounded-xl p-5">
-        <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
-          <h2 className="font-semibold text-text-primary">
-            {isSellAd
-              ? isMine ? 'Your Accepted Payment Methods' : 'Seller Accepted Payment Methods'
-              : isMine ? 'Your Accepted Payment Methods' : 'Buyer Accepted Payment Methods'}
-          </h2>
-          <svg className={`w-4 h-4 text-text-muted transition-transform ${paymentOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        {paymentOpen && (
-          <div className="mt-3">
-            <p className="text-xs text-text-muted mb-3">
+      {/* Payment methods card */}
+      {resolvedMethods.length > 0 && (
+        <div className="bg-white border border-border rounded-xl p-5">
+          <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">
               {isSellAd
-                ? isMine ? 'These are the payment methods you accept from buyers.' : 'These are the methods this seller accepts from buyers.'
-                : isMine ? 'These are the payment methods you accept from sellers.' : 'These are the methods this buyer accepts from sellers.'}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {resolvedMethods.map((m) => (
-                <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
-                  <EntityLogo type={PK_MOBILE_METHODS.includes(m.id) ? 'payment_method' : 'bank'} slug={m.id} size="xs" className="flex-shrink-0" />
-                  {m.label}
-                </span>
-              ))}
+                ? isMine ? 'Your Accepted Payment Methods' : 'Seller Accepted Payment Methods'
+                : isMine ? 'Your Accepted Payment Methods' : 'Buyer Accepted Payment Methods'}
+            </h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${paymentOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {paymentOpen && (
+            <div className="mt-3">
+              <p className="text-xs text-text-muted mb-3">
+                {isSellAd
+                  ? isMine ? 'These are the payment methods you accept from buyers.' : 'These are the methods this seller accepts from buyers.'
+                  : isMine ? 'These are the payment methods you accept from sellers.' : 'These are the methods this buyer accepts from sellers.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {resolvedMethods.map((m) => (
+                  <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+                    <EntityLogo
+                      type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'}
+                      slug={m.label}
+                      size="xs"
+                      className="flex-shrink-0"
+                    />
+                    {m.label}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* USDT Network card — collapsible */}
-      <div className="bg-white border border-border rounded-xl p-5">
-        <button onClick={() => setNetworkOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
-          <h2 className="font-semibold text-text-primary">USDT Network</h2>
-          <svg className={`w-4 h-4 text-text-muted transition-transform ${networkOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        {networkOpen && (
-          <p className="text-sm text-text-muted mt-3">
-            {isSellAd
-              ? isMine
-                ? `You will send USDT to the buyer via the ${ad.network} network.`
-                : `Seller will send USDT to you via the ${ad.network} network. Make sure to provide a receiving address on this network.`
-              : isMine
-                ? `Sellers will send USDT to your ${ad.network} address after you confirm payment.`
-                : `Send USDT to the buyer's ${ad.network} address after the buyer confirms payment.`}
-          </p>
-        )}
-      </div>
+      {/* Token delivery methods card */}
+      {deliveryTypes.length > 0 && (
+        <div className="bg-white border border-border rounded-xl p-5">
+          <button onClick={() => setNetworkOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">USDT Delivery</h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${networkOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {networkOpen && (
+            <div className="mt-3">
+              <p className="text-xs text-text-muted mb-2">
+                {isSellAd
+                  ? 'Seller can send USDT via these methods. You will select one when starting a trade.'
+                  : 'Buyer accepts USDT via these methods. Select one when starting a trade.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {deliveryTypes.map((dt) => (
+                  <span key={dt} className="bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium text-text-primary">
+                    {DELIVERY_LABELS[dt] ?? dt}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-text-muted mt-2">Network: {ad.network}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Terms */}
       {ad.terms && (
@@ -310,23 +392,15 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      {/* Activity stats bar — public */}
+      {/* Activity stats */}
       {activity && (
         <div className="bg-white border border-border rounded-xl p-5">
           <h2 className="font-semibold text-text-primary mb-3">Listing Activity</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+          <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <p className="text-lg font-bold text-text-primary">{activity.bids.pendingCount}</p>
               <p className="text-xs text-text-muted">Pending Bids</p>
             </div>
-            {activity.bids.pendingCount > 0 && activity.bids.minPrice && (
-              <div>
-                <p className="text-lg font-bold text-text-primary">
-                  PKR {Number(activity.bids.minPrice).toLocaleString()}–{Number(activity.bids.maxPrice!).toLocaleString()}
-                </p>
-                <p className="text-xs text-text-muted">Bid Price Range</p>
-              </div>
-            )}
             <div>
               <p className="text-lg font-bold text-text-primary">{activity.trades.activeCount}</p>
               <p className="text-xs text-text-muted">Active Trades</p>
@@ -335,17 +409,11 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <p className="text-lg font-bold text-text-primary">{activity.trades.completedCount}</p>
               <p className="text-xs text-text-muted">Completed</p>
             </div>
-            {activity.trades.lastTradePrice && (
-              <div>
-                <p className="text-lg font-bold text-text-primary">PKR {Number(activity.trades.lastTradePrice).toLocaleString()}</p>
-                <p className="text-xs text-text-muted">Last Trade Price</p>
-              </div>
-            )}
           </div>
         </div>
       )}
 
-      {/* Owner management panel — tabbed bids + trades */}
+      {/* Owner management panel */}
       {isMine && activity && (
         <div className="bg-white border border-border rounded-xl p-5">
           <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
@@ -425,31 +493,21 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      {/* Complete Trade banner — shown when buyer's bid was accepted but payment details not yet provided */}
+      {/* Accepted bid banner */}
       {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
           <p className="font-semibold text-amber-900">Your bid was accepted!</p>
           <p className="text-sm text-amber-700 mt-1">
-            Complete your payment details to open the trade. The window expires at{' '}
+            Complete your payment details to open the trade. Window expires at{' '}
             {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </p>
           <button
-            onClick={() => { setShowConfirmModal(true); setConfirmPaymentMethod(''); setConfirmUsdtAddress(''); setConfirmError('') }}
+            onClick={() => { setShowConfirmModal(true); setConfirmPaymentMethod(''); setConfirmDeliveryMethod(''); setConfirmDeliveryAddress(''); setConfirmError('') }}
             className="mt-3 bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-amber-700 transition-colors"
           >
             Complete Trade Details
           </button>
         </div>
-      )}
-
-      {/* CTA */}
-      {!isMine && ad.status === 'active' && !myActiveBid && (
-        <button
-          onClick={() => { setShowBidModal(true); setBidPrice(''); setBidAmount(''); setError('') }}
-          className={`w-full py-3.5 rounded-xl font-bold text-white transition-colors ${isSellAd ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-        >
-          {isSellAd ? `Buy ${ad.coin} — Place Bid` : `Sell ${ad.coin} — Place Bid`}
-        </button>
       )}
 
       {/* Pending bid notice */}
@@ -461,7 +519,103 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>}
 
-      {/* Bid modal */}
+      {/* Two CTA buttons */}
+      {!isMine && ad.status === 'active' && !myActiveBid && (
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => { setShowInstantModal(true); setInstantAmount(''); setInstantPaymentMethod(''); setInstantDeliveryMethod(''); setInstantDeliveryAddress(''); setInstantError('') }}
+            className={`py-3.5 rounded-xl font-bold text-white transition-colors ${isSellAd ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
+          </button>
+          <button
+            onClick={() => { setShowBidModal(true); setBidPrice(''); setBidAmount(''); setError('') }}
+            className="py-3.5 rounded-xl font-bold border-2 border-primary text-primary hover:bg-primary/5 transition-colors"
+          >
+            Place Bid
+          </button>
+        </div>
+      )}
+
+      {/* ─── Instant Trade Modal ─────────────────────────────────────────── */}
+      {showInstantModal && ad && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h3 className="font-bold text-lg text-text-primary">{isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}</h3>
+              <p className="text-xs text-text-muted mt-0.5">Trade at the listed price of PKR {Number(ad.price).toLocaleString()}.</p>
+            </div>
+            {instantError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{instantError}</div>}
+
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                {isSellAd ? `How many ${ad.coin} do you want to buy?` : `How many ${ad.coin} will you sell?`}
+              </label>
+              <div className="relative">
+                <input type="number" min={Number(ad.minOrder)} max={Math.min(Number(ad.maxOrder), Number(ad.availableAmount))} step="0.000001"
+                  placeholder={`${Number(ad.minOrder).toLocaleString()} – ${Number(ad.maxOrder).toLocaleString()}`}
+                  value={instantAmount} onChange={(e) => setInstantAmount(e.target.value)}
+                  className="w-full border border-border rounded-xl pl-3 pr-16 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">{ad.coin}</span>
+              </div>
+              {instantAmount && (
+                <p className="text-xs text-text-muted mt-1">
+                  Total: PKR {(parseFloat(instantAmount || '0') * Number(ad.price)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+
+            {/* Payment method */}
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                {isSellAd ? "Pay via (seller's accepted methods)" : 'Receive payment via (your account)'}
+              </label>
+              <div className="space-y-2">
+                {tradePaymentMethods.map((m) => (
+                  <button type="button" key={m.id}
+                    onClick={() => setInstantPaymentMethod(instantPaymentMethod === m.id ? '' : m.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'}`}>
+                    <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
+                    <span className="text-sm font-medium text-text-primary">{m.label}</span>
+                    <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantPaymentMethod === m.id ? 'border-primary bg-primary' : 'border-border'}`}>
+                      {instantPaymentMethod === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Delivery method — only for buying (receiving USDT) */}
+            {isSellAd && deliveryTypes.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-0.5">How will you receive {ad.coin}?</label>
+                <p className="text-xs text-text-muted mb-1">Choose one from the seller's available methods.</p>
+                <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={setInstantDeliveryMethod} />
+                {instantDeliveryMethod && (
+                  <div className="mt-2">
+                    <input type="text"
+                      placeholder={instantDeliveryMethod === 'wallet_blockchain' ? '0x… wallet address' : `Your ${instantDeliveryMethod} deposit address or UID`}
+                      value={instantDeliveryAddress} onChange={(e) => setInstantDeliveryAddress(e.target.value)}
+                      className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowInstantModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
+              <button onClick={handleInstantTrade} disabled={instantSubmitting}
+                className={`flex-1 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-colors ${isSellAd ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                {instantSubmitting ? 'Opening…' : isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Bid Modal ───────────────────────────────────────────────────── */}
       {showBidModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -486,7 +640,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
-                {isSellAd ? `How many ${ad.coin} do you want to buy?` : `How many ${ad.coin} will you sell?`}
+                {isSellAd ? `How many ${ad.coin} do you want?` : `How many ${ad.coin} will you sell?`}
               </label>
               <div className="relative">
                 <input type="number" min={Number(ad.minOrder)} max={Math.min(Number(ad.maxOrder), Number(ad.availableAmount))} step="0.000001"
@@ -496,32 +650,29 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">{ad.coin}</span>
               </div>
-              <p className="text-xs text-text-muted mt-1">Min {Number(ad.minOrder).toLocaleString()} · Max {Number(ad.maxOrder).toLocaleString()} {ad.coin}</p>
             </div>
 
             {bidPrice && bidAmount && (() => {
-              const price = parseFloat(bidPrice)
-              const amount = parseFloat(bidAmount)
-              const total = price * amount
+              const total = parseFloat(bidPrice) * parseFloat(bidAmount)
               return (
                 <div className="bg-surface rounded-xl border border-border p-4 space-y-2 text-sm">
                   <p className="font-semibold text-text-primary mb-2">Bid Summary</p>
-                  <div className="flex justify-between"><span className="text-text-muted">Your bid price</span><span className="font-medium text-text-primary">PKR {price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
-                  <div className="flex justify-between"><span className="text-text-muted">{ad.coin} amount</span><span className="font-medium text-text-primary">{amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {ad.coin}</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">Your bid price</span><span className="font-medium">PKR {parseFloat(bidPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">Amount</span><span className="font-medium">{parseFloat(bidAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} {ad.coin}</span></div>
                   <div className="flex justify-between border-t border-border pt-2 font-semibold">
                     <span className="text-text-muted">{isSellAd ? 'Total payable' : 'Total you receive'}</span>
-                    <span className="text-text-primary">PKR {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    <span>PKR {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               )
             })()}
 
             <p className="text-xs text-text-muted bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-              Payment details and your {ad.coin} wallet address will be collected after the owner accepts your bid.
+              Payment details and delivery address will be collected after the owner accepts your bid.
             </p>
 
             <div className="flex gap-3">
-              <button onClick={() => setShowBidModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
+              <button onClick={() => setShowBidModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium hover:bg-surface transition-colors">Cancel</button>
               <button onClick={handlePlaceBid} disabled={submitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60 transition-colors">
                 {submitting ? 'Placing…' : 'Place Bid'}
               </button>
@@ -530,7 +681,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      {/* Complete Bid Details modal — shown after owner accepts bid */}
+      {/* ─── Confirm Bid Details Modal ───────────────────────────────────── */}
       {showConfirmModal && myActiveBid && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -540,58 +691,56 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
             </div>
 
             <div className="bg-surface rounded-xl border border-border p-4 space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-text-muted">Bid price</span><span className="font-medium text-text-primary">PKR {Number(myActiveBid.pricePerUnit).toLocaleString()}/{ad.coin}</span></div>
-              <div className="flex justify-between"><span className="text-text-muted">Amount</span><span className="font-medium text-text-primary">{Number(myActiveBid.usdtAmount).toLocaleString()} {ad.coin}</span></div>
+              <div className="flex justify-between"><span className="text-text-muted">Bid price</span><span className="font-medium">PKR {Number(myActiveBid.pricePerUnit).toLocaleString()}/{ad.coin}</span></div>
+              <div className="flex justify-between"><span className="text-text-muted">Amount</span><span className="font-medium">{Number(myActiveBid.usdtAmount).toLocaleString()} {ad.coin}</span></div>
               <div className="flex justify-between border-t border-border pt-1 font-semibold">
                 <span className="text-text-muted">{isSellAd ? 'Total payable' : 'Total you receive'}</span>
-                <span className="text-text-primary">PKR {Number(myActiveBid.fiatAmount).toLocaleString()}</span>
+                <span>PKR {Number(myActiveBid.fiatAmount).toLocaleString()}</span>
               </div>
             </div>
 
             {confirmError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{confirmError}</div>}
 
-            {/* Payment method selection */}
+            {/* Payment method */}
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-0.5">
-                {isSellAd ? "Select the seller's payment account you'll send payment to" : 'Choose where you want to receive payment (PKR)'}
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                {isSellAd ? "Select seller's payment account to send PKR to" : 'Choose where you receive PKR'}
               </label>
-              {!isSellAd && myMethods.length === 0 && (
-                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-                  No saved payment accounts. <a href="/payment-methods" className="text-primary underline">Add one →</a>
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2 mt-1.5">
-                {confirmModalMethods.map((m) => (
+              <div className="space-y-2">
+                {tradePaymentMethods.map((m) => (
                   <button type="button" key={m.id}
                     onClick={() => setConfirmPaymentMethod(confirmPaymentMethod === m.id ? '' : m.id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${confirmPaymentMethod === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
-                  >
-                    <EntityLogo type={PK_MOBILE_METHODS.includes(m.id) ? 'payment_method' : 'bank'} slug={m.id} size="xs" className="flex-shrink-0" />
-                    {m.label}
-                    {confirmPaymentMethod === m.id && <span className="ml-0.5 text-xs">✓</span>}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${confirmPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'}`}>
+                    <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
+                    <span className="text-sm font-medium text-text-primary">{m.label}</span>
+                    <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${confirmPaymentMethod === m.id ? 'border-primary bg-primary' : 'border-border'}`}>
+                      {confirmPaymentMethod === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                    </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* USDT receiving address — only when buying (SELL ad) */}
-            {isSellAd && (
+            {/* Delivery method — only when buying (receiving USDT) */}
+            {isSellAd && deliveryTypes.length > 0 && (
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-1.5">
-                  Your {ad.coin} receiving address ({ad.network})
-                </label>
-                <input type="text"
-                  placeholder={`Your ${ad.network} wallet address or exchange deposit address`}
-                  value={confirmUsdtAddress}
-                  onChange={(e) => setConfirmUsdtAddress(e.target.value)}
-                  className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-                <p className="mt-1 text-xs text-text-muted">The seller will send {ad.coin} here after your payment is confirmed.</p>
+                <label className="block text-sm font-medium text-text-primary mb-0.5">How will you receive {ad.coin}?</label>
+                <p className="text-xs text-text-muted mb-1">Choose one from the seller's available methods.</p>
+                <DeliveryMethodPicker selected={confirmDeliveryMethod} onSelect={setConfirmDeliveryMethod} />
+                {confirmDeliveryMethod && (
+                  <div className="mt-2">
+                    <input type="text"
+                      placeholder={confirmDeliveryMethod === 'wallet_blockchain' ? '0x… wallet address' : `Your ${confirmDeliveryMethod} deposit address or UID`}
+                      value={confirmDeliveryAddress} onChange={(e) => setConfirmDeliveryAddress(e.target.value)}
+                      className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
             <div className="flex gap-3">
-              <button onClick={() => setShowConfirmModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
+              <button onClick={() => setShowConfirmModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium hover:bg-surface transition-colors">Cancel</button>
               <button onClick={handleConfirmBidDetails} disabled={confirmSubmitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60 transition-colors">
                 {confirmSubmitting ? 'Opening Trade…' : 'Open Trade'}
               </button>
