@@ -11,10 +11,12 @@ export interface CreateAdInput {
   priceType: 'fixed' | 'float'
   price: number
   floatOffset?: number
-  totalAmount: number
+  totalAmount?: number
   minOrder: number
   maxOrder: number
   paymentMethods: string[]
+  tokenDeliveryType?: string
+  settlementMethod?: string
   tradeWindow?: number
   terms?: string
 }
@@ -52,12 +54,17 @@ export async function createAd(userId: string, data: CreateAdInput) {
   if (data.minOrder > data.maxOrder) {
     throw new AppError('VALIDATION_ERROR', 'minOrder must be less than or equal to maxOrder', 400)
   }
-  if (data.minOrder <= 0 || data.maxOrder <= 0 || data.totalAmount <= 0) {
+  if (data.minOrder <= 0 || data.maxOrder <= 0) {
     throw new AppError('VALIDATION_ERROR', 'Amounts must be positive', 400)
   }
 
+  const totalAmount = data.totalAmount ?? 0
+
   // For sell ads: verify the user has enough balance in their wallet
   if (data.side === 'sell') {
+    if (totalAmount <= 0) {
+      throw new AppError('VALIDATION_ERROR', 'Total available amount is required for sell listings', 400)
+    }
     const wallet = await db.wallet.findFirst({
       where: { userId, coin: data.coin.toUpperCase() },
       select: { balance: true, lockedBalance: true },
@@ -65,10 +72,10 @@ export async function createAd(userId: string, data: CreateAdInput) {
     const available = wallet
       ? new Prisma.Decimal(wallet.balance).sub(new Prisma.Decimal(wallet.lockedBalance))
       : new Prisma.Decimal(0)
-    if (new Prisma.Decimal(data.totalAmount).gt(available)) {
+    if (new Prisma.Decimal(totalAmount).gt(available)) {
       throw new AppError(
         'INSUFFICIENT_BALANCE',
-        `Insufficient ${data.coin} balance. Available: ${available.toFixed(8)}, Required: ${data.totalAmount}`,
+        `Insufficient ${data.coin} balance. Available: ${available.toFixed(8)}, Required: ${totalAmount}`,
         400,
       )
     }
@@ -83,11 +90,13 @@ export async function createAd(userId: string, data: CreateAdInput) {
       priceType: data.priceType as 'fixed' | 'float',
       price: new Prisma.Decimal(data.price),
       floatOffset: data.floatOffset != null ? new Prisma.Decimal(data.floatOffset) : new Prisma.Decimal(0),
-      totalAmount: new Prisma.Decimal(data.totalAmount),
-      availableAmount: new Prisma.Decimal(data.totalAmount),
+      totalAmount: new Prisma.Decimal(totalAmount),
+      availableAmount: new Prisma.Decimal(totalAmount),
       minOrder: new Prisma.Decimal(data.minOrder),
       maxOrder: new Prisma.Decimal(data.maxOrder),
       paymentMethods: data.paymentMethods,
+      tokenDeliveryType: data.tokenDeliveryType ?? null,
+      settlementMethod: data.settlementMethod ?? null,
       tradeWindow: data.tradeWindow ?? 30,
       terms: data.terms ?? '',
       status: 'active',

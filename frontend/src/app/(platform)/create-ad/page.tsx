@@ -50,6 +50,8 @@ interface FormState {
   maxAmount: string
   availableAmount: string
   paymentMethods: string[]
+  tokenDeliveryType: 'wallet_blockchain' | 'exchange' | ''
+  settlementMethod: string
   tradeWindow: number
   terms: string
 }
@@ -64,6 +66,8 @@ const defaultForm: FormState = {
   maxAmount: '',
   availableAmount: '',
   paymentMethods: [],
+  tokenDeliveryType: '',
+  settlementMethod: '',
   tradeWindow: 45,
   terms: '',
 }
@@ -90,8 +94,11 @@ function validate(form: FormState): Record<string, string> {
   if (!form.maxAmount) e.maxAmount = 'Enter maximum order'
   if (form.minAmount && form.maxAmount && parseFloat(form.minAmount) >= parseFloat(form.maxAmount))
     e.maxAmount = 'Max must be greater than min'
-  if (!form.availableAmount) e.availableAmount = 'Enter total amount'
-  if (form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one payment method'
+  if (form.side === 'sell' && !form.availableAmount) e.availableAmount = 'Enter total amount'
+  if (form.side === 'sell' && form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one payment method'
+  if (!form.tokenDeliveryType) e.tokenDeliveryType = 'Select a token delivery method'
+  if (form.side === 'buy' && form.tokenDeliveryType && !form.settlementMethod.trim())
+    e.settlementMethod = 'Enter your receiving address so sellers know where to send USDT'
   return e
 }
 
@@ -113,7 +120,6 @@ function CreateListingPageContent() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
 
-  // Load saved payment methods + existing ad if editing
   useEffect(() => {
     const init = async () => {
       const [methodsRes] = await Promise.all([
@@ -130,6 +136,8 @@ function CreateListingPageContent() {
                 maxAmount: ad.maxOrder,
                 availableAmount: '',
                 paymentMethods: ad.paymentMethods,
+                tokenDeliveryType: '' as 'wallet_blockchain' | 'exchange' | '',
+                settlementMethod: '',
                 tradeWindow: ad.tradeWindow ?? 45,
                 terms: ad.terms ?? '',
               })
@@ -200,10 +208,12 @@ function CreateListingPageContent() {
           priceType: form.priceType,
           price,
           floatOffset: parseFloat(form.floatOffset || '0'),
-          totalAmount: parseFloat(form.availableAmount),
+          ...(form.side === 'sell' ? { totalAmount: parseFloat(form.availableAmount) } : {}),
           minOrder: parseFloat(form.minAmount),
           maxOrder: parseFloat(form.maxAmount),
-          paymentMethods: form.paymentMethods,
+          paymentMethods: form.side === 'sell' ? form.paymentMethods : [],
+          tokenDeliveryType: form.tokenDeliveryType as 'wallet_blockchain' | 'exchange',
+          ...(form.settlementMethod.trim() ? { settlementMethod: form.settlementMethod.trim() } : {}),
           tradeWindow: form.tradeWindow,
           terms: form.terms,
         }
@@ -343,56 +353,124 @@ function CreateListingPageContent() {
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Total available amount (USDT) *</label>
-          <input type="number" min="0" step="0.000001" value={form.availableAmount} onChange={(e) => set('availableAmount', e.target.value)}
-            placeholder="Total amount available to trade in this listing"
-            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          {errors.availableAmount && <p className="text-sm text-danger mt-1">{errors.availableAmount}</p>}
-        </div>
+        {/* Total available amount — sell only */}
+        {form.side === 'sell' && (
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Total available amount (USDT) *</label>
+            <input type="number" min="0" step="0.000001" value={form.availableAmount} onChange={(e) => set('availableAmount', e.target.value)}
+              placeholder="Total USDT you are offering in this listing"
+              className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            {errors.availableAmount && <p className="text-sm text-danger mt-1">{errors.availableAmount}</p>}
+          </div>
+        )}
 
-        {/* Payment methods */}
+        {/* Token Delivery Method */}
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-0.5">Payment methods *</label>
-          <p className="text-xs text-text-muted mb-2">Select which of your saved payment accounts counterparties can use.</p>
-          {errors.paymentMethods && <p className="text-sm text-danger mb-2">{errors.paymentMethods}</p>}
+          <label className="block text-sm font-medium text-text-primary mb-0.5">Token Delivery Method *</label>
+          <p className="text-xs text-text-muted mb-2">
+            {form.side === 'sell'
+              ? 'How will you send USDT to buyers after payment is confirmed?'
+              : 'How should sellers send USDT to you?'}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { value: 'wallet_blockchain', label: 'Wallet / Blockchain' },
+              { value: 'exchange', label: 'Exchange' },
+            ] as const).map((m) => (
+              <button
+                type="button"
+                key={m.value}
+                onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: m.value, settlementMethod: '' }))}
+                className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m.value ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          {errors.tokenDeliveryType && <p className="text-sm text-danger mt-1">{errors.tokenDeliveryType}</p>}
 
-          {savedMethods.length === 0 ? (
-            <div className="border border-border rounded-xl p-4 text-center">
-              <p className="text-sm text-text-muted mb-2">No payment methods saved yet.</p>
-              <a href="/payment-methods" className="text-sm text-primary font-medium hover:underline">Add payment methods in Wallet →</a>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {savedMethods.map((m) => {
-                const selected = form.paymentMethods.includes(m.id)
-                const isMobile = m.type !== 'bank_transfer'
-                return (
-                  <button type="button" key={m.id} onClick={() => toggleMethod(m.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'}`}>
-                    <EntityLogo
-                      type={isMobile ? 'payment_method' : 'bank'}
-                      slug={isMobile ? (METHOD_LABELS[m.type] ?? m.type) : (m.bankName ?? 'bank')}
-                      size="sm"
-                      className="flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text-primary">{methodLabel(m)}</p>
-                      <p className="text-xs text-text-muted truncate">{m.accountName} · {methodSubline(m)}</p>
-                    </div>
-                    <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>
-                      {selected && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12">
-                          <path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </div>
-                  </button>
-                )
-              })}
+          {/* Buy: show receiving address input */}
+          {form.side === 'buy' && form.tokenDeliveryType && (
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-text-muted mb-1">
+                {form.tokenDeliveryType === 'wallet_blockchain'
+                  ? 'Your USDT wallet address (sellers will send here)'
+                  : 'Your exchange account / deposit address'}
+              </label>
+              <input
+                type="text"
+                placeholder={
+                  form.tokenDeliveryType === 'wallet_blockchain'
+                    ? '0x… or your USDT wallet address'
+                    : 'e.g. Binance UID or deposit address'
+                }
+                value={form.settlementMethod}
+                onChange={(e) => set('settlementMethod', e.target.value)}
+                className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
+              <p className="mt-1 text-xs text-text-muted">Sellers will send USDT here when they take your listing.</p>
             </div>
           )}
+
+          {form.side === 'sell' && form.tokenDeliveryType && (
+            <p className="mt-2 text-xs text-primary bg-primary/5 rounded-lg px-3 py-2">
+              Buyers will provide their receiving {form.tokenDeliveryType === 'exchange' ? 'exchange account' : 'wallet address'} when they start the trade — you do not need to enter it here.
+            </p>
+          )}
         </div>
+
+        {/* Payment methods — sell only */}
+        {form.side === 'sell' && (
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-0.5">Payment methods *</label>
+            <p className="text-xs text-text-muted mb-2">Select which of your saved payment accounts buyers can use to pay you.</p>
+            {errors.paymentMethods && <p className="text-sm text-danger mb-2">{errors.paymentMethods}</p>}
+
+            {savedMethods.length === 0 ? (
+              <div className="border border-border rounded-xl p-4 text-center">
+                <p className="text-sm text-text-muted mb-2">No payment methods saved yet.</p>
+                <a href="/payment-methods" className="text-sm text-primary font-medium hover:underline">Add payment methods in Wallet →</a>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {savedMethods.map((m) => {
+                  const selected = form.paymentMethods.includes(m.id)
+                  const isMobile = m.type !== 'bank_transfer'
+                  return (
+                    <button type="button" key={m.id} onClick={() => toggleMethod(m.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'}`}>
+                      <EntityLogo
+                        type={isMobile ? 'payment_method' : 'bank'}
+                        slug={isMobile ? (METHOD_LABELS[m.type] ?? m.type) : (m.bankName ?? 'bank')}
+                        size="sm"
+                        className="flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-text-primary">{methodLabel(m)}</p>
+                        <p className="text-xs text-text-muted truncate">{m.accountName} · {methodSubline(m)}</p>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>
+                        {selected && (
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12">
+                            <path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Buy listing info note */}
+        {form.side === 'buy' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">
+            Payment details are not required on a buy listing. The seller will provide their payment receiving account when they accept your trade.
+          </div>
+        )}
 
         {/* Trade window */}
         <div>

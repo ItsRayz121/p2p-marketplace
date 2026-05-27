@@ -416,10 +416,12 @@ export interface CreateAdPayload {
   priceType: 'fixed' | 'float'
   price: number
   floatOffset?: number
-  totalAmount: number
+  totalAmount?: number
   minOrder: number
   maxOrder: number
   paymentMethods: string[]
+  tokenDeliveryType?: 'wallet_blockchain' | 'exchange'
+  settlementMethod?: string
   tradeWindow?: number
   terms?: string
 }
