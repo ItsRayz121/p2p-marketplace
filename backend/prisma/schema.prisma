@@ -232,7 +232,8 @@ enum GasLedgerEntryType {
   delivery_refund      // native gas refunded to user (failed delivery)
   refill_hot_from_treasury  // treasury â†’ hot wallet transfer
   drain_hot_to_treasury     // hot wallet â†’ treasury (emergency drain)
-  platform_fee         // platform fee collected (informational, USD only)
+  platform_fee         // platform fee collected from user withdrawals (stays in hot wallet)
+  platform_fee_sweep   // accumulated platform fees swept from hot wallet → treasury wallet
   external_hot_wallet_deposit  // direct native-token send to hot wallet (e.g. admin top-up)
 }
 

@@ -5028,82 +5028,133 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // ── Platform Revenue ───────────────────────────────────────────────────────
-  // Authoritative source: GasLedgerEntry WHERE entryType = 'platform_fee'
-  // Every completed withdrawal (auto-sent or manually marked sent) appends one
-  // platform_fee entry. The fee stays physically in the hot wallet; these entries
-  // are the accounting record of platform-owned funds.
+  // Authoritative source: GasLedgerEntry WHERE entryType IN ('platform_fee', 'platform_fee_sweep')
+  //
+  //   platform_fee        — fee collected from each withdrawal (stays in hot wallet)
+  //   platform_fee_sweep  — batch sweep of accumulated fees to treasury wallet
+  //
+  // Available-to-sweep formula (per token+chain):
+  //   SUM(platform_fee.tokenAmount) − SUM(platform_fee_sweep.tokenAmount)
 
-  // GET /admin/platform-revenue/summary — aggregate stats for the revenue dashboard
+  // GET /admin/platform-revenue/summary
   app.get('/admin/platform-revenue/summary', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
-    const now  = new Date()
-    const todayStart  = new Date(now); todayStart.setHours(0, 0, 0, 0)
-    const weekStart   = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0, 0, 0, 0)
-    const monthStart  = new Date(now.getFullYear(), now.getMonth(), 1)
+    const { getEvmTreasuryAddress, getTronTreasuryAddress } = await import('../lib/gas/gasWalletService')
 
-    const BASE_WHERE = { entryType: 'platform_fee' as const }
+    const now        = new Date()
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
+    const weekStart  = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0, 0, 0, 0)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const FEE_WHERE   = { entryType: 'platform_fee'       as const }
+    const SWEEP_WHERE = { entryType: 'platform_fee_sweep' as const }
+
+    const thirtyDaysAgo = new Date(now)
+    thirtyDaysAgo.setDate(now.getDate() - 29)
+    thirtyDaysAgo.setHours(0, 0, 0, 0)
 
     const [
-      allTimeAgg,
-      todayAgg,
-      weekAgg,
-      monthAgg,
-      allTimeCount,
-      todayCount,
-      // Group by tokenSymbol for per-coin breakdown
-      byTokenRaw,
-      // Group by chain for per-network breakdown
-      byChainRaw,
+      allTimeAgg, todayAgg, weekAgg, monthAgg,
+      allTimeCount, todayCount,
+      // Collected fees grouped by token×chain — for sweepable breakdown
+      collectedByTokenChainRaw,
+      // Already swept grouped by token×chain — to compute available
+      sweptByTokenChainRaw,
+      // Simple group-by views
+      byTokenRaw, byChainRaw,
+      // Daily chart data
+      dailyEntries,
+      // Total swept (all time)
+      sweptAllTime,
     ] = await Promise.all([
-      db.gasLedgerEntry.aggregate({ where: BASE_WHERE, _sum: { tokenAmount: true, usdAmount: true }, _count: { id: true } }),
-      db.gasLedgerEntry.aggregate({ where: { ...BASE_WHERE, createdAt: { gte: todayStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
-      db.gasLedgerEntry.aggregate({ where: { ...BASE_WHERE, createdAt: { gte: weekStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
-      db.gasLedgerEntry.aggregate({ where: { ...BASE_WHERE, createdAt: { gte: monthStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
-      db.gasLedgerEntry.count({ where: BASE_WHERE }),
-      db.gasLedgerEntry.count({ where: { ...BASE_WHERE, createdAt: { gte: todayStart } } }),
+      db.gasLedgerEntry.aggregate({ where: FEE_WHERE, _sum: { tokenAmount: true, usdAmount: true }, _count: { id: true } }),
+      db.gasLedgerEntry.aggregate({ where: { ...FEE_WHERE, createdAt: { gte: todayStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
+      db.gasLedgerEntry.aggregate({ where: { ...FEE_WHERE, createdAt: { gte: weekStart  } }, _sum: { tokenAmount: true, usdAmount: true } }),
+      db.gasLedgerEntry.aggregate({ where: { ...FEE_WHERE, createdAt: { gte: monthStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
+      db.gasLedgerEntry.count({ where: FEE_WHERE }),
+      db.gasLedgerEntry.count({ where: { ...FEE_WHERE, createdAt: { gte: todayStart } } }),
+      // Collected per token+chain
+      db.gasLedgerEntry.groupBy({
+        by: ['tokenSymbol', 'chain'],
+        where: FEE_WHERE,
+        _sum: { tokenAmount: true, usdAmount: true },
+        _count: { id: true },
+      }),
+      // Swept per token+chain
+      db.gasLedgerEntry.groupBy({
+        by: ['tokenSymbol', 'chain'],
+        where: SWEEP_WHERE,
+        _sum: { tokenAmount: true },
+      }),
+      // For display tables
       db.gasLedgerEntry.groupBy({
         by: ['tokenSymbol'],
-        where: BASE_WHERE,
+        where: FEE_WHERE,
         _sum: { tokenAmount: true, usdAmount: true },
         _count: { id: true },
         orderBy: { _sum: { tokenAmount: 'desc' } },
       }),
       db.gasLedgerEntry.groupBy({
         by: ['chain'],
-        where: BASE_WHERE,
+        where: FEE_WHERE,
         _sum: { tokenAmount: true, usdAmount: true },
         _count: { id: true },
         orderBy: { _sum: { tokenAmount: 'desc' } },
       }),
+      db.gasLedgerEntry.findMany({
+        where: { ...FEE_WHERE, createdAt: { gte: thirtyDaysAgo } },
+        select: { createdAt: true, tokenAmount: true, usdAmount: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      db.gasLedgerEntry.aggregate({ where: SWEEP_WHERE, _sum: { tokenAmount: true, usdAmount: true } }),
     ])
 
-    // Map daily totals for the last 30 days
-    const thirtyDaysAgo = new Date(now)
-    thirtyDaysAgo.setDate(now.getDate() - 29)
-    thirtyDaysAgo.setHours(0, 0, 0, 0)
-    const dailyEntries = await db.gasLedgerEntry.findMany({
-      where: { ...BASE_WHERE, createdAt: { gte: thirtyDaysAgo } },
-      select: { createdAt: true, tokenAmount: true, usdAmount: true },
-      orderBy: { createdAt: 'asc' },
-    })
+    // Build swept map: `${tokenSymbol}:${chain}` → swept amount
+    const sweptMap = new Map<string, number>()
+    for (const r of sweptByTokenChainRaw) {
+      if (r.tokenSymbol) {
+        sweptMap.set(`${r.tokenSymbol}:${r.chain}`, Number(r._sum?.tokenAmount ?? 0))
+      }
+    }
 
-    // Aggregate by day (YYYY-MM-DD)
+    // Build sweepable array: one row per token+chain with collected/swept/available
+    const EVM_SWEEP_CHAINS = new Set(['BSC', 'ETH', 'BASE', 'ARB', 'OP', 'MATIC'])
+    const sweepable = collectedByTokenChainRaw
+      .filter(r => r.tokenSymbol)
+      .map(r => {
+        const collected = Number(r._sum?.tokenAmount ?? 0)
+        const swept     = sweptMap.get(`${r.tokenSymbol}:${r.chain}`) ?? 0
+        const available = Math.max(0, collected - swept)
+        return {
+          token:     r.tokenSymbol!,
+          chain:     r.chain as string,
+          collected,
+          swept,
+          available,
+          count:     r._count.id,
+          canSweep:  EVM_SWEEP_CHAINS.has(r.chain as string) && available > 0,
+        }
+      })
+      .sort((a, b) => b.available - a.available)
+
+    // Daily chart
     const dailyMap = new Map<string, { tokenAmount: number; usdAmount: number; count: number }>()
     for (const e of dailyEntries) {
       const day = e.createdAt.toISOString().slice(0, 10)
-      const existing = dailyMap.get(day) ?? { tokenAmount: 0, usdAmount: 0, count: 0 }
-      existing.tokenAmount += Number(e.tokenAmount ?? 0)
-      existing.usdAmount   += Number(e.usdAmount ?? 0)
-      existing.count       += 1
-      dailyMap.set(day, existing)
+      const s   = dailyMap.get(day) ?? { tokenAmount: 0, usdAmount: 0, count: 0 }
+      s.tokenAmount += Number(e.tokenAmount ?? 0)
+      s.usdAmount   += Number(e.usdAmount   ?? 0)
+      s.count       += 1
+      dailyMap.set(day, s)
     }
-    const dailyChart = Array.from(dailyMap.entries()).map(([date, v]) => ({ date, ...v }))
 
     return reply.send({
       success: true,
       data: {
         allTime: {
-          totalTokenFees: Number(allTimeAgg._sum.tokenAmount ?? 0),
-          totalUsdFees:   Number(allTimeAgg._sum.usdAmount   ?? 0),
+          totalTokenFees: Number(allTimeAgg._sum?.tokenAmount ?? 0),
+          totalUsdFees:   Number(allTimeAgg._sum?.usdAmount   ?? 0),
+          totalSwept:     Number(sweptAllTime._sum?.tokenAmount ?? 0),
+          available:      Math.max(0, Number(allTimeAgg._sum?.tokenAmount ?? 0) - Number(sweptAllTime._sum?.tokenAmount ?? 0)),
           count:          allTimeCount,
         },
         today: {
@@ -5111,32 +5162,122 @@ export async function adminRoutes(app: FastifyInstance) {
           totalUsdFees:   Number(todayAgg._sum.usdAmount   ?? 0),
           count:          todayCount,
         },
-        thisWeek: {
-          totalTokenFees: Number(weekAgg._sum.tokenAmount ?? 0),
-          totalUsdFees:   Number(weekAgg._sum.usdAmount   ?? 0),
-        },
-        thisMonth: {
-          totalTokenFees: Number(monthAgg._sum.tokenAmount ?? 0),
-          totalUsdFees:   Number(monthAgg._sum.usdAmount   ?? 0),
-        },
+        thisWeek:  { totalTokenFees: Number(weekAgg._sum.tokenAmount  ?? 0), totalUsdFees: Number(weekAgg._sum.usdAmount  ?? 0) },
+        thisMonth: { totalTokenFees: Number(monthAgg._sum.tokenAmount ?? 0), totalUsdFees: Number(monthAgg._sum.usdAmount ?? 0) },
+        sweepable,
         byToken: byTokenRaw.map(r => ({
-          token:     r.tokenSymbol ?? 'UNKNOWN',
-          amount:    Number(r._sum.tokenAmount ?? 0),
-          usdAmount: Number(r._sum.usdAmount   ?? 0),
-          count:     r._count.id,
+          token: r.tokenSymbol ?? 'UNKNOWN',
+          amount: Number(r._sum.tokenAmount ?? 0), usdAmount: Number(r._sum.usdAmount ?? 0), count: r._count.id,
         })),
         byChain: byChainRaw.map(r => ({
-          chain:     r.chain,
-          amount:    Number(r._sum.tokenAmount ?? 0),
-          usdAmount: Number(r._sum.usdAmount   ?? 0),
-          count:     r._count.id,
+          chain: r.chain, amount: Number(r._sum.tokenAmount ?? 0), usdAmount: Number(r._sum.usdAmount ?? 0), count: r._count.id,
         })),
-        dailyChart,
+        dailyChart: Array.from(dailyMap.entries()).map(([date, v]) => ({ date, ...v })),
+        // Treasury wallet addresses (public — safe to expose to admin)
+        treasuryAddresses: {
+          evm:  getEvmTreasuryAddress()  ?? null,
+          tron: getTronTreasuryAddress() ?? null,
+        },
       },
     })
   })
 
-  // GET /admin/platform-revenue/history — paginated list of all platform_fee entries
+  // POST /admin/platform-revenue/sweep — super_admin only, on-chain transfer
+  app.post('/admin/platform-revenue/sweep', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { sweepTokenToTreasury } = await import('../lib/treasury.sweep')
+
+    const body = req.body as { tokenSymbol?: string; chain?: string; amount?: number }
+    if (!body.tokenSymbol || !body.chain) {
+      return reply.status(400).send({ success: false, error: 'tokenSymbol and chain are required' })
+    }
+
+    const tokenSymbol = body.tokenSymbol.toUpperCase()
+    const chain       = body.chain.toUpperCase()
+
+    // Calculate available balance from the ledger — this is the safety gate
+    const [collectedAgg, sweptAgg] = await Promise.all([
+      db.gasLedgerEntry.aggregate({
+        where: { entryType: 'platform_fee', tokenSymbol, chain: chain as import('@prisma/client').GasChain },
+        _sum: { tokenAmount: true },
+      }),
+      db.gasLedgerEntry.aggregate({
+        where: { entryType: 'platform_fee_sweep', tokenSymbol, chain: chain as import('@prisma/client').GasChain },
+        _sum: { tokenAmount: true },
+      }),
+    ])
+
+    const totalCollected = Number(collectedAgg._sum?.tokenAmount ?? 0)
+    const totalSwept     = Number(sweptAgg._sum?.tokenAmount     ?? 0)
+    const available      = Math.max(0, totalCollected - totalSwept)
+
+    if (available <= 0) {
+      return reply.status(400).send({
+        success: false,
+        error:   `No platform fees available to sweep for ${tokenSymbol} on ${chain}. Collected: ${totalCollected}, already swept: ${totalSwept}.`,
+      })
+    }
+
+    // Sweep amount: use requested or default to all available
+    const sweepAmount = body.amount != null
+      ? Math.min(Number(body.amount), available)
+      : available
+
+    if (sweepAmount <= 0) {
+      return reply.status(400).send({ success: false, error: 'Sweep amount must be greater than zero' })
+    }
+
+    // Execute on-chain transfer — throws on failure; nothing is recorded if it throws
+    const result = await sweepTokenToTreasury(tokenSymbol, chain, sweepAmount)
+
+    // Record sweep in ledger — idempotent via sourceKey
+    const sourceKey = `platform_fee_sweep:${result.txHash}`
+    await appendLedgerEntry({
+      entryType:   'platform_fee_sweep',
+      chain:       chain as import('../lib/gas/gas.chains').GasChainId,
+      nativeAmount: 0,
+      tokenSymbol,
+      tokenAmount:  sweepAmount,
+      usdAmount:    sweepAmount,   // USDT ≈ $1
+      txHash:       result.txHash,
+      fromAddress:  result.hotWalletAddress,
+      toAddress:    result.treasuryAddress,
+      sourceKey,
+      notes: `Treasury sweep by admin ${req.user!.id} — ${sweepAmount} ${tokenSymbol} on ${chain}`,
+    })
+
+    await createAuditLog(
+      req.user!.id,
+      'PLATFORM_FEE_SWEEP',
+      'GasLedgerEntry',
+      result.txHash,
+      { tokenSymbol, chain, amount: sweepAmount, treasuryAddress: result.treasuryAddress, txHash: result.txHash },
+    )
+
+    const { createAdminNotif: notifSweep } = await import('../services/adminNotification.service')
+    void notifSweep({
+      category: 'SYSTEM',
+      title:    `Platform Fee Swept: ${sweepAmount} ${tokenSymbol}`,
+      body:     `Admin swept ${sweepAmount} ${tokenSymbol} (${chain}) from hot wallet to treasury ${result.treasuryAddress.slice(0, 10)}... TX: ${result.txHash.slice(0, 18)}...`,
+      href:     '/admin/platform-revenue',
+      metadata: { txHash: result.txHash, tokenSymbol, chain, amount: String(sweepAmount) },
+    })
+
+    return reply.send({
+      success: true,
+      data: {
+        txHash:           result.txHash,
+        treasuryAddress:  result.treasuryAddress,
+        hotWalletAddress: result.hotWalletAddress,
+        tokenSymbol,
+        chain,
+        amount:           sweepAmount,
+        hotWalletBalanceBefore: result.hotWalletBalanceBefore,
+        remainingAvailable: available - sweepAmount,
+      },
+    })
+  })
+
+  // GET /admin/platform-revenue/history — paginated fee entries (platform_fee only)
   app.get('/admin/platform-revenue/history', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
@@ -5156,21 +5297,44 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     }
 
-    const where = { AND: andClauses }
-
     const [entries, total] = await Promise.all([
       db.gasLedgerEntry.findMany({
-        where,
+        where: { AND: andClauses },
         orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
+        skip, take: limit,
         select: {
           id: true, chain: true,
           tokenSymbol: true, tokenAmount: true, usdAmount: true,
           txHash: true, sourceKey: true, notes: true, createdAt: true,
         },
       }),
-      db.gasLedgerEntry.count({ where }),
+      db.gasLedgerEntry.count({ where: { AND: andClauses } }),
+    ])
+
+    return reply.send({
+      success: true,
+      data: { entries, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
+
+  // GET /admin/platform-revenue/sweep-history — paginated list of past sweeps
+  app.get('/admin/platform-revenue/sweep-history', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+
+    const [entries, total] = await Promise.all([
+      db.gasLedgerEntry.findMany({
+        where: { entryType: 'platform_fee_sweep' },
+        orderBy: { createdAt: 'desc' },
+        skip, take: limit,
+        select: {
+          id: true, chain: true,
+          tokenSymbol: true, tokenAmount: true, usdAmount: true,
+          txHash: true, fromAddress: true, toAddress: true,
+          notes: true, createdAt: true,
+        },
+      }),
+      db.gasLedgerEntry.count({ where: { entryType: 'platform_fee_sweep' } }),
     ])
 
     return reply.send({
