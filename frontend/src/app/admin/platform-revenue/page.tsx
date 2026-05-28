@@ -264,7 +264,7 @@ export default function PlatformRevenuePage() {
   const fetchSummary = useCallback(async () => {
     try {
       const res = await adminApi.getPlatformRevenueSummary()
-      setSummary((res as unknown as { data: RevenueSummary }).data)
+      setSummary(res)
       setSummaryError(null)
     } catch (e) { setSummaryError(e instanceof Error ? e.message : 'Failed to load') }
   }, [])
@@ -278,18 +278,16 @@ export default function PlatformRevenuePage() {
       if (feeTo)     params.to     = feeTo
       if (feeSearch) params.search = feeSearch
       const res = await adminApi.getPlatformFeeHistory(params)
-      const d = (res as unknown as { data: { entries: FeeEntry[]; pagination: typeof feePagination } }).data
-      setFeeEntries(d.entries)
-      setFeePagination(d.pagination)
+      setFeeEntries(res.entries)
+      setFeePagination(res.pagination)
     } catch { /* silent */ }
   }, [feePage, feeToken, feeChain, feeFrom, feeTo, feeSearch])
 
   const fetchSweepHistory = useCallback(async () => {
     try {
       const res = await adminApi.getPlatformSweepHistory({ page: sweepPage, limit: 10 })
-      const d = (res as unknown as { data: { entries: SweepEntry[]; pagination: typeof sweepPagination } }).data
-      setSweepHistory(d.entries)
-      setSweepPagination(d.pagination)
+      setSweepHistory(res.entries)
+      setSweepPagination(res.pagination)
     } catch { /* silent */ }
   }, [sweepPage])
 
@@ -303,7 +301,7 @@ export default function PlatformRevenuePage() {
     setSweepResult(null)
     try {
       const res = await adminApi.sweepPlatformFees({ tokenSymbol: row.token, chain: row.chain, amount })
-      setSweepResult((res as unknown as { data: SweepResult }).data)
+      setSweepResult(res)
       setSweepModal(null)
       // Refresh everything
       void fetchSummary()
