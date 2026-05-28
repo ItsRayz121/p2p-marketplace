@@ -1494,6 +1494,28 @@ export const adminApi = {
   updateWithdrawalTiers: (data: Record<string, unknown>) =>
     apiRequest<void>('/admin/withdrawal-tiers', { method: 'PUT', body: JSON.stringify(data) }),
 
+  // Platform Revenue
+  getPlatformRevenueSummary: () =>
+    apiRequest<{
+      allTime:   { totalTokenFees: number; totalUsdFees: number; count: number }
+      today:     { totalTokenFees: number; totalUsdFees: number; count: number }
+      thisWeek:  { totalTokenFees: number; totalUsdFees: number }
+      thisMonth: { totalTokenFees: number; totalUsdFees: number }
+      byToken: Array<{ token: string; amount: number; usdAmount: number; count: number }>
+      byChain: Array<{ chain: string; amount: number; usdAmount: number; count: number }>
+      dailyChart: Array<{ date: string; tokenAmount: number; usdAmount: number; count: number }>
+    }>('/admin/platform-revenue/summary'),
+  getPlatformFeeHistory: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{
+      entries: Array<{
+        id: string; chain: string
+        tokenSymbol: string | null; tokenAmount: string | null; usdAmount: string
+        txHash: string | null; sourceKey: string | null; notes: string | null
+        createdAt: string
+      }>
+      pagination: { page: number; limit: number; total: number; pages: number }
+    }>('/admin/platform-revenue/history' + buildQs(params)),
+
   // Ratings
   getAdminRatings: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ ratings: unknown[]; pagination: { page: number; limit: number; total: number; pages: number } }>('/admin/ratings' + buildQs(params)),

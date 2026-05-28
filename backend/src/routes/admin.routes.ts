@@ -5026,4 +5026,156 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'RATING_UNHIDDEN', 'TradeRating', id, {})
     return reply.send({ success: true })
   })
+
+  // ── Platform Revenue ───────────────────────────────────────────────────────
+  // Authoritative source: GasLedgerEntry WHERE entryType = 'platform_fee'
+  // Every completed withdrawal (auto-sent or manually marked sent) appends one
+  // platform_fee entry. The fee stays physically in the hot wallet; these entries
+  // are the accounting record of platform-owned funds.
+
+  // GET /admin/platform-revenue/summary — aggregate stats for the revenue dashboard
+  app.get('/admin/platform-revenue/summary', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const now  = new Date()
+    const todayStart  = new Date(now); todayStart.setHours(0, 0, 0, 0)
+    const weekStart   = new Date(now); weekStart.setDate(now.getDate() - now.getDay()); weekStart.setHours(0, 0, 0, 0)
+    const monthStart  = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const BASE_WHERE = { entryType: 'platform_fee' as const }
+
+    const [
+      allTimeAgg,
+      todayAgg,
+      weekAgg,
+      monthAgg,
+      allTimeCount,
+      todayCount,
+      // Group by tokenSymbol for per-coin breakdown
+      byTokenRaw,
+      // Group by chain for per-network breakdown
+      byChainRaw,
+    ] = await Promise.all([
+      db.gasLedgerEntry.aggregate({ where: BASE_WHERE, _sum: { tokenAmount: true, usdAmount: true }, _count: { id: true } }),
+      db.gasLedgerEntry.aggregate({ where: { ...BASE_WHERE, createdAt: { gte: todayStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
+      db.gasLedgerEntry.aggregate({ where: { ...BASE_WHERE, createdAt: { gte: weekStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
+      db.gasLedgerEntry.aggregate({ where: { ...BASE_WHERE, createdAt: { gte: monthStart } }, _sum: { tokenAmount: true, usdAmount: true } }),
+      db.gasLedgerEntry.count({ where: BASE_WHERE }),
+      db.gasLedgerEntry.count({ where: { ...BASE_WHERE, createdAt: { gte: todayStart } } }),
+      db.gasLedgerEntry.groupBy({
+        by: ['tokenSymbol'],
+        where: BASE_WHERE,
+        _sum: { tokenAmount: true, usdAmount: true },
+        _count: { id: true },
+        orderBy: { _sum: { tokenAmount: 'desc' } },
+      }),
+      db.gasLedgerEntry.groupBy({
+        by: ['chain'],
+        where: BASE_WHERE,
+        _sum: { tokenAmount: true, usdAmount: true },
+        _count: { id: true },
+        orderBy: { _sum: { tokenAmount: 'desc' } },
+      }),
+    ])
+
+    // Map daily totals for the last 30 days
+    const thirtyDaysAgo = new Date(now)
+    thirtyDaysAgo.setDate(now.getDate() - 29)
+    thirtyDaysAgo.setHours(0, 0, 0, 0)
+    const dailyEntries = await db.gasLedgerEntry.findMany({
+      where: { ...BASE_WHERE, createdAt: { gte: thirtyDaysAgo } },
+      select: { createdAt: true, tokenAmount: true, usdAmount: true },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    // Aggregate by day (YYYY-MM-DD)
+    const dailyMap = new Map<string, { tokenAmount: number; usdAmount: number; count: number }>()
+    for (const e of dailyEntries) {
+      const day = e.createdAt.toISOString().slice(0, 10)
+      const existing = dailyMap.get(day) ?? { tokenAmount: 0, usdAmount: 0, count: 0 }
+      existing.tokenAmount += Number(e.tokenAmount ?? 0)
+      existing.usdAmount   += Number(e.usdAmount ?? 0)
+      existing.count       += 1
+      dailyMap.set(day, existing)
+    }
+    const dailyChart = Array.from(dailyMap.entries()).map(([date, v]) => ({ date, ...v }))
+
+    return reply.send({
+      success: true,
+      data: {
+        allTime: {
+          totalTokenFees: Number(allTimeAgg._sum.tokenAmount ?? 0),
+          totalUsdFees:   Number(allTimeAgg._sum.usdAmount   ?? 0),
+          count:          allTimeCount,
+        },
+        today: {
+          totalTokenFees: Number(todayAgg._sum.tokenAmount ?? 0),
+          totalUsdFees:   Number(todayAgg._sum.usdAmount   ?? 0),
+          count:          todayCount,
+        },
+        thisWeek: {
+          totalTokenFees: Number(weekAgg._sum.tokenAmount ?? 0),
+          totalUsdFees:   Number(weekAgg._sum.usdAmount   ?? 0),
+        },
+        thisMonth: {
+          totalTokenFees: Number(monthAgg._sum.tokenAmount ?? 0),
+          totalUsdFees:   Number(monthAgg._sum.usdAmount   ?? 0),
+        },
+        byToken: byTokenRaw.map(r => ({
+          token:     r.tokenSymbol ?? 'UNKNOWN',
+          amount:    Number(r._sum.tokenAmount ?? 0),
+          usdAmount: Number(r._sum.usdAmount   ?? 0),
+          count:     r._count.id,
+        })),
+        byChain: byChainRaw.map(r => ({
+          chain:     r.chain,
+          amount:    Number(r._sum.tokenAmount ?? 0),
+          usdAmount: Number(r._sum.usdAmount   ?? 0),
+          count:     r._count.id,
+        })),
+        dailyChart,
+      },
+    })
+  })
+
+  // GET /admin/platform-revenue/history — paginated list of all platform_fee entries
+  app.get('/admin/platform-revenue/history', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+
+    const andClauses: Record<string, unknown>[] = [{ entryType: 'platform_fee' }]
+    if (query.token)  andClauses.push({ tokenSymbol: { equals: query.token.toUpperCase() } })
+    if (query.chain)  andClauses.push({ chain: query.chain.toUpperCase() })
+    if (query.from)   andClauses.push({ createdAt: { gte: new Date(query.from) } })
+    if (query.to)     andClauses.push({ createdAt: { lte: new Date(query.to) } })
+    if (query.search) {
+      andClauses.push({
+        OR: [
+          { txHash:   { contains: query.search, mode: 'insensitive' } },
+          { notes:    { contains: query.search, mode: 'insensitive' } },
+          { sourceKey:{ contains: query.search, mode: 'insensitive' } },
+        ],
+      })
+    }
+
+    const where = { AND: andClauses }
+
+    const [entries, total] = await Promise.all([
+      db.gasLedgerEntry.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          id: true, chain: true,
+          tokenSymbol: true, tokenAmount: true, usdAmount: true,
+          txHash: true, sourceKey: true, notes: true, createdAt: true,
+        },
+      }),
+      db.gasLedgerEntry.count({ where }),
+    ])
+
+    return reply.send({
+      success: true,
+      data: { entries, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+    })
+  })
 }
