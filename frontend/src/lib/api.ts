@@ -490,6 +490,7 @@ export interface Notification {
 
 export interface WalletBalance {
   coin: string
+  network: string
   available: string
   locked: string
   total: string

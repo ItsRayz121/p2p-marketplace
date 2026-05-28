@@ -69,7 +69,7 @@ function timeAgo(dateStr: string): string {
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
 function WithdrawModal({
-  isOpen, onClose, coin, twoFaEnabled, onSuccess, availableBalance,
+  isOpen, onClose, coin, twoFaEnabled, onSuccess, availableBalance, defaultNetwork,
 }: {
   isOpen: boolean
   onClose: () => void
@@ -77,11 +77,12 @@ function WithdrawModal({
   twoFaEnabled: boolean
   onSuccess?: () => void
   availableBalance?: number
+  defaultNetwork?: string
 }) {
   const [state, setState] = useState<WithdrawState>({
     address: '',
     amount: '',
-    network: networksFor(coin)[0] ?? 'TRC20',
+    network: defaultNetwork ?? networksFor(coin)[0] ?? 'TRC20',
     fee: '0',
     gasFee: '0',
     platformFee: '0',
@@ -105,7 +106,7 @@ function WithdrawModal({
   useEffect(() => {
     if (isOpen) {
       idempotencyKey.current = crypto.randomUUID()
-      setState((s) => ({ ...s, address: '', amount: '', fee: '0', gasFee: '0', platformFee: '0', feePkr: '0' }))
+      setState((s) => ({ ...s, address: '', amount: '', fee: '0', gasFee: '0', platformFee: '0', feePkr: '0', network: defaultNetwork ?? networksFor(coin)[0] ?? 'TRC20' }))
       setTotpCode('')
       setSuccess(false)
       setAutoSent(false)
@@ -1188,7 +1189,7 @@ export default function WalletPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [depositCoin, setDepositCoin] = useState<string | null>(null)
-  const [withdrawCoin, setWithdrawCoin] = useState<string | null>(null)
+  const [withdrawWallet, setWithdrawWallet] = useState<{ coin: string; network: string } | null>(null)
 
   const fetchBalances = useCallback(async () => {
     try {
@@ -1293,12 +1294,13 @@ export default function WalletPage() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {balances.map((b) => (
-              <div key={b.coin} className="bg-white rounded-xl border border-border p-5">
+              <div key={`${b.coin}-${b.network}`} className="bg-white rounded-xl border border-border p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center">
                     {b.coin.slice(0, 2)}
                   </div>
                   <span className="font-semibold text-text-primary">{b.coin}</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-surface text-text-muted font-medium">{b.network}</span>
                 </div>
                 <div className="space-y-1 mb-4">
                   <div className="flex justify-between text-sm">
@@ -1322,7 +1324,7 @@ export default function WalletPage() {
                   <Button
                     size="sm"
                     fullWidth
-                    onClick={() => setWithdrawCoin(b.coin)}
+                    onClick={() => setWithdrawWallet({ coin: b.coin, network: b.network })}
                   >
                     Withdraw
                   </Button>
@@ -1417,15 +1419,16 @@ export default function WalletPage() {
       )}
 
       {/* Withdraw modal */}
-      {withdrawCoin && (
+      {withdrawWallet && (
         <WithdrawModal
-          isOpen={!!withdrawCoin}
-          onClose={() => setWithdrawCoin(null)}
-          coin={withdrawCoin}
+          isOpen={!!withdrawWallet}
+          onClose={() => setWithdrawWallet(null)}
+          coin={withdrawWallet.coin}
+          defaultNetwork={withdrawWallet.network}
           twoFaEnabled={user?.twoFaEnabled ?? false}
           onSuccess={() => { fetchBalances(); fetchTransactions(1) }}
           availableBalance={parseFloat(
-            balances.find((b) => b.coin === withdrawCoin)?.available ?? '0'
+            balances.find((b) => b.coin === withdrawWallet.coin && b.network === withdrawWallet.network)?.available ?? '0'
           )}
         />
       )}
