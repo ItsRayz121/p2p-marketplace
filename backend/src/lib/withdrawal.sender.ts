@@ -24,6 +24,7 @@ import { createAdminNotif } from '../services/adminNotification.service'
 import { getEvmGasPrice } from './evmRpc'
 import { getHotWalletBalance } from './gas/gas.balance'
 import type { GasChainId } from './gas/gas.chains'
+import { appendLedgerEntry } from './gas/gas.ledger'
 
 const ERC20_TRANSFER_ABI = [
   {
@@ -70,6 +71,17 @@ const CHAIN_TO_GAS_CHAIN: Partial<Record<string, GasChainId>> = {
   base:     'BASE',
 }
 
+// Maps withdrawal network label → GasChainId for the platform_fee ledger entry
+const NETWORK_TO_GAS_CHAIN: Partial<Record<string, GasChainId>> = {
+  TRC20:    'TRON',
+  BEP20:    'BSC',
+  ERC20:    'ETHEREUM',
+  BASE:     'BASE',
+  ARBITRUM: 'ARB',
+  OPTIMISM: 'OP',
+  POLYGON:  'MATIC',
+}
+
 // Native symbol per chain slug — used in alert messages
 const CHAIN_NATIVE_SYMBOL: Partial<Record<string, string>> = {
   bsc:      'BNB',
@@ -89,6 +101,7 @@ interface AutoWithdrawal {
   coin: string
   network: string
   amount: number | string
+  fee?: number | string
   toAddress: string
 }
 
@@ -240,6 +253,27 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     })
 
     log.info({ withdrawalId: wd.id, txHash, coin: wd.coin, network: wd.network }, 'Auto-send withdrawal completed')
+
+    // Record the platform fee in the gas ledger so it shows up in revenue accounting.
+    // The fee stays physically in the hot wallet (only `amount` is sent on-chain, not
+    // amount+fee). This entry makes it traceable and queryable.
+    const feeAmount = Number(wd.fee ?? 0)
+    if (feeAmount > 0) {
+      const gasChain = NETWORK_TO_GAS_CHAIN[wd.network.toUpperCase()]
+      if (gasChain) {
+        void appendLedgerEntry({
+          entryType:   'platform_fee',
+          chain:       gasChain,
+          nativeAmount: 0,                    // no native movement — fee is in token
+          tokenSymbol:  wd.coin.toUpperCase(),
+          tokenAmount:  feeAmount,
+          usdAmount:    feeAmount,            // USDT ≈ 1 USD; adjust per-coin if needed
+          txHash,
+          sourceKey:    `platform_fee:withdrawal:${wd.id}`,
+          notes:        `Withdrawal fee from user ${wd.userId} — withdrawal ${wd.id}`,
+        }).catch((err) => log.error({ err, withdrawalId: wd.id }, 'Failed to write platform_fee ledger entry'))
+      }
+    }
 
     // Notify admin so completed auto-sends appear in the notifications feed.
     // Without this the only way to see them is the "Auto-Sent" tab.

@@ -259,6 +259,7 @@ export async function requestWithdrawal(
       coin: data.coin,
       network: data.network,
       amount: data.amount,
+      fee,
       toAddress: data.toAddress,
     })
     return result

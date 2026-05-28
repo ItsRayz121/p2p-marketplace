@@ -30,6 +30,17 @@ import { listFlaggedOrders, reviewFlaggedOrder } from '../lib/gas/gas.risk'
 import { listMerchantAccounts, createMerchantAccount, updateMerchantAccount, getMerchantAccount, listMerchantSettlements, approveSettlement } from '../lib/gas/gas.merchant-settlement'
 type JsonValue = Prisma.InputJsonValue
 
+// Maps withdrawal network label → GasChainId for platform_fee ledger entries
+const WITHDRAWAL_NETWORK_TO_GAS_CHAIN: Partial<Record<string, GasChainId>> = {
+  TRC20:    'TRON',
+  BEP20:    'BSC',
+  ERC20:    'ETHEREUM',
+  BASE:     'BASE',
+  ARBITRUM: 'ARB',
+  OPTIMISM: 'OP',
+  POLYGON:  'MATIC',
+}
+
 const adminOrSuper = requireRole('admin', 'super_admin')
 const adminOrSuperOrKyc = requireRole('admin', 'super_admin', 'kyc_reviewer')
 const superAdminOnly = requireRole('super_admin')
@@ -1899,6 +1910,26 @@ export async function adminRoutes(app: FastifyInstance) {
       amount: withdrawal.amount.toString(),
       toAddress: withdrawal.toAddress,
     })
+
+    // Record platform fee in the gas ledger (same as auto-send path).
+    // The fee stays physically in the hot wallet — only `amount` goes on-chain.
+    const withdrawalFee = Number(withdrawal.fee)
+    if (withdrawalFee > 0) {
+      const gasChain = WITHDRAWAL_NETWORK_TO_GAS_CHAIN[withdrawal.network.toUpperCase()]
+      if (gasChain) {
+        void appendLedgerEntry({
+          entryType:    'platform_fee',
+          chain:        gasChain,
+          nativeAmount: 0,
+          tokenSymbol:  withdrawal.coin.toUpperCase(),
+          tokenAmount:  withdrawalFee,
+          usdAmount:    withdrawalFee,
+          txHash,
+          sourceKey:    `platform_fee:withdrawal:${id}`,
+          notes:        `Withdrawal fee — marked sent by admin ${req.user!.id}`,
+        }).catch((err) => log.error({ err, withdrawalId: id }, 'Failed to write platform_fee ledger entry (mark-sent)'))
+      }
+    }
 
     await sendWithdrawalEmail('approved', withdrawal.user.email, {
       amount: withdrawal.amount.toString(),
