@@ -386,7 +386,7 @@ export default function PlatformRevenuePage() {
           <div className="flex gap-4"><span className="text-text-muted w-24">EVM</span><span className="text-text-primary break-all">{s.treasuryAddresses.evm ?? 'Not configured'}</span></div>
           <div className="flex gap-4"><span className="text-text-muted w-24">TRON</span><span className="text-text-primary break-all">{s.treasuryAddresses.tron ?? 'Not configured'}</span></div>
         </div>
-        <p className="text-text-muted text-xs mt-2 font-sans">Sweep destinations are derived from your configured mnemonic (HD index 101 for EVM, 100 for TRON).</p>
+        <p className="text-text-muted text-xs mt-2 font-sans">Sweep destinations are the platform hot wallet (HD index 0).</p>
       </div>
 
       {/* Sweepable breakdown */}

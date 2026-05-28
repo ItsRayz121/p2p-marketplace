@@ -1346,32 +1346,32 @@ export default function WalletPage() {
           <div className="bg-white rounded-xl border border-border overflow-hidden">
             <div className="divide-y divide-border">
               {transactions.map((tx) => (
-                <div key={tx.id} className="flex items-center gap-4 px-4 py-3">
-                  <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center text-sm flex-shrink-0">
-                    {txTypeIcon[tx.type] ?? '?'}
+                <div key={tx.id} className="px-4 py-3 space-y-2">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold text-text-primary`}>
+                        <span className={tx.type === 'withdrawal' || tx.type === 'fee' ? 'text-danger' : 'text-success'}>
+                          {tx.type === 'withdrawal' || tx.type === 'fee' ? '-' : '+'}{parseFloat(tx.amount).toFixed(4)} {tx.coin}
+                        </span>
+                      </span>
+                      <Badge variant={txStatusVariant(tx.status)} size="sm">{txStatusLabel(tx)}</Badge>
+                    </div>
+                    <div className="text-xs text-text-muted capitalize">
+                      {tx.type.replace(/_/g, ' ')} · {timeAgo(tx.createdAt)}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary capitalize">
-                      {tx.type.replace(/_/g, ' ')}
-                    </p>
-                    <p className="text-xs text-text-muted">{timeAgo(tx.createdAt)}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className={`text-sm font-bold ${tx.type === 'withdrawal' || tx.type === 'fee' ? 'text-danger' : 'text-success'}`}>
-                      {tx.type === 'withdrawal' || tx.type === 'fee' ? '-' : '+'}{parseFloat(tx.amount).toFixed(4)} {tx.coin}
-                    </p>
-                    <Badge variant={txStatusVariant(tx.status)} size="sm">{txStatusLabel(tx)}</Badge>
-                    {tx.txHash && tx.type === 'withdrawal' && (
+                  {tx.txHash && (
+                    <div className="text-xs">
                       <a
                         href={`${EXPLORER_TX_BASE[tx.network?.toUpperCase() ?? ''] ?? '#'}/${tx.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block text-xs text-primary hover:underline mt-0.5"
+                        className="text-primary hover:underline"
                       >
                         View on-chain ↗
                       </a>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

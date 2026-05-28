@@ -29,13 +29,8 @@ import { env } from '../env'
 /** Index 0 → hot wallet — signs outgoing delivery transactions */
 export const HOT_WALLET_INDEX = 0
 
-/**
- * Index 100 → TRON treasury wallet (same mnemonic, never signs deliveries).
- * Index 101 → EVM treasury wallet (same mnemonic, never signs deliveries).
- * High indices ensure no accidental overlap with future hot wallet pool expansion.
- */
-export const TREASURY_TRON_INDEX = 100
-export const TREASURY_EVM_INDEX  = 101
+export const TREASURY_TRON_INDEX = HOT_WALLET_INDEX
+export const TREASURY_EVM_INDEX  = HOT_WALLET_INDEX
 
 // ── TRON address encoding ─────────────────────────────────────────────────────
 // TRON uses secp256k1 (same curve as EVM). The only difference is the address
