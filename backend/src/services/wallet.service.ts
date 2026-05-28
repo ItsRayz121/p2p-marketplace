@@ -8,6 +8,7 @@ import { recordAuditLog } from '../lib/audit'
 import { assessWithdrawalRisk, getWithdrawalTierConfig } from './withdrawal-risk.service'
 import { sendWithdrawalEmail, sendWithdrawalConfirmationEmail } from './email.service'
 import { env } from '../lib/env'
+import { sendWithdrawalOnChain } from '../lib/withdrawal.sender'
 import {
   assertWithdrawalNotLocked,
   storeConfirmationTokens,
@@ -237,6 +238,16 @@ export async function requestWithdrawal(
       toAddress: data.toAddress,
       orderRef: result.orderRef,
       amountUsd,
+    })
+    // Fire-and-forget: broadcast the on-chain transaction from the hot wallet.
+    // On failure the withdrawal stays auto_approved and an admin alert is sent.
+    void sendWithdrawalOnChain({
+      id: result.id,
+      userId,
+      coin: data.coin,
+      network: data.network,
+      amount: data.amount,
+      toAddress: data.toAddress,
     })
     return result
   }

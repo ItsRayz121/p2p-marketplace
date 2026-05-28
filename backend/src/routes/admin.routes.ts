@@ -1796,23 +1796,50 @@ export async function adminRoutes(app: FastifyInstance) {
       }
 
       if (wallet) {
-        await tx.transaction.create({
-          data: {
+        // Try to update the existing pending transaction record to avoid duplicates
+        const pendingTx = await tx.transaction.findFirst({
+          where: {
             walletId: wallet.id,
-            type: 'withdrawal',
-            amount: withdrawal.amount,
-            fee: withdrawal.fee,
-            txHash: parsed.data.txHash,
-            status: 'completed',
-            metadata: {
-              withdrawalId: withdrawal.id,
-              orderRef: withdrawal.orderRef,
-              toAddress: withdrawal.toAddress,
-              markedSentBy: req.user!.id,
-              ...(parsed.data.adminNote ? { adminNote: parsed.data.adminNote } : {}),
-            } as JsonValue,
+            type:     'withdrawal',
+            status:   'pending',
+            metadata: { path: ['withdrawalId'], equals: withdrawal.id },
           },
         })
+        if (pendingTx) {
+          await tx.transaction.update({
+            where: { id: pendingTx.id },
+            data: {
+              status:  'completed',
+              txHash:  parsed.data.txHash,
+              metadata: {
+                withdrawalId: withdrawal.id,
+                orderRef:     withdrawal.orderRef,
+                toAddress:    withdrawal.toAddress,
+                markedSentBy: req.user!.id,
+                ...(parsed.data.adminNote ? { adminNote: parsed.data.adminNote } : {}),
+              } as JsonValue,
+            },
+          })
+        } else {
+          // No pending transaction found — create a new completed one
+          await tx.transaction.create({
+            data: {
+              walletId: wallet.id,
+              type:     'withdrawal',
+              amount:   withdrawal.amount,
+              fee:      withdrawal.fee,
+              txHash:   parsed.data.txHash,
+              status:   'completed',
+              metadata: {
+                withdrawalId: withdrawal.id,
+                orderRef:     withdrawal.orderRef,
+                toAddress:    withdrawal.toAddress,
+                markedSentBy: req.user!.id,
+                ...(parsed.data.adminNote ? { adminNote: parsed.data.adminNote } : {}),
+              } as JsonValue,
+            },
+          })
+        }
       }
     })
 

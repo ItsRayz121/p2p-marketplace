@@ -64,7 +64,7 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'pending', label: 'Pending' },
   { value: 'first_approved', label: '1st Approved' },
   { value: 'approved', label: 'Ready to Send' },
-  { value: 'auto_approved', label: 'Auto-Approved' },
+  { value: 'auto_approved', label: 'Auto-Sent' },
   { value: 'on_hold', label: 'On Hold' },
   { value: 'all', label: 'All' },
 ]
@@ -84,7 +84,7 @@ const statusLabel = (s: WithdrawalStatus): string => {
     pending: 'Pending',
     first_approved: '1 of 2 Approved',
     approved: 'Ready to Send',
-    auto_approved: 'Auto-Approved',
+    auto_approved: 'Auto-Sent',
     on_hold: 'On Hold',
     sent: 'Sent',
     completed: 'Sent',
@@ -293,7 +293,7 @@ export default function WithdrawalsPage() {
 
   const isSameAdmin = selected?.firstApprovedBy === user?.id
   const canApprove = selected?.status === 'pending' || (selected?.status === 'first_approved' && !isSameAdmin)
-  const canMarkSent = selected?.status === 'approved' || selected?.status === 'auto_approved'
+  const canMarkSent = selected?.status === 'approved'
   const canHold = selected ? !['sent', 'completed', 'rejected', 'cancelled', 'on_hold'].includes(selected.status) : false
   const totalPages = Math.ceil(total / limit)
 
@@ -305,7 +305,7 @@ export default function WithdrawalsPage() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Withdrawals</h1>
         <p className="text-text-muted text-sm mt-0.5">
-          Under $100 → auto-approved instantly · $100+ → single admin approval
+          Under $100 → auto-sent on-chain instantly · $100+ → single admin approval
         </p>
       </div>
 
@@ -383,11 +383,8 @@ export default function WithdrawalsPage() {
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(w.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       {w.status === 'auto_approved' ? (
-                        // Auto-approved: show Mark Sent + a hold escape hatch
-                        <div className="flex items-center justify-end gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => openModal(w)}>Hold/Reject</Button>
-                          <Button size="sm" variant="primary" onClick={() => openMarkSent(w)}>Mark Sent</Button>
-                        </div>
+                        // Auto-approved: fully automatic — no admin action needed
+                        <Button size="sm" variant="ghost" onClick={() => openModal(w)}>Hold/Reject</Button>
                       ) : canMarkSentFor(w) ? (
                         <Button size="sm" variant="primary" onClick={() => openMarkSent(w)}>Mark Sent</Button>
                       ) : (
@@ -562,7 +559,7 @@ export default function WithdrawalsPage() {
               // Auto-approved emergency controls: hold or reject before it gets sent
               <>
                 <div className="px-4 py-3 bg-success/5 border border-success/20 rounded-xl text-sm text-success">
-                  This withdrawal was auto-approved (Tier 1). Use the controls below only if you need to intervene before it is sent.
+                  Tier 1 withdrawal — sent automatically from the hot wallet. No admin action required. Use the controls below only to cancel or hold if there is a fraud concern.
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Rejection Reason (required to reject)</label>
@@ -687,18 +684,25 @@ export default function WithdrawalsPage() {
       <Modal isOpen={markSentOpen} onClose={() => setMarkSentOpen(false)} title="Mark Withdrawal as Sent" size="lg">
         {selected && (
           <div className="space-y-5">
-            <div className="p-4 bg-warning/5 border border-warning/20 rounded-xl text-sm">
-              <p className="font-medium text-warning mb-1">Final step — confirm the on-chain transaction</p>
-              <p className="text-text-secondary">
-                Broadcasting <span className="font-bold">{selected.amount} {selected.coin}</span> to{' '}
-                <span className="font-mono">{selected.toAddress?.slice(0, 12)}...{selected.toAddress?.slice(-6)}</span> on {selected.network}.
-              </p>
-              {selected.status === 'auto_approved' && (
-                <p className="mt-1.5 text-success text-xs font-medium">
-                  Tier 1 — auto-approved (no admin approval required)
+            {selected.status === 'auto_approved' ? (
+              <div className="p-4 bg-danger/5 border border-danger/20 rounded-xl text-sm">
+                <p className="font-medium text-danger mb-1">Fallback — auto-send failed or is still in progress</p>
+                <p className="text-text-secondary">
+                  This is a Tier-1 withdrawal that should have been sent automatically. Use this only if the auto-send failed.
+                  Send <span className="font-bold">{selected.amount} {selected.coin}</span> to{' '}
+                  <span className="font-mono">{selected.toAddress?.slice(0, 12)}...{selected.toAddress?.slice(-6)}</span> on {selected.network} from the hot wallet,
+                  then enter the transaction hash below.
                 </p>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-warning/5 border border-warning/20 rounded-xl text-sm">
+                <p className="font-medium text-warning mb-1">Final step — confirm the on-chain transaction</p>
+                <p className="text-text-secondary">
+                  Broadcasting <span className="font-bold">{selected.amount} {selected.coin}</span> to{' '}
+                  <span className="font-mono">{selected.toAddress?.slice(0, 12)}...{selected.toAddress?.slice(-6)}</span> on {selected.network}.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
@@ -862,5 +866,5 @@ export default function WithdrawalsPage() {
 
 // Helper — avoids inline ternary complexity in the table row
 function canMarkSentFor(w: Withdrawal): boolean {
-  return w.status === 'approved' || w.status === 'auto_approved'
+  return w.status === 'approved'
 }

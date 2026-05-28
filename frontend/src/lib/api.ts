@@ -505,6 +505,8 @@ export interface Transaction {
   fee?: string
   status: 'pending' | 'completed' | 'failed'
   reference?: string
+  txHash?: string
+  metadata?: Record<string, unknown>
   createdAt: string
 }
 

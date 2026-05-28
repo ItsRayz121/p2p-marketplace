@@ -67,12 +67,13 @@ function timeAgo(dateStr: string): string {
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
 function WithdrawModal({
-  isOpen, onClose, coin, twoFaEnabled,
+  isOpen, onClose, coin, twoFaEnabled, onSuccess,
 }: {
   isOpen: boolean
   onClose: () => void
   coin: string
   twoFaEnabled: boolean
+  onSuccess?: () => void
 }) {
   const [state, setState] = useState<WithdrawState>({
     address: '',
@@ -88,6 +89,7 @@ function WithdrawModal({
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [autoSent, setAutoSent] = useState(false)
   const [requiresEmailConfirm, setRequiresEmailConfirm] = useState(false)
   const [pendingWithdrawalId, setPendingWithdrawalId] = useState<string | null>(null)
   const [resending, setResending] = useState(false)
@@ -101,6 +103,7 @@ function WithdrawModal({
       setState((s) => ({ ...s, address: '', amount: '', fee: '0', feePkr: '0' }))
       setTotpCode('')
       setSuccess(false)
+      setAutoSent(false)
       setRequiresEmailConfirm(false)
       setPendingWithdrawalId(null)
       setResendMsg(null)
@@ -158,7 +161,9 @@ function WithdrawModal({
         setRequiresEmailConfirm(true)
         setPendingWithdrawalId(result.id)
       } else {
+        setAutoSent(result.status === 'auto_approved')
         setSuccess(true)
+        onSuccess?.()
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Withdrawal failed')
@@ -210,14 +215,29 @@ function WithdrawModal({
           </div>
         ) : success ? (
           <div className="text-center py-6 space-y-3">
-            <div className="w-12 h-12 bg-warning/10 rounded-full flex items-center justify-center mx-auto text-warning text-2xl">⏳</div>
-            <p className="text-sm font-medium text-text-primary">Withdrawal request submitted</p>
-            <p className="text-xs text-text-muted">Your request is pending admin review. Funds have not been sent on-chain yet.</p>
-            <div className="bg-surface rounded-lg px-3 py-2 text-xs text-text-secondary space-y-1 text-left">
-              <p>• Funds are held securely while your request is reviewed.</p>
-              <p>• You will be notified once approved and sent.</p>
-              <p>• If rejected, your balance will be refunded automatically.</p>
-            </div>
+            {autoSent ? (
+              <>
+                <div className="w-12 h-12 bg-success/10 rounded-full flex items-center justify-center mx-auto text-success text-2xl">✓</div>
+                <p className="text-sm font-medium text-text-primary">Withdrawal sent</p>
+                <p className="text-xs text-text-muted">Your funds are being sent on-chain automatically. No admin approval needed.</p>
+                <div className="bg-surface rounded-lg px-3 py-2 text-xs text-text-secondary space-y-1 text-left">
+                  <p>• The transaction will appear in your history within seconds.</p>
+                  <p>• On-chain confirmation typically takes 1–2 minutes.</p>
+                  <p>• If the send fails, you will be notified and your balance refunded.</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-12 h-12 bg-warning/10 rounded-full flex items-center justify-center mx-auto text-warning text-2xl">⏳</div>
+                <p className="text-sm font-medium text-text-primary">Withdrawal request submitted</p>
+                <p className="text-xs text-text-muted">Your request is pending admin review. Funds have not been sent on-chain yet.</p>
+                <div className="bg-surface rounded-lg px-3 py-2 text-xs text-text-secondary space-y-1 text-left">
+                  <p>• Funds are held securely while your request is reviewed.</p>
+                  <p>• You will be notified once approved and sent.</p>
+                  <p>• If rejected, your balance will be refunded automatically.</p>
+                </div>
+              </>
+            )}
             <Button fullWidth onClick={onClose}>Done</Button>
           </div>
         ) : (
@@ -1174,7 +1194,10 @@ export default function WalletPage() {
 
   // Show contextual status labels — withdrawal "pending" means admin review, not on-chain pending
   const txStatusLabel = (tx: Transaction): string => {
-    if (tx.type === 'withdrawal' && tx.status === 'pending') return 'Pending Review'
+    if (tx.type === 'withdrawal' && tx.status === 'pending') {
+      // Tier-1 auto-approved withdrawals are being sent automatically
+      return tx.metadata?.tier === 1 ? 'Sending' : 'Pending Review'
+    }
     if (tx.type === 'withdrawal' && tx.status === 'completed') return 'Sent'
     if (tx.status === 'failed') return 'Failed / Refunded'
     return tx.status.charAt(0).toUpperCase() + tx.status.slice(1)
@@ -1231,7 +1254,7 @@ export default function WalletPage() {
       {/* ── PakSwap internal balances ── */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-1">PakSwap balance</h2>
-        <p className="text-xs text-text-muted mb-3">Held in escrow on PakSwap — backs your P2P trades. Deposit on-chain to top up; withdrawals are reviewed by admins.</p>
+        <p className="text-xs text-text-muted mb-3">Held in escrow on PakSwap — backs your P2P trades. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
         {balances.length === 0 ? (
           <EmptyState title="No balances" description="Make a deposit to get started" />
         ) : (
@@ -1357,6 +1380,7 @@ export default function WalletPage() {
           onClose={() => setWithdrawCoin(null)}
           coin={withdrawCoin}
           twoFaEnabled={user?.twoFaEnabled ?? false}
+          onSuccess={() => { fetchBalances(); fetchTransactions(1) }}
         />
       )}
     </div>
