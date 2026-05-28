@@ -118,6 +118,21 @@ const riskFlagLabel = (flag: RiskFlag) => {
   return labels[flag] ?? flag
 }
 
+const EXPLORER_TX_BASE: Record<string, string> = {
+  BEP20:    'https://bscscan.com/tx',
+  ERC20:    'https://etherscan.io/tx',
+  TRC20:    'https://tronscan.org/#/transaction',
+  POLYGON:  'https://polygonscan.com/tx',
+  ARBITRUM: 'https://arbiscan.io/tx',
+  OPTIMISM: 'https://optimistic.etherscan.io/tx',
+  BASE:     'https://basescan.org/tx',
+}
+
+const explorerTxUrl = (network: string, txHash: string): string => {
+  const base = EXPLORER_TX_BASE[network.toUpperCase()]
+  return base ? `${base}/${txHash}` : '#'
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function WithdrawalsPage() {
@@ -147,6 +162,11 @@ export default function WithdrawalsPage() {
   const [txHash, setTxHash] = useState('')
   const [adminNote, setAdminNote] = useState('')
   const [confirmMarkSent, setConfirmMarkSent] = useState(false)
+
+  // refund-sent modal
+  const [refundOpen, setRefundOpen] = useState(false)
+  const [refundReason, setRefundReason] = useState('')
+  const [confirmRefund, setConfirmRefund] = useState(false)
 
   // mark-resolved modal
   const [resolvedOpen, setResolvedOpen] = useState(false)
@@ -288,6 +308,21 @@ export default function WithdrawalsPage() {
       fetchWithdrawals()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to mark as sent')
+    }
+  }
+
+  async function handleRefund() {
+    if (!selected) return
+    setActionError(null)
+    try {
+      await adminApi.refundWithdrawal(selected.id, refundReason)
+      setConfirmRefund(false)
+      setRefundOpen(false)
+      setRefundReason('')
+      setModalOpen(false)
+      fetchWithdrawals()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Refund failed')
     }
   }
 
@@ -446,6 +481,19 @@ export default function WithdrawalsPage() {
                 <p className="text-text-muted">Submitted</p>
                 <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
               </div>
+              {selected.txHash && (
+                <div className="col-span-2">
+                  <p className="text-text-muted">Transaction Hash</p>
+                  <a
+                    href={explorerTxUrl(selected.network, selected.txHash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-xs text-primary break-all mt-0.5 hover:underline"
+                  >
+                    {selected.txHash}
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* Risk assessment panel */}
@@ -669,9 +717,27 @@ export default function WithdrawalsPage() {
               </>
             ) : null}
 
-            {/* Reject-only for rejected/cancelled/completed */}
-            {['rejected', 'cancelled', 'sent', 'completed'].includes(selected.status) && (
+            {/* Finalised states */}
+            {['rejected', 'cancelled', 'completed'].includes(selected.status) && (
               <p className="text-text-muted text-sm text-center">This withdrawal has been finalised.</p>
+            )}
+
+            {/* Sent — show refund option in case the on-chain tx never actually happened */}
+            {selected.status === 'sent' && (
+              <div className="pt-2 border-t border-border space-y-2">
+                <p className="text-sm text-text-muted text-center">This withdrawal has been finalised.</p>
+                <div className="bg-warning/5 border border-warning/20 rounded-lg p-3">
+                  <p className="text-xs text-warning font-medium mb-1">On-chain transfer never happened?</p>
+                  <p className="text-xs text-text-muted mb-2">If the transaction hash above is fake or the funds never arrived at the destination, use Refund to restore the balance to the user.</p>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => { setModalOpen(false); setRefundOpen(true) }}
+                  >
+                    Refund Balance to User
+                  </Button>
+                </div>
+              </div>
             )}
 
             {/* Mark as Resolved — for manually handled withdrawals stuck in pending/first_approved */}
@@ -817,6 +883,55 @@ export default function WithdrawalsPage() {
         description={`Mark ${selected?.amount} ${selected?.coin} withdrawal as sent with tx ${txHash.slice(0, 16)}...? This cannot be undone.`}
         confirmLabel="Mark as Sent"
         confirmVariant="primary"
+      />
+
+      {/* ── Refund Sent Withdrawal Modal ─────────────────────────────────────── */}
+      <Modal isOpen={refundOpen} onClose={() => { setRefundOpen(false); setRefundReason('') }} title="Refund Withdrawal to User" size="lg">
+        {selected && (
+          <div className="space-y-5">
+            <div className="p-4 bg-danger/5 border border-danger/20 rounded-xl text-sm">
+              <p className="font-medium text-danger mb-1">This will reverse the withdrawal</p>
+              <p className="text-text-secondary">
+                <span className="font-bold">{selected.amount} {selected.coin}</span> (+{selected.fee} {selected.coin} fee) will be credited back to the user&apos;s PakSwap balance.
+                Use this only when the on-chain transaction never happened (fake hash, failed broadcast, or stuck tx).
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                Reason <span className="text-danger">*</span>
+              </label>
+              <textarea
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                placeholder="e.g. Transaction hash was invalid — funds never sent on-chain"
+                rows={3}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+              />
+            </div>
+            {actionError && <p className="text-sm text-danger">{actionError}</p>}
+            <div className="flex gap-3 pt-2">
+              <Button variant="secondary" onClick={() => { setRefundOpen(false); setRefundReason('') }} className="flex-1">Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={() => { if (refundReason.trim()) setConfirmRefund(true) }}
+                disabled={!refundReason.trim()}
+                className="flex-1"
+              >
+                Refund Balance
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmModal
+        isOpen={confirmRefund}
+        onClose={() => setConfirmRefund(false)}
+        onConfirm={handleRefund}
+        title="Confirm Refund"
+        description={`Refund ${selected?.amount} ${selected?.coin} back to ${selected?.user?.username ?? 'the user'}? This marks the withdrawal as rejected and restores their balance.`}
+        confirmLabel="Confirm Refund"
+        confirmVariant="danger"
       />
 
       {/* ── Mark Resolved Modal ─────────────────────────────────────────────── */}

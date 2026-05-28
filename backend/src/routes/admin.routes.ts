@@ -1773,6 +1773,25 @@ export async function adminRoutes(app: FastifyInstance) {
       )
     }
 
+    // Validate txHash format against the withdrawal's network so admins cannot
+    // accidentally (or for testing) enter a fake hash that would leave the user's
+    // balance permanently deducted with no real on-chain transaction.
+    const txHash = parsed.data.txHash.trim()
+    const EVM_TX_RE  = /^0x[0-9a-fA-F]{64}$/
+    const TRON_TX_RE = /^[0-9a-fA-F]{64}$/
+    const isTron = withdrawal.network.toUpperCase() === 'TRC20'
+    const validHash = isTron ? TRON_TX_RE.test(txHash) : EVM_TX_RE.test(txHash)
+    if (!validHash) {
+      const expected = isTron
+        ? '64 hex characters (TRON format)'
+        : '0x followed by 64 hex characters (EVM format)'
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `Invalid transaction hash for ${withdrawal.network}. Expected ${expected}. If you need to send this withdrawal manually, complete the on-chain transfer first, then paste the real transaction hash here.`,
+        400,
+      )
+    }
+
     const wallet = await db.wallet.findFirst({
       where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
       select: { id: true },
@@ -1786,7 +1805,7 @@ export async function adminRoutes(app: FastifyInstance) {
         where: { id, status: { in: ['approved', 'auto_approved'] } },
         data: {
           status: 'sent',
-          txHash: parsed.data.txHash,
+          txHash,
           completedAt: new Date(),
           ...(parsed.data.adminNote ? { adminNote: parsed.data.adminNote } : {}),
         },
@@ -1810,7 +1829,7 @@ export async function adminRoutes(app: FastifyInstance) {
             where: { id: pendingTx.id },
             data: {
               status:  'completed',
-              txHash:  parsed.data.txHash,
+              txHash,
               metadata: {
                 withdrawalId: withdrawal.id,
                 orderRef:     withdrawal.orderRef,
@@ -1828,7 +1847,7 @@ export async function adminRoutes(app: FastifyInstance) {
               type:     'withdrawal',
               amount:   withdrawal.amount,
               fee:      withdrawal.fee,
-              txHash:   parsed.data.txHash,
+              txHash,
               status:   'completed',
               metadata: {
                 withdrawalId: withdrawal.id,
@@ -1844,12 +1863,12 @@ export async function adminRoutes(app: FastifyInstance) {
     })
 
     log.info(
-      { adminId: req.user!.id, withdrawalId: id, txHash: parsed.data.txHash, coin: withdrawal.coin },
+      { adminId: req.user!.id, withdrawalId: id, txHash, coin: withdrawal.coin },
       'Withdrawal marked as sent',
     )
 
     await createAuditLog(req.user!.id, 'WITHDRAWAL_MARKED_SENT', 'Withdrawal', id, {
-      txHash: parsed.data.txHash,
+      txHash,
       adminNote: parsed.data.adminNote,
       userId: withdrawal.userId,
       coin: withdrawal.coin,
@@ -1860,10 +1879,93 @@ export async function adminRoutes(app: FastifyInstance) {
     await sendWithdrawalEmail('approved', withdrawal.user.email, {
       amount: withdrawal.amount.toString(),
       coin: withdrawal.coin,
-      txHash: parsed.data.txHash,
+      txHash,
     }).catch(() => {})
 
-    return reply.send({ success: true, data: { status: 'sent', txHash: parsed.data.txHash } })
+    return reply.send({ success: true, data: { status: 'sent', txHash } })
+  })
+
+  // POST /admin/withdrawals/:id/refund — refund a "sent" withdrawal where the
+  // on-chain transaction never actually happened (e.g. fake txHash entered during
+  // testing, or a failed broadcast). Restores amount + fee to the user's wallet
+  // and marks the withdrawal as rejected so it is no longer treated as finalised.
+  app.post('/admin/withdrawals/:id/refund', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ reason: z.string().min(1).max(500) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const withdrawal = await db.withdrawal.findUnique({
+      where: { id },
+      include: { user: { select: { email: true } } },
+    })
+    if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
+    if (withdrawal.status !== 'sent') {
+      throw new AppError(
+        'INVALID_STATUS',
+        `Only 'sent' withdrawals can be refunded this way (current: ${withdrawal.status}). For pending/approved withdrawals use Reject instead.`,
+        400,
+      )
+    }
+
+    const refundReason = `Refunded by admin: ${parsed.data.reason}`
+
+    await db.$transaction(async (tx) => {
+      await tx.withdrawal.update({
+        where: { id },
+        data: {
+          status: 'rejected',
+          rejectedBy: req.user!.id,
+          rejectionReason: refundReason,
+        },
+      })
+
+      // Credit amount + fee back to the user's wallet
+      await tx.wallet.updateMany({
+        where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
+        data: { balance: { increment: new Prisma.Decimal(Number(withdrawal.amount) + Number(withdrawal.fee)) } },
+      })
+
+      const wallet = await tx.wallet.findFirst({
+        where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
+        select: { id: true },
+      })
+      if (wallet) {
+        await tx.transaction.create({
+          data: {
+            walletId: wallet.id,
+            type:     'withdrawal',
+            amount:   withdrawal.amount,
+            fee:      withdrawal.fee,
+            status:   'failed',
+            metadata: {
+              withdrawalId:    withdrawal.id,
+              orderRef:        withdrawal.orderRef,
+              toAddress:       withdrawal.toAddress,
+              rejectionReason: refundReason,
+              refundedBy:      req.user!.id,
+              refunded:        true,
+            } as JsonValue,
+          },
+        })
+      }
+    })
+
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_REFUNDED', 'Withdrawal', id, {
+      reason: parsed.data.reason,
+      previousTxHash: withdrawal.txHash ?? null,
+      userId: withdrawal.userId,
+      coin: withdrawal.coin,
+      amount: withdrawal.amount.toString(),
+    })
+
+    await sendWithdrawalEmail('rejected', withdrawal.user.email, {
+      amount: withdrawal.amount.toString(),
+      coin: withdrawal.coin,
+      reason: `Your withdrawal has been refunded to your PakSwap balance. Reason: ${parsed.data.reason}`,
+    }).catch(() => {})
+
+    return reply.send({ success: true, message: 'Withdrawal refunded — balance restored to user.' })
   })
 
   // GET /admin/withdrawal-tiers — read current tier thresholds + risk config

@@ -1144,6 +1144,16 @@ function SavedDeliveryAddressesSection() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const EXPLORER_TX_BASE: Record<string, string> = {
+  BEP20:    'https://bscscan.com/tx',
+  ERC20:    'https://etherscan.io/tx',
+  TRC20:    'https://tronscan.org/#/transaction',
+  POLYGON:  'https://polygonscan.com/tx',
+  ARBITRUM: 'https://arbiscan.io/tx',
+  OPTIMISM: 'https://optimistic.etherscan.io/tx',
+  BASE:     'https://basescan.org/tx',
+}
+
 export default function WalletPage() {
   const { user } = useAuth()
   const [balances, setBalances] = useState<WalletBalance[]>([])
@@ -1326,6 +1336,16 @@ export default function WalletPage() {
                       {tx.type === 'withdrawal' || tx.type === 'fee' ? '-' : '+'}{parseFloat(tx.amount).toFixed(4)} {tx.coin}
                     </p>
                     <Badge variant={txStatusVariant(tx.status)} size="sm">{txStatusLabel(tx)}</Badge>
+                    {tx.txHash && tx.type === 'withdrawal' && (
+                      <a
+                        href={`${EXPLORER_TX_BASE[tx.network?.toUpperCase() ?? ''] ?? '#'}/${tx.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-xs text-primary hover:underline mt-0.5"
+                      >
+                        View on-chain ↗
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}

@@ -1478,6 +1478,8 @@ export const adminApi = {
     apiRequest<void>(`/admin/withdrawals/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
   markWithdrawalSent: (id: string, data: { txHash: string; adminNote?: string }) =>
     apiRequest<void>(`/admin/withdrawals/${id}/mark-sent`, { method: 'POST', body: JSON.stringify(data) }),
+  refundWithdrawal: (id: string, reason: string) =>
+    apiRequest<void>(`/admin/withdrawals/${id}/refund`, { method: 'POST', body: JSON.stringify({ reason }) }),
   holdWithdrawal: (id: string, data: { reason: string }) =>
     apiRequest<void>(`/admin/withdrawals/${id}/hold`, { method: 'POST', body: JSON.stringify(data) }),
   releaseWithdrawalHold: (id: string) =>

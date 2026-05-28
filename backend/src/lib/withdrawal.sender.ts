@@ -15,11 +15,15 @@ import { env } from './env'
 import {
   decryptGasSeed,
   deriveEvmPrivateKeyHex,
+  getEvmHotWalletAddress,
   HOT_WALLET_INDEX,
 } from './gas/gasWalletService'
 import { getChainByNetworkLabel } from '../services/chainRegistry.service'
 import { logger as log } from './logger'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { getEvmGasPrice } from './evmRpc'
+import { getHotWalletBalance } from './gas/gas.balance'
+import type { GasChainId } from './gas/gas.chains'
 
 const ERC20_TRANSFER_ABI = [
   {
@@ -55,6 +59,29 @@ const getRpcUrl = (chainId: string): string | undefined => {
   }
   return map[chainId]
 }
+
+// Maps deposit chain slug → GasChainId for native balance lookups
+const CHAIN_TO_GAS_CHAIN: Partial<Record<string, GasChainId>> = {
+  bsc:      'BSC',
+  ethereum: 'ETHEREUM',
+  polygon:  'MATIC',
+  arbitrum: 'ARB',
+  optimism: 'OP',
+  base:     'BASE',
+}
+
+// Native symbol per chain slug — used in alert messages
+const CHAIN_NATIVE_SYMBOL: Partial<Record<string, string>> = {
+  bsc:      'BNB',
+  ethereum: 'ETH',
+  polygon:  'POL',
+  arbitrum: 'ETH',
+  optimism: 'ETH',
+  base:     'ETH',
+}
+
+// Gas units required for an ERC-20 token transfer
+const ERC20_GAS_LIMIT = 65_000n
 
 interface AutoWithdrawal {
   id: string
@@ -102,9 +129,58 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     return
   }
 
+  // ── Gas pre-flight check ──────────────────────────────────────────────────────
+  // Verify the hot wallet has enough native token (BNB / ETH / POL) to cover the
+  // ERC-20 transfer gas cost before we even attempt to broadcast. A withdrawal
+  // that can't pay gas will either drop from the mempool or revert; catching it
+  // here lets us alert admins and leave the withdrawal in auto_approved (rather
+  // than marking it "sent" with a stuck/dropped txHash).
+  const gasChainId = CHAIN_TO_GAS_CHAIN[chainCfg.id]
+  const nativeSymbol = CHAIN_NATIVE_SYMBOL[chainCfg.id] ?? 'native'
+  const hotAddress = getEvmHotWalletAddress()
+
+  if (gasChainId && hotAddress) {
+    try {
+      const [gasPriceWei, nativeBalance] = await Promise.all([
+        getEvmGasPrice(rpcUrl, chainCfg.id),
+        getHotWalletBalance(gasChainId, hotAddress),
+      ])
+
+      // Minimum balance = live gas price × 65,000 gas units × 2 safety buffer
+      const gasNeededWei = gasPriceWei * ERC20_GAS_LIMIT
+      const gasNeededNative = Number(gasNeededWei) / 1e18
+      const minimumBalance = gasNeededNative * 2
+
+      if (nativeBalance < minimumBalance) {
+        log.warn(
+          { withdrawalId: wd.id, nativeBalance, gasNeededNative, minimumBalance, nativeSymbol, chainId: chainCfg.id },
+          'sendWithdrawalOnChain: insufficient gas balance — skipping auto-send',
+        )
+        void createAdminNotif({
+          category: 'SYSTEM',
+          title:    `Auto-withdrawal skipped — hot wallet low on ${nativeSymbol} gas`,
+          body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) cannot be auto-sent: hot wallet has ${nativeBalance.toFixed(6)} ${nativeSymbol} but needs at least ${minimumBalance.toFixed(6)} ${nativeSymbol} for gas. Top up the hot wallet (${hotAddress}), then the withdrawal will retry automatically or you can Mark Sent manually after sending.`,
+          href:     '/admin/withdrawals',
+          metadata: { withdrawalId: wd.id, nativeBalance, gasNeededNative, nativeSymbol },
+        })
+        return
+      }
+
+      log.info(
+        { withdrawalId: wd.id, nativeBalance, gasNeededNative, nativeSymbol },
+        'sendWithdrawalOnChain: gas pre-flight passed',
+      )
+    } catch (err) {
+      // Gas check failure is non-fatal — log and proceed. writeContract will fail
+      // naturally if gas is truly insufficient, and the catch block below will alert.
+      log.warn({ err, withdrawalId: wd.id }, 'sendWithdrawalOnChain: gas pre-check errored, proceeding anyway')
+    }
+  }
+
   let txHash: `0x${string}`
-  const seed = decryptGasSeed()
+  let seed: Buffer | undefined
   try {
+    seed = decryptGasSeed()
     const privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
     const account = privateKeyToAccount(privateKey)
     const client = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
@@ -116,7 +192,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
       args: [wd.toAddress as `0x${string}`, parseUnits(String(wd.amount), tokenCfg.decimals)],
     })
   } catch (err) {
-    seed.fill(0)
+    seed?.fill(0)
     const msg = err instanceof Error ? err.message : String(err)
     log.error({ err, withdrawalId: wd.id }, 'sendWithdrawalOnChain: on-chain send failed')
     void createAdminNotif({
