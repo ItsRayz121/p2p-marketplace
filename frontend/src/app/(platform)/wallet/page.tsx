@@ -69,13 +69,14 @@ function timeAgo(dateStr: string): string {
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
 function WithdrawModal({
-  isOpen, onClose, coin, twoFaEnabled, onSuccess,
+  isOpen, onClose, coin, twoFaEnabled, onSuccess, availableBalance,
 }: {
   isOpen: boolean
   onClose: () => void
   coin: string
   twoFaEnabled: boolean
   onSuccess?: () => void
+  availableBalance?: number
 }) {
   const [state, setState] = useState<WithdrawState>({
     address: '',
@@ -150,6 +151,12 @@ function WithdrawModal({
   const total = state.amount && Number.isFinite(amountNum)
     ? (amountNum + (Number.isFinite(feeNum) ? feeNum : 0)).toFixed(6)
     : '—'
+  const totalNum = Number.isFinite(amountNum) && Number.isFinite(feeNum) ? amountNum + feeNum : 0
+  const insufficientBalance =
+    availableBalance !== undefined &&
+    Number.isFinite(totalNum) &&
+    totalNum > 0 &&
+    totalNum > availableBalance
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -344,13 +351,19 @@ function WithdrawModal({
               </div>
             )}
 
+            {insufficientBalance && (
+              <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">
+                Insufficient balance. You need <strong>{totalNum.toFixed(6)} {coin}</strong> (amount + fee) but only have <strong>{availableBalance!.toFixed(6)} {coin}</strong>.
+              </p>
+            )}
+
             {submitError && (
               <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{submitError}</p>
             )}
 
             <Button
               fullWidth
-              disabled={!state.address || !state.amount || state.loadingFee || !!state.feeError || (twoFaEnabled && totpCode.length !== 6)}
+              disabled={!state.address || !state.amount || state.loadingFee || !!state.feeError || insufficientBalance || (twoFaEnabled && totpCode.length !== 6)}
               onClick={() => setShowConfirm(true)}
             >
               {state.loadingFee ? 'Loading fee…' : state.feeError ? 'Fee unavailable' : 'Continue'}
@@ -1411,6 +1424,9 @@ export default function WalletPage() {
           coin={withdrawCoin}
           twoFaEnabled={user?.twoFaEnabled ?? false}
           onSuccess={() => { fetchBalances(); fetchTransactions(1) }}
+          availableBalance={parseFloat(
+            balances.find((b) => b.coin === withdrawCoin)?.available ?? '0'
+          )}
         />
       )}
     </div>
