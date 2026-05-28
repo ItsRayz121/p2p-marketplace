@@ -278,13 +278,19 @@ export async function walletRoutes(app: FastifyInstance) {
     }
 
     const result = await requestWithdrawal(userId, { ...parsed.data, idempotencyKey })
-    void createAdminNotif({
-      category: 'SYSTEM',
-      title:    'Withdrawal Requested',
-      body:     `User ${userId} requested a withdrawal of ${parsed.data.amount} ${parsed.data.coin}`,
-      href:     `/admin/wallet`,
-      metadata: { userId, amount: parsed.data.amount, coin: parsed.data.coin },
-    })
+    // Only notify admins for manual-review withdrawals — Tier 1 auto-approved
+    // ones send themselves and have their own failure alerts in withdrawal.sender.ts
+    if (result.status !== 'auto_approved') {
+      const userRow = await db.user.findUnique({ where: { id: userId }, select: { username: true } })
+      const userLabel = userRow?.username ?? userId
+      void createAdminNotif({
+        category: 'SYSTEM',
+        title:    'Withdrawal Requested',
+        body:     `User ${userLabel} requested a withdrawal of ${parsed.data.amount} ${parsed.data.coin}`,
+        href:     `/admin/withdrawals`,
+        metadata: { userId, amount: parsed.data.amount, coin: parsed.data.coin },
+      })
+    }
     return reply.code(201).send({ success: true, data: result })
   })
 
