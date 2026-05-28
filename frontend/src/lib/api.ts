@@ -687,7 +687,7 @@ export const walletApi = {
   removeTrustedAddress: (id: string) =>
     apiRequest<void>(`/wallet/trusted-addresses/${id}`, { method: 'DELETE' }),
   getLiveFee: (coin: string, network: string) =>
-    apiRequest<{ networkFee: string; platformFee: string; coin: string; network: string }>(
+    apiRequest<{ networkFee: string; platformFee: string; gasFee: string; coin: string; network: string }>(
       `/wallet/live-fee?coin=${encodeURIComponent(coin)}&network=${encodeURIComponent(network)}`,
     ),
   getSavedAddresses: () =>

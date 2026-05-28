@@ -80,13 +80,20 @@ export async function getDepositAddress(userId: string, coin: string, network: s
 // ─── Fees ─────────────────────────────────────────────────────────────────────
 
 export async function getLiveFee(coin: string, network: string) {
-  const [networkFeeRow, platformFeeRow] = await Promise.all([
+  const net = network.toUpperCase()
+  const [networkFeeRow, platformFeeRow, gasFeeRow, wdPlatformFeeRow] = await Promise.all([
     db.platformConfig.findUnique({ where: { key: `network_fee_${coin}_${network}` } }),
     db.platformConfig.findUnique({ where: { key: `platform_fee_${coin}` } }),
+    db.platformConfig.findUnique({ where: { key: `withdrawal_gas_fee_${net}` } }),
+    db.platformConfig.findUnique({ where: { key: `withdrawal_platform_fee_${net}` } }),
   ])
+  // New per-network withdrawal fee keys take precedence; fall back to legacy keys
+  const gasFee = gasFeeRow?.value ?? networkFeeRow?.value ?? '0'
+  const platformFee = wdPlatformFeeRow?.value ?? platformFeeRow?.value ?? '0'
   return {
-    networkFee: networkFeeRow?.value ?? '0',
-    platformFee: platformFeeRow?.value ?? '0',
+    networkFee: gasFee,   // backward-compat alias
+    platformFee,
+    gasFee,
     coin,
     network,
   }
@@ -153,11 +160,16 @@ export async function requestWithdrawal(
     )
   }
 
-  // Read network fee from PlatformConfig
-  const feeConfig = await db.platformConfig.findUnique({
-    where: { key: `network_fee_${data.coin}_${data.network}` },
-  })
-  const fee = parseFloat(feeConfig?.value ?? '0')
+  // Read withdrawal fees from PlatformConfig (new per-network keys take precedence over legacy)
+  const net = data.network.toUpperCase()
+  const [gasFeeConfig, platformFeeConfig, legacyFeeConfig] = await Promise.all([
+    db.platformConfig.findUnique({ where: { key: `withdrawal_gas_fee_${net}` } }),
+    db.platformConfig.findUnique({ where: { key: `withdrawal_platform_fee_${net}` } }),
+    db.platformConfig.findUnique({ where: { key: `network_fee_${data.coin}_${data.network}` } }),
+  ])
+  const gasFee = parseFloat(gasFeeConfig?.value ?? legacyFeeConfig?.value ?? '0')
+  const platformFee = parseFloat(platformFeeConfig?.value ?? '0')
+  const fee = gasFee + platformFee
 
   // Determine USD value to decide whether to skip email confirmation
   const coinPrice = cfg.coinPricesUsd[data.coin.toUpperCase()] ?? 0

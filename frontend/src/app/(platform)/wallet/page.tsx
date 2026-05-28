@@ -48,7 +48,9 @@ interface WithdrawState {
   address: string
   amount: string
   network: string
-  fee: string
+  fee: string       // total fee = gasFee + platformFee
+  gasFee: string
+  platformFee: string
   feePkr: string
   loadingFee: boolean
   feeError: string | null
@@ -80,6 +82,8 @@ function WithdrawModal({
     amount: '',
     network: networksFor(coin)[0] ?? 'TRC20',
     fee: '0',
+    gasFee: '0',
+    platformFee: '0',
     feePkr: '0',
     loadingFee: false,
     feeError: null,
@@ -100,7 +104,7 @@ function WithdrawModal({
   useEffect(() => {
     if (isOpen) {
       idempotencyKey.current = crypto.randomUUID()
-      setState((s) => ({ ...s, address: '', amount: '', fee: '0', feePkr: '0' }))
+      setState((s) => ({ ...s, address: '', amount: '', fee: '0', gasFee: '0', platformFee: '0', feePkr: '0' }))
       setTotpCode('')
       setSuccess(false)
       setAutoSent(false)
@@ -117,22 +121,24 @@ function WithdrawModal({
     setState((s) => ({ ...s, loadingFee: true, feeError: null }))
     try {
       const liveFee = await walletApi.getLiveFee(coin, state.network)
-      const networkFee = liveFee?.networkFee ?? '0'
+      const gasFee = liveFee?.gasFee ?? liveFee?.networkFee ?? '0'
+      const platformFee = liveFee?.platformFee ?? '0'
+      const totalFee = (parseFloat(gasFee) + parseFloat(platformFee)).toFixed(6).replace(/\.?0+$/, '') || '0'
 
       // Best-effort PKR conversion — if the rate call fails we still show
       // the fee in coin units instead of breaking the modal.
       let feePkr = '0'
       try {
         const rate = await marketplaceApi.getRate(coin)
-        const feeNum = parseFloat(networkFee)
+        const feeNum = parseFloat(totalFee)
         if (Number.isFinite(feeNum) && Number.isFinite(rate?.rate)) {
           feePkr = (feeNum * rate.rate).toFixed(2)
         }
       } catch { /* leave feePkr as '0' */ }
 
-      setState((s) => ({ ...s, fee: networkFee, feePkr, loadingFee: false, feeError: null }))
+      setState((s) => ({ ...s, fee: totalFee, gasFee, platformFee, feePkr, loadingFee: false, feeError: null }))
     } catch {
-      setState((s) => ({ ...s, fee: '0', feePkr: '0', feeError: 'Fee unavailable', loadingFee: false }))
+      setState((s) => ({ ...s, fee: '0', gasFee: '0', platformFee: '0', feePkr: '0', feeError: 'Fee unavailable', loadingFee: false }))
     }
   }, [coin, state.network])
 
@@ -281,34 +287,38 @@ function WithdrawModal({
 
             {/* Fee display */}
             <div className="bg-surface rounded-lg p-3 space-y-2 text-sm">
-              <div className="flex justify-between items-center">
-                <span className="text-text-muted">Network Fee</span>
-                <span className="font-medium text-text-primary flex items-center gap-2">
-                  {state.loadingFee ? (
-                    <>
-                      <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      <span className="text-xs text-text-muted">Loading…</span>
-                    </>
-                  ) : state.feeError ? (
-                    <button
-                      type="button"
-                      onClick={fetchFee}
-                      className="text-xs text-warning hover:underline"
-                    >
-                      Fee unavailable — retry
-                    </button>
-                  ) : (
-                    <>
-                      {state.fee} {coin}
-                      {parseFloat(state.feePkr) > 0 && (
-                        <span className="text-text-muted">
-                          {' '}(≈ PKR {parseFloat(state.feePkr).toLocaleString()})
-                        </span>
-                      )}
-                    </>
+              {state.loadingFee ? (
+                <div className="flex items-center gap-2 text-text-muted">
+                  <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs">Loading fees…</span>
+                </div>
+              ) : state.feeError ? (
+                <div className="flex justify-between items-center">
+                  <span className="text-text-muted">Fees</span>
+                  <button type="button" onClick={fetchFee} className="text-xs text-warning hover:underline">
+                    Fee unavailable — retry
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-text-muted">Gas Fee</span>
+                    <span className="font-medium text-text-primary">{state.gasFee} {coin}</span>
+                  </div>
+                  {parseFloat(state.platformFee) > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-text-muted">Platform Fee</span>
+                      <span className="font-medium text-text-primary">{state.platformFee} {coin}</span>
+                    </div>
                   )}
-                </span>
-              </div>
+                  {parseFloat(state.feePkr) > 0 && (
+                    <div className="flex justify-between items-center text-xs text-text-muted">
+                      <span>Total fees (PKR)</span>
+                      <span>≈ PKR {parseFloat(state.feePkr).toLocaleString()}</span>
+                    </div>
+                  )}
+                </>
+              )}
               <div className="flex justify-between border-t border-border pt-2">
                 <span className="text-text-muted font-medium">Total Deduction</span>
                 <span className="font-bold text-text-primary">

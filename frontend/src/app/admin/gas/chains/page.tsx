@@ -863,6 +863,143 @@ function TokenModal({
   )
 }
 
+// ─── Withdrawal Fees Panel ────────────────────────────────────────────────────
+
+const WITHDRAWAL_FEE_NETWORKS = [
+  { label: 'BNB (BEP20)', network: 'BEP20' },
+  { label: 'Aptos', network: 'APTOS' },
+]
+
+function WithdrawalFeesPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const [fees, setFees] = useState<Record<string, string>>({})
+  const [editing, setEditing] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState<string | null>(null)
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const configs = await adminApi.getConfig()
+        const map: Record<string, string> = {}
+        configs.forEach((c) => {
+          if (c.key.startsWith('withdrawal_gas_fee_') || c.key.startsWith('withdrawal_platform_fee_')) {
+            map[c.key] = c.value
+          }
+        })
+        setFees(map)
+      } catch { /* non-critical */ }
+    }
+    load()
+  }, [])
+
+  function val(key: string) {
+    return key in editing ? editing[key] : (fees[key] ?? '')
+  }
+
+  async function save(key: string) {
+    const value = val(key)
+    setSaving(key)
+    setMsg(null)
+    try {
+      await adminApi.updateConfig({ key, value })
+      setFees((f) => ({ ...f, [key]: value }))
+      setEditing((e) => { const n = { ...e }; delete n[key]; return n })
+      setMsg({ type: 'success', text: 'Saved.' })
+      setTimeout(() => setMsg(null), 2500)
+    } catch (err) {
+      setMsg({ type: 'error', text: err instanceof Error ? err.message : 'Save failed' })
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <div className="bg-white border border-border rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <h2 className="text-sm font-semibold text-text-primary">Wallet Withdrawal Fees</h2>
+        <p className="text-xs text-text-muted mt-0.5">
+          Fees charged when users withdraw from their platform wallet. Shown as a breakdown (Gas Fee + Platform Fee) in the withdrawal modal.
+        </p>
+      </div>
+
+      {msg && (
+        <div className={`mx-5 mt-3 px-3 py-2 rounded-lg text-xs ${msg.type === 'success' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+          {msg.text}
+        </div>
+      )}
+
+      <div className="divide-y divide-border">
+        {WITHDRAWAL_FEE_NETWORKS.map(({ label, network }) => {
+          const gasKey = `withdrawal_gas_fee_${network}`
+          const platformKey = `withdrawal_platform_fee_${network}`
+          return (
+            <div key={network} className="px-5 py-4">
+              <p className="text-xs font-semibold text-text-primary mb-3">{label}</p>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Gas Fee */}
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Gas Fee (USDT)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      disabled={!isSuperAdmin}
+                      value={val(gasKey)}
+                      onChange={(e) => setEditing((ed) => ({ ...ed, [gasKey]: e.target.value }))}
+                      placeholder="0"
+                      className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-surface disabled:text-text-muted"
+                    />
+                    {isSuperAdmin && gasKey in editing && (
+                      <button
+                        onClick={() => save(gasKey)}
+                        disabled={saving === gasKey}
+                        className="px-3 py-1.5 text-xs font-medium bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+                      >
+                        {saving === gasKey ? '…' : 'Save'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {/* Platform Fee */}
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Platform Fee (USDT)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      disabled={!isSuperAdmin}
+                      value={val(platformKey)}
+                      onChange={(e) => setEditing((ed) => ({ ...ed, [platformKey]: e.target.value }))}
+                      placeholder="0"
+                      className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-surface disabled:text-text-muted"
+                    />
+                    {isSuperAdmin && platformKey in editing && (
+                      <button
+                        onClick={() => save(platformKey)}
+                        disabled={saving === platformKey}
+                        className="px-3 py-1.5 text-xs font-medium bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+                      >
+                        {saving === platformKey ? '…' : 'Save'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {(fees[gasKey] || fees[platformKey]) && (
+                <p className="text-xs text-text-muted mt-2">
+                  Total fee charged: {((parseFloat(fees[gasKey] ?? '0') || 0) + (parseFloat(fees[platformKey] ?? '0') || 0)).toFixed(4)} USDT
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GasChainsAdminPage() {
@@ -1151,6 +1288,9 @@ export default function GasChainsAdminPage() {
       {errorMsg && (
         <div className="px-4 py-3 bg-danger/10 border border-danger/20 rounded-xl text-danger text-sm">{errorMsg}</div>
       )}
+
+      {/* Withdrawal Fees */}
+      <WithdrawalFeesPanel isSuperAdmin={isSuperAdmin} />
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-border">
