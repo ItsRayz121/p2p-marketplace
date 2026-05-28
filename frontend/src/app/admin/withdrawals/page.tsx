@@ -58,15 +58,15 @@ interface WithdrawalsResponse {
 
 // ─── Status display helpers ────────────────────────────────────────────────────
 
-type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved' | 'on_hold' | 'all'
+type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved,sent' | 'on_hold' | 'all'
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'first_approved', label: '1st Approved' },
-  { value: 'approved', label: 'Ready to Send' },
-  { value: 'auto_approved', label: 'Auto-Sent' },
-  { value: 'on_hold', label: 'On Hold' },
-  { value: 'all', label: 'All' },
+  { value: 'pending',            label: 'Pending' },
+  { value: 'first_approved',     label: '1st Approved' },
+  { value: 'approved',           label: 'Ready to Send' },
+  { value: 'auto_approved,sent', label: 'Auto-Sent' },
+  { value: 'on_hold',            label: 'On Hold' },
+  { value: 'all',                label: 'All' },
 ]
 
 const statusVariant = (s: WithdrawalStatus): 'default' | 'success' | 'warning' | 'danger' | 'outline' => {
@@ -364,7 +364,7 @@ export default function WithdrawalsPage() {
       {withdrawals.length === 0 ? (
         <EmptyState
           title="No withdrawals"
-          description={`No ${statusFilter === 'all' ? '' : statusFilter.replace('_', ' ')} withdrawals found.`}
+          description={`No ${statusFilter === 'all' ? '' : STATUS_TABS.find((t) => t.value === statusFilter)?.label.toLowerCase() ?? ''} withdrawals found.`}
         />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">

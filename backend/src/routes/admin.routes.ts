@@ -1503,7 +1503,10 @@ export async function adminRoutes(app: FastifyInstance) {
     const { page, limit, skip } = paginationParams(query)
 
     const where: Record<string, unknown> = {}
-    if (query.status) where.status = query.status
+    if (query.status) {
+      const statuses = query.status.split(',').map((s) => s.trim()).filter(Boolean)
+      where.status = statuses.length === 1 ? statuses[0] : { in: statuses }
+    }
 
     const [withdrawals, total] = await Promise.all([
       db.withdrawal.findMany({
