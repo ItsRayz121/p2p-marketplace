@@ -29,6 +29,7 @@ type RiskFlag = 'FIRST_WITHDRAWAL' | 'NEW_WALLET' | 'VELOCITY_EXCEEDED' | 'AMOUN
 
 interface Withdrawal {
   id: string
+  orderRef: string
   userId: string
   user?: { email: string; username: string }
   coin: string
@@ -48,7 +49,9 @@ interface Withdrawal {
   onHoldReason?: string
   riskOverride?: boolean
   riskOverrideNote?: string
+  adminNote?: string
   createdAt: string
+  completedAt?: string
 }
 
 interface WithdrawalsResponse {
@@ -58,15 +61,16 @@ interface WithdrawalsResponse {
 
 // ─── Status display helpers ────────────────────────────────────────────────────
 
-type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved,sent' | 'on_hold' | 'all'
+type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved,sent,completed' | 'on_hold' | 'rejected,cancelled' | 'all'
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
-  { value: 'pending',            label: 'Pending' },
-  { value: 'first_approved',     label: '1st Approved' },
-  { value: 'approved',           label: 'Ready to Send' },
-  { value: 'auto_approved,sent', label: 'Auto-Sent' },
-  { value: 'on_hold',            label: 'On Hold' },
-  { value: 'all',                label: 'All' },
+  { value: 'pending',                       label: 'Pending' },
+  { value: 'first_approved',               label: '1st Approved' },
+  { value: 'approved',                     label: 'Ready to Send' },
+  { value: 'auto_approved,sent,completed', label: 'Completed' },
+  { value: 'on_hold',                      label: 'On Hold' },
+  { value: 'rejected,cancelled',           label: 'Rejected' },
+  { value: 'all',                          label: 'All' },
 ]
 
 const statusVariant = (s: WithdrawalStatus): 'default' | 'success' | 'warning' | 'danger' | 'outline' => {
@@ -328,7 +332,6 @@ export default function WithdrawalsPage() {
 
   const isSameAdmin = selected?.firstApprovedBy === user?.id
   const canApprove = selected?.status === 'pending' || (selected?.status === 'first_approved' && !isSameAdmin)
-  const canMarkSent = selected?.status === 'approved'
   const canHold = selected ? !['sent', 'completed', 'rejected', 'cancelled', 'on_hold'].includes(selected.status) : false
   const totalPages = Math.ceil(total / limit)
 
@@ -373,8 +376,8 @@ export default function WithdrawalsPage() {
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Coin</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Amount</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Amount · Fee</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Network</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Tier / Risk</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Address</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
@@ -386,15 +389,30 @@ export default function WithdrawalsPage() {
                 {withdrawals.map((w) => (
                   <tr key={w.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{w.user?.username}</p>
+                      <p className="font-medium text-text-primary">{w.user?.username ?? '—'}</p>
                       <p className="text-xs text-text-muted">{w.user?.email}</p>
                     </td>
-                    <td className="px-4 py-3 font-medium text-text-primary">{w.coin}</td>
                     <td className="px-4 py-3">
                       <p className="font-semibold text-text-primary">{w.amount} {w.coin}</p>
+                      {parseFloat(w.fee) > 0 ? (
+                        <p className="text-xs text-text-muted">fee: {w.fee} {w.coin}</p>
+                      ) : null}
                       {w.amountUsd && (
                         <p className="text-xs text-text-muted">≈ ${parseFloat(w.amountUsd).toFixed(2)}</p>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-secondary">
+                      <p>{w.network}</p>
+                      {w.txHash ? (
+                        <a
+                          href={explorerTxUrl(w.network, w.txHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline font-mono"
+                        >
+                          {w.txHash.slice(0, 10)}…
+                        </a>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${tierColor(w.tier ?? 3)}`}>
@@ -415,13 +433,19 @@ export default function WithdrawalsPage() {
                         {statusLabel(w.status)}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{fmtDate(w.createdAt)}</td>
+                    <td className="px-4 py-3 text-text-secondary text-xs">
+                      <p>{fmtDate(w.createdAt)}</p>
+                      {w.completedAt && (
+                        <p className="text-text-muted">sent: {fmtDate(w.completedAt)}</p>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       {w.status === 'auto_approved' ? (
-                        // Auto-approved: fully automatic — no admin action needed
                         <Button size="sm" variant="ghost" onClick={() => openModal(w)}>Hold/Reject</Button>
                       ) : canMarkSentFor(w) ? (
                         <Button size="sm" variant="primary" onClick={() => openMarkSent(w)}>Mark Sent</Button>
+                      ) : ['sent', 'completed', 'rejected', 'cancelled'].includes(w.status) ? (
+                        <Button size="sm" variant="ghost" onClick={() => openModal(w)}>View</Button>
                       ) : (
                         <Button size="sm" variant="ghost" onClick={() => openModal(w)}>Review</Button>
                       )}
@@ -451,24 +475,46 @@ export default function WithdrawalsPage() {
             <div className="grid grid-cols-2 gap-4 p-4 bg-surface rounded-xl text-sm">
               <div>
                 <p className="text-text-muted">User</p>
-                <p className="font-medium text-text-primary">{selected.user?.username}</p>
+                <p className="font-medium text-text-primary">{selected.user?.username ?? '—'}</p>
                 <p className="text-xs text-text-muted">{selected.user?.email}</p>
+                <p className="text-xs text-text-muted font-mono">{selected.userId}</p>
               </div>
               <div>
-                <p className="text-text-muted">Amount</p>
-                <p className="font-bold text-text-primary text-lg">{selected.amount} {selected.coin}</p>
-                {selected.amountUsd && (
-                  <p className="text-xs text-text-muted">≈ ${parseFloat(selected.amountUsd).toFixed(2)} USD</p>
-                )}
-              </div>
-              <div>
-                <p className="text-text-muted">Network Fee</p>
-                <p className="text-text-primary">{selected.fee} {selected.coin}</p>
-              </div>
-              <div>
-                <p className="text-text-muted">Network</p>
+                <p className="text-text-muted">Order Ref</p>
+                <p className="font-mono text-xs text-text-primary">{selected.orderRef}</p>
+                <p className="text-text-muted mt-2">Network</p>
                 <p className="text-text-primary">{selected.network}</p>
               </div>
+
+              {/* Fee breakdown accounting box */}
+              <div className="col-span-2 bg-white border border-border rounded-lg p-3 space-y-1.5 text-xs">
+                <p className="font-semibold text-text-primary text-sm mb-2">Accounting Breakdown</p>
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Withdrawal amount</span>
+                  <span className="font-mono font-medium text-text-primary">{selected.amount} {selected.coin}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Platform + network fee</span>
+                  <span className="font-mono text-warning">{selected.fee} {selected.coin}</span>
+                </div>
+                <div className="flex justify-between border-t border-border pt-1.5 font-semibold">
+                  <span className="text-text-primary">Total deducted from user</span>
+                  <span className="font-mono text-danger">
+                    {(parseFloat(selected.amount) + parseFloat(selected.fee)).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} {selected.coin}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Net sent on-chain</span>
+                  <span className="font-mono text-success">{selected.amount} {selected.coin}</span>
+                </div>
+                {selected.amountUsd && (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">USD value (approx)</span>
+                    <span className="font-mono text-text-secondary">${parseFloat(selected.amountUsd).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
               <div className="col-span-2">
                 <p className="text-text-muted">Destination Address</p>
                 <p className="font-mono text-xs text-text-primary break-all mt-0.5">{selected.toAddress}</p>
@@ -480,6 +526,12 @@ export default function WithdrawalsPage() {
               <div>
                 <p className="text-text-muted">Submitted</p>
                 <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
+                {selected.completedAt && (
+                  <>
+                    <p className="text-text-muted mt-1">Completed</p>
+                    <p className="text-text-secondary">{fmtDateTime(selected.completedAt)}</p>
+                  </>
+                )}
               </div>
               {selected.txHash && (
                 <div className="col-span-2">
@@ -492,6 +544,12 @@ export default function WithdrawalsPage() {
                   >
                     {selected.txHash}
                   </a>
+                </div>
+              )}
+              {selected.adminNote && (
+                <div className="col-span-2">
+                  <p className="text-text-muted">Admin Note</p>
+                  <p className="text-text-secondary text-xs mt-0.5">{selected.adminNote}</p>
                 </div>
               )}
             </div>

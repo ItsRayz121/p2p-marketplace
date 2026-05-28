@@ -105,6 +105,11 @@ export async function adminRoutes(app: FastifyInstance) {
         todayGasRevenueResult,
         totalGasOrders,
         totalGasRevenueResult,
+        // Withdrawal accounting stats
+        todaySentWithdrawals,
+        totalSentWithdrawals,
+        todayWithdrawalFeesResult,
+        totalWithdrawalFeesResult,
         recentGasActivity,
       ] = await Promise.all([
         db.kycSubmission.count({ where: { status: 'pending' } }),
@@ -141,6 +146,17 @@ export async function adminRoutes(app: FastifyInstance) {
         db.gasFeeOrder.aggregate({
           where: { status: 'delivered' },
           _sum: { paymentAmount: true },
+        }),
+        // Withdrawal accounting stats — fees collected and sends completed
+        db.withdrawal.count({ where: { status: { in: ['sent', 'completed'] }, completedAt: { gte: today } } }),
+        db.withdrawal.count({ where: { status: { in: ['sent', 'completed'] } } }),
+        db.withdrawal.aggregate({
+          where: { status: { in: ['sent', 'completed'] }, completedAt: { gte: today } },
+          _sum: { fee: true },
+        }),
+        db.withdrawal.aggregate({
+          where: { status: { in: ['sent', 'completed'] } },
+          _sum: { fee: true },
         }),
         // Recent gas wallet activity (inbound deposits + outbound deliveries)
         db.gasFeeOrder.findMany({
@@ -184,6 +200,11 @@ export async function adminRoutes(app: FastifyInstance) {
           totalGasOrders,
           totalGasRevenueUsdt: Number(totalGasRevenueResult._sum.paymentAmount ?? 0).toFixed(2),
           recentGasActivity,
+          // Withdrawal accounting
+          todaySentWithdrawals,
+          totalSentWithdrawals,
+          todayWithdrawalFeesUsdt: Number(todayWithdrawalFeesResult._sum.fee ?? 0).toFixed(6),
+          totalWithdrawalFeesUsdt: Number(totalWithdrawalFeesResult._sum.fee ?? 0).toFixed(6),
         },
       })
     },

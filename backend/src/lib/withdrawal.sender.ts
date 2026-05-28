@@ -240,6 +240,21 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     })
 
     log.info({ withdrawalId: wd.id, txHash, coin: wd.coin, network: wd.network }, 'Auto-send withdrawal completed')
+
+    // Notify admin so completed auto-sends appear in the notifications feed.
+    // Without this the only way to see them is the "Auto-Sent" tab.
+    const userRow = await db.user.findUnique({
+      where: { id: wd.userId },
+      select: { username: true },
+    }).catch(() => null)
+    const userLabel = userRow?.username ?? wd.userId.slice(-8)
+    void createAdminNotif({
+      category: 'SYSTEM',
+      title:    `Withdrawal Sent: ${wd.amount} ${wd.coin}`,
+      body:     `User ${userLabel} auto-withdrawal of ${wd.amount} ${wd.coin} (${wd.network}) sent on-chain. TX: ${txHash.slice(0, 18)}...`,
+      href:     '/admin/withdrawals?tab=sent',
+      metadata: { withdrawalId: wd.id, txHash, coin: wd.coin, amount: String(wd.amount), network: wd.network, userId: wd.userId },
+    })
   } catch (err) {
     // On-chain tx is already broadcast — log the DB failure but don't throw
     log.error({ err, withdrawalId: wd.id, txHash }, 'sendWithdrawalOnChain: DB update failed after successful on-chain send')
