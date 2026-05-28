@@ -5229,29 +5229,36 @@ export async function adminRoutes(app: FastifyInstance) {
     // Execute on-chain transfer — throws on failure; nothing is recorded if it throws
     const result = await sweepTokenToTreasury(tokenSymbol, chain, sweepAmount)
 
-    // Record sweep in ledger — idempotent via sourceKey
+    // Record sweep in ledger. If the DB write fails after a successful on-chain tx,
+    // we still return success with the txHash so the admin can record it manually.
+    // sourceKey ensures idempotency — a retry will skip the duplicate write silently.
     const sourceKey = `platform_fee_sweep:${result.txHash}`
-    await appendLedgerEntry({
-      entryType:   'platform_fee_sweep',
-      chain:       chain as import('../lib/gas/gas.chains').GasChainId,
-      nativeAmount: 0,
-      tokenSymbol,
-      tokenAmount:  sweepAmount,
-      usdAmount:    sweepAmount,   // USDT ≈ $1
-      txHash:       result.txHash,
-      fromAddress:  result.hotWalletAddress,
-      toAddress:    result.treasuryAddress,
-      sourceKey,
-      notes: `Treasury sweep by admin ${req.user!.id} — ${sweepAmount} ${tokenSymbol} on ${chain}`,
-    })
+    try {
+      await appendLedgerEntry({
+        entryType:   'platform_fee_sweep',
+        chain:       chain as import('../lib/gas/gas.chains').GasChainId,
+        nativeAmount: 0,
+        tokenSymbol,
+        tokenAmount:  sweepAmount,
+        usdAmount:    sweepAmount,
+        txHash:       result.txHash,
+        fromAddress:  result.hotWalletAddress,
+        toAddress:    result.treasuryAddress,
+        sourceKey,
+        notes: `Treasury sweep by admin ${req.user!.id} — ${sweepAmount} ${tokenSymbol} on ${chain}`,
+      })
 
-    await createAuditLog(
-      req.user!.id,
-      'PLATFORM_FEE_SWEEP',
-      'GasLedgerEntry',
-      result.txHash,
-      { tokenSymbol, chain, amount: sweepAmount, treasuryAddress: result.treasuryAddress, txHash: result.txHash },
-    )
+      await createAuditLog(
+        req.user!.id,
+        'PLATFORM_FEE_SWEEP',
+        'GasLedgerEntry',
+        result.txHash,
+        { tokenSymbol, chain, amount: sweepAmount, treasuryAddress: result.treasuryAddress, txHash: result.txHash },
+      )
+    } catch (dbErr) {
+      // On-chain tx already broadcast — DB failure must not hide the success from admin
+      log.error({ dbErr, txHash: result.txHash, tokenSymbol, chain, sweepAmount }, 'platform-revenue/sweep: DB write failed after successful on-chain sweep')
+    }
 
     const { createAdminNotif: notifSweep } = await import('../services/adminNotification.service')
     void notifSweep({
