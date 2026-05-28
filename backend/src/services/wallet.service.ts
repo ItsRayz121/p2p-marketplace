@@ -158,8 +158,90 @@ export async function requestWithdrawal(
   })
   const fee = parseFloat(feeConfig?.value ?? '0')
 
-  // Phase 2: create withdrawal as email_pending — balance NOT deducted yet.
-  // If email confirmation is disabled, fall through to legacy immediate processing.
+  // Determine USD value to decide whether to skip email confirmation
+  const coinPrice = cfg.coinPricesUsd[data.coin.toUpperCase()] ?? 0
+  const amountUsd = coinPrice > 0 ? data.amount * coinPrice : 999999
+  const isSmallAmount = coinPrice > 0 && amountUsd < cfg.tier1MaxUsd
+
+  // Sub-$100: skip email confirmation and auto-approve immediately
+  if (isSmallAmount) {
+    const totalDeduct = data.amount + fee
+    const result = await db.$transaction(async (tx) => {
+      const wallets = await tx.$queryRaw<
+        Array<{ id: string; balance: string; lockedBalance: string }>
+      >`
+        SELECT id, balance, "lockedBalance"
+        FROM "Wallet"
+        WHERE "userId" = ${userId} AND coin = ${data.coin} AND network = ${data.network}
+        FOR UPDATE
+      `
+      const w = wallets[0]
+      if (!w) throw new AppError('NOT_FOUND', 'Wallet not found', 404)
+
+      const available = parseFloat(w.balance) - parseFloat(w.lockedBalance)
+      if (available < totalDeduct) {
+        throw new AppError('INSUFFICIENT_BALANCE', 'Insufficient balance', 400)
+      }
+
+      await tx.wallet.update({
+        where: { id: w.id },
+        data: { balance: { decrement: totalDeduct } },
+      })
+
+      const orderRef = generateOrderRef('WDR')
+      const withdrawal = await tx.withdrawal.create({
+        data: {
+          orderRef,
+          userId,
+          coin: data.coin,
+          network: data.network,
+          amount: data.amount,
+          fee,
+          toAddress: data.toAddress,
+          status: 'auto_approved',
+          tier: 1,
+          riskScore: 0,
+          riskFlags: [],
+          amountUsd,
+        },
+      })
+
+      await tx.transaction.create({
+        data: {
+          walletId: w.id,
+          type: 'withdrawal',
+          amount: data.amount,
+          fee,
+          status: 'pending',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          metadata: {
+            withdrawalId: withdrawal.id,
+            orderRef,
+            toAddress: data.toAddress,
+            network: data.network,
+            coin: data.coin,
+            tier: 1,
+          } as any,
+        },
+      })
+
+      return withdrawal
+    })
+
+    await redis.set(idempKey, JSON.stringify(result), 'EX', 86400)
+    void recordAuditLog(userId, 'WITHDRAWAL_AUTO_APPROVED', 'Withdrawal', result.id, {
+      coin: data.coin,
+      network: data.network,
+      amount: data.amount,
+      fee,
+      toAddress: data.toAddress,
+      orderRef: result.orderRef,
+      amountUsd,
+    })
+    return result
+  }
+
+  // $100+: email confirmation required before admin review
   if (cfg.emailConfirmationEnabled) {
     const orderRef = generateOrderRef('WDR')
     const withdrawal = await db.withdrawal.create({

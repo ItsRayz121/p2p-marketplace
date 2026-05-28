@@ -2,25 +2,21 @@ import { PrismaClient } from '@prisma/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type RiskFlag =
-  | 'FIRST_WITHDRAWAL'   // user has never completed a withdrawal before
-  | 'NEW_WALLET'         // destination address not seen in prior completions
-  | 'VELOCITY_EXCEEDED'  // too many withdrawal requests in velocity window
-  | 'AMOUNT_SPIKE'       // amount is 5× the user's historical average
+export type RiskFlag = string
 
 export interface RiskAssessment {
   tier: 1 | 2 | 3 | 4
-  riskScore: number     // 0–100 composite risk score
+  riskScore: number
   riskFlags: RiskFlag[]
   amountUsd: number
-  requiresHold: boolean // true when tier 4 or riskScore ≥ 70
+  requiresHold: boolean
 }
 
 export interface TierConfig {
-  tier1MaxUsd: number           // <=$200 → auto-approve
-  tier2MaxUsd: number           // $201–$500 → 1 admin
-  tier3MaxUsd: number           // $501–$2000 → 2 admins
-  autoApproveEnabled: boolean   // master switch for tier-1 auto-approve
+  tier1MaxUsd: number           // <$100 → instant auto-approve
+  tier2MaxUsd: number           // $100+ → 1 admin approval
+  tier3MaxUsd: number
+  autoApproveEnabled: boolean   // master switch: false forces all to tier 2
   firstWithdrawalReview: boolean
   newWalletReview: boolean
   velocityWindowMins: number
@@ -34,14 +30,14 @@ export interface TierConfig {
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 const DEFAULTS: TierConfig = {
-  tier1MaxUsd: 200,
-  tier2MaxUsd: 500,
-  tier3MaxUsd: 2000,
+  tier1MaxUsd: 100,
+  tier2MaxUsd: 999999,
+  tier3MaxUsd: 999999,
   autoApproveEnabled: true,
-  firstWithdrawalReview: true,
-  newWalletReview: true,
+  firstWithdrawalReview: false,
+  newWalletReview: false,
   velocityWindowMins: 60,
-  velocityMaxCount: 3,
+  velocityMaxCount: 10,
   coinPricesUsd: { USDT: 1, USDC: 1, BNB: 600, ETH: 3000, BTC: 60000 },
   emailConfirmationEnabled: true,
   emailConfirmationTtlMins: 15,
@@ -132,113 +128,28 @@ export async function upsertWithdrawalTierConfig(
 
 // ─── Core assessment ──────────────────────────────────────────────────────────
 
-function computeBaseTier(amountUsd: number, cfg: TierConfig): 1 | 2 | 3 | 4 {
-  if (amountUsd <= cfg.tier1MaxUsd) return 1
-  if (amountUsd <= cfg.tier2MaxUsd) return 2
-  if (amountUsd <= cfg.tier3MaxUsd) return 3
-  return 4
-}
-
 export async function assessWithdrawalRisk(
-  userId: string,
+  _userId: string,
   amount: number,   // coin units (not USD)
   coin: string,
-  toAddress: string,
+  _toAddress: string,
   prisma: PrismaClient,
   config?: TierConfig,
 ): Promise<RiskAssessment> {
   const cfg = config ?? (await getWithdrawalTierConfig(prisma))
 
   const coinPrice = cfg.coinPricesUsd[coin.toUpperCase()] ?? 0
-  const coinPriceKnown = coinPrice > 0
-  const amountUsd = amount * coinPrice
+  const amountUsd = coinPrice > 0 ? amount * coinPrice : 999999
 
-  const flags: RiskFlag[] = []
-  let riskScore = 0
-
-  // Check 1: first-ever withdrawal for this user
-  if (cfg.firstWithdrawalReview) {
-    const completedCount = await prisma.withdrawal.count({
-      where: {
-        userId,
-        status: { in: ['sent', 'completed', 'approved', 'auto_approved'] },
-      },
-    })
-    if (completedCount === 0) {
-      flags.push('FIRST_WITHDRAWAL')
-      riskScore += 25
-    }
-  }
-
-  // Check 2: destination address not trusted (whitelist) and never used before
-  if (cfg.newWalletReview) {
-    const trusted = await prisma.trustedWithdrawalAddress.findFirst({
-      where: { userId, address: toAddress, removedAt: null },
-    })
-    const isTrustedAndActive = trusted && trusted.activatesAt <= new Date()
-    if (!isTrustedAndActive) {
-      // Also check historical successful withdrawals as a fallback trust signal
-      const knownCount = await prisma.withdrawal.count({
-        where: { userId, toAddress, status: { in: ['sent', 'completed'] } },
-      })
-      if (knownCount === 0) {
-        flags.push('NEW_WALLET')
-        riskScore += 15
-      }
-    }
-  }
-
-  // Check 3: velocity — too many requests in the rolling window
-  const windowStart = new Date(Date.now() - cfg.velocityWindowMins * 60_000)
-  const recentCount = await prisma.withdrawal.count({
-    where: {
-      userId,
-      createdAt: { gte: windowStart },
-      status: { notIn: ['rejected', 'cancelled'] },
-    },
-  })
-  if (recentCount >= cfg.velocityMaxCount) {
-    flags.push('VELOCITY_EXCEEDED')
-    riskScore += 30
-  }
-
-  // Check 4: amount spike — 5× user's last-10 average
-  const prior = await prisma.withdrawal.findMany({
-    where: { userId, status: { in: ['sent', 'completed'] } },
-    select: { amount: true },
-    orderBy: { createdAt: 'desc' },
-    take: 10,
-  })
-  if (prior.length >= 3) {
-    const avg = prior.reduce((s, w) => s + parseFloat(w.amount.toString()), 0) / prior.length
-    if (amount > avg * 5) {
-      flags.push('AMOUNT_SPIKE')
-      riskScore += 20
-    }
-  }
-
-  const baseTier = computeBaseTier(amountUsd, cfg)
-  let effectiveTier: 1 | 2 | 3 | 4 = baseTier
-
-  // FIX: Unknown coin price means we cannot compute a USD tier — default to T3 (dual
-  // approval) so large unknown-coin amounts are never silently auto-approved.
-  if (!coinPriceKnown && effectiveTier < 3) effectiveTier = 3
-
-  // Risk flags escalate tier — a flagged tier-1 withdrawal needs at least 1 admin
-  if (flags.length > 0 && effectiveTier === 1) effectiveTier = 2
-  // High composite score requires dual approval
-  if (riskScore >= 50 && effectiveTier < 3) effectiveTier = 3
-
-  // FIX: Master switch — if auto-approve is disabled, tier-1 must go through 1 admin
-  if (!cfg.autoApproveEnabled && effectiveTier === 1) effectiveTier = 2
-
-  const requiresHold = baseTier === 4 || riskScore >= 70
+  // Simple two-tier rule: under $100 → auto-approve (tier 1), $100+ → 1 admin (tier 2)
+  const tier: 1 | 2 = amountUsd < cfg.tier1MaxUsd ? 1 : 2
+  const effectiveTier: 1 | 2 = !cfg.autoApproveEnabled && tier === 1 ? 2 : tier
 
   return {
     tier: effectiveTier,
-    riskScore: Math.min(riskScore, 100),
-    riskFlags: flags,
+    riskScore: 0,
+    riskFlags: [],
     amountUsd,
-    requiresHold,
+    requiresHold: false,
   }
 }

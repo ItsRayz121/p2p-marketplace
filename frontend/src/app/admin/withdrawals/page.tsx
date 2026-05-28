@@ -305,7 +305,7 @@ export default function WithdrawalsPage() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Withdrawals</h1>
         <p className="text-text-muted text-sm mt-0.5">
-          Tiered approval: T1 auto-approved · T2 single admin · T3 dual admin · T4 security hold
+          Under $100 → auto-approved instantly · $100+ → single admin approval
         </p>
       </div>
 
