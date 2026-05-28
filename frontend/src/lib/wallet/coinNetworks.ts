@@ -15,7 +15,7 @@
 // for ETH/USDC) so users don't accidentally pick a $20 ERC20 transfer by
 // default.
 export const COIN_NETWORKS: Record<string, string[]> = {
-  USDT: ['TRC20', 'BEP20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'ERC20'],
+  USDT: ['BEP20', 'Aptos'],
   USDC: ['POLYGON', 'ARBITRUM', 'OPTIMISM', 'BASE', 'ERC20'],
   ETH:  ['ARBITRUM', 'OPTIMISM', 'BASE', 'ERC20'],
   BNB:  ['BEP20'],
@@ -25,9 +25,9 @@ export const COIN_NETWORKS: Record<string, string[]> = {
 }
 
 export function networksFor(coin: string): string[] {
-  return COIN_NETWORKS[coin.toUpperCase()] ?? ['TRC20']
+  return COIN_NETWORKS[coin.toUpperCase()] ?? ['BEP20']
 }
 
 export function defaultNetworkFor(coin: string): string {
-  return networksFor(coin)[0] ?? 'TRC20'
+  return networksFor(coin)[0] ?? 'BEP20'
 }
