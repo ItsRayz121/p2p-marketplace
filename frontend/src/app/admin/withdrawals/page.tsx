@@ -556,10 +556,11 @@ export default function WithdrawalsPage() {
                 </Button>
               </div>
             ) : selected.status === 'auto_approved' ? (
-              // Auto-approved emergency controls: hold or reject before it gets sent
+              // Auto-approved emergency controls: hold, reject, or manual fallback if auto-send failed
               <>
                 <div className="px-4 py-3 bg-success/5 border border-success/20 rounded-xl text-sm text-success">
-                  Tier 1 withdrawal — sent automatically from the hot wallet. No admin action required. Use the controls below only to cancel or hold if there is a fraud concern.
+                  Tier 1 — sent automatically from the hot wallet. No action needed in normal cases.
+                  If the auto-send failed (check admin notifications), use the fallback below.
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">Rejection Reason (required to reject)</label>
@@ -578,7 +579,7 @@ export default function WithdrawalsPage() {
                     disabled={!rejectReason.trim()}
                     className="flex-1"
                   >
-                    Reject (Emergency)
+                    Reject &amp; Refund
                   </Button>
                   <div className="flex-1 space-y-1.5">
                     <input
@@ -597,6 +598,16 @@ export default function WithdrawalsPage() {
                       Place on Hold
                     </Button>
                   </div>
+                </div>
+                <div className="border-t border-border pt-3">
+                  <p className="text-xs text-text-muted mb-2">Auto-send failed? Manually send from the hot wallet then record the hash:</p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => { setModalOpen(false); openMarkSent(selected) }}
+                  >
+                    Mark Sent (Manual Fallback)
+                  </Button>
                 </div>
               </>
             ) : canApprove ? (

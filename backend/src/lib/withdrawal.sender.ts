@@ -95,7 +95,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     void createAdminNotif({
       category: 'SYSTEM',
       title:    'Auto-withdrawal skipped — hot wallet not configured',
-      body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) is auto-approved but GAS_SEED_CIPHERTEXT is not set. Please Mark Sent manually.`,
+      body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) is auto-approved but GAS_SEED_CIPHERTEXT is not set. Send manually from your wallet, then open the withdrawal in the admin panel → Review → Mark Sent (Manual Fallback).`,
       href:     '/admin/withdrawals',
       metadata: { withdrawalId: wd.id },
     })
@@ -122,7 +122,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     void createAdminNotif({
       category: 'SYSTEM',
       title:    'Auto-withdrawal send FAILED — manual action required',
-      body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) could not be sent automatically: ${msg}. Please send manually and use Mark Sent.`,
+      body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) failed to send automatically: ${msg}. Send manually from the hot wallet, then open the withdrawal → Review → Mark Sent (Manual Fallback). Or reject to refund the user.`,
       href:     '/admin/withdrawals',
       metadata: { withdrawalId: wd.id, error: msg },
     })
