@@ -97,37 +97,35 @@ export default function MyCtmTradesPage() {
         </button>
       </div>
 
-      {/* Filters – single scrollable row */}
-      <div className="overflow-x-auto mb-6 -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="flex items-center gap-1 min-w-max">
-          {STATUS_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => { setStatus(opt.value); setPage(1) }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
-                status === opt.value
-                  ? 'bg-primary text-white'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-          <div className="w-px h-5 bg-border mx-2 shrink-0" />
-          {ROLE_OPTIONS.map((r) => (
-            <button
-              key={r}
-              onClick={() => { setRole(r); setPage(1) }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
-                role === r
-                  ? 'bg-primary/10 text-primary border border-primary/30'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
-              }`}
-            >
-              {r === 'all' ? 'All Roles' : r.charAt(0).toUpperCase() + r.slice(1)}
-            </button>
-          ))}
-        </div>
+      {/* Filters – single row, fits at a glance on desktop */}
+      <div className="flex items-center gap-1 flex-wrap mb-6 overflow-x-auto">
+        {STATUS_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => { setStatus(opt.value); setPage(1) }}
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+              status === opt.value
+                ? 'bg-primary text-white'
+                : 'bg-white border border-border text-text-secondary hover:bg-surface'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+        <div className="w-px h-4 bg-border mx-1 shrink-0 self-center" />
+        {ROLE_OPTIONS.map((r) => (
+          <button
+            key={r}
+            onClick={() => { setRole(r); setPage(1) }}
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+              role === r
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'bg-white border border-border text-text-secondary hover:bg-surface'
+            }`}
+          >
+            {r === 'all' ? 'All Roles' : r.charAt(0).toUpperCase() + r.slice(1)}
+          </button>
+        ))}
       </div>
 
       {loading ? (
