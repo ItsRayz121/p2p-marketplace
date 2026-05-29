@@ -8,7 +8,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
   app.get('/dashboard/summary', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
 
-    const [user, wallets, recentTrades, recentOrders, usdtRate, notifications, tradeStats, ctmCompletedTrades] =
+    const [user, wallets, recentTrades, recentOrders, usdtRate, notifications, tradeStats, ctmCompletedTrades, gasCompletedOrders, ctmTerminalCount, gasTerminalCount] =
       await Promise.all([
         db.user.findUnique({
           where: { id: userId },
@@ -64,7 +64,28 @@ export async function dashboardRoutes(app: FastifyInstance) {
         db.ctmTrade.count({
           where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'completed' },
         }),
+
+        db.gasFeeOrder.count({
+          where: { userId, status: 'delivered' },
+        }),
+
+        // CTM terminal count for cross-platform completion rate
+        db.ctmTrade.count({
+          where: {
+            OR: [{ buyerId: userId }, { sellerId: userId }],
+            status: { in: ['completed', 'cancelled', 'disputed', 'dispute_resolved', 'expired'] },
+          },
+        }),
+
+        // Gas terminal count for cross-platform completion rate
+        db.gasFeeOrder.count({
+          where: { userId, status: { in: ['delivered', 'expired', 'failed', 'refunded'] } },
+        }),
       ])
+
+    const crossCompleted = (tradeStats?.completedTrades ?? 0) + ctmCompletedTrades + gasCompletedOrders
+    const crossTotal = (tradeStats?.totalTrades ?? 0) + ctmTerminalCount + gasTerminalCount
+    const crossPlatformCompletionRate = crossTotal > 0 ? crossCompleted / crossTotal : null
 
     return reply.send({
       success: true,
@@ -77,6 +98,8 @@ export async function dashboardRoutes(app: FastifyInstance) {
         notifications,
         tradeStats,
         ctmCompletedTrades,
+        gasCompletedOrders,
+        crossPlatformCompletionRate,
       },
     })
   })

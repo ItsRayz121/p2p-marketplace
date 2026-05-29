@@ -18,6 +18,8 @@ export interface AuthUser {
   createdAt: string
   withdrawalLockedUntil: string | null
   withdrawalLockReason: string | null
+  avatarUrl: string | null
+  usernameChangedAt: string | null
   tradeStats: {
     badge: 'new' | 'active' | 'trusted' | 'top' | 'elite'
     badgeLabel: string

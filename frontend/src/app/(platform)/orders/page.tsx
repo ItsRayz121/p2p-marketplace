@@ -1,6 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { tradesApi } from '@/lib/api'
 import type { Trade } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -42,9 +43,22 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString()
 }
 
+function getPkrDisplay(t: Trade): string {
+  const direct = parseFloat(t.fiatAmount ?? t.totalPkr ?? '')
+  if (Number.isFinite(direct) && direct > 0) {
+    return `PKR ${direct.toLocaleString('en-PK', { maximumFractionDigits: 2 })}`
+  }
+  const calc = parseFloat(t.price) * parseFloat(t.amount)
+  if (Number.isFinite(calc) && calc > 0) {
+    return `PKR ${calc.toLocaleString('en-PK', { maximumFractionDigits: 2 })}`
+  }
+  return '—'
+}
+
 
 export default function OrdersPage() {
   const { user } = useAuth()
+  const router = useRouter()
   const [status, setStatus] = useState<StatusFilter>('all')
   const [role, setRole] = useState<RoleFilter>('all')
   const [trades, setTrades] = useState<Trade[]>([])
@@ -156,16 +170,16 @@ export default function OrdersPage() {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden sm:block bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+          <div className="hidden sm:block bg-white shadow-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
-              <thead className="bg-surface border-b border-border">
+              <thead className="bg-surface border-b-2 border-border">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Role</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted">Counterparty</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">Crypto</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">PKR</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-text-muted">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide">Role</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide">Counterparty</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary uppercase tracking-wide">Crypto</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary uppercase tracking-wide">PKR</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary uppercase tracking-wide">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -175,22 +189,26 @@ export default function OrdersPage() {
                     ? (t.seller?.username || 'Seller')
                     : (t.buyer?.username || 'Buyer')
                   return (
-                    <tr key={t.id} className="hover:bg-surface/50 transition-colors">
+                    <tr
+                      key={t.id}
+                      onClick={() => router.push(`/trade/${t.id}`)}
+                      className="hover:bg-primary/5 transition-colors cursor-pointer"
+                    >
                       <td className="px-4 py-3">
                         {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-secondary">{isBuyer ? 'Buyer' : 'Seller'}</td>
-                      <td className="px-4 py-3 text-sm font-medium text-text-primary">{counterparty}</td>
-                      <td className="px-4 py-3 text-sm text-text-primary text-right">
+                      <td className="px-4 py-3">
+                        <span className="text-sm font-medium text-primary hover:underline">{counterparty}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-text-primary text-right font-mono">
                         {parseFloat(t.amount).toFixed(4)} {t.coin}
                       </td>
-                      <td className="px-4 py-3 text-sm text-text-primary text-right">
-                        PKR {Number(t.totalPkr).toLocaleString()}
+                      <td className="px-4 py-3 text-sm font-semibold text-text-primary text-right">
+                        {getPkrDisplay(t)}
                       </td>
                       <td className="px-4 py-3 text-xs text-text-muted text-right">
-                        <Link href={`/trade/${t.id}`} className="hover:text-primary transition-colors">
-                          {timeAgo(t.createdAt)}
-                        </Link>
+                        {timeAgo(t.createdAt)}
                       </td>
                     </tr>
                   )
@@ -219,7 +237,7 @@ export default function OrdersPage() {
                         <p className="text-sm font-bold text-text-primary">
                           {parseFloat(t.amount).toFixed(4)} {t.coin}
                         </p>
-                        <p className="text-xs text-text-muted">PKR {Number(t.totalPkr).toLocaleString()}</p>
+                        <p className="text-xs text-text-muted">{getPkrDisplay(t)}</p>
                         <p className="text-xs text-text-muted mt-1">{timeAgo(t.createdAt)}</p>
                       </div>
                     </div>

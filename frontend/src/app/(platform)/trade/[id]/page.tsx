@@ -917,21 +917,32 @@ export default function TradePage() {
             )}
             {messages.map((msg) => {
               const isMine = msg.senderId === user?.id
+              const msgTime = new Date(msg.createdAt).toLocaleTimeString('en-PK', {
+                timeZone: 'Asia/Karachi',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
               if (msg.isSystem) {
                 return (
-                  <div key={msg.id} className="text-center">
-                    <span className="text-xs text-text-muted italic bg-surface px-3 py-1 rounded-full">{msg.message}</span>
+                  <div key={msg.id} className="flex justify-center my-1">
+                    <div className="bg-surface border border-border rounded-xl px-3 py-1.5 text-center max-w-[85%]">
+                      <p className="text-xs text-text-muted italic">{msg.message}</p>
+                      <p className="text-[10px] text-text-muted/60 mt-0.5">{msgTime}</p>
+                    </div>
                   </div>
                 )
               }
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] flex flex-col gap-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
-                    <div className={`px-3 py-2 rounded-2xl text-sm ${
-                      isMine ? 'bg-primary text-white rounded-br-sm' : 'bg-surface text-text-primary rounded-bl-sm'
+                    <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+                      isMine
+                        ? 'bg-primary text-white rounded-br-sm shadow-sm'
+                        : 'bg-surface border border-border text-text-primary rounded-bl-sm shadow-sm'
                     } ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
                       {msg.message}
                     </div>
+                    <span className="text-[10px] text-text-muted px-1">{msgTime}</span>
                     {isMine && msg.sendStatus === 'sending' && (
                       <span className="text-[10px] text-text-muted">Sending…</span>
                     )}

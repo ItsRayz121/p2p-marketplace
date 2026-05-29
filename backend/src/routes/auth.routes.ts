@@ -309,17 +309,42 @@ export async function authRoutes(app: FastifyInstance) {
   })
   app.patch('/profile', { preHandler: [authenticate] }, async (req, reply) => {
     const parsed = profileSchema.parse(req.body)
-    if (parsed.username) {
+
+    const current = await db.user.findUnique({
+      where: { id: req.user!.id },
+      select: { username: true, usernameChangedAt: true },
+    })
+    if (!current) throw new AppError('NOT_FOUND', 'User not found', 404)
+
+    const isUsernameChange = parsed.username && parsed.username !== current.username
+    if (isUsernameChange) {
+      if (current.usernameChangedAt) {
+        const cooldownMs = 30 * 24 * 60 * 60 * 1000
+        const nextAllowed = new Date(current.usernameChangedAt.getTime() + cooldownMs)
+        if (new Date() < nextAllowed) {
+          throw new AppError(
+            'TOO_MANY_REQUESTS',
+            `Username can be changed again on ${nextAllowed.toLocaleDateString('en-PK', { timeZone: 'Asia/Karachi', day: '2-digit', month: 'long', year: 'numeric' })}`,
+            429,
+          )
+        }
+      }
       const taken = await db.user.findFirst({
-        where: { username: parsed.username, NOT: { id: req.user!.id } },
+        where: { username: parsed.username!, NOT: { id: req.user!.id } },
         select: { id: true },
       })
       if (taken) throw new AppError('CONFLICT', 'Username is already taken', 409)
     }
-    const data: Record<string, string> = {}
+
+    const data: Record<string, unknown> = {}
     if (parsed.fullName) data.fullName = parsed.fullName
-    if (parsed.username) data.username = parsed.username
-    await db.user.update({ where: { id: req.user!.id }, data })
+    if (isUsernameChange) {
+      data.username = parsed.username
+      data.usernameChangedAt = new Date()
+    }
+    if (Object.keys(data).length > 0) {
+      await db.user.update({ where: { id: req.user!.id }, data })
+    }
     const user = await getMe(req.user!.id)
     return reply.send({ success: true, data: user })
   })

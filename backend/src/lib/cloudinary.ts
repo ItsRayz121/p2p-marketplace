@@ -21,6 +21,7 @@ export const CLOUDINARY_FOLDERS = {
   CTM_TOKEN_PROOF: 'pakswap/ctm/token-proof',
   CTM_TOKEN_LOGO: 'pakswap/ctm/token-logos',
   GAS_LOGO: 'pakswap/gas/logos',
+  AVATAR: 'pakswap/avatars',
 } as const
 
 // Max file sizes in bytes

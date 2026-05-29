@@ -373,6 +373,9 @@ model User {
   twoFaEnabled  Boolean   @default(false)
   twoFaSecret   String?
 
+  avatarUrl         String?
+  usernameChangedAt DateTime?
+
   // Withdrawal security lock â€” set after password/email/2FA changes.
   // requestWithdrawal checks this before creating any withdrawal.
   withdrawalLockedUntil DateTime?

@@ -565,6 +565,8 @@ export const authApi = {
     apiRequest<AuthUser>('/auth/profile', { method: 'PATCH', body: JSON.stringify(data) }),
   checkUsername: (username: string) =>
     apiRequest<{ available: boolean }>('/auth/check-username?username=' + encodeURIComponent(username)),
+  updateAvatar: (avatarUrl: string) =>
+    apiRequest<AuthUser>('/upload/avatar', { method: 'PATCH', body: JSON.stringify({ avatarUrl }) }),
   verify2fa: (data: { preAuthToken: string; code: string }) =>
     apiRequest<{ accessToken: string; user: AuthUser }>('/auth/2fa/verify', { method: 'POST', body: JSON.stringify(data) }),
   changePassword: (data: { currentPassword: string; newPassword: string }) =>

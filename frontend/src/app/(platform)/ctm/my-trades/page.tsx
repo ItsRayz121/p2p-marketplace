@@ -6,17 +6,17 @@ import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const STATUS_COLORS: Record<string, string> = {
-  awaiting_payment: 'bg-yellow-100 text-yellow-800',
-  payment_uploaded: 'bg-blue-100 text-blue-800',
-  payment_confirmed: 'bg-blue-100 text-blue-800',
-  seller_transferring: 'bg-indigo-100 text-indigo-800',
-  proof_submitted: 'bg-purple-100 text-purple-800',
-  buyer_confirming: 'bg-purple-100 text-purple-800',
-  completed: 'bg-green-100 text-green-800',
-  cancelled: 'bg-gray-100 text-gray-600',
-  disputed: 'bg-red-100 text-red-800',
-  dispute_resolved: 'bg-orange-100 text-orange-800',
-  expired: 'bg-gray-100 text-gray-500',
+  awaiting_payment:   'bg-warning/10 text-warning',
+  payment_uploaded:   'bg-primary/10 text-primary',
+  payment_confirmed:  'bg-primary/10 text-primary',
+  seller_transferring:'bg-info/10 text-info',
+  proof_submitted:    'bg-info/10 text-info',
+  buyer_confirming:   'bg-info/10 text-info',
+  completed:          'bg-success/10 text-success',
+  cancelled:          'bg-surface-alt text-text-secondary',
+  disputed:           'bg-danger/10 text-danger',
+  dispute_resolved:   'bg-warning/10 text-warning',
+  expired:            'bg-surface-alt text-text-muted',
 }
 
 const STATUS_OPTIONS = [
@@ -97,37 +97,38 @@ export default function MyCtmTradesPage() {
         </button>
       </div>
 
-      {/* Filters — all chips on a single wrapping row */}
-      <div className="flex flex-wrap gap-1 mb-6">
-        {STATUS_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => { setStatus(opt.value); setPage(1) }}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              status === opt.value
-                ? 'bg-primary text-white'
-                : 'bg-white border border-border text-text-secondary hover:bg-surface'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-
-        <div className="w-px bg-border self-stretch mx-0.5" />
-
-        {ROLE_OPTIONS.map((r) => (
-          <button
-            key={r}
-            onClick={() => { setRole(r); setPage(1) }}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              role === r
-                ? 'bg-primary/10 text-primary border border-primary/30'
-                : 'bg-white border border-border text-text-secondary hover:bg-surface'
-            }`}
-          >
-            {r.charAt(0).toUpperCase() + r.slice(1)}
-          </button>
-        ))}
+      {/* Filters */}
+      <div className="space-y-2 mb-6">
+        <div className="flex flex-wrap gap-1">
+          {STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { setStatus(opt.value); setPage(1) }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                status === opt.value
+                  ? 'bg-primary text-white'
+                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1">
+          {ROLE_OPTIONS.map((r) => (
+            <button
+              key={r}
+              onClick={() => { setRole(r); setPage(1) }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                role === r
+                  ? 'bg-primary/10 text-primary border border-primary/30'
+                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+              }`}
+            >
+              {r.charAt(0).toUpperCase() + r.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
@@ -135,30 +136,55 @@ export default function MyCtmTradesPage() {
       ) : trades.length === 0 ? (
         <div className="text-center py-16 text-text-muted">No trades matching the current filters.</div>
       ) : (
-        <div className="space-y-3">
-          {trades.map((t) => {
-            const isBuyer = user?.id === t.buyer.id
-            return (
-              <Link key={t.id} href={`/ctm/trade/${t.tradeRef}`} className="block bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <EntityLogo type="token" slug={t.token.symbol} size="xl" logoUrl={t.token.logoUrl} />
-                    <div>
-                      <p className="font-semibold text-text-primary">{t.tokenAmount} {t.token.symbol}</p>
-                      <p className="text-xs text-text-muted">PKR {Number(t.fiatAmount).toLocaleString()} · #{t.tradeRef.slice(-8)}</p>
-                      <p className="text-xs text-text-muted">{isBuyer ? 'Buyer' : 'Seller'}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {t.status.replace(/_/g, ' ')}
-                    </span>
-                    <span className="text-xs text-text-muted">{new Date(t.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
+        <div className="bg-white shadow-card rounded-xl border border-border overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-surface border-b-2 border-border">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide">Token</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide hidden sm:table-cell">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide hidden sm:table-cell">PKR</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide">Role</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wide">Status</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-text-secondary uppercase tracking-wide">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {trades.map((t) => {
+                const isBuyer = user?.id === t.buyer.id
+                return (
+                  <tr
+                    key={t.id}
+                    onClick={() => { window.location.href = `/ctm/trade/${t.tradeRef}` }}
+                    className="hover:bg-primary/5 transition-colors cursor-pointer"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <EntityLogo type="token" slug={t.token.symbol} size="sm" logoUrl={t.token.logoUrl} />
+                        <span className="text-sm font-semibold text-text-primary">{t.token.symbol}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-primary font-mono hidden sm:table-cell">
+                      {t.tokenAmount}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-semibold text-text-primary hidden sm:table-cell">
+                      PKR {Number(t.fiatAmount).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-secondary">
+                      {isBuyer ? 'Buyer' : 'Seller'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {t.status.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-text-muted text-right">
+                      {new Date(t.createdAt).toLocaleDateString()}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 

@@ -1,12 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { leaderboardApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
-import { Trophy } from 'lucide-react'
+import { Trophy, ArrowLeft } from 'lucide-react'
 import { fmtNumber, fmtPkr } from '@/lib/fmt'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -84,9 +85,15 @@ export default function LeaderboardPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-24 lg:pb-6 space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Leaderboard</h1>
-        <p className="text-sm text-text-muted">Top traders on PakSwap</p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-primary transition-colors mb-2">
+            <ArrowLeft size={13} />
+            Dashboard
+          </Link>
+          <h1 className="text-2xl font-bold text-text-primary">Leaderboard</h1>
+          <p className="text-sm text-text-muted">Top traders on PakSwap</p>
+        </div>
       </div>
 
       {/* Trade Type Filter */}
@@ -96,7 +103,7 @@ export default function LeaderboardPage() {
             key={t.id}
             onClick={() => setTradeType(t.id)}
             className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              tradeType === t.id ? 'bg-white text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'
+              tradeType === t.id ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {t.label}
@@ -111,7 +118,7 @@ export default function LeaderboardPage() {
             key={p.id}
             onClick={() => setPeriod(p.id)}
             className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              period === p.id ? 'bg-white text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'
+              period === p.id ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {p.label}
@@ -132,10 +139,10 @@ export default function LeaderboardPage() {
               {/* Desktop */}
               <div className="hidden md:block bg-surface shadow-card border border-border rounded-xl overflow-hidden">
                 <table className="w-full">
-                  <thead className="bg-surface border-b border-border">
+                  <thead className="bg-surface border-b-2 border-border">
                     <tr>
                       {['Rank', 'Trader', 'Badge', 'Completed Trades', 'Volume (PKR)', 'Rate'].map((h) => (
-                        <th key={h} className="text-left text-xs font-semibold text-text-muted px-4 py-3">{h}</th>
+                        <th key={h} className="text-left text-xs font-semibold text-text-secondary uppercase tracking-wide px-4 py-3">{h}</th>
                       ))}
                     </tr>
                   </thead>

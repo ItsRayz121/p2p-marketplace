@@ -67,6 +67,21 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString()
 }
 
+function fmtTxDateTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return timeAgo(dateStr)
+  return d.toLocaleString('en-PK', {
+    timeZone: 'Asia/Karachi',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const SUPPORTED_ESCROW_NETWORKS = new Set(['BEP20', 'APTOS', 'Aptos'])
+
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
 function WithdrawModal({
@@ -1297,51 +1312,67 @@ export default function WalletPage() {
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-1">PakSwap balance</h2>
         <p className="text-xs text-text-muted mb-3">Held in escrow on PakSwap — backs your P2P trades. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
-        {balances.length === 0 ? (
-          <EmptyState icon={Wallet} title="No balances" description="Make a deposit to get started" />
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {balances.map((b) => (
-              <div key={`${b.coin}-${b.network}`} className="bg-surface shadow-card rounded-xl border border-border p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center">
-                    {b.coin.slice(0, 2)}
+        {(() => {
+          const displayBalances = balances.filter((b) => SUPPORTED_ESCROW_NETWORKS.has(b.network ?? ''))
+          return displayBalances.length === 0 ? (
+            <EmptyState icon={Wallet} title="No balances" description="Make a deposit to get started" />
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {displayBalances.map((b) => (
+                <div key={`${b.coin}-${b.network}`} className="bg-white shadow-card rounded-xl border border-border p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center">
+                      {b.coin.slice(0, 2)}
+                    </div>
+                    <span className="font-semibold text-text-primary">{b.coin}</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">{b.network}</span>
                   </div>
-                  <span className="font-semibold text-text-primary">{b.coin}</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-surface text-text-muted font-medium">{b.network}</span>
-                </div>
-                <div className="space-y-1 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-text-muted">Available</span>
-                    <span className="font-bold text-text-primary">{parseFloat(b.available).toFixed(6)}</span>
+                  <div className="space-y-1 mb-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-text-muted">Available</span>
+                      <span className="font-bold text-text-primary">{parseFloat(b.available).toFixed(6)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-text-muted">Locked</span>
+                      <span className="text-text-secondary">{parseFloat(b.locked).toFixed(6)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-text-muted">Locked</span>
-                    <span className="text-text-secondary">{parseFloat(b.locked).toFixed(6)}</span>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      fullWidth
+                      onClick={() => setDepositCoin(b.coin)}
+                    >
+                      Deposit
+                    </Button>
+                    <Button
+                      size="sm"
+                      fullWidth
+                      onClick={() => setWithdrawWallet({ coin: b.coin, network: b.network })}
+                    >
+                      Withdraw
+                    </Button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    fullWidth
-                    onClick={() => setDepositCoin(b.coin)}
-                  >
-                    Deposit
-                  </Button>
-                  <Button
-                    size="sm"
-                    fullWidth
-                    onClick={() => setWithdrawWallet({ coin: b.coin, network: b.network })}
-                  >
-                    Withdraw
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )
+        })()}
       </section>
+
+      {/* ── PKR Payment Methods ── */}
+      <div id="payment-methods">
+        <PaymentMethodsSection />
+      </div>
+
+      {/* ── Saved Delivery Addresses ── */}
+      <div id="saved-addresses">
+        <SavedDeliveryAddressesSection />
+      </div>
+
+      {/* ── Trusted addresses ── */}
+      <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
 
       <RecentDeposits />
 
@@ -1351,31 +1382,32 @@ export default function WalletPage() {
         {transactions.length === 0 ? (
           <EmptyState icon={ArrowUpDown} title="No transactions" description="Your transaction history will appear here" />
         ) : (
-          <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+          <div className="bg-white shadow-card rounded-xl border border-border overflow-hidden">
             <div className="divide-y divide-border">
               {transactions.map((tx) => {
                 const explorerBase = EXPLORER_TX_BASE[tx.network?.toUpperCase() ?? '']
                 const explorerUrl = tx.txHash && explorerBase ? `${explorerBase}/${tx.txHash}` : null
                 const networkLabel = NETWORK_DISPLAY_NAMES[tx.network?.toUpperCase() ?? ''] ?? tx.network
                 const isDebit = tx.type === 'withdrawal' || tx.type === 'fee'
-                const statusIcon = tx.status === 'completed' ? '✓' : tx.status === 'failed' ? '✗' : '…'
+                const statusIcon = tx.status === 'completed' ? '✓' : tx.status === 'failed' ? '✗' : '⏳'
                 const statusColor = tx.status === 'completed' ? 'text-success' : tx.status === 'failed' ? 'text-danger' : 'text-warning'
                 return (
-                  <div key={tx.id} className="px-4 py-3 space-y-2">
+                  <div key={tx.id} className="px-4 py-3.5 space-y-1.5">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="flex items-center gap-2">
-                        <span className={`font-bold ${isDebit ? 'text-danger' : 'text-success'}`}>
+                        <span className={`font-bold text-sm ${isDebit ? 'text-danger' : 'text-success'}`}>
                           {isDebit ? '-' : '+'}{parseFloat(tx.amount).toFixed(4)} {tx.coin}
                         </span>
                         <Badge variant={txStatusVariant(tx.status)} size="sm">{txStatusLabel(tx)}</Badge>
                       </div>
-                      <div className="text-xs text-text-muted">
-                        {networkLabel ? `${networkLabel} · ` : ''}{timeAgo(tx.createdAt)}
+                      <div className="text-xs text-text-muted text-right">
+                        {networkLabel && <span className="font-medium text-text-secondary">{networkLabel}</span>}
+                        <span className="text-text-muted"> · {fmtTxDateTime(tx.createdAt)}</span>
                       </div>
                     </div>
                     <div className={`flex items-center gap-1.5 text-xs ${statusColor}`}>
                       <span>{statusIcon}</span>
-                      <span className="capitalize">{txStatusLabel(tx)} {timeAgo(tx.createdAt)}</span>
+                      <span className="capitalize">{txStatusLabel(tx)} {fmtTxDateTime(tx.createdAt)}</span>
                     </div>
                     {explorerUrl && (
                       <div className="text-xs">
@@ -1413,19 +1445,6 @@ export default function WalletPage() {
           </div>
         )}
       </section>
-
-      {/* ── Trusted addresses ── */}
-      <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
-
-      {/* ── PKR Payment Methods ── */}
-      <div id="payment-methods">
-        <PaymentMethodsSection />
-      </div>
-
-      {/* ── Saved Delivery Addresses ── */}
-      <div id="saved-addresses">
-        <SavedDeliveryAddressesSection />
-      </div>
 
       {/* Deposit modal */}
       {depositCoin && (

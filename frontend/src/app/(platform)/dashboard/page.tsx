@@ -51,6 +51,8 @@ interface DashboardSummary {
     trustScore: number | null
   } | null
   ctmCompletedTrades?: number
+  gasCompletedOrders?: number
+  crossPlatformCompletionRate?: number | null
 }
 
 interface InstantOrder {
@@ -78,6 +80,14 @@ const GAS_NATIVE_SYMBOL: Record<string, string> = {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function computeEffectiveBadge(completedTrades: number, completionRate: number): TraderBadge {
+  if (completedTrades >= 500 && completionRate >= 0.98) return 'elite'
+  if (completedTrades >= 200 && completionRate >= 0.95) return 'top'
+  if (completedTrades >= 50  && completionRate >= 0.90) return 'trusted'
+  if (completedTrades >= 5   && completionRate >= 0.80) return 'active'
+  return 'new'
+}
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -151,8 +161,18 @@ export default function DashboardPage() {
   const emailVerified = user?.isEmailVerified ?? false
   const kycApproved = kycStatus === 'approved'
   const hasBalance = (summary?.wallets ?? []).some((b) => parseFloat(b.available) > 0)
-  const hasCompletedTrade =
-    (summary?.tradeStats?.completedTrades ?? 0) + (summary?.ctmCompletedTrades ?? 0) > 0
+  const totalCompletedTrades =
+    (summary?.tradeStats?.completedTrades ?? 0) +
+    (summary?.ctmCompletedTrades ?? 0) +
+    (summary?.gasCompletedOrders ?? 0)
+  const hasCompletedTrade = totalCompletedTrades > 0
+
+  const crossPlatformCompletionRate =
+    summary?.crossPlatformCompletionRate ??
+    user?.tradeStats?.completionRate ??
+    0
+
+  const effectiveBadge = computeEffectiveBadge(totalCompletedTrades, crossPlatformCompletionRate)
 
   const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
 
@@ -184,9 +204,7 @@ export default function DashboardPage() {
                     : `KYC: ${kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}`}
                 </Badge>
               </Link>
-              {user?.tradeStats && (
-                <BadgeChip badge={user.tradeStats.badge as TraderBadge} badgeLabel={user.tradeStats.badgeLabel ?? undefined} />
-              )}
+              <BadgeChip badge={effectiveBadge} />
             </div>
           </div>
           {totalPortfolioPkr !== null && totalPortfolioPkr > 0 && (
@@ -385,11 +403,10 @@ export default function DashboardPage() {
       {/* ── 7. Trader Badge ── */}
       <section>
         <TraderLevelCard
-          badge={(user?.tradeStats?.badge ?? summary?.tradeStats?.badge ?? 'new') as TraderBadge}
-          badgeLabel={user?.tradeStats?.badgeLabel ?? summary?.tradeStats?.badgeLabel ?? undefined}
+          badge={effectiveBadge}
           trustScore={user?.tradeStats?.trustScore ?? summary?.tradeStats?.trustScore ?? 0}
-          completedTrades={user?.tradeStats?.completedTrades ?? summary?.tradeStats?.completedTrades ?? 0}
-          completionRate={user?.tradeStats?.completionRate ?? summary?.tradeStats?.completionRate ?? 0}
+          completedTrades={totalCompletedTrades}
+          completionRate={crossPlatformCompletionRate}
           kycStatus={kycStatus}
         />
       </section>

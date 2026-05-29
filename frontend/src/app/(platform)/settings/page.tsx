@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { authApi } from '@/lib/api'
 import type { Session } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -7,11 +7,11 @@ import { useAuthStore } from '@/store/auth.store'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
-import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
-import { Lock } from 'lucide-react'
+import { useFileUpload } from '@/hooks/useFileUpload'
+import { Lock, Camera } from 'lucide-react'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
@@ -39,10 +39,19 @@ function ProfileTab() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const { upload: uploadAvatar, uploading: uploadingAvatar, error: uploadAvatarError } = useFileUpload('avatar')
+
+  const usernameChangedAt = user?.usernameChangedAt ? new Date(user.usernameChangedAt) : null
+  const usernameNextAllowed = usernameChangedAt
+    ? new Date(usernameChangedAt.getTime() + 30 * 24 * 60 * 60 * 1000)
+    : null
+  const usernameOnCooldown = usernameNextAllowed ? new Date() < usernameNextAllowed : false
 
   useEffect(() => {
     const original = user?.username ?? ''
     if (!username || username === original) { setUsernameAvailable(null); return }
+    if (usernameOnCooldown) return
     const timer = setTimeout(async () => {
       setCheckingUsername(true)
       try {
@@ -51,7 +60,7 @@ function ProfileTab() {
       } catch { setUsernameAvailable(null) } finally { setCheckingUsername(false) }
     }, 500)
     return () => clearTimeout(timer)
-  }, [username, user?.username])
+  }, [username, user?.username, usernameOnCooldown])
 
   const handleSave = async () => {
     setSaving(true)
@@ -69,35 +78,93 @@ function ProfileTab() {
     }
   }
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const url = await uploadAvatar(file)
+      const updated = await authApi.updateAvatar(url)
+      setUser(updated)
+    } catch { /* upload hook sets error state */ }
+    if (avatarInputRef.current) avatarInputRef.current.value = ''
+  }
+
+  const initials = (user?.fullName || user?.username || user?.email || '?').charAt(0).toUpperCase()
+
   return (
     <div className="space-y-5">
+      {/* Avatar */}
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          {user?.avatarUrl ? (
+            <img src={user.avatarUrl} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-border" />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-primary/10 text-primary text-xl font-bold flex items-center justify-center border-2 border-border">
+              {initials}
+            </div>
+          )}
+          <button
+            onClick={() => avatarInputRef.current?.click()}
+            disabled={uploadingAvatar}
+            className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow hover:bg-primary-hover transition-colors disabled:opacity-50"
+          >
+            {uploadingAvatar ? <Spinner size="sm" /> : <Camera size={12} />}
+          </button>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-text-primary">{user?.fullName || user?.username || 'Profile Photo'}</p>
+          <p className="text-xs text-text-muted">JPEG, PNG or WebP, max 10MB</p>
+          {uploadAvatarError && <p className="text-xs text-danger mt-0.5">{uploadAvatarError}</p>}
+        </div>
+      </div>
+
       <div>
         <label className="text-sm font-medium text-text-primary block mb-1.5">Full Name</label>
         <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" />
       </div>
       <div>
         <label className="text-sm font-medium text-text-primary block mb-1.5">Username</label>
-        <div className="relative">
-          <Input
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-            placeholder="username"
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm">
-            {checkingUsername ? <Spinner size="sm" /> :
-              usernameAvailable === true ? <span className="text-success">✓</span> :
-              usernameAvailable === false ? <span className="text-danger">✗</span> : null}
-          </span>
-        </div>
-        {usernameAvailable === false && (
-          <p className="text-sm text-danger mt-1">Username is taken</p>
+        {usernameOnCooldown ? (
+          <>
+            <Input value={username} disabled className="opacity-60" />
+            <p className="text-xs text-warning mt-1">
+              Username can be changed again on{' '}
+              <strong>{usernameNextAllowed!.toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })}</strong>
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="relative">
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                placeholder="username"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm">
+                {checkingUsername ? <Spinner size="sm" /> :
+                  usernameAvailable === true ? <span className="text-success">✓</span> :
+                  usernameAvailable === false ? <span className="text-danger">✗</span> : null}
+              </span>
+            </div>
+            {usernameAvailable === false && (
+              <p className="text-sm text-danger mt-1">Username is taken</p>
+            )}
+            <p className="text-xs text-text-muted mt-1">Can be changed once every 30 days</p>
+          </>
         )}
       </div>
       {error && <p className="text-sm text-danger">{error}</p>}
       {saved && <p className="text-sm text-success">Profile saved successfully!</p>}
       <Button
         onClick={handleSave}
-        disabled={saving || usernameAvailable === false}
+        disabled={saving || usernameAvailable === false || (usernameOnCooldown && username !== user?.username)}
         className="w-full sm:w-auto"
       >
         {saving ? <Spinner size="sm" /> : 'Save Changes'}

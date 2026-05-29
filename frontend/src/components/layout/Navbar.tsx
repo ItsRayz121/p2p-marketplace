@@ -154,11 +154,15 @@ export default function Navbar() {
                         menuOpen && 'bg-surface-alt',
                       )}
                     >
-                      <div className="w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
-                        {(user.username || user.email).charAt(0).toUpperCase()}
-                      </div>
-                      <span className="hidden sm:block text-sm font-medium text-text-primary max-w-[100px] truncate">
-                        {user.username || user.email}
+                      {user.avatarUrl ? (
+                        <img src={user.avatarUrl} alt="Avatar" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
+                          {(user.fullName || user.username || user.email).charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="hidden sm:block text-sm font-medium text-text-primary max-w-[120px] truncate">
+                        {user.fullName || user.username || user.email}
                       </span>
                       <ChevronDown size={14} className="text-text-muted hidden sm:block" aria-hidden />
                     </button>
@@ -174,7 +178,7 @@ export default function Navbar() {
                       <div className="px-3 py-2.5 border-b border-border">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-text-primary truncate">
-                            {user.username || 'No username'}
+                            {user.fullName || user.username || 'No username'}
                           </p>
                           {kycBadge && (
                             <span className={cn('shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none', kycBadge.cls)}>
