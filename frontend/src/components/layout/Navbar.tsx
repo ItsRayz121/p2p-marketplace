@@ -36,15 +36,15 @@ const NAV_ITEMS: { href: string; Icon: LucideIcon; label: string; shortLabel?: s
   { href: '/dashboard',   Icon: LayoutDashboard, label: 'Dashboard'                                },
 ]
 
-const DROPDOWN_ITEMS: { href: string; Icon: LucideIcon; label: string }[] = [
-  { href: '/dashboard', Icon: LayoutDashboard, label: 'Dashboard'        },
-  { href: '/kyc',       Icon: ShieldCheck,     label: 'KYC Verification' },
-  { href: '/orders',    Icon: ClipboardList,   label: 'My Trades'        },
-  { href: '/wallet',    Icon: Wallet,          label: 'Wallet'           },
-  { href: '/my-ads',    Icon: Tag,             label: 'My Ads'           },
-  { href: '/settings',  Icon: Settings,        label: 'Settings'         },
-  { href: '/leaderboard', Icon: Trophy,        label: 'Leaderboard'      },
-  { href: '/referral',  Icon: Gift,            label: 'Referral'         },
+const DROPDOWN_ITEMS: { href: string; Icon: LucideIcon; label: string; iconCls: string; bgCls: string }[] = [
+  { href: '/dashboard',   Icon: LayoutDashboard, label: 'Dashboard',        iconCls: 'text-blue-500',   bgCls: 'bg-blue-500/10'   },
+  { href: '/kyc',         Icon: ShieldCheck,     label: 'KYC Verification', iconCls: 'text-amber-500',  bgCls: 'bg-amber-500/10'  },
+  { href: '/orders',      Icon: ClipboardList,   label: 'My Trades',        iconCls: 'text-emerald-500',bgCls: 'bg-emerald-500/10'},
+  { href: '/wallet',      Icon: Wallet,          label: 'Wallet',           iconCls: 'text-violet-500', bgCls: 'bg-violet-500/10' },
+  { href: '/my-ads',      Icon: Tag,             label: 'My Ads',           iconCls: 'text-cyan-500',   bgCls: 'bg-cyan-500/10'   },
+  { href: '/settings',    Icon: Settings,        label: 'Settings',         iconCls: 'text-slate-400',  bgCls: 'bg-slate-400/10'  },
+  { href: '/leaderboard', Icon: Trophy,          label: 'Leaderboard',      iconCls: 'text-yellow-500', bgCls: 'bg-yellow-500/10' },
+  { href: '/referral',    Icon: Gift,            label: 'Referral',         iconCls: 'text-pink-500',   bgCls: 'bg-pink-500/10'   },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -190,10 +190,12 @@ export default function Navbar() {
                         <p className="text-xs text-text-muted truncate mt-0.5">{user.email}</p>
                       </div>
 
-                      {DROPDOWN_ITEMS.map(({ href, Icon, label }) => (
+                      {DROPDOWN_ITEMS.map(({ href, Icon, label, iconCls, bgCls }) => (
                         <DropdownMenu.Item key={href} asChild>
                           <Link href={href} className={dropdownItemCls}>
-                            <Icon size={14} className="text-text-muted flex-shrink-0" aria-hidden />
+                            <span className={cn('flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0', bgCls)}>
+                              <Icon size={13} className={iconCls} aria-hidden />
+                            </span>
                             {label}
                           </Link>
                         </DropdownMenu.Item>
@@ -205,7 +207,9 @@ export default function Navbar() {
                         onSelect={() => logout()}
                         className={cn(dropdownItemCls, 'text-danger focus:text-danger focus:bg-danger/10')}
                       >
-                        <LogOut size={14} className="flex-shrink-0" aria-hidden />
+                        <span className="flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0 bg-red-500/10">
+                          <LogOut size={13} className="text-red-500" aria-hidden />
+                        </span>
                         Logout
                       </DropdownMenu.Item>
                     </DropdownMenu.Content>
