@@ -5,6 +5,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { RefreshCw, CheckCircle2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui/Modal'
@@ -174,7 +175,7 @@ export default function GasReconciliationPage() {
       {loading && <LoadingState message="Loading runs..." />}
       {!loading && error && <ErrorState title={error} onRetry={() => fetchRuns(1)} />}
       {!loading && !error && runs.length === 0 && (
-        <EmptyState title="No reconciliation runs yet" description="Trigger a run or wait for the daily job." />
+        <EmptyState icon={RefreshCw} title="No reconciliation runs yet" description="Trigger a run or wait for the daily job." />
       )}
 
       {!loading && runs.length > 0 && (
@@ -259,7 +260,7 @@ export default function GasReconciliationPage() {
                   </div>
 
                   {selectedRun.discrepancies.length === 0 ? (
-                    <EmptyState title="No discrepancies" description="All checked orders matched on-chain state." />
+                    <EmptyState icon={CheckCircle2} title="No discrepancies" description="All checked orders matched on-chain state." />
                   ) : (
                     <div className="space-y-3">
                       <h3 className="font-semibold text-text-primary text-sm">Discrepancies</h3>

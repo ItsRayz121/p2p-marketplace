@@ -9,6 +9,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
+import { Bell } from 'lucide-react'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ export default function NotificationsPage() {
       </div>
 
       {notifications.length === 0 ? (
-        <EmptyState title="No notifications" description="You're all caught up." />
+        <EmptyState icon={Bell} title="All caught up" description="You have no new notifications." />
       ) : (
         <div className="bg-white border border-border rounded-xl overflow-hidden divide-y divide-border">
           {notifications.map((notif) => {

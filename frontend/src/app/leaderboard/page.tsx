@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { Trophy } from 'lucide-react'
 import { fmtNumber, fmtPkr } from '@/lib/fmt'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -125,7 +126,7 @@ export default function LeaderboardPage() {
       {!loading && !error && (
         <>
           {entries.length === 0 ? (
-            <EmptyState title="No data" description="No traders found for this period yet." />
+            <EmptyState icon={Trophy} title="No data yet" description="No traders found for this period yet." />
           ) : (
             <>
               {/* Desktop */}

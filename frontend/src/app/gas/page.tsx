@@ -369,11 +369,11 @@ function CustomGasRequest() {
 // ─── PKR payment method details ───────────────────────────────────────────────
 
 const PKR_METHOD_META = {
-  bank_transfer: { icon: '🏦', label: 'Bank Transfer', desc: 'Direct bank account transfer' },
-  easypaisa:     { icon: '📱', label: 'Easypaisa',     desc: 'Pay via Easypaisa mobile wallet' },
-  jazzcash:      { icon: '📲', label: 'JazzCash',      desc: 'Pay via JazzCash mobile wallet' },
-  nayapay:       { icon: '📱', label: 'NayaPay',       desc: 'Pay via NayaPay digital bank' },
-  sadapay:       { icon: '📱', label: 'SadaPay',       desc: 'Pay via SadaPay digital bank' },
+  bank_transfer: { abbr: 'BK', label: 'Bank Transfer', desc: 'Direct bank account transfer' },
+  easypaisa:     { abbr: 'EP', label: 'Easypaisa',     desc: 'Pay via Easypaisa mobile wallet' },
+  jazzcash:      { abbr: 'JC', label: 'JazzCash',      desc: 'Pay via JazzCash mobile wallet' },
+  nayapay:       { abbr: 'NP', label: 'NayaPay',       desc: 'Pay via NayaPay digital bank' },
+  sadapay:       { abbr: 'SP', label: 'SadaPay',       desc: 'Pay via SadaPay digital bank' },
 } as const
 
 type PkrMethodKey = keyof typeof PKR_METHOD_META
@@ -407,7 +407,11 @@ function PkrMethodIcon({ methodKey, pkrMethods, sizeCls = 'w-12 h-12' }: {
       />
     )
   }
-  return <span className="text-2xl flex-shrink-0">{meta.icon}</span>
+  return (
+    <div className={`${sizeCls} rounded-xl bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0`}>
+      {meta.abbr}
+    </div>
+  )
 }
 
 // ─── Main Page Component ──────────────────────────────────────────────────────

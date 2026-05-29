@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { Coins, LayoutList, BarChart3 } from 'lucide-react'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
@@ -112,13 +113,15 @@ export default function CtmHomePage() {
 
       {/* Quick links */}
       <div className="grid grid-cols-3 gap-3">
-        {[
-          { href: '/ctm/tokens',    label: 'Token Directory',    icon: '🪙' },
-          { href: '/ctm/listings',  label: 'Buy/Sell Listings',  icon: '📋' },
-          { href: '/ctm/dashboard', label: 'Merchant Dashboard', icon: '📊' },
-        ].map((item) => (
+        {([
+          { href: '/ctm/tokens',    label: 'Token Directory',    Icon: Coins      },
+          { href: '/ctm/listings',  label: 'Buy/Sell Listings',  Icon: LayoutList },
+          { href: '/ctm/dashboard', label: 'Merchant Dashboard', Icon: BarChart3  },
+        ] as const).map((item) => (
           <Link key={item.href} href={item.href} className="bg-white border border-border rounded-xl p-4 text-center hover:shadow-md transition-shadow">
-            <div className="text-2xl mb-1">{item.icon}</div>
+            <div className="flex justify-center mb-2">
+              <item.Icon size={22} className="text-primary" />
+            </div>
             <p className="text-sm font-medium text-text-primary">{item.label}</p>
           </Link>
         ))}

@@ -1,3 +1,14 @@
+import { Lock, CreditCard, Zap, ShieldCheck, BadgeDollarSign, TrendingUp, CheckCircle } from 'lucide-react'
+
+const FEATURES = [
+  { Icon: Lock,            title: 'Escrow Protection',  desc: 'All trades are protected by our escrow system. Crypto is only released when payment is confirmed.' },
+  { Icon: CreditCard,      title: 'Local Payments',     desc: 'Pay and receive with JazzCash, Easypaisa, and all major Pakistani banks.' },
+  { Icon: Zap,             title: 'Instant Buy',        desc: 'Buy USDT, BTC, ETH, and more in minutes without finding a counterparty.' },
+  { Icon: ShieldCheck,     title: 'KYC Verified',       desc: 'Our KYC system ensures all traders are verified, creating a trusted community.' },
+  { Icon: BadgeDollarSign, title: 'Zero Trading Fees',  desc: '0% maker and taker fees on all P2P trades — we only earn on premium services.' },
+  { Icon: TrendingUp,      title: 'Real-time Prices',   desc: 'Live market rates ensure you always get a fair deal based on current market conditions.' },
+]
+
 export default function AboutPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10 pb-16 space-y-10">
@@ -24,18 +35,13 @@ export default function AboutPage() {
       <section>
         <h2 className="text-xl font-bold text-text-primary mb-4">Why PakSwap?</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {[
-            { icon: '🔒', title: 'Escrow Protection', desc: 'All trades are protected by our escrow system. Crypto is only released when payment is confirmed.' },
-            { icon: '🇵🇰', title: 'Local Payments', desc: 'Pay and receive with JazzCash, Easypaisa, and all major Pakistani banks.' },
-            { icon: '⚡', title: 'Instant Buy', desc: 'Buy USDT, BTC, ETH, and more in minutes without finding a counterparty.' },
-            { icon: '🛡️', title: 'KYC Verified', desc: 'Our KYC system ensures all traders are verified, creating a trusted community.' },
-            { icon: '💰', title: 'Zero Trading Fees', desc: '0% maker and taker fees on all P2P trades — we only earn on premium services.' },
-            { icon: '📊', title: 'Real-time Prices', desc: 'Live market rates ensure you always get a fair deal based on current market conditions.' },
-          ].map((item) => (
-            <div key={item.title} className="bg-white border border-border rounded-xl p-4 space-y-2">
-              <div className="text-2xl">{item.icon}</div>
-              <h3 className="text-sm font-bold text-text-primary">{item.title}</h3>
-              <p className="text-sm text-text-muted">{item.desc}</p>
+          {FEATURES.map(({ Icon, title, desc }) => (
+            <div key={title} className="bg-white border border-border rounded-xl p-4 space-y-2">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Icon size={18} className="text-primary" />
+              </div>
+              <h3 className="text-sm font-bold text-text-primary">{title}</h3>
+              <p className="text-sm text-text-muted">{desc}</p>
             </div>
           ))}
         </div>
@@ -54,9 +60,7 @@ export default function AboutPage() {
           ].map((item) => (
             <div key={item.label} className="flex items-start gap-3">
               <div className="w-5 h-5 rounded-full bg-success/10 text-success flex items-center justify-center flex-shrink-0 mt-0.5">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
+                <CheckCircle size={12} className="text-success" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-text-primary">{item.label}</p>

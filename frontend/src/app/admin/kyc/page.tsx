@@ -7,6 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -156,7 +157,7 @@ export default function KycQueuePage() {
       </div>
 
       {submissions.length === 0 ? (
-        <EmptyState title="No pending KYC submissions" description="All submissions have been reviewed." />
+        <EmptyState icon={ShieldCheck} title="No pending KYC submissions" description="All submissions have been reviewed." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">

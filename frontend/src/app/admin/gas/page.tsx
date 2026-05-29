@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { Fuel } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
@@ -1035,7 +1036,7 @@ export default function GasAdminPage() {
 
       {/* ── Orders Table ─────────────────────────────────────────────────────── */}
       {orders.length === 0 ? (
-        <EmptyState title="No gas orders found" description="No gas orders match the current filter." />
+        <EmptyState icon={Fuel} title="No gas orders found" description="No gas orders match the current filter." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">

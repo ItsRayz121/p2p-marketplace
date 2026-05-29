@@ -5,6 +5,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { Flag } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui/Modal'
@@ -147,7 +148,7 @@ export default function GasFlaggedPage() {
       {loading && <LoadingState message="Loading flagged orders..." />}
       {!loading && error && <ErrorState title={error} onRetry={() => fetchItems(1)} />}
       {!loading && !error && items.length === 0 && (
-        <EmptyState title="No flagged orders" description={statusFilter ? `No orders with status "${statusFilter}".` : 'No orders have been flagged.'} />
+        <EmptyState icon={Flag} title="No flagged orders" description={statusFilter ? `No orders with status "${statusFilter}".` : 'No orders have been flagged.'} />
       )}
 
       {!loading && items.length > 0 && (

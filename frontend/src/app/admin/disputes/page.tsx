@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -228,7 +229,7 @@ export default function DisputesPage() {
       </div>
 
       {disputes.length === 0 ? (
-        <EmptyState title="No disputes found" description="No disputes match the current filter." />
+        <EmptyState icon={ShieldAlert} title="No disputes found" description="No disputes match the current filter." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">

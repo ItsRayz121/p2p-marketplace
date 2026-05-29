@@ -7,6 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Input } from '@/components/ui/Input'
@@ -177,7 +178,7 @@ export default function TradesPage() {
       </div>
 
       {trades.length === 0 ? (
-        <EmptyState title="No trades found" description="No trades match the current filters." />
+        <EmptyState icon={ClipboardList} title="No trades found" description="No trades match the current filters." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">

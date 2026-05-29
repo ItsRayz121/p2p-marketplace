@@ -23,6 +23,7 @@ import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAccount } from 'wagmi'
+import { Wallet, ArrowUpDown } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1304,7 +1305,7 @@ export default function WalletPage() {
         <h2 className="text-base font-semibold text-text-primary mb-1">PakSwap balance</h2>
         <p className="text-xs text-text-muted mb-3">Held in escrow on PakSwap — backs your P2P trades. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
         {balances.length === 0 ? (
-          <EmptyState title="No balances" description="Make a deposit to get started" />
+          <EmptyState icon={Wallet} title="No balances" description="Make a deposit to get started" />
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {balances.map((b) => (
@@ -1355,7 +1356,7 @@ export default function WalletPage() {
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Transactions</h2>
         {transactions.length === 0 ? (
-          <EmptyState title="No transactions" description="Your transaction history will appear here" />
+          <EmptyState icon={ArrowUpDown} title="No transactions" description="Your transaction history will appear here" />
         ) : (
           <div className="bg-white rounded-xl border border-border overflow-hidden">
             <div className="divide-y divide-border">

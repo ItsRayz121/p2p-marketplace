@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { Activity } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
@@ -549,7 +550,7 @@ export default function GasWalletActivityPage() {
       {loading && <LoadingState message="Loading wallet activity…" />}
       {!loading && error && <ErrorState title={error} onRetry={() => fetchActivity(page)} />}
       {!loading && !error && items.length === 0 && (
-        <EmptyState title="No wallet activity" description="No matching ledger entries found. Try adjusting filters." />
+        <EmptyState icon={Activity} title="No wallet activity" description="No matching ledger entries found. Try adjusting filters." />
       )}
 
       {!loading && items.length > 0 && (

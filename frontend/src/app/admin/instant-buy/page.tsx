@@ -7,6 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { Zap } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -120,7 +121,7 @@ export default function InstantBuyPage() {
       </div>
 
       {orders.length === 0 ? (
-        <EmptyState title="No orders pending review" description="All instant buy orders have been processed." />
+        <EmptyState icon={Zap} title="No orders pending review" description="All instant buy orders have been processed." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">

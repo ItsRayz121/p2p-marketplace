@@ -10,6 +10,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getTradeStatus } from '@/lib/tradeStatus'
+import { ClipboardList } from 'lucide-react'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -148,6 +149,7 @@ export default function OrdersPage() {
         <ErrorState title={error} onRetry={() => fetchTrades(1, false)} />
       ) : trades.length === 0 ? (
         <EmptyState
+          icon={ClipboardList}
           title="No orders found"
           description="You have no trades matching the current filters."
         />

@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { Globe, Coins } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -1320,7 +1321,7 @@ export default function GasChainsAdminPage() {
           {chainsError && <ErrorState title={chainsError} onRetry={fetchChains} />}
 
           {!chainsLoading && !chainsError && chains.length === 0 && (
-            <EmptyState title="No chains configured" description="Add a chain to get started." />
+            <EmptyState icon={Globe} title="No chains configured" description="Add a chain to get started." />
           )}
 
           {!chainsLoading && chains.length > 0 && (
@@ -1428,7 +1429,7 @@ export default function GasChainsAdminPage() {
           {tokensError && <ErrorState title={tokensError} onRetry={fetchTokens} />}
 
           {!tokensLoading && !tokensError && tokens.length === 0 && (
-            <EmptyState title="No tokens configured" description="Add a token to a chain." />
+            <EmptyState icon={Coins} title="No tokens configured" description="Add a token to a chain." />
           )}
 
           {!tokensLoading && tokens.length > 0 && (

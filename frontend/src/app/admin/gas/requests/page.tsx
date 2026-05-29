@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { Fuel } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -212,7 +213,7 @@ export default function GasRequestsPage() {
 
       {/* Cards */}
       {requests.length === 0 ? (
-        <EmptyState title="No requests found" description="No custom gas fee requests match the current filter." />
+        <EmptyState icon={Fuel} title="No requests found" description="No custom gas fee requests match the current filter." />
       ) : (
         <div className="space-y-3">
           {requests.map(req => (

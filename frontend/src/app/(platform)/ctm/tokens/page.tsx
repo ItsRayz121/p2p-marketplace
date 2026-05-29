@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { Coins } from 'lucide-react'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
@@ -91,7 +92,7 @@ export default function CtmTokensPage() {
       {loading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : tokens.length === 0 ? (
-        <EmptyState title="No tokens found" description="Try adjusting your filters." />
+        <EmptyState icon={Coins} title="No tokens found" description="Try adjusting your filters." />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {tokens.map((token) => (

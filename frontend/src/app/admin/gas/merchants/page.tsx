@@ -5,6 +5,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { Building2, ArrowRightLeft } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/store/auth.store'
@@ -228,7 +229,7 @@ export default function GasMerchantsPage() {
       {loading && <LoadingState message="Loading merchant accounts..." />}
       {!loading && error && <ErrorState title={error} onRetry={() => fetchMerchants(1)} />}
       {!loading && !error && merchants.length === 0 && (
-        <EmptyState title="No merchant accounts" description="Add a merchant account to get started." />
+        <EmptyState icon={Building2} title="No merchant accounts" description="Add a merchant account to get started." />
       )}
 
       {!loading && merchants.length > 0 && (
@@ -345,7 +346,7 @@ export default function GasMerchantsPage() {
               {settlementsLoading && <LoadingState message="Loading settlements..." />}
 
               {!settlementsLoading && settlements.length === 0 && (
-                <EmptyState title="No settlements yet" description="Settlements are created automatically by the daily job." />
+                <EmptyState icon={ArrowRightLeft} title="No settlements yet" description="Settlements are created automatically by the daily job." />
               )}
 
               {!settlementsLoading && settlements.length > 0 && (

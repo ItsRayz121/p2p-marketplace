@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { ArrowDownToLine } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -366,6 +367,7 @@ export default function WithdrawalsPage() {
 
       {withdrawals.length === 0 ? (
         <EmptyState
+          icon={ArrowDownToLine}
           title="No withdrawals"
           description={`No ${statusFilter === 'all' ? '' : STATUS_TABS.find((t) => t.value === statusFilter)?.label.toLowerCase() ?? ''} withdrawals found.`}
         />

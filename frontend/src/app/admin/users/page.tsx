@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { Users, ClipboardList, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -226,7 +227,7 @@ export default function UsersPage() {
       </div>
 
       {users.length === 0 ? (
-        <EmptyState title="No users found" description="Try adjusting your filters." />
+        <EmptyState icon={Users} title="No users found" description="Try adjusting your filters." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
@@ -477,7 +478,7 @@ export default function UsersPage() {
             {activeTab === 'trades' && (
               <div>
                 {!selected.trades || selected.trades.length === 0 ? (
-                  <EmptyState title="No trades" description="This user has no trade history." />
+                  <EmptyState icon={ClipboardList} title="No trades" description="This user has no trade history." />
                 ) : (
                   <div className="divide-y divide-border">
                     {selected.trades.slice(0, 10).map((t) => (
@@ -500,7 +501,7 @@ export default function UsersPage() {
             {activeTab === 'kyc' && (
               <div>
                 {!selected.kycSubmissions || selected.kycSubmissions.length === 0 ? (
-                  <EmptyState title="No KYC submissions" description="This user has not submitted KYC." />
+                  <EmptyState icon={ShieldCheck} title="No KYC submissions" description="This user has not submitted KYC." />
                 ) : (
                   <div className="divide-y divide-border">
                     {selected.kycSubmissions.map((k) => (

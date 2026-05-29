@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { FileText } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 
 interface AuditEntry {
@@ -71,7 +72,7 @@ export default function AuditLogPage() {
       </div>
 
       {entries.length === 0 ? (
-        <EmptyState title="No audit entries" description="No admin actions have been recorded yet." />
+        <EmptyState icon={FileText} title="No audit entries" description="No admin actions have been recorded yet." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">

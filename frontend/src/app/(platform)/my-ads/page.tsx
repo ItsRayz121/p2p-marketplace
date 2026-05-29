@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
+import { Tag } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Spinner } from '@/components/ui/Spinner'
@@ -91,6 +92,7 @@ export default function MyAdsPage() {
 
       {ads.length === 0 ? (
         <EmptyState
+          icon={Tag}
           title="No listings yet"
           description="Create your first buy or sell listing to start trading on PakSwap."
           action={{ label: 'Create Your First Listing', onClick: () => router.push('/create-ad') }}

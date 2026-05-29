@@ -5,6 +5,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { CreditCard } from 'lucide-react'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Spinner } from '@/components/ui/Spinner'
 import { PK_BANKS } from '@/lib/pkPaymentMethods'
@@ -278,6 +279,7 @@ export default function PaymentMethodsPage() {
         <EmptyState
           title="No payment methods"
           description="Add JazzCash, Easypaisa, SadaPay, NayaPay, or a bank account to start trading."
+          icon={CreditCard}
           action={{ label: 'Add Payment Method', onClick: () => setShowAddForm(true) }}
         />
       ) : (

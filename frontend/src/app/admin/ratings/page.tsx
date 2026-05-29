@@ -7,6 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { Star } from 'lucide-react'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 interface RatingRecord {
@@ -102,7 +103,7 @@ export default function AdminRatingsPage() {
       </div>
 
       {ratings.length === 0 ? (
-        <EmptyState title="No ratings yet" description="Ratings will appear here after trades are completed and reviewed." />
+        <EmptyState icon={Star} title="No ratings yet" description="Ratings will appear here after trades are completed and reviewed." />
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
