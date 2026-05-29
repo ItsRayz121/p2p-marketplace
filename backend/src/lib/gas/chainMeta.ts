@@ -153,7 +153,7 @@ export const CHAIN_CAPABILITIES: Record<string, ChainCapabilities> = {
     supportsAutoDelivery:     true,  // @solana/web3.js delivery implemented
     supportsStablecoins:      false, // USDT-on-SOL not yet wired
     supportsRefunds:          false,
-    supportsConfirmation:     false,
+    supportsConfirmation:     true,  // getSignatureStatuses — checks finalized + err=null
     supportsDepositAddress:   true,
     supportsMonitoring:       true,
     supportsRpcHealthCheck:   true,
@@ -164,7 +164,7 @@ export const CHAIN_CAPABILITIES: Record<string, ChainCapabilities> = {
     supportsAutoDelivery:     true,  // @ton/ton WalletContractV4 delivery implemented
     supportsStablecoins:      false,
     supportsRefunds:          false,
-    supportsConfirmation:     false,
+    supportsConfirmation:     true,  // instant finality — confirmed immediately after 60s delay
     supportsDepositAddress:   true,  // real V4R2 address via WalletContractV4
     supportsMonitoring:       true,
     supportsRpcHealthCheck:   true,
@@ -175,7 +175,7 @@ export const CHAIN_CAPABILITIES: Record<string, ChainCapabilities> = {
     supportsAutoDelivery:     true,  // @mysten/sui delivery implemented (requires blake2b-256)
     supportsStablecoins:      false,
     supportsRefunds:          false,
-    supportsConfirmation:     false,
+    supportsConfirmation:     true,  // sui_getTransactionBlock effects.status check
     supportsDepositAddress:   true,  // address correct when blake2b-256 available
     supportsMonitoring:       true,
     supportsRpcHealthCheck:   true,
@@ -269,21 +269,21 @@ export const CHAIN_READINESS_MATRIX: ChainReadinessEntry[] = [
     recommendedState: 'beta',
     deliveryReady: true,
     blockers: [],
-    notes: 'Delivery via @solana/web3.js. Admin must: (1) create GasHotWallet row, (2) fund it with SOL, (3) set backendChainId=SOL, (4) set readiness to beta.',
+    notes: 'Delivery + confirmation fully implemented. Admin must: (1) POST /admin/gas/hot-wallets chain=SOL, (2) fund the derived address with SOL, (3) activate hot wallet row, (4) set GasChainConfig backendChainId=SOL + isActive=true + readinessState=beta.',
   },
   {
     chain: 'TON',
     recommendedState: 'beta',
     deliveryReady: true,
     blockers: [],
-    notes: 'Delivery via @ton/ton WalletContractV4. Real V4R2 address now derived. Admin must: (1) create GasHotWallet row, (2) fund it with TON, (3) set backendChainId=TON, (4) set readiness to beta.',
+    notes: 'Delivery + instant-confirm implemented. Real V4R2 address derived via WalletContractV4. Admin must: (1) POST /admin/gas/hot-wallets chain=TON, (2) fund with TON, (3) activate hot wallet row, (4) set GasChainConfig backendChainId=TON + isActive=true + readinessState=beta.',
   },
   {
     chain: 'SUI',
     recommendedState: 'beta',
     deliveryReady: true,
     blockers: [],
-    notes: 'Delivery via @mysten/sui. REQUIRES blake2b-256 on production host (Node 20 + OpenSSL 3) — verify with deploy:verify before activating. Admin must: (1) create GasHotWallet row, (2) fund it with SUI, (3) set backendChainId=SUI, (4) set readiness to beta.',
+    notes: 'Delivery + sui_getTransactionBlock confirmation implemented. REQUIRES blake2b-256 (Node 20 + OpenSSL 3) — run deploy:verify before activating. Admin must: (1) POST /admin/gas/hot-wallets chain=SUI, (2) fund with SUI, (3) activate hot wallet row, (4) set GasChainConfig backendChainId=SUI + isActive=true + readinessState=beta.',
   },
 ]
 
@@ -311,9 +311,9 @@ export const UNSUPPORTED_FEATURES: UnsupportedFeatureEntry[] = [
   },
   {
     feature: 'Tx confirmation check',
-    affectedChains: ['SOL', 'TON', 'SUI'],
-    reason: 'Post-delivery confirmation polling not yet implemented for non-EVM chains',
-    resolution: 'Add chain-specific confirmation check in gas.confirmation.ts',
+    affectedChains: [],
+    reason: 'Implemented for all chains: SOL uses getSignatureStatuses, SUI uses sui_getTransactionBlock, TON uses instant-finality confirmation.',
+    resolution: 'N/A — complete.',
   },
   {
     feature: 'SUI address on non-blake2b hosts',

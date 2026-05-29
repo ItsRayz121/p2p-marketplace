@@ -4558,30 +4558,50 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('CONFIG_ERROR', 'Gas mnemonic not configured', 503)
     }
 
-    // Find next available hdIndex for this chain
+    type DbChain = 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI'
+    const dbChain = chain.toUpperCase() as DbChain
+
+    // Non-EVM chains (SOL/TON/SUI) derive a single address from the shared mnemonic.
+    // Additional hot wallet indices are not supported for these chains — prevent duplicates.
+    const NON_EVM_SINGLE_ADDRESS = new Set(['SOL', 'TON', 'SUI'])
+    if (NON_EVM_SINGLE_ADDRESS.has(dbChain)) {
+      const existing = await db.gasHotWallet.findFirst({ where: { chain: dbChain } })
+      if (existing) {
+        throw new AppError('CONFLICT', `A hot wallet for ${dbChain} already exists (id: ${existing.id}). Only one hot wallet per non-EVM chain is supported.`, 409)
+      }
+
+      const { getSolanaHotWalletAddress } = await import('../lib/gas/solanaWalletService')
+      const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
+      const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
+
+      let address: string | null = null
+      if (dbChain === 'SOL') address = getSolanaHotWalletAddress()
+      if (dbChain === 'TON') address = getTonHotWalletAddress()
+      if (dbChain === 'SUI') address = getSuiHotWalletAddress()
+      if (!address) throw new AppError('DERIVATION_ERROR', `Could not derive ${dbChain} address — check mnemonic configuration`, 500)
+
+      const wallet = await db.gasHotWallet.create({
+        data: { chain: dbChain, address, hdIndex: 0, weight: 0, isActive: false },
+      })
+      await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain: dbChain, hdIndex: 0, address })
+      return reply.code(201).send({ success: true, data: wallet })
+    }
+
+    // TRON and EVM chains: find next available hdIndex for multi-wallet load balancing
     const existing = await db.gasHotWallet.findMany({
-      where: { chain: chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI' },
+      where: { chain: dbChain },
       orderBy: { hdIndex: 'desc' },
       take: 1,
     })
     const nextIndex = existing.length > 0 ? existing[0]!.hdIndex + 1 : 1
 
-    // Derive address for new index — currently only index 0 is used for delivery;
-    // additional wallets require manual funding before activation
-    const address = chain === 'TRON' ? getTronHotWalletAddress(nextIndex) : getEvmHotWalletAddress(nextIndex)
+    const address = dbChain === 'TRON' ? getTronHotWalletAddress(nextIndex) : getEvmHotWalletAddress(nextIndex)
     if (!address) throw new AppError('DERIVATION_ERROR', 'Could not derive address for new wallet', 500)
 
     const wallet = await db.gasHotWallet.create({
-      data: {
-        chain:    chain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'TON' | 'AVAX' | 'OP' | 'SUI',
-        address,
-        hdIndex:  nextIndex,
-        weight:   0, // start with 0 weight until funded
-        isActive: false,
-      },
+      data: { chain: dbChain, address, hdIndex: nextIndex, weight: 0, isActive: false },
     })
-
-    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain, hdIndex: nextIndex, address })
+    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain: dbChain, hdIndex: nextIndex, address })
     return reply.code(201).send({ success: true, data: wallet })
   })
 
