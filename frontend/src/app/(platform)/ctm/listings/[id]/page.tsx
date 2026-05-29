@@ -333,7 +333,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <p className="text-text-muted text-sm">{listing.token.symbol} · {listing.token.settlementType}</p>
             </div>
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{listing.status}</span>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">

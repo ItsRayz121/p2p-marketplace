@@ -15,6 +15,11 @@ const STATUS_COLORS: Record<string, string> = {
   delisted: 'bg-gray-100 text-gray-600',
   restricted: 'bg-orange-100 text-orange-700',
 }
+const TOKEN_STATUS_LABELS: Record<string, string> = {
+  approved: 'Approved', pending_review: 'Pending Review',
+  rejected: 'Rejected', delisted: 'Delisted', restricted: 'Restricted',
+}
+const tokenStatusLabel = (s: string) => TOKEN_STATUS_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
@@ -313,8 +318,8 @@ export default function AdminCtmTokensPage() {
                       <div><p className="font-medium text-text-primary">{t.name}</p><p className="text-xs text-text-muted">{t.symbol} · {t.slug}</p></div>
                     </div>
                   </td>
-                  <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>{t.status}</span></td>
-                  <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RISK_COLORS[t.riskTier] ?? 'bg-gray-100 text-gray-600'}`}>{t.riskTier}</span></td>
+                  <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>{tokenStatusLabel(t.status)}</span></td>
+                  <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RISK_COLORS[t.riskTier] ?? 'bg-gray-100 text-gray-600'}`}>{t.riskTier.charAt(0).toUpperCase() + t.riskTier.slice(1)}</span></td>
                   <td className="px-4 py-3 text-text-muted">{t.totalTrades}</td>
                   <td className="px-4 py-3"><span className={`text-xs font-medium ${t.isListingEnabled ? 'text-green-600' : 'text-red-500'}`}>{t.isListingEnabled ? 'Enabled' : 'Disabled'}</span></td>
                   <td className="px-4 py-3">

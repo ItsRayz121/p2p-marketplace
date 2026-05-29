@@ -50,6 +50,10 @@ function settlementStatusVariant(s: string): 'warning' | 'success' | 'default' {
   if (s === 'approved') return 'warning'
   return 'default'
 }
+const SETTLEMENT_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending', approved: 'Approved', paid: 'Paid',
+}
+const settlementStatusLabel = (s: string) => SETTLEMENT_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
 
 type MerchantForm = {
   name: string
@@ -373,7 +377,7 @@ export default function GasMerchantsPage() {
                             <td className="px-4 py-3 text-right text-text-primary">{usd(s.grossRevenueUsd)}</td>
                             <td className="px-4 py-3 text-right font-semibold text-success">{usd(s.merchantShareUsd)}</td>
                             <td className="px-4 py-3">
-                              <Badge variant={settlementStatusVariant(s.status)} size="sm">{s.status}</Badge>
+                              <Badge variant={settlementStatusVariant(s.status)} size="sm">{settlementStatusLabel(s.status)}</Badge>
                               {s.paidAt && <p className="text-xs text-text-muted mt-0.5">Paid {fmt(s.paidAt)}</p>}
                             </td>
                             <td className="px-4 py-3 text-right">

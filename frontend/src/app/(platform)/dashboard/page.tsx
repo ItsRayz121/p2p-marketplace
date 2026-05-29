@@ -156,8 +156,9 @@ export default function DashboardPage() {
 
   const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
 
-  const totalPortfolioPkr = usdtRate > 0
-    ? (summary?.wallets ?? []).reduce((sum, b) => sum + parseFloat(b.available ?? '0') * usdtRate, 0)
+  const usdtBalance = (summary?.wallets ?? []).find((b) => b.coin === 'USDT')
+  const totalPortfolioPkr = usdtRate > 0 && usdtBalance
+    ? parseFloat(usdtBalance.available ?? '0') * usdtRate
     : null
 
   const notifIconColor: Record<string, string> = {
@@ -190,7 +191,7 @@ export default function DashboardPage() {
           </div>
           {totalPortfolioPkr !== null && totalPortfolioPkr > 0 && (
             <div className="text-right">
-              <p className="text-xs text-text-muted">Portfolio Value</p>
+              <p className="text-xs text-text-muted">USDT Balance (PKR)</p>
               <p className="text-2xl font-bold text-text-primary">PKR {Math.round(totalPortfolioPkr).toLocaleString()}</p>
               {(summary?.tradeStats?.totalVolumePKR ?? null) && (
                 <p className="text-xs text-text-muted">Vol: PKR {Number(summary!.tradeStats!.totalVolumePKR).toLocaleString()}</p>

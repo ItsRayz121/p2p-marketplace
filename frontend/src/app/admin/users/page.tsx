@@ -182,6 +182,16 @@ export default function UsersPage() {
     if (s === 'pending') return 'warning'
     return 'default'
   }
+  const KYC_STATUS_LABELS: Record<string, string> = {
+    none: 'None', pending: 'Pending', approved: 'Approved', rejected: 'Rejected',
+  }
+  const kycStatusLabel = (s: string) => KYC_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
+  const TRADE_STATUS_LABELS_USER: Record<string, string> = {
+    payment_pending: 'Awaiting Payment', payment_uploaded: 'Proof Uploaded',
+    payment_confirmed: 'Payment Confirmed', crypto_sent: 'Crypto Sent',
+    crypto_released: 'Completed', disputed: 'Disputed', cancelled: 'Cancelled', expired: 'Expired',
+  }
+  const tradeStatusLabelUser = (s: string) => TRADE_STATUS_LABELS_USER[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
   if (loading) return <LoadingState message="Loading users..." />
   if (error && users.length === 0) return <ErrorState title={error} onRetry={fetchUsers} />
@@ -255,7 +265,7 @@ export default function UsersPage() {
                       <Badge variant="outline" size="sm">{u.role}</Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={kycVariant(u.kycStatus)} size="sm">{u.kycStatus}</Badge>
+                      <Badge variant={kycVariant(u.kycStatus)} size="sm">{kycStatusLabel(u.kycStatus)}</Badge>
                     </td>
                     <td className="px-4 py-3">
                       {u.isBanned ? (
@@ -340,7 +350,7 @@ export default function UsersPage() {
                   </div>
                   <div>
                     <p className="text-text-muted">KYC Status</p>
-                    <Badge variant={kycVariant(selected.kycStatus)}>{selected.kycStatus}</Badge>
+                    <Badge variant={kycVariant(selected.kycStatus)}>{kycStatusLabel(selected.kycStatus)}</Badge>
                   </div>
                   <div>
                     <p className="text-text-muted">KYC Level</p>
@@ -488,7 +498,7 @@ export default function UsersPage() {
                           <p className="text-text-primary">{t.amount} {t.coin}</p>
                         </div>
                         <div className="text-right">
-                          <Badge variant="default" size="sm">{t.status}</Badge>
+                          <Badge variant="default" size="sm">{tradeStatusLabelUser(t.status)}</Badge>
                           <p className="text-xs text-text-muted mt-0.5">{fmtDate(t.createdAt)}</p>
                         </div>
                       </div>

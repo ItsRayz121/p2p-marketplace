@@ -8,6 +8,11 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Building2 } from 'lucide-react'
+
+const MERCHANT_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending', approved: 'Approved', rejected: 'Rejected',
+}
+const merchantStatusLabel = (s: string) => MERCHANT_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -164,7 +169,7 @@ export default function MerchantKycPage() {
                         variant={sub.status === 'approved' ? 'success' : sub.status === 'rejected' ? 'danger' : 'warning'}
                         size="sm"
                       >
-                        {sub.status}
+                        {merchantStatusLabel(sub.status)}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(sub.createdAt)}</td>
@@ -220,7 +225,7 @@ export default function MerchantKycPage() {
                 <Badge
                   variant={selected.status === 'approved' ? 'success' : selected.status === 'rejected' ? 'danger' : 'warning'}
                 >
-                  {selected.status}
+                  {merchantStatusLabel(selected.status)}
                 </Badge>
               </div>
             </div>
@@ -283,7 +288,7 @@ export default function MerchantKycPage() {
 
             {selected.status !== 'pending' && (
               <div className="px-4 py-3 bg-surface rounded-xl text-sm text-text-muted text-center">
-                This application has already been {selected.status}.
+                This application has already been {merchantStatusLabel(selected.status)}.
               </div>
             )}
           </div>
