@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { Clock } from 'lucide-react'
+import { Clock, ShieldCheck, ShieldPlus } from 'lucide-react'
 import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -58,11 +58,17 @@ function TierCard({
       onClick={onSelect}
     >
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-bold text-text-primary">{isBasic ? 'Basic KYC' : 'Enhanced KYC'}</h3>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isBasic ? 'bg-blue-500/10' : 'bg-amber-500/10'}`}>
+          {isBasic
+            ? <ShieldCheck size={20} className="text-blue-500" aria-hidden />
+            : <ShieldPlus size={20} className="text-amber-500" aria-hidden />
+          }
+        </div>
         <Badge variant={isBasic ? 'default' : 'gold'} size="sm">
           {isBasic ? 'Level 1' : 'Level 2'}
         </Badge>
       </div>
+      <h3 className="text-base font-bold text-text-primary mb-3">{isBasic ? 'Basic KYC' : 'Enhanced KYC'}</h3>
       <ul className="text-sm text-text-secondary space-y-2 mb-4">
         {isBasic ? (
           <>
@@ -423,18 +429,31 @@ export default function KycPage() {
             <h3 className="text-sm font-semibold text-text-primary">What you will need</h3>
             <div className="grid sm:grid-cols-2 gap-3 text-sm text-text-secondary">
               <div className="space-y-2">
-                <p className="font-medium text-text-primary">Basic KYC (Level 1)</p>
-                <ul className="space-y-1">
-                  <li className="flex gap-2"><span className="text-primary">1.</span> CNIC front photo (clear, unobstructed)</li>
-                  <li className="flex gap-2"><span className="text-primary">2.</span> CNIC back photo</li>
-                  <li className="flex gap-2"><span className="text-primary">3.</span> Selfie holding your CNIC</li>
+                <p className="font-medium text-text-primary flex items-center gap-2">
+                  <ShieldCheck size={14} className="text-blue-500" />
+                  Basic KYC (Level 1)
+                </p>
+                <ul className="space-y-1.5">
+                  {['CNIC front photo (clear, unobstructed)', 'CNIC back photo', 'Selfie holding your CNIC'].map((item, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
               <div className="space-y-2">
-                <p className="font-medium text-text-primary">Enhanced KYC (Level 2)</p>
-                <ul className="space-y-1">
-                  <li className="flex gap-2"><span className="text-primary">+</span> Everything in Basic</li>
-                  <li className="flex gap-2"><span className="text-primary">+</span> 2 or more social media profile links</li>
+                <p className="font-medium text-text-primary flex items-center gap-2">
+                  <ShieldPlus size={14} className="text-amber-500" />
+                  Enhanced KYC (Level 2)
+                </p>
+                <ul className="space-y-1.5">
+                  {['Everything in Basic', '2 or more social media profile links'].map((item, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-amber-500/10 text-amber-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">+</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>

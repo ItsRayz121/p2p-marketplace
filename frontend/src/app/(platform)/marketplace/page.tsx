@@ -49,8 +49,9 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
   const rating = parseFloat(ad.seller?.tradeStats?.avgRating ?? '0')
   const trades = ad.seller?.tradeStats?.totalTrades ?? 0
 
+  const isSell = ad.side === 'sell'
   return (
-    <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
+    <div className={`bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow overflow-hidden relative border-l-4 ${isSell ? 'border-l-emerald-500' : 'border-l-blue-500'}`}>
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
 
         {/* USDT logo + coin/network */}
@@ -59,12 +60,15 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           <div>
             <p className="font-semibold text-text-primary text-sm">{ad.coin}</p>
             <p className="text-xs text-text-muted">{ad.network}</p>
+            <span className={`inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'}`}>
+              {isSell ? 'SELL' : 'BUY'}
+            </span>
           </div>
         </div>
 
         {/* Price + available */}
         <div className="sm:flex-1">
-          <p className="text-xl font-bold text-text-primary">PKR {Number(ad.price).toLocaleString()}</p>
+          <p className={`text-xl font-bold ${isSell ? 'text-emerald-600' : 'text-blue-600'}`}>PKR {Number(ad.price).toLocaleString()}</p>
           <p className="text-xs text-text-muted">per {ad.coin}</p>
           <p className="text-xs text-text-muted mt-0.5">
             <span className="font-medium">{ad.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
