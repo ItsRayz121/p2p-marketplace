@@ -57,9 +57,9 @@ const config: Config = {
         'surface-alt': '#f1f5f9',
 
         // ── Border hierarchy ─────────────────────────────────────────────────
-        'border-subtle': '#f1f5f9',   // hairline dividers
-        border:          '#e2e8f0',   // default border
-        'border-strong': '#cbd5e1',   // active / focus border
+        'border-subtle': '#e2e8f0',   // hairline dividers
+        border:          '#cbd5e1',   // default border
+        'border-strong': '#94a3b8',   // active / focus border
 
         // ── Text hierarchy ────────────────────────────────────────────────────
         'text-primary':   '#0f172a',
@@ -73,9 +73,9 @@ const config: Config = {
       // card-md   → hovered / focused card
       // card-lg   → modals, dropdowns, popovers
       boxShadow: {
-        card:    '0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.06)',
-        'card-md':'0 4px 6px -1px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.07)',
-        'card-lg':'0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05)',
+        card:    '0 1px 3px 0 rgb(0 0 0 / 0.10), 0 1px 2px -1px rgb(0 0 0 / 0.08)',
+        'card-md':'0 4px 6px -1px rgb(0 0 0 / 0.12), 0 2px 4px -2px rgb(0 0 0 / 0.08)',
+        'card-lg':'0 10px 15px -3px rgb(0 0 0 / 0.10), 0 4px 6px -4px rgb(0 0 0 / 0.06)',
         focus:   '0 0 0 3px rgb(37 99 235 / 0.15)',
       },
 
