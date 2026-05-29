@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { Clock } from 'lucide-react'
 import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -383,7 +384,9 @@ export default function KycPage() {
       {/* ── Pending ── */}
       {uiState === 'pending' && (
         <div className="bg-warning/10 border border-warning/20 rounded-xl p-6 text-center space-y-3">
-          <div className="w-14 h-14 bg-warning/20 rounded-full flex items-center justify-center mx-auto text-2xl">⏳</div>
+          <div className="w-14 h-14 bg-warning/20 rounded-full flex items-center justify-center mx-auto">
+            <Clock size={26} className="text-warning" />
+          </div>
           <h2 className="text-lg font-bold text-warning">Under Review</h2>
           <p className="text-sm text-text-secondary">
             Your documents are being reviewed. This usually takes 1-2 business days.

@@ -23,7 +23,7 @@ import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAccount } from 'wagmi'
-import { Wallet, ArrowUpDown } from 'lucide-react'
+import { Wallet, ArrowUpDown, Lock, Clock } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,7 +243,9 @@ function WithdrawModal({
               </>
             ) : (
               <>
-                <div className="w-12 h-12 bg-warning/10 rounded-full flex items-center justify-center mx-auto text-warning text-2xl">⏳</div>
+                <div className="w-12 h-12 bg-warning/10 rounded-full flex items-center justify-center mx-auto">
+                    <Clock size={22} className="text-warning" />
+                  </div>
                 <p className="text-sm font-medium text-text-primary">Withdrawal request submitted</p>
                 <p className="text-xs text-text-muted">Your request is pending admin review. Funds have not been sent on-chain yet.</p>
                 <div className="bg-surface rounded-lg px-3 py-2 text-xs text-text-secondary space-y-1 text-left">
@@ -1252,15 +1254,6 @@ export default function WalletPage() {
     return tx.status.charAt(0).toUpperCase() + tx.status.slice(1)
   }
 
-  const txTypeIcon: Record<string, string> = {
-    deposit: '↓',
-    withdrawal: '↑',
-    trade_lock: '🔒',
-    trade_release: '🔓',
-    fee: '💸',
-    referral_bonus: '🎁',
-  }
-
   if (loading) return <LoadingState message="Loading wallet..." />
   if (error) return <ErrorState title={error} onRetry={fetchBalances} />
 
@@ -1282,7 +1275,7 @@ export default function WalletPage() {
       {/* ── Withdrawal security lock banner ── */}
       {wdLockActive && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
-          <span className="text-amber-500 text-xl mt-0.5">🔒</span>
+          <Lock size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>
             <p className="text-xs text-amber-700 mt-0.5">
@@ -1365,7 +1358,7 @@ export default function WalletPage() {
                 const explorerUrl = tx.txHash && explorerBase ? `${explorerBase}/${tx.txHash}` : null
                 const networkLabel = NETWORK_DISPLAY_NAMES[tx.network?.toUpperCase() ?? ''] ?? tx.network
                 const isDebit = tx.type === 'withdrawal' || tx.type === 'fee'
-                const statusIcon = tx.status === 'completed' ? '✓' : tx.status === 'failed' ? '✗' : '⏳'
+                const statusIcon = tx.status === 'completed' ? '✓' : tx.status === 'failed' ? '✗' : '…'
                 const statusColor = tx.status === 'completed' ? 'text-success' : tx.status === 'failed' ? 'text-danger' : 'text-warning'
                 return (
                   <div key={tx.id} className="px-4 py-3 space-y-2">

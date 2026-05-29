@@ -6,6 +6,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { Star } from 'lucide-react'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
 
@@ -371,7 +372,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 <span className="font-semibold text-text-primary">{listing.merchantProfile.user.username}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-gray-100 text-gray-700'}`}>{listing.merchantProfile.tier}</span>
               </div>
-              <p className="text-xs text-text-muted">{listing.merchantProfile.completedCtmTrades} completed · ⭐ {Number(listing.merchantProfile.ctmAvgRating).toFixed(1)}</p>
+              <p className="text-xs text-text-muted flex items-center gap-1">{listing.merchantProfile.completedCtmTrades} completed · <Star size={10} className="text-warning fill-warning" />{Number(listing.merchantProfile.ctmAvgRating).toFixed(1)}</p>
             </div>
           </div>
         )}

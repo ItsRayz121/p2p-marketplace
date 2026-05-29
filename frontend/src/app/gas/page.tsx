@@ -18,6 +18,7 @@ import { CopyButton } from '@/components/ui/CopyButton'
 import { Spinner } from '@/components/ui/Spinner'
 import { usePolling } from '@/hooks/usePolling'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { Zap, Fuel } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -715,7 +716,9 @@ export default function GasPage() {
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">⚡</div>
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center text-white">
+                <Zap size={18} />
+              </div>
             <div>
               <h1 className="text-base font-bold text-gray-900 leading-tight">Buy Gas Instantly</h1>
               <p className="text-xs text-gray-500">Pay with PKR or USDT</p>
@@ -747,7 +750,11 @@ export default function GasPage() {
 
             {!chainsLoading && !chainsError && chains.length === 0 && (
               <div className="text-center py-16 px-4">
-                <div className="text-5xl mb-4">⛽</div>
+                <div className="flex justify-center mb-4">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <Fuel size={32} className="text-primary" />
+                  </div>
+                </div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">Gas Fee Service Unavailable</h3>
                 <p className="text-sm text-gray-500 max-w-sm mx-auto">
                   No blockchain networks are currently active. Check back soon — we&apos;re working on expanding coverage.

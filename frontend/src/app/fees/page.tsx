@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { walletApi, marketplaceApi } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { Gift } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,7 +150,9 @@ export default function FeesPage() {
         <h2 className="text-lg font-bold text-text-primary mb-3">Referral Rewards</h2>
         <div className="bg-white border border-border rounded-xl p-5">
           <div className="flex items-center gap-4">
-            <div className="text-3xl">🎁</div>
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Gift size={20} className="text-primary" />
+            </div>
             <div>
               <p className="text-base font-bold text-text-primary">
                 Earn {referralReward} per referral

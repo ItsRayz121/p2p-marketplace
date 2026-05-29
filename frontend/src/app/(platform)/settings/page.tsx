@@ -11,6 +11,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
+import { Lock } from 'lucide-react'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ function SecurityTab() {
       {/* Withdrawal lock notice */}
       {wdLocked && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
-          <span className="text-amber-500 text-xl mt-0.5">🔒</span>
+          <Lock size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>
             <p className="text-xs text-amber-700 mt-0.5">

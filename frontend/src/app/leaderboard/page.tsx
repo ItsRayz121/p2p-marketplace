@@ -51,9 +51,9 @@ const PERIOD_MAP: Record<Period, string> = {
 }
 
 function RankDisplay({ rank }: { rank: number }) {
-  if (rank === 1) return <span className="text-lg">🥇</span>
-  if (rank === 2) return <span className="text-lg">🥈</span>
-  if (rank === 3) return <span className="text-lg">🥉</span>
+  if (rank === 1) return <span className="text-sm font-black text-yellow-500 w-6 text-center inline-block">#1</span>
+  if (rank === 2) return <span className="text-sm font-black text-slate-400 w-6 text-center inline-block">#2</span>
+  if (rank === 3) return <span className="text-sm font-black text-amber-600 w-6 text-center inline-block">#3</span>
   return <span className="text-sm font-bold text-text-muted w-6 text-center inline-block">{rank}</span>
 }
 

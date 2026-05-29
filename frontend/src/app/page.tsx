@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { Store, Fuel, FileText, type LucideIcon } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -395,19 +396,19 @@ export default function HomePage() {
           <div className="grid sm:grid-cols-3 gap-4">
             <QuickActionCard
               href="/marketplace"
-              icon="🏪"
+              Icon={Store}
               title="P2P Marketplace"
               description="Browse buy and sell offers from verified traders"
             />
             <QuickActionCard
               href="/gas"
-              icon="⛽"
+              Icon={Fuel}
               title="Crypto Gas Fees"
               description="Top up gas fees on any chain instantly"
             />
             <QuickActionCard
               href="/fees"
-              icon="📋"
+              Icon={FileText}
               title="View Fees"
               description="Transparent fee schedule for all transactions"
             />
@@ -429,10 +430,10 @@ export default function HomePage() {
 }
 
 function QuickActionCard({
-  href, icon, title, description,
+  href, Icon, title, description,
 }: {
   href: string
-  icon: string
+  Icon: LucideIcon
   title: string
   description: string
 }) {
@@ -441,7 +442,9 @@ function QuickActionCard({
       href={href}
       className="block p-6 bg-surface border border-border rounded-xl hover:shadow-md hover:border-primary/30 transition-all group"
     >
-      <div className="text-3xl mb-3">{icon}</div>
+      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/15 transition-colors">
+        <Icon size={20} className="text-primary" />
+      </div>
       <h3 className="text-base font-semibold text-text-primary group-hover:text-primary transition-colors">{title}</h3>
       <p className="mt-1 text-sm text-text-muted">{description}</p>
     </Link>
