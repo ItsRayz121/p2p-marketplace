@@ -32,7 +32,7 @@ interface CtmToken {
 
 function TokenCard({ token }: { token: CtmToken }) {
   return (
-    <Link href={`/ctm/tokens/${token.slug}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+    <Link href={`/ctm/tokens/${token.slug}`} className="block bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
       <div className="flex items-center gap-3 mb-3">
         <EntityLogo type="token" slug={token.symbol} size="xl" logoUrl={token.logoUrl} />
         <div className="min-w-0">

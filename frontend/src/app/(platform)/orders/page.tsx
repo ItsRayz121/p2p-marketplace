@@ -156,7 +156,7 @@ export default function OrdersPage() {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden sm:block bg-white rounded-xl border border-border overflow-hidden">
+          <div className="hidden sm:block bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
               <thead className="bg-surface border-b border-border">
                 <tr>

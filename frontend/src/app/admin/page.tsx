@@ -260,7 +260,7 @@ export default function AdminDashboardPage() {
               key={card.label}
               href={card.href}
               className={cn(
-                'flex items-center gap-3 p-4 rounded-xl border bg-white hover:shadow-md transition-all',
+                'flex items-center gap-3 p-4 rounded-xl border bg-surface shadow-card hover:shadow-card-md transition-all',
                 card.urgent ? 'border-danger/30 shadow-sm' : 'border-border',
               )}
             >

@@ -326,14 +326,14 @@ export default function DisputesPage() {
 
             {/* Parties */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-white border border-border rounded-xl text-sm">
+              <div className="p-3 bg-surface shadow-card border border-border rounded-xl text-sm">
                 <p className="text-text-muted text-xs mb-1">Buyer</p>
                 <Link href={`/admin/users/${selected.trade?.buyer?.id ?? selected.trade?.buyerId}`} className="font-semibold text-primary hover:underline">
                   {selected.trade?.buyer?.username || 'Unknown'}
                 </Link>
                 <p className="text-xs text-text-muted">{selected.trade?.buyer?.email}</p>
               </div>
-              <div className="p-3 bg-white border border-border rounded-xl text-sm">
+              <div className="p-3 bg-surface shadow-card border border-border rounded-xl text-sm">
                 <p className="text-text-muted text-xs mb-1">Seller</p>
                 <Link href={`/admin/users/${selected.trade?.seller?.id ?? selected.trade?.sellerId}`} className="font-semibold text-primary hover:underline">
                   {selected.trade?.seller?.username || 'Unknown'}

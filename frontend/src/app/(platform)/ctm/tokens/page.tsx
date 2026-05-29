@@ -96,7 +96,7 @@ export default function CtmTokensPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {tokens.map((token) => (
-            <Link key={token.id} href={`/ctm/tokens/${token.slug}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+            <Link key={token.id} href={`/ctm/tokens/${token.slug}`} className="block bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
               <div className="flex items-center gap-3 mb-3">
                 <EntityLogo type="token" slug={token.symbol} size="xl" logoUrl={token.logoUrl} />
                 <div className="min-w-0">

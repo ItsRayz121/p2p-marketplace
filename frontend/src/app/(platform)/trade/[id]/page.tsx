@@ -31,6 +31,7 @@ import {
   Package,
   ShieldCheck,
   WifiOff,
+  BadgeCheck,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -495,6 +496,9 @@ export default function TradePage() {
   const counterparty = counterpartyUser?.username || (isUserBuyer ? 'Seller' : 'Buyer')
   const counterpartyBadge = (counterpartyUser?.tradeStats?.badge ?? 'new') as TraderBadge
   const counterpartyStats = counterpartyUser?.tradeStats
+  const counterpartyKycVerified = counterpartyUser?.kycLevel === 'basic' || counterpartyUser?.kycLevel === 'enhanced'
+  const completionRateColor = (rate: number) =>
+    rate >= 0.8 ? 'text-success' : rate >= 0.6 ? 'text-warning' : 'text-danger'
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -515,11 +519,20 @@ export default function TradePage() {
             </h1>
             <BadgeChip badge={counterpartyBadge} />
           </div>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
             <p className="text-xs text-text-muted font-mono">{trade.id}</p>
             {counterpartyStats && (
               <span className="text-xs text-text-muted">
-                {counterpartyStats.completedTrades} trades · {((Number(counterpartyStats.completionRate) ?? 0) * 100).toFixed(0)}% completion
+                {counterpartyStats.completedTrades} trades ·{' '}
+                <span className={completionRateColor(Number(counterpartyStats.completionRate) ?? 0)}>
+                  {((Number(counterpartyStats.completionRate) ?? 0) * 100).toFixed(0)}% completion
+                </span>
+              </span>
+            )}
+            {counterpartyKycVerified && (
+              <span className="inline-flex items-center gap-1 text-xs text-success font-medium">
+                <BadgeCheck size={12} />
+                KYC Verified
               </span>
             )}
           </div>

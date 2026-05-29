@@ -942,7 +942,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
         </div>
 
         {/* Right: Chat */}
-        <div className="lg:col-span-2 flex flex-col bg-white border border-border rounded-xl overflow-hidden" style={{ maxHeight: '70vh' }}>
+        <div className="lg:col-span-2 flex flex-col bg-surface shadow-card border border-border rounded-xl overflow-hidden" style={{ maxHeight: '70vh' }}>
           <div className="p-4 border-b border-border font-semibold text-text-primary text-sm">
             Chat — {trade.buyer.username} & {trade.seller.username}
           </div>

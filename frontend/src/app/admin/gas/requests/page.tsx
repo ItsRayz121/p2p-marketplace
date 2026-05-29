@@ -60,7 +60,7 @@ function RequestCard({
   }
 
   return (
-    <div className={`bg-white border rounded-xl overflow-hidden transition-all ${
+    <div className={`bg-surface shadow-card border rounded-xl overflow-hidden transition-all ${
       req.status === 'pending' ? 'border-warning/40' : 'border-border'
     }`}>
       {/* Summary row */}

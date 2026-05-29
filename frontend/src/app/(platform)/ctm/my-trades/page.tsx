@@ -139,7 +139,7 @@ export default function MyCtmTradesPage() {
           {trades.map((t) => {
             const isBuyer = user?.id === t.buyer.id
             return (
-              <Link key={t.id} href={`/ctm/trade/${t.tradeRef}`} className="block bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+              <Link key={t.id} href={`/ctm/trade/${t.tradeRef}`} className="block bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <EntityLogo type="token" slug={t.token.symbol} size="xl" logoUrl={t.token.logoUrl} />

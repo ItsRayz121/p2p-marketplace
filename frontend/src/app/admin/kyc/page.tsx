@@ -131,7 +131,7 @@ export default function KycQueuePage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 bg-white p-4 rounded-xl border border-border">
+      <div className="flex flex-wrap gap-3 bg-surface shadow-card p-4 rounded-xl border border-border">
         <div className="flex-1 min-w-48">
           <Input
             placeholder="Search by email or username..."

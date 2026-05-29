@@ -306,7 +306,12 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <p className="font-semibold text-text-primary">{ad.user.username}</p>
               {ad.user.tradeStats && (
                 <p className="text-xs text-text-muted">
-                  {ad.user.tradeStats.completedTrades} completed · {(Number(ad.user.tradeStats.completionRate) * 100).toFixed(0)}% completion
+                  {ad.user.tradeStats.completedTrades} completed ·{' '}
+                  {(() => {
+                    const pct = Number(ad.user.tradeStats.completionRate) * 100
+                    const color = pct >= 80 ? 'text-success' : pct >= 60 ? 'text-warning' : 'text-danger'
+                    return <span className={color}>{pct.toFixed(0)}% completion</span>
+                  })()}
                 </p>
               )}
             </div>

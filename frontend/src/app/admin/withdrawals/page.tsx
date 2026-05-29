@@ -489,7 +489,7 @@ export default function WithdrawalsPage() {
               </div>
 
               {/* Fee breakdown accounting box */}
-              <div className="col-span-2 bg-white border border-border rounded-lg p-3 space-y-1.5 text-xs">
+              <div className="col-span-2 bg-surface shadow-card border border-border rounded-lg p-3 space-y-1.5 text-xs">
                 <p className="font-semibold text-text-primary text-sm mb-2">Accounting Breakdown</p>
                 <div className="flex justify-between">
                   <span className="text-text-muted">Withdrawal amount</span>

@@ -156,6 +156,10 @@ export default function DashboardPage() {
 
   const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
 
+  const totalPortfolioPkr = usdtRate > 0
+    ? (summary?.wallets ?? []).reduce((sum, b) => sum + parseFloat(b.available ?? '0') * usdtRate, 0)
+    : null
+
   const notifIconColor: Record<string, string> = {
     trade:  'text-primary',
     kyc:    'text-warning',
@@ -169,7 +173,8 @@ export default function DashboardPage() {
       <div className="bg-surface rounded-xl border border-border shadow-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-text-primary">{greeting}, {displayName}!</h1>
+            <p className="text-sm text-text-muted">{greeting}</p>
+            <h1 className="text-xl font-bold text-text-primary">{displayName}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <Link href="/kyc">
                 <Badge variant={kycStatusVariant(kycStatus)} size="sm">
@@ -183,6 +188,15 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+          {totalPortfolioPkr !== null && totalPortfolioPkr > 0 && (
+            <div className="text-right">
+              <p className="text-xs text-text-muted">Portfolio Value</p>
+              <p className="text-2xl font-bold text-text-primary">PKR {Math.round(totalPortfolioPkr).toLocaleString()}</p>
+              {(summary?.tradeStats?.totalVolumePKR ?? null) && (
+                <p className="text-xs text-text-muted">Vol: PKR {Number(summary!.tradeStats!.totalVolumePKR).toLocaleString()}</p>
+              )}
+            </div>
+          )}
           {kycStatus !== 'approved' && (
             <Link href="/kyc">
               <Button size="sm" variant="secondary">Upgrade KYC</Button>

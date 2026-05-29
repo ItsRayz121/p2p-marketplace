@@ -209,7 +209,7 @@ function WalletCard({
   const estDeliveries = estimatedDeliveries(wallet)
 
   return (
-    <div className={`bg-white border rounded-xl p-5 ${
+    <div className={`bg-surface border rounded-xl p-5 ${
       wallet.status === 'paused' ? 'border-danger/40 bg-red-50/30'
       : wallet.status === 'low' ? 'border-warning/40 bg-yellow-50/30'
       : 'border-border'

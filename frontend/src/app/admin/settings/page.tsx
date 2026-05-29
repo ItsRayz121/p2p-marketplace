@@ -290,7 +290,7 @@ function SessionsTab() {
       {sessions.map((sess) => (
         <div
           key={sess.id}
-          className={`bg-white border rounded-xl p-4 ${sess.isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border'}`}
+          className={`bg-surface shadow-card border rounded-xl p-4 ${sess.isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border'}`}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
