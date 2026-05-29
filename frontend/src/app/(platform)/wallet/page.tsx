@@ -1178,6 +1178,20 @@ const EXPLORER_TX_BASE: Record<string, string> = {
   BASE:     'https://basescan.org/tx',
 }
 
+const NETWORK_DISPLAY_NAMES: Record<string, string> = {
+  BEP20:    'BNB Smart Chain',
+  ERC20:    'Ethereum',
+  TRC20:    'Tron',
+  POLYGON:  'Polygon',
+  ARBITRUM: 'Arbitrum',
+  OPTIMISM: 'Optimism',
+  BASE:     'Base',
+}
+
+function shortTxHash(h: string): string {
+  return h.slice(0, 10) + '…' + h.slice(-6)
+}
+
 export default function WalletPage() {
   const { user } = useAuth()
   const [balances, setBalances] = useState<WalletBalance[]>([])
@@ -1345,35 +1359,45 @@ export default function WalletPage() {
         ) : (
           <div className="bg-white rounded-xl border border-border overflow-hidden">
             <div className="divide-y divide-border">
-              {transactions.map((tx) => (
-                <div key={tx.id} className="px-4 py-3 space-y-2">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span className={`font-bold text-text-primary`}>
-                        <span className={tx.type === 'withdrawal' || tx.type === 'fee' ? 'text-danger' : 'text-success'}>
-                          {tx.type === 'withdrawal' || tx.type === 'fee' ? '-' : '+'}{parseFloat(tx.amount).toFixed(4)} {tx.coin}
+              {transactions.map((tx) => {
+                const explorerBase = EXPLORER_TX_BASE[tx.network?.toUpperCase() ?? '']
+                const explorerUrl = tx.txHash && explorerBase ? `${explorerBase}/${tx.txHash}` : null
+                const networkLabel = NETWORK_DISPLAY_NAMES[tx.network?.toUpperCase() ?? ''] ?? tx.network
+                const isDebit = tx.type === 'withdrawal' || tx.type === 'fee'
+                const statusIcon = tx.status === 'completed' ? '✓' : tx.status === 'failed' ? '✗' : '⏳'
+                const statusColor = tx.status === 'completed' ? 'text-success' : tx.status === 'failed' ? 'text-danger' : 'text-warning'
+                return (
+                  <div key={tx.id} className="px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-bold ${isDebit ? 'text-danger' : 'text-success'}`}>
+                          {isDebit ? '-' : '+'}{parseFloat(tx.amount).toFixed(4)} {tx.coin}
                         </span>
-                      </span>
-                      <Badge variant={txStatusVariant(tx.status)} size="sm">{txStatusLabel(tx)}</Badge>
+                        <Badge variant={txStatusVariant(tx.status)} size="sm">{txStatusLabel(tx)}</Badge>
+                      </div>
+                      <div className="text-xs text-text-muted">
+                        {networkLabel ? `${networkLabel} · ` : ''}{timeAgo(tx.createdAt)}
+                      </div>
                     </div>
-                    <div className="text-xs text-text-muted capitalize">
-                      {tx.type.replace(/_/g, ' ')} · {timeAgo(tx.createdAt)}
+                    <div className={`flex items-center gap-1.5 text-xs ${statusColor}`}>
+                      <span>{statusIcon}</span>
+                      <span className="capitalize">{txStatusLabel(tx)} {timeAgo(tx.createdAt)}</span>
                     </div>
+                    {explorerUrl && (
+                      <div className="text-xs">
+                        <a
+                          href={explorerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline font-mono"
+                        >
+                          {shortTxHash(tx.txHash!)} ↗
+                        </a>
+                      </div>
+                    )}
                   </div>
-                  {tx.txHash && (
-                    <div className="text-xs">
-                      <a
-                        href={`${EXPLORER_TX_BASE[tx.network?.toUpperCase() ?? ''] ?? '#'}/${tx.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        View on-chain ↗
-                      </a>
-                    </div>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {transactions.length < txTotal && (
