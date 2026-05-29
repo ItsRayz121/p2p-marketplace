@@ -10,40 +10,76 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // PakSwap brand colors — from FRONTEND_STANDARDS.md Section 2
+        // ── Brand ────────────────────────────────────────────────────────────
         primary: {
           DEFAULT: '#2563eb',
-          hover: '#1d4ed8',
-          light: '#eff6ff',
+          hover:   '#1d4ed8',
+          light:   '#eff6ff',
+          muted:   '#dbeafe',
         },
+
+        // ── Semantic status ───────────────────────────────────────────────────
         success: {
           DEFAULT: '#10b981',
-          hover: '#059669',
-          light: '#ecfdf5',
+          hover:   '#059669',
+          light:   '#ecfdf5',
+          muted:   '#d1fae5',
         },
         warning: {
           DEFAULT: '#d97706',
-          hover: '#b45309',
-          light: '#fffbeb',
+          hover:   '#b45309',
+          light:   '#fffbeb',
+          muted:   '#fef3c7',
         },
         danger: {
           DEFAULT: '#ef4444',
-          hover: '#dc2626',
-          light: '#fef2f2',
+          hover:   '#dc2626',
+          light:   '#fef2f2',
+          muted:   '#fee2e2',
+        },
+        info: {
+          DEFAULT: '#3b82f6',
+          hover:   '#2563eb',
+          light:   '#eff6ff',
+          muted:   '#dbeafe',
         },
         gold: {
           DEFAULT: '#f59e0b',
-          light: '#fef3c7',
+          light:   '#fef3c7',
         },
-        surface: '#ffffff',
-        'surface-alt': '#f8fafc',
-        border: '#e2e8f0',
-        'text-primary': '#0f172a',
-        'text-secondary': '#64748b',
-        'text-muted': '#94a3b8',
+
+        // ── Surface / background hierarchy ───────────────────────────────────
+        // canvas     → page background (body)
+        // surface    → card / panel background
+        // surface-alt→ inset / subtle background (input fields, code, tags)
+        canvas:        '#f8fafc',
+        surface:       '#ffffff',
+        'surface-alt': '#f1f5f9',
+
+        // ── Border hierarchy ─────────────────────────────────────────────────
+        'border-subtle': '#f1f5f9',   // hairline dividers
+        border:          '#e2e8f0',   // default border
+        'border-strong': '#cbd5e1',   // active / focus border
+
+        // ── Text hierarchy ────────────────────────────────────────────────────
+        'text-primary':   '#0f172a',
+        'text-secondary': '#475569',
+        'text-muted':     '#94a3b8',
+        'text-disabled':  '#cbd5e1',
       },
+
+      // ── Shadows ──────────────────────────────────────────────────────────────
+      // card      → default resting card
+      // card-md   → hovered / focused card
+      // card-lg   → modals, dropdowns, popovers
+      boxShadow: {
+        card:    '0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04)',
+        'card-md':'0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05)',
+        'card-lg':'0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05)',
+        focus:   '0 0 0 3px rgb(37 99 235 / 0.15)',
+      },
+
       fontFamily: {
-        // System font stack — no external font download
         sans: [
           '-apple-system',
           'BlinkMacSystemFont',
@@ -52,9 +88,11 @@ const config: Config = {
           'sans-serif',
         ],
       },
+
       fontSize: {
         input: ['16px', { lineHeight: '1.5' }],
       },
+
       screens: {
         xs: '375px',
         sm: '640px',
@@ -62,41 +100,45 @@ const config: Config = {
         lg: '1024px',
         xl: '1280px',
       },
+
       minHeight: {
         screen: '100dvh',
       },
+
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
+
       animation: {
-        'fade-in': 'fadeIn 150ms ease-out',
-        'slide-up': 'slideUp 200ms ease-out',
-        'pulse-subtle': 'pulseSubtle 2s ease-in-out infinite',
+        'fade-in':        'fadeIn 150ms ease-out',
+        'slide-up':       'slideUp 200ms ease-out',
+        'pulse-subtle':   'pulseSubtle 2s ease-in-out infinite',
         'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
+        'accordion-up':   'accordion-up 0.2s ease-out',
       },
+
       keyframes: {
         fadeIn: {
-          '0%': { opacity: '0' },
+          '0%':   { opacity: '0' },
           '100%': { opacity: '1' },
         },
         slideUp: {
-          '0%': { transform: 'translateY(8px)', opacity: '0' },
-          '100%': { transform: 'translateY(0)', opacity: '1' },
+          '0%':   { transform: 'translateY(8px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)',   opacity: '1' },
         },
         pulseSubtle: {
-          '0%, 100%': { opacity: '1' },
-          '50%': { opacity: '0.7' },
+          '0%, 100%': { opacity: '1'   },
+          '50%':      { opacity: '0.7' },
         },
         'accordion-down': {
           from: { height: '0' },
-          to: { height: 'var(--radix-accordion-content-height)' },
+          to:   { height: 'var(--radix-accordion-content-height)' },
         },
         'accordion-up': {
           from: { height: 'var(--radix-accordion-content-height)' },
-          to: { height: '0' },
+          to:   { height: '0' },
         },
       },
     },

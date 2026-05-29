@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { getTradeStatus } from '@/lib/tradeStatus'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -40,26 +41,6 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString()
 }
 
-function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (s === 'crypto_released') return 'success'
-  if (['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(s)) return 'warning'
-  if (['disputed', 'cancelled', 'expired'].includes(s)) return 'danger'
-  return 'default'
-}
-
-function statusLabel(s: string): string {
-  const labels: Record<string, string> = {
-    payment_pending: 'Awaiting Payment',
-    payment_uploaded: 'Proof Uploaded',
-    payment_confirmed: 'Confirmed',
-    crypto_sent: 'Crypto Sent',
-    crypto_released: 'Completed',
-    disputed: 'Disputed',
-    cancelled: 'Cancelled',
-    expired: 'Expired',
-  }
-  return labels[s] ?? s
-}
 
 export default function OrdersPage() {
   const { user } = useAuth()
@@ -194,7 +175,7 @@ export default function OrdersPage() {
                   return (
                     <tr key={t.id} className="hover:bg-surface/50 transition-colors">
                       <td className="px-4 py-3">
-                        <Badge variant={statusVariant(t.status)} size="sm">{statusLabel(t.status)}</Badge>
+                        {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-secondary">{isBuyer ? 'Buyer' : 'Seller'}</td>
                       <td className="px-4 py-3 text-sm font-medium text-text-primary">{counterparty}</td>
@@ -225,10 +206,10 @@ export default function OrdersPage() {
                 : (t.buyer?.username || 'Buyer')
               return (
                 <Link key={t.id} href={`/trade/${t.id}`}>
-                  <div className="bg-white rounded-xl border border-border p-4 hover:shadow-sm transition-shadow">
+                  <div className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <Badge variant={statusVariant(t.status)} size="sm">{statusLabel(t.status)}</Badge>
+                        {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
                         <p className="text-sm font-medium text-text-primary mt-1">{counterparty}</p>
                         <p className="text-xs text-text-muted">{isBuyer ? 'You bought' : 'You sold'}</p>
                       </div>

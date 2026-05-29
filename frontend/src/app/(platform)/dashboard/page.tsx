@@ -10,6 +10,16 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { TraderLevelCard, BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
+import { getTradeStatus, getGasStatus, kycStatusVariant } from '@/lib/tradeStatus'
+import {
+  Fuel,
+  Store,
+  Coins,
+  ClipboardList,
+  Wallet,
+  Gift,
+  Bell,
+} from 'lucide-react'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -17,6 +27,15 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   bybit:     { label: 'Bybit',     url: 'https://www.bybit.com' },
   binance:   { label: 'Binance',   url: 'https://www.binance.com' },
 }
+
+const QUICK_ACTIONS = [
+  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: Fuel          },
+  { href: '/marketplace', label: 'USDT Marketplace', Icon: Store         },
+  { href: '/ctm',         label: 'Community Tokens', Icon: Coins         },
+  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList },
+  { href: '/wallet',      label: 'Wallet',           Icon: Wallet        },
+  { href: '/referral',    label: 'Referral',         Icon: Gift          },
+]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,26 +77,6 @@ const GAS_NATIVE_SYMBOL: Record<string, string> = {
   AVAX: 'AVAX', TON: 'TON', SUI: 'SUI', APT: 'APT',
 }
 
-function gasStatusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (s === 'delivered' || s === 'refunded') return 'success'
-  if (s === 'failed' || s === 'expired') return 'danger'
-  if (s === 'payment_verified' || s === 'payment_detected' || s === 'sending') return 'warning'
-  return 'default'
-}
-
-const GAS_STATUS_LABELS: Record<string, string> = {
-  payment_pending:   'Awaiting',
-  payment_uploaded:  'Proof Sent',
-  payment_verified:  'Verified',
-  payment_detected:  'Confirmed',
-  sending:           'Sending',
-  delivered:         'Delivered',
-  failed:            'Failed',
-  expired:           'Expired',
-  refund_pending:    'Refund Pending',
-  refunded:          'Refunded',
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function timeAgo(dateStr: string): string {
@@ -88,26 +87,6 @@ function timeAgo(dateStr: string): string {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
-}
-
-function tradeStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (status === 'crypto_released') return 'success'
-  if (status === 'disputed') return 'danger'
-  if (status === 'cancelled') return 'danger'
-  if (
-    status === 'payment_pending' ||
-    status === 'payment_uploaded' ||
-    status === 'payment_confirmed' ||
-    status === 'crypto_sent'
-  ) return 'warning'
-  return 'default'
-}
-
-function kycBadgeVariant(status: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (status === 'approved') return 'success'
-  if (status === 'pending') return 'warning'
-  if (status === 'rejected') return 'danger'
-  return 'default'
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -178,8 +157,8 @@ export default function DashboardPage() {
   const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
 
   const notifIconColor: Record<string, string> = {
-    trade: 'text-primary',
-    kyc: 'text-warning',
+    trade:  'text-primary',
+    kyc:    'text-warning',
     wallet: 'text-success',
     system: 'text-text-muted',
   }
@@ -187,13 +166,13 @@ export default function DashboardPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       {/* ── 1. Welcome bar ── */}
-      <div className="bg-white rounded-xl border border-border p-5">
+      <div className="bg-surface rounded-xl border border-border shadow-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-text-primary">{greeting}, {displayName}!</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <Link href="/kyc">
-                <Badge variant={kycBadgeVariant(kycStatus)} size="sm">
+                <Badge variant={kycStatusVariant(kycStatus)} size="sm">
                   {kycStatus === 'approved'
                     ? `KYC LV${user?.kycLevel === 'enhanced' ? 2 : 1}: Approved`
                     : `KYC: ${kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}`}
@@ -232,7 +211,7 @@ export default function DashboardPage() {
         {summary?.wallets && summary.wallets.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {summary.wallets.map((b) => (
-              <div key={b.coin} className="bg-white rounded-xl border border-border p-4">
+              <div key={b.coin} className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
                     {b.coin.slice(0, 2)}
@@ -276,8 +255,8 @@ export default function DashboardPage() {
             ))}
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-border p-6 text-center text-sm text-text-muted">
-            No balances. <Link href="/wallet" className="text-primary underline">Deposit now</Link>
+          <div className="bg-surface rounded-xl border border-border shadow-card p-6 text-center text-sm text-text-muted">
+            No balances yet. <Link href="/wallet" className="text-primary hover:underline font-medium">Deposit now</Link>
           </div>
         )}
       </section>
@@ -285,22 +264,17 @@ export default function DashboardPage() {
       {/* ── 3. Quick Actions ── */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-          {[
-            { href: '/gas',         label: 'Crypto Gas Fees',  icon: '⛽' },
-            { href: '/marketplace', label: 'USDT Marketplace', icon: '🏪' },
-            { href: '/ctm',         label: 'Community Tokens', icon: '🪙' },
-            { href: '/orders',      label: 'My Trades',        icon: '📋' },
-            { href: '/wallet',      label: 'Wallet',           icon: '💰' },
-            { href: '/referral',    label: 'Referral',         icon: '🎁' },
-          ].map((item) => (
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+          {QUICK_ACTIONS.map(({ href, label, Icon }) => (
             <Link
-              key={item.href}
-              href={item.href}
-              className="flex flex-col items-center gap-2 bg-white rounded-xl border border-border p-4 hover:border-primary/40 hover:shadow-sm transition-all text-center"
+              key={href}
+              href={href}
+              className="flex flex-col items-center gap-2 bg-surface rounded-xl border border-border shadow-card p-4 hover:border-primary/30 hover:shadow-card-md transition-all text-center group"
             >
-              <span className="text-2xl">{item.icon}</span>
-              <span className="text-xs font-medium text-text-primary">{item.label}</span>
+              <div className="w-10 h-10 rounded-xl bg-surface-alt flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+                <Icon size={18} className="text-text-secondary group-hover:text-primary transition-colors" aria-hidden />
+              </div>
+              <span className="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors leading-tight">{label}</span>
             </Link>
           ))}
         </div>
@@ -312,7 +286,7 @@ export default function DashboardPage() {
           <h2 className="text-base font-semibold text-text-primary">Recent Trades</h2>
           <Link href="/orders" className="text-xs text-primary hover:underline">View all</Link>
         </div>
-        <div className="bg-white rounded-xl border border-border divide-y divide-border">
+        <div className="bg-surface rounded-xl border border-border shadow-card divide-y divide-border">
           {(trades ?? []).length === 0 ? (
             <p className="text-sm text-text-muted text-center py-6">No trades yet.</p>
           ) : (
@@ -321,10 +295,11 @@ export default function DashboardPage() {
               const counterparty = isUserBuyer
                 ? (t.seller?.username || 'Seller')
                 : (t.buyer?.username || 'Buyer')
+              const ts = getTradeStatus(t.status)
               return (
-                <Link key={t.id} href={`/trade/${t.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-surface transition-colors">
+                <Link key={t.id} href={`/trade/${t.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-surface-alt/60 transition-colors">
                   <div className="flex items-center gap-3">
-                    <Badge variant={tradeStatusVariant(t.status)} size="sm">{t.status}</Badge>
+                    <Badge variant={ts.variant} icon={ts.icon} size="sm">{ts.label}</Badge>
                     <span className="text-sm text-text-primary">{counterparty}</span>
                   </div>
                   <div className="text-right">
@@ -345,15 +320,14 @@ export default function DashboardPage() {
             <h2 className="text-base font-semibold text-text-primary">Recent Gas Orders</h2>
             <Link href="/gas/orders" className="text-xs text-primary hover:underline">View all</Link>
           </div>
-          <div className="bg-white rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface rounded-xl border border-border shadow-card divide-y divide-border">
             {gasOrders.map((o) => {
               const symbol = GAS_NATIVE_SYMBOL[o.chain] ?? o.chain
+              const gs = getGasStatus(o.status)
               return (
                 <div key={o.orderRef} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Badge variant={gasStatusVariant(o.status)} size="sm">
-                      {GAS_STATUS_LABELS[o.status] ?? o.status}
-                    </Badge>
+                    <Badge variant={gs.variant} icon={gs.icon} size="sm">{gs.label}</Badge>
                     <div>
                       <p className="text-sm font-medium text-text-primary">
                         {parseFloat(o.gasAmountNative).toFixed(4)} {symbol}
@@ -376,16 +350,19 @@ export default function DashboardPage() {
             <h2 className="text-base font-semibold text-text-primary">Recent Instant Buy</h2>
             <Link href="/instant-buy" className="text-xs text-primary hover:underline">View all</Link>
           </div>
-          <div className="bg-white rounded-xl border border-border divide-y divide-border">
-            {(instantOrders ?? []).slice(0, 3).map((o) => (
-              <div key={o.id} className="flex items-center justify-between px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <Badge variant={o.status === 'completed' ? 'success' : 'warning'} size="sm">{o.status}</Badge>
-                  <span className="text-sm text-text-primary">{parseFloat(o.amount).toFixed(4)} {o.coin}</span>
+          <div className="bg-surface rounded-xl border border-border shadow-card divide-y divide-border">
+            {(instantOrders ?? []).slice(0, 3).map((o) => {
+              const s = getTradeStatus(o.status)
+              return (
+                <div key={o.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge>
+                    <span className="text-sm text-text-primary">{parseFloat(o.amount).toFixed(4)} {o.coin}</span>
+                  </div>
+                  <span className="text-xs text-text-muted">{timeAgo(o.createdAt)}</span>
                 </div>
-                <span className="text-xs text-text-muted">{timeAgo(o.createdAt)}</span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </section>
       )}
@@ -409,16 +386,14 @@ export default function DashboardPage() {
             <h2 className="text-base font-semibold text-text-primary">Notifications</h2>
             <Link href="/notifications" className="text-xs text-primary hover:underline">View all</Link>
           </div>
-          <div className="bg-white rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface rounded-xl border border-border shadow-card divide-y divide-border">
             {(notifications ?? []).map((n) => (
               <div key={n.id} className="flex items-start gap-3 px-4 py-3">
-                <div className={`mt-0.5 ${notifIconColor[n.type] ?? 'text-text-muted'}`}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                    />
-                  </svg>
-                </div>
+                <Bell
+                  size={15}
+                  className={`mt-0.5 flex-shrink-0 ${notifIconColor[n.type] ?? 'text-text-muted'}`}
+                  aria-hidden
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-text-primary">{n.title}</p>
                   <p className="text-xs text-text-muted truncate">{n.body}</p>
@@ -433,7 +408,7 @@ export default function DashboardPage() {
       {/* ── 9. Onboarding Checklist ── */}
       {!onboardingDone && (
         <section>
-          <div className="bg-white rounded-xl border border-border p-5">
+          <div className="bg-surface rounded-xl border border-border shadow-card p-5">
             <h2 className="text-base font-semibold text-text-primary mb-4">Getting Started</h2>
             <div className="space-y-3">
               <ChecklistRow done={emailVerified} label="Verify your email" href="/settings" />

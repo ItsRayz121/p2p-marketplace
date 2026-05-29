@@ -20,6 +20,18 @@ import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { getTradeStatus } from '@/lib/tradeStatus'
+import {
+  FileText,
+  Upload,
+  CheckCheck,
+  ArrowUpRight,
+  CheckCircle2,
+  CreditCard,
+  Package,
+  ShieldCheck,
+  WifiOff,
+} from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,41 +58,20 @@ interface ExtendedTrade extends Trade {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TIMELINE_STEPS = [
-  { key: 'payment_pending', label: 'Order Created', icon: '📋' },
-  { key: 'payment_uploaded', label: 'Proof Uploaded', icon: '💳' },
-  { key: 'payment_confirmed', label: 'Payment Confirmed', icon: '✔️' },
-  { key: 'crypto_sent', label: 'Crypto Sent', icon: '🚀' },
-  { key: 'crypto_released', label: 'Trade Complete', icon: '✅' },
+  { key: 'payment_pending',   label: 'Order Created',     Icon: FileText      },
+  { key: 'payment_uploaded',  label: 'Proof Uploaded',    Icon: Upload        },
+  { key: 'payment_confirmed', label: 'Payment Confirmed', Icon: CheckCheck    },
+  { key: 'crypto_sent',       label: 'Crypto Sent',       Icon: ArrowUpRight  },
+  { key: 'crypto_released',   label: 'Trade Complete',    Icon: CheckCircle2  },
 ]
 
 function stepIndex(status: string): number {
-  if (status === 'payment_pending') return 0
-  if (status === 'payment_uploaded') return 1
+  if (status === 'payment_pending')   return 0
+  if (status === 'payment_uploaded')  return 1
   if (status === 'payment_confirmed') return 2
-  if (status === 'crypto_sent') return 3
-  if (status === 'crypto_released') return 4
+  if (status === 'crypto_sent')       return 3
+  if (status === 'crypto_released')   return 4
   return 0
-}
-
-function statusVariant(status: string): 'success' | 'warning' | 'danger' | 'default' {
-  if (status === 'crypto_released') return 'success'
-  if (['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(status)) return 'warning'
-  if (['disputed', 'cancelled', 'expired'].includes(status)) return 'danger'
-  return 'default'
-}
-
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    payment_pending: 'Awaiting Payment',
-    payment_uploaded: 'Proof Uploaded',
-    payment_confirmed: 'Payment Confirmed',
-    crypto_sent: 'Crypto Sent',
-    crypto_released: 'Completed',
-    disputed: 'Disputed',
-    cancelled: 'Cancelled',
-    expired: 'Expired',
-  }
-  return labels[status] ?? status
 }
 
 // ─── Rating Tags & Inline Rating Form ─────────────────────────────────────────
@@ -168,27 +159,29 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
   return (
     <div className="bg-success/5 border border-success/20 rounded-xl p-6 mb-6 space-y-5">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-xl">✅</div>
+        <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
+          <CheckCircle2 size={22} className="text-success" aria-hidden />
+        </div>
         <div>
-          <h2 className="text-lg font-bold text-success">Trade Completed!</h2>
+          <h2 className="text-lg font-bold text-success">Trade Completed</h2>
           <p className="text-sm text-text-muted">Thank you for using PakSwap.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <div className="bg-white rounded-lg border border-border p-3">
+        <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Token</p>
           <p className="font-semibold text-text-primary">{parseFloat(trade.amount).toFixed(4)} {trade.coin}</p>
         </div>
-        <div className="bg-white rounded-lg border border-border p-3">
+        <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Total PKR</p>
           <p className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</p>
         </div>
-        <div className="bg-white rounded-lg border border-border p-3">
+        <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Payment Method</p>
           <p className="font-semibold text-text-primary">{trade.paymentMethod}</p>
         </div>
-        <div className="bg-white rounded-lg border border-border p-3">
+        <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">{isUserBuyer ? 'Seller' : 'Buyer'}</p>
           <p className="font-semibold text-text-primary">{counterparty}</p>
         </div>
@@ -505,12 +498,10 @@ export default function TradePage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* L-6: Offline banner — warn user that actions won't go through */}
+      {/* Offline banner */}
       {isOffline && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg bg-danger/10 border border-danger/30 px-4 py-3 text-sm text-danger">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 01-.001-7.072M5.636 18.364a9 9 0 010-12.728" />
-          </svg>
+        <div className="mb-4 flex items-center gap-3 rounded-xl bg-danger/10 border border-danger/20 px-4 py-3 text-sm text-danger">
+          <WifiOff size={16} className="flex-shrink-0" aria-hidden />
           <span>You are offline. Trade actions will not go through until your connection is restored.</span>
         </div>
       )}
@@ -533,10 +524,21 @@ export default function TradePage() {
             )}
           </div>
         </div>
-        <Badge variant={statusVariant(trade.status)}>
-          {statusLabel(trade.status)}
-        </Badge>
+        {(() => {
+          const s = getTradeStatus(trade.status)
+          return <Badge variant={s.variant} icon={s.icon}>{s.label}</Badge>
+        })()}
       </div>
+
+      {/* Escrow trust banner — only on active trades */}
+      {!['crypto_released', 'cancelled', 'expired', 'disputed'].includes(trade.status) && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl bg-primary/5 border border-primary/15 px-4 py-3">
+          <ShieldCheck size={16} className="text-primary flex-shrink-0 mt-0.5" aria-hidden />
+          <p className="text-sm text-primary/90">
+            Funds are held in escrow. PakSwap protects both buyer and seller. Do not release until you have confirmed receipt.
+          </p>
+        </div>
+      )}
 
       {/* Completed card */}
       {trade.status === 'crypto_released' && (
@@ -550,9 +552,8 @@ export default function TradePage() {
         />
       )}
 
-      {/* Mobile tab switcher — only visible <lg. Red dot on Chat indicates
-          unread counterparty messages since the user last opened that tab. */}
-      <div className="flex bg-white border border-border rounded-lg overflow-hidden mb-4 lg:hidden">
+      {/* Mobile tab switcher */}
+      <div className="flex bg-surface border border-border rounded-xl overflow-hidden mb-4 lg:hidden">
         {(['trade', 'chat'] as const).map((t) => (
           <button
             key={t}
@@ -584,10 +585,10 @@ export default function TradePage() {
           )}
 
           {/* Timeline */}
-          <div className="bg-white rounded-xl border border-border">
+          <div className="bg-surface rounded-xl border border-border shadow-card">
             <button
               onClick={() => toggleSection('timeline')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface/50 transition-colors rounded-xl"
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-alt/50 transition-colors rounded-xl"
             >
               <h2 className="text-sm font-semibold text-text-primary">Trade Progress</h2>
               <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 ${openSections.timeline ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -595,30 +596,62 @@ export default function TradePage() {
               </svg>
             </button>
             {openSections.timeline && (
-              <div className="px-5 pb-5 space-y-4">
+              <div className="px-5 pb-5">
                 {TIMELINE_STEPS.map((step, idx) => {
-                  const done = idx < currentStep
-                  const active = idx === currentStep
-                  const clickable = done && (step.key === 'payment_uploaded' || step.key === 'payment_confirmed' || step.key === 'crypto_sent' || step.key === 'crypto_released')
+                  const done    = idx < currentStep
+                  const active  = idx === currentStep
+                  const last    = idx === TIMELINE_STEPS.length - 1
+                  const clickable = done && (
+                    step.key === 'payment_uploaded' ||
+                    step.key === 'payment_confirmed' ||
+                    step.key === 'crypto_sent' ||
+                    step.key === 'crypto_released'
+                  )
+                  const { Icon } = step
                   return (
                     <div
                       key={step.key}
                       onClick={() => done && handleStepClick(step.key)}
-                      className={`flex items-center gap-3 ${clickable ? 'cursor-pointer group' : ''}`}
+                      className={`flex gap-3 ${clickable ? 'cursor-pointer group' : ''}`}
                     >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 transition-transform ${
-                        done ? 'bg-success text-white' : active ? 'bg-primary text-white' : 'bg-surface text-text-muted border border-border'
-                      } ${clickable ? 'group-hover:scale-110' : ''}`}>
-                        {done ? '✓' : step.icon}
+                      {/* Spine column */}
+                      <div className="flex flex-col items-center flex-shrink-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                          done
+                            ? 'bg-success text-white'
+                            : active
+                            ? 'bg-primary text-white ring-4 ring-primary/15'
+                            : 'bg-surface-alt text-text-muted border border-border'
+                        } ${clickable ? 'group-hover:scale-105' : ''}`}>
+                          <Icon size={14} aria-hidden />
+                        </div>
+                        {!last && (
+                          <div className={`w-px flex-1 my-1 min-h-[20px] ${
+                            done ? 'bg-success/40' : 'bg-border'
+                          }`} />
+                        )}
                       </div>
-                      <span className={`text-sm flex-1 ${active ? 'font-semibold text-text-primary' : done ? 'text-success' : 'text-text-muted'}`}>
-                        {step.label}
-                      </span>
-                      {clickable && (
-                        <svg className="w-3.5 h-3.5 text-success/50 group-hover:text-success transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      )}
+
+                      {/* Label */}
+                      <div className={`flex-1 flex items-center justify-between min-h-[32px] ${last ? 'pb-0' : 'pb-4'}`}>
+                        <span className={`text-sm ${
+                          active ? 'font-semibold text-text-primary'
+                          : done  ? 'text-success font-medium'
+                          :         'text-text-muted'
+                        }`}>
+                          {step.label}
+                        </span>
+                        {active && (
+                          <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                            Current
+                          </span>
+                        )}
+                        {done && clickable && (
+                          <svg className="w-3.5 h-3.5 text-success/40 group-hover:text-success transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
@@ -627,13 +660,13 @@ export default function TradePage() {
           </div>
 
           {/* Payment Settlement */}
-          <div ref={paymentSectionRef} className="bg-white rounded-xl border border-border">
+          <div ref={paymentSectionRef} className="bg-surface rounded-xl border border-border shadow-card">
             <button
               onClick={() => toggleSection('payment')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface/50 transition-colors rounded-xl"
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-alt/50 transition-colors rounded-xl"
             >
               <div className="flex items-center gap-2">
-                <span className="text-base">💳</span>
+                <CreditCard size={16} className="text-text-muted flex-shrink-0" aria-hidden />
                 <h2 className="text-sm font-semibold text-text-primary">
                   {isUserBuyer ? 'You are sending PKR payment' : 'Awaiting PKR payment from buyer'}
                 </h2>
@@ -676,13 +709,13 @@ export default function TradePage() {
           </div>
 
           {/* Token Delivery */}
-          <div ref={deliverySectionRef} className="bg-white rounded-xl border border-border">
+          <div ref={deliverySectionRef} className="bg-surface rounded-xl border border-border shadow-card">
             <button
               onClick={() => toggleSection('delivery')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface/50 transition-colors rounded-xl"
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-alt/50 transition-colors rounded-xl"
             >
               <div className="flex items-center gap-2">
-                <span className="text-base">📦</span>
+                <Package size={16} className="text-text-muted flex-shrink-0" aria-hidden />
                 <h2 className="text-sm font-semibold text-text-primary">Token Delivery</h2>
               </div>
               <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 flex-shrink-0 ml-2 ${openSections.delivery ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -734,9 +767,9 @@ export default function TradePage() {
             )}
           </div>
 
-          {/* Actions — hidden for completed trades (CompletedTradeCard handles the final state) */}
+          {/* Actions — hidden for completed trades */}
           {trade.status !== 'crypto_released' && (
-          <div className="bg-white rounded-xl border border-border p-5 space-y-3">
+          <div className="bg-surface rounded-xl border border-border shadow-card p-5 space-y-3">
             <h2 className="text-sm font-semibold text-text-primary mb-1">Actions</h2>
 
             {/* Buyer: upload payment proof (payment_pending) */}
@@ -859,7 +892,7 @@ export default function TradePage() {
 
         {/* Right: Chat — display class is conditional so `flex` and `hidden`
             never coexist in the class list (which is ambiguous in Tailwind). */}
-        <div className={`bg-white rounded-xl border border-border flex-col ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`} style={{ minHeight: '400px', maxHeight: '600px' }}>
+        <div className={`bg-surface rounded-xl border border-border shadow-card flex-col ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`} style={{ minHeight: '400px', maxHeight: '600px' }}>
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-semibold text-text-primary">Chat with {counterparty}</h2>
           </div>

@@ -1,32 +1,49 @@
+import type { LucideIcon } from 'lucide-react'
+import { Inbox } from 'lucide-react'
+import Link from 'next/link'
 import { Button } from './Button'
 
-interface EmptyStateProps {
-  title: string
-  description?: string
-  action?: {
-    label: string
-    onClick: () => void
-  }
+interface EmptyStateAction {
+  label: string
+  href?: string
+  onClick?: () => void
 }
 
-export function EmptyState({ title, description, action }: EmptyStateProps) {
+interface EmptyStateProps {
+  /** Lucide icon to display above the title. Defaults to Inbox. */
+  icon?: LucideIcon
+  title: string
+  description?: string
+  action?: EmptyStateAction
+  className?: string
+}
+
+export function EmptyState({
+  icon: Icon = Inbox,
+  title,
+  description,
+  action,
+  className,
+}: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full gap-3 py-16 text-center">
-      <div className="w-12 h-12 rounded-full bg-surface flex items-center justify-center">
-        <svg className="w-6 h-6 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+    <div className={`flex flex-col items-center justify-center w-full gap-3 py-16 text-center px-4 ${className ?? ''}`}>
+      <div className="w-14 h-14 rounded-2xl bg-surface-alt flex items-center justify-center">
+        <Icon size={26} className="text-text-muted" aria-hidden />
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 max-w-xs">
         <p className="font-semibold text-text-secondary">{title}</p>
         {description && (
-          <p className="text-sm text-text-muted max-w-xs">{description}</p>
+          <p className="text-sm text-text-muted">{description}</p>
         )}
       </div>
       {action && (
-        <Button variant="secondary" size="sm" onClick={action.onClick}>
-          {action.label}
-        </Button>
+        action.href ? (
+          <Link href={action.href}>
+            <Button variant="secondary" size="sm">{action.label}</Button>
+          </Link>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={action.onClick}>{action.label}</Button>
+        )
       )}
     </div>
   )
