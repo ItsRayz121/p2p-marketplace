@@ -1318,14 +1318,24 @@ export default function WalletPage() {
             <EmptyState icon={Wallet} title="No balances" description="Make a deposit to get started" />
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {displayBalances.map((b) => (
-                <div key={`${b.coin}-${b.network}`} className="bg-white shadow-card rounded-xl border border-border p-5">
+              {displayBalances.map((b) => {
+                const coinColor: Record<string, { bg: string; text: string }> = {
+                  USDT: { bg: 'bg-emerald-500/10', text: 'text-emerald-600' },
+                  BNB:  { bg: 'bg-yellow-500/10',  text: 'text-yellow-600'  },
+                  ETH:  { bg: 'bg-slate-500/10',   text: 'text-slate-600'   },
+                  BTC:  { bg: 'bg-orange-500/10',  text: 'text-orange-600'  },
+                  SOL:  { bg: 'bg-violet-500/10',  text: 'text-violet-600'  },
+                  APT:  { bg: 'bg-cyan-500/10',    text: 'text-cyan-600'    },
+                }
+                const cc = coinColor[b.coin] ?? { bg: 'bg-primary/10', text: 'text-primary' }
+                return (
+                <div key={`${b.coin}-${b.network}`} className="bg-surface shadow-card rounded-xl border border-border p-5">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center">
+                    <div className={`w-9 h-9 rounded-full ${cc.bg} ${cc.text} text-sm font-bold flex items-center justify-center`}>
                       {b.coin.slice(0, 2)}
                     </div>
                     <span className="font-semibold text-text-primary">{b.coin}</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">{b.network}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${cc.bg} ${cc.text}`}>{b.network}</span>
                   </div>
                   <div className="space-y-1 mb-4">
                     <div className="flex justify-between text-sm">
@@ -1355,7 +1365,7 @@ export default function WalletPage() {
                     </Button>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )
         })()}

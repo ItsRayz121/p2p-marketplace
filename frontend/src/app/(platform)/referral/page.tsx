@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
+import { Users, TrendingUp, Clock } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,13 +100,16 @@ export default function ReferralPage() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Total Referrals', value: stats.totalReferrals.toString() },
-          { label: 'Total Earned', value: `PKR ${parseFloat(stats.totalEarned).toLocaleString()}` },
-          { label: 'Pending', value: `PKR ${parseFloat(stats.pendingEarnings).toLocaleString()}` },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center">
-            <p className="text-lg font-bold text-text-primary">{stat.value}</p>
-            <p className="text-xs text-text-muted mt-0.5">{stat.label}</p>
+          { label: 'Total Referrals', value: stats.totalReferrals.toString(),                          Icon: Users,       iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'    },
+          { label: 'Total Earned',    value: `PKR ${parseFloat(stats.totalEarned).toLocaleString()}`,  Icon: TrendingUp,  iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10' },
+          { label: 'Pending',         value: `PKR ${parseFloat(stats.pendingEarnings).toLocaleString()}`, Icon: Clock,    iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'   },
+        ].map(({ label, value, Icon, iconCls, bgCls }) => (
+          <div key={label} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-2 ${bgCls}`}>
+              <Icon size={16} className={iconCls} aria-hidden />
+            </div>
+            <p className="text-lg font-bold text-text-primary">{value}</p>
+            <p className="text-xs text-text-muted mt-0.5">{label}</p>
           </div>
         ))}
       </div>
@@ -152,7 +156,7 @@ export default function ReferralPage() {
           { step: '4', text: 'You earn a PKR reward automatically' },
         ].map((item) => (
           <div key={item.step} className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+            <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
               {item.step}
             </div>
             <p className="text-sm text-text-primary">{item.text}</p>

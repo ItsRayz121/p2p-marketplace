@@ -197,7 +197,11 @@ export default function OrdersPage() {
                       <td className="px-4 py-3">
                         {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
                       </td>
-                      <td className="px-4 py-3 text-sm text-text-secondary">{isBuyer ? 'Buyer' : 'Seller'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isBuyer ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'}`}>
+                          {isBuyer ? 'Buyer' : 'Seller'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <span className="text-sm font-medium text-primary hover:underline">{counterparty}</span>
                       </td>
@@ -231,7 +235,7 @@ export default function OrdersPage() {
                       <div>
                         {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
                         <p className="text-sm font-medium text-text-primary mt-1">{counterparty}</p>
-                        <p className="text-xs text-text-muted">{isBuyer ? 'You bought' : 'You sold'}</p>
+                        <p className={`text-xs font-medium mt-0.5 ${isBuyer ? 'text-emerald-600' : 'text-blue-600'}`}>{isBuyer ? 'You bought' : 'You sold'}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-text-primary">
