@@ -114,7 +114,7 @@ export default function MerchantKycPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-2">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-2">
         {['pending', 'approved', 'rejected', 'all'].map((s) => (
           <button
             key={s}
@@ -133,7 +133,7 @@ export default function MerchantKycPage() {
       {submissions.length === 0 ? (
         <EmptyState icon={Building2} title="No merchant KYC applications" description="No applications match the current filter." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">

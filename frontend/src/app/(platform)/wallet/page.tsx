@@ -588,7 +588,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-border p-4 space-y-3">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Coin</label>
@@ -650,11 +650,11 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
       )}
 
       {addresses.length === 0 ? (
-        <div className="bg-white rounded-xl border border-border p-4 text-center text-sm text-text-muted">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-4 text-center text-sm text-text-muted">
           No trusted addresses yet. Add one to reduce friction on future withdrawals.
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-border divide-y divide-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border overflow-hidden">
           {addresses.map((a) => {
             const active = isActive(a)
             const wait = hoursLeft(a)
@@ -820,7 +820,7 @@ function PaymentMethodsSection() {
       </div>
 
       {showForm && (
-        <div className="bg-white border border-border rounded-xl p-4 mb-4 space-y-4">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4 mb-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-primary">Add Payment Method</h3>
             <button onClick={resetForm} className="text-xs text-text-muted hover:text-text-primary">Cancel</button>
@@ -963,12 +963,12 @@ function PaymentMethodsSection() {
       {pmLoading ? (
         <div className="text-sm text-text-muted py-4 text-center">Loading...</div>
       ) : methods.length === 0 ? (
-        <div className="bg-white border border-border rounded-xl px-4 py-8 text-center">
+        <div className="bg-surface shadow-card border border-border rounded-xl px-4 py-8 text-center">
           <p className="text-sm text-text-muted">No payment methods saved yet.</p>
           <p className="text-xs text-text-muted mt-1">Add your JazzCash, Easypaisa, or bank account so buyers know how to pay you.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-border divide-y divide-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border overflow-hidden">
           {methods.map((m) => (
             <div key={m.id} className="flex items-center gap-3 px-4 py-3">
               <EntityLogo
@@ -1085,7 +1085,7 @@ function SavedDeliveryAddressesSection() {
       </div>
 
       {showForm && (
-        <div className="bg-white border border-border rounded-xl p-4 mb-4 space-y-3">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4 mb-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-primary">Add Delivery Address</h3>
             <button onClick={resetForm} className="text-xs text-text-muted hover:text-text-primary">Cancel</button>
@@ -1143,12 +1143,12 @@ function SavedDeliveryAddressesSection() {
       {loading ? (
         <div className="text-sm text-text-muted py-4 text-center">Loading...</div>
       ) : addresses.length === 0 ? (
-        <div className="bg-white border border-border rounded-xl px-4 py-8 text-center">
+        <div className="bg-surface shadow-card border border-border rounded-xl px-4 py-8 text-center">
           <p className="text-sm text-text-muted">No saved addresses yet.</p>
           <p className="text-xs text-text-muted mt-1">Save your wallet addresses and exchange UIDs once — select them instantly in every trade.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-border divide-y divide-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border overflow-hidden">
           {addresses.map((a) => (
             <div key={a.id} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-0">
@@ -1286,7 +1286,7 @@ export default function WalletPage() {
       )}
 
       {/* ── Connected wallet ── */}
-      <section className="space-y-4 bg-white rounded-xl border border-border p-5">
+      <section className="space-y-4 bg-surface shadow-card rounded-xl border border-border p-5">
         <h2 className="text-base font-semibold text-text-primary">Connected wallet</h2>
         <ChainSwitcher />
         <ConnectedBalances />
@@ -1302,7 +1302,7 @@ export default function WalletPage() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {balances.map((b) => (
-              <div key={`${b.coin}-${b.network}`} className="bg-white rounded-xl border border-border p-5">
+              <div key={`${b.coin}-${b.network}`} className="bg-surface shadow-card rounded-xl border border-border p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center">
                     {b.coin.slice(0, 2)}
@@ -1351,7 +1351,7 @@ export default function WalletPage() {
         {transactions.length === 0 ? (
           <EmptyState icon={ArrowUpDown} title="No transactions" description="Your transaction history will appear here" />
         ) : (
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <div className="divide-y divide-border">
               {transactions.map((tx) => {
                 const explorerBase = EXPLORER_TX_BASE[tx.network?.toUpperCase() ?? '']

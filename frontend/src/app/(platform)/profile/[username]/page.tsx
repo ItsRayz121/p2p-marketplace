@@ -111,7 +111,7 @@ export default function TraderProfilePage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
       {/* Header */}
-      <div className="bg-white rounded-xl border border-border p-5">
+      <div className="bg-surface shadow-card rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-start gap-4">
           <div className="w-14 h-14 rounded-full bg-primary/10 text-primary text-2xl font-bold flex items-center justify-center flex-shrink-0">
             {profile.username.charAt(0).toUpperCase()}
@@ -155,7 +155,7 @@ export default function TraderProfilePage() {
           { label: 'Success Rate', value: `${successRate}%` },
           { label: 'Avg Rating', value: avgRating },
         ].map(({ label, value }) => (
-          <div key={label} className="bg-white rounded-xl border border-border p-4 text-center">
+          <div key={label} className="bg-surface shadow-card rounded-xl border border-border p-4 text-center">
             <p className="text-2xl font-bold text-text-primary">{value}</p>
             <p className="text-xs text-text-muted mt-0.5">{label}</p>
           </div>
@@ -164,7 +164,7 @@ export default function TraderProfilePage() {
 
       {/* Active Ads */}
       {profile.activeAds.length > 0 && (
-        <div className="bg-white rounded-xl border border-border p-5">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Active Listings</h2>
           <div className="space-y-3">
             {profile.activeAds.map((ad) => (
@@ -193,7 +193,7 @@ export default function TraderProfilePage() {
 
       {/* Ratings */}
       {profile.ratings.length > 0 && (
-        <div className="bg-white rounded-xl border border-border p-5">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">
             Reviews <span className="text-text-muted font-normal">({profile.ratings.length})</span>
           </h2>

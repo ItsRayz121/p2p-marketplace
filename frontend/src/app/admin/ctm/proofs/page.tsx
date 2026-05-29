@@ -59,7 +59,7 @@ export default function AdminCtmProofsPage() {
 
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-48 animate-pulse" />)}
+          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-48 animate-pulse" />)}
         </div>
       ) : proofs.length === 0 ? (
         <div className="text-center py-16 text-text-muted">
@@ -69,7 +69,7 @@ export default function AdminCtmProofsPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {proofs.map((p) => (
-            <button key={p.id} onClick={() => { setSelected(p); setAdminNote('') }} className="bg-white border border-border rounded-xl overflow-hidden hover:border-primary transition-colors text-left">
+            <button key={p.id} onClick={() => { setSelected(p); setAdminNote('') }} className="bg-surface shadow-card border border-border rounded-xl overflow-hidden hover:border-primary transition-colors text-left">
               {p.fileUrl ? (
                 <img src={p.fileUrl} alt="proof" className="w-full h-36 object-cover" />
               ) : (

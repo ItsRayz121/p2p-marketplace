@@ -130,7 +130,7 @@ export default function LeaderboardPage() {
           ) : (
             <>
               {/* Desktop */}
-              <div className="hidden md:block bg-white border border-border rounded-xl overflow-hidden">
+              <div className="hidden md:block bg-surface shadow-card border border-border rounded-xl overflow-hidden">
                 <table className="w-full">
                   <thead className="bg-surface border-b border-border">
                     <tr>
@@ -184,7 +184,7 @@ export default function LeaderboardPage() {
                   return (
                     <div
                       key={entry.userId}
-                      className={`bg-white border rounded-xl px-4 py-3 flex items-center gap-3 ${isMe ? 'border-primary/30 bg-primary/5' : 'border-border'}`}
+                      className={`border rounded-xl px-4 py-3 flex items-center gap-3 shadow-card ${isMe ? 'border-primary/30 bg-primary/5' : 'border-border bg-surface'}`}
                     >
                       <div className="flex-shrink-0 w-8 text-center">
                         <RankDisplay rank={entry.rank} />

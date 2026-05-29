@@ -99,7 +99,7 @@ export default function MyListingsPage() {
       />
 
       {loading ? (
-        <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />)}</div>
+        <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : listings.length === 0 ? (
         <div className="text-center py-16 text-text-muted">
           <p className="mb-4">No listings yet.</p>
@@ -108,7 +108,7 @@ export default function MyListingsPage() {
       ) : (
         <div className="space-y-3">
           {listings.map((l) => (
-            <div key={l.id} className="bg-white border border-border rounded-xl p-4">
+            <div key={l.id} className="bg-surface shadow-card border border-border rounded-xl p-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <EntityLogo type="token" slug={l.token.symbol} size="xl" logoUrl={l.token.logoUrl} />

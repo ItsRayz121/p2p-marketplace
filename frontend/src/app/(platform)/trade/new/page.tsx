@@ -136,7 +136,7 @@ function NewTradePageContent() {
       </div>
 
       {/* Offer details card */}
-      <div className="bg-white rounded-xl border border-border p-5 mb-6">
+      <div className="bg-surface shadow-card rounded-xl border border-border p-5 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center">
@@ -186,7 +186,7 @@ function NewTradePageContent() {
       </div>
 
       {/* Trade form */}
-      <div className="bg-white rounded-xl border border-border p-5 space-y-5">
+      <div className="bg-surface shadow-card rounded-xl border border-border p-5 space-y-5">
         {/* Amount input */}
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1">

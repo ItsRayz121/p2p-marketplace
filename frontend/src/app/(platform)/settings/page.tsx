@@ -199,7 +199,7 @@ function SecurityTab() {
       )}
 
       {/* Change Password */}
-      <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-bold text-text-primary">Change Password</h3>
         <div>
           <label className="text-sm font-medium text-text-primary block mb-1.5">Current Password</label>
@@ -221,7 +221,7 @@ function SecurityTab() {
       </div>
 
       {/* 2FA */}
-      <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-text-primary">Two-Factor Authentication</h3>
           <Badge variant={twoFaEnabled ? 'success' : 'default'} size="sm">
@@ -282,7 +282,7 @@ function SecurityTab() {
       </div>
 
       {/* Push Notifications */}
-      <div className="bg-white border border-border rounded-xl p-5 space-y-3">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
         <h3 className="text-base font-semibold text-text-primary">Push Notifications</h3>
         <p className="text-sm text-text-muted">Get instant alerts for trade updates and payment events.</p>
         <PushToggle />
@@ -327,7 +327,7 @@ function SessionsTab() {
       {sessions.map((sess) => (
         <div
           key={sess.id}
-          className={`bg-white border rounded-xl p-4 ${sess.isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border'}`}
+          className={`shadow-card border rounded-xl p-4 ${sess.isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border bg-surface'}`}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
@@ -398,7 +398,7 @@ export default function SettingsPage() {
           <p className="text-sm text-text-muted">
             Deleting your account is permanent and cannot be undone. All your data, trades, and balances will be permanently deleted.
           </p>
-          <div className="bg-white border border-border rounded-lg p-4">
+          <div className="bg-surface shadow-card border border-border rounded-lg p-4">
             <p className="text-sm font-semibold text-text-primary mb-1">Delete Account</p>
             <p className="text-sm text-text-muted mb-3">
               To request account deletion, please contact our support team at{' '}

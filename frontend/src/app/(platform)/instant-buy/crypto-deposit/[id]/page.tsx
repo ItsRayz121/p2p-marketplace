@@ -92,7 +92,7 @@ export default function CryptoDepositPage() {
       </div>
 
       {/* Status + Timer */}
-      <div className="bg-white border border-border rounded-xl p-5 space-y-3">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-text-primary">Order Status</span>
           <Badge variant={statusVariant(order.status)} size="sm">
@@ -107,7 +107,7 @@ export default function CryptoDepositPage() {
 
       {/* Deposit Instructions */}
       {order.status !== 'completed' && order.status !== 'expired' && (
-        <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
           <h2 className="text-sm font-semibold text-text-primary">Deposit Instructions</h2>
 
           {/* Network Warning */}
@@ -146,7 +146,7 @@ export default function CryptoDepositPage() {
 
       {/* Already Sent? Manual TX Hash */}
       {!submitDone && order.status !== 'completed' && order.status !== 'expired' && order.status !== 'detected' && (
-        <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
           <h2 className="text-sm font-semibold text-text-primary">Already Sent?</h2>
           <p className="text-xs text-text-muted">If you have already sent the crypto, enter the transaction hash to speed up processing.</p>
           <Input

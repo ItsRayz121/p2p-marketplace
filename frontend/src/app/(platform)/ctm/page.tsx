@@ -118,7 +118,7 @@ export default function CtmHomePage() {
           { href: '/ctm/listings',  label: 'Buy/Sell Listings',  Icon: LayoutList },
           { href: '/ctm/dashboard', label: 'Merchant Dashboard', Icon: BarChart3  },
         ] as const).map((item) => (
-          <Link key={item.href} href={item.href} className="bg-white border border-border rounded-xl p-4 text-center hover:shadow-md transition-shadow">
+          <Link key={item.href} href={item.href} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center hover:shadow-md transition-shadow">
             <div className="flex justify-center mb-2">
               <item.Icon size={22} className="text-primary" />
             </div>

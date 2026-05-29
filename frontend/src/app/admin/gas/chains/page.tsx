@@ -915,7 +915,7 @@ function WithdrawalFeesPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   }
 
   return (
-    <div className="bg-white border border-border rounded-xl overflow-hidden">
+    <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-border">
         <h2 className="text-sm font-semibold text-text-primary">Wallet Withdrawal Fees</h2>
         <p className="text-xs text-text-muted mt-0.5">
@@ -1325,7 +1325,7 @@ export default function GasChainsAdminPage() {
           )}
 
           {!chainsLoading && chains.length > 0 && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-surface border-b border-border">
@@ -1433,7 +1433,7 @@ export default function GasChainsAdminPage() {
           )}
 
           {!tokensLoading && tokens.length > 0 && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-surface border-b border-border">

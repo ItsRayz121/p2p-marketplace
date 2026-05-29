@@ -121,7 +121,7 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+    <form onSubmit={handleSubmit} className="bg-surface shadow-card border border-border rounded-xl p-6 space-y-4">
       <h3 className="font-semibold text-slate-800">Add Token</h3>
 
       <div className="flex gap-2">
@@ -254,7 +254,7 @@ export default function ChainTokensPage() {
       </div>
 
       {/* Token table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>

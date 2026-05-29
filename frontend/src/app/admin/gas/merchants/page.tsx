@@ -233,7 +233,7 @@ export default function GasMerchantsPage() {
       )}
 
       {!loading && merchants.length > 0 && (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
@@ -350,7 +350,7 @@ export default function GasMerchantsPage() {
               )}
 
               {!settlementsLoading && settlements.length > 0 && (
-                <div className="bg-white rounded-xl border border-border overflow-hidden">
+                <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-surface border-b border-border">

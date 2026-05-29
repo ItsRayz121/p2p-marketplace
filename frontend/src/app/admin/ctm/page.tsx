@@ -22,7 +22,7 @@ const TIER_COLORS: Record<string, string> = {
 
 function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
   return (
-    <div className="bg-white border border-border rounded-xl p-4">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-4">
       <p className="text-xs text-text-muted mb-1">{label}</p>
       <p className={`text-2xl font-bold ${accent ?? 'text-text-primary'}`}>{value}</p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
@@ -46,7 +46,7 @@ export default function AdminCtmDashboardPage() {
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-text-primary">CTM Overview</h1>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-20 animate-pulse" />)}
+          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-20 animate-pulse" />)}
         </div>
       </div>
     )
@@ -98,7 +98,7 @@ export default function AdminCtmDashboardPage() {
           <StatCard label="Active Merchants" value={stats.merchants.active.toLocaleString()} />
           <StatCard label="Pending Approval" value={stats.merchants.pendingApproval.toLocaleString()} accent={stats.merchants.pendingApproval > 0 ? 'text-yellow-600' : undefined} />
           {Object.entries(stats.merchants.byTier).map(([tier, count]) => (
-            <div key={tier} className="bg-white border border-border rounded-xl p-4">
+            <div key={tier} className="bg-surface shadow-card border border-border rounded-xl p-4">
               <p className="text-xs text-text-muted mb-1">Tier</p>
               <div className="flex items-center gap-2">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[tier] ?? 'bg-gray-100 text-gray-700'}`}>{tier}</span>
@@ -113,7 +113,7 @@ export default function AdminCtmDashboardPage() {
       {stats.topTokens.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">Top Tokens by Volume</h2>
-          <div className="bg-white border border-border rounded-xl overflow-hidden">
+          <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
@@ -150,7 +150,7 @@ export default function AdminCtmDashboardPage() {
           { href: '/admin/ctm/merchants', label: 'Merchant Queue' },
           { href: '/admin/ctm/proofs', label: 'Proof Review' },
         ].map((item) => (
-          <Link key={item.href} href={item.href} className="bg-white border border-border rounded-xl p-4 text-center text-sm font-medium text-text-primary hover:shadow-sm hover:border-primary/30 transition-all">
+          <Link key={item.href} href={item.href} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center text-sm font-medium text-text-primary hover:shadow-sm hover:border-primary/30 transition-all">
             {item.label}
           </Link>
         ))}

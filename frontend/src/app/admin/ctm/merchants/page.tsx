@@ -117,11 +117,11 @@ export default function AdminCtmMerchantsPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-20 animate-pulse" />)}</div>
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-20 animate-pulse" />)}</div>
       ) : merchants.length === 0 ? (
         <div className="text-center py-16 text-text-muted">{tab === 'pending' ? 'No pending approvals.' : 'No merchants found.'}</div>
       ) : (
-        <div className="bg-white border border-border rounded-xl overflow-hidden">
+        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border">
               <tr>

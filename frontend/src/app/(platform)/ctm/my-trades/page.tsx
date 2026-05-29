@@ -131,7 +131,7 @@ export default function MyCtmTradesPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />)}</div>
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : trades.length === 0 ? (
         <div className="text-center py-16 text-text-muted">No trades matching the current filters.</div>
       ) : (

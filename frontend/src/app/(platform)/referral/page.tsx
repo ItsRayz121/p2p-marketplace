@@ -103,7 +103,7 @@ export default function ReferralPage() {
           { label: 'Total Earned', value: `PKR ${parseFloat(stats.totalEarned).toLocaleString()}` },
           { label: 'Pending', value: `PKR ${parseFloat(stats.pendingEarnings).toLocaleString()}` },
         ].map((stat) => (
-          <div key={stat.label} className="bg-white border border-border rounded-xl p-4 text-center">
+          <div key={stat.label} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center">
             <p className="text-lg font-bold text-text-primary">{stat.value}</p>
             <p className="text-xs text-text-muted mt-0.5">{stat.label}</p>
           </div>
@@ -113,7 +113,7 @@ export default function ReferralPage() {
       {/* Referred Users */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Your Referrals</h2>
-        <div className="bg-white border border-border rounded-xl overflow-hidden">
+        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
           {referrals.length === 0 ? (
             <div className="py-10 text-center">
               <p className="text-text-muted text-sm">No referrals yet.</p>

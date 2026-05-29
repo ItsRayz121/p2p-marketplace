@@ -140,7 +140,7 @@ export default function BrowseListingsPage() {
 
       {loading ? (
         <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />)}
+          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}
         </div>
       ) : error ? (
         <div className="text-center py-16">
@@ -159,7 +159,7 @@ export default function BrowseListingsPage() {
               : l.paymentMethods.map((pm) => ({ id: pm, type: 'other', label: pm }))
 
             return (
-              <div key={l.id} className="bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+              <div key={l.id} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   {/* Token */}
                   <div className="flex items-center gap-3 sm:w-44">

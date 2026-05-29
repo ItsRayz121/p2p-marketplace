@@ -43,7 +43,7 @@ const TIER_NEXT: Record<string, { label: string; requirement: string }> = {
 
 function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
   return (
-    <div className="bg-white border border-border rounded-xl p-4">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-4">
       <p className="text-xs text-text-muted">{label}</p>
       <p className={`text-2xl font-bold mt-1 ${accent ?? 'text-text-primary'}`}>{value}</p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
@@ -68,9 +68,9 @@ export default function CtmDashboardPage() {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12">
         <div className="space-y-4 animate-pulse">
-          <div className="bg-white border border-border rounded-xl h-32" />
+          <div className="bg-surface shadow-card border border-border rounded-xl h-32" />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-20" />)}
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-20" />)}
           </div>
         </div>
       </div>
@@ -151,7 +151,7 @@ export default function CtmDashboardPage() {
       </div>
 
       {/* Tier progress */}
-      <div className="bg-white border border-border rounded-xl p-5">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-text-primary">Tier Progress</h2>
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[profile.tier] ?? 'bg-gray-100 text-gray-700'}`}>
@@ -170,7 +170,7 @@ export default function CtmDashboardPage() {
       </div>
 
       {/* Active listings */}
-      <div className="bg-white border border-border rounded-xl p-5">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-text-primary">Active Listings ({activeListings.length})</h2>
           <Link href="/ctm/my-listings" className="text-sm text-primary hover:underline">View all</Link>
@@ -221,7 +221,7 @@ export default function CtmDashboardPage() {
           { label: 'My Bids', href: '/ctm/my-bids', desc: 'Bids you have placed' },
           { label: 'Browse Market', href: '/ctm/listings', desc: 'See other listings' },
         ].map((l) => (
-          <Link key={l.href} href={l.href} className="bg-white border border-border rounded-xl p-4 hover:shadow-sm transition-shadow">
+          <Link key={l.href} href={l.href} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-sm transition-shadow">
             <p className="font-semibold text-text-primary text-sm">{l.label}</p>
             <p className="text-xs text-text-muted mt-0.5">{l.desc}</p>
           </Link>

@@ -59,7 +59,7 @@ export default function CtmTokenDetailPage() {
       <Link href="/ctm/tokens" className="text-sm text-primary hover:underline">← Back to Directory</Link>
 
       {/* Header */}
-      <div className="bg-white border border-border rounded-xl p-6">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-6">
         <div className="flex items-start gap-4">
           <EntityLogo type="token" slug={token.symbol} size="2xl" logoUrl={token.logoUrl} className="w-16 h-16" />
           <div className="flex-1 min-w-0">
@@ -115,12 +115,12 @@ export default function CtmTokenDetailPage() {
           { label: 'Active Listings', value: (token._count?.listings ?? 0).toString(), href: `/ctm/listings?tokenId=${token.id}` },
         ].map((stat) =>
           stat.href ? (
-            <Link key={stat.label} href={stat.href} className="bg-white border border-border rounded-xl p-4 text-center block hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer group">
+            <Link key={stat.label} href={stat.href} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center block hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer group">
               <p className="text-xl font-bold text-text-primary group-hover:text-primary">{stat.value}</p>
               <p className="text-xs text-text-muted group-hover:text-primary/80">{stat.label} →</p>
             </Link>
           ) : (
-            <div key={stat.label} className="bg-white border border-border rounded-xl p-4 text-center">
+            <div key={stat.label} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center">
               <p className="text-xl font-bold text-text-primary">{stat.value}</p>
               <p className="text-xs text-text-muted">{stat.label}</p>
             </div>

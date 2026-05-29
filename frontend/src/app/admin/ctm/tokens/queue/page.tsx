@@ -87,13 +87,13 @@ export default function AdminTokenQueuePage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />)}</div>
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : requests.length === 0 ? (
         <div className="text-center py-16 text-text-muted">No pending token requests.</div>
       ) : (
         <div className="space-y-4">
           {requests.map((r) => (
-            <div key={r.id} className="bg-white border border-border rounded-xl p-5">
+            <div key={r.id} className="bg-surface shadow-card border border-border rounded-xl p-5">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">

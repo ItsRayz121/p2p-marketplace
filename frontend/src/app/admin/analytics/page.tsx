@@ -116,7 +116,7 @@ export default function AnalyticsPage() {
         <div className="space-y-6">
           {/* User Growth */}
           {data?.userGrowth && data.userGrowth.length > 0 && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="px-5 py-4 border-b border-border">
                 <h2 className="font-semibold text-text-primary">User Growth</h2>
               </div>
@@ -138,7 +138,7 @@ export default function AnalyticsPage() {
 
           {/* Trade Volume */}
           {data?.tradeVolume && data.tradeVolume.length > 0 && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="px-5 py-4 border-b border-border">
                 <h2 className="font-semibold text-text-primary">Trade Volume</h2>
               </div>
@@ -180,7 +180,7 @@ export default function AnalyticsPage() {
 
           {/* Badge Distribution */}
           {data?.badgeDistribution && badgeTotals > 0 && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="px-5 py-4 border-b border-border">
                 <h2 className="font-semibold text-text-primary">Badge Distribution</h2>
                 <p className="text-text-muted text-sm">{badgeTotals.toLocaleString()} total users</p>
@@ -203,7 +203,7 @@ export default function AnalyticsPage() {
 
           {/* Top Traders */}
           {data?.topTraders && data.topTraders.length > 0 && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="px-5 py-4 border-b border-border">
                 <h2 className="font-semibold text-text-primary">Top Traders</h2>
               </div>
@@ -241,7 +241,7 @@ export default function AnalyticsPage() {
           )}
 
           {!data?.userGrowth?.length && !data?.tradeVolume?.length && !data?.topTraders?.length && (
-            <div className="bg-white rounded-xl border border-border p-12 text-center text-text-muted">
+            <div className="bg-surface shadow-card rounded-xl border border-border p-12 text-center text-text-muted">
               No analytics data available for the selected period.
             </div>
           )}

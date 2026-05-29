@@ -320,7 +320,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
       {/* Listing header */}
-      <div className="bg-white border border-border rounded-xl p-6">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-6">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex items-center gap-4">
             <EntityLogo type="token" slug={listing.token.symbol} size="2xl" logoUrl={listing.token.logoUrl} />
@@ -357,7 +357,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {/* Merchant card */}
-      <div className="bg-white border border-border rounded-xl p-5">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
         <button onClick={() => setMerchantOpen((o) => !o)} className="w-full flex items-center justify-between text-left mb-0">
           <h2 className="font-semibold text-text-primary">Merchant</h2>
           <svg className={`w-4 h-4 text-text-muted transition-transform ${merchantOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -381,7 +381,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Payment / receiving info section */}
       {isBuyListing ? (
         // BUY listing: lister is BUYER — most important info is buyer's token receiving address
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
             <h2 className="font-semibold text-text-primary">
               {isMine ? 'Your Token Receiving Address' : "Buyer's Token Receiving Address"}
@@ -409,7 +409,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         </div>
       ) : (
         // SELL listing: lister is SELLER — show their accepted payment methods
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
             <h2 className="font-semibold text-text-primary">
               {isMine ? 'Your Accepted Payment Methods' : 'Seller Accepted Payment Methods'}
@@ -440,7 +440,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Delivery method */}
       {listing.tokenDeliveryType && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <button onClick={() => setDeliveryOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
             <h2 className="font-semibold text-text-primary">Token Delivery Method</h2>
             <svg className={`w-4 h-4 text-text-muted transition-transform ${deliveryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -463,7 +463,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Terms */}
       {listing.terms && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <h2 className="font-semibold text-text-primary mb-2">Terms</h2>
           <p className="text-sm text-text-muted whitespace-pre-wrap">{listing.terms}</p>
         </div>
@@ -471,7 +471,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Activity stats bar — public */}
       {activity && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <h2 className="font-semibold text-text-primary mb-3">Listing Activity</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
             <div>
@@ -506,7 +506,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Owner management panel — tabbed bids + trades */}
       {isMine && activity && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
             {(['bids', 'trades'] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}

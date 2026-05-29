@@ -148,7 +148,7 @@ export default function FeesPage() {
       {/* Referral */}
       <section>
         <h2 className="text-lg font-bold text-text-primary mb-3">Referral Rewards</h2>
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
               <Gift size={20} className="text-primary" />

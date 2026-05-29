@@ -254,7 +254,7 @@ export default function GasOrdersPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           {/* Column headers — hidden on mobile */}
           <div className="hidden sm:grid sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 bg-surface border-b border-border text-xs font-medium text-text-muted uppercase tracking-wider">
             <span>Order</span>

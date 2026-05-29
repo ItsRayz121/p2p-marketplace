@@ -177,7 +177,7 @@ function GasOrderTrackingPageInner() {
 
   if (accessDenied) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="bg-white rounded-xl border border-gray-100 p-8 max-w-sm w-full text-center space-y-4">
+      <div className="bg-surface shadow-card rounded-xl border border-border p-8 max-w-sm w-full text-center space-y-4">
         <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto">
           <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
@@ -232,7 +232,7 @@ function GasOrderTrackingPageInner() {
         </div>
 
         {/* Timeline */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-5">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Order Status</h2>
 
           {order.status === 'expired' && (
@@ -299,7 +299,7 @@ function GasOrderTrackingPageInner() {
         </div>
 
         {/* Order Details */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-5">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Order Details</h2>
           <DetailRow label="Reference" value={<span className="font-mono text-xs">{order.orderRef}</span>} />
           <DetailRow label="Chain" value={<span className="font-medium">{order.chain}</span>} />
@@ -348,7 +348,7 @@ function GasOrderTrackingPageInner() {
 
         {/* Transactions */}
         {(order.paymentTxHash || order.deliveryTxHash || order.refundTxHash) && (
-          <div className="bg-white rounded-xl border border-gray-100 p-5">
+          <div className="bg-surface shadow-card rounded-xl border border-border p-5">
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Transactions</h2>
             {order.paymentTxHash && paymentNetwork && (
               <TxRow label="Payment Tx" hash={order.paymentTxHash} network={paymentNetwork} />
@@ -364,7 +364,7 @@ function GasOrderTrackingPageInner() {
 
         {/* PKR payment proof */}
         {isPkr && order.paymentProofUrl && (
-          <div className="bg-white rounded-xl border border-gray-100 p-5">
+          <div className="bg-surface shadow-card rounded-xl border border-border p-5">
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Payment Proof</h2>
             <a
               href={order.paymentProofUrl}

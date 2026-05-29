@@ -41,6 +41,14 @@ function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' 
   return 'default'
 }
 
+const RECON_STATUS_LABELS: Record<string, string> = {
+  complete: 'Complete',
+  running:  'Running',
+  failed:   'Failed',
+  pending:  'Pending',
+}
+const reconStatusLabel = (s: string) => RECON_STATUS_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
 function fmt(iso: string) {
   return new Date(iso).toLocaleString()
 }
@@ -179,7 +187,7 @@ export default function GasReconciliationPage() {
       )}
 
       {!loading && runs.length > 0 && (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
@@ -208,7 +216,7 @@ export default function GasReconciliationPage() {
                         : <Badge variant="success" size="sm">Clean</Badge>}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={statusVariant(r.status)} size="sm">{r.status}</Badge>
+                      <Badge variant={statusVariant(r.status)} size="sm">{reconStatusLabel(r.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => openRun(r.id)}>View</Button>

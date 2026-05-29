@@ -129,7 +129,7 @@ export default function AdminNotificationsPage() {
       </div>
 
       {/* Category tabs */}
-      <div className="bg-white rounded-xl border border-border p-1 flex flex-wrap gap-1">
+      <div className="bg-surface shadow-card rounded-xl border border-border p-1 flex flex-wrap gap-1">
         {CATEGORIES.map((cat) => (
           <button
             key={cat.id}
@@ -158,7 +158,7 @@ export default function AdminNotificationsPage() {
       </div>
 
       {/* Notification list */}
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-text-muted text-sm gap-2">
             <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />

@@ -300,7 +300,7 @@ function WalletCard({
 
 function AnalyticsPanel({ analytics }: { analytics: GasAnalytics }) {
   return (
-    <div className="bg-white border border-border rounded-xl p-5">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-5">
       <h2 className="text-sm font-semibold text-text-primary mb-4">
         Delivery Analytics
         <span className="ml-2 text-xs font-normal text-text-muted">({analytics.period})</span>
@@ -404,7 +404,7 @@ function FinancialKpiSection({ kpi, loading }: { kpi: GasFinancialKpi | null; lo
   return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
       {cards.map(({ label, primary, secondary, accent }) => (
-        <div key={label} className="bg-white border border-border rounded-xl p-4">
+        <div key={label} className="bg-surface shadow-card border border-border rounded-xl p-4">
           <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">{label}</p>
           <p className={`text-xl font-bold ${accent}`}>{primary}</p>
           <p className="text-sm text-text-muted mt-0.5">{secondary}</p>
@@ -860,26 +860,26 @@ export default function GasAdminPage() {
       {/* ── Operational Quick Stats ──────────────────────────────────────────── */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white border border-border rounded-xl p-4">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Active Orders</p>
             <p className="text-2xl font-bold text-warning mt-1">{stats.pendingCount}</p>
           </div>
-          <div className="bg-white border border-border rounded-xl p-4">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Failed Orders</p>
             <p className={`text-2xl font-bold mt-1 ${stats.failedCount > 0 ? 'text-danger' : 'text-text-primary'}`}>{stats.failedCount}</p>
           </div>
           {(stats.refundPendingCount ?? 0) > 0 ? (
-            <div className="bg-white border border-warning/40 rounded-xl p-4">
+            <div className="bg-surface shadow-card border border-warning/40 rounded-xl p-4">
               <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
               <p className="text-2xl font-bold mt-1 text-warning">{stats.refundPendingCount}</p>
             </div>
           ) : (
-            <div className="bg-white border border-border rounded-xl p-4">
+            <div className="bg-surface shadow-card border border-border rounded-xl p-4">
               <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
               <p className="text-2xl font-bold mt-1 text-text-primary">0</p>
             </div>
           )}
-          <div className="bg-white border border-border rounded-xl p-4">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Custom Requests</p>
             <p className={`text-2xl font-bold mt-1 ${(stats.pendingCustomRequests ?? 0) > 0 ? 'text-warning' : 'text-text-primary'}`}>{stats.pendingCustomRequests ?? 0}</p>
           </div>
@@ -887,7 +887,7 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Financial KPI Dashboard ──────────────────────────────────────────── */}
-      <div className="bg-white border border-border rounded-xl overflow-hidden">
+      <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
         {/* Tab bar */}
         <div className="flex items-center gap-0 border-b border-border">
           {(['today', 'alltime', 'custom'] as const).map((tab) => (
@@ -959,7 +959,7 @@ export default function GasAdminPage() {
             ))}
           </div>
           {analytics ? <AnalyticsPanel analytics={analytics} /> : (
-            <div className="bg-white border border-border rounded-xl p-8 text-center text-text-muted text-sm">Loading analytics…</div>
+            <div className="bg-surface shadow-card border border-border rounded-xl p-8 text-center text-text-muted text-sm">Loading analytics…</div>
           )}
         </div>
       )}
@@ -1018,7 +1018,7 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Status Filters ───────────────────────────────────────────────────── */}
-      <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-2">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-2">
         {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
           <button
             key={s}
@@ -1038,7 +1038,7 @@ export default function GasAdminPage() {
       {orders.length === 0 ? (
         <EmptyState icon={Fuel} title="No gas orders found" description="No gas orders match the current filter." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">

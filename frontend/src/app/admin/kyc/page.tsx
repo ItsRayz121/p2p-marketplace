@@ -159,7 +159,7 @@ export default function KycQueuePage() {
       {submissions.length === 0 ? (
         <EmptyState icon={ShieldCheck} title="No pending KYC submissions" description="All submissions have been reviewed." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">

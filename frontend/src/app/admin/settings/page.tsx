@@ -167,7 +167,7 @@ function SecurityTab() {
   return (
     <div className="space-y-6">
       {/* Change Password */}
-      <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-bold text-text-primary">Change Password</h3>
         <div>
           <label className="text-sm font-medium text-text-primary block mb-1.5">Current Password</label>
@@ -189,7 +189,7 @@ function SecurityTab() {
       </div>
 
       {/* 2FA */}
-      <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-text-primary">Two-Factor Authentication</h3>
           <Badge variant={twoFaEnabled ? 'success' : 'default'} size="sm">

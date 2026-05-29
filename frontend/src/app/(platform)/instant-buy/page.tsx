@@ -255,7 +255,7 @@ export default function InstantBuyPage() {
             <button
               key={c.id}
               onClick={() => { setSelectedCoin(c.id); setSelectedNetwork(''); setStep(1) }}
-              className="flex flex-col items-center gap-3 p-4 bg-white border border-border rounded-xl hover:border-primary/50 hover:shadow-sm transition-all text-center group"
+              className="flex flex-col items-center gap-3 p-4 bg-surface shadow-card border border-border rounded-xl hover:border-primary/50 hover:shadow-card-md transition-all text-center group"
             >
               <div className="w-12 h-12 rounded-full bg-primary/10 text-primary font-bold text-sm flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
                 {c.abbr.slice(0, 3)}
@@ -272,7 +272,7 @@ export default function InstantBuyPage() {
       {/* ── Step 2: Network + Payment Mode ── */}
       {step === 1 && (
         <div className="space-y-5">
-          <div className="bg-white border border-border rounded-xl p-4">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
             <p className="text-sm font-semibold text-text-primary mb-3">Select Network</p>
             <div className="grid grid-cols-2 gap-2">
               {(NETWORKS[selectedCoin] ?? []).map((net) => (
@@ -291,7 +291,7 @@ export default function InstantBuyPage() {
             </div>
           </div>
 
-          <div className="bg-white border border-border rounded-xl p-4">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
             <p className="text-sm font-semibold text-text-primary mb-3">Payment Mode</p>
             <div className="grid grid-cols-2 gap-2">
               {PAYMENT_MODES.map((m) => (
@@ -341,7 +341,7 @@ export default function InstantBuyPage() {
       {/* ── Step 3: Amount + Address ── */}
       {step === 2 && (
         <div className="space-y-5">
-          <div className="bg-white border border-border rounded-xl p-4 space-y-4">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-4 space-y-4">
             <div>
               <label className="text-sm font-medium text-text-primary block mb-1.5">
                 {paymentMode === 'pkr' ? 'Amount (PKR)' : `Amount (${selectedCoin})`}
@@ -426,7 +426,7 @@ export default function InstantBuyPage() {
       {/* ── Step 4: Confirm & Submit ── */}
       {step === 3 && (
         <div className="space-y-5">
-          <div className="bg-white border border-border rounded-xl p-5 space-y-3">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
             <h2 className="text-base font-bold text-text-primary">Order Summary</h2>
             <div className="divide-y divide-border">
               {[

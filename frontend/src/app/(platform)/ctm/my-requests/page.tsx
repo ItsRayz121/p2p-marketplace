@@ -129,14 +129,14 @@ export default function MyRequestsPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />)}</div>
+        <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : tab === 'requests' ? (
         requests.length === 0 ? (
           <div className="text-center py-16 text-text-muted">No requests yet. <Link href="/ctm/requests/create" className="text-primary hover:underline">Post one →</Link></div>
         ) : (
           <div className="space-y-4">
             {requests.map((r) => (
-              <div key={r.id} className="bg-white border border-border rounded-xl p-5">
+              <div key={r.id} className="bg-surface shadow-card border border-border rounded-xl p-5">
                 <div className="flex items-start justify-between gap-3 mb-4">
                   <div className="flex items-center gap-2.5">
                     <EntityLogo type="token" slug={r.token.symbol} size="md" logoUrl={r.token.logoUrl} />
@@ -178,7 +178,7 @@ export default function MyRequestsPage() {
         ) : (
           <div className="space-y-3">
             {bids.map((b) => (
-              <div key={b.id} className="bg-white border border-border rounded-xl p-4 flex items-center justify-between gap-4">
+              <div key={b.id} className="bg-surface shadow-card border border-border rounded-xl p-4 flex items-center justify-between gap-4">
                 <div>
                   <p className="font-semibold text-text-primary">{b.request.side === 'buy' ? 'Buy' : 'Sell'} {b.request.amount} {b.request.token.symbol}</p>
                   <p className="text-xs text-text-muted">Your bid: PKR {Number(b.totalPkr).toLocaleString()} · {b.status}</p>

@@ -156,7 +156,7 @@ export default function WalletPage() {
       )}
 
       {/* Section 1: Deposit Addresses */}
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <h2 className="font-semibold text-text-primary">Deposit Addresses</h2>
           <span className="text-text-muted text-sm">{depositAddresses.filter((a) => a.configured).length} / {depositAddresses.length} configured</span>
@@ -199,7 +199,7 @@ export default function WalletPage() {
       </div>
 
       {/* Section 2: Hot Wallet Status */}
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <h2 className="font-semibold text-text-primary">Hot Wallet Status</h2>
           <span className="text-text-muted text-sm">{hotWallets.length} wallet(s)</span>
@@ -272,7 +272,7 @@ export default function WalletPage() {
       </div>
 
       {/* Section 3: Gas Order Summary */}
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <h2 className="font-semibold text-text-primary">Gas Order Summary</h2>
           <span className="text-text-muted text-sm">{totalOrders} total orders</span>

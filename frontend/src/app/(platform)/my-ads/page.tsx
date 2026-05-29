@@ -24,6 +24,13 @@ function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' 
   return 'default'
 }
 
+const AD_STATUS_LABELS: Record<string, string> = {
+  active:   'Active',
+  paused:   'Paused',
+  inactive: 'Inactive',
+}
+const adStatusLabel = (s: string) => AD_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function MyAdsPage() {
@@ -100,7 +107,7 @@ export default function MyAdsPage() {
       ) : (
         <>
           {/* Desktop Table */}
-          <div className="hidden md:block bg-white border border-border rounded-xl overflow-hidden">
+          <div className="hidden md:block bg-surface shadow-card border border-border rounded-xl overflow-hidden">
             <table className="w-full">
               <thead className="bg-surface border-b border-border">
                 <tr>
@@ -124,7 +131,7 @@ export default function MyAdsPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-text-primary">—</td>
                     <td className="px-4 py-3">
-                      <Badge variant={statusVariant(ad.status)} size="sm">{ad.status}</Badge>
+                      <Badge variant={statusVariant(ad.status)} size="sm">{adStatusLabel(ad.status)}</Badge>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -161,7 +168,7 @@ export default function MyAdsPage() {
           {/* Mobile Cards */}
           <div className="md:hidden space-y-3">
             {ads.map((ad) => (
-              <div key={ad.id} className="bg-white border border-border rounded-xl p-4 space-y-3">
+              <div key={ad.id} className="bg-surface shadow-card border border-border rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant={ad.side === 'buy' ? 'success' : 'danger'} size="sm">
@@ -169,7 +176,7 @@ export default function MyAdsPage() {
                     </Badge>
                     <span className="text-sm font-bold text-text-primary">{ad.coin}</span>
                   </div>
-                  <Badge variant={statusVariant(ad.status)} size="sm">{ad.status}</Badge>
+                  <Badge variant={statusVariant(ad.status)} size="sm">{adStatusLabel(ad.status)}</Badge>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>

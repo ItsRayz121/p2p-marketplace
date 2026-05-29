@@ -120,7 +120,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
   }
 
   return (
-    <div className="bg-white rounded-xl border border-blue-200 p-6 space-y-5">
+    <div className="bg-surface shadow-card rounded-xl border border-border p-6 space-y-5">
       <h2 className="text-lg font-semibold text-slate-900">Add New Blockchain</h2>
 
       {/* Chain search */}
@@ -285,7 +285,7 @@ export default function DepositChainsPage() {
         />
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>

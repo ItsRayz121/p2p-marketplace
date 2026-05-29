@@ -123,7 +123,7 @@ export default function InstantBuyPage() {
       {orders.length === 0 ? (
         <EmptyState icon={Zap} title="No orders pending review" description="All instant buy orders have been processed." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">

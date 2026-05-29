@@ -50,7 +50,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
   const trades = ad.seller?.tradeStats?.totalTrades ?? 0
 
   return (
-    <div className="bg-white border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
 
         {/* USDT logo + coin/network */}
@@ -286,7 +286,7 @@ export default function MarketplacePage() {
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="bg-white border border-border rounded-xl h-24 animate-pulse" />
+            <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />
           ))}
         </div>
       ) : error ? (

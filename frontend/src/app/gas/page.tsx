@@ -1218,7 +1218,7 @@ export default function GasPage() {
                     </div>
 
                     {/* Amount to send */}
-                    <div className="bg-white rounded-xl p-3 flex items-center justify-between">
+                    <div className="bg-surface shadow-card rounded-xl p-3 flex items-center justify-between">
                       <span className="text-xs text-gray-500">Amount to Send</span>
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-bold text-green-700">PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</span>

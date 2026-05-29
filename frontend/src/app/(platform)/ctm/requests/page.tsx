@@ -117,7 +117,7 @@ export default function RequestBoardPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-28 animate-pulse" />)}</div>
+        <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-28 animate-pulse" />)}</div>
       ) : requests.length === 0 ? (
         <div className="text-center py-16 text-text-muted">No open {side} requests. <Link href="/ctm/requests/create" className="text-primary hover:underline">Post the first one →</Link></div>
       ) : (
@@ -125,7 +125,7 @@ export default function RequestBoardPage() {
           {requests.map((r) => {
             const isOwner = user?.id === r.user.id
             return (
-              <div key={r.id} className="bg-white border border-border rounded-xl p-5">
+              <div key={r.id} className="bg-surface shadow-card border border-border rounded-xl p-5">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <EntityLogo type="token" slug={r.token.symbol} size="xl" logoUrl={r.token.logoUrl} />

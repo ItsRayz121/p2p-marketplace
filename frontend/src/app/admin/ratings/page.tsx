@@ -105,7 +105,7 @@ export default function AdminRatingsPage() {
       {ratings.length === 0 ? (
         <EmptyState icon={Star} title="No ratings yet" description="Ratings will appear here after trades are completed and reviewed." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">

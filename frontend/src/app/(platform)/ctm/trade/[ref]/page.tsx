@@ -522,7 +522,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
         <div className="lg:col-span-3 space-y-4">
 
           {/* Header + Progress */}
-          <div className="bg-white border border-border rounded-xl p-5">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-5">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
                 <h1 className="font-bold text-text-primary text-lg">{trade.tokenAmount} {trade.token.symbol}</h1>
@@ -904,7 +904,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           {/* Admin flat view */}
           {!isBuyer && !isSeller && (
             <>
-              <div className="bg-white border border-border rounded-xl p-5">
+              <div className="bg-surface shadow-card border border-border rounded-xl p-5">
                 <h2 className="font-semibold text-text-primary mb-3">Order Summary</h2>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
@@ -915,7 +915,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                   </div>
                 </div>
               </div>
-              <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+              <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
                 <h2 className="font-semibold text-text-primary">Payment Method</h2>
                 <div>
                   <p className="text-xs font-medium text-text-muted mb-2">Seller Receiving</p>
@@ -926,7 +926,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                   {renderBuyerAccountBlock()}
                 </div>
               </div>
-              <div className="bg-white border border-border rounded-xl p-5">
+              <div className="bg-surface shadow-card border border-border rounded-xl p-5">
                 <h2 className="font-semibold text-text-primary mb-3">Token Delivery</h2>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm mb-3">
                   {(trade.buyerSettlementId || trade.settlementMethod) && (

@@ -160,7 +160,7 @@ function LiveBalancesPanel() {
   }, [fetchBalances])
 
   return (
-    <div className="bg-white rounded-xl border border-border overflow-hidden">
+    <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
         <div>
           <h2 className="text-sm font-semibold text-text-primary">Live Hot Wallet Balances</h2>
@@ -322,7 +322,7 @@ function ManualDepositForm({ onSuccess }: { onSuccess: () => void }) {
           + Log Manual Deposit
         </Button>
       ) : (
-        <div className="bg-white rounded-xl border border-border p-5">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-text-primary">Log Manual Deposit</h3>
             <button onClick={() => { setOpen(false); reset() }} className="text-text-muted hover:text-text-primary text-xl leading-none">&times;</button>
@@ -489,7 +489,7 @@ export default function GasWalletActivityPage() {
       <LiveBalancesPanel />
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-border p-4">
+      <div className="bg-surface shadow-card rounded-xl border border-border p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="lg:col-span-2 flex gap-2">
             <input
@@ -554,7 +554,7 @@ export default function GasWalletActivityPage() {
       )}
 
       {!loading && items.length > 0 && (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">

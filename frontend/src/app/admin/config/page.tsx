@@ -127,7 +127,7 @@ function Accordion({ title, subtitle, open, onToggle, children, badge }: {
   children: React.ReactNode; badge?: React.ReactNode
 }) {
   return (
-    <div className="bg-white rounded-xl border border-border overflow-hidden">
+    <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
       <button onClick={onToggle} className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface/40 transition-colors text-left">
         <div>
           <div className="flex items-center gap-2">

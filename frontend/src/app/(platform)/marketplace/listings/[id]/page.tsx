@@ -253,7 +253,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
 
       {/* Listing header */}
-      <div className="bg-white border border-border rounded-xl p-6">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-6">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-xl font-bold text-primary flex-shrink-0">$</div>
@@ -290,7 +290,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       </div>
 
       {/* Seller / Buyer card */}
-      <div className="bg-white border border-border rounded-xl p-5">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
         <button onClick={() => setSellerOpen((o) => !o)} className="w-full flex items-center justify-between text-left mb-0">
           <h2 className="font-semibold text-text-primary">{isSellAd ? 'Seller' : 'Buyer'}</h2>
           <svg className={`w-4 h-4 text-text-muted transition-transform ${sellerOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -316,7 +316,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Payment methods card */}
       {resolvedMethods.length > 0 && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
             <h2 className="font-semibold text-text-primary">
               {isSellAd
@@ -354,7 +354,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Token delivery methods card */}
       {deliveryTypes.length > 0 && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <button onClick={() => setNetworkOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
             <h2 className="font-semibold text-text-primary">USDT Delivery</h2>
             <svg className={`w-4 h-4 text-text-muted transition-transform ${networkOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -383,7 +383,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Terms */}
       {ad.terms && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <h2 className="font-semibold text-text-primary mb-2">Terms</h2>
           <p className="text-sm text-text-muted whitespace-pre-wrap">{ad.terms}</p>
         </div>
@@ -391,7 +391,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Activity stats */}
       {activity && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <h2 className="font-semibold text-text-primary mb-3">Listing Activity</h2>
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
@@ -412,7 +412,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Owner management panel */}
       {isMine && activity && (
-        <div className="bg-white border border-border rounded-xl p-5">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
             {(['bids', 'trades'] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}

@@ -116,7 +116,7 @@ function StatCard({ label, primary, sub, badge }: {
   label: string; primary: string; sub?: string; badge?: { text: string; color: string }
 }) {
   return (
-    <div className="bg-white border border-border rounded-xl p-4">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-4">
       <p className="text-xs text-text-muted uppercase tracking-wide mb-1">{label}</p>
       <p className="text-2xl font-bold text-text-primary">{primary}</p>
       {badge && (
@@ -380,7 +380,7 @@ export default function PlatformRevenuePage() {
       </div>
 
       {/* Treasury wallet addresses */}
-      <div className="bg-white border border-border rounded-xl p-4 text-xs font-mono">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-4 text-xs font-mono">
         <p className="text-text-muted text-xs uppercase tracking-wide mb-2 font-sans font-semibold">Treasury Wallet Addresses</p>
         <div className="space-y-1">
           <div className="flex gap-4"><span className="text-text-muted w-24">EVM</span><span className="text-text-primary break-all">{s.treasuryAddresses.evm ?? 'Not configured'}</span></div>
@@ -390,7 +390,7 @@ export default function PlatformRevenuePage() {
       </div>
 
       {/* Sweepable breakdown */}
-      <div className="bg-white border border-border rounded-xl p-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-4">
         <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Available to Sweep — by Token &amp; Network</h2>
         {s.sweepable.length === 0 ? (
           <p className="text-sm text-text-muted">No platform fees collected yet.</p>
@@ -438,7 +438,7 @@ export default function PlatformRevenuePage() {
       </div>
 
       {/* Sweep history */}
-      <div className="bg-white border border-border rounded-xl p-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-4">
         <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-3">Sweep History</h2>
         {sweepHistory.length === 0 ? (
           <p className="text-sm text-text-muted">No sweeps yet.</p>
@@ -495,7 +495,7 @@ export default function PlatformRevenuePage() {
 
       {/* Breakdown tables */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white border border-border rounded-xl p-4">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
           <h2 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">Fees by Token</h2>
           <table className="w-full text-sm">
             <thead><tr className="text-xs text-text-muted border-b border-border"><th className="text-left py-1.5">Token</th><th className="text-right py-1.5">Collected</th><th className="text-right py-1.5">USD</th><th className="text-right py-1.5">Count</th></tr></thead>
@@ -512,7 +512,7 @@ export default function PlatformRevenuePage() {
             </tbody>
           </table>
         </div>
-        <div className="bg-white border border-border rounded-xl p-4">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
           <h2 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">Fees by Network</h2>
           <table className="w-full text-sm">
             <thead><tr className="text-xs text-text-muted border-b border-border"><th className="text-left py-1.5">Network</th><th className="text-right py-1.5">Collected</th><th className="text-right py-1.5">USD</th><th className="text-right py-1.5">Count</th></tr></thead>
@@ -532,14 +532,14 @@ export default function PlatformRevenuePage() {
       </div>
 
       {/* 30-day chart */}
-      <div className="bg-white border border-border rounded-xl p-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-4">
         <h2 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">Daily Fees — Last 30 Days</h2>
         <DailyChart data={s.dailyChart} />
         <p className="text-xs text-text-muted mt-2">Each bar = one day. Hover for exact amount.</p>
       </div>
 
       {/* Fee history */}
-      <div className="bg-white border border-border rounded-xl p-4">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">Fee Collection History</h2>
           <div className="flex flex-wrap gap-2 text-xs">

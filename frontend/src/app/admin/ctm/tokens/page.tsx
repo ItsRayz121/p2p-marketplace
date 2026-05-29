@@ -290,9 +290,9 @@ export default function AdminCtmTokensPage() {
       )}
 
       {loading ? (
-        <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="bg-white border border-border rounded-xl h-16 animate-pulse" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-16 animate-pulse" />)}</div>
       ) : (
-        <div className="bg-white border border-border rounded-xl overflow-hidden">
+        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border">
               <tr>

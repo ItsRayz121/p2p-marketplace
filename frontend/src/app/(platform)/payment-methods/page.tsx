@@ -119,7 +119,7 @@ function AddMethodForm({ onSuccess, onCancel }: { onSuccess: (m: PaymentMethod) 
   }
 
   return (
-    <div className="bg-white border border-border rounded-xl p-5 space-y-4">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
       <h2 className="text-base font-bold text-text-primary">Add Payment Method</h2>
 
       {/* Mobile wallets */}
@@ -285,7 +285,7 @@ export default function PaymentMethodsPage() {
       ) : (
         <div className="space-y-3">
           {methods.map((method) => (
-            <div key={method.id} className="bg-white border border-border rounded-xl p-4 flex items-start justify-between gap-3">
+            <div key={method.id} className="bg-surface shadow-card border border-border rounded-xl p-4 flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
                 <EntityLogo
                   type={method.type === 'bank_transfer' ? 'bank' : 'payment_method'}

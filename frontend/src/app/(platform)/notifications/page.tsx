@@ -194,7 +194,7 @@ export default function NotificationsPage() {
       {notifications.length === 0 ? (
         <EmptyState icon={Bell} title="All caught up" description="You have no new notifications." />
       ) : (
-        <div className="bg-white border border-border rounded-xl overflow-hidden divide-y divide-border">
+        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden divide-y divide-border">
           {notifications.map((notif) => {
             const target = getNavTarget(notif)
             return (

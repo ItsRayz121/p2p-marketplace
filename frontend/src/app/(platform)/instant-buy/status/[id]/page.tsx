@@ -83,7 +83,7 @@ export default function InstantBuyStatusPage() {
       </div>
 
       {/* Progress Bar */}
-      <div className="bg-white border border-border rounded-xl p-5">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
         <div className="relative flex justify-between">
           {/* Connecting line */}
           <div className="absolute top-4 left-4 right-4 h-0.5 bg-border" />
@@ -123,7 +123,7 @@ export default function InstantBuyStatusPage() {
       </div>
 
       {/* Order Details */}
-      <div className="bg-white border border-border rounded-xl p-5 space-y-3">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-text-primary">Order Details</h2>
           <Badge variant={statusVariant(order.status)} size="sm">
@@ -147,7 +147,7 @@ export default function InstantBuyStatusPage() {
 
       {/* TX Hash */}
       {order.txHash && (
-        <div className="bg-white border border-border rounded-xl p-5 space-y-2">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-2">
           <h2 className="text-sm font-semibold text-text-primary">Transaction Hash</h2>
           <p className="text-xs font-mono text-text-primary break-all">{order.txHash}</p>
           <a

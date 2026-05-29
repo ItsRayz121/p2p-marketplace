@@ -52,7 +52,7 @@ function TierCard({
   const isBasic = tier === 'basic'
   return (
     <div
-      className={`bg-white rounded-xl border-2 p-6 cursor-pointer hover:border-primary transition-colors ${
+      className={`bg-surface shadow-card rounded-xl border-2 p-6 cursor-pointer hover:border-primary transition-colors ${
         isBasic ? 'border-border' : 'border-primary/30'
       }`}
       onClick={onSelect}
@@ -349,7 +349,7 @@ export default function KycPage() {
 
           {/* Level 2 upgrade CTA — only shown for basic */}
           {kycLevel === 'basic' && (
-            <div className="bg-white border-2 border-primary/30 rounded-xl p-5 space-y-4">
+            <div className="bg-surface shadow-card border-2 border-primary/30 rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-base font-bold text-text-primary">Upgrade to Level 2</p>

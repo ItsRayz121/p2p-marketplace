@@ -65,7 +65,7 @@ export default function MyBidsPage() {
 
   if (loading) return (
     <div className="max-w-3xl mx-auto px-4 py-12 space-y-3">
-      {[1, 2, 3].map((i) => <div key={i} className="bg-white rounded-xl h-24 border border-border animate-pulse" />)}
+      {[1, 2, 3].map((i) => <div key={i} className="bg-surface rounded-xl h-24 border border-border animate-pulse" />)}
     </div>
   )
 
@@ -77,7 +77,7 @@ export default function MyBidsPage() {
       </div>
 
       {bids.length === 0 && (
-        <div className="bg-white border border-border rounded-xl p-10 text-center">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-10 text-center">
           <p className="text-text-muted mb-4">You haven&apos;t placed any bids yet.</p>
           <Link href="/ctm/listings" className="bg-primary text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">Browse Listings</Link>
         </div>
@@ -85,7 +85,7 @@ export default function MyBidsPage() {
 
       <div className="space-y-3">
         {bids.map((bid) => (
-          <div key={bid.id} className="bg-white border border-border rounded-xl p-5">
+          <div key={bid.id} className="bg-surface shadow-card border border-border rounded-xl p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <EntityLogo type="token" slug={bid.listing.token.symbol} size="lg" logoUrl={bid.listing.token.logoUrl} />

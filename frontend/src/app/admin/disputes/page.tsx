@@ -90,6 +90,15 @@ const statusVariant = (s: string): 'default' | 'success' | 'warning' | 'danger' 
   return 'warning'
 }
 
+const DISPUTE_STATUS_LABELS: Record<string, string> = {
+  disputed:  'Disputed',
+  open:      'Open',
+  escalated: 'Escalated',
+  resolved:  'Resolved',
+  pending:   'Pending',
+}
+const disputeStatusLabel = (s: string) => DISPUTE_STATUS_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
 const DIRECTION_LABELS: Record<string, string> = { buy: 'Buyer listing', sell: 'Seller listing' }
 
 export default function DisputesPage() {
@@ -207,7 +216,7 @@ export default function DisputesPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-2">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-2">
         {[
           { value: 'open', label: 'Open' },
           { value: 'resolved', label: 'Resolved' },
@@ -231,7 +240,7 @@ export default function DisputesPage() {
       {disputes.length === 0 ? (
         <EmptyState icon={ShieldAlert} title="No disputes found" description="No disputes match the current filter." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
@@ -260,7 +269,7 @@ export default function DisputesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={statusVariant(d.status)} size="sm">{d.status}</Badge>
+                      <Badge variant={statusVariant(d.status)} size="sm">{disputeStatusLabel(d.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => openModal(d)}>View</Button>
@@ -311,7 +320,7 @@ export default function DisputesPage() {
               </div>
               <div>
                 <p className="text-text-muted text-xs">Dispute Status</p>
-                <Badge variant={statusVariant(selected.status)} size="sm">{selected.status}</Badge>
+                <Badge variant={statusVariant(selected.status)} size="sm">{disputeStatusLabel(selected.status)}</Badge>
               </div>
             </div>
 

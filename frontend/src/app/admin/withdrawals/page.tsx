@@ -372,7 +372,7 @@ export default function WithdrawalsPage() {
           description={`No ${statusFilter === 'all' ? '' : STATUS_TABS.find((t) => t.value === statusFilter)?.label.toLowerCase() ?? ''} withdrawals found.`}
         />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">

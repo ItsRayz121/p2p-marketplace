@@ -289,7 +289,7 @@ export default function AdminDashboardPage() {
         <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Today</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           {todayCards.map((card) => (
-            <div key={card.label} className="bg-white rounded-xl border border-border p-4">
+            <div key={card.label} className="bg-surface shadow-card rounded-xl border border-border p-4">
               <div className="flex items-center gap-2 mb-2">
                 {card.icon}
                 <p className="text-xs font-medium text-text-muted">{card.label}</p>
@@ -306,7 +306,7 @@ export default function AdminDashboardPage() {
         {/* Platform Totals */}
         <section className="lg:col-span-1">
           <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">All Time</h2>
-          <div className="bg-white rounded-xl border border-border divide-y divide-border">
+          <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border">
             {totalCards.map((card) => (
               <div key={card.label} className="flex items-center justify-between px-4 py-3">
                 <p className="text-sm text-text-muted">{card.label}</p>
@@ -331,7 +331,7 @@ export default function AdminDashboardPage() {
               </Link>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             {(stats?.recentNotifications ?? []).length === 0 ? (
               <div className="flex items-center justify-center py-8 text-text-muted text-sm gap-2">
                 <svg className="w-5 h-5 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -388,7 +388,7 @@ export default function AdminDashboardPage() {
           <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Gas Wallet Activity</h2>
           <Link href="/admin/gas/wallet-activity" className="text-xs text-primary hover:underline font-medium">View all →</Link>
         </div>
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           {(stats?.recentGasActivity ?? []).length === 0 ? (
             <div className="flex items-center justify-center py-8 text-text-muted text-sm gap-2">
               <svg className="w-5 h-5 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">

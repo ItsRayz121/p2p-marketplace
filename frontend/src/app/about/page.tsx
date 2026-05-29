@@ -22,7 +22,7 @@ export default function AboutPage() {
       </div>
 
       {/* Mission */}
-      <section className="bg-white border border-border rounded-2xl p-6 space-y-3">
+      <section className="bg-surface shadow-card border border-border rounded-2xl p-6 space-y-3">
         <h2 className="text-xl font-bold text-text-primary">Our Mission</h2>
         <p className="text-text-muted leading-relaxed">
           PakSwap exists to give every Pakistani access to the global crypto economy. We believe financial freedom shouldn't
@@ -36,7 +36,7 @@ export default function AboutPage() {
         <h2 className="text-xl font-bold text-text-primary mb-4">Why PakSwap?</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {FEATURES.map(({ Icon, title, desc }) => (
-            <div key={title} className="bg-white border border-border rounded-xl p-4 space-y-2">
+            <div key={title} className="bg-surface shadow-card border border-border rounded-xl p-4 space-y-2">
               <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
                 <Icon size={18} className="text-primary" />
               </div>
@@ -48,7 +48,7 @@ export default function AboutPage() {
       </section>
 
       {/* Security */}
-      <section className="bg-white border border-border rounded-2xl p-6 space-y-4">
+      <section className="bg-surface shadow-card border border-border rounded-2xl p-6 space-y-4">
         <h2 className="text-xl font-bold text-text-primary">Security First</h2>
         <div className="space-y-3">
           {[

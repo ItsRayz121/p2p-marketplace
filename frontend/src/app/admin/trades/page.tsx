@@ -32,12 +32,29 @@ interface TradesResponse {
 }
 
 const statusVariant = (s: string) => {
-  if (s === 'released' || s === 'completed') return 'success'
+  if (s === 'released' || s === 'completed' || s === 'crypto_released') return 'success'
   if (s === 'disputed') return 'danger'
   if (s === 'cancelled' || s === 'expired') return 'warning'
   if (s === 'payment_uploaded' || s === 'paid') return 'gold'
   return 'default'
 }
+
+const TRADE_STATUS_LABELS: Record<string, string> = {
+  payment_pending:   'Awaiting Payment',
+  payment_uploaded:  'Proof Uploaded',
+  payment_confirmed: 'Payment Confirmed',
+  crypto_sent:       'Crypto Sent',
+  crypto_released:   'Completed',
+  disputed:          'Disputed',
+  cancelled:         'Cancelled',
+  expired:           'Expired',
+  released:          'Completed',
+  completed:         'Completed',
+  paid:              'Paid',
+  active:            'Active',
+  pending:           'Pending',
+}
+const tradeStatusLabel = (s: string) => TRADE_STATUS_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 export default function TradesPage() {
   const [trades, setTrades] = useState<AdminTrade[]>([])
@@ -131,7 +148,7 @@ export default function TradesPage() {
       )}
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-3">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-3">
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
@@ -180,7 +197,7 @@ export default function TradesPage() {
       {trades.length === 0 ? (
         <EmptyState icon={ClipboardList} title="No trades found" description="No trades match the current filters." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
@@ -210,7 +227,7 @@ export default function TradesPage() {
                     <td className="px-4 py-3 font-medium text-text-primary">{t.coin}</td>
                     <td className="px-4 py-3 font-medium text-text-primary">{t.amount}</td>
                     <td className="px-4 py-3">
-                      <Badge variant={statusVariant(t.status)} size="sm">{t.status}</Badge>
+                      <Badge variant={statusVariant(t.status)} size="sm">{tradeStatusLabel(t.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(t.createdAt)}</td>
                     <td className="px-4 py-3 text-right">

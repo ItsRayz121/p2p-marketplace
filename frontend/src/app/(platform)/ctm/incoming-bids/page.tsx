@@ -50,7 +50,7 @@ function BidCard({ bid, listing, onAccept, onReject, acting }: {
   const diff = ((bidPrice - listedPrice) / listedPrice) * 100
 
   return (
-    <div className="bg-white border border-border rounded-xl p-5">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-5">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <EntityLogo type="token" slug={listing.token.symbol} size="lg" logoUrl={listing.token.logoUrl} />
@@ -204,7 +204,7 @@ export default function IncomingBidsPage() {
 
   if (loading) return (
     <div className="max-w-3xl mx-auto px-4 py-12 space-y-3">
-      {[1, 2, 3].map((i) => <div key={i} className="bg-white rounded-xl h-32 border border-border animate-pulse" />)}
+      {[1, 2, 3].map((i) => <div key={i} className="bg-surface rounded-xl h-32 border border-border animate-pulse" />)}
     </div>
   )
 
@@ -234,7 +234,7 @@ export default function IncomingBidsPage() {
       </div>
 
       {filtered.length === 0 && (
-        <div className="bg-white border border-border rounded-xl p-10 text-center">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-10 text-center">
           <p className="text-text-muted">{filter === 'pending' ? 'No pending bids right now.' : 'No bids on your listings yet.'}</p>
         </div>
       )}

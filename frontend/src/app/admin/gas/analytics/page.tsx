@@ -72,7 +72,7 @@ function VolumeChart({ data }: { data: DailyVolume[] }) {
   const labelEvery = Math.ceil(data.length / 6)
 
   return (
-    <div className="bg-white rounded-xl border border-border p-4 overflow-x-auto">
+    <div className="bg-surface shadow-card rounded-xl border border-border p-4 overflow-x-auto">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 300 }}>
         {/* Y-axis tick lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((t) => {
@@ -260,7 +260,7 @@ export default function GasAnalyticsPage() {
         {profitability.length === 0 ? (
           <p className="text-text-muted text-sm">No profitability data available.</p>
         ) : (
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-surface border-b border-border">
@@ -313,7 +313,7 @@ export default function GasAnalyticsPage() {
         {burnRates.length === 0 ? (
           <p className="text-text-muted text-sm">No burn rate data yet.</p>
         ) : (
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-surface border-b border-border">

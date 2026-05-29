@@ -194,7 +194,7 @@ export default function UsersPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-xl border border-border flex flex-wrap gap-3">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-3">
         <div className="flex-1 min-w-48">
           <Input
             placeholder="Search email or username..."
@@ -229,7 +229,7 @@ export default function UsersPage() {
       {users.length === 0 ? (
         <EmptyState icon={Users} title="No users found" description="Try adjusting your filters." />
       ) : (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
