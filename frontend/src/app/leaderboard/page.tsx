@@ -172,7 +172,7 @@ export default function LeaderboardPage() {
                     {entries.map((entry) => {
                       const isMe = entry.userId === user?.id
                       return (
-                        <tr key={entry.userId} className={`hover:brightness-[0.98] transition-colors ${rankRowCls(entry.rank, isMe)}`}>
+                        <tr key={entry.userId} className={`hover:bg-black/[0.03] transition-colors ${rankRowCls(entry.rank, isMe)}`}>
                           <td className="px-4 py-3">
                             <RankDisplay rank={entry.rank} />
                           </td>
