@@ -97,14 +97,14 @@ export default function MyCtmTradesPage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="space-y-2 mb-6">
-        <div className="flex flex-wrap gap-1">
+      {/* Filters – single scrollable row */}
+      <div className="overflow-x-auto mb-6 -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="flex items-center gap-1 min-w-max">
           {STATUS_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               onClick={() => { setStatus(opt.value); setPage(1) }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
                 status === opt.value
                   ? 'bg-primary text-white'
                   : 'bg-white border border-border text-text-secondary hover:bg-surface'
@@ -113,19 +113,18 @@ export default function MyCtmTradesPage() {
               {opt.label}
             </button>
           ))}
-        </div>
-        <div className="flex gap-1">
+          <div className="w-px h-5 bg-border mx-2 shrink-0" />
           {ROLE_OPTIONS.map((r) => (
             <button
               key={r}
               onClick={() => { setRole(r); setPage(1) }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
                 role === r
                   ? 'bg-primary/10 text-primary border border-primary/30'
                   : 'bg-white border border-border text-text-secondary hover:bg-surface'
               }`}
             >
-              {r.charAt(0).toUpperCase() + r.slice(1)}
+              {r === 'all' ? 'All Roles' : r.charAt(0).toUpperCase() + r.slice(1)}
             </button>
           ))}
         </div>
