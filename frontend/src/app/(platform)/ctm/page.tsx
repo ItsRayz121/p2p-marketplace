@@ -32,7 +32,7 @@ interface CtmToken {
 
 function TokenCard({ token }: { token: CtmToken }) {
   return (
-    <Link href={`/ctm/tokens/${token.slug}`} className="block bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
+    <Link href={`/ctm/tokens/${token.slug}`} className="block bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md hover:border-primary/20 transition-all">
       <div className="flex items-center gap-3 mb-3">
         <EntityLogo type="token" slug={token.symbol} size="xl" logoUrl={token.logoUrl} />
         <div className="min-w-0">
@@ -114,15 +114,15 @@ export default function CtmHomePage() {
       {/* Quick links */}
       <div className="grid grid-cols-3 gap-3">
         {([
-          { href: '/ctm/tokens',    label: 'Token Directory',    Icon: Coins      },
-          { href: '/ctm/listings',  label: 'Buy/Sell Listings',  Icon: LayoutList },
-          { href: '/ctm/dashboard', label: 'Merchant Dashboard', Icon: BarChart3  },
+          { href: '/ctm/tokens',    label: 'Token Directory',    Icon: Coins,      iconCls: 'text-violet-500', bgCls: 'bg-violet-500/10' },
+          { href: '/ctm/listings',  label: 'Buy/Sell Listings',  Icon: LayoutList, iconCls: 'text-emerald-500',bgCls: 'bg-emerald-500/10'},
+          { href: '/ctm/dashboard', label: 'Merchant Dashboard', Icon: BarChart3,  iconCls: 'text-amber-500',  bgCls: 'bg-amber-500/10'  },
         ] as const).map((item) => (
-          <Link key={item.href} href={item.href} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center hover:shadow-md transition-shadow">
-            <div className="flex justify-center mb-2">
-              <item.Icon size={22} className="text-primary" />
+          <Link key={item.href} href={item.href} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center hover:shadow-card-md hover:border-primary/20 transition-all group">
+            <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-2 transition-colors ${item.bgCls}`}>
+              <item.Icon size={22} className={item.iconCls} aria-hidden />
             </div>
-            <p className="text-sm font-medium text-text-primary">{item.label}</p>
+            <p className="text-sm font-medium text-text-primary group-hover:text-primary transition-colors">{item.label}</p>
           </Link>
         ))}
       </div>
