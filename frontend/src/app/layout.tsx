@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="en">
-      <body className="min-h-screen bg-surface antialiased">
+      <body className="min-h-screen bg-canvas antialiased">
         <Providers>
           {children}
           <Toaster />

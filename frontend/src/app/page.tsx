@@ -399,18 +399,24 @@ export default function HomePage() {
               Icon={Store}
               title="P2P Marketplace"
               description="Browse buy and sell offers from verified traders"
+              iconCls="text-blue-500"
+              bgCls="bg-blue-500/10"
             />
             <QuickActionCard
               href="/gas"
               Icon={Fuel}
               title="Crypto Gas Fees"
               description="Top up gas fees on any chain instantly"
+              iconCls="text-amber-500"
+              bgCls="bg-amber-500/10"
             />
             <QuickActionCard
               href="/fees"
               Icon={FileText}
               title="View Fees"
               description="Transparent fee schedule for all transactions"
+              iconCls="text-indigo-500"
+              bgCls="bg-indigo-500/10"
             />
           </div>
         </div>
@@ -430,20 +436,22 @@ export default function HomePage() {
 }
 
 function QuickActionCard({
-  href, Icon, title, description,
+  href, Icon, title, description, iconCls = 'text-primary', bgCls = 'bg-primary/10',
 }: {
   href: string
   Icon: LucideIcon
   title: string
   description: string
+  iconCls?: string
+  bgCls?: string
 }) {
   return (
     <Link
       href={href}
-      className="block p-6 bg-surface border border-border rounded-xl hover:shadow-md hover:border-primary/30 transition-all group"
+      className="block p-6 bg-surface border border-border rounded-xl hover:shadow-card-md hover:border-primary/30 transition-all group"
     >
-      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/15 transition-colors">
-        <Icon size={20} className="text-primary" />
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 transition-colors ${bgCls}`}>
+        <Icon size={20} className={iconCls} />
       </div>
       <h3 className="text-base font-semibold text-text-primary group-hover:text-primary transition-colors">{title}</h3>
       <p className="mt-1 text-sm text-text-muted">{description}</p>

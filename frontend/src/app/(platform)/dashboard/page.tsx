@@ -11,6 +11,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { TraderLevelCard, BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { getTradeStatus, getGasStatus, kycStatusVariant } from '@/lib/tradeStatus'
+import { cn } from '@/lib/utils'
 import {
   Fuel,
   Store,
@@ -29,12 +30,12 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
 }
 
 const QUICK_ACTIONS = [
-  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: Fuel          },
-  { href: '/marketplace', label: 'USDT Marketplace', Icon: Store         },
-  { href: '/ctm',         label: 'Community Tokens', Icon: Coins         },
-  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList },
-  { href: '/wallet',      label: 'Wallet',           Icon: Wallet        },
-  { href: '/referral',    label: 'Referral',         Icon: Gift          },
+  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: Fuel,          iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'   },
+  { href: '/marketplace', label: 'USDT Marketplace', Icon: Store,         iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'    },
+  { href: '/ctm',         label: 'Community Tokens', Icon: Coins,         iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10'  },
+  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList, iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10' },
+  { href: '/wallet',      label: 'Wallet',           Icon: Wallet,        iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'    },
+  { href: '/referral',    label: 'Referral',         Icon: Gift,          iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'    },
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -298,14 +299,14 @@ export default function DashboardPage() {
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Quick Actions</h2>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          {QUICK_ACTIONS.map(({ href, label, Icon }) => (
+          {QUICK_ACTIONS.map(({ href, label, Icon, iconCls, bgCls }) => (
             <Link
               key={href}
               href={href}
               className="flex flex-col items-center gap-2 bg-surface rounded-xl border border-border shadow-card p-4 hover:border-primary/30 hover:shadow-card-md transition-all text-center group"
             >
-              <div className="w-10 h-10 rounded-xl bg-surface-alt flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                <Icon size={18} className="text-text-secondary group-hover:text-primary transition-colors" aria-hidden />
+              <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center transition-colors', bgCls)}>
+                <Icon size={18} className={iconCls} aria-hidden />
               </div>
               <span className="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors leading-tight">{label}</span>
             </Link>
