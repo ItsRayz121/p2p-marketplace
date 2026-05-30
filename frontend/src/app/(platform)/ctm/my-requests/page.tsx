@@ -122,7 +122,7 @@ export default function MyRequestsPage() {
       <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 mb-6 w-fit">
         {(['requests', 'bids'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${tab === t ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+            className={`px-5 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${tab === t ? 'bg-surface text-primary shadow-card' : 'text-text-muted hover:text-text-primary'}`}>
             My {t}
           </button>
         ))}

@@ -115,7 +115,7 @@ export default function MyListingsPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-text-primary">{l.side === 'sell' ? 'Selling' : 'Buying'} {l.token.name}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-100 text-green-700' : l.status === 'paused' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>{l.status.charAt(0).toUpperCase() + l.status.slice(1)}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-100 text-green-700' : l.status === 'paused' ? 'bg-yellow-100 text-yellow-700' : 'bg-surface-alt text-text-secondary'}`}>{l.status.charAt(0).toUpperCase() + l.status.slice(1)}</span>
                     </div>
                     <p className="text-xs text-text-muted">PKR {Number(l.pricePerUnit).toLocaleString()} · {Number(l.availableAmount).toLocaleString()} {l.token.symbol} available</p>
                   </div>

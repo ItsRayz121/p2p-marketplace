@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
-import { Store, Fuel, FileText, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Fuel, FileText, type LucideIcon } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -424,7 +424,7 @@ export default function HomePage() {
           <div className="grid sm:grid-cols-3 gap-4">
             <QuickActionCard
               href="/marketplace"
-              Icon={Store}
+              Icon={ArrowLeftRight}
               title="P2P Marketplace"
               description="Browse buy and sell offers from verified traders"
               iconCls="text-blue-500"

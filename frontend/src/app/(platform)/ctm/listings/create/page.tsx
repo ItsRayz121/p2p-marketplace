@@ -137,7 +137,7 @@ export default function CreateListingPage() {
         {/* Token */}
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Token *</label>
-          <select value={form.tokenId} onChange={(e) => setForm((f) => ({ ...f, tokenId: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30" required>
+          <select value={form.tokenId} onChange={(e) => setForm((f) => ({ ...f, tokenId: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30" required>
             <option value="">Select a token</option>
             {tokens.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>)}
           </select>
@@ -149,7 +149,7 @@ export default function CreateListingPage() {
           <div className="flex gap-3">
             {(['sell', 'buy'] as const).map((s) => (
               <button type="button" key={s} onClick={() => setForm((f) => ({ ...f, side: s }))}
-                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}>
+                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}>
                 {s === 'sell' ? 'Sell Tokens' : 'Buy Tokens'}
               </button>
             ))}
@@ -212,7 +212,7 @@ export default function CreateListingPage() {
                 type="button"
                 key={m.value}
                 onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: m.value, settlementMethod: '' }))}
-                className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m.value ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+                className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}
               >
                 {m.label}
               </button>
@@ -279,7 +279,7 @@ export default function CreateListingPage() {
                       key={m.id}
                       onClick={() => togglePaymentMethod(m.id)}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
-                        selected ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'
+                        selected ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface'
                       }`}
                     >
                       <EntityLogo
@@ -315,7 +315,7 @@ export default function CreateListingPage() {
         {/* Trade window */}
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Trade window (minutes)</label>
-          <select value={form.tradeWindowMins} onChange={(e) => setForm((f) => ({ ...f, tradeWindowMins: parseInt(e.target.value) }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
+          <select value={form.tradeWindowMins} onChange={(e) => setForm((f) => ({ ...f, tradeWindowMins: parseInt(e.target.value) }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none">
             {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m} minutes</option>)}
           </select>
         </div>

@@ -66,7 +66,7 @@ export default function CtmTokenDetailPage() {
             <h1 className="text-2xl font-bold text-text-primary">{token.name}</h1>
             <p className="text-text-muted">{token.symbol}</p>
             <div className="flex items-center gap-2 flex-wrap mt-2">
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${RISK_COLORS[token.riskTier] ?? 'bg-gray-100 text-gray-700'}`}>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${RISK_COLORS[token.riskTier] ?? 'bg-surface-alt text-text-secondary'}`}>
                 {token.riskTier} risk
               </span>
               <Badge variant="default" size="sm">{token.settlementType}</Badge>
@@ -80,7 +80,7 @@ export default function CtmTokenDetailPage() {
         {token.riskLabels.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-3">
             {token.riskLabels.map((label) => (
-              <span key={label} className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{label}</span>
+              <span key={label} className="bg-surface-alt text-text-secondary text-xs px-2 py-0.5 rounded-full">{label}</span>
             ))}
           </div>
         )}

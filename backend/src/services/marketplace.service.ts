@@ -31,6 +31,7 @@ export interface SellerInfo {
   badge: string
   lastSeenAt: string | null
   isMerchant: boolean
+  merchantId: string | null
   merchantName: string | null
   tradeStats: {
     completionRate: string
@@ -329,6 +330,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',
+        merchantId: merchant?.status === 'approved' ? (merchant.id ?? null) : null,
         merchantName: merchant?.status === 'approved' ? (merchant.businessName ?? null) : null,
         tradeStats: stats
           ? {
@@ -525,6 +527,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',
+        merchantId: merchant?.status === 'approved' ? (merchant.id ?? null) : null,
         merchantName: merchant?.status === 'approved' ? (merchant.businessName ?? null) : null,
         tradeStats: stats
           ? {

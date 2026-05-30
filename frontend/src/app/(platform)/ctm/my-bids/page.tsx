@@ -27,8 +27,8 @@ const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-700',
   accepted: 'bg-green-100 text-green-700',
   rejected: 'bg-red-100 text-red-700',
-  expired: 'bg-gray-100 text-gray-500',
-  cancelled: 'bg-gray-100 text-gray-500',
+  expired: 'bg-surface-alt text-text-muted',
+  cancelled: 'bg-surface-alt text-text-muted',
 }
 
 export default function MyBidsPage() {
@@ -96,7 +96,7 @@ export default function MyBidsPage() {
                   <p className="text-xs text-text-muted">Merchant: @{bid.listing.merchantProfile.user.username}</p>
                 </div>
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${STATUS_STYLES[bid.status] ?? 'bg-gray-100 text-gray-600'}`}>{bid.status}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${STATUS_STYLES[bid.status] ?? 'bg-surface-alt text-text-secondary'}`}>{bid.status}</span>
             </div>
 
             <div className="grid grid-cols-3 gap-3 mt-4 text-sm">

@@ -38,10 +38,10 @@ function StarRating({ rating, size = 'sm' }: { rating: number; size?: 'sm' | 'xs
 }
 
 const TIER_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-700',
+  new: 'bg-surface-alt text-text-secondary',
   basic: 'bg-blue-100 text-blue-700',
   verified: 'bg-green-100 text-green-700',
-  elite: 'bg-purple-100 text-purple-700',
+  elite: 'bg-primary/10 text-primary',
 }
 
 export default function BrowseListingsPage() {
@@ -105,24 +105,24 @@ export default function BrowseListingsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <select value={side} onChange={(e) => { setSide(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+        <select value={side} onChange={(e) => { setSide(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-surface focus:outline-none">
           <option value="">Buy &amp; Sell</option>
           <option value="buy">Buy listings</option>
           <option value="sell">Sell listings</option>
         </select>
 
-        <select value={paymentMethod} onChange={(e) => { setPaymentMethod(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+        <select value={paymentMethod} onChange={(e) => { setPaymentMethod(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-surface focus:outline-none">
           <option value="">All payment methods</option>
           {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
 
-        <select value={tierFilter} onChange={(e) => { setTierFilter(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+        <select value={tierFilter} onChange={(e) => { setTierFilter(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-surface focus:outline-none">
           <option value="">All tiers</option>
           {TIERS.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
         </select>
 
         <div className="flex items-center gap-1.5">
-          <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+          <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-surface focus:outline-none">
             <option value="createdAt">Newest</option>
             <option value="pricePerUnit">Price</option>
             <option value="ctmAvgRating">Rating</option>
@@ -130,7 +130,7 @@ export default function BrowseListingsPage() {
           </select>
           <button
             onClick={toggleSortDir}
-            className="border border-border rounded-lg px-2.5 py-2 text-sm bg-white hover:bg-surface transition-colors"
+            className="border border-border rounded-lg px-2.5 py-2 text-sm bg-surface hover:bg-surface transition-colors"
             title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
           >
             {sortDir === 'asc' ? '↑' : '↓'}
@@ -191,7 +191,7 @@ export default function BrowseListingsPage() {
                     <p className="text-xs text-text-muted mb-0.5">Merchant</p>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-sm font-medium text-text-primary">{l.merchantProfile.user.username}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TIER_COLORS[l.merchantProfile.tier] ?? 'bg-gray-100 text-gray-700'}`}>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TIER_COLORS[l.merchantProfile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
                         {l.merchantProfile.tier}
                       </span>
                     </div>

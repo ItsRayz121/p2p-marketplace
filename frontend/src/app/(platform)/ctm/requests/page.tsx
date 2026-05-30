@@ -110,7 +110,7 @@ export default function RequestBoardPage() {
       <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 mb-6 w-fit">
         {(['buy', 'sell'] as const).map((s) => (
           <button key={s} onClick={() => { setSide(s); setPage(1) }}
-            className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${side === s ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+            className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${side === s ? 'bg-surface text-primary shadow-card' : 'text-text-muted hover:text-text-primary'}`}>
             {s === 'buy' ? 'Buy Requests' : 'Sell Requests'}
           </button>
         ))}
@@ -189,7 +189,7 @@ export default function RequestBoardPage() {
       {/* Bid modal */}
       {bidModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4">
             <h3 className="font-bold text-lg text-text-primary">Submit Bid</h3>
             <p className="text-sm text-text-muted">For: {bidModal.amount} {bidModal.token.symbol}</p>
             {bidError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{bidError}</div>}

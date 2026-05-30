@@ -105,7 +105,7 @@ export default function CtmTokensPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap mb-2">
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${RISK_COLORS[token.riskTier] ?? 'bg-gray-100 text-gray-700'}`}>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${RISK_COLORS[token.riskTier] ?? 'bg-surface-alt text-text-secondary'}`}>
                   {token.riskTier} risk
                 </span>
                 <Badge variant="default" size="sm">{token.settlementType}</Badge>

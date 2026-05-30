@@ -131,11 +131,15 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
 
           {/* Merchant + Badge + collateral row */}
           <div className="flex items-center gap-1 flex-wrap mb-1.5">
-            {ad.seller?.isMerchant && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
+            {ad.seller?.isMerchant && ad.seller?.merchantId && (
+              <Link
+                href={`/merchant/${ad.seller.merchantId}`}
+                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full hover:bg-primary/20 transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <ShieldCheck size={9} />
                 Merchant
-              </span>
+              </Link>
             )}
             <BadgeChip badge={(ad.seller?.badge ?? 'new') as TraderBadge} />
             {ad.seller?.hasCollateral && (

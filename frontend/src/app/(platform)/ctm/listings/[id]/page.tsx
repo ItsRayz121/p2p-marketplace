@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { Star } from 'lucide-react'
 
-const TIER_COLORS: Record<string, string> = { new: 'bg-gray-100 text-gray-700', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-purple-100 text-purple-700' }
+const TIER_COLORS: Record<string, string> = { new: 'bg-surface-alt text-text-secondary', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-primary/10 text-primary' }
 
 const METHOD_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -298,7 +298,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  if (loading) return <div className="max-w-3xl mx-auto px-4 py-12 animate-pulse"><div className="bg-white rounded-xl h-64 border border-border" /></div>
+  if (loading) return <div className="max-w-3xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-64 border border-border" /></div>
   if (!listing) return <div className="max-w-3xl mx-auto px-4 py-12 text-center text-text-muted">Listing not found.</div>
 
   const isMine = user?.id === listing.merchantProfile.user.id
@@ -333,7 +333,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <p className="text-text-muted text-sm">{listing.token.symbol} · {listing.token.settlementType}</p>
             </div>
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">
@@ -370,7 +370,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-text-primary">{listing.merchantProfile.user.username}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-gray-100 text-gray-700'}`}>{listing.merchantProfile.tier}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>{listing.merchantProfile.tier}</span>
               </div>
               <p className="text-xs text-text-muted flex items-center gap-1">{listing.merchantProfile.completedCtmTrades} completed · <Star size={10} className="text-warning fill-warning" />{Number(listing.merchantProfile.ctmAvgRating).toFixed(1)}</p>
             </div>
@@ -510,7 +510,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
             {(['bids', 'trades'] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}
-                className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+                className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-surface text-primary shadow-card' : 'text-text-muted hover:text-text-primary'}`}>
                 {t === 'bids'
                   ? `Pending Bids (${activity.bids.pendingCount})`
                   : `Trades (${activity.trades.activeCount + activity.trades.completedCount})`}
@@ -541,7 +541,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                               {bidActionId === bid.id ? '…' : 'Accept'}
                             </button>
                             <button onClick={() => handleRejectBid(bid.id)} disabled={bidActionId === bid.id}
-                              className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-white disabled:opacity-60 transition-colors">
+                              className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-surface disabled:opacity-60 transition-colors">
                               Reject
                             </button>
                           </>
@@ -569,7 +569,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                       <div className="text-right flex-shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           t.status === 'completed'  ? 'bg-green-100 text-green-700' :
-                          t.status === 'cancelled'  ? 'bg-gray-100 text-gray-600' :
+                          t.status === 'cancelled'  ? 'bg-surface-alt text-text-secondary' :
                           t.status === 'disputed'   ? 'bg-red-100 text-red-700' :
                           'bg-blue-100 text-blue-700'
                         }`}>{t.status.replace(/_/g, ' ')}</span>
@@ -628,7 +628,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Trade modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4">
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
             {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
 
@@ -712,7 +712,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                           setPaymentMethodId(m.id)
                         }
                       }}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
                     >
                       <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
                       {m.label}
@@ -738,7 +738,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                       type="button"
                       key={m.id}
                       onClick={() => setBuyerFromMethodId(prev => prev === m.id ? '' : m.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${buyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${buyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
                     >
                       <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
                       {m.label}
@@ -802,7 +802,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Bid modal */}
       {showBidModal && listing && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
               <h3 className="font-bold text-lg text-text-primary">Place a Bid</h3>
               <p className="text-xs text-text-muted mt-0.5">Offer your own price. The merchant has 30 minutes to accept or reject.</p>
@@ -892,7 +892,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Complete Bid Details modal — shown after merchant accepts bid */}
       {showConfirmBidModal && listing && myActiveBid && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
               <h3 className="font-bold text-lg text-text-primary">Complete Trade Details</h3>
               <p className="text-xs text-text-muted mt-0.5">Your bid was accepted. Provide payment details to open the trade.</p>
@@ -938,7 +938,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                           setConfirmPaymentMethodId(m.id)
                         }
                       }}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
                     >
                       <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
                       {m.label}
@@ -957,7 +957,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   {myMethods.map((m) => (
                     <button type="button" key={m.id}
                       onClick={() => setConfirmBuyerFromMethodId(prev => prev === m.id ? '' : m.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${confirmBuyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-white text-text-primary'}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${confirmBuyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
                     >
                       <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
                       {m.label}

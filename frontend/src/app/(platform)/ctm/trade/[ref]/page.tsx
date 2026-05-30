@@ -137,8 +137,8 @@ function StepCard({
   const isExpanded = state === 'active' || (state === 'completed' && expanded)
   return (
     <div className={`border rounded-xl overflow-hidden transition-colors ${
-      state === 'active' ? 'border-primary bg-white shadow-sm ring-1 ring-primary/10'
-        : state === 'completed' ? 'border-green-200 bg-white'
+      state === 'active' ? 'border-primary bg-surface shadow-card ring-1 ring-primary/10'
+        : state === 'completed' ? 'border-green-200 bg-surface'
         : 'border-border bg-surface/50'
     }`}>
       <div
@@ -146,12 +146,12 @@ function StepCard({
         onClick={state === 'completed' ? onToggle : undefined}
       >
         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-          state === 'completed' ? 'bg-green-500 text-white' : state === 'active' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'
+          state === 'completed' ? 'bg-green-500 text-white' : state === 'active' ? 'bg-primary text-white' : 'bg-surface-alt text-text-muted'
         }`}>
           {state === 'completed' ? '✓' : stepNum}
         </div>
         <div className="flex-1 min-w-0">
-          <p className={`font-semibold text-sm ${state === 'active' ? 'text-primary' : state === 'completed' ? 'text-text-primary' : 'text-gray-400'}`}>
+          <p className={`font-semibold text-sm ${state === 'active' ? 'text-primary' : state === 'completed' ? 'text-text-primary' : 'text-text-muted'}`}>
             {state === 'active' && <span className="mr-1">→</span>}
             {title}
           </p>
@@ -165,7 +165,7 @@ function StepCard({
           </svg>
         )}
         {state === 'future' && (
-          <svg className="w-4 h-4 text-gray-300 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+          <svg className="w-4 h-4 text-text-disabled flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
           </svg>
         )}
@@ -243,7 +243,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
     }
   })
 
-  if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-white rounded-xl h-96 border border-border" /></div>
+  if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-96 border border-border" /></div>
   if (!trade) return <div className="max-w-5xl mx-auto px-4 py-12 text-center text-text-muted">Trade not found.</div>
 
   const isBuyer = user?.id === trade.buyer.id
@@ -474,7 +474,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             {ratingError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{ratingError}</div>}
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((s) => (
-                <button key={s} onClick={() => setRating(s)} className={`text-2xl ${s <= rating ? 'text-yellow-400' : 'text-gray-200'}`}>★</button>
+                <button key={s} onClick={() => setRating(s)} className={`text-2xl ${s <= rating ? 'text-yellow-400' : 'text-text-disabled'}`}>★</button>
               ))}
             </div>
             <textarea rows={2} placeholder="Trader feedback (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
@@ -496,7 +496,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           <>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((s) => (
-                <button key={s} onClick={() => setPlatformRating(s)} className={`text-2xl ${s <= platformRating ? 'text-yellow-400' : 'text-gray-200'}`}>★</button>
+                <button key={s} onClick={() => setPlatformRating(s)} className={`text-2xl ${s <= platformRating ? 'text-yellow-400' : 'text-text-disabled'}`}>★</button>
               ))}
             </div>
             <textarea rows={2} placeholder="Suggestions (optional)" value={platformComment} onChange={(e) => setPlatformComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
@@ -545,22 +545,22 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 {STATUS_STEPS.map((s, i) => (
                   <div key={s} className="flex items-start">
                     <div className="flex flex-col items-center">
-                      <div className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 ${i < stepIndex ? 'bg-green-500 text-white' : i === stepIndex ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
+                      <div className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 ${i < stepIndex ? 'bg-green-500 text-white' : i === stepIndex ? 'bg-primary text-white' : 'bg-surface-alt text-text-muted'}`}>
                         {i < stepIndex ? '✓' : i + 1}
                       </div>
                       <div className="mt-1.5 w-16 text-center">
-                        <p className={`text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
+                        <p className={`text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 font-medium' : 'text-text-muted'}`}>
                           {STEP_INFO[i].label}
                         </p>
                         {STEP_INFO[i].actor && (
-                          <span className={`text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (STEP_INFO[i].actor === 'Buyer' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600') : 'bg-gray-100 text-gray-400'}`}>
+                          <span className={`text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (STEP_INFO[i].actor === 'Buyer' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600') : 'bg-surface-alt text-text-muted'}`}>
                             {STEP_INFO[i].actor}
                           </span>
                         )}
                       </div>
                     </div>
                     {i < STATUS_STEPS.length - 1 && (
-                      <div className={`h-0.5 w-8 mt-3.5 flex-shrink-0 ${i < stepIndex ? 'bg-green-500' : 'bg-gray-200'}`} />
+                      <div className={`h-0.5 w-8 mt-3.5 flex-shrink-0 ${i < stepIndex ? 'bg-green-500' : 'bg-border'}`} />
                     )}
                   </div>
                 ))}
@@ -579,7 +579,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           )}
 
           {['cancelled', 'expired'].includes(trade.status) && (
-            <div className="bg-gray-50 border border-border rounded-xl p-4 text-sm text-center text-text-muted">
+            <div className="bg-surface-alt border border-border rounded-xl p-4 text-sm text-center text-text-muted">
               This trade was <span className="font-medium text-text-primary">{trade.status}</span>.
             </div>
           )}
@@ -619,7 +619,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                   <div className="space-y-3">
                     <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
                       <p className="text-sm font-semibold text-blue-800">Send USDT to Escrow Address</p>
-                      <div className="bg-white rounded-lg border border-blue-200 p-2">
+                      <div className="bg-surface rounded-lg border border-blue-200 p-2">
                         <p className="text-xs text-text-muted mb-1">Escrow Address ({trade.escrowCurrency ?? 'USDT_TRC20'})</p>
                         <p className="font-mono text-xs text-text-primary break-all select-all">{trade.escrowAddress}</p>
                       </div>
@@ -724,7 +724,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                     <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                       <p className="font-semibold text-green-800">Seller has submitted transfer proof</p>
                       <p className="text-xs text-green-700">Check your wallet / account for the incoming tokens, then confirm below.</p>
-                      <div className="bg-white rounded-lg border border-green-200 p-3 space-y-1.5 text-sm">
+                      <div className="bg-surface rounded-lg border border-green-200 p-3 space-y-1.5 text-sm">
                         <p className="text-xs font-semibold text-text-muted mb-2">Delivery Summary</p>
                         <Row label="Token" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
                         <Row label="Method" value={settlementLabel(trade.settlementType)} />
@@ -733,7 +733,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                         )}
                       </div>
                       {latestTokenProof && (
-                        <div className="bg-white rounded-lg border border-green-200 p-3 space-y-2">
+                        <div className="bg-surface rounded-lg border border-green-200 p-3 space-y-2">
                           <p className="text-xs font-semibold text-text-muted">Transfer Proof from Seller</p>
                           {latestTokenProof.txHash && (
                             <div className="space-y-1">
@@ -971,12 +971,12 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
 
       {disputeOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4">
             <h3 className="font-bold text-lg text-text-primary">Open Dispute</h3>
             <p className="text-sm text-text-muted">Try messaging the {isBuyer ? 'seller' : 'buyer'} first using the chat. If unresolved, open a dispute and an admin will review.</p>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Reason</label>
-              <select value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
+              <select value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none">
                 <option value="">Select reason</option>
                 {DISPUTE_REASONS.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
               </select>
@@ -1006,7 +1006,7 @@ function CompletedSummary({
   const myRating = trade.ratings?.find((r) => r.ratedByUserId === userId)
   const theirRating = trade.ratings?.find((r) => r.ratedUserId === userId)
   const starRow = (rating: number) =>
-    Array.from({ length: 5 }, (_, i) => <span key={i} className={i < rating ? 'text-yellow-400' : 'text-gray-300'}>★</span>)
+    Array.from({ length: 5 }, (_, i) => <span key={i} className={i < rating ? 'text-yellow-400' : 'text-text-disabled'}>★</span>)
   return (
     <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
       <div className="flex items-center gap-2">

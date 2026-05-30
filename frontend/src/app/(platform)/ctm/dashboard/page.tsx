@@ -28,10 +28,10 @@ interface MerchantProfile {
 }
 
 const TIER_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-700',
+  new: 'bg-surface-alt text-text-secondary',
   basic: 'bg-blue-100 text-blue-700',
   verified: 'bg-green-100 text-green-700',
-  elite: 'bg-purple-100 text-purple-700',
+  elite: 'bg-primary/10 text-primary',
 }
 
 const TIER_NEXT: Record<string, { label: string; requirement: string }> = {
@@ -122,7 +122,7 @@ export default function CtmDashboardPage() {
               </p>
             </div>
           </div>
-          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${TIER_COLORS[profile.tier] ?? 'bg-gray-100 text-gray-700'}`}>
+          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${TIER_COLORS[profile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
             {profile.tier.charAt(0).toUpperCase() + profile.tier.slice(1)} Tier
           </span>
         </div>
@@ -154,7 +154,7 @@ export default function CtmDashboardPage() {
       <div className="bg-surface shadow-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-text-primary">Tier Progress</h2>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[profile.tier] ?? 'bg-gray-100 text-gray-700'}`}>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[profile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
             {profile.tier}
           </span>
         </div>
@@ -201,7 +201,7 @@ export default function CtmDashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-text-muted mb-1">{fillPct}% filled</p>
-                    <div className="w-20 bg-white rounded-full h-1.5 border border-border">
+                    <div className="w-20 bg-surface rounded-full h-1.5 border border-border">
                       <div className="h-1.5 rounded-full bg-primary" style={{ width: `${fillPct}%` }} />
                     </div>
                   </div>
@@ -221,7 +221,7 @@ export default function CtmDashboardPage() {
           { label: 'My Bids', href: '/ctm/my-bids', desc: 'Bids you have placed' },
           { label: 'Browse Market', href: '/ctm/listings', desc: 'See other listings' },
         ].map((l) => (
-          <Link key={l.href} href={l.href} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-sm transition-shadow">
+          <Link key={l.href} href={l.href} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card transition-shadow">
             <p className="font-semibold text-text-primary text-sm">{l.label}</p>
             <p className="text-xs text-text-muted mt-0.5">{l.desc}</p>
           </Link>

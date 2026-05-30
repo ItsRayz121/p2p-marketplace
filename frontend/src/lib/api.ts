@@ -460,6 +460,7 @@ export interface MarketplaceAd {
     badge: string
     lastSeenAt: string | null
     isMerchant: boolean
+    merchantId: string | null
     merchantName: string | null
     tradeStats: {
       completionRate: string
@@ -945,7 +946,28 @@ export const merchantsApi = {
   getProfile: () =>
     apiRequest<{ id: string; userId: string; status: string; businessName?: string; rating: number; totalTrades: number }>('/merchants/me'),
   getPublicProfile: (id: string) =>
-    apiRequest<{ id: string; username: string; rating: number; totalTrades: number; responseTime: string }>(`/merchants/${id}`),
+    apiRequest<{
+      id: string
+      businessName: string
+      status: string
+      rank: string
+      approvedAt: string | null
+      createdAt: string
+      user: {
+        id: string
+        username: string
+        createdAt: string
+        tradeStats: {
+          totalTrades: number
+          completedTrades: number
+          completionRate: number
+          avgRating: number
+          totalReviews: number
+          badge: string
+          totalVolumePKR: string
+        } | null
+      }
+    }>(`/merchants/${id}`),
   getPendingApplications: () =>
     apiRequest<{ applications: Array<{ id: string; userId: string; status: string; createdAt: string }> }>('/merchants/pending'),
   reviewApplication: (id: string, data: { status: 'approved' | 'rejected'; notes?: string }) =>

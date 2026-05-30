@@ -32,8 +32,8 @@ const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-700',
   accepted: 'bg-green-100 text-green-700',
   rejected: 'bg-red-100 text-red-700',
-  expired: 'bg-gray-100 text-gray-500',
-  cancelled: 'bg-gray-100 text-gray-500',
+  expired: 'bg-surface-alt text-text-muted',
+  cancelled: 'bg-surface-alt text-text-muted',
 }
 
 function BidCard({ bid, listing, onAccept, onReject, acting }: {
@@ -59,7 +59,7 @@ function BidCard({ bid, listing, onAccept, onReject, acting }: {
             <p className="text-xs text-text-muted">From @{bid.bidder.username}</p>
           </div>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${STATUS_STYLES[bid.status] ?? 'bg-gray-100 text-gray-600'}`}>{bid.status}</span>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${STATUS_STYLES[bid.status] ?? 'bg-surface-alt text-text-secondary'}`}>{bid.status}</span>
       </div>
 
       <div className="grid grid-cols-3 gap-3 text-sm mb-3">
@@ -226,7 +226,7 @@ export default function IncomingBidsPage() {
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors capitalize ${filter === f ? 'bg-primary text-white' : 'bg-white border border-border text-text-muted hover:bg-surface'}`}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors capitalize ${filter === f ? 'bg-primary text-white' : 'bg-surface border border-border text-text-muted hover:bg-surface'}`}
           >
             {f === 'pending' ? `Pending (${pendingCount})` : 'All bids'}
           </button>

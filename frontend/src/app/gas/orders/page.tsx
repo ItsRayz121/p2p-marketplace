@@ -113,11 +113,11 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
   return (
     <Link href={`/gas/orders/${order.orderRef}`} className="block border-b border-border last:border-0 cursor-pointer hover:bg-surface transition-colors">
       {order.status === 'payment_uploaded' && (
-        <div className="mx-4 mt-3 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-50 border border-purple-200">
-          <svg className="w-4 h-4 text-purple-500 shrink-0 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="mx-4 mt-3 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20">
+          <svg className="w-4 h-4 text-warning shrink-0 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-xs text-purple-700 font-medium">
+          <p className="text-xs text-warning font-medium">
             Payment under review — tap to track your order
           </p>
         </div>
@@ -183,7 +183,7 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
             </svg>
           </span>
         )}
-        <svg className="w-4 h-4 text-gray-300 mt-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 text-text-disabled mt-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </div>

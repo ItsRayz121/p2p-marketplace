@@ -67,7 +67,7 @@ export default function CreateRequestPage() {
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Token *</label>
-          <select value={form.tokenId} onChange={(e) => setForm((f) => ({ ...f, tokenId: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30" required>
+          <select value={form.tokenId} onChange={(e) => setForm((f) => ({ ...f, tokenId: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30" required>
             <option value="">Select a token</option>
             {tokens.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>)}
           </select>
@@ -78,7 +78,7 @@ export default function CreateRequestPage() {
           <div className="flex gap-3">
             {(['buy', 'sell'] as const).map((s) => (
               <button type="button" key={s} onClick={() => setForm((f) => ({ ...f, side: s }))}
-                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}>
+                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}>
                 {s === 'buy' ? 'Buy Tokens' : 'Sell Tokens'}
               </button>
             ))}
@@ -111,7 +111,7 @@ export default function CreateRequestPage() {
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Request expires in</label>
-          <select value={form.expiryHours} onChange={(e) => setForm((f) => ({ ...f, expiryHours: parseInt(e.target.value) }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
+          <select value={form.expiryHours} onChange={(e) => setForm((f) => ({ ...f, expiryHours: parseInt(e.target.value) }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none">
             <option value={1}>1 hour</option>
             <option value={2}>2 hours</option>
             <option value={4}>4 hours</option>

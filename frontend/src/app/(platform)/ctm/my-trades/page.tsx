@@ -88,7 +88,7 @@ export default function MyCtmTradesPage() {
       <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-fit">
         <Link
           href="/orders"
-          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-white transition-colors"
+          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface transition-colors"
         >
           USDT P2P
         </Link>
@@ -106,7 +106,7 @@ export default function MyCtmTradesPage() {
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
               status === opt.value
                 ? 'bg-primary text-white'
-                : 'bg-white border border-border text-text-secondary hover:bg-surface'
+                : 'bg-surface border border-border text-text-secondary hover:bg-surface'
             }`}
           >
             {opt.label}
@@ -120,7 +120,7 @@ export default function MyCtmTradesPage() {
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
               role === r
                 ? 'bg-primary/10 text-primary border border-primary/30'
-                : 'bg-white border border-border text-text-secondary hover:bg-surface'
+                : 'bg-surface border border-border text-text-secondary hover:bg-surface'
             }`}
           >
             {r === 'all' ? 'All Roles' : r.charAt(0).toUpperCase() + r.slice(1)}
@@ -133,7 +133,7 @@ export default function MyCtmTradesPage() {
       ) : trades.length === 0 ? (
         <div className="text-center py-16 text-text-muted">No trades matching the current filters.</div>
       ) : (
-        <div className="bg-white shadow-card rounded-xl border border-border overflow-hidden">
+        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <table className="w-full">
             <thead className="bg-surface border-b-2 border-border">
               <tr>
@@ -170,7 +170,7 @@ export default function MyCtmTradesPage() {
                       {isBuyer ? 'Buyer' : 'Seller'}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-surface-alt text-text-secondary'}`}>
                         {t.status.replace(/_/g, ' ')}
                       </span>
                     </td>
