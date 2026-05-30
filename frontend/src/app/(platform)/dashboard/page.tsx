@@ -259,14 +259,30 @@ export default function DashboardPage() {
                 {(() => {
                   const avail = parseFloat(b.available ?? '0') || 0
                   const locked = parseFloat(b.locked ?? '0') || 0
+                  const total = avail + locked
                   const pkr = avail * usdtRate
                   return (
                     <>
-                      <p className="text-lg font-bold text-text-primary">{avail.toFixed(4)}</p>
+                      <div className="space-y-0.5 mt-1">
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-xs text-text-muted">Available</span>
+                          <span className="text-base font-bold text-text-primary">{avail.toFixed(4)}</span>
+                        </div>
+                        {locked > 0 && (
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs text-text-muted">Locked</span>
+                            <span className="text-xs text-text-secondary">{locked.toFixed(4)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-baseline border-t border-border pt-0.5">
+                          <span className="text-xs text-text-muted">Total</span>
+                          <span className="text-xs text-text-secondary">{total.toFixed(4)}</span>
+                        </div>
+                      </div>
                       {usdtRate > 0 && b.coin === 'USDT' && (
-                        <div className="mt-0.5">
+                        <div className="mt-1">
                           <p className="text-xs text-text-muted">
-                            ≈ PKR {pkr.toLocaleString()}
+                            ≈ PKR {Math.round(pkr).toLocaleString()}
                           </p>
                           {SOURCE_LABELS[usdtRateSource] && (
                             <a
@@ -280,9 +296,6 @@ export default function DashboardPage() {
                           )}
                         </div>
                       )}
-                      <p className="text-xs text-text-muted mt-0.5">
-                        Locked: {locked.toFixed(4)}
-                      </p>
                     </>
                   )
                 })()}

@@ -25,7 +25,15 @@ export async function dashboardRoutes(app: FastifyInstance) {
           },
         }),
 
-        db.wallet.findMany({ where: { userId } }),
+        db.wallet.findMany({ where: { userId } }).then((rows) =>
+          rows.map((w) => ({
+            coin: w.coin,
+            network: w.network,
+            available: (Number(w.balance) - Number(w.lockedBalance)).toFixed(8),
+            locked: w.lockedBalance.toString(),
+            total: w.balance.toString(),
+          }))
+        ),
 
         db.trade.findMany({
           where: { OR: [{ buyerId: userId }, { sellerId: userId }] },

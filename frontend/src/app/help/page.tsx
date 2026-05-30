@@ -25,11 +25,11 @@ const FAQS = [
     items: [
       {
         q: 'How does a P2P trade work?',
-        a: "Browse the marketplace and pick an ad that suits your needs. Enter the amount, choose a payment method, and start the trade. The seller's crypto is locked in escrow. You then send the payment via your chosen method and upload a screenshot as proof. The seller confirms receipt and releases the crypto to you.",
+        a: "Browse the marketplace and pick an ad that suits your needs. Enter the amount, choose a payment method, and start the trade. You then send the payment via your chosen method and upload a screenshot as proof. The seller confirms receipt and releases the crypto to you. RupChain monitors the process and handles any disputes.",
       },
       {
         q: 'How long do I have to complete a trade?',
-        a: 'The trade window is set by the seller and ranges from 15 minutes to 2 hours. You can see the countdown timer on the trade page. If the window expires, the trade is cancelled and escrowed funds are returned.',
+        a: 'The trade window is set by the seller and ranges from 15 minutes to 2 hours. You can see the countdown timer on the trade page. If the window expires, the trade is cancelled automatically.',
       },
       {
         q: 'What happens if there is a dispute?',

@@ -30,7 +30,7 @@
             title: '2. How We Use Your Data',
             items: [
               { label: 'Identity Verification', desc: 'KYC documents are used solely to verify your identity and comply with anti-money laundering regulations.' },
-              { label: 'Service Delivery', desc: 'To facilitate trades, process payments, and operate escrow services.' },
+              { label: 'Service Delivery', desc: 'To facilitate trades, process payments, and operate platform wallet services.' },
               { label: 'Security', desc: 'To detect and prevent fraud, money laundering, and unauthorized access.' },
               { label: 'Communication', desc: 'To send transaction notifications, security alerts, and platform updates.' },
               { label: 'Compliance', desc: 'To comply with applicable Pakistani laws and regulatory requirements.' },

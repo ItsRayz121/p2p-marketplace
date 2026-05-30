@@ -545,12 +545,12 @@ export default function TradePage() {
         })()}
       </div>
 
-      {/* Escrow trust banner — only on active trades */}
+      {/* Trade protection banner — only on active trades */}
       {!['crypto_released', 'cancelled', 'expired', 'disputed'].includes(trade.status) && (
         <div className="mb-4 flex items-start gap-3 rounded-xl bg-primary/5 border border-primary/15 px-4 py-3">
           <ShieldCheck size={16} className="text-primary flex-shrink-0 mt-0.5" aria-hidden />
           <p className="text-sm text-primary/90">
-            Funds are held in escrow. RupChain protects both buyer and seller. Do not release until you have confirmed receipt.
+            RupChain monitors this trade and protects both parties. Only confirm receipt after you have verified payment.
           </p>
         </div>
       )}

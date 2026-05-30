@@ -1,7 +1,7 @@
-import { Lock, CreditCard, Zap, ShieldCheck, BadgeDollarSign, TrendingUp, CheckCircle } from 'lucide-react'
+import { CreditCard, Zap, ShieldCheck, BadgeDollarSign, TrendingUp, CheckCircle } from 'lucide-react'
 
 const FEATURES = [
-  { Icon: Lock,            title: 'Escrow Protection',  desc: 'All trades are protected by our escrow system. Crypto is only released when payment is confirmed.' },
+  { Icon: ShieldCheck,     title: 'Trade Protection',   desc: 'All trades are monitored by RupChain. Crypto is only released after the seller confirms payment receipt.' },
   { Icon: CreditCard,      title: 'Local Payments',     desc: 'Pay and receive with JazzCash, Easypaisa, and all major Pakistani banks.' },
   { Icon: Zap,             title: 'Instant Buy',        desc: 'Buy USDT, BTC, ETH, and more in minutes without finding a counterparty.' },
   { Icon: ShieldCheck,     title: 'KYC Verified',       desc: 'Our KYC system ensures all traders are verified, creating a trusted community.' },
@@ -52,7 +52,7 @@ export default function AboutPage() {
         <h2 className="text-xl font-bold text-text-primary">Security First</h2>
         <div className="space-y-3">
           {[
-            { label: 'Escrow System', desc: 'Crypto funds are locked in escrow during every trade, preventing fraud.' },
+            { label: 'Trade Monitoring', desc: 'RupChain monitors every active trade and steps in to resolve disputes and protect all parties.' },
             { label: 'Two-Factor Authentication', desc: 'Protect your account with TOTP-based 2FA.' },
             { label: 'KYC Verification', desc: 'Identity verification prevents bad actors and protects all users.' },
             { label: 'Dispute Resolution', desc: 'Our team resolves disputes fairly with evidence-based reviews.' },

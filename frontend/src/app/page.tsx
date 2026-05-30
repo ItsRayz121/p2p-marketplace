@@ -246,7 +246,7 @@ export default function HomePage() {
                 </span>
               </h1>
               <p className="mt-4 text-lg text-slate-300 max-w-md">
-                Peer-to-peer trading with secure escrow. Pay with JazzCash, Easypaisa, or bank transfer.
+                Peer-to-peer trading with dispute protection. Pay with JazzCash, Easypaisa, or bank transfer.
                 Your funds, your control.
               </p>
               <div className="flex flex-wrap gap-3 mt-8">

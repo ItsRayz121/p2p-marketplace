@@ -40,7 +40,7 @@ function DisconnectedHint() {
   if (isConnected) return null
   return (
     <p className="text-sm text-text-muted">
-      Connect MetaMask, WalletConnect, or Coinbase Wallet to see your on-chain balances. Your RupChain escrow balance below works without a connection.
+      Connect MetaMask, WalletConnect, or Coinbase Wallet to see your on-chain balances. Your RupChain balance below works without a connection.
     </p>
   )
 }
@@ -80,7 +80,7 @@ function fmtTxDateTime(dateStr: string): string {
   })
 }
 
-const SUPPORTED_ESCROW_NETWORKS = new Set(['BEP20', 'APTOS', 'Aptos'])
+const SUPPORTED_PLATFORM_NETWORKS = new Set(['BEP20', 'APTOS', 'Aptos'])
 
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
@@ -1311,9 +1311,9 @@ export default function WalletPage() {
       {/* ── RupChain internal balances ── */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-1">RupChain balance</h2>
-        <p className="text-xs text-text-muted mb-3">Held in escrow on RupChain — backs your P2P trades. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
+        <p className="text-xs text-text-muted mb-3">Held in your RupChain account. Used for withdrawals, listings, and merchant collateral. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
         {(() => {
-          const displayBalances = balances.filter((b) => SUPPORTED_ESCROW_NETWORKS.has(b.network ?? ''))
+          const displayBalances = balances.filter((b) => SUPPORTED_PLATFORM_NETWORKS.has(b.network ?? ''))
           return displayBalances.length === 0 ? (
             <EmptyState icon={Wallet} title="No balances" description="Make a deposit to get started" />
           ) : (
@@ -1342,9 +1342,15 @@ export default function WalletPage() {
                       <span className="text-text-muted">Available</span>
                       <span className="font-bold text-text-primary">{parseFloat(b.available).toFixed(6)}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-text-muted">Locked</span>
-                      <span className="text-text-secondary">{parseFloat(b.locked).toFixed(6)}</span>
+                    {parseFloat(b.locked) > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-text-muted">Locked collateral</span>
+                        <span className="text-text-secondary">{parseFloat(b.locked).toFixed(6)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm border-t border-border pt-1 mt-1">
+                      <span className="text-text-muted">Total</span>
+                      <span className="text-text-secondary">{(parseFloat(b.available) + parseFloat(b.locked)).toFixed(6)}</span>
                     </div>
                   </div>
                   <div className="flex gap-2">

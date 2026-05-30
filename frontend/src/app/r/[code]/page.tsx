@@ -61,7 +61,7 @@ export default function ReferralLandingPage() {
             'Buy & sell crypto peer-to-peer with PKR',
             'Zero trading fees on all P2P trades',
             'Fast payments via JazzCash, Easypaisa & banks',
-            'Full escrow protection on every trade',
+            'Dispute protection on every trade',
           ].map((benefit) => (
             <div key={benefit} className="flex items-center gap-2">
               <div className="w-4 h-4 rounded-full bg-success/10 text-success flex items-center justify-center flex-shrink-0">

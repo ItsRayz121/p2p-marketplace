@@ -38,12 +38,12 @@
             ],
           },
           {
-            title: '3. Escrow & Trade Execution',
+            title: '3. Trade Execution',
             content: [
-              'When a trade is initiated, the seller\'s cryptocurrency is locked in our escrow system.',
+              'When a trade is initiated, the seller must hold sufficient balance in their RupChain account to fulfil the order.',
               'Cryptocurrency is only released after the buyer confirms payment and the seller verifies receipt.',
               'Trades must be completed within the agreed trade window (15 minutes to 2 hours).',
-              'Incomplete trades will be automatically cancelled and escrowed funds returned.',
+              'Incomplete trades will be automatically cancelled.',
               'RupChain is not responsible for errors in payment details provided by users.',
             ],
           },
