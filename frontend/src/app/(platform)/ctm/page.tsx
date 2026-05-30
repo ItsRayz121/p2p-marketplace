@@ -82,6 +82,14 @@ function CtmStatsStrip({ stats, total }: { stats: CtmStats; total: number }) {
         <LayoutGrid size={11} className="text-primary" />
         <span className="font-semibold text-text-primary">{stats.totalTokens}</span> tokens listed
       </span>
+      <span className="w-px h-3 bg-border hidden sm:block" />
+      <Link
+        href="/ctm/tokens"
+        className="flex items-center gap-1 text-primary hover:underline hover:text-primary/80 transition-colors cursor-pointer"
+      >
+        <Sparkles size={11} />
+        <span className="font-medium">Featured Tokens</span>
+      </Link>
     </div>
   )
 }
@@ -330,15 +338,6 @@ export default function CtmHomePage() {
 
       {/* Stats strip */}
       {ctmStats && <CtmStatsStrip stats={ctmStats} total={total} />}
-
-      {/* Featured Tokens link */}
-      <Link
-        href="/ctm/tokens"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline mb-4"
-      >
-        <Sparkles size={14} />
-        Featured Tokens
-      </Link>
 
       {/* Recent trades ticker */}
       <RecentTradesFeed trades={recentTrades} />
