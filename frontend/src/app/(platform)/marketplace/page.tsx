@@ -358,6 +358,9 @@ export default function MarketplacePage() {
         limit: PAGE_SIZE,
       }
       if (filters.network) params.network = filters.network
+      if (filters.paymentMethod) params.paymentMethod = filters.paymentMethod
+      if (filters.minAmount) params.minAmount = filters.minAmount
+      if (filters.maxAmount) params.maxAmount = filters.maxAmount
       const res = await marketplaceApi.getAds(params)
       setAds(res.ads)
       setTotal(res.total)
