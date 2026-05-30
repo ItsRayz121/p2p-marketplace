@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="8" fill="#0D1B2A"/>
-  <text x="16" y="22" font-family="-apple-system,sans-serif" font-size="16" font-weight="700"
-        fill="#00C9A7" text-anchor="middle">R</text>
+  <rect width="32" height="32" rx="6" fill="#0D1B2A"/>
+  <rect x="5" y="5" width="6" height="22" fill="white"/>
+  <path d="M11,5 H20 Q27,5 27,11 Q27,18 20,18 H11 Z" fill="white"/>
+  <polygon points="11,18 21,18 27,27 17,27" fill="#00C9A7"/>
 </svg>

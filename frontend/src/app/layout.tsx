@@ -8,7 +8,14 @@ export const metadata: Metadata = {
   title: 'RupChain — Pakistan P2P Crypto Marketplace',
   description: 'Buy and sell crypto peer-to-peer using JazzCash, Easypaisa, and bank transfer. Fast, safe, and local.',
   manifest: '/manifest.json',
-  icons: { icon: '/brand/logo-icon.png', apple: '/brand/logo-icon-white.png' },
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
+  },
 }
 
 export const viewport: Viewport = {
