@@ -5,17 +5,17 @@ import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
 
 export const metadata: Metadata = {
-  title: 'PakSwap — Pakistan P2P Crypto Exchange',
+  title: 'RupChain — Pakistan P2P Crypto Marketplace',
   description: 'Buy and sell crypto peer-to-peer using JazzCash, Easypaisa, and bank transfer. Fast, safe, and local.',
   manifest: '/manifest.json',
-  icons: { icon: '/favicon.svg', apple: '/favicon.svg' },
+  icons: { icon: '/brand/logo-icon.png', apple: '/brand/logo-icon-white.png' },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   minimumScale: 1,
-  themeColor: '#2563eb',
+  themeColor: '#0D1B2A',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -123,7 +123,7 @@ export default function ConfirmWithdrawalPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="max-w-md w-full bg-surface border border-border rounded-2xl p-8 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-text-primary">PakSwap</h1>
+        <h1 className="text-2xl font-bold text-text-primary">RupChain</h1>
         <Suspense
           fallback={
             <div className="flex justify-center py-8">

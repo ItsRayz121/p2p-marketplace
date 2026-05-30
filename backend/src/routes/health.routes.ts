@@ -84,7 +84,7 @@ export async function healthRoutes(app: FastifyInstance) {
       adminAlertEmail: env.ADMIN_ALERT_EMAIL ?? null,
       recent: recentLogs,
       hint: !isEmailConfigured()
-        ? 'Set EMAIL_FROM in Railway to a Resend-verified sender (e.g. "PakSwap <noreply@yourdomain.com>") and ensure RESEND_API_KEY is set, then redeploy.'
+        ? 'Set EMAIL_FROM in Railway to a Resend-verified sender (e.g. "RupChain <noreply@yourdomain.com>") and ensure RESEND_API_KEY is set, then redeploy.'
         : 'Configuration looks valid. If sends still fail, check that the sender domain is verified in your Resend dashboard.',
     })
   })

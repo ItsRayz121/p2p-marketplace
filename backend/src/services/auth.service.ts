@@ -511,7 +511,7 @@ export async function setup2Fa(userId: string): Promise<{ secret: string; qrCode
   if (user.twoFaEnabled) throw new AppError('CONFLICT', '2FA is already enabled', 409)
 
   const secret = authenticator.generateSecret()
-  const otpauthUrl = authenticator.keyuri(user.email, 'PakSwap', secret)
+  const otpauthUrl = authenticator.keyuri(user.email, 'RupChain', secret)
   const qrCodeUrl = await qrcode.toDataURL(otpauthUrl)
 
   // Store secret temporarily (not yet enabled)

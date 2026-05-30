@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { notificationsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import Image from 'next/image'
 import {
   Store,
   Coins,
@@ -85,8 +86,15 @@ export default function Navbar() {
         <div className="flex h-16 items-center justify-between">
 
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-xl font-bold text-primary">PakSwap</span>
+          <Link href="/" className="flex items-center flex-shrink-0">
+            <Image
+              src="/brand/logo-horizontal-dark.png"
+              alt="RupChain"
+              width={160}
+              height={44}
+              className="h-9 w-auto object-contain"
+              priority
+            />
           </Link>
 
           {/* Center nav — md+ */}

@@ -107,7 +107,7 @@ function LoginInner() {
   return (
     <div>
       <h2 className="text-xl font-semibold text-text-primary mb-1">Welcome back</h2>
-      <p className="text-text-muted text-sm mb-6">Sign in to your PakSwap account</p>
+      <p className="text-text-muted text-sm mb-6">Sign in to your RupChain account</p>
 
       {/* Google Sign-In */}
       <a

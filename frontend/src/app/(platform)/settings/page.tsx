@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { authApi } from '@/lib/api'
 import type { Session } from '@/lib/api'
@@ -469,7 +469,7 @@ export default function SettingsPage() {
             <p className="text-sm font-semibold text-text-primary mb-1">Delete Account</p>
             <p className="text-sm text-text-muted mb-3">
               To request account deletion, please contact our support team at{' '}
-              <a href="mailto:support@pakswap.pk" className="text-primary underline">support@pakswap.pk</a>{' '}
+              <a href="mailto:support@RupChain.pk" className="text-primary underline">support@RupChain.pk</a>{' '}
               from your registered email address.
             </p>
             <Button variant="secondary" disabled className="opacity-50">

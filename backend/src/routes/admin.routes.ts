@@ -2017,7 +2017,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await sendWithdrawalEmail('rejected', withdrawal.user.email, {
       amount: withdrawal.amount.toString(),
       coin: withdrawal.coin,
-      reason: `Your withdrawal has been refunded to your PakSwap balance. Reason: ${parsed.data.reason}`,
+      reason: `Your withdrawal has been refunded to your RupChain balance. Reason: ${parsed.data.reason}`,
     }).catch(() => {})
 
     return reply.send({ success: true, message: 'Withdrawal refunded — balance restored to user.' })

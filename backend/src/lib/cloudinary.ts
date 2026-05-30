@@ -12,16 +12,16 @@ export { cloudinary }
 
 // Allowed upload folders — enforced in upload service
 export const CLOUDINARY_FOLDERS = {
-  KYC_FRONT: 'pakswap/kyc/front',
-  KYC_BACK: 'pakswap/kyc/back',
-  KYC_SELFIE: 'pakswap/kyc/selfie',
-  PAYMENT_PROOF: 'pakswap/payment-proof',
-  MERCHANT_PROOF: 'pakswap/merchant/proof',
-  CTM_PAYMENT_PROOF: 'pakswap/ctm/payment-proof',
-  CTM_TOKEN_PROOF: 'pakswap/ctm/token-proof',
-  CTM_TOKEN_LOGO: 'pakswap/ctm/token-logos',
-  GAS_LOGO: 'pakswap/gas/logos',
-  AVATAR: 'pakswap/avatars',
+  KYC_FRONT: 'rupchain/kyc/front',
+  KYC_BACK: 'rupchain/kyc/back',
+  KYC_SELFIE: 'rupchain/kyc/selfie',
+  PAYMENT_PROOF: 'rupchain/payment-proof',
+  MERCHANT_PROOF: 'rupchain/merchant/proof',
+  CTM_PAYMENT_PROOF: 'rupchain/ctm/payment-proof',
+  CTM_TOKEN_PROOF: 'rupchain/ctm/token-proof',
+  CTM_TOKEN_LOGO: 'rupchain/ctm/token-logos',
+  GAS_LOGO: 'rupchain/gas/logos',
+  AVATAR: 'rupchain/avatars',
 } as const
 
 // Max file sizes in bytes

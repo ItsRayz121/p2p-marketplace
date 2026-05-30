@@ -17,7 +17,7 @@ export function ensureAppKit() {
     networks: APPKIT_NETWORKS,
     projectId: WALLETCONNECT_PROJECT_ID,
     metadata: {
-      name: 'PakSwap',
+      name: 'RupChain',
       description: 'Pakistan P2P Crypto Marketplace',
       url: typeof window !== 'undefined' ? window.location.origin : 'https://p2p-marketplace-kappa.vercel.app',
       icons: ['https://p2p-marketplace-kappa.vercel.app/favicon.ico'],

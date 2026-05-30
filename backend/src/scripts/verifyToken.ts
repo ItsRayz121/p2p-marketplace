@@ -88,7 +88,7 @@ function fetchJson(url: string, opts?: { method?: string; headers?: Record<strin
       method: opts?.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'PakSwap-TokenVerifier/1.0',
+        'User-Agent': 'RupChain-TokenVerifier/1.0',
         ...(opts?.headers ?? {}),
       },
     }

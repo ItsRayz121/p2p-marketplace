@@ -15,7 +15,7 @@ export default function AboutPage() {
       {/* Hero */}
       <div className="text-center space-y-3">
         <div className="w-16 h-16 rounded-2xl bg-primary text-white font-black text-2xl flex items-center justify-center mx-auto">P</div>
-        <h1 className="text-3xl font-black text-text-primary">About PakSwap</h1>
+        <h1 className="text-3xl font-black text-text-primary">About RupChain</h1>
         <p className="text-text-muted text-base max-w-xl mx-auto">
           Pakistan's first secure peer-to-peer cryptocurrency exchange — built for Pakistanis, by Pakistanis.
         </p>
@@ -25,15 +25,15 @@ export default function AboutPage() {
       <section className="bg-surface shadow-card border border-border rounded-2xl p-6 space-y-3">
         <h2 className="text-xl font-bold text-text-primary">Our Mission</h2>
         <p className="text-text-muted leading-relaxed">
-          PakSwap exists to give every Pakistani access to the global crypto economy. We believe financial freedom shouldn't
+          RupChain exists to give every Pakistani access to the global crypto economy. We believe financial freedom shouldn't
           be limited by geography. By connecting buyers and sellers directly, we remove intermediaries, reduce costs, and
           put control back in your hands.
         </p>
       </section>
 
-      {/* Why PakSwap */}
+      {/* Why RupChain */}
       <section>
-        <h2 className="text-xl font-bold text-text-primary mb-4">Why PakSwap?</h2>
+        <h2 className="text-xl font-bold text-text-primary mb-4">Why RupChain?</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {FEATURES.map(({ Icon, title, desc }) => (
             <div key={title} className="bg-surface shadow-card border border-border rounded-xl p-4 space-y-2">
@@ -77,7 +77,7 @@ export default function AboutPage() {
         <p className="text-sm text-text-muted">Have questions or need support? We're here to help.</p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <a
-            href="mailto:support@pakswap.pk"
+            href="mailto:support@rupchain.pk"
             className="inline-flex items-center justify-center gap-2 bg-primary text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Email Support

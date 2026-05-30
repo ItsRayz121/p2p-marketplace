@@ -11,7 +11,7 @@ export const WALLETCONNECT_PROJECT_ID =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? ''
 
 /**
- * EVM networks PakSwap supports. Imported from `@reown/appkit/networks` (which
+ * EVM networks RupChain supports. Imported from `@reown/appkit/networks` (which
  * re-exports the viem chain defs with AppKit's type wrapping) so the same
  * references flow into both `WagmiAdapter` and `createAppKit()`. If we mixed
  * viem-chain refs with AppKit-chain refs the modal would silently fail to

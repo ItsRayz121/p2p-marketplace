@@ -165,7 +165,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
         </div>
         <div>
           <h2 className="text-lg font-bold text-success">Trade Completed</h2>
-          <p className="text-sm text-text-muted">Thank you for using PakSwap.</p>
+          <p className="text-sm text-text-muted">Thank you for using RupChain.</p>
         </div>
       </div>
 
@@ -548,7 +548,7 @@ export default function TradePage() {
         <div className="mb-4 flex items-start gap-3 rounded-xl bg-primary/5 border border-primary/15 px-4 py-3">
           <ShieldCheck size={16} className="text-primary flex-shrink-0 mt-0.5" aria-hidden />
           <p className="text-sm text-primary/90">
-            Funds are held in escrow. PakSwap protects both buyer and seller. Do not release until you have confirmed receipt.
+            Funds are held in escrow. RupChain protects both buyer and seller. Do not release until you have confirmed receipt.
           </p>
         </div>
       )}

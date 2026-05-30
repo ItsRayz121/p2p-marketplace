@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useAccount, useBalance, useChainId } from 'wagmi'
 import { getUiChainByChainId, type UiToken } from '@/lib/web3/chains'
 import { formatUnits } from 'viem'
@@ -54,7 +54,7 @@ export function ConnectedBalances() {
         ))}
       </div>
       <p className="text-xs text-text-muted">
-        These balances are read directly from your connected wallet. To trade on PakSwap, deposit to your PakSwap address below.
+        These balances are read directly from your connected wallet. To trade on RupChain, deposit to your RupChain address below.
       </p>
     </div>
   )

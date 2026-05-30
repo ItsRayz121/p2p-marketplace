@@ -171,7 +171,7 @@ async function evmDrain(
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('=== PakSwap Phase 8 — Legacy Wallet Drain ===')
+  console.log('=== RupChain Phase 8 — Legacy Wallet Drain ===')
   console.log(`Mode: ${DRAIN ? 'DRAIN (live transactions)' : 'CHECK (balance report only)'}`)
   console.log()
 

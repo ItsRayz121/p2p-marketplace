@@ -135,7 +135,7 @@ export default function SetupUsernamePage() {
     <div>
       <h2 className="text-xl font-semibold text-text-primary mb-1">Choose Your Username</h2>
       <p className="text-text-muted text-sm mb-6">
-        Pick a unique username for your PakSwap profile
+        Pick a unique username for your RupChain profile
       </p>
 
       <form onSubmit={handleSave} noValidate className="flex flex-col gap-4">

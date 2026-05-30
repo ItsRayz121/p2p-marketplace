@@ -32,7 +32,7 @@ if (!validated && env.RESEND_API_KEY) {
     { rawEmailFrom: env.EMAIL_FROM },
     'EMAIL_FROM is missing or malformed — transactional emails are DISABLED. ' +
       'Set EMAIL_FROM to a Resend-verified sender, e.g. ' +
-      '"PakSwap <noreply@yourdomain.com>" or "noreply@yourdomain.com".',
+      '"RupChain <noreply@yourdomain.com>" or "noreply@yourdomain.com".',
   )
 } else if (validated && !env.RESEND_API_KEY) {
   logger.warn(

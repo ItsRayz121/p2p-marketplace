@@ -292,7 +292,7 @@ async function checkChainActivationSafety(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log('━'.repeat(60))
-  console.log('PakSwap Gas System — Production Deployment Verification')
+  console.log('RupChain Gas System — Production Deployment Verification')
   if (specificChain) console.log(`Chain filter: ${specificChain}`)
   if (fullMode) console.log('Mode: full (including non-EVM chains)')
   console.log('━'.repeat(60))

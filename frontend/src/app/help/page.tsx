@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState } from 'react'
 import Link from 'next/link'
 
@@ -70,8 +70,8 @@ const FAQS = [
         a: 'Click "Forgot password?" on the login page. We will send a reset link to your registered email address. The link expires after 1 hour.',
       },
       {
-        q: 'PakSwap will never ask for my password?',
-        a: 'Correct. Our support team will never ask for your password, 2FA code, or private keys via email, WhatsApp, or any other channel. If someone claims to be from PakSwap and asks for these, it is a scam.',
+        q: 'RupChain will never ask for my password?',
+        a: 'Correct. Our support team will never ask for your password, 2FA code, or private keys via email, WhatsApp, or any other channel. If someone claims to be from RupChain and asks for these, it is a scam.',
       },
     ],
   },
@@ -129,7 +129,7 @@ export default function HelpPage() {
     <div className="max-w-3xl mx-auto px-4 py-10 pb-16">
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-black text-text-primary">Help Centre</h1>
-        <p className="text-text-muted mt-2 text-sm">Answers to the most common questions about PakSwap</p>
+        <p className="text-text-muted mt-2 text-sm">Answers to the most common questions about RupChain</p>
       </div>
 
       {/* Contact bar */}
@@ -151,7 +151,7 @@ export default function HelpPage() {
             Live Chat
           </button>
           <a
-            href="mailto:support@pakswap.pk"
+            href="mailto:support@RupChain.pk"
             className="px-4 py-2 text-sm font-medium border border-border text-text-primary rounded-lg hover:bg-surface transition-colors"
           >
             Email Us
@@ -178,7 +178,7 @@ export default function HelpPage() {
         <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
         <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
         <Link href="/fees" className="hover:text-primary transition-colors">Fee Schedule</Link>
-        <a href="mailto:support@pakswap.pk" className="hover:text-primary transition-colors">support@pakswap.pk</a>
+        <a href="mailto:support@RupChain.pk" className="hover:text-primary transition-colors">support@RupChain.pk</a>
       </div>
     </div>
   )

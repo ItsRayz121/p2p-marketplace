@@ -1,4 +1,4 @@
-export default function TermsPage() {
+﻿export default function TermsPage() {
   const lastUpdated = '1 January 2025'
 
   return (
@@ -10,7 +10,7 @@ export default function TermsPage() {
 
       <div className="prose prose-sm max-w-none space-y-8">
         <p className="text-text-muted leading-relaxed">
-          Please read these Terms of Service (&quot;Terms&quot;) carefully before using PakSwap. By accessing or using our platform,
+          Please read these Terms of Service (&quot;Terms&quot;) carefully before using RupChain. By accessing or using our platform,
           you agree to be bound by these Terms. If you do not agree, do not use the platform.
         </p>
 
@@ -18,10 +18,10 @@ export default function TermsPage() {
           {
             title: '1. Eligibility',
             content: [
-              'You must be at least 18 years of age to use PakSwap.',
+              'You must be at least 18 years of age to use RupChain.',
               'You must be a resident of Pakistan or otherwise legally permitted to access cryptocurrency services.',
               'You must complete our KYC (Know Your Customer) verification before conducting trades.',
-              'You may not use PakSwap if you are subject to any sanctions, are a Politically Exposed Person (PEP) without disclosure, or have been previously banned from our platform.',
+              'You may not use RupChain if you are subject to any sanctions, are a Politically Exposed Person (PEP) without disclosure, or have been previously banned from our platform.',
               'By registering, you confirm that all information you provide is accurate, current, and complete.',
             ],
           },
@@ -44,7 +44,7 @@ export default function TermsPage() {
               'Cryptocurrency is only released after the buyer confirms payment and the seller verifies receipt.',
               'Trades must be completed within the agreed trade window (15 minutes to 2 hours).',
               'Incomplete trades will be automatically cancelled and escrowed funds returned.',
-              'PakSwap is not responsible for errors in payment details provided by users.',
+              'RupChain is not responsible for errors in payment details provided by users.',
             ],
           },
           {
@@ -70,15 +70,15 @@ export default function TermsPage() {
             title: '6. Account Security',
             content: [
               'You are solely responsible for maintaining the security of your account credentials.',
-              'You must notify us immediately at security@pakswap.pk of any unauthorized access.',
+              'You must notify us immediately at security@RupChain.pk of any unauthorized access.',
               'We recommend enabling Two-Factor Authentication (2FA).',
-              'PakSwap will never ask for your password via email, WhatsApp, or any other channel.',
+              'RupChain will never ask for your password via email, WhatsApp, or any other channel.',
             ],
           },
           {
             title: '7. Limitations of Liability',
             content: [
-              'PakSwap provides the platform "as is" without warranties of any kind.',
+              'RupChain provides the platform "as is" without warranties of any kind.',
               'We are not liable for losses arising from price volatility of cryptocurrencies.',
               'We are not liable for user errors, including incorrect wallet addresses.',
               'Our liability is limited to the amount of fees paid in the 30 days preceding the claim.',
@@ -90,7 +90,7 @@ export default function TermsPage() {
             content: [
               'We reserve the right to suspend or terminate accounts that violate these Terms.',
               'Suspected fraudulent activity will result in immediate account suspension.',
-              'Users may request account deletion by contacting support@pakswap.pk.',
+              'Users may request account deletion by contacting support@RupChain.pk.',
               'Upon termination, any funds in your wallet will be returned after identity verification.',
             ],
           },
@@ -99,7 +99,7 @@ export default function TermsPage() {
             content: [
               'These Terms are governed by the laws of the Islamic Republic of Pakistan.',
               'Any disputes shall be subject to the exclusive jurisdiction of courts in Lahore, Pakistan.',
-              'These Terms constitute the entire agreement between you and PakSwap.',
+              'These Terms constitute the entire agreement between you and RupChain.',
             ],
           },
           {
@@ -126,7 +126,7 @@ export default function TermsPage() {
 
         <div className="bg-surface border border-border rounded-xl p-5 text-sm text-text-muted">
           <p className="font-semibold text-text-primary mb-1">Contact Us</p>
-          <p>For questions about these Terms, contact us at <a href="mailto:legal@pakswap.pk" className="text-primary underline">legal@pakswap.pk</a></p>
+          <p>For questions about these Terms, contact us at <a href="mailto:legal@RupChain.pk" className="text-primary underline">legal@RupChain.pk</a></p>
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { walletApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
@@ -100,7 +100,7 @@ export function RecentDeposits() {
     <section>
       <h2 className="text-base font-semibold text-text-primary mb-1">Recent deposits</h2>
       <p className="text-xs text-text-muted mb-3">
-        On-chain transfers to your PakSwap addresses. Pending rows update as new blocks confirm.
+        On-chain transfers to your RupChain addresses. Pending rows update as new blocks confirm.
       </p>
       <div className="bg-white rounded-xl border border-border overflow-hidden divide-y divide-border">
         {rows.map((r) => (

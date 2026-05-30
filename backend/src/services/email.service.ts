@@ -11,12 +11,12 @@ function htmlShell(content: string): string {
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #0f172a;">
   <div style="text-align: center; margin-bottom: 32px;">
-    <h1 style="color: #2563eb; font-size: 28px; margin: 0;">PakSwap</h1>
+    <h1 style="color: #2563eb; font-size: 28px; margin: 0;">RupChain</h1>
     <p style="color: #64748b; margin: 4px 0 0;">Pakistan P2P Crypto Exchange</p>
   </div>
   ${content}
   <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
-  <p style="color: #94a3b8; font-size: 12px; text-align: center;">© 2026 PakSwap. Pakistan P2P Crypto Exchange</p>
+  <p style="color: #94a3b8; font-size: 12px; text-align: center;">© 2026 RupChain. Pakistan P2P Crypto Exchange</p>
 </body>
 </html>`
 }
@@ -89,7 +89,7 @@ export async function sendOtpEmail(
   type: 'verify' | 'reset',
 ): Promise<void> {
   const isVerify = type === 'verify'
-  const subject = isVerify ? 'Verify your PakSwap email' : 'Reset your PakSwap password'
+  const subject = isVerify ? 'Verify your RupChain email' : 'Reset your RupChain password'
   const heading = isVerify ? 'Email Verification' : 'Password Reset'
   const instruction = isVerify
     ? 'Enter this code to verify your email address.'
@@ -169,7 +169,7 @@ export async function sendKycEmail(
     approved: {
       subject: 'KYC approved — account verified',
       heading: 'KYC Approved',
-      body: `Your identity has been verified${data?.level ? ` at <strong>${data.level}</strong> level` : ''}. You can now trade on PakSwap${data?.dailyLimit ? ` with a daily limit of PKR ${data.dailyLimit.toLocaleString()}` : ''}.`,
+      body: `Your identity has been verified${data?.level ? ` at <strong>${data.level}</strong> level` : ''}. You can now trade on RupChain${data?.dailyLimit ? ` with a daily limit of PKR ${data.dailyLimit.toLocaleString()}` : ''}.`,
     },
     rejected: {
       subject: 'KYC submission rejected',
@@ -256,7 +256,7 @@ export async function sendWithdrawalConfirmationEmail(
 export async function sendReferralRewardEmail(email: string, amount: string): Promise<void> {
   const html = htmlShell(`
     <h2 style="margin: 0 0 16px;">Referral Reward Earned!</h2>
-    <p style="color: #475569;">You earned a referral reward of <strong>PKR ${amount}</strong> for inviting a new user to PakSwap.</p>
+    <p style="color: #475569;">You earned a referral reward of <strong>PKR ${amount}</strong> for inviting a new user to RupChain.</p>
     <p style="color: #64748b; font-size: 14px;">Keep sharing your referral code to earn more rewards.</p>
   `)
   await send(email, `You earned a PKR ${amount} referral reward`, html, 'referral_reward')
@@ -290,5 +290,5 @@ export async function sendAdminAlertEmail(subject: string, body: string): Promis
     <h2 style="margin: 0 0 16px; color: #dc2626;">Admin Alert</h2>
     <pre style="background: #f8fafc; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">${body}</pre>
   `)
-  await send(env.ADMIN_ALERT_EMAIL, `[PakSwap Alert] ${subject}`, html, 'admin_alert')
+  await send(env.ADMIN_ALERT_EMAIL, `[RupChain Alert] ${subject}`, html, 'admin_alert')
 }

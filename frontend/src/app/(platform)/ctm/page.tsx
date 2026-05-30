@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
@@ -84,7 +84,7 @@ export default function CtmHomePage() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-amber-800">Community Token Market — High Risk</p>
             <p className="text-xs text-amber-700 mt-0.5">
-              These tokens are community-requested and not exchange-listed. All trades are manual proof-based. PakSwap does not guarantee token value or delivery. Trade with caution.
+              These tokens are community-requested and not exchange-listed. All trades are manual proof-based. RupChain does not guarantee token value or delivery. Trade with caution.
             </p>
           </div>
           <button onClick={handleDismiss} aria-label="Dismiss" className="text-amber-500 hover:text-amber-700 flex-shrink-0">

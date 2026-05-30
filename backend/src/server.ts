@@ -27,7 +27,7 @@ async function start() {
   let app: Awaited<ReturnType<typeof buildApp>> | null = null
 
   try {
-    logger.info('Starting PakSwap backend...')
+    logger.info('Starting RupChain backend...')
 
     // Validate wallet custody config before accepting traffic. Throws if the
     // master key/ciphertext are half-configured or fail to decrypt. Logs

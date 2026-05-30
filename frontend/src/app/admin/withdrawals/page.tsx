@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import { fmtDate, fmtDateTime } from '@/lib/fmt'
@@ -952,7 +952,7 @@ export default function WithdrawalsPage() {
             <div className="p-4 bg-danger/5 border border-danger/20 rounded-xl text-sm">
               <p className="font-medium text-danger mb-1">This will reverse the withdrawal</p>
               <p className="text-text-secondary">
-                <span className="font-bold">{selected.amount} {selected.coin}</span> (+{selected.fee} {selected.coin} fee) will be credited back to the user&apos;s PakSwap balance.
+                <span className="font-bold">{selected.amount} {selected.coin}</span> (+{selected.fee} {selected.coin} fee) will be credited back to the user&apos;s RupChain balance.
                 Use this only when the on-chain transaction never happened (fake hash, failed broadcast, or stuck tx).
               </p>
             </div>

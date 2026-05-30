@@ -34,7 +34,7 @@ export function middleware(request: NextRequest) {
   // backend on its own (Railway) origin, so the Vercel-side middleware can't
   // see it. Each protected backend route still validates the JWT — the hint
   // cookie only controls client-side route gating.
-  const hasAuthHint = request.cookies.has('pakswap_auth')
+  const hasAuthHint = request.cookies.has('rupchain_auth')
 
   const requiresAuth = AUTH_REQUIRED.some((p) => pathname.startsWith(p))
   const requiresAdmin = ADMIN_REQUIRED.some((p) => pathname.startsWith(p))

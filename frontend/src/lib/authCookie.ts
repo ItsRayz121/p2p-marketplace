@@ -7,7 +7,7 @@
 // a valid access token + refresh token. The hint only controls client-side
 // routing UX.
 
-const COOKIE_NAME = 'pakswap_auth'
+const COOKIE_NAME = 'rupchain_auth'
 const MAX_AGE_SECONDS = 7 * 24 * 60 * 60 // 7 days, matches refresh-token lifetime
 
 export function setAuthHint(): void {

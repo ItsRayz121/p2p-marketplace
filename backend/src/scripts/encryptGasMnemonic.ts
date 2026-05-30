@@ -26,7 +26,7 @@ import { stdin as input, stdout as output } from 'node:process'
 async function main() {
   console.log('')
   console.log('══════════════════════════════════════════════════════')
-  console.log('  PakSwap — Phase 2: Encrypt Gas Wallet Mnemonic      ')
+  console.log('  RupChain — Phase 2: Encrypt Gas Wallet Mnemonic      ')
   console.log('══════════════════════════════════════════════════════')
   console.log('  LOCAL ONLY. No network calls. Nothing is logged.')
   console.log('  Your mnemonic is never written to disk.')

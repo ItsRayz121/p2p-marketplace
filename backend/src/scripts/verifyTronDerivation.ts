@@ -67,7 +67,7 @@ async function main() {
 
   console.log('')
   console.log('══════════════════════════════════════════════════════')
-  console.log('  PakSwap — Phase 1: TRON Wallet Verification         ')
+  console.log('  RupChain — Phase 1: TRON Wallet Verification         ')
   console.log('══════════════════════════════════════════════════════')
   console.log('  LOCAL ONLY. No network calls. Nothing is logged.')
   console.log('  Type carefully — backspace works normally.')

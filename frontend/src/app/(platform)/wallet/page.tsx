@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { walletApi, marketplaceApi, userPaymentMethodsApi } from '@/lib/api'
 import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod, SavedDeliveryAddress } from '@/lib/api'
@@ -40,7 +40,7 @@ function DisconnectedHint() {
   if (isConnected) return null
   return (
     <p className="text-sm text-text-muted">
-      Connect MetaMask, WalletConnect, or Coinbase Wallet to see your on-chain balances. Your PakSwap escrow balance below works without a connection.
+      Connect MetaMask, WalletConnect, or Coinbase Wallet to see your on-chain balances. Your RupChain escrow balance below works without a connection.
     </p>
   )
 }
@@ -518,7 +518,7 @@ function DepositModal({
             </p>
             {typeof info.minConfirmations === 'number' && (
               <div className="bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 text-xs text-text-secondary text-center">
-                Waiting for {info.minConfirmations} blockchain confirmations before your PakSwap balance is credited. Pending deposits appear in your transaction history.
+                Waiting for {info.minConfirmations} blockchain confirmations before your RupChain balance is credited. Pending deposits appear in your transaction history.
               </div>
             )}
             {UI_CHAINS.some((c) => c.networkLabel === info.network) && (
@@ -1308,10 +1308,10 @@ export default function WalletPage() {
         <DisconnectedHint />
       </section>
 
-      {/* ── PakSwap internal balances ── */}
+      {/* ── RupChain internal balances ── */}
       <section>
-        <h2 className="text-base font-semibold text-text-primary mb-1">PakSwap balance</h2>
-        <p className="text-xs text-text-muted mb-3">Held in escrow on PakSwap — backs your P2P trades. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
+        <h2 className="text-base font-semibold text-text-primary mb-1">RupChain balance</h2>
+        <p className="text-xs text-text-muted mb-3">Held in escrow on RupChain — backs your P2P trades. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
         {(() => {
           const displayBalances = balances.filter((b) => SUPPORTED_ESCROW_NETWORKS.has(b.network ?? ''))
           return displayBalances.length === 0 ? (

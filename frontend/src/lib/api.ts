@@ -7,7 +7,7 @@ function resolveApiBase(): string {
     if (typeof window !== 'undefined') {
       // eslint-disable-next-line no-console
       console.error(
-        '[PakSwap] NEXT_PUBLIC_API_URL is not set — API calls will hit the current origin and 404. Set it in Vercel → Settings → Environment Variables to your Railway backend URL (no trailing slash, no /api).',
+        '[RupChain] NEXT_PUBLIC_API_URL is not set — API calls will hit the current origin and 404. Set it in Vercel → Settings → Environment Variables to your Railway backend URL (no trailing slash, no /api).',
       )
     }
     return ''

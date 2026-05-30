@@ -85,7 +85,7 @@ export default function RegisterPage() {
   return (
     <div>
       <h2 className="text-xl font-semibold text-text-primary mb-1">Create your account</h2>
-      <p className="text-text-muted text-sm mb-6">Join PakSwap to buy and sell crypto peer-to-peer</p>
+      <p className="text-text-muted text-sm mb-6">Join RupChain to buy and sell crypto peer-to-peer</p>
 
       {/* Google Sign-Up */}
       <a

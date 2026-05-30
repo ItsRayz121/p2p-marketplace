@@ -114,7 +114,7 @@ export default function LeaderboardPage() {
             Dashboard
           </Link>
           <h1 className="text-2xl font-bold text-text-primary">Leaderboard</h1>
-          <p className="text-sm text-text-muted">Top traders on PakSwap</p>
+          <p className="text-sm text-text-muted">Top traders on RupChain</p>
         </div>
       </div>
 

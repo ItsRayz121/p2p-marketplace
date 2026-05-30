@@ -8,5 +8,5 @@ export const logger = pino({
   ...(isDev && {
     transport: { target: 'pino-pretty', options: { colorize: true, ignore: 'pid,hostname' } },
   }),
-  base: { service: 'pakswap-backend' },
+  base: { service: 'rupchain-backend' },
 })

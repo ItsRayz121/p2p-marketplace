@@ -43,7 +43,7 @@ export default function ReferralLandingPage() {
         <div>
           <h1 className="text-2xl font-black text-text-primary mb-2">You've been invited!</h1>
           <p className="text-text-muted">
-            Your friend has invited you to join <span className="font-semibold text-text-primary">PakSwap</span> — Pakistan's #1 P2P crypto marketplace.
+            Your friend has invited you to join <span className="font-semibold text-text-primary">RupChain</span> — Pakistan's #1 P2P crypto marketplace.
           </p>
         </div>
 

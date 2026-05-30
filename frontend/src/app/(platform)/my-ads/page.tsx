@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -101,7 +101,7 @@ export default function MyAdsPage() {
         <EmptyState
           icon={Tag}
           title="No listings yet"
-          description="Create your first buy or sell listing to start trading on PakSwap."
+          description="Create your first buy or sell listing to start trading on RupChain."
           action={{ label: 'Create Your First Listing', onClick: () => router.push('/create-ad') }}
         />
       ) : (

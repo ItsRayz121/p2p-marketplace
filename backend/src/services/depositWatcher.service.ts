@@ -98,7 +98,7 @@ export async function processDepositEvent(event: NormalizedDepositEvent): Promis
   // Case-insensitive — findUserByDepositAddress uses mode: 'insensitive'.
   const userId = await findUserByDepositAddress(event.toAddress)
   if (!userId) {
-    return { status: 'ignored', reason: 'toAddress is not a known PakSwap deposit address' }
+    return { status: 'ignored', reason: 'toAddress is not a known RupChain deposit address' }
   }
 
   // Upsert Deposit row. Unique (txHash, chain, asset) makes this idempotent.

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useAccount, useSwitchChain, useChainId } from 'wagmi'
 import { SUPPORTED_CHAINS, UI_CHAINS, getUiChainByChainId } from '@/lib/web3/chains'
 
@@ -35,7 +35,7 @@ export function ChainSwitcher() {
       </div>
       {!onSupportedChain && (
         <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-sm text-warning">
-          Your wallet is on an unsupported network. PakSwap supports Ethereum, BSC, Polygon, Arbitrum, Optimism and Base. Pick one above to switch.
+          Your wallet is on an unsupported network. RupChain supports Ethereum, BSC, Polygon, Arbitrum, Optimism and Base. Pick one above to switch.
         </div>
       )}
     </div>

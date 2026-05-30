@@ -487,8 +487,8 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
       </div>
       <div className="border-t border-border pt-4 space-y-3">
         <div>
-          <p className="text-sm font-semibold text-text-primary">Rate PakSwap platform</p>
-          <p className="text-xs text-text-muted">Share suggestions to improve PakSwap.</p>
+          <p className="text-sm font-semibold text-text-primary">Rate RupChain platform</p>
+          <p className="text-xs text-text-muted">Share suggestions to improve RupChain.</p>
         </div>
         {platformRatingDone ? (
           <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">✓ Platform feedback received. Thank you!</div>
@@ -1039,7 +1039,7 @@ function CompletedSummary({
           </>
         )}
       </div>
-      <p className="text-xs text-center text-green-700">Thank you for using PakSwap.</p>
+      <p className="text-xs text-center text-green-700">Thank you for using RupChain.</p>
     </div>
   )
 }

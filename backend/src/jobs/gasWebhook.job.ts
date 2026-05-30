@@ -49,13 +49,13 @@ export async function fireGasWebhook(job: Job<{ orderId: string; status: string 
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'User-Agent':   'PakSwap-Webhook/1.0',
+    'User-Agent':   'RupChain-Webhook/1.0',
     'X-Attempt':    String(job.attemptsMade + 1),
   }
 
   if (apiKey.webhookSecret) {
     const sig = createHmac('sha256', apiKey.webhookSecret).update(payload).digest('hex')
-    headers['X-PakSwap-Signature'] = `sha256=${sig}`
+    headers['X-RupChain-Signature'] = `sha256=${sig}`
   }
 
   const controller = new AbortController()

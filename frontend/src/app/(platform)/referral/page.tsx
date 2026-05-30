@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { referralApi } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -61,9 +61,9 @@ export default function ReferralPage() {
   if (loading) return <LoadingState message="Loading referral data..." />
   if (error || !stats) return <ErrorState title={error || 'Failed to load data'} onRetry={fetchData} />
 
-  const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://pakswap.pk'}/r/${stats.referralCode}`
+  const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://RupChain.pk'}/r/${stats.referralCode}`
   const whatsappMessage = encodeURIComponent(
-    `Join PakSwap — Pakistan's P2P crypto marketplace! Use my referral code ${stats.referralCode} to sign up and earn bonuses. ${shareUrl}`
+    `Join RupChain — Pakistan's P2P crypto marketplace! Use my referral code ${stats.referralCode} to sign up and earn bonuses. ${shareUrl}`
   )
 
   return (

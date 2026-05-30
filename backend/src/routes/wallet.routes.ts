@@ -170,7 +170,7 @@ export async function walletRoutes(app: FastifyInstance) {
   // GET /api/wallet/deposits — the user's own recent on-chain deposits with
   // confirmation progress and explorer links. Backs the "Recent deposits"
   // widget on the wallet page so users can see the state of a transfer
-  // between "I sent it" and "PakSwap balance went up".
+  // between "I sent it" and "RupChain balance went up".
   app.get('/wallet/deposits', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
     const query = req.query as Record<string, string>
