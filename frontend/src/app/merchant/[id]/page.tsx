@@ -139,7 +139,7 @@ export default function MerchantProfilePage({ params }: { params: Promise<{ id: 
           </div>
           <div className="bg-surface shadow-card rounded-xl border border-border p-4 text-center">
             <div className="flex items-center justify-center gap-1">
-              <Star size={14} className="text-gold fill-gold" />
+              <Star size={14} className="text-gold" fill="currentColor" />
               <p className="text-2xl font-bold text-text-primary">{Number(stats.avgRating).toFixed(1)}</p>
             </div>
             <p className="text-xs text-text-muted mt-0.5">{stats.totalReviews} reviews</p>

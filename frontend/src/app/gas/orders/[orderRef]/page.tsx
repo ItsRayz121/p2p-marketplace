@@ -285,7 +285,7 @@ function GasOrderTrackingPageInner() {
                       }
                     </div>
                     {i < TIMELINE_STEPS.length - 1 && (
-                      <div className={`w-0.5 h-8 my-0.5 ${done ? 'bg-green-300' : 'bg-surface-alt'}`} />
+                      <div className={`w-0.5 h-8 my-0.5 ${done ? 'bg-green-300' : 'bg-border'}`} />
                     )}
                   </div>
                   <div className="pb-3 flex-1 min-w-0 pt-1">
