@@ -22,15 +22,20 @@ export interface PlatformStats {
   totalTrades: number
   totalVolume: string
   verifiedTraders: number
+  todayTrades: number
 }
 
 export interface SellerInfo {
   id: string
   username: string
   badge: string
+  lastSeenAt: string | null
+  isMerchant: boolean
+  merchantName: string | null
   tradeStats: {
     completionRate: string
     totalTrades: number
+    completedTrades: number
     avgRating: string
   } | null
   hasCollateral: boolean
@@ -178,11 +183,15 @@ export async function getStats(): Promise<PlatformStats> {
     }
   }
 
-  const [users, trades, volume, verifiedTraders] = await Promise.all([
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+
+  const [users, trades, volume, verifiedTraders, todayTrades] = await Promise.all([
     db.user.count({ where: { isEmailVerified: true } }),
     db.trade.count({ where: { status: { in: ['crypto_released'] } } }),
     db.trade.aggregate({ _sum: { fiatAmount: true }, where: { status: 'crypto_released' } }),
     db.user.count({ where: { kycStatus: 'approved' } }),
+    db.trade.count({ where: { status: 'crypto_released', updatedAt: { gte: todayStart } } }),
   ])
 
   const result: PlatformStats = {
@@ -190,9 +199,57 @@ export async function getStats(): Promise<PlatformStats> {
     totalTrades: trades,
     totalVolume: (volume._sum.fiatAmount ?? new Prisma.Decimal(0)).toString(),
     verifiedTraders,
+    todayTrades,
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 300)
+  return result
+}
+
+export interface RecentTrade {
+  id: string
+  amount: string
+  coin: string
+  completedAt: string
+  buyerUsername: string
+  sellerUsername: string
+}
+
+export async function getRecentTrades(): Promise<RecentTrade[]> {
+  const cacheKey = 'marketplace:recent-trades'
+  const cached = await redis.get(cacheKey)
+  if (cached) {
+    try {
+      return JSON.parse(cached) as RecentTrade[]
+    } catch {
+      // fall through
+    }
+  }
+
+  const trades = await db.trade.findMany({
+    where: { status: 'crypto_released', coin: 'USDT' },
+    orderBy: { updatedAt: 'desc' },
+    take: 20,
+    select: {
+      id: true,
+      amount: true,
+      coin: true,
+      updatedAt: true,
+      buyer: { select: { username: true } },
+      seller: { select: { username: true } },
+    },
+  })
+
+  const result: RecentTrade[] = trades.map((t) => ({
+    id: t.id,
+    amount: t.amount.toString(),
+    coin: t.coin,
+    completedAt: t.updatedAt.toISOString(),
+    buyerUsername: t.buyer.username,
+    sellerUsername: t.seller.username,
+  }))
+
+  await redis.set(cacheKey, JSON.stringify(result), 'EX', 30)
   return result
 }
 
@@ -211,11 +268,13 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
     select: {
       id: true,
       username: true,
+      lastSeenAt: true,
       tradeStats: {
         select: {
           badge: true,
           completionRate: true,
           totalTrades: true,
+          completedTrades: true,
           avgRating: true,
         },
       },
@@ -223,6 +282,9 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
         where: { status: 'locked' as const },
         select: { id: true },
         take: 1,
+      },
+      merchant: {
+        select: { id: true, businessName: true, status: true },
       },
     },
   }
@@ -244,6 +306,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
 
   function mapAd(ad: typeof buyAds[0]): AdWithSeller {
     const stats = ad.user.tradeStats
+    const merchant = ad.user.merchant
     return {
       id: ad.id,
       side: ad.side,
@@ -264,10 +327,14 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
         id: ad.user.id,
         username: ad.user.username,
         badge: stats?.badge ?? 'new',
+        lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
+        isMerchant: !!merchant && merchant.status === 'approved',
+        merchantName: merchant?.status === 'approved' ? (merchant.businessName ?? null) : null,
         tradeStats: stats
           ? {
               completionRate: stats.completionRate.toString(),
               totalTrades: stats.totalTrades,
+              completedTrades: stats.completedTrades,
               avgRating: stats.avgRating.toString(),
             }
           : null,
@@ -386,11 +453,13 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     select: {
       id: true,
       username: true,
+      lastSeenAt: true,
       tradeStats: {
         select: {
           badge: true,
           completionRate: true,
           totalTrades: true,
+          completedTrades: true,
           avgRating: true,
         },
       },
@@ -398,6 +467,9 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
         where: { status: 'locked' as const },
         select: { id: true },
         take: 1,
+      },
+      merchant: {
+        select: { id: true, businessName: true, status: true },
       },
     },
   }
@@ -427,6 +499,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items: AdWithSeller[] = (rawItems as any[]).map((ad) => {
     const stats = ad.user.tradeStats
+    const merchant = ad.user.merchant
     const resolvedMethods = [...new Set(
       (ad.paymentMethods as string[]).map((id) => pmTypeMap.get(id) ?? id)
     )]
@@ -450,10 +523,14 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
         id: ad.user.id,
         username: ad.user.username,
         badge: stats?.badge ?? 'new',
+        lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
+        isMerchant: !!merchant && merchant.status === 'approved',
+        merchantName: merchant?.status === 'approved' ? (merchant.businessName ?? null) : null,
         tradeStats: stats
           ? {
               completionRate: stats.completionRate.toString(),
               totalTrades: stats.totalTrades,
+              completedTrades: stats.completedTrades,
               avgRating: stats.avgRating.toString(),
             }
           : null,

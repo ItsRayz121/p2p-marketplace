@@ -8,42 +8,43 @@ import { usePolling } from '@/hooks/usePolling'
 import { notificationsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 import {
-  BuildingStorefrontIcon,
-  CircleStackIcon,
-  FireIcon,
-  TrophyIcon,
-  Squares2X2Icon,
-  BellIcon,
-  ShieldCheckIcon,
-  ClipboardDocumentListIcon,
-  WalletIcon,
-  TagIcon,
-  Cog6ToothIcon,
-  GiftIcon,
-  ArrowRightStartOnRectangleIcon,
-  ChevronDownIcon,
-} from '@heroicons/react/24/solid'
+  ArrowLeftRight,
+  Coins,
+  Fuel,
+  Trophy,
+  LayoutGrid,
+  Bell,
+  ShieldCheck,
+  ClipboardList,
+  Wallet,
+  Tag,
+  Settings,
+  Gift,
+  LogOut,
+  ChevronDown,
+} from 'lucide-react'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { href: string; Icon: React.ElementType; label: string; shortLabel?: string }[] = [
-  { href: '/marketplace', Icon: BuildingStorefrontIcon, label: 'USDT Marketplace', shortLabel: 'Market' },
-  { href: '/ctm',         Icon: CircleStackIcon,        label: 'Community Tokens', shortLabel: 'Tokens' },
-  { href: '/gas',         Icon: FireIcon,               label: 'Crypto Gas Fees',  shortLabel: 'Gas'    },
-  { href: '/leaderboard', Icon: TrophyIcon,             label: 'Leaderboard'                            },
-  { href: '/dashboard',   Icon: Squares2X2Icon,         label: 'Dashboard'                              },
+  { href: '/marketplace', Icon: ArrowLeftRight, label: 'USDT Marketplace', shortLabel: 'Market' },
+  { href: '/ctm',         Icon: Coins,        label: 'Community Tokens', shortLabel: 'Tokens' },
+  { href: '/gas',         Icon: Fuel,               label: 'Crypto Gas Fees',  shortLabel: 'Gas'    },
+  { href: '/leaderboard', Icon: Trophy,             label: 'Leaderboard'                            },
+  { href: '/dashboard',   Icon: LayoutGrid,         label: 'Dashboard'                              },
 ]
 
 const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; iconCls: string; bgCls: string }[] = [
-  { href: '/dashboard',   Icon: Squares2X2Icon,               label: 'Dashboard',        iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'   },
-  { href: '/kyc',         Icon: ShieldCheckIcon,               label: 'KYC Verification', iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'  },
-  { href: '/orders',      Icon: ClipboardDocumentListIcon,     label: 'My Trades',        iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10'},
-  { href: '/wallet',      Icon: WalletIcon,                    label: 'Wallet',           iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10' },
-  { href: '/my-ads',      Icon: TagIcon,                       label: 'My Ads',           iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'   },
-  { href: '/settings',    Icon: Cog6ToothIcon,                 label: 'Settings',         iconCls: 'text-slate-500',   bgCls: 'bg-slate-400/10'  },
-  { href: '/leaderboard', Icon: TrophyIcon,                    label: 'Leaderboard',      iconCls: 'text-yellow-500',  bgCls: 'bg-yellow-500/10' },
-  { href: '/referral',    Icon: GiftIcon,                      label: 'Referral',         iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'   },
+  { href: '/dashboard',   Icon: LayoutGrid,               label: 'Dashboard',        iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'   },
+  { href: '/kyc',         Icon: ShieldCheck,               label: 'KYC Verification', iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'  },
+  { href: '/orders',      Icon: ClipboardList,     label: 'My Trades',        iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10'},
+  { href: '/wallet',      Icon: Wallet,                    label: 'Wallet',           iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10' },
+  { href: '/my-ads',      Icon: Tag,                       label: 'My Ads',           iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'   },
+  { href: '/settings',    Icon: Settings,                 label: 'Settings',         iconCls: 'text-slate-500',   bgCls: 'bg-slate-400/10'  },
+  { href: '/leaderboard', Icon: Trophy,                    label: 'Leaderboard',      iconCls: 'text-yellow-500',  bgCls: 'bg-yellow-500/10' },
+  { href: '/referral',    Icon: Gift,                      label: 'Referral',         iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'   },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -88,12 +89,12 @@ export default function Navbar() {
             <Image
               src="/brand/logo-icon.png"
               alt="RupChain"
-              width={32}
-              height={32}
-              className="w-8 h-8 object-contain flex-shrink-0"
+              width={40}
+              height={40}
+              className="w-10 h-10 object-contain flex-shrink-0"
               priority
             />
-            <span className="hidden sm:block font-bold text-lg text-text-primary tracking-tight leading-none">
+            <span className="hidden sm:block font-black text-xl text-text-primary tracking-normal leading-none">
               RupChain
             </span>
           </Link>
@@ -146,7 +147,7 @@ export default function Navbar() {
                   className="relative p-2 text-text-secondary hover:text-text-primary hover:bg-surface-alt rounded-lg transition-colors"
                   aria-label="Notifications"
                 >
-                  <BellIcon className="w-5 h-5" aria-hidden />
+                  <Bell className="w-5 h-5" aria-hidden />
                   {unreadCount > 0 && (
                     <span className="absolute top-1 right-1 min-w-[18px] h-[18px] bg-danger text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
                       {unreadCount > 99 ? '99+' : unreadCount}
@@ -163,17 +164,15 @@ export default function Navbar() {
                         menuOpen && 'bg-surface-alt',
                       )}
                     >
-                      {user.avatarUrl ? (
-                        <img src={user.avatarUrl} alt="Avatar" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
-                          {(user.fullName || user.username || user.email).charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      <UserAvatar
+                        name={user.fullName || user.username || user.email}
+                        avatarUrl={user.avatarUrl}
+                        size="sm"
+                      />
                       <span className="hidden sm:block text-sm font-medium text-text-primary max-w-[120px] truncate">
                         {user.fullName || user.username || user.email}
                       </span>
-                      <ChevronDownIcon className="w-3.5 h-3.5 text-text-muted hidden sm:block" aria-hidden />
+                      <ChevronDown className="w-3.5 h-3.5 text-text-muted hidden sm:block" aria-hidden />
                     </button>
                   </DropdownMenu.Trigger>
 
@@ -191,7 +190,7 @@ export default function Navbar() {
                           </p>
                           {kycBadge && (
                             <span className={cn('shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none', kycBadge.cls)}>
-                              <ShieldCheckIcon className="w-2.5 h-2.5" aria-hidden />
+                              <ShieldCheck className="w-2.5 h-2.5" aria-hidden />
                               {kycBadge.label}
                             </span>
                           )}
@@ -217,7 +216,7 @@ export default function Navbar() {
                         className={cn(dropdownItemCls, 'text-danger focus:text-danger focus:bg-danger/10')}
                       >
                         <span className="flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0 bg-red-500/10">
-                          <ArrowRightStartOnRectangleIcon className="w-3.5 h-3.5 text-red-500" aria-hidden />
+                          <LogOut className="w-3.5 h-3.5 text-red-500" aria-hidden />
                         </span>
                         Logout
                       </DropdownMenu.Item>

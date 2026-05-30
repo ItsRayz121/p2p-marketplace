@@ -3,13 +3,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  HomeIcon,
-  BuildingStorefrontIcon,
-  FireIcon,
-  WalletIcon,
-  ClipboardDocumentListIcon,
-  CircleStackIcon,
-} from '@heroicons/react/24/solid'
+  Home,
+  ArrowLeftRight,
+  Fuel,
+  Wallet,
+  ClipboardList,
+  Coins,
+} from 'lucide-react'
 
 interface NavItem {
   href: string
@@ -22,35 +22,35 @@ const baseNavItems: NavItem[] = [
   {
     href: '/dashboard',
     label: 'Home',
-    icon: <HomeIcon className="w-6 h-6" />,
+    icon: <Home className="w-6 h-6" />,
   },
   {
     href: '/marketplace',
     label: 'Market',
-    icon: <BuildingStorefrontIcon className="w-6 h-6" />,
+    icon: <ArrowLeftRight className="w-6 h-6" />,
   },
   {
     href: '/gas',
     label: 'Gas',
-    icon: <FireIcon className="w-6 h-6" />,
+    icon: <Fuel className="w-6 h-6" />,
     primary: true,
   },
   {
     href: '/wallet',
     label: 'Wallet',
-    icon: <WalletIcon className="w-6 h-6" />,
+    icon: <Wallet className="w-6 h-6" />,
   },
   {
     href: '/orders',
     label: 'Orders',
-    icon: <ClipboardDocumentListIcon className="w-6 h-6" />,
+    icon: <ClipboardList className="w-6 h-6" />,
   },
 ]
 
 const ctmNavItem: NavItem = {
   href: '/ctm',
   label: 'CTM',
-  icon: <CircleStackIcon className="w-6 h-6" />,
+  icon: <Coins className="w-6 h-6" />,
 }
 
 export default function BottomNav() {
@@ -64,7 +64,7 @@ export default function BottomNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-30 lg:hidden bg-white border-t border-border pb-4 safe-area-inset-bottom">
+    <nav className="fixed bottom-0 inset-x-0 z-30 lg:hidden bg-surface border-t border-border pb-4 safe-area-inset-bottom">
       <div className="flex items-center justify-around h-16">
         {navItems.map((item) => {
           const active = isActive(item.href)

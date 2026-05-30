@@ -20,15 +20,16 @@ function colorFor(name: string): string {
 interface Props {
   name: string
   avatarUrl?: string | null
-  size?: 'xs' | 'sm' | 'md' | 'lg'
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   className?: string
 }
 
 const SIZE = {
-  xs: 'w-5 h-5 text-[9px]',
-  sm: 'w-7 h-7 text-[11px]',
-  md: 'w-9 h-9 text-sm',
-  lg: 'w-12 h-12 text-base',
+  xs:  'w-5 h-5 text-[9px]',
+  sm:  'w-7 h-7 text-[11px]',
+  md:  'w-9 h-9 text-sm',
+  lg:  'w-12 h-12 text-base',
+  xl:  'w-16 h-16 text-xl',
 }
 
 export function UserAvatar({ name, avatarUrl, size = 'sm', className }: Props) {

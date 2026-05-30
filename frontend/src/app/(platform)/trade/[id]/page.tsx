@@ -17,6 +17,7 @@ import { Modal } from '@/components/ui/Modal'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
@@ -514,6 +515,7 @@ export default function TradePage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
+            <UserAvatar name={counterparty} avatarUrl={counterpartyUser?.avatarUrl} size="md" />
             <h1 className="text-xl font-bold text-text-primary">
               Trade with {counterparty}
             </h1>
@@ -859,7 +861,7 @@ export default function TradePage() {
                   <select
                     value={disputeReason}
                     onChange={(e) => setDisputeReason(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-danger"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-danger"
                   >
                     <option value="">Select a reason…</option>
                     <option value="payment_not_received">Payment not received</option>
@@ -966,7 +968,7 @@ export default function TradePage() {
               onChange={(e) => setMessageInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
               placeholder="Type a message..."
-              className="flex-1 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+              className="flex-1 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-surface"
             />
             <Button size="sm" loading={sendingMsg} onClick={handleSendMessage}>Send</Button>
           </div>

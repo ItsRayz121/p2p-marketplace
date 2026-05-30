@@ -458,9 +458,26 @@ export interface MarketplaceAd {
     id: string
     username: string
     badge: string
-    tradeStats: { completionRate: string; totalTrades: number; avgRating: string } | null
+    lastSeenAt: string | null
+    isMerchant: boolean
+    merchantName: string | null
+    tradeStats: {
+      completionRate: string
+      totalTrades: number
+      completedTrades: number
+      avgRating: string
+    } | null
     hasCollateral: boolean
   }
+}
+
+export interface RecentTrade {
+  id: string
+  amount: string
+  coin: string
+  completedAt: string
+  buyerUsername: string
+  sellerUsername: string
 }
 
 export interface KycDocument {
@@ -589,11 +606,13 @@ export const marketplaceApi = {
   getRates: () =>
     apiRequest<{ rates: Record<string, number>; updatedAt: string; source: string }>('/marketplace/rates'),
   getStats: () =>
-    apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; verifiedTraders: number }>('/marketplace/stats'),
+    apiRequest<{ totalUsers: number; totalTrades: number; totalVolume: string; verifiedTraders: number; todayTrades: number }>('/marketplace/stats'),
   getTopAds: () =>
-    apiRequest<{ buys: Ad[]; sells: Ad[] }>('/marketplace/top-ads'),
+    apiRequest<{ buys: MarketplaceAd[]; sells: MarketplaceAd[] }>('/marketplace/top-ads'),
   getConfig: () =>
     apiRequest<Record<string, unknown>>('/marketplace/config'),
+  getRecentTrades: () =>
+    apiRequest<RecentTrade[]>('/marketplace/recent-trades'),
   getAds: (params?: Record<string, string | number | undefined>) => {
     const qs = params
       ? '?' + new URLSearchParams(

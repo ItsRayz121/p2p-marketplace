@@ -177,13 +177,13 @@ function StepIndicator({ phase }: { phase: Phase }) {
         <div key={name} className="flex items-center gap-1">
           <div className={`flex items-center gap-1.5 transition-opacity ${i <= idx ? 'opacity-100' : 'opacity-35'}`}>
             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-              i < idx ? 'bg-purple-600 text-white' : i === idx ? 'bg-purple-600 text-white ring-4 ring-purple-100' : 'bg-gray-100 text-gray-400'
+              i < idx ? 'bg-primary text-white' : i === idx ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-surface-alt text-text-muted'
             }`}>
               {i < idx ? <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg> : i + 1}
             </div>
-            <span className={`hidden sm:block text-xs font-medium ${i === idx ? 'text-purple-600' : 'text-gray-400'}`}>{name}</span>
+            <span className={`hidden sm:block text-xs font-medium ${i === idx ? 'text-primary' : 'text-text-muted'}`}>{name}</span>
           </div>
-          {i < STEP_NAMES.length - 1 && <div className={`w-5 h-px mx-1 ${i < idx ? 'bg-purple-500' : 'bg-gray-200'}`} />}
+          {i < STEP_NAMES.length - 1 && <div className={`w-5 h-px mx-1 ${i < idx ? 'bg-primary/50' : 'bg-border'}`} />}
         </div>
       ))}
     </div>
@@ -195,7 +195,7 @@ function StepIndicator({ phase }: { phase: Phase }) {
 function ChainSkeleton() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-      {Array.from({ length: 10 }).map((_, i) => <div key={i} className="animate-pulse bg-gray-100 rounded-2xl h-28" />)}
+      {Array.from({ length: 10 }).map((_, i) => <div key={i} className="animate-pulse bg-surface-alt rounded-xl h-28" />)}
     </div>
   )
 }
@@ -204,7 +204,7 @@ function ChainSkeleton() {
 
 function BackBtn({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="text-gray-400 hover:text-gray-600 transition-colors">
+    <button onClick={onClick} className="text-text-muted hover:text-text-secondary transition-colors">
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
       </svg>
@@ -216,11 +216,11 @@ function BackBtn({ onClick }: { onClick: () => void }) {
 
 function CardHeader({ onBack, title, sub }: { onBack?: () => void; title: string; sub?: string }) {
   return (
-    <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
+    <div className="flex items-center gap-3 pb-3 border-b border-border">
       {onBack && <BackBtn onClick={onBack} />}
       <div>
-        <p className="text-sm font-bold text-gray-900">{title}</p>
-        {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+        <p className="text-sm font-bold text-text-primary">{title}</p>
+        {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
       </div>
     </div>
   )
@@ -238,16 +238,16 @@ function ProcessingTimeline({ status, isPkr }: { status: string; isPkr: boolean 
         return (
           <div key={label} className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-              done ? 'bg-green-500 text-white' : cur ? 'bg-purple-600 text-white ring-4 ring-purple-100' : 'bg-gray-100 text-gray-300'
+              done ? 'bg-green-500 text-white' : cur ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-surface-alt text-text-disabled'
             }`}>
               {done
                 ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                 : cur
-                ? <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
-                : <div className="w-2 h-2 rounded-full bg-gray-300" />
+                ? <div className="w-3 h-3 rounded-full bg-surface animate-pulse" />
+                : <div className="w-2 h-2 rounded-full bg-text-disabled" />
               }
             </div>
-            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600' : cur ? 'text-purple-700' : 'text-gray-400'}`}>{label}</p>
+            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600' : cur ? 'text-primary' : 'text-text-muted'}`}>{label}</p>
             {cur && <Spinner size="sm" />}
           </div>
         )
@@ -279,25 +279,25 @@ function CustomGasRequest() {
   return (
     <div className="mt-6">
       {!open && (
-        <div className="border border-dashed border-purple-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-purple-50/50">
+        <div className="border border-dashed border-primary/20 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-primary/5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600 flex-shrink-0 text-xl">+</div>
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0 text-xl">+</div>
             <div>
-              <p className="text-sm font-semibold text-gray-800">Can't find your blockchain?</p>
-              <p className="text-xs text-gray-500">Request custom gas fee for any blockchain</p>
+              <p className="text-sm font-semibold text-text-primary">Can't find your blockchain?</p>
+              <p className="text-xs text-text-muted">Request custom gas fee for any blockchain</p>
             </div>
           </div>
-          <button onClick={() => setOpen(true)} className="px-4 py-2 rounded-xl border border-purple-300 text-purple-700 text-sm font-semibold hover:bg-purple-100 transition-colors flex-shrink-0">
+          <button onClick={() => setOpen(true)} className="px-4 py-2 rounded-xl border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/10 transition-colors flex-shrink-0">
             Request Custom Gas Fee
           </button>
         </div>
       )}
 
       {open && (
-        <div className="border border-purple-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-          <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-purple-100">
-            <p className="text-sm font-bold text-gray-900">Custom Gas Fee Request</p>
-            <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+        <div className="border border-primary/20 rounded-xl overflow-hidden bg-surface shadow-card">
+          <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-primary/5 to-blue-50 border-b border-primary/10">
+            <p className="text-sm font-bold text-text-primary">Custom Gas Fee Request</p>
+            <button onClick={() => setOpen(false)} className="text-text-muted hover:text-text-secondary">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
@@ -306,8 +306,8 @@ function CustomGasRequest() {
               <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
                 <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
               </div>
-              <p className="text-base font-bold text-gray-900 mb-1">Request Submitted!</p>
-              <p className="text-sm text-gray-500">Our team will review and contact you within 24 hours.</p>
+              <p className="text-base font-bold text-text-primary mb-1">Request Submitted!</p>
+              <p className="text-sm text-text-muted">Our team will review and contact you within 24 hours.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -318,15 +318,15 @@ function CustomGasRequest() {
                 { label: 'Contact Email',     key: 'contactEmail',    placeholder: 'your@email.com' },
               ].map(f => (
                 <div key={f.key}>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{f.label}</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1.5">{f.label}</label>
                   <input type={f.key === 'contactEmail' ? 'email' : 'text'} placeholder={f.placeholder} value={(form as Record<string,string>)[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" required={f.key === 'blockchainName' || f.key === 'token'} />
+                    className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required={f.key === 'blockchainName' || f.key === 'token'} />
                 </div>
               ))}
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Purpose *</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5">Purpose *</label>
                 <select value={form.purpose} onChange={e => setForm(p => ({ ...p, purpose: e.target.value }))} required
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white">
+                  className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-surface">
                   <option value="">Select purpose</option>
                   <option value="wallet_activation">Wallet Activation</option>
                   <option value="airdrop_gas">Airdrop Gas Refill</option>
@@ -337,25 +337,25 @@ function CustomGasRequest() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Urgency</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5">Urgency</label>
                 <select value={form.urgency} onChange={e => setForm(p => ({ ...p, urgency: e.target.value }))}
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white">
+                  className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-surface">
                   <option value="low">Low</option>
                   <option value="normal">Normal</option>
                   <option value="urgent">Urgent</option>
                 </select>
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Additional Details</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5">Additional Details</label>
                 <textarea rows={3} maxLength={500} placeholder="Describe your requirements..." value={form.details} onChange={e => setForm(p => ({ ...p, details: e.target.value }))}
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none" />
-                <p className="text-right text-xs text-gray-400">{form.details.length}/500</p>
+                  className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+                <p className="text-right text-xs text-text-muted">{form.details.length}/500</p>
               </div>
               {error && <p className="sm:col-span-2 text-sm text-red-500">{error}</p>}
               <div className="sm:col-span-2 flex gap-3">
-                <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold text-text-secondary hover:bg-surface-alt">Cancel</button>
                 <button type="submit" disabled={submitting || !form.blockchainName || !form.token || !form.purpose}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                   {submitting ? <Spinner size="sm" /> : 'Submit Request'}
                 </button>
               </div>
@@ -710,27 +710,27 @@ export default function GasPage() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-canvas">
 
       {/* ── Sticky header ──────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
+      <div className="bg-surface border-b border-border">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white">
                 <Fuel size={18} />
               </div>
             <div>
-              <h1 className="text-base font-bold text-gray-900 leading-tight">Buy Gas Instantly</h1>
-              <p className="text-xs text-gray-500">Pay with PKR or USDT</p>
+              <h1 className="text-base font-bold text-text-primary leading-tight">Buy Gas Instantly</h1>
+              <p className="text-xs text-text-muted">Pay with PKR or USDT</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/dashboard" className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors px-2 py-1.5">
+            <Link href="/dashboard" className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors px-2 py-1.5">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
               Dashboard
             </Link>
             {user && (
-              <Link href="/gas/orders" className="flex items-center gap-1.5 text-xs text-purple-600 font-semibold border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50 transition-colors">
+              <Link href="/gas/orders" className="flex items-center gap-1.5 text-xs text-primary font-semibold border border-primary/20 rounded-lg px-3 py-1.5 hover:bg-primary/5 transition-colors">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                 My Orders
               </Link>
@@ -747,8 +747,8 @@ export default function GasPage() {
         {phase === PHASE.CHAINS && (
           <div>
             <div className="text-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Select Blockchain</h2>
-              <p className="text-sm text-gray-500 mt-1">Choose a blockchain to view gas fee and create gas orders</p>
+              <h2 className="text-xl font-bold text-text-primary">Select Blockchain</h2>
+              <p className="text-sm text-text-muted mt-1">Choose a blockchain to view gas fee and create gas orders</p>
             </div>
 
             {chainsLoading && <ChainSkeleton />}
@@ -757,12 +757,12 @@ export default function GasPage() {
             {!chainsLoading && !chainsError && chains.length === 0 && (
               <div className="text-center py-16 px-4">
                 <div className="flex justify-center mb-4">
-                  <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-xl bg-amber-50 flex items-center justify-center">
                     <Fuel size={32} className="text-amber-500" />
                   </div>
                 </div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">⛽ Gas Fee Service Unavailable</h3>
-                <p className="text-sm text-gray-500 max-w-sm mx-auto">
+                <h3 className="text-lg font-semibold text-text-primary mb-2">⛽ Gas Fee Service Unavailable</h3>
+                <p className="text-sm text-text-muted max-w-sm mx-auto">
                   No blockchain networks are currently active. Check back soon — we&apos;re working on expanding coverage.
                 </p>
               </div>
@@ -777,20 +777,20 @@ export default function GasPage() {
                       key={chain.id}
                       onClick={() => handleSelectChain(chain)}
                       disabled={inactive}
-                      className={`group flex flex-col items-center justify-center gap-2.5 p-4 rounded-2xl border-2 text-center transition-all duration-200 h-full min-h-[150px] ${
+                      className={`group flex flex-col items-center justify-center gap-2.5 p-4 rounded-xl border-2 text-center transition-all duration-200 h-full min-h-[150px] ${
                         inactive
-                          ? 'opacity-50 cursor-not-allowed border-gray-100 bg-white'
+                          ? 'opacity-50 cursor-not-allowed border-border bg-surface'
                           : selectedChain?.id === chain.id
-                          ? 'border-purple-400 bg-purple-50 shadow-md shadow-purple-100'
-                          : 'border-gray-100 bg-white hover:border-purple-300 hover:shadow-md hover:scale-[1.03]'
+                          ? 'border-primary bg-primary/5 shadow-md shadow-primary/10'
+                          : 'border-border bg-surface hover:border-primary/30 hover:shadow-md hover:scale-[1.03]'
                       }`}
                     >
                       <div className={!inactive ? 'group-hover:scale-110 transition-transform' : ''}>
                         <ChainLogo chain={chain} />
                       </div>
                       <div className="min-w-0 w-full">
-                        <p className="text-xs font-bold text-gray-800 truncate">{chain.name}</p>
-                        <p className="text-xs text-gray-400 font-medium">{chain.symbol}</p>
+                        <p className="text-xs font-bold text-text-primary truncate">{chain.name}</p>
+                        <p className="text-xs text-text-muted font-medium">{chain.symbol}</p>
                       </div>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gradient-to-r ${catGradient(chain.category)} text-white`}>
                         {CAT_LABELS[chain.category] ?? chain.category}
@@ -821,7 +821,7 @@ export default function GasPage() {
         {phase > PHASE.CHAINS && (
           <div>
             <StepIndicator phase={phase} />
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-surface rounded-xl shadow-card border border-border overflow-hidden">
 
               {/* ─────────────────────────────────────────────────────────── */}
               {/* PHASE 1 — Token Selection                                   */}
@@ -848,35 +848,35 @@ export default function GasPage() {
                             disabled={inactive}
                             className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all duration-200 ${
                               inactive
-                                ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                                ? 'border-border bg-surface-alt opacity-60 cursor-not-allowed'
                                 : sel
-                                  ? 'border-purple-400 bg-gradient-to-r from-purple-50 to-blue-50'
-                                  : 'border-gray-100 bg-gray-50 hover:border-purple-200'
+                                  ? 'border-primary bg-gradient-to-r from-primary/5 to-blue-50'
+                                  : 'border-border bg-surface-alt hover:border-primary/20'
                             }`}>
                             <TokenLogo token={t} cat={selectedChain.category} sizeCls="w-12 h-12" />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <p className="text-sm font-bold text-gray-900">{t.name}</p>
+                                <p className="text-sm font-bold text-text-primary">{t.name}</p>
                                 {inactive && (
-                                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-gray-200 text-gray-500">Soon</span>
+                                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-border text-text-muted">Soon</span>
                                 )}
                                 {!inactive && t.rateStale && (
                                   <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700">Rate stale</span>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-400">{t.symbol} · {selectedChain.networkLabel}</p>
+                              <p className="text-xs text-text-muted">{t.symbol} · {selectedChain.networkLabel}</p>
                             </div>
                             <div className="text-right">
                               {inactive ? (
-                                <p className="text-sm text-gray-400">Coming soon</p>
+                                <p className="text-sm text-text-muted">Coming soon</p>
                               ) : (
                                 <>
-                                  <p className={`text-sm font-bold ${t.rateStale ? 'text-yellow-600' : 'text-gray-900'}`}>{displayPrice}</p>
-                                  <p className="text-xs text-gray-400">{displaySub || `per ${t.symbol}`}</p>
+                                  <p className={`text-sm font-bold ${t.rateStale ? 'text-yellow-600' : 'text-text-primary'}`}>{displayPrice}</p>
+                                  <p className="text-xs text-text-muted">{displaySub || `per ${t.symbol}`}</p>
                                 </>
                               )}
                             </div>
-                            {!inactive && sel && <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
+                            {!inactive && sel && <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
                           </button>
                         )
                       })}
@@ -896,20 +896,20 @@ export default function GasPage() {
                 <div className="p-5 space-y-4">
                   <CardHeader onBack={() => setPhase(PHASE.TOKEN)} title="Choose Amount" />
 
-                  <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3 text-sm">
+                  <div className="flex items-center justify-between bg-surface-alt rounded-xl px-4 py-3 text-sm">
                     <div>
-                      <span className="text-gray-500">Market Price</span>
-                      <p className="text-xs text-gray-400 mt-0.5">1 {selectedToken.symbol}</p>
+                      <span className="text-text-muted">Market Price</span>
+                      <p className="text-xs text-text-muted mt-0.5">1 {selectedToken.symbol}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-gray-900">${priceUsd.toFixed(4)}</p>
-                      <p className="text-xs text-gray-400">≈ PKR {pricePkr.toFixed(0)}</p>
+                      <p className="font-bold text-text-primary">${priceUsd.toFixed(4)}</p>
+                      <p className="text-xs text-text-muted">≈ PKR {pricePkr.toFixed(0)}</p>
                     </div>
                   </div>
 
                   {/* Preset chips */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Quick Select</p>
+                    <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Quick Select</p>
                     <div className="flex flex-wrap gap-2">
                       {selectedToken.presetAmounts.map(preset => {
                         const usdVal = preset * priceUsd
@@ -918,13 +918,13 @@ export default function GasPage() {
                         return (
                           <button key={preset} onClick={() => { if (!tooHigh) { setAmount(String(preset)); if (usdVal > maxUsd) setAmountError(`Exceeds $${maxUsd} limit`); else setAmountError('') } }} disabled={tooHigh}
                             className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all flex flex-col items-center ${
-                              active    ? 'border-purple-500 bg-purple-600 text-white shadow-sm'
-                              : tooHigh ? 'border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed'
-                              :           'border-gray-200 bg-white text-gray-700 hover:border-purple-300'
+                              active    ? 'border-primary bg-primary text-white shadow-card'
+                              : tooHigh ? 'border-border text-text-disabled bg-surface-alt cursor-not-allowed'
+                              :           'border-border bg-surface text-text-secondary hover:border-primary/30'
                             }`}>
                             <span>{preset} {selectedToken.symbol}</span>
                             {priceUsd > 0 && (
-                              <span className={`text-[10px] font-medium mt-0.5 ${active ? 'text-purple-100' : tooHigh ? 'text-gray-300' : 'text-gray-400'}`}>
+                              <span className={`text-[10px] font-medium mt-0.5 ${active ? 'text-white/70' : tooHigh ? 'text-text-disabled' : 'text-text-muted'}`}>
                                 ≈ ${usdVal.toFixed(2)}
                               </span>
                             )}
@@ -936,16 +936,16 @@ export default function GasPage() {
 
                   {/* Custom input */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Custom Amount ({selectedToken.symbol})</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5">Custom Amount ({selectedToken.symbol})</label>
                     <Input type="number" placeholder={`Min ${minAmount}`} value={amount}
                       onChange={e => { const v = e.target.value; setAmount(v); if (v) validateAmountField(v); else setAmountError('') }}
                       onBlur={() => { if (amount) validateAmountField(amount) }} min={minAmount} step="any" />
                     {amountError && <p className="text-xs text-red-500 mt-1">{amountError}</p>}
                     {amountNum > 0 && !amountError && (
-                      <div className={`text-xs mt-1.5 space-y-0.5 ${usdExceeded ? 'text-red-500' : 'text-gray-500'}`}>
+                      <div className={`text-xs mt-1.5 space-y-0.5 ${usdExceeded ? 'text-red-500' : 'text-text-muted'}`}>
                         <div className="flex gap-2">
                           <span>≈ <span className="font-semibold">${gasValueUsd.toFixed(4)}</span> market value</span>
-                          <span className="text-gray-400">≈ PKR {(gasValueUsd * usdPkrRate).toFixed(0)}</span>
+                          <span className="text-text-muted">≈ PKR {(gasValueUsd * usdPkrRate).toFixed(0)}</span>
                         </div>
                         {usdExceeded && <span className="font-semibold">— exceeds ${maxUsd} limit</span>}
                       </div>
@@ -971,10 +971,10 @@ export default function GasPage() {
                 <div className="p-5 space-y-4">
                   <CardHeader onBack={() => setPhase(PHASE.AMOUNT)} title={`Enter ${selectedChain.networkLabel} Address`} />
 
-                  <p className="text-xs text-gray-500">The wallet address that needs {selectedToken.symbol} for gas.</p>
+                  <p className="text-xs text-text-muted">The wallet address that needs {selectedToken.symbol} for gas.</p>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">{selectedChain.name} Wallet Address</label>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1.5">{selectedChain.name} Wallet Address</label>
                     <Input placeholder={addressPlaceholder(selectedChain.addressType)} value={address}
                       onChange={e => { setAddress(e.target.value); if (addressError) validateAddressField(e.target.value) }}
                       onBlur={() => validateAddressField(address)} />
@@ -988,41 +988,41 @@ export default function GasPage() {
                   </div>
 
                   {/* Order Summary — all fees before proceeding to payment */}
-                  <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-xs">
-                    <p className="font-bold text-gray-400 uppercase tracking-wide mb-1">Order Summary</p>
-                    <div className="flex justify-between"><span className="text-gray-500">Network</span><span className="font-semibold text-gray-800">{selectedChain.name}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Token</span><span className="font-semibold text-gray-800">{selectedToken.symbol}</span></div>
+                  <div className="bg-surface-alt rounded-xl p-4 space-y-2 text-xs">
+                    <p className="font-bold text-text-muted uppercase tracking-wide mb-1">Order Summary</p>
+                    <div className="flex justify-between"><span className="text-text-muted">Network</span><span className="font-semibold text-text-primary">{selectedChain.name}</span></div>
+                    <div className="flex justify-between"><span className="text-text-muted">Token</span><span className="font-semibold text-text-primary">{selectedToken.symbol}</span></div>
                     <div className="flex justify-between">
-                      <span className="text-gray-500">Amount</span>
-                      <span className="font-semibold text-gray-800">
+                      <span className="text-text-muted">Amount</span>
+                      <span className="font-semibold text-text-primary">
                         {amount} {selectedToken.symbol}
-                        {priceUsd > 0 && amountNum > 0 && <span className="text-gray-400 font-normal"> (≈ ${gasValueUsd.toFixed(2)})</span>}
+                        {priceUsd > 0 && amountNum > 0 && <span className="text-text-muted font-normal"> (≈ ${gasValueUsd.toFixed(2)})</span>}
                       </span>
                     </div>
                     {priceUsd > 0 && amountNum > 0 && (
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Market Price</span>
-                        <span className="font-semibold text-gray-800">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
+                        <span className="text-text-muted">Market Price</span>
+                        <span className="font-semibold text-text-primary">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
                       </div>
                     )}
                     {priceUsd > 0 && amountNum > 0 && (
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Token Value</span>
-                        <span className="font-semibold text-gray-800">${gasValueUsd.toFixed(2)} USDT</span>
+                        <span className="text-text-muted">Token Value</span>
+                        <span className="font-semibold text-text-primary">${gasValueUsd.toFixed(2)} USDT</span>
                       </div>
                     )}
-                    <div className="pt-1.5 border-t border-gray-200 space-y-1.5">
-                      <p className="text-gray-400 font-semibold uppercase tracking-wide" style={{fontSize:'0.65rem'}}>Platform charges</p>
+                    <div className="pt-1.5 border-t border-border space-y-1.5">
+                      <p className="text-text-muted font-semibold uppercase tracking-wide" style={{fontSize:'0.65rem'}}>Platform charges</p>
                       {networkFee?.supported && (networkFee.estimatedFeeNative ?? 0) > 0 ? (
                         <div className="flex justify-between items-start gap-2">
-                          <span className="text-gray-600 font-medium">
+                          <span className="text-text-secondary font-medium">
                             {selectedChain.name} Network Fee
-                            {networkFee.gasPriceGwei != null && <span className="text-gray-400 font-normal"> · {networkFee.gasPriceGwei.toFixed(2)} Gwei</span>}
+                            {networkFee.gasPriceGwei != null && <span className="text-text-muted font-normal"> · {networkFee.gasPriceGwei.toFixed(2)} Gwei</span>}
                           </span>
-                          <span className="font-semibold text-gray-800 text-right">
+                          <span className="font-semibold text-text-primary text-right">
                             <span className="block">~{(networkFee.estimatedFeeNative ?? 0).toFixed(6)} {networkFee.symbol}</span>
                             {networkFee.estimatedFeeUsd != null && (
-                              <span className="block text-gray-500 font-normal">
+                              <span className="block text-text-muted font-normal">
                                 {networkFee.estimatedFeeUsd < 0.001 ? `≈ $${networkFee.estimatedFeeUsd.toFixed(5)}` : networkFee.estimatedFeeUsd < 0.01 ? `≈ $${networkFee.estimatedFeeUsd.toFixed(4)}` : `≈ $${networkFee.estimatedFeeUsd.toFixed(3)}`}
                               </span>
                             )}
@@ -1030,27 +1030,27 @@ export default function GasPage() {
                         </div>
                       ) : (
                         <div className="flex justify-between">
-                          <span className="text-gray-600 font-medium">{selectedChain.name} Network Fee</span>
-                          <span className="text-gray-400 italic">included in platform fee</span>
+                          <span className="text-text-secondary font-medium">{selectedChain.name} Network Fee</span>
+                          <span className="text-text-muted italic">included in platform fee</span>
                         </div>
                       )}
                       <div className="flex justify-between">
-                        <span className="text-gray-600 font-medium">Platform Service Fee</span>
-                        <span className="font-semibold text-gray-800">${platformFeeUsdt.toFixed(2)} USDT</span>
+                        <span className="text-text-secondary font-medium">Platform Service Fee</span>
+                        <span className="font-semibold text-text-primary">${platformFeeUsdt.toFixed(2)} USDT</span>
                       </div>
                     </div>
-                    <div className="flex justify-between pt-2 border-t border-gray-200">
-                      <span className="text-gray-700 font-semibold">You Pay</span>
+                    <div className="flex justify-between pt-2 border-t border-border">
+                      <span className="text-text-secondary font-semibold">You Pay</span>
                       <div className="text-right">
-                        <p className="font-bold text-purple-700">${computedUsd.toFixed(2)} USDT</p>
-                        <p className="text-gray-400">≈ PKR {computedPkr.toFixed(0)}</p>
+                        <p className="font-bold text-primary">${computedUsd.toFixed(2)} USDT</p>
+                        <p className="text-text-muted">≈ PKR {computedPkr.toFixed(0)}</p>
                       </div>
                     </div>
                     {networkFee?.supported && networkFee.estimatedFeeNative != null && amountNum > 0 && networkFee.estimatedFeeNative > 0 && (
-                      <div className="mt-1 pt-2 border-t border-gray-200">
-                        <div className="flex items-start gap-1.5 text-gray-500">
+                      <div className="mt-1 pt-2 border-t border-border">
+                        <div className="flex items-start gap-1.5 text-text-muted">
                           <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                          <p className="text-gray-400">
+                          <p className="text-text-muted">
                             Your {amount} {selectedToken.symbol} covers ~{Math.floor(amountNum / networkFee.estimatedFeeNative).toLocaleString()} {selectedChain.name} transfers
                           </p>
                         </div>
@@ -1074,11 +1074,11 @@ export default function GasPage() {
 
                   {/* Context pills */}
                   <div className="flex items-center gap-2 flex-wrap text-xs">
-                    <span className="flex items-center gap-1.5 bg-gray-100 rounded-full px-3 py-1">
+                    <span className="flex items-center gap-1.5 bg-surface-alt rounded-full px-3 py-1">
                       <ChainLogo chain={selectedChain} sizeCls="w-4 h-4" />
                       {selectedToken.symbol} · {selectedChain.networkLabel}
                     </span>
-                    <span className="bg-purple-100 text-purple-700 rounded-full px-3 py-1 font-bold">${computedUsd.toFixed(2)} USDT</span>
+                    <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${computedUsd.toFixed(2)} USDT</span>
                     <span className="bg-green-100 text-green-700 rounded-full px-3 py-1 font-bold">≈ PKR {computedPkr.toFixed(0)}</span>
                   </div>
 
@@ -1089,16 +1089,16 @@ export default function GasPage() {
 
                       {/* ── Pay with PKR ──────────────────────────────────── */}
                       <button onClick={() => setPhase(PHASE.PKR_METHOD)}
-                        className="flex flex-col gap-3 p-5 rounded-2xl border-2 border-gray-200 bg-white hover:border-green-400 hover:shadow-sm transition-all text-left group">
+                        className="flex flex-col gap-3 p-5 rounded-xl border-2 border-border bg-surface hover:border-green-400 hover:shadow-card transition-all text-left group">
                         <div className="flex items-center justify-between">
-                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-xl shadow-sm">₨</div>
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-xl shadow-card">₨</div>
                           <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">Easy & Fast</span>
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-gray-900 mb-0.5">Pay with PKR</p>
-                          <p className="text-xs text-gray-500">Bank Transfer · Easypaisa · JazzCash</p>
+                          <p className="text-sm font-bold text-text-primary mb-0.5">Pay with PKR</p>
+                          <p className="text-xs text-text-muted">Bank Transfer · Easypaisa · JazzCash</p>
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                        <div className="flex items-center gap-1.5 text-xs text-text-muted">
                           <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                           No crypto needed
                         </div>
@@ -1106,16 +1106,16 @@ export default function GasPage() {
 
                       {/* ── Pay with Crypto ───────────────────────────────── */}
                       <button onClick={() => setPhase(PHASE.CRYPTO_NETWORK)}
-                        className="flex flex-col gap-3 p-5 rounded-2xl border-2 border-gray-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all text-left group">
+                        className="flex flex-col gap-3 p-5 rounded-xl border-2 border-border bg-surface hover:border-blue-400 hover:shadow-card transition-all text-left group">
                         <div className="flex items-center justify-between">
-                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-sm">₮</div>
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-card">₮</div>
                           <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2.5 py-1 rounded-full">Low Fees</span>
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-gray-900 mb-0.5">Pay with Crypto</p>
-                          <p className="text-xs text-gray-500">USDT BEP20 · USDT Aptos</p>
+                          <p className="text-sm font-bold text-text-primary mb-0.5">Pay with Crypto</p>
+                          <p className="text-xs text-text-muted">USDT BEP20 · USDT Aptos</p>
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                        <div className="flex items-center gap-1.5 text-xs text-text-muted">
                           <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                           Instant payment detection
                         </div>
@@ -1141,16 +1141,16 @@ export default function GasPage() {
                       return (
                         <button key={key} onClick={() => configured && setSelectedPkrMethod(key)} disabled={!configured}
                           className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                            !configured ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
-                            : sel ? 'border-purple-400 bg-purple-50'
-                            : 'border-gray-100 bg-white hover:border-purple-200'
+                            !configured ? 'opacity-40 cursor-not-allowed border-border bg-surface-alt'
+                            : sel ? 'border-primary bg-primary/5'
+                            : 'border-border bg-surface hover:border-primary/20'
                           }`}>
                           <PkrMethodIcon methodKey={key} pkrMethods={pkrMethods} sizeCls="w-12 h-12" />
                           <div className="flex-1">
-                            <p className="text-sm font-bold text-gray-900">{meta.label}</p>
-                            <p className="text-xs text-gray-400">{configured ? meta.desc : 'Currently unavailable'}</p>
+                            <p className="text-sm font-bold text-text-primary">{meta.label}</p>
+                            <p className="text-xs text-text-muted">{configured ? meta.desc : 'Currently unavailable'}</p>
                           </div>
-                          {sel && <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
+                          {sel && <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
                         </button>
                       )
                     })}
@@ -1158,35 +1158,35 @@ export default function GasPage() {
 
                   {/* PKR Breakdown */}
                   {selectedPkrMethod && (
-                    <div className="bg-gray-50 rounded-xl p-4 space-y-2.5 text-sm">
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Payment Breakdown</p>
+                    <div className="bg-surface-alt rounded-xl p-4 space-y-2.5 text-sm">
+                      <p className="text-xs font-bold text-text-muted uppercase tracking-wide">Payment Breakdown</p>
                       <div className="space-y-2">
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Gas Ordered</span>
+                          <span className="text-text-muted">Gas Ordered</span>
                           <span className="font-semibold">{amount} {selectedToken.symbol}</span>
                         </div>
                         {priceUsd > 0 && (
                           <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Market Price</span>
+                            <span className="text-text-muted">Market Price</span>
                             <span className="font-semibold">${priceUsd.toFixed(4)} / {selectedToken.symbol}</span>
                           </div>
                         )}
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Token Value</span>
+                          <span className="text-text-muted">Token Value</span>
                           <span className="font-semibold">${gasValueUsd.toFixed(2)} USDT</span>
                         </div>
                         <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Platform Fee</span>
+                          <span className="text-text-muted">Platform Fee</span>
                           <span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span>
                         </div>
                         {usdPkrRate > 0 && (
                           <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Exchange Rate</span>
+                            <span className="text-text-muted">Exchange Rate</span>
                             <span className="font-semibold">1 USDT ≈ PKR {usdPkrRate.toFixed(0)}</span>
                           </div>
                         )}
-                        <div className="flex justify-between pt-2 border-t border-gray-200">
-                          <span className="font-bold text-gray-800">Total Payable in PKR</span>
+                        <div className="flex justify-between pt-2 border-t border-border">
+                          <span className="font-bold text-text-primary">Total Payable in PKR</span>
                           <span className="font-bold text-green-700 text-base">PKR {computedPkr.toFixed(0)}</span>
                         </div>
                       </div>
@@ -1220,12 +1220,12 @@ export default function GasPage() {
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <PkrMethodIcon methodKey={selectedPkrMethod} pkrMethods={pkrMethods} sizeCls="w-8 h-8" />
-                      <p className="text-sm font-bold text-gray-900">Send via {PKR_METHOD_META[selectedPkrMethod].label}</p>
+                      <p className="text-sm font-bold text-text-primary">Send via {PKR_METHOD_META[selectedPkrMethod].label}</p>
                     </div>
 
                     {/* Amount to send */}
                     <div className="bg-surface shadow-card rounded-xl p-3 flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Amount to Send</span>
+                      <span className="text-xs text-text-muted">Amount to Send</span>
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-bold text-green-700">PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</span>
                         <CopyButton text={String(order.pkrAmount ?? computedPkr.toFixed(0))} />
@@ -1241,10 +1241,10 @@ export default function GasPage() {
                       return (
                         <div className="space-y-2">
                           {details.map(({ label, value }) => value && (
-                            <div key={label} className="bg-white rounded-xl px-3 py-2.5 flex items-center justify-between">
-                              <span className="text-xs text-gray-500">{label}</span>
+                            <div key={label} className="bg-surface rounded-xl px-3 py-2.5 flex items-center justify-between">
+                              <span className="text-xs text-text-muted">{label}</span>
                               <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-gray-900 font-mono">{value}</span>
+                                <span className="text-xs font-bold text-text-primary font-mono">{value}</span>
                                 <CopyButton text={value} />
                               </div>
                             </div>
@@ -1262,14 +1262,14 @@ export default function GasPage() {
 
                   {/* Proof upload */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-700 mb-2">Upload Payment Screenshot</p>
-                    <label className={`flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${proofUrl ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-purple-300 bg-gray-50'}`}>
+                    <p className="text-xs font-semibold text-text-secondary mb-2">Upload Payment Screenshot</p>
+                    <label className={`flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${proofUrl ? 'border-green-400 bg-green-50' : 'border-border hover:border-primary/30 bg-surface-alt'}`}>
                       <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadFile(f) }} />
                       {uploading
-                        ? <><Spinner size="md" /><p className="text-xs text-gray-500">Uploading...</p></>
+                        ? <><Spinner size="md" /><p className="text-xs text-text-muted">Uploading...</p></>
                         : proofUrl
-                        ? <><svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><p className="text-xs text-green-600 font-semibold">Screenshot uploaded</p><p className="text-xs text-gray-400">Click to replace</p></>
-                        : <><svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><p className="text-xs text-gray-500">Click to upload screenshot</p><p className="text-xs text-gray-400">JPEG, PNG, WebP · Max 10MB</p></>
+                        ? <><svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><p className="text-xs text-green-600 font-semibold">Screenshot uploaded</p><p className="text-xs text-text-muted">Click to replace</p></>
+                        : <><svg className="w-8 h-8 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><p className="text-xs text-text-muted">Click to upload screenshot</p><p className="text-xs text-text-muted">JPEG, PNG, WebP · Max 10MB</p></>
                       }
                     </label>
                     {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
@@ -1297,20 +1297,20 @@ export default function GasPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <p className="text-base font-bold text-gray-900 mb-1">Proof Submitted!</p>
-                    <p className="text-sm text-gray-500">Our team is reviewing your payment. Gas will be released after verification (usually within 30–60 minutes during business hours).</p>
+                    <p className="text-base font-bold text-text-primary mb-1">Proof Submitted!</p>
+                    <p className="text-sm text-text-muted">Our team is reviewing your payment. Gas will be released after verification (usually within 30–60 minutes during business hours).</p>
                   </div>
 
                   {/* Status tracker */}
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Order Status</p>
+                  <div className="bg-surface-alt rounded-xl p-4">
+                    <p className="text-xs font-bold text-text-muted uppercase tracking-wide mb-3">Order Status</p>
                     <ProcessingTimeline status={order.status} isPkr />
                   </div>
 
-                  <div className="bg-gray-50 rounded-xl p-3 space-y-2 text-xs">
-                    <div className="flex justify-between"><span className="text-gray-500">Order ID</span><span className="font-mono text-gray-700">{order.orderRef}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Amount Ordered</span><span className="font-semibold">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">PKR Paid</span><span className="font-semibold text-green-700">PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</span></div>
+                  <div className="bg-surface-alt rounded-xl p-3 space-y-2 text-xs">
+                    <div className="flex justify-between"><span className="text-text-muted">Order ID</span><span className="font-mono text-text-secondary">{order.orderRef}</span></div>
+                    <div className="flex justify-between"><span className="text-text-muted">Amount Ordered</span><span className="font-semibold">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>
+                    <div className="flex justify-between"><span className="text-text-muted">PKR Paid</span><span className="font-semibold text-green-700">PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</span></div>
                   </div>
 
                   {order.status === 'delivered' && (
@@ -1350,10 +1350,10 @@ export default function GasPage() {
                           disabled={!bepConfigured}
                           className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
                             !bepConfigured
-                              ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
+                              ? 'opacity-50 cursor-not-allowed border-border bg-surface-alt'
                               : selectedCryptoNetwork === 'BEP20'
-                              ? 'border-purple-400 bg-purple-50'
-                              : 'border-gray-100 bg-white hover:border-purple-200'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border bg-surface hover:border-primary/20'
                           }`}
                         >
                           {cryptoMethods?.bep20?.logoUrl
@@ -1361,19 +1361,19 @@ export default function GasPage() {
                             : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">BNB</div>
                           }
                           <div className="flex-1">
-                            <p className="text-sm font-bold text-gray-900">USDT BEP20</p>
-                            <p className="text-xs text-gray-400">
+                            <p className="text-sm font-bold text-text-primary">USDT BEP20</p>
+                            <p className="text-xs text-text-muted">
                               {bepConfigured ? 'BNB Smart Chain · est. ~$0.29 network fee' : 'Coming soon — not yet configured'}
                             </p>
                             {bepAddr && (
-                              <p className="text-xs font-mono text-gray-400 mt-0.5">{bepAddr.slice(0, 8)}...{bepAddr.slice(-6)}</p>
+                              <p className="text-xs font-mono text-text-muted mt-0.5">{bepAddr.slice(0, 8)}...{bepAddr.slice(-6)}</p>
                             )}
                           </div>
                           {bepConfigured
                             ? selectedCryptoNetwork === 'BEP20'
-                              ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                              : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 flex-shrink-0">Select</span>
-                            : <span className="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full flex-shrink-0">Soon</span>
+                              ? <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                              : <span className="text-xs text-text-muted border border-border rounded-full px-2 py-0.5 flex-shrink-0">Select</span>
+                            : <span className="text-xs bg-surface-alt text-text-muted font-semibold px-2 py-0.5 rounded-full flex-shrink-0">Soon</span>
                           }
                         </button>
                       )
@@ -1387,8 +1387,8 @@ export default function GasPage() {
                           onClick={() => setSelectedCryptoNetwork('APTOS')}
                           className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
                             selectedCryptoNetwork === 'APTOS'
-                              ? 'border-purple-400 bg-purple-50'
-                              : 'border-gray-100 bg-white hover:border-purple-200'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border bg-surface hover:border-primary/20'
                           }`}
                         >
                           {cryptoMethods?.aptos?.logoUrl
@@ -1396,17 +1396,17 @@ export default function GasPage() {
                             : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">APT</div>
                           }
                           <div className="flex-1">
-                            <p className="text-sm font-bold text-gray-900">USDT Aptos</p>
-                            <p className="text-xs text-gray-400">Aptos Network · ~$0.01 network fee</p>
+                            <p className="text-sm font-bold text-text-primary">USDT Aptos</p>
+                            <p className="text-xs text-text-muted">Aptos Network · ~$0.01 network fee</p>
                             {aptosAddr && (
-                              <p className="text-xs font-mono text-gray-400 mt-0.5">{aptosAddr.slice(0, 8)}...{aptosAddr.slice(-6)}</p>
+                              <p className="text-xs font-mono text-text-muted mt-0.5">{aptosAddr.slice(0, 8)}...{aptosAddr.slice(-6)}</p>
                             )}
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span className="text-xs bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">Lowest Fee</span>
                             {selectedCryptoNetwork === 'APTOS'
-                              ? <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                              : <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">Select</span>
+                              ? <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                              : <span className="text-xs text-text-muted border border-border rounded-full px-2 py-0.5">Select</span>
                             }
                           </div>
                         </button>
@@ -1429,8 +1429,8 @@ export default function GasPage() {
               {/* ─────────────────────────────────────────────────────────── */}
               {phase === PHASE.CRYPTO_QR && order && (
                 <div className="p-5 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                    <p className="text-sm font-bold text-gray-900">Make Payment</p>
+                  <div className="flex items-center justify-between pb-3 border-b border-border">
+                    <p className="text-sm font-bold text-text-primary">Make Payment</p>
                     <Badge variant={statusVariant(order.status)} size="sm">{STATUS_LABELS[order.status] ?? order.status}</Badge>
                   </div>
 
@@ -1453,7 +1453,7 @@ export default function GasPage() {
                             <p className="text-xs text-amber-600">Copy the address below to pay.</p>
                           </div>
                         ) : (
-                          <div className="w-48 h-48 rounded-2xl overflow-hidden border-4 border-white shadow-lg">
+                          <div className="w-48 h-48 rounded-xl overflow-hidden border-4 border-white shadow-lg">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={`https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(order.paymentAddress)}`}
@@ -1463,26 +1463,26 @@ export default function GasPage() {
                             />
                           </div>
                         )}
-                        <p className="text-xs text-gray-400">{qrFailed ? 'Use the address and amount below' : 'Scan to get the address'}</p>
+                        <p className="text-xs text-text-muted">{qrFailed ? 'Use the address and amount below' : 'Scan to get the address'}</p>
                       </div>
 
                       {/* Address */}
                       <div>
-                        <p className="text-xs text-gray-500 font-semibold mb-1.5">Send to Address</p>
-                        <div className="bg-gray-50 rounded-xl p-3 flex items-start gap-2 border border-gray-100">
-                          <p className="text-xs font-mono text-gray-800 break-all flex-1">{order.paymentAddress}</p>
+                        <p className="text-xs text-text-muted font-semibold mb-1.5">Send to Address</p>
+                        <div className="bg-surface-alt rounded-xl p-3 flex items-start gap-2 border border-border">
+                          <p className="text-xs font-mono text-text-primary break-all flex-1">{order.paymentAddress}</p>
                           <CopyButton text={order.paymentAddress} />
                         </div>
                       </div>
 
                       {/* Amount */}
                       <div>
-                        <p className="text-xs text-gray-500 font-semibold mb-1.5">Exact Amount — Send to Platform</p>
-                        <div className="bg-gray-50 rounded-xl p-3 flex items-center justify-between border border-gray-100">
-                          <span className="text-lg font-bold text-gray-900">{order.paymentAmount} USDT</span>
+                        <p className="text-xs text-text-muted font-semibold mb-1.5">Exact Amount — Send to Platform</p>
+                        <div className="bg-surface-alt rounded-xl p-3 flex items-center justify-between border border-border">
+                          <span className="text-lg font-bold text-text-primary">{order.paymentAmount} USDT</span>
                           <CopyButton text={order.paymentAmount} />
                         </div>
-                        <p className="text-xs text-gray-400 mt-1.5">
+                        <p className="text-xs text-text-muted mt-1.5">
                           Send exactly this amount to the address above. Your wallet will also deduct a separate {order.paymentNetwork} USDT transfer fee ({
                             (() => {
                               const m = order.paymentNetwork === 'TRC20' ? cryptoMethods?.trc20
@@ -1497,9 +1497,9 @@ export default function GasPage() {
                       </div>
 
                       {/* Details row */}
-                      <div className="bg-gray-50 rounded-xl p-3 text-xs space-y-1.5 border border-gray-100">
-                        <div className="flex justify-between"><span className="text-gray-500">Network</span><span className="font-bold text-gray-800">{order.paymentNetwork}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500">Order ID</span><span className="font-mono text-gray-700">{order.orderRef}</span></div>
+                      <div className="bg-surface-alt rounded-xl p-3 text-xs space-y-1.5 border border-border">
+                        <div className="flex justify-between"><span className="text-text-muted">Network</span><span className="font-bold text-text-primary">{order.paymentNetwork}</span></div>
+                        <div className="flex justify-between"><span className="text-text-muted">Order ID</span><span className="font-mono text-text-secondary">{order.orderRef}</span></div>
                       </div>
 
                       {/* Warning */}
@@ -1525,28 +1525,28 @@ export default function GasPage() {
                       ) : !paymentSent ? (
                         <button
                           onClick={() => setPaymentSent(true)}
-                          className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-sm font-semibold transition-colors shadow-sm"
+                          className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-hover text-white text-sm font-semibold transition-colors shadow-card"
                         >
                           I&apos;ve Sent the Payment
                         </button>
                       ) : !verifyOpen ? (
-                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
+                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">
                           <div className="flex items-center gap-2">
-                            <svg className="w-4 h-4 text-purple-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                            <p className="text-sm font-semibold text-purple-900">Payment Sent</p>
+                            <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            <p className="text-sm font-semibold text-primary">Payment Sent</p>
                           </div>
-                          <p className="text-xs text-purple-700">
+                          <p className="text-xs text-primary">
                             We&apos;ll detect your payment automatically. If it doesn&apos;t confirm in a minute, paste your transaction hash to speed it up.
                           </p>
                           <button
                             onClick={() => setVerifyOpen(true)}
-                            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white text-sm font-semibold transition-colors"
+                            className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-hover text-white text-sm font-semibold transition-colors"
                           >
                             Enter Transaction Hash
                           </button>
                           <button
                             onClick={() => setPaymentSent(false)}
-                            className="w-full text-xs text-purple-400 hover:text-purple-600 text-center"
+                            className="w-full text-xs text-primary/50 hover:text-primary text-center"
                           >
                             I haven&apos;t sent yet — go back
                           </button>
@@ -1563,7 +1563,7 @@ export default function GasPage() {
                             value={verifyTxHash}
                             onChange={e => { setVerifyTxHash(e.target.value); setVerifyError('') }}
                             placeholder="0x... transaction hash"
-                            className="w-full text-xs font-mono bg-white border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-gray-300"
+                            className="w-full text-xs font-mono bg-surface border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-text-disabled"
                           />
                           {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
                           <Button
@@ -1582,14 +1582,14 @@ export default function GasPage() {
                   {order.status === 'payment_verified' && (
                     <div className="text-center py-4">
                       <p className="text-sm font-bold text-green-700 mb-1">Payment Verified</p>
-                      <p className="text-xs text-gray-500">Your payment has been confirmed on-chain. Gas will be released shortly.</p>
+                      <p className="text-xs text-text-muted">Your payment has been confirmed on-chain. Gas will be released shortly.</p>
                     </div>
                   )}
 
                   {/* Payment detected / sending → move to processing */}
                   {(order.status === 'payment_detected' || order.status === 'sending') && (
                     <div>
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4">Processing</p>
+                      <p className="text-xs font-bold text-text-muted uppercase tracking-wide mb-4">Processing</p>
                       <ProcessingTimeline status={order.status} isPkr={false} />
                     </div>
                   )}
@@ -1600,11 +1600,11 @@ export default function GasPage() {
                       <p className="text-base font-bold text-red-600 mb-2">{order.status === 'expired' ? 'Order Expired' : 'Order Failed'}</p>
                       {order.status === 'expired' ? (
                         <>
-                          <p className="text-sm text-gray-500 mb-3">Payment not received in time.</p>
+                          <p className="text-sm text-text-muted mb-3">Payment not received in time.</p>
                           {/* Grace window: offer verify option for recently-expired orders */}
                           {!verifyOpen && !verifySuccess ? (
                             <div className="mb-4 space-y-2">
-                              <p className="text-xs text-gray-400">Already sent the payment? We can still verify it.</p>
+                              <p className="text-xs text-text-muted">Already sent the payment? We can still verify it.</p>
                               <button
                                 onClick={() => setVerifyOpen(true)}
                                 className="text-xs text-blue-600 underline underline-offset-2 hover:text-blue-800 font-semibold"
@@ -1629,7 +1629,7 @@ export default function GasPage() {
                                 value={verifyTxHash}
                                 onChange={e => { setVerifyTxHash(e.target.value); setVerifyError('') }}
                                 placeholder="0x... transaction hash"
-                                className="w-full text-xs font-mono bg-white border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-gray-300"
+                                className="w-full text-xs font-mono bg-surface border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-text-disabled"
                               />
                               {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
                               <Button onClick={handleVerifyPayment} disabled={verifying || !verifyTxHash.trim()} className="w-full text-sm">
@@ -1641,7 +1641,7 @@ export default function GasPage() {
                         </>
                       ) : (
                         <>
-                          <p className="text-sm text-gray-500 mb-4">Something went wrong.</p>
+                          <p className="text-sm text-text-muted mb-4">Something went wrong.</p>
                           <Button onClick={resetFlow}>Try Again</Button>
                         </>
                       )}
@@ -1652,7 +1652,7 @@ export default function GasPage() {
                   {(order.status === 'refund_pending' || order.status === 'refunded') && (
                     <div className="text-center py-4">
                       <p className="text-base font-bold text-amber-600 mb-1">{order.status === 'refund_pending' ? 'Refund Processing' : 'Refunded'}</p>
-                      <p className="text-sm text-gray-500">{order.status === 'refund_pending' ? 'Your USDT refund is being processed.' : 'Your USDT has been refunded.'}</p>
+                      <p className="text-sm text-text-muted">{order.status === 'refund_pending' ? 'Your USDT refund is being processed.' : 'Your USDT has been refunded.'}</p>
                     </div>
                   )}
 
@@ -1667,9 +1667,9 @@ export default function GasPage() {
               {/* ─────────────────────────────────────────────────────────── */}
               {phase === PHASE.PROCESSING && order && (
                 <div className="p-5 space-y-4">
-                  <div className="pb-3 border-b border-gray-100">
-                    <p className="text-sm font-bold text-gray-900">Processing Your Order</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Order #{order.orderRef}</p>
+                  <div className="pb-3 border-b border-border">
+                    <p className="text-sm font-bold text-text-primary">Processing Your Order</p>
+                    <p className="text-xs text-text-muted mt-0.5">Order #{order.orderRef}</p>
                   </div>
                   <ProcessingTimeline status={order.status} isPkr={isPkrOrder} />
                   {order.status === 'delivered' && <Button className="w-full" onClick={() => setPhase(PHASE.COMPLETE)}>View Order Completion</Button>}
@@ -1693,20 +1693,20 @@ export default function GasPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                       </svg>
                     </div>
-                    <p className="text-xl font-bold text-gray-900">Order Completed!</p>
-                    <p className="text-sm text-gray-500 mt-1">Your gas fee order has been processed successfully.</p>
+                    <p className="text-xl font-bold text-text-primary">Order Completed!</p>
+                    <p className="text-sm text-text-muted mt-1">Your gas fee order has been processed successfully.</p>
                   </div>
 
-                  <div className="bg-gray-50 rounded-xl p-4 text-left space-y-2.5 text-xs">
-                    <div className="flex justify-between"><span className="text-gray-500">Amount Received</span><span className="font-bold text-gray-900">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Destination</span><span className="font-mono text-gray-700">{order.toAddress.slice(0, 14)}...{order.toAddress.slice(-6)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Payment Method</span><span className="font-semibold capitalize">{isPkrOrder ? `PKR · ${order.pkrPaymentMethod?.replace('_', ' ') ?? ''}` : `USDT · ${order.paymentNetwork}`}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Order ID</span><span className="font-mono text-gray-700">{order.orderRef}</span></div>
+                  <div className="bg-surface-alt rounded-xl p-4 text-left space-y-2.5 text-xs">
+                    <div className="flex justify-between"><span className="text-text-muted">Amount Received</span><span className="font-bold text-text-primary">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>
+                    <div className="flex justify-between"><span className="text-text-muted">Destination</span><span className="font-mono text-text-secondary">{order.toAddress.slice(0, 14)}...{order.toAddress.slice(-6)}</span></div>
+                    <div className="flex justify-between"><span className="text-text-muted">Payment Method</span><span className="font-semibold capitalize">{isPkrOrder ? `PKR · ${order.pkrPaymentMethod?.replace('_', ' ') ?? ''}` : `USDT · ${order.paymentNetwork}`}</span></div>
+                    <div className="flex justify-between"><span className="text-text-muted">Order ID</span><span className="font-mono text-text-secondary">{order.orderRef}</span></div>
                     {order.deliveryTxHash && selectedChain && (
-                      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                        <span className="text-gray-500">Transaction</span>
+                      <div className="flex justify-between items-center pt-2 border-t border-border">
+                        <span className="text-text-muted">Transaction</span>
                         <a href={explorerUrl(selectedChain.slug, explorerBase, order.deliveryTxHash)} target="_blank" rel="noopener noreferrer"
-                          className="text-xs text-purple-600 font-semibold hover:underline flex items-center gap-1">
+                          className="text-xs text-primary font-semibold hover:underline flex items-center gap-1">
                           {order.deliveryTxHash.slice(0, 12)}...
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                         </a>

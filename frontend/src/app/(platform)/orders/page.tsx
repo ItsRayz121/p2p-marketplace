@@ -12,6 +12,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getTradeStatus } from '@/lib/tradeStatus'
 import { ClipboardList } from 'lucide-react'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -112,7 +113,7 @@ export default function OrdersPage() {
         </button>
         <Link
           href="/ctm/my-trades"
-          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-white transition-colors"
+          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
         >
           Community Tokens
         </Link>
@@ -129,7 +130,7 @@ export default function OrdersPage() {
               className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                 status === opt.value
                   ? 'bg-primary text-white'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+                  : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
               }`}
             >
               {opt.label}
@@ -148,7 +149,7 @@ export default function OrdersPage() {
               className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                 role === r
                   ? 'bg-primary/10 text-primary border border-primary/30'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+                  : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
               }`}
             >
               {r.charAt(0).toUpperCase() + r.slice(1)}
@@ -170,7 +171,7 @@ export default function OrdersPage() {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden sm:block bg-white shadow-card rounded-xl border border-border overflow-hidden">
+          <div className="hidden sm:block bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
               <thead className="bg-surface border-b-2 border-border">
                 <tr>
@@ -203,7 +204,10 @@ export default function OrdersPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm font-medium text-primary hover:underline">{counterparty}</span>
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={counterparty} size="xs" />
+                          <span className="text-sm font-medium text-primary hover:underline">{counterparty}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-text-primary text-right font-mono">
                         {parseFloat(t.amount).toFixed(4)} {t.coin}
@@ -234,7 +238,10 @@ export default function OrdersPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
-                        <p className="text-sm font-medium text-text-primary mt-1">{counterparty}</p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <UserAvatar name={counterparty} size="xs" />
+                          <p className="text-sm font-medium text-text-primary">{counterparty}</p>
+                        </div>
                         <p className={`text-xs font-medium mt-0.5 ${isBuyer ? 'text-emerald-600' : 'text-blue-600'}`}>{isBuyer ? 'You bought' : 'You sold'}</p>
                       </div>
                       <div className="text-right">

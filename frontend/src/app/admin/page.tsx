@@ -6,6 +6,10 @@ import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { cn } from '@/lib/utils'
+import {
+  ShieldCheck, AlertTriangle, Wallet, Zap, Fuel, FileText,
+  TrendingUp, BarChart2, Users, PackageCheck, DollarSign, ArrowDownToLine,
+} from 'lucide-react'
 
 type Stats = Awaited<ReturnType<typeof adminApi.getStats>>
 
@@ -54,152 +58,22 @@ export default function AdminDashboardPage() {
   if (error && !stats) return <ErrorState title={error} onRetry={fetchStats} />
 
   const actionCards = [
-    {
-      label: 'Pending KYC',
-      value: stats?.pendingKyc ?? 0,
-      href: '/admin/kyc',
-      urgent: (stats?.pendingKyc ?? 0) > 0,
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0" />
-        </svg>
-      ),
-    },
-    {
-      label: 'Open Disputes',
-      value: stats?.openDisputes ?? 0,
-      href: '/admin/disputes',
-      urgent: (stats?.openDisputes ?? 0) > 0,
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-      ),
-    },
-    {
-      label: 'Pending Withdrawals',
-      value: stats?.pendingWithdrawals ?? 0,
-      href: '/admin/withdrawals',
-      urgent: (stats?.pendingWithdrawals ?? 0) > 0,
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-      ),
-    },
-    {
-      label: 'Instant Buy Review',
-      value: stats?.pendingInstantBuy ?? 0,
-      href: '/admin/instant-buy',
-      urgent: (stats?.pendingInstantBuy ?? 0) > 0,
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      ),
-    },
-    {
-      label: 'Gas Orders Active',
-      value: stats?.pendingGasOrders ?? 0,
-      href: '/admin/gas',
-      urgent: (stats?.pendingGasOrders ?? 0) > 0,
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      ),
-    },
-    {
-      label: 'PKR Proofs Pending',
-      value: stats?.pkrGasProofsPending ?? 0,
-      href: '/admin/gas',
-      urgent: (stats?.pkrGasProofsPending ?? 0) > 0,
-      icon: (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      ),
-    },
+    { label: 'Pending KYC',        value: stats?.pendingKyc ?? 0,          href: '/admin/kyc',        urgent: (stats?.pendingKyc ?? 0) > 0,          icon: <ShieldCheck className="w-4 h-4" /> },
+    { label: 'Open Disputes',      value: stats?.openDisputes ?? 0,        href: '/admin/disputes',   urgent: (stats?.openDisputes ?? 0) > 0,        icon: <AlertTriangle className="w-4 h-4" /> },
+    { label: 'Pending Withdrawals',value: stats?.pendingWithdrawals ?? 0,  href: '/admin/withdrawals',urgent: (stats?.pendingWithdrawals ?? 0) > 0,  icon: <Wallet className="w-4 h-4" /> },
+    { label: 'Instant Buy Review', value: stats?.pendingInstantBuy ?? 0,   href: '/admin/instant-buy',urgent: (stats?.pendingInstantBuy ?? 0) > 0,   icon: <Zap className="w-4 h-4" /> },
+    { label: 'Gas Orders Active',  value: stats?.pendingGasOrders ?? 0,    href: '/admin/gas',        urgent: (stats?.pendingGasOrders ?? 0) > 0,    icon: <Fuel className="w-4 h-4" /> },
+    { label: 'PKR Proofs Pending', value: stats?.pkrGasProofsPending ?? 0, href: '/admin/gas',        urgent: (stats?.pkrGasProofsPending ?? 0) > 0, icon: <FileText className="w-4 h-4" /> },
   ]
 
   const todayCards = [
-    {
-      label: "Today's Revenue",
-      value: `PKR ${fmt(stats?.todayRevenuePkr ?? 0)}`,
-      sub: 'from completed trades',
-      color: 'text-success',
-      icon: (
-        <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ),
-    },
-    {
-      label: "Today's Trades",
-      value: fmt(stats?.todayTrades ?? 0),
-      sub: 'trades started today',
-      color: 'text-primary',
-      icon: (
-        <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-        </svg>
-      ),
-    },
-    {
-      label: 'New Users Today',
-      value: fmt(stats?.newUsersToday ?? 0),
-      sub: 'registered today',
-      color: 'text-purple-600',
-      icon: (
-        <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-        </svg>
-      ),
-    },
-    {
-      label: "Today's Gas Orders",
-      value: fmt(stats?.todayGasOrders ?? 0),
-      sub: 'gas fee orders today',
-      color: 'text-orange-600',
-      icon: (
-        <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      ),
-    },
-    {
-      label: "Today's Gas Revenue",
-      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,
-      sub: 'from delivered gas orders',
-      color: 'text-orange-600',
-      icon: (
-        <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ),
-    },
-    {
-      label: "Today's Withdrawals Sent",
-      value: fmt((stats as any)?.todaySentWithdrawals ?? 0),
-      sub: 'withdrawals completed today',
-      color: 'text-primary',
-      icon: (
-        <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-      ),
-    },
-    {
-      label: "Today's Withdrawal Fees",
-      value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,
-      sub: 'fees collected from withdrawals',
-      color: 'text-success',
-      icon: (
-        <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ),
-    },
+    { label: "Today's Revenue",          value: `PKR ${fmt(stats?.todayRevenuePkr ?? 0)}`,                      sub: 'from completed trades',        color: 'text-success',       icon: <DollarSign className="w-5 h-5 text-success" /> },
+    { label: "Today's Trades",           value: fmt(stats?.todayTrades ?? 0),                                   sub: 'trades started today',         color: 'text-primary',       icon: <BarChart2 className="w-5 h-5 text-primary" /> },
+    { label: 'New Users Today',          value: fmt(stats?.newUsersToday ?? 0),                                  sub: 'registered today',             color: 'text-violet-600',    icon: <Users className="w-5 h-5 text-violet-600" /> },
+    { label: "Today's Gas Orders",       value: fmt(stats?.todayGasOrders ?? 0),                                 sub: 'gas fee orders today',         color: 'text-orange-600',    icon: <Fuel className="w-5 h-5 text-orange-500" /> },
+    { label: "Today's Gas Revenue",      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,                sub: 'from delivered gas orders',    color: 'text-orange-600',    icon: <TrendingUp className="w-5 h-5 text-orange-500" /> },
+    { label: "Today's Withdrawals Sent", value: fmt((stats as any)?.todaySentWithdrawals ?? 0),                  sub: 'withdrawals completed today',  color: 'text-primary',       icon: <PackageCheck className="w-5 h-5 text-primary" /> },
+    { label: "Today's Withdrawal Fees",  value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,sub: 'fees collected from withdrawals',color: 'text-success',      icon: <ArrowDownToLine className="w-5 h-5 text-success" /> },
   ]
 
   const totalCards = [

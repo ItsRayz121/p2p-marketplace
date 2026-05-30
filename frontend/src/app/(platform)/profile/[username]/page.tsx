@@ -10,6 +10,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { getPaymentMethodColor } from '@/lib/pkPaymentMethods'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 
 interface TraderProfile {
   id: string
@@ -113,9 +114,7 @@ export default function TraderProfilePage() {
       {/* Header */}
       <div className="bg-surface shadow-card rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-start gap-4">
-          <div className="w-14 h-14 rounded-full bg-primary/10 text-primary text-2xl font-bold flex items-center justify-center flex-shrink-0">
-            {profile.username.charAt(0).toUpperCase()}
-          </div>
+          <UserAvatar name={profile.username} size="xl" className="flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold text-text-primary">{profile.username}</h1>
@@ -202,8 +201,9 @@ export default function TraderProfilePage() {
               <div key={r.id} className="border-b border-border last:border-0 pb-4 last:pb-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2">
+                    <UserAvatar name={r.reviewerUsername} size="xs" />
                     <StarRow rating={r.rating} />
-                    <span className="text-xs text-text-muted">by {r.reviewerUsername}</span>
+                    <span className="text-xs text-text-muted font-medium">{r.reviewerUsername}</span>
                   </div>
                   <span className="text-xs text-text-muted">{timeAgo(r.createdAt)}</span>
                 </div>

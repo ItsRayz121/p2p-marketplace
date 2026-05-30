@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Trophy, ArrowLeft } from 'lucide-react'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 import { fmtNumber, fmtPkr } from '@/lib/fmt'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,12 +67,6 @@ function rankRowCls(rank: number, isMe: boolean): string {
   return ''
 }
 
-function rankAvatarCls(rank: number): string {
-  if (rank === 1) return 'bg-yellow-100 text-yellow-700'
-  if (rank === 2) return 'bg-slate-100 text-slate-500'
-  if (rank === 3) return 'bg-amber-100 text-amber-700'
-  return 'bg-primary/10 text-primary'
-}
 
 function badgeVariant(badge?: string | null): 'warning' | 'success' | 'info' | 'default' {
   if (badge === 'elite' || badge === 'top') return 'warning'
@@ -158,7 +153,46 @@ export default function LeaderboardPage() {
             <EmptyState icon={Trophy} title="No data yet" description="No traders found for this period yet." />
           ) : (
             <>
-              {/* Desktop */}
+              {/* Top-3 podium — desktop only */}
+              {entries.length >= 3 && (
+                <div className="hidden md:grid grid-cols-3 gap-3 mb-2 items-end">
+                  {[entries[1], entries[0], entries[2]].map((entry, podiumIdx) => {
+                    const isFirst = podiumIdx === 1
+                    // rank badge styles: gold=1st, slate=2nd, amber=3rd
+                    const rankNum = podiumIdx === 0 ? 2 : podiumIdx === 1 ? 1 : 3
+                    const rankBadgeCls = isFirst
+                      ? 'bg-yellow-500 text-white shadow-lg shadow-yellow-200'
+                      : rankNum === 2
+                      ? 'bg-slate-400 text-white'
+                      : 'bg-amber-600 text-white'
+                    const cardCls = isFirst
+                      ? 'bg-gradient-to-b from-yellow-50 to-surface border-yellow-200 shadow-card-md pb-5'
+                      : 'bg-surface border-border shadow-card pb-4'
+                    return (
+                      <div key={entry.userId} className={`border rounded-xl pt-4 px-4 text-center flex flex-col items-center gap-2 ${cardCls}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${rankBadgeCls}`}>
+                          #{rankNum}
+                        </div>
+                        <UserAvatar name={entry.username ?? '?'} size={isFirst ? 'lg' : 'md'} />
+                        <div>
+                          <p className={`font-bold text-text-primary truncate max-w-[120px] ${isFirst ? 'text-base' : 'text-sm'}`}>{entry.username}</p>
+                          <p className="text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
+                          {entry.totalVolumePKR != null && (
+                            <p className="text-xs font-semibold text-text-secondary mt-0.5">
+                              PKR {fmtNumber(entry.totalVolumePKR)}
+                            </p>
+                          )}
+                        </div>
+                        {entry.badge && (
+                          <Badge variant={badgeVariant(entry.badge)} size="sm">{entry.badgeLabel ?? entry.badge}</Badge>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Desktop table */}
               <div className="hidden md:block bg-surface shadow-card border border-border rounded-xl overflow-hidden">
                 <table className="w-full">
                   <thead className="bg-surface border-b-2 border-border">
@@ -178,9 +212,7 @@ export default function LeaderboardPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <div className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center uppercase flex-shrink-0 ${rankAvatarCls(entry.rank)}`}>
-                                {(entry.username ?? '?').slice(0, 2)}
-                              </div>
+                              <UserAvatar name={entry.username ?? '?'} size="sm" />
                               <span className="text-sm font-medium text-text-primary">
                                 {entry.username}
                                 {isMe && <span className="ml-1 text-primary text-xs">(you)</span>}
@@ -219,9 +251,7 @@ export default function LeaderboardPage() {
                       <div className="flex-shrink-0 w-8 text-center">
                         <RankDisplay rank={entry.rank} />
                       </div>
-                      <div className={`w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 uppercase ${rankAvatarCls(entry.rank)}`}>
-                        {(entry.username ?? '?').slice(0, 2)}
-                      </div>
+                      <UserAvatar name={entry.username ?? '?'} size="sm" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-text-primary truncate">
                           {entry.username}

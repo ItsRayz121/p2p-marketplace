@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import * as marketplaceService from '../services/marketplace.service'
+import { getRecentTrades } from '../services/marketplace.service'
 
 export async function marketplaceRoutes(app: FastifyInstance) {
   // All routes are public (no auth required)
@@ -27,6 +28,11 @@ export async function marketplaceRoutes(app: FastifyInstance) {
 
   app.get('/config', async (_req, reply) => {
     const data = await marketplaceService.getPublicConfig()
+    return reply.send({ success: true, data })
+  })
+
+  app.get('/recent-trades', async (_req, reply) => {
+    const data = await getRecentTrades()
     return reply.send({ success: true, data })
   })
 

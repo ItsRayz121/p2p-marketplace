@@ -10,6 +10,10 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { BadgeChip } from '@/components/ui/TraderLevelCard'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
+import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp } from 'lucide-react'
+import type { RecentTrade } from '@/lib/api'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -21,13 +25,6 @@ const NETWORKS = [
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const PAGE_SIZE = 20
 
-const BADGE_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-700',
-  basic: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
-  elite: 'bg-purple-100 text-purple-700',
-}
-
 interface Filters {
   side: 'buy' | 'sell'
   network: string
@@ -36,26 +33,49 @@ interface Filters {
   maxAmount: string
 }
 
-function StarRating({ rating }: { rating: number }) {
-  const full = Math.round(rating)
-  return (
-    <span className="text-yellow-400 text-xs" title={`${rating.toFixed(1)} / 5`}>
-      {'★'.repeat(full)}{'☆'.repeat(5 - full)}
-    </span>
-  )
+
+function listingAge(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+function activeLabel(lastSeenAt: string | null): { text: string; cls: string } | null {
+  if (!lastSeenAt) return null
+  const diff = Date.now() - new Date(lastSeenAt).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 10)  return { text: 'Online now',    cls: 'text-success' }
+  if (mins < 60)  return { text: `Active ${mins}m ago`, cls: 'text-success' }
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 6)    return { text: `Active ${hrs}h ago`,  cls: 'text-text-muted' }
+  if (hrs < 24)   return { text: 'Active today',        cls: 'text-text-muted' }
+  const days = Math.floor(hrs / 24)
+  if (days <= 3)  return { text: `Active ${days}d ago`,  cls: 'text-text-muted' }
+  return null
 }
 
 function AdRow({ ad }: { ad: MarketplaceAd }) {
   const methods = ad.paymentMethods ?? []
-  const rating = parseFloat(ad.seller?.tradeStats?.avgRating ?? '0')
-  const trades = ad.seller?.tradeStats?.totalTrades ?? 0
+  const stats = ad.seller?.tradeStats
+  const rating = parseFloat(stats?.avgRating ?? '0')
+  const completedTrades = stats?.completedTrades ?? 0
+  // API returns completion rate as decimal 0–1; multiply to get percentage
+  const completionPct = stats?.completionRate != null ? parseFloat(stats.completionRate) * 100 : null
+  const completionColor =
+    completionPct === null ? '' :
+    completionPct >= 90    ? 'text-success' :
+    completionPct >= 70    ? 'text-warning'  : 'text-danger'
 
-  const isSell = ad.side === 'sell'
-  // isSell = this seller is selling → the user can BUY. Label from user's perspective.
+  const activity = activeLabel(ad.seller?.lastSeenAt ?? null)
+  const isSell     = ad.side === 'sell'
   const userAction = isSell ? 'BUY' : 'SELL'
   const accentCls  = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
   const chipCls    = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
   const priceCls   = isSell ? 'text-emerald-600' : 'text-blue-600'
+
   return (
     <div className={`bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -72,7 +92,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           </div>
         </div>
 
-        {/* Price + available */}
+        {/* Price + available + listing age */}
         <div className="sm:flex-1">
           <p className={`text-xl font-bold ${priceCls}`}>PKR {Number(ad.price).toLocaleString()}</p>
           <p className="text-xs text-text-muted">per {ad.coin}</p>
@@ -80,37 +100,74 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             <span className="font-medium">{ad.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
             {Number(ad.availableAmount).toFixed(4)} {ad.coin}
           </p>
+          <p className="text-xs text-text-muted mt-0.5">Listed {listingAge(ad.createdAt)}</p>
         </div>
 
-        {/* Limits */}
+        {/* Limits + trade window */}
         <div className="sm:w-44">
-          <p className="text-xs text-text-muted">Limit</p>
+          <p className="text-xs text-text-muted">Order Limit</p>
           <p className="text-sm font-medium text-text-primary">
             {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()} {ad.coin}
           </p>
+          <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
+            <Clock size={10} className="flex-shrink-0" />
+            {ad.tradeWindow} min window
+          </p>
         </div>
 
-        {/* Seller info */}
-        <div className="sm:w-36">
-          <p className="text-xs text-text-muted mb-0.5">Seller</p>
-          <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Seller trust block */}
+        <div className="sm:w-48">
+          {/* Name + avatar row */}
+          <div className="flex items-center gap-1.5 mb-1.5">
             <UserAvatar name={ad.seller?.username ?? 'A'} size="xs" />
-            <span className="text-sm font-medium text-text-primary">{ad.seller?.username ?? 'Anonymous'}</span>
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${BADGE_COLORS[ad.seller?.badge ?? 'new'] ?? 'bg-gray-100 text-gray-700'}`}>
-              {ad.seller?.badge ?? 'new'}
-            </span>
+            <Link
+              href={`/profile/${ad.seller?.username}`}
+              className="text-sm font-semibold text-text-primary hover:text-primary hover:underline truncate"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {ad.seller?.username ?? 'Anonymous'}
+            </Link>
           </div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            {rating > 0 ? (
-              <>
-                <StarRating rating={rating} />
-                <span className="text-xs text-text-muted">{rating.toFixed(1)}</span>
-              </>
-            ) : (
-              <span className="text-xs text-text-muted">No ratings yet</span>
+
+          {/* Merchant + Badge + collateral row */}
+          <div className="flex items-center gap-1 flex-wrap mb-1.5">
+            {ad.seller?.isMerchant && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
+                <ShieldCheck size={9} />
+                Merchant
+              </span>
             )}
-            <span className="text-xs text-text-muted">· {trades} trades</span>
+            <BadgeChip badge={(ad.seller?.badge ?? 'new') as TraderBadge} />
+            {ad.seller?.hasCollateral && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-success bg-success/10 px-1.5 py-0.5 rounded-full">
+                <ShieldCheck size={9} />
+                Collateral
+              </span>
+            )}
           </div>
+
+          {/* Stats row: completion · rating · completed trades */}
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            {completionPct !== null && (
+              <span className={`font-bold ${completionColor}`}>
+                {completionPct.toFixed(0)}%
+              </span>
+            )}
+            {rating > 0 && (
+              <span className="flex items-center gap-0.5 text-text-muted">
+                <span className="text-gold">★</span>
+                {rating.toFixed(1)}
+              </span>
+            )}
+            <span className="text-text-muted">{completedTrades} done</span>
+          </div>
+
+          {/* Active status */}
+          {activity && (
+            <p className={`text-[10px] mt-1 ${activity.cls}`}>
+              {activity.text}
+            </p>
+          )}
         </div>
 
         {/* Payment methods */}
@@ -125,7 +182,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
                 </span>
               ))}
               {methods.length > 3 && (
-                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface text-text-secondary">
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface-alt text-text-secondary">
                   +{methods.length - 3}
                 </span>
               )}
@@ -144,12 +201,86 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             {ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
           </Link>
         ) : (
-          <span className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-surface text-text-muted border border-border">
+          <span className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-surface-alt text-text-muted border border-border">
             Sold Out
           </span>
         )}
 
       </div>
+    </div>
+  )
+}
+
+// ─── Recent Trades Feed ───────────────────────────────────────────────────────
+
+function tradeFeedAge(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1)  return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  return hrs < 24 ? `${hrs}h ago` : `${Math.floor(hrs / 24)}d ago`
+}
+
+function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
+  if (!trades.length) return null
+  // Duplicate list for seamless infinite scroll
+  const items = [...trades, ...trades]
+  return (
+    <div className="relative bg-surface border border-border rounded-xl overflow-hidden mb-4">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-surface-alt">
+        <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse flex-shrink-0" />
+        <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Recent Trades</span>
+      </div>
+      <div className="flex overflow-hidden">
+        <div className="flex gap-3 px-3 py-2 animate-[marquee_40s_linear_infinite] whitespace-nowrap">
+          {items.map((t, i) => (
+            <span
+              key={`${t.id}-${i}`}
+              className="inline-flex items-center gap-1.5 text-xs text-text-secondary flex-shrink-0 border-r border-border pr-3 last:border-0"
+            >
+              <CheckCircle2 size={11} className="text-success flex-shrink-0" />
+              <span className="font-semibold text-text-primary">
+                {parseFloat(t.amount).toFixed(2)} {t.coin}
+              </span>
+              <span className="text-text-muted">{t.buyerUsername} ← {t.sellerUsername}</span>
+              <span className="text-text-muted/60">{tradeFeedAge(t.completedAt)}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Marketplace Stats Strip ──────────────────────────────────────────────────
+
+interface MarketStats {
+  totalListings: number
+  todayTrades: number
+  usdtRate: number | null
+}
+
+function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-text-muted">
+      <span className="flex items-center gap-1">
+        <TrendingUp size={11} className="text-primary" />
+        <span className="font-semibold text-text-primary">{stats.totalListings}</span> active listings
+      </span>
+      <span className="w-px h-3 bg-border hidden sm:block" />
+      <span className="flex items-center gap-1">
+        <CheckCircle2 size={11} className="text-success" />
+        <span className="font-semibold text-success">{stats.todayTrades}</span> trades completed today
+      </span>
+      {stats.usdtRate !== null && (
+        <>
+          <span className="w-px h-3 bg-border hidden sm:block" />
+          <span>
+            1 USDT = <span className="font-semibold text-text-primary">PKR {stats.usdtRate.toLocaleString()}</span>
+          </span>
+        </>
+      )}
     </div>
   )
 }
@@ -167,6 +298,8 @@ export default function MarketplacePage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])
+  const [marketStats, setMarketStats] = useState<MarketStats | null>(null)
 
   const fetchAds = useCallback(async (p = 1, append = false) => {
     try {
@@ -220,13 +353,36 @@ export default function MarketplacePage() {
     return () => window.removeEventListener('focus', onFocus)
   }, [fetchAds])
 
+  // Fetch recent trades and market stats once on mount, then poll every 60s
+  const fetchMeta = useCallback(async () => {
+    try {
+      const [tradesRes, statsRes, rateRes] = await Promise.allSettled([
+        marketplaceApi.getRecentTrades(),
+        marketplaceApi.getStats(),
+        marketplaceApi.getRate('USDT'),
+      ])
+      if (tradesRes.status === 'fulfilled') setRecentTrades(tradesRes.value)
+      if (statsRes.status === 'fulfilled') {
+        const s = statsRes.value as { totalTrades: number; todayTrades?: number }
+        const rate = rateRes.status === 'fulfilled' ? rateRes.value.rate : null
+        setMarketStats({
+          totalListings: total,
+          todayTrades: s.todayTrades ?? 0,
+          usdtRate: rate,
+        })
+      }
+    } catch { /* silently fail */ }
+  }, [total])
+
+  usePolling(fetchMeta, 60_000, true)
+
   const hasMore = ads.length < total
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
 
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">USDT Marketplace</h1>
           <p className="text-text-muted text-sm">{total} listings available</p>
@@ -236,10 +392,16 @@ export default function MarketplacePage() {
         </Link>
       </div>
 
+      {/* Stats strip */}
+      {marketStats && <MarketplaceStatsStrip stats={{ ...marketStats, totalListings: total }} />}
+
+      {/* Recent trades ticker */}
+      <RecentTradesFeed trades={recentTrades} />
+
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
         {/* Side toggle */}
-        <div className="flex bg-white border border-border rounded-lg overflow-hidden flex-shrink-0">
+        <div className="flex bg-surface border border-border rounded-lg overflow-hidden flex-shrink-0">
           {(['buy', 'sell'] as const).map((s) => (
             <button
               key={s}
@@ -253,41 +415,47 @@ export default function MarketplacePage() {
           ))}
         </div>
 
-        <select
-          value={filters.network}
-          onChange={(e) => { setFilters((f) => ({ ...f, network: e.target.value })); setPage(1) }}
-          className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none"
-        >
-          {NETWORKS.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}
-        </select>
+        <div className="relative">
+          <select
+            value={filters.network}
+            onChange={(e) => { setFilters((f) => ({ ...f, network: e.target.value })); setPage(1) }}
+            className="appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
+          >
+            {NETWORKS.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}
+          </select>
+          <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+        </div>
 
-        <select
-          value={filters.paymentMethod}
-          onChange={(e) => { setFilters((f) => ({ ...f, paymentMethod: e.target.value })); setPage(1) }}
-          className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none"
-        >
-          <option value="">All payment methods</option>
-          {PAYMENT_METHODS.map((pm) => <option key={pm} value={pm}>{pm}</option>)}
-        </select>
+        <div className="relative">
+          <select
+            value={filters.paymentMethod}
+            onChange={(e) => { setFilters((f) => ({ ...f, paymentMethod: e.target.value })); setPage(1) }}
+            className="appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
+          >
+            <option value="">All payment methods</option>
+            {PAYMENT_METHODS.map((pm) => <option key={pm} value={pm}>{pm}</option>)}
+          </select>
+          <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+        </div>
 
         <input
           type="number"
           placeholder="Min PKR"
           value={filters.minAmount}
           onChange={(e) => setFilters((f) => ({ ...f, minAmount: e.target.value }))}
-          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none"
+          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
         />
         <input
           type="number"
           placeholder="Max PKR"
           value={filters.maxAmount}
           onChange={(e) => setFilters((f) => ({ ...f, maxAmount: e.target.value }))}
-          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none"
+          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
         />
 
         <button
           onClick={() => setFilters({ side: 'buy', network: '', paymentMethod: '', minAmount: '', maxAmount: '' })}
-          className="border border-border rounded-lg px-3 py-2 text-sm bg-white hover:bg-surface transition-colors"
+          className="border border-border rounded-lg px-3 py-2 text-sm bg-surface hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
         >
           Clear
         </button>

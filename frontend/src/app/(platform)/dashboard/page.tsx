@@ -13,14 +13,14 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { getTradeStatus, getGasStatus, kycStatusVariant } from '@/lib/tradeStatus'
 import { cn } from '@/lib/utils'
 import {
-  FireIcon,
-  BuildingStorefrontIcon,
-  CircleStackIcon,
-  ClipboardDocumentListIcon,
-  WalletIcon,
-  GiftIcon,
-  BellIcon,
-} from '@heroicons/react/24/solid'
+  Fuel,
+  ArrowLeftRight,
+  Coins,
+  ClipboardList,
+  Wallet,
+  Gift,
+  Bell,
+} from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
@@ -31,12 +31,12 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
 }
 
 const QUICK_ACTIONS = [
-  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: FireIcon,                  iconCls: 'text-amber-600',   bgCls: 'bg-amber-100'   },
-  { href: '/marketplace', label: 'USDT Marketplace', Icon: BuildingStorefrontIcon,    iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
-  { href: '/ctm',         label: 'Community Tokens', Icon: CircleStackIcon,           iconCls: 'text-violet-600',  bgCls: 'bg-violet-100'  },
-  { href: '/orders',      label: 'My Trades',        Icon: ClipboardDocumentListIcon, iconCls: 'text-emerald-600', bgCls: 'bg-emerald-100' },
-  { href: '/wallet',      label: 'Wallet',           Icon: WalletIcon,                iconCls: 'text-cyan-600',    bgCls: 'bg-cyan-100'    },
-  { href: '/referral',    label: 'Referral',         Icon: GiftIcon,                  iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
+  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: Fuel,                  iconCls: 'text-amber-600',   bgCls: 'bg-amber-100'   },
+  { href: '/marketplace', label: 'USDT Marketplace', Icon: ArrowLeftRight,    iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
+  { href: '/ctm',         label: 'Community Tokens', Icon: Coins,           iconCls: 'text-violet-600',  bgCls: 'bg-violet-100'  },
+  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList, iconCls: 'text-emerald-600', bgCls: 'bg-emerald-100' },
+  { href: '/wallet',      label: 'Wallet',           Icon: Wallet,                iconCls: 'text-cyan-600',    bgCls: 'bg-cyan-100'    },
+  { href: '/referral',    label: 'Referral',         Icon: Gift,                  iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -429,7 +429,7 @@ export default function DashboardPage() {
           <div className="bg-surface rounded-xl border border-border shadow-card divide-y divide-border">
             {(notifications ?? []).map((n) => (
               <div key={n.id} className="flex items-start gap-3 px-4 py-3">
-                <BellIcon
+                <Bell
                   className={`w-4 h-4 mt-0.5 flex-shrink-0 ${notifIconColor[n.type] ?? 'text-text-muted'}`}
                   aria-hidden
                 />

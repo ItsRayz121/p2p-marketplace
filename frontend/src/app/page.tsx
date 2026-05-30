@@ -2,13 +2,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { marketplaceApi } from '@/lib/api'
-import type { Ad } from '@/lib/api'
+import type { MarketplaceAd } from '@/lib/api'
 import { StalenessBadge } from '@/components/ui/StalenessBadge'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { Store, Fuel, FileText, type LucideIcon } from 'lucide-react'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,11 +18,12 @@ interface MarketStats {
   totalTrades: number
   totalVolume: string
   verifiedTraders: number
+  todayTrades: number
 }
 
 interface TopAds {
-  buys: Ad[]
-  sells: Ad[]
+  buys: MarketplaceAd[]
+  sells: MarketplaceAd[]
 }
 
 interface FaqItem {
@@ -91,19 +93,36 @@ function FaqAccordion({ items }: { items: FaqItem[] }) {
 
 // ─── Ad Card ─────────────────────────────────────────────────────────────────
 
-function AdCard({ ad }: { ad: Ad }) {
+function AdCard({ ad }: { ad: MarketplaceAd }) {
+  const seller = ad.seller
+  const stats = seller?.tradeStats
+  const completionPct = stats?.completionRate ? parseFloat(stats.completionRate) * 100 : null
+  const completionColor = completionPct === null ? 'text-text-muted' : completionPct >= 90 ? 'text-success' : completionPct >= 70 ? 'text-warning' : 'text-danger'
+  const completedTrades = stats?.completedTrades ?? 0
+  const rating = stats?.avgRating ? parseFloat(stats.avgRating) : 0
+
   return (
-    <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
+          {/* Seller row */}
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center flex-shrink-0">
-              {(ad.user?.username || 'U').charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-text-primary truncate">
-                {ad.user?.username || 'Anonymous'}
+            <UserAvatar name={seller?.username || 'Anonymous'} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-text-primary truncate">
+                {seller?.username || 'Anonymous'}
               </p>
+              <div className="flex items-center gap-2 text-xs mt-0.5">
+                {completionPct !== null && (
+                  <span className={`font-bold ${completionColor}`}>{completionPct.toFixed(0)}%</span>
+                )}
+                {rating > 0 && (
+                  <span className="text-text-muted flex items-center gap-0.5">
+                    <span className="text-gold">★</span>{rating.toFixed(1)}
+                  </span>
+                )}
+                <span className="text-text-muted">{completedTrades} done</span>
+              </div>
             </div>
           </div>
           <p className="text-2xl font-bold text-text-primary">
@@ -128,7 +147,7 @@ function AdCard({ ad }: { ad: Ad }) {
           </div>
         </div>
         <Link
-          href={`/trade/new?adId=${ad.id}`}
+          href={`/marketplace/listings/${ad.id}`}
           className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
         >
           Trade
@@ -209,31 +228,37 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-surface">
       {/* ── 1. HERO ── */}
-      <section className="bg-surface border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
+      <section className="relative bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 border-b border-slate-800 overflow-hidden">
+        {/* Subtle grid overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px)] [background-size:48px_48px] pointer-events-none" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="animate-fade-in">
+              <div className="inline-flex items-center gap-2 bg-primary/20 border border-primary/30 text-primary text-xs font-semibold px-3 py-1.5 rounded-full mb-5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                Live P2P Market · Pakistan
+              </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight">
-                <span className="text-text-primary">Buy &amp; Sell Crypto</span>
+                <span className="text-white">Buy &amp; Sell Crypto</span>
                 <br />
-                <span className="bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                   in Pakistan
                 </span>
               </h1>
-              <p className="mt-4 text-lg text-text-secondary max-w-md">
+              <p className="mt-4 text-lg text-slate-300 max-w-md">
                 Peer-to-peer trading with secure escrow. Pay with JazzCash, Easypaisa, or bank transfer.
                 Your funds, your control.
               </p>
               <div className="flex flex-wrap gap-3 mt-8">
                 <Link
                   href="/marketplace"
-                  className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors"
+                  className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30"
                 >
                   Start Trading
                 </Link>
                 <Link
                   href="/gas"
-                  className="px-6 py-3 bg-white text-primary font-semibold rounded-lg border-2 border-primary hover:bg-primary/5 transition-colors"
+                  className="px-6 py-3 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm"
                 >
                   Crypto Gas Fees
                 </Link>
@@ -241,53 +266,56 @@ export default function HomePage() {
             </div>
 
             {/* Rate calculator */}
-            <div className="bg-surface rounded-2xl border border-border p-6 animate-slide-up">
+            <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6 animate-slide-up shadow-card-lg">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-text-primary">USDT / PKR Calculator</h2>
+                <h2 className="text-base font-semibold text-white">USDT / PKR Calculator</h2>
                 {rateUpdatedAt && <StalenessBadge updatedAt={rateUpdatedAt} />}
               </div>
 
               {error ? (
-                <p className="text-sm text-danger">Could not load rate. Please refresh.</p>
+                <p className="text-sm text-red-400">Could not load rate. Please refresh.</p>
               ) : (
                 <>
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-xs font-medium text-text-muted mb-1">PKR Amount</label>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">PKR Amount</label>
                       <div className="relative">
                         <input
                           type="number"
                           value={pkrInput}
                           onChange={(e) => handlePkrChange(e.target.value)}
                           placeholder="Enter PKR"
-                          className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                          className="w-full px-4 py-3 border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white/10 text-white placeholder:text-slate-500"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-muted">PKR</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">PKR</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-center">
-                      <svg className="w-5 h-5 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                       </svg>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-text-muted mb-1">USDT Amount</label>
+                      <label className="block text-xs font-medium text-slate-400 mb-1">USDT Amount</label>
                       <div className="relative">
                         <input
                           type="number"
                           value={usdtInput}
                           onChange={(e) => handleUsdtChange(e.target.value)}
                           placeholder="Enter USDT"
-                          className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                          className="w-full px-4 py-3 border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white/10 text-white placeholder:text-slate-500"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-text-muted">USDT</span>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">USDT</span>
                       </div>
                     </div>
                   </div>
                   {rate && (
-                    <p className="mt-3 text-xs text-text-muted text-center">
-                      1 USDT = PKR {rate.toLocaleString()}
-                    </p>
+                    <div className="mt-3 flex items-center justify-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                      <p className="text-xs text-slate-400 text-center">
+                        1 USDT = <span className="text-white font-semibold">PKR {rate.toLocaleString()}</span>
+                      </p>
+                    </div>
                   )}
                 </>
               )}
@@ -298,32 +326,32 @@ export default function HomePage() {
 
       {/* ── 2. STATS BAR ── */}
       {stats && (
-        <section className="bg-primary text-white py-8">
+        <section className="bg-slate-800 border-b border-slate-700 py-5">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
               <div>
-                <p className="text-2xl font-bold">
+                <p className="text-xl font-bold text-white">
                   <AnimatedNumber value={stats.totalUsers} />
                 </p>
-                <p className="text-sm text-white/70 mt-1">Total Users</p>
+                <p className="text-xs text-slate-400 mt-0.5 uppercase tracking-wide font-medium">Users</p>
               </div>
               <div>
-                <p className="text-2xl font-bold">
+                <p className="text-xl font-bold text-white">
                   <AnimatedNumber value={stats.totalTrades} />
                 </p>
-                <p className="text-sm text-white/70 mt-1">Total Trades</p>
+                <p className="text-xs text-slate-400 mt-0.5 uppercase tracking-wide font-medium">Trades Completed</p>
               </div>
               <div>
-                <p className="text-2xl font-bold">
+                <p className="text-xl font-bold text-white">
                   <AnimatedNumber value={parseFloat(stats.totalVolume) || 0} prefix="$" />
                 </p>
-                <p className="text-sm text-white/70 mt-1">Volume (USD)</p>
+                <p className="text-xs text-slate-400 mt-0.5 uppercase tracking-wide font-medium">Volume (USD)</p>
               </div>
               <div>
-                <p className="text-2xl font-bold">
+                <p className="text-xl font-bold text-white">
                   <AnimatedNumber value={stats.verifiedTraders} />
                 </p>
-                <p className="text-sm text-white/70 mt-1">Verified Traders</p>
+                <p className="text-xs text-slate-400 mt-0.5 uppercase tracking-wide font-medium">Verified Traders</p>
               </div>
             </div>
           </div>
@@ -341,7 +369,7 @@ export default function HomePage() {
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 adsTab === 'buy'
                   ? 'bg-primary text-white'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+                  : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
               }`}
             >
               Buy USDT
@@ -351,7 +379,7 @@ export default function HomePage() {
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 adsTab === 'sell'
                   ? 'bg-primary text-white'
-                  : 'bg-white border border-border text-text-secondary hover:bg-surface'
+                  : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
               }`}
             >
               Sell USDT
@@ -390,7 +418,7 @@ export default function HomePage() {
       </section>
 
       {/* ── 4. QUICK ACTIONS ── */}
-      <section className="py-12 bg-white border-t border-border">
+      <section className="py-12 bg-surface border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold text-text-primary mb-6">Quick Actions</h2>
           <div className="grid sm:grid-cols-3 gap-4">

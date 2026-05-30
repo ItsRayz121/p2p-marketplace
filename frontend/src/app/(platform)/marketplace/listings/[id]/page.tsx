@@ -2,6 +2,7 @@
 import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { adsApi, apiRequest, ApiError, tradesApi, walletApi } from '@/lib/api'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 import type { AdActivity, SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
@@ -266,7 +267,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <p className="text-text-muted text-sm">{ad.coin} · {ad.network}</p>
             </div>
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${ad.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{ad.status.charAt(0).toUpperCase() + ad.status.slice(1)}</span>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${ad.status === 'active' ? 'bg-success/10 text-success' : 'bg-surface-alt text-text-muted'}`}>{ad.status.charAt(0).toUpperCase() + ad.status.slice(1)}</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">
@@ -299,9 +300,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </button>
         {sellerOpen && (
           <div className="flex items-center gap-3 mt-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center flex-shrink-0">
-              {ad.user.username.charAt(0).toUpperCase()}
-            </div>
+            <UserAvatar name={ad.user.username} size="md" />
             <div>
               <p className="font-semibold text-text-primary">{ad.user.username}</p>
               {ad.user.tradeStats && (

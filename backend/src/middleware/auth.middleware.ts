@@ -31,6 +31,14 @@ export async function authenticate(req: FastifyRequest, _reply: FastifyReply): P
   if (user.isBanned) throw new AppError('ACCOUNT_BANNED', 'Your account has been banned', 403)
   if (user.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Your account has been temporarily suspended', 403)
   req.user = { id: user.id, email: user.email, role: user.role }
+
+  // Track last-seen at most once every 5 minutes per user (fire-and-forget).
+  const seenKey = `user-seen:${user.id}`
+  redis.set(seenKey, '1', 'EX', 300, 'NX').then((set) => {
+    if (set) {
+      db.user.update({ where: { id: user.id }, data: { lastSeenAt: new Date() } }).catch(() => {})
+    }
+  }).catch(() => {})
 }
 
 export function requireRole(...roles: string[]) {
