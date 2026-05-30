@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { Coins, LayoutList, BarChart3 } from 'lucide-react'
+import { Coins, LayoutList } from 'lucide-react'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
@@ -112,11 +112,10 @@ export default function CtmHomePage() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {([
-          { href: '/ctm/tokens',    label: 'Token Directory',    Icon: Coins,      iconCls: 'text-violet-500', bgCls: 'bg-violet-500/10' },
-          { href: '/ctm/listings',  label: 'Buy/Sell Listings',  Icon: LayoutList, iconCls: 'text-emerald-500',bgCls: 'bg-emerald-500/10'},
-          { href: '/ctm/dashboard', label: 'Merchant Dashboard', Icon: BarChart3,  iconCls: 'text-amber-500',  bgCls: 'bg-amber-500/10'  },
+          { href: '/ctm/tokens',   label: 'Token Directory',   Icon: Coins,      iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10'  },
+          { href: '/ctm/listings', label: 'Buy/Sell Listings', Icon: LayoutList, iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10' },
         ] as const).map((item) => (
           <Link key={item.href} href={item.href} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center hover:shadow-card-md hover:border-primary/20 transition-all group">
             <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-2 transition-colors ${item.bgCls}`}>

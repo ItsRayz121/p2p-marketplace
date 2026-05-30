@@ -217,7 +217,7 @@ export default function IncomingBidsPage() {
             <p className="text-sm text-yellow-600 font-medium">{pendingCount} pending bid{pendingCount !== 1 ? 's' : ''} awaiting your response</p>
           )}
         </div>
-        <Link href="/ctm/dashboard" className="text-sm text-primary hover:underline">Dashboard →</Link>
+        <Link href="/my-ads?tab=analytics" className="text-sm text-primary hover:underline">Merchant Analytics →</Link>
       </div>
 
       {/* Filter tabs */}
