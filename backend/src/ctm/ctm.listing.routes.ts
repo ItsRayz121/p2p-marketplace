@@ -13,6 +13,7 @@ import {
   deleteListing,
 } from './ctm.listing.service'
 import { createTradeFromListing } from './ctm.trade.service'
+import { db } from '../lib/prisma'
 
 const createListingSchema = z.object({
   tokenId: z.string().min(1),
@@ -48,6 +49,46 @@ const updateListingSchema = z.object({
 })
 
 export async function ctmListingRoutes(app: FastifyInstance) {
+  // GET /ctm/stats — public marketplace stats
+  app.get('/ctm/stats', async (_req, reply) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const [activeListings, todayTrades, totalTokens] = await Promise.all([
+      db.ctmListing.count({ where: { status: 'active' } }),
+      db.ctmTrade.count({ where: { status: 'completed', completedAt: { gte: today } } }),
+      db.ctmToken.count({ where: { status: 'approved' } }),
+    ])
+    return reply.send({ success: true, data: { activeListings, todayTrades, totalTokens } })
+  })
+
+  // GET /ctm/recent-trades — recent completed trades feed
+  app.get('/ctm/recent-trades', async (_req, reply) => {
+    const trades = await db.ctmTrade.findMany({
+      where: { status: 'completed' },
+      orderBy: { completedAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        tokenAmount: true,
+        completedAt: true,
+        token: { select: { symbol: true } },
+        buyer: { select: { username: true } },
+        seller: { select: { username: true } },
+      },
+    })
+    return reply.send({
+      success: true,
+      data: trades.map((t) => ({
+        id: t.id,
+        amount: t.tokenAmount.toString(),
+        coin: t.token.symbol,
+        completedAt: (t.completedAt ?? new Date()).toISOString(),
+        buyerUsername: t.buyer.username,
+        sellerUsername: t.seller.username,
+      })),
+    })
+  })
+
   // GET /ctm/listings — browse listings
   app.get('/ctm/listings', { preHandler: [optionalAuth] }, async (req, reply) => {
     const q = req.query as Record<string, string>
@@ -66,7 +107,6 @@ export async function ctmListingRoutes(app: FastifyInstance) {
 
   // GET /ctm/listings/me — my listings
   app.get('/ctm/listings/me', { preHandler: [authenticate] }, async (req, reply) => {
-    const { db } = await import('../lib/prisma')
     const profile = await db.ctmMerchantProfile.findUnique({ where: { userId: req.user!.id }, select: { id: true } })
     if (!profile) return reply.send({ success: true, data: { listings: [], total: 0, page: 1, limit: 20, totalPages: 0 } })
     // Update lastActiveAt fire-and-forget

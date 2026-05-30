@@ -1906,6 +1906,12 @@ export const ctmApi = {
   adminApproveTokenRequest: (id: string, data: object) => apiRequest<unknown>(`/ctm/tokens/admin/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
   adminRejectTokenRequest: (id: string, data: object) => apiRequest<void>(`/ctm/tokens/admin/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
 
+  // Stats & feed
+  getStats: () =>
+    apiRequest<{ activeListings: number; todayTrades: number; totalTokens: number }>('/ctm/stats'),
+  getRecentTrades: () =>
+    apiRequest<RecentTrade[]>('/ctm/recent-trades'),
+
   // Listings
   getListings: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ listings: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/listings' + buildQs(params)),
