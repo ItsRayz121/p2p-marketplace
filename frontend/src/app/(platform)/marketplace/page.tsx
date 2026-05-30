@@ -36,11 +36,10 @@ interface Filters {
 
 function responseTimeLabel(mins: number | null | undefined): { text: string; cls: string } | null {
   if (mins == null) return null
-  if (mins <  5)  return { text: '⚡ < 5 min',   cls: 'text-success font-semibold' }
-  if (mins < 15)  return { text: `⚡ ~${mins}m`,  cls: 'text-success' }
-  if (mins < 30)  return { text: `⚡ ~${mins}m`,  cls: 'text-text-muted' }
-  if (mins < 60)  return { text: `⚡ ~${mins}m`,  cls: 'text-text-muted' }
-  return null   // ≥ 60 min — don't advertise a slow response time
+  if (mins <  5)  return { text: '⚡ < 5 min',  cls: 'text-success font-semibold' }
+  if (mins < 30)  return { text: `⚡ ~${mins}m`, cls: 'text-success' }
+  if (mins < 60)  return { text: `⚡ ~${mins}m`, cls: 'text-text-muted' }
+  return null   // ≥ 60 min — don't advertise a slow responder
 }
 
 function listingAge(dateStr: string): string {
