@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { Fuel } from 'lucide-react'
 import { gasApi, type GasOrder, ApiError } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
@@ -222,9 +223,16 @@ function GasOrderTrackingPageInner() {
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 font-mono">{order.orderRef}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Gas Fee Order</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white shrink-0">
+              <Fuel size={20} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 font-mono">{order.orderRef}</h1>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {order.status === 'delivered' ? '⛽ Gas delivered to your wallet' : 'Gas Fee Order'}
+              </p>
+            </div>
           </div>
           <Badge variant={statusVariant(order.status)} size="md">
             {STATUS_LABELS[order.status] ?? order.status}

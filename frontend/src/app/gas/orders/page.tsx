@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { apiRequest } from '@/lib/api'
+import { Fuel } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -244,9 +245,14 @@ export default function GasOrdersPage() {
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-text-primary">Gas Order History</h1>
-            <p className="text-sm text-text-muted mt-0.5">All your past gas fee orders</p>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white shrink-0">
+              <Fuel size={18} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-text-primary">Gas Order History</h1>
+              <p className="text-sm text-text-muted mt-0.5">All your past gas fee orders</p>
+            </div>
           </div>
           <Link href="/gas">
             <Button variant="secondary" size="sm">New Order</Button>
