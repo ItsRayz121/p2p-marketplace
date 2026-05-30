@@ -60,7 +60,7 @@ export default function AdminDashboardPage() {
       href: '/admin/kyc',
       urgent: (stats?.pendingKyc ?? 0) > 0,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0" />
         </svg>
       ),
@@ -71,7 +71,7 @@ export default function AdminDashboardPage() {
       href: '/admin/disputes',
       urgent: (stats?.openDisputes ?? 0) > 0,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
       ),
@@ -82,7 +82,7 @@ export default function AdminDashboardPage() {
       href: '/admin/withdrawals',
       urgent: (stats?.pendingWithdrawals ?? 0) > 0,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
         </svg>
       ),
@@ -93,7 +93,7 @@ export default function AdminDashboardPage() {
       href: '/admin/instant-buy',
       urgent: (stats?.pendingInstantBuy ?? 0) > 0,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       ),
@@ -104,7 +104,7 @@ export default function AdminDashboardPage() {
       href: '/admin/gas',
       urgent: (stats?.pendingGasOrders ?? 0) > 0,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       ),
@@ -115,7 +115,7 @@ export default function AdminDashboardPage() {
       href: '/admin/gas',
       urgent: (stats?.pkrGasProofsPending ?? 0) > 0,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       ),
@@ -254,26 +254,26 @@ export default function AdminDashboardPage() {
       {/* Action Required */}
       <section>
         <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Action Required</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {actionCards.map((card) => (
             <Link
               key={card.label}
               href={card.href}
               className={cn(
-                'flex items-center gap-3 p-4 rounded-xl border bg-surface shadow-card hover:shadow-card-md transition-all',
+                'flex items-center gap-2 p-3 rounded-lg border bg-surface shadow-card hover:shadow-card-md transition-all',
                 card.urgent ? 'border-danger/30 shadow-sm' : 'border-border',
               )}
             >
               <div className={cn(
-                'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0',
+                'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
                 card.urgent ? 'bg-danger/10 text-danger' : 'bg-surface text-text-muted',
               )}>
                 {card.icon}
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-text-muted truncate">{card.label}</p>
+                <p className="text-[11px] text-text-muted truncate leading-tight">{card.label}</p>
                 <p className={cn(
-                  'text-2xl font-bold leading-tight',
+                  'text-lg font-bold leading-tight',
                   card.urgent ? 'text-danger' : 'text-text-primary',
                 )}>
                   {card.value}
@@ -287,15 +287,15 @@ export default function AdminDashboardPage() {
       {/* Today at a Glance */}
       <section>
         <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Today</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2">
           {todayCards.map((card) => (
-            <div key={card.label} className="bg-surface shadow-card rounded-xl border border-border p-4">
-              <div className="flex items-center gap-2 mb-2">
+            <div key={card.label} className="bg-surface shadow-card rounded-lg border border-border p-3">
+              <div className="flex items-center gap-1.5 mb-1">
                 {card.icon}
-                <p className="text-xs font-medium text-text-muted">{card.label}</p>
+                <p className="text-[11px] font-medium text-text-muted leading-tight">{card.label}</p>
               </div>
-              <p className={cn('text-2xl font-bold', card.color)}>{card.value}</p>
-              <p className="text-[11px] text-text-muted mt-0.5">{card.sub}</p>
+              <p className={cn('text-base font-bold leading-tight', card.color)}>{card.value}</p>
+              <p className="text-[10px] text-text-muted mt-0.5">{card.sub}</p>
             </div>
           ))}
         </div>
