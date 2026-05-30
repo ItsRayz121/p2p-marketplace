@@ -38,6 +38,7 @@ export interface SellerInfo {
     totalTrades: number
     completedTrades: number
     avgRating: string
+    avgResponseMinutes: number | null
   } | null
   hasCollateral: boolean
 }
@@ -277,6 +278,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
           totalTrades: true,
           completedTrades: true,
           avgRating: true,
+          avgResponseMinutes: true,
         },
       },
       collateralLocks: {
@@ -338,6 +340,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
               totalTrades: stats.totalTrades,
               completedTrades: stats.completedTrades,
               avgRating: stats.avgRating.toString(),
+              avgResponseMinutes: stats.avgResponseMinutes ?? null,
             }
           : null,
         hasCollateral: ad.user.collateralLocks.length > 0,
@@ -463,6 +466,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
           totalTrades: true,
           completedTrades: true,
           avgRating: true,
+          avgResponseMinutes: true,
         },
       },
       collateralLocks: {
@@ -535,6 +539,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
               totalTrades: stats.totalTrades,
               completedTrades: stats.completedTrades,
               avgRating: stats.avgRating.toString(),
+              avgResponseMinutes: stats.avgResponseMinutes ?? null,
             }
           : null,
         hasCollateral: ad.user.collateralLocks.length > 0,

@@ -467,6 +467,7 @@ export interface MarketplaceAd {
       totalTrades: number
       completedTrades: number
       avgRating: string
+      avgResponseMinutes: number | null
     } | null
     hasCollateral: boolean
   }

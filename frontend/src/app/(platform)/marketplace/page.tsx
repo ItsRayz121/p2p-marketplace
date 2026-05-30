@@ -34,6 +34,15 @@ interface Filters {
 }
 
 
+function responseTimeLabel(mins: number | null | undefined): { text: string; cls: string } | null {
+  if (mins == null) return null
+  if (mins <  5)  return { text: '⚡ < 5 min',   cls: 'text-success font-semibold' }
+  if (mins < 15)  return { text: `⚡ ~${mins}m`,  cls: 'text-success' }
+  if (mins < 30)  return { text: `⚡ ~${mins}m`,  cls: 'text-text-muted' }
+  if (mins < 60)  return { text: `⚡ ~${mins}m`,  cls: 'text-text-muted' }
+  return null   // ≥ 60 min — don't advertise a slow response time
+}
+
 function listingAge(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60_000)
@@ -71,6 +80,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
     completionPct >= 70    ? 'text-warning'  : 'text-danger'
 
   const activity = activeLabel(ad.seller?.lastSeenAt ?? null)
+  const responseTime = responseTimeLabel(stats?.avgResponseMinutes)
   const isSell     = ad.side === 'sell'
   const userAction = isSell ? 'BUY' : 'SELL'
   const accentCls  = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
@@ -167,12 +177,19 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             <span className="text-text-muted">{completedTrades} done</span>
           </div>
 
-          {/* Active status */}
-          {activity && (
-            <p className={`text-[10px] mt-1 ${activity.cls}`}>
-              {activity.text}
-            </p>
-          )}
+          {/* Response time + active status */}
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            {responseTime && (
+              <span className={`text-[10px] ${responseTime.cls}`}>
+                {responseTime.text}
+              </span>
+            )}
+            {activity && (
+              <span className={`text-[10px] ${activity.cls}`}>
+                {activity.text}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Payment methods */}

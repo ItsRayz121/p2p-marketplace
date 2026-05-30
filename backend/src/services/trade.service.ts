@@ -29,6 +29,42 @@ export interface GetTradesParams {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+async function recalcSellerResponseTime(tx: Prisma.TransactionClient, sellerId: string) {
+  const recentTrades = await tx.trade.findMany({
+    where: {
+      sellerId,
+      status: 'crypto_released',
+      paymentUploadedAt: { not: null },
+      paymentConfirmedAt: { not: null },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 20,
+    select: { paymentUploadedAt: true, paymentConfirmedAt: true },
+  })
+
+  const times = recentTrades
+    .map((t) => {
+      if (!t.paymentUploadedAt || !t.paymentConfirmedAt) return null
+      const mins = Math.round((t.paymentConfirmedAt.getTime() - t.paymentUploadedAt.getTime()) / 60_000)
+      return mins > 0 ? mins : null
+    })
+    .filter((v): v is number => v !== null)
+
+  if (times.length === 0) return
+
+  times.sort((a, b) => a - b)
+  const mid = Math.floor(times.length / 2)
+  const median = times.length % 2 !== 0
+    ? times[mid]!
+    : Math.round((times[mid - 1]! + times[mid]!) / 2)
+
+  await tx.tradeStats.upsert({
+    where: { userId: sellerId },
+    create: { userId: sellerId, avgResponseMinutes: median },
+    update: { avgResponseMinutes: median },
+  })
+}
+
 async function upsertTradeStats(
   tx: Prisma.TransactionClient,
   userId: string,
@@ -214,7 +250,7 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
   // Use optimistic updateMany with status guard — prevents two concurrent uploads both succeeding
   const result = await db.trade.updateMany({
     where: { id: tradeId, buyerId, status: 'payment_pending' },
-    data: { status: 'payment_uploaded', paymentProofUrl: proofUrl },
+    data: { status: 'payment_uploaded', paymentProofUrl: proofUrl, paymentUploadedAt: new Date() },
   })
 
   if (result.count === 0) {
@@ -263,7 +299,7 @@ export async function confirmPayment(tradeId: string, actorId: string, role: str
 
     return tx.trade.update({
       where: { id: tradeId },
-      data: { status: 'payment_confirmed' },
+      data: { status: 'payment_confirmed', paymentConfirmedAt: new Date() },
     })
   })
 
@@ -335,6 +371,9 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     // Update TradeStats for buyer and seller
     await upsertTradeStats(tx, buyerId, true, rows.fiatAmount)
     await upsertTradeStats(tx, rows.sellerId, true, rows.fiatAmount)
+
+    // Recalculate seller's median response time from last 20 trades
+    await recalcSellerResponseTime(tx, rows.sellerId)
   })
 
   // Queue badge recalculation for both

@@ -608,6 +608,8 @@ model Trade {
   cancelReason       String?
   cancelledAt        DateTime?
   expiresAt          DateTime
+  paymentUploadedAt  DateTime?   // set when buyer uploads payment proof
+  paymentConfirmedAt DateTime?   // set when seller confirms payment received
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   adBidId            String?     @unique
@@ -1088,10 +1090,11 @@ model TradeStats {
   totalReviews     Int         @default(0)
   totalVolumePKR   Decimal     @default(0) @db.Decimal(18, 2)
   trustScore       Int         @default(0)
-  badge            TraderBadge @default(new)
-  badgeLabel       String      @default("New Trader")
-  badgeOverride    Boolean     @default(false)
-  lastUpdated      DateTime    @updatedAt
+  badge              TraderBadge @default(new)
+  badgeLabel         String      @default("New Trader")
+  badgeOverride      Boolean     @default(false)
+  avgResponseMinutes Int?        // median seller response time in minutes (null = not enough data)
+  lastUpdated        DateTime    @updatedAt
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
