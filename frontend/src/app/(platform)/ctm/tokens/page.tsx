@@ -53,7 +53,7 @@ export default function CtmTokensPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-primary">Token Directory</h1>
+        <h1 className="text-2xl font-bold text-text-primary">Featured Tokens</h1>
         <Link href="/ctm" className="text-sm text-primary hover:underline">← CTM Home</Link>
       </div>
 

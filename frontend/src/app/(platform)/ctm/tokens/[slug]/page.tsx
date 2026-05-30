@@ -56,7 +56,7 @@ export default function CtmTokenDetailPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      <Link href="/ctm/tokens" className="text-sm text-primary hover:underline">← Back to Directory</Link>
+      <Link href="/ctm/tokens" className="text-sm text-primary hover:underline">← Featured Tokens</Link>
 
       {/* Header */}
       <div className="bg-surface shadow-card border border-border rounded-xl p-6">

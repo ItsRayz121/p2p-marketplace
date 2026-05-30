@@ -7,7 +7,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
-import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid } from 'lucide-react'
+import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles } from 'lucide-react'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const PAGE_SIZE = 20
@@ -330,6 +330,15 @@ export default function CtmHomePage() {
 
       {/* Stats strip */}
       {ctmStats && <CtmStatsStrip stats={ctmStats} total={total} />}
+
+      {/* Featured Tokens link */}
+      <Link
+        href="/ctm/tokens"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline mb-4"
+      >
+        <Sparkles size={14} />
+        Featured Tokens
+      </Link>
 
       {/* Recent trades ticker */}
       <RecentTradesFeed trades={recentTrades} />
