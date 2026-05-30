@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Option A: Navy square, bold white R, teal leg -->
+  <rect width="32" height="32" rx="6" fill="#0D1B2A"/>
+  <!-- Stem -->
+  <rect x="5" y="5" width="6" height="22" fill="white"/>
+  <!-- Bowl: solid D-shape, no counter -->
+  <path d="M11,5 H20 Q27,5 27,11 Q27,18 20,18 H11 Z" fill="white"/>
+  <!-- Leg: teal diagonal -->
+  <polygon points="11,18 21,18 27,27 17,27" fill="#00C9A7"/>
+</svg>

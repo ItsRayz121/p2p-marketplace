@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 32 32">
+  <!-- Option C: Circle container, teal leg -->
+  <circle cx="16" cy="16" r="16" fill="#0D1B2A"/>
+  <!-- Stem (shifted right slightly for circle centering) -->
+  <rect x="6" y="5" width="6" height="22" fill="white"/>
+  <!-- Bowl -->
+  <path d="M12,5 H20 Q27,5 27,11 Q27,18 20,18 H12 Z" fill="white"/>
+  <!-- Leg: teal diagonal -->
+  <polygon points="12,18 21,18 26,27 17,27" fill="#00C9A7"/>
+</svg>

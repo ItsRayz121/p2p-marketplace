@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 32 32">
+  <!-- Option B: Deeper navy, all-white R with hollow bowl counter -->
+  <rect width="32" height="32" rx="7" fill="#162B44"/>
+  <!-- Stem -->
+  <rect x="5" y="5" width="6" height="22" fill="white"/>
+  <!-- Bowl outer: solid D -->
+  <path d="M11,5 H20 Q27,5 27,11 Q27,18 20,18 H11 Z" fill="white"/>
+  <!-- Bowl inner counter (navy cutout) -->
+  <path d="M13,8 H18 Q23,8 23,11 Q23,15 18,15 H13 Z" fill="#162B44"/>
+  <!-- Leg: white diagonal -->
+  <polygon points="11,18 21,18 27,27 17,27" fill="white"/>
+</svg>
