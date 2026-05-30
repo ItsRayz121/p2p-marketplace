@@ -18,8 +18,6 @@ import type { RecentTrade } from '@/lib/api'
 const NETWORKS = [
   { value: '', label: 'All Networks' },
   { value: 'BEP20', label: 'BNB Chain (BEP20)' },
-  { value: 'TRC20', label: 'Tron (TRC20)' },
-  { value: 'ERC20', label: 'Ethereum (ERC20)' },
   { value: 'Aptos', label: 'Aptos' },
 ]
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
