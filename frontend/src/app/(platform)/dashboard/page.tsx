@@ -13,14 +13,15 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { getTradeStatus, getGasStatus, kycStatusVariant } from '@/lib/tradeStatus'
 import { cn } from '@/lib/utils'
 import {
-  Fuel,
-  Store,
-  Coins,
-  ClipboardList,
-  Wallet,
-  Gift,
-  Bell,
-} from 'lucide-react'
+  FireIcon,
+  BuildingStorefrontIcon,
+  CircleStackIcon,
+  ClipboardDocumentListIcon,
+  WalletIcon,
+  GiftIcon,
+  BellIcon,
+} from '@heroicons/react/24/solid'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -30,12 +31,12 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
 }
 
 const QUICK_ACTIONS = [
-  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: Fuel,          iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'   },
-  { href: '/marketplace', label: 'USDT Marketplace', Icon: Store,         iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'    },
-  { href: '/ctm',         label: 'Community Tokens', Icon: Coins,         iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10'  },
-  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList, iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10' },
-  { href: '/wallet',      label: 'Wallet',           Icon: Wallet,        iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'    },
-  { href: '/referral',    label: 'Referral',         Icon: Gift,          iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'    },
+  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: FireIcon,                  iconCls: 'text-amber-600',   bgCls: 'bg-amber-100'   },
+  { href: '/marketplace', label: 'USDT Marketplace', Icon: BuildingStorefrontIcon,    iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
+  { href: '/ctm',         label: 'Community Tokens', Icon: CircleStackIcon,           iconCls: 'text-violet-600',  bgCls: 'bg-violet-100'  },
+  { href: '/orders',      label: 'My Trades',        Icon: ClipboardDocumentListIcon, iconCls: 'text-emerald-600', bgCls: 'bg-emerald-100' },
+  { href: '/wallet',      label: 'Wallet',           Icon: WalletIcon,                iconCls: 'text-cyan-600',    bgCls: 'bg-cyan-100'    },
+  { href: '/referral',    label: 'Referral',         Icon: GiftIcon,                  iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -194,7 +195,9 @@ export default function DashboardPage() {
       {/* ── 1. Welcome bar ── */}
       <div className="bg-surface rounded-xl border border-border shadow-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
+          <div className="flex items-center gap-3">
+            <UserAvatar name={displayName} avatarUrl={user?.avatarUrl} size="lg" className="flex-shrink-0" />
+            <div>
             <p className="text-sm text-text-muted">{greeting}</p>
             <h1 className="text-xl font-bold text-text-primary">{displayName}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -206,6 +209,7 @@ export default function DashboardPage() {
                 </Badge>
               </Link>
               <BadgeChip badge={effectiveBadge} />
+            </div>
             </div>
           </div>
           {totalPortfolioPkr !== null && totalPortfolioPkr > 0 && (
@@ -305,8 +309,8 @@ export default function DashboardPage() {
               href={href}
               className="flex flex-col items-center gap-2 bg-surface rounded-xl border border-border shadow-card p-4 hover:border-primary/30 hover:shadow-card-md transition-all text-center group"
             >
-              <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center transition-colors', bgCls)}>
-                <Icon size={18} className={iconCls} aria-hidden />
+              <div className={cn('w-11 h-11 rounded-xl flex items-center justify-center transition-colors', bgCls)}>
+                <Icon className={cn('w-5 h-5', iconCls)} aria-hidden />
               </div>
               <span className="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors leading-tight">{label}</span>
             </Link>
@@ -334,7 +338,10 @@ export default function DashboardPage() {
                 <Link key={t.id} href={`/trade/${t.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-surface-alt/60 transition-colors">
                   <div className="flex items-center gap-3">
                     <Badge variant={ts.variant} icon={ts.icon} size="sm">{ts.label}</Badge>
-                    <span className="text-sm text-text-primary">{counterparty}</span>
+                    <div className="flex items-center gap-1.5">
+                      <UserAvatar name={counterparty} avatarUrl={isUserBuyer ? t.seller?.avatarUrl : t.buyer?.avatarUrl} size="xs" />
+                      <span className="text-sm text-text-primary">{counterparty}</span>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-medium text-text-primary">{parseFloat(t.amount).toFixed(4)} {t.coin}</p>
@@ -422,9 +429,8 @@ export default function DashboardPage() {
           <div className="bg-surface rounded-xl border border-border shadow-card divide-y divide-border">
             {(notifications ?? []).map((n) => (
               <div key={n.id} className="flex items-start gap-3 px-4 py-3">
-                <Bell
-                  size={15}
-                  className={`mt-0.5 flex-shrink-0 ${notifIconColor[n.type] ?? 'text-text-muted'}`}
+                <BellIcon
+                  className={`w-4 h-4 mt-0.5 flex-shrink-0 ${notifIconColor[n.type] ?? 'text-text-muted'}`}
                   aria-hidden
                 />
                 <div className="flex-1 min-w-0">

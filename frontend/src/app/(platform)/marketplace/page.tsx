@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -93,6 +94,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
         <div className="sm:w-36">
           <p className="text-xs text-text-muted mb-0.5">Seller</p>
           <div className="flex items-center gap-1.5 flex-wrap">
+            <UserAvatar name={ad.seller?.username ?? 'A'} size="xs" />
             <span className="text-sm font-medium text-text-primary">{ad.seller?.username ?? 'Anonymous'}</span>
             <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${BADGE_COLORS[ad.seller?.badge ?? 'new'] ?? 'bg-gray-100 text-gray-700'}`}>
               {ad.seller?.badge ?? 'new'}

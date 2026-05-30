@@ -9,43 +9,41 @@ import { notificationsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import {
-  Store,
-  Coins,
-  Fuel,
-  Trophy,
-  LayoutDashboard,
-  Bell,
-  ShieldCheck,
-  ClipboardList,
-  Wallet,
-  Tag,
-  Settings,
-  Star,
-  Gift,
-  LogOut,
-  ChevronDown,
-  type LucideIcon,
-} from 'lucide-react'
+  BuildingStorefrontIcon,
+  CircleStackIcon,
+  FireIcon,
+  TrophyIcon,
+  Squares2X2Icon,
+  BellIcon,
+  ShieldCheckIcon,
+  ClipboardDocumentListIcon,
+  WalletIcon,
+  TagIcon,
+  Cog6ToothIcon,
+  GiftIcon,
+  ArrowRightStartOnRectangleIcon,
+  ChevronDownIcon,
+} from '@heroicons/react/24/solid'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
-const NAV_ITEMS: { href: string; Icon: LucideIcon; label: string; shortLabel?: string }[] = [
-  { href: '/marketplace', Icon: Store,           label: 'USDT Marketplace', shortLabel: 'Market'   },
-  { href: '/ctm',         Icon: Coins,           label: 'Community Tokens', shortLabel: 'Tokens'   },
-  { href: '/gas',         Icon: Fuel,            label: 'Crypto Gas Fees',  shortLabel: 'Gas'      },
-  { href: '/leaderboard', Icon: Trophy,          label: 'Leaderboard'                              },
-  { href: '/dashboard',   Icon: LayoutDashboard, label: 'Dashboard'                                },
+const NAV_ITEMS: { href: string; Icon: React.ElementType; label: string; shortLabel?: string }[] = [
+  { href: '/marketplace', Icon: BuildingStorefrontIcon, label: 'USDT Marketplace', shortLabel: 'Market' },
+  { href: '/ctm',         Icon: CircleStackIcon,        label: 'Community Tokens', shortLabel: 'Tokens' },
+  { href: '/gas',         Icon: FireIcon,               label: 'Crypto Gas Fees',  shortLabel: 'Gas'    },
+  { href: '/leaderboard', Icon: TrophyIcon,             label: 'Leaderboard'                            },
+  { href: '/dashboard',   Icon: Squares2X2Icon,         label: 'Dashboard'                              },
 ]
 
-const DROPDOWN_ITEMS: { href: string; Icon: LucideIcon; label: string; iconCls: string; bgCls: string }[] = [
-  { href: '/dashboard',   Icon: LayoutDashboard, label: 'Dashboard',        iconCls: 'text-blue-500',   bgCls: 'bg-blue-500/10'   },
-  { href: '/kyc',         Icon: ShieldCheck,     label: 'KYC Verification', iconCls: 'text-amber-500',  bgCls: 'bg-amber-500/10'  },
-  { href: '/orders',      Icon: ClipboardList,   label: 'My Trades',        iconCls: 'text-emerald-500',bgCls: 'bg-emerald-500/10'},
-  { href: '/wallet',      Icon: Wallet,          label: 'Wallet',           iconCls: 'text-violet-500', bgCls: 'bg-violet-500/10' },
-  { href: '/my-ads',      Icon: Tag,             label: 'My Ads',           iconCls: 'text-cyan-500',   bgCls: 'bg-cyan-500/10'   },
-  { href: '/settings',    Icon: Settings,        label: 'Settings',         iconCls: 'text-slate-400',  bgCls: 'bg-slate-400/10'  },
-  { href: '/leaderboard', Icon: Trophy,          label: 'Leaderboard',      iconCls: 'text-yellow-500', bgCls: 'bg-yellow-500/10' },
-  { href: '/referral',    Icon: Gift,            label: 'Referral',         iconCls: 'text-pink-500',   bgCls: 'bg-pink-500/10'   },
+const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; iconCls: string; bgCls: string }[] = [
+  { href: '/dashboard',   Icon: Squares2X2Icon,               label: 'Dashboard',        iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'   },
+  { href: '/kyc',         Icon: ShieldCheckIcon,               label: 'KYC Verification', iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'  },
+  { href: '/orders',      Icon: ClipboardDocumentListIcon,     label: 'My Trades',        iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10'},
+  { href: '/wallet',      Icon: WalletIcon,                    label: 'Wallet',           iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10' },
+  { href: '/my-ads',      Icon: TagIcon,                       label: 'My Ads',           iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'   },
+  { href: '/settings',    Icon: Cog6ToothIcon,                 label: 'Settings',         iconCls: 'text-slate-500',   bgCls: 'bg-slate-400/10'  },
+  { href: '/leaderboard', Icon: TrophyIcon,                    label: 'Leaderboard',      iconCls: 'text-yellow-500',  bgCls: 'bg-yellow-500/10' },
+  { href: '/referral',    Icon: GiftIcon,                      label: 'Referral',         iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'   },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -86,15 +84,18 @@ export default function Navbar() {
         <div className="flex h-16 items-center justify-between">
 
           {/* Logo */}
-          <Link href="/" className="flex items-center flex-shrink-0">
+          <Link href="/" className="flex items-center gap-2 flex-shrink-0">
             <Image
-              src="/brand/logo-horizontal-dark.png"
+              src="/brand/logo-icon.png"
               alt="RupChain"
-              width={160}
-              height={44}
-              className="h-9 w-auto object-contain"
+              width={32}
+              height={32}
+              className="w-8 h-8 object-contain flex-shrink-0"
               priority
             />
+            <span className="hidden sm:block font-bold text-lg text-text-primary tracking-tight leading-none">
+              RupChain
+            </span>
           </Link>
 
           {/* Center nav — md+ */}
@@ -112,7 +113,7 @@ export default function Navbar() {
                       : 'text-text-secondary hover:text-text-primary hover:bg-surface-alt',
                   )}
                 >
-                  <Icon size={15} aria-hidden className="flex-shrink-0" />
+                  <Icon className="w-4 h-4 flex-shrink-0" aria-hidden />
                   <span className="lg:hidden">{shortLabel ?? label}</span>
                   <span className="hidden lg:inline">{label}</span>
                 </Link>
@@ -145,7 +146,7 @@ export default function Navbar() {
                   className="relative p-2 text-text-secondary hover:text-text-primary hover:bg-surface-alt rounded-lg transition-colors"
                   aria-label="Notifications"
                 >
-                  <Bell size={18} aria-hidden />
+                  <BellIcon className="w-5 h-5" aria-hidden />
                   {unreadCount > 0 && (
                     <span className="absolute top-1 right-1 min-w-[18px] h-[18px] bg-danger text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
                       {unreadCount > 99 ? '99+' : unreadCount}
@@ -172,7 +173,7 @@ export default function Navbar() {
                       <span className="hidden sm:block text-sm font-medium text-text-primary max-w-[120px] truncate">
                         {user.fullName || user.username || user.email}
                       </span>
-                      <ChevronDown size={14} className="text-text-muted hidden sm:block" aria-hidden />
+                      <ChevronDownIcon className="w-3.5 h-3.5 text-text-muted hidden sm:block" aria-hidden />
                     </button>
                   </DropdownMenu.Trigger>
 
@@ -190,7 +191,7 @@ export default function Navbar() {
                           </p>
                           {kycBadge && (
                             <span className={cn('shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none', kycBadge.cls)}>
-                              <ShieldCheck size={9} aria-hidden />
+                              <ShieldCheckIcon className="w-2.5 h-2.5" aria-hidden />
                               {kycBadge.label}
                             </span>
                           )}
@@ -202,7 +203,7 @@ export default function Navbar() {
                         <DropdownMenu.Item key={href} asChild>
                           <Link href={href} className={dropdownItemCls}>
                             <span className={cn('flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0', bgCls)}>
-                              <Icon size={13} className={iconCls} aria-hidden />
+                              <Icon className={cn('w-3.5 h-3.5', iconCls)} aria-hidden />
                             </span>
                             {label}
                           </Link>
@@ -216,7 +217,7 @@ export default function Navbar() {
                         className={cn(dropdownItemCls, 'text-danger focus:text-danger focus:bg-danger/10')}
                       >
                         <span className="flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0 bg-red-500/10">
-                          <LogOut size={13} className="text-red-500" aria-hidden />
+                          <ArrowRightStartOnRectangleIcon className="w-3.5 h-3.5 text-red-500" aria-hidden />
                         </span>
                         Logout
                       </DropdownMenu.Item>
