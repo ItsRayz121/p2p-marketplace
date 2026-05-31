@@ -564,7 +564,7 @@ export const authApi = {
     apiRequest<{ message: string; accessToken: string; user: AuthUser }>('/auth/verify-email', { method: 'POST', body: JSON.stringify(data) }),
   resendOtp: (email: string, type: 'verify' | 'reset' = 'verify') =>
     apiRequest<{ sent: boolean }>('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email, type }) }),
-  login: (data: { email: string; password: string }) =>
+  login: (data: { email: string; password: string; rememberMe?: boolean }) =>
     apiRequest<{ accessToken?: string; preAuthToken?: string; user?: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   refresh: () =>
     apiRequest<{ accessToken: string }>('/auth/refresh', { method: 'POST' }),

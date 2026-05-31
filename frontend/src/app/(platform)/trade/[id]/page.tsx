@@ -41,11 +41,14 @@ interface ChatMessage {
   id: string
   senderId: string
   message: string
+  imageUrl?: string
   isSystem?: boolean
   createdAt: string
   /** Local-only delivery state for optimistic sends. Absent on server messages. */
   sendStatus?: 'sending' | 'failed'
 }
+
+const AUTO_RELEASE_HOURS = 2
 
 interface ExtendedTrade extends Trade {
   paymentProofUrl?: string
@@ -106,11 +109,13 @@ function InlineRatingForm({ onSubmit, actionError }: {
     <div className="space-y-4">
       <div>
         <p className="text-sm text-text-muted mb-2">How was your experience?</p>
-        <div className="flex gap-2">
+        <div className="flex gap-2" role="group" aria-label="Star rating">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
               onClick={() => setRating(star)}
+              aria-label={`Rate ${star} out of 5 stars`}
+              aria-pressed={star <= rating}
               className={`text-2xl transition-transform hover:scale-110 ${star <= rating ? 'text-gold' : 'text-text-muted/30'}`}
             >
               ★
@@ -258,8 +263,10 @@ export default function TradePage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const chatImageInputRef = useRef<HTMLInputElement>(null)
   const prevMsgCountRef = useRef(0)
   const { upload, uploading } = useFileUpload('payment-proof')
+  const { upload: uploadChatImage, uploading: uploadingChatImage } = useFileUpload('chat-image')
 
   const fetchTrade = useCallback(async () => {
     try {
@@ -474,6 +481,42 @@ export default function TradePage() {
     } catch (err) {
       setMessages((prev) => prev.map((m) => m.id === failedId ? { ...m, sendStatus: 'failed' } : m))
       setActionError(err instanceof Error ? err.message : 'Failed to send message')
+    }
+  }
+
+  const handleChatImageUpload = async (file: File) => {
+    setActionError(null)
+    try {
+      const url = await uploadChatImage(file)
+      // Send the image URL as a chat message with a special prefix so the UI can render it
+      const tempId = `tmp-img-${Date.now()}`
+      const optimistic: ChatMessage = {
+        id: tempId,
+        senderId: user?.id ?? '',
+        message: '',
+        imageUrl: url,
+        createdAt: new Date().toISOString(),
+        sendStatus: 'sending',
+      }
+      setMessages((prev) => [...prev, optimistic])
+      setSendingMsg(true)
+      try {
+        const msg = await tradesApi.sendMessage(id, `[image]${url}`)
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? { id: msg.id, senderId: user?.id ?? '', message: `[image]${url}`, imageUrl: url, createdAt: msg.createdAt }
+              : m,
+          ),
+        )
+      } catch (err) {
+        setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, sendStatus: 'failed' } : m))
+        setActionError(err instanceof Error ? err.message : 'Failed to send image')
+      } finally {
+        setSendingMsg(false)
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Image upload failed')
     }
   }
 
@@ -842,9 +885,12 @@ export default function TradePage() {
 
             {/* Buyer: release escrow (crypto_sent) */}
             {isUserBuyer && trade.status === 'crypto_sent' && (
-              <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>
-                I Received the Crypto — Release
-              </Button>
+              <>
+                <AutoReleaseCountdown updatedAt={trade.updatedAt} hoursWindow={AUTO_RELEASE_HOURS} />
+                <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>
+                  I Received the Crypto — Release
+                </Button>
+              </>
             )}
 
             {/* Dispute */}
@@ -934,16 +980,28 @@ export default function TradePage() {
                   </div>
                 )
               }
+              const imageUrl = msg.imageUrl ?? (msg.message.startsWith('[image]') ? msg.message.slice(7) : null)
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] flex flex-col gap-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
-                    <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
-                      isMine
-                        ? 'bg-primary text-white rounded-br-sm shadow-sm'
-                        : 'bg-surface border border-border text-text-primary rounded-bl-sm shadow-sm'
-                    } ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
-                      {msg.message}
-                    </div>
+                    {imageUrl ? (
+                      <a href={imageUrl} target="_blank" rel="noopener noreferrer" className={`block rounded-2xl overflow-hidden border-2 shadow-sm ${isMine ? 'border-primary/30' : 'border-border'} ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={imageUrl}
+                          alt="Shared image"
+                          className="max-w-[200px] max-h-[200px] object-cover"
+                        />
+                      </a>
+                    ) : (
+                      <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+                        isMine
+                          ? 'bg-primary text-white rounded-br-sm shadow-sm'
+                          : 'bg-surface border border-border text-text-primary rounded-bl-sm shadow-sm'
+                      } ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
+                        {msg.message}
+                      </div>
+                    )}
                     <span className="text-[10px] text-text-muted px-1">{msgTime}</span>
                     {isMine && msg.sendStatus === 'sending' && (
                       <span className="text-[10px] text-text-muted">Sending…</span>
@@ -961,7 +1019,30 @@ export default function TradePage() {
           </div>
 
           {/* Send box */}
-          <div className="px-3 py-3 border-t border-border flex gap-2">
+          <div className="px-3 py-3 border-t border-border flex gap-2 items-center">
+            {/* Hidden image input */}
+            <input
+              ref={chatImageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleChatImageUpload(f); e.target.value = '' } }}
+            />
+            <button
+              type="button"
+              onClick={() => chatImageInputRef.current?.click()}
+              disabled={uploadingChatImage || sendingMsg}
+              aria-label="Attach image"
+              className="flex-shrink-0 p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors disabled:opacity-40"
+            >
+              {uploadingChatImage ? (
+                <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin block" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              )}
+            </button>
             <input
               type="text"
               value={messageInput}
@@ -1015,6 +1096,44 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between">
       <span className="text-text-muted">{label}</span>
       <span className="font-medium text-text-primary">{value}</span>
+    </div>
+  )
+}
+
+function AutoReleaseCountdown({ updatedAt, hoursWindow }: { updatedAt: string; hoursWindow: number }) {
+  const [remaining, setRemaining] = useState('')
+
+  useEffect(() => {
+    const releaseAt = new Date(updatedAt).getTime() + hoursWindow * 3_600_000
+
+    function tick() {
+      const diff = releaseAt - Date.now()
+      if (diff <= 0) {
+        setRemaining('shortly')
+        return
+      }
+      const h = Math.floor(diff / 3_600_000)
+      const m = Math.floor((diff % 3_600_000) / 60_000)
+      const s = Math.floor((diff % 60_000) / 1_000)
+      setRemaining(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`)
+    }
+
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [updatedAt, hoursWindow])
+
+  return (
+    <div className="bg-primary/5 border border-primary/20 rounded-lg px-3 py-2.5 flex items-start gap-2.5 text-xs">
+      <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <span className="text-text-secondary leading-snug">
+        If you don&apos;t confirm or dispute within{' '}
+        <span className="font-bold text-primary">{remaining}</span>, the escrow
+        will auto-release to the seller.
+        Only confirm after verifying you received the crypto.
+      </span>
     </div>
   )
 }

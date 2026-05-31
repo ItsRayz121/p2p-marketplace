@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react'
 import { apiRequest } from '@/lib/api'
 
-type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'payment-proof' | 'merchant-proof' | 'avatar'
+type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'payment-proof' | 'merchant-proof' | 'avatar' | 'chat-image'
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 const MAX_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB

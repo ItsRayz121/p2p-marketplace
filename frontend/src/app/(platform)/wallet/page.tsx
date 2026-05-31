@@ -24,6 +24,7 @@ import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAccount } from 'wagmi'
 import { Wallet, ArrowUpDown, Lock, Clock } from 'lucide-react'
+import { toast } from '@/lib/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -280,7 +281,7 @@ function WithdrawModal({
               <select
                 value={state.network}
                 onChange={(e) => setState((s) => ({ ...s, network: e.target.value }))}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {networks.map((n) => <option key={n}>{n}</option>)}
               </select>
@@ -457,7 +458,7 @@ function DepositModal({
           <select
             value={network}
             onChange={(e) => setNetwork(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
           >
             {networks.map((n) => <option key={n}>{n}</option>)}
           </select>
@@ -479,7 +480,7 @@ function DepositModal({
               <p className="text-xs text-text-muted mb-2">
                 Network: <span className="font-medium text-text-primary">{info.chainName ?? info.network}</span>
               </p>
-              <div className="w-36 h-36 bg-white border border-border rounded-lg flex items-center justify-center mx-auto mb-3 p-2">
+              <div className="w-36 h-36 bg-white border border-border rounded-lg flex items-center justify-center mx-auto mb-3 p-2" style={{ backgroundColor: '#ffffff' }}>
                 {/* Encode only the address — there's no universal URI scheme
                     for memo/destination tags across wallets, so embedding
                     `?memo=` would make Trust/Binance scan as a malformed
@@ -498,7 +499,7 @@ function DepositModal({
               <input
                 readOnly
                 value={info.address}
-                className="flex-1 px-3 py-2 text-xs font-mono border border-border rounded-lg bg-white"
+                className="flex-1 px-3 py-2 text-xs font-mono border border-border rounded-lg bg-surface"
               />
               <CopyButton text={info.address} />
             </div>
@@ -614,7 +615,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
                   const firstNetwork = networksFor(coin)[0] ?? 'ERC20'
                   setForm((f) => ({ ...f, coin, network: firstNetwork }))
                 }}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {Object.keys(COIN_NETWORKS).map((c) => <option key={c}>{c}</option>)}
               </select>
@@ -624,7 +625,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
               <select
                 value={form.network}
                 onChange={(e) => setForm((f) => ({ ...f, network: e.target.value }))}
-                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {networksFor(form.coin).map((n) => <option key={n}>{n}</option>)}
               </select>
@@ -816,8 +817,12 @@ function PaymentMethodsSection() {
     try {
       await userPaymentMethodsApi.remove(id)
       setMethods((prev) => prev.filter((m) => m.id !== id))
-    } catch { /* silently fail */ }
-    finally { setRemoveId(null) }
+      toast.success('Payment method removed')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove payment method')
+    } finally {
+      setRemoveId(null)
+    }
   }
 
   return (
@@ -858,7 +863,7 @@ function PaymentMethodsSection() {
                   className={`text-left px-3 py-2.5 rounded-lg border text-sm transition-colors ${
                     category === cat.key
                       ? 'border-primary bg-primary/5 text-primary font-medium'
-                      : 'border-border bg-white text-text-primary hover:border-primary/50'
+                      : 'border-border bg-surface text-text-primary hover:border-primary/50'
                   }`}
                 >
                   <div className="font-medium text-xs leading-tight">{cat.label}</div>
@@ -878,7 +883,7 @@ function PaymentMethodsSection() {
                 <select
                   value={selectedMethod ?? ''}
                   onChange={(e) => setSelectedMethod(e.target.value || null)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="">— Choose a bank —</option>
                   {PK_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
@@ -927,7 +932,7 @@ function PaymentMethodsSection() {
                   placeholder="Full name on the account"
                   value={accountName}
                   onChange={(e) => setAccountName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
@@ -939,7 +944,7 @@ function PaymentMethodsSection() {
                     placeholder="03xx-xxxxxxx"
                     value={mobileNumber}
                     onChange={(e) => setMobileNumber(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
               )}
@@ -953,7 +958,7 @@ function PaymentMethodsSection() {
                       placeholder="PK00XXXX..."
                       value={ibanNumber}
                       onChange={(e) => setIbanNumber(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div>
@@ -963,7 +968,7 @@ function PaymentMethodsSection() {
                       placeholder="Account number"
                       value={accountNumber}
                       onChange={(e) => setAccountNumber(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                 </div>
@@ -1082,7 +1087,10 @@ function SavedDeliveryAddressesSection() {
     try {
       await walletApi.deleteSavedAddress(id)
       setAddresses((prev) => prev.filter((a) => a.id !== id))
-    } catch { /* ignore */ }
+      toast.success('Address removed')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove address')
+    }
   }
 
   const selectedNetwork = DELIVERY_NETWORKS.find((n) => n.value === form.network)
@@ -1118,7 +1126,7 @@ function SavedDeliveryAddressesSection() {
                   className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
                     form.network === n.value
                       ? 'border-primary bg-primary/5 text-primary'
-                      : 'border-border bg-white text-text-primary hover:border-primary/50'
+                      : 'border-border bg-surface text-text-primary hover:border-primary/50'
                   }`}
                 >
                   {n.label}
@@ -1136,7 +1144,7 @@ function SavedDeliveryAddressesSection() {
               value={form.address}
               onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
               placeholder={selectedNetwork?.placeholder ?? 'Address or UID'}
-              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
@@ -1147,7 +1155,7 @@ function SavedDeliveryAddressesSection() {
               value={form.label}
               onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
               placeholder='e.g. "My Main Binance" or "Trading Wallet"'
-              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
@@ -1210,6 +1218,31 @@ function shortTxHash(h: string): string {
   return h.slice(0, 10) + '…' + h.slice(-6)
 }
 
+function exportTransactionsCsv(txs: Transaction[]) {
+  const headers = ['Date (PKT)', 'Type', 'Coin', 'Network', 'Amount', 'Status', 'TX Hash']
+  const rows = txs.map((tx) => {
+    const date = new Date(tx.createdAt).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })
+    const sign = (tx.type === 'withdrawal' || tx.type === 'fee') ? '-' : '+'
+    return [
+      date,
+      tx.type,
+      tx.coin,
+      tx.network ?? '',
+      `${sign}${parseFloat(tx.amount).toFixed(6)}`,
+      tx.status,
+      tx.txHash ?? '',
+    ]
+  })
+  const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `rupchain-transactions-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function WalletPage() {
   const { user } = useAuth()
   const [balances, setBalances] = useState<WalletBalance[]>([])
@@ -1240,8 +1273,11 @@ export default function WalletPage() {
       const res = await walletApi.getTransactions({ page: p, limit: 20 })
       setTransactions((prev) => (p === 1 ? res.transactions : [...prev, ...res.transactions]))
       setTxTotal(res.total)
-    } catch { /* silently fail */ }
-    finally { setTxLoading(false) }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load transactions')
+    } finally {
+      setTxLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -1331,9 +1367,7 @@ export default function WalletPage() {
                 return (
                 <div key={`${b.coin}-${b.network}`} className="bg-surface shadow-card rounded-xl border border-border p-5">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className={`w-9 h-9 rounded-full ${cc.bg} ${cc.text} text-sm font-bold flex items-center justify-center`}>
-                      {b.coin.slice(0, 2)}
-                    </div>
+                    <EntityLogo type="token" slug={b.coin} size="md" className="flex-shrink-0" />
                     <span className="font-semibold text-text-primary">{b.coin}</span>
                     <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${cc.bg} ${cc.text}`}>{b.network}</span>
                   </div>
@@ -1394,11 +1428,25 @@ export default function WalletPage() {
 
       {/* ── Transaction history ── */}
       <section>
-        <h2 className="text-base font-semibold text-text-primary mb-3">Transactions</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-text-primary">Transactions</h2>
+          {transactions.length > 0 && (
+            <button
+              onClick={() => exportTransactionsCsv(transactions)}
+              className="flex items-center gap-1.5 text-xs text-primary font-medium hover:underline"
+              aria-label="Download transactions as CSV"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download CSV
+            </button>
+          )}
+        </div>
         {transactions.length === 0 ? (
           <EmptyState icon={ArrowUpDown} title="No transactions" description="Your transaction history will appear here" />
         ) : (
-          <div className="bg-white shadow-card rounded-xl border border-border overflow-hidden">
+          <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <div className="divide-y divide-border">
               {transactions.map((tx) => {
                 const explorerBase = EXPLORER_TX_BASE[tx.network?.toUpperCase() ?? '']

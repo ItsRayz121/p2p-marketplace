@@ -20,8 +20,10 @@ import {
   Wallet,
   Gift,
   Bell,
+  Zap,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -31,12 +33,12 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
 }
 
 const QUICK_ACTIONS = [
-  { href: '/gas',         label: 'Crypto Gas Fees',  Icon: Fuel,                  iconCls: 'text-amber-600',   bgCls: 'bg-amber-100'   },
-  { href: '/marketplace', label: 'USDT Marketplace', Icon: ArrowLeftRight,    iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
-  { href: '/ctm',         label: 'Community Tokens', Icon: Coins,           iconCls: 'text-violet-600',  bgCls: 'bg-violet-100'  },
-  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList, iconCls: 'text-emerald-600', bgCls: 'bg-emerald-100' },
-  { href: '/wallet',      label: 'Wallet',           Icon: Wallet,                iconCls: 'text-cyan-600',    bgCls: 'bg-cyan-100'    },
-  { href: '/referral',    label: 'Referral',         Icon: Gift,                  iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
+  { href: '/instant-buy', label: 'Instant Buy',      Icon: Zap,           iconCls: 'text-yellow-600',  bgCls: 'bg-yellow-100'  },
+  { href: '/marketplace', label: 'P2P Market',       Icon: ArrowLeftRight, iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
+  { href: '/gas',         label: 'Gas Fees',         Icon: Fuel,           iconCls: 'text-amber-600',   bgCls: 'bg-amber-100'   },
+  { href: '/wallet',      label: 'Wallet',           Icon: Wallet,         iconCls: 'text-cyan-600',    bgCls: 'bg-cyan-100'    },
+  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList,  iconCls: 'text-emerald-600', bgCls: 'bg-emerald-100' },
+  { href: '/referral',    label: 'Referral',         Icon: Gift,           iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -251,9 +253,7 @@ export default function DashboardPage() {
             {summary.wallets.map((b) => (
               <div key={b.coin} className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
-                    {b.coin.slice(0, 2)}
-                  </div>
+                  <EntityLogo type="token" slug={b.coin} size="sm" className="flex-shrink-0" />
                   <span className="text-sm font-medium text-text-primary">{b.coin}</span>
                 </div>
                 {(() => {

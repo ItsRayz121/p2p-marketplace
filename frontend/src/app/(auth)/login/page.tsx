@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button'
 const schema = z.object({
   email: z.string().email('Please enter a valid email address'),
   password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean().optional(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -37,14 +38,14 @@ function LoginInner() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) })
+  } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { rememberMe: true } })
 
   async function onSubmit(values: FormValues) {
     setServerError(null)
     setUnverifiedEmail(null)
     setAlreadyVerified(false)
     try {
-      const res = await authApi.login(values)
+      const res = await authApi.login({ email: values.email, password: values.password, rememberMe: values.rememberMe ?? true })
 
       if (res.preAuthToken) {
         sessionStorage.setItem('preAuthToken', res.preAuthToken)
@@ -174,6 +175,16 @@ function LoginInner() {
             </Link>
           </div>
         </div>
+
+        {/* Remember me */}
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30 cursor-pointer"
+            {...register('rememberMe')}
+          />
+          <span className="text-sm text-text-secondary">Remember me for 30 days</span>
+        </label>
 
         {serverError && (
           <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">

@@ -1,21 +1,70 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 export default function Footer() {
   return (
-    <footer className="bg-surface border-t border-border py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-text-muted">
+    <footer className="bg-surface border-t border-border">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-8">
+
+          {/* Brand */}
+          <div className="col-span-2 sm:col-span-1">
+            <Link href="/" className="flex items-center gap-2 mb-3">
+              <Image src="/brand/logo-icon.png" alt="RupChain" width={32} height={32} className="w-8 h-8 object-contain" />
+              <span className="font-black text-lg text-text-primary">RupChain</span>
+            </Link>
+            <p className="text-xs text-text-muted leading-relaxed">
+              Pakistan&apos;s trusted P2P crypto marketplace. Buy and sell USDT safely with escrow protection.
+            </p>
+            <p className="text-xs text-text-muted mt-3">
+              Registered in Pakistan · support@rupchain.pk
+            </p>
+          </div>
+
+          {/* Products */}
+          <div>
+            <h3 className="text-xs font-bold text-text-primary uppercase tracking-wide mb-3">Products</h3>
+            <nav className="space-y-2">
+              <FooterLink href="/instant-buy">Instant Buy</FooterLink>
+              <FooterLink href="/marketplace">P2P Marketplace</FooterLink>
+              <FooterLink href="/gas">Crypto Gas Fees</FooterLink>
+              <FooterLink href="/ctm">Community Tokens</FooterLink>
+              <FooterLink href="/fees">Fee Schedule</FooterLink>
+            </nav>
+          </div>
+
+          {/* Account */}
+          <div>
+            <h3 className="text-xs font-bold text-text-primary uppercase tracking-wide mb-3">Account</h3>
+            <nav className="space-y-2">
+              <FooterLink href="/register">Create Account</FooterLink>
+              <FooterLink href="/login">Sign In</FooterLink>
+              <FooterLink href="/kyc">KYC Verification</FooterLink>
+              <FooterLink href="/referral">Referral — Earn PKR 500</FooterLink>
+              <FooterLink href="/leaderboard">Leaderboard</FooterLink>
+            </nav>
+          </div>
+
+          {/* Company */}
+          <div>
+            <h3 className="text-xs font-bold text-text-primary uppercase tracking-wide mb-3">Company</h3>
+            <nav className="space-y-2">
+              <FooterLink href="/about">About Us</FooterLink>
+              <FooterLink href="/help">Help Center</FooterLink>
+              <FooterLink href="/terms">Terms of Service</FooterLink>
+              <FooterLink href="/privacy">Privacy Policy</FooterLink>
+            </nav>
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-xs text-text-muted">
             &copy; {new Date().getFullYear()} RupChain. All rights reserved.
           </p>
-          <nav className="flex items-center gap-4 flex-wrap justify-center">
-            <FooterLink href="/leaderboard">Leaderboard</FooterLink>
-            <FooterLink href="/about">About</FooterLink>
-            <FooterLink href="/terms">Terms</FooterLink>
-            <FooterLink href="/privacy">Privacy</FooterLink>
-            <FooterLink href="/fees">Fees</FooterLink>
-            <FooterLink href="/help">Help</FooterLink>
-          </nav>
+          <p className="text-xs text-text-muted text-center">
+            Crypto trading involves risk. Only trade what you can afford to lose.
+            RupChain does not provide financial advice.
+          </p>
         </div>
       </div>
     </footer>
@@ -24,10 +73,7 @@ export default function Footer() {
 
 function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link
-      href={href}
-      className="text-sm text-text-muted hover:text-text-primary transition-colors"
-    >
+    <Link href={href} className="block text-sm text-text-muted hover:text-text-primary transition-colors">
       {children}
     </Link>
   )

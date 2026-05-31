@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import NextImage from 'next/image'
 import {
   gasApi,
   type GasChain, type GasToken, type GasTokensResponse, type GasOrder,
@@ -144,8 +145,19 @@ function getActiveStep(status: string): number {
 // ─── Chain Logo ───────────────────────────────────────────────────────────────
 
 function ChainLogo({ chain, sizeCls = 'w-11 h-11' }: { chain: GasChain; sizeCls?: string }) {
-  if (chain.logoUrl) {
-    return <img src={chain.logoUrl} alt={chain.symbol} className={`${sizeCls} rounded-full object-contain`} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+  const [imgError, setImgError] = useState(false)
+  if (chain.logoUrl && !imgError) {
+    return (
+      <NextImage
+        src={chain.logoUrl}
+        alt={chain.symbol}
+        width={44}
+        height={44}
+        className={`${sizeCls} rounded-full object-contain`}
+        onError={() => setImgError(true)}
+        unoptimized
+      />
+    )
   }
   return (
     <div className={`${sizeCls} rounded-full bg-gradient-to-br ${catGradient(chain.category)} text-white font-bold text-xs flex items-center justify-center flex-shrink-0`}>
@@ -155,8 +167,19 @@ function ChainLogo({ chain, sizeCls = 'w-11 h-11' }: { chain: GasChain; sizeCls?
 }
 
 function TokenLogo({ token, cat, sizeCls = 'w-10 h-10' }: { token: GasToken; cat: string; sizeCls?: string }) {
-  if (token.logoUrl) {
-    return <img src={token.logoUrl} alt={token.symbol} className={`${sizeCls} rounded-full object-contain`} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+  const [imgError, setImgError] = useState(false)
+  if (token.logoUrl && !imgError) {
+    return (
+      <NextImage
+        src={token.logoUrl}
+        alt={token.symbol}
+        width={40}
+        height={40}
+        className={`${sizeCls} rounded-full object-contain`}
+        onError={() => setImgError(true)}
+        unoptimized
+      />
+    )
   }
   return (
     <div className={`${sizeCls} rounded-full bg-gradient-to-br ${catGradient(cat)} text-white font-bold text-xs flex items-center justify-center flex-shrink-0`}>
@@ -396,15 +419,19 @@ function PkrMethodIcon({ methodKey, pkrMethods, sizeCls = 'w-12 h-12' }: {
   pkrMethods: GasPkrMethods | null
   sizeCls?: string
 }) {
+  const [imgError, setImgError] = useState(false)
   const logoUrl = pkrLogoFor(methodKey, pkrMethods)
   const meta = PKR_METHOD_META[methodKey]
-  if (logoUrl) {
+  if (logoUrl && !imgError) {
     return (
-      <img
+      <NextImage
         src={logoUrl}
         alt={meta.label}
+        width={48}
+        height={48}
         className={`${sizeCls} rounded-xl object-contain flex-shrink-0`}
-        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+        onError={() => setImgError(true)}
+        unoptimized
       />
     )
   }

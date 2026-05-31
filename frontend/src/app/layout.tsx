@@ -4,9 +4,24 @@ import './globals.css'
 import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
 
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
+
 export const metadata: Metadata = {
-  title: 'RupChain — Pakistan P2P Crypto Marketplace',
-  description: 'Buy and sell crypto peer-to-peer using JazzCash, Easypaisa, and bank transfer. Fast, safe, and local.',
+  metadataBase: new URL(BASE_URL),
+  title: {
+    default: 'RupChain — Buy & Sell Crypto in Pakistan',
+    template: '%s | RupChain',
+  },
+  description:
+    'RupChain is Pakistan\'s trusted P2P crypto marketplace. Buy and sell USDT with JazzCash, Easypaisa, and bank transfer. Escrow-protected trades, KYC-verified traders.',
+  keywords: [
+    'buy USDT Pakistan', 'sell USDT Pakistan', 'P2P crypto Pakistan',
+    'JazzCash crypto', 'Easypaisa USDT', 'crypto exchange Pakistan',
+    'rupchain', 'Pakistan crypto marketplace', 'P2P USDT PKR',
+  ],
+  authors: [{ name: 'RupChain' }],
+  creator: 'RupChain',
+  publisher: 'RupChain',
   manifest: '/manifest.json',
   icons: {
     icon: [
@@ -15,6 +30,34 @@ export const metadata: Metadata = {
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
     ],
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_PK',
+    url: BASE_URL,
+    siteName: 'RupChain',
+    title: 'RupChain — Buy & Sell Crypto in Pakistan',
+    description:
+      'Pakistan\'s trusted P2P crypto marketplace. Trade USDT safely with JazzCash, Easypaisa, and bank transfer. Escrow-protected, KYC-verified.',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'RupChain — Pakistan P2P Crypto Marketplace',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'RupChain — Buy & Sell Crypto in Pakistan',
+    description: 'Pakistan\'s trusted P2P crypto marketplace. Trade USDT with JazzCash & Easypaisa.',
+    images: ['/og-image.png'],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large' },
   },
 }
 

@@ -14,6 +14,7 @@ import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
+import { toast } from '@/lib/toast'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -364,7 +365,9 @@ export default function MarketplacePage() {
       const res = await marketplaceApi.getAds(params)
       setAds(res.ads)
       setTotal(res.total)
-    } catch { /* silently fail */ }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to refresh listings')
+    }
   }, [filters])
 
   usePolling(pollFn, 30_000, !loading)
@@ -393,7 +396,7 @@ export default function MarketplacePage() {
           usdtRate: rate,
         })
       }
-    } catch { /* silently fail */ }
+    } catch { /* stats are non-critical — suppress */ }
   }, [total])
 
   usePolling(fetchMeta, 60_000, true)
@@ -509,21 +512,16 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* Pagination */}
+      {/* Load more */}
       {hasMore && !loading && (
-        <div className="flex justify-center gap-2 mt-8">
+        <div className="flex justify-center mt-8">
           <Button variant="secondary" onClick={() => { const next = page + 1; setPage(next); fetchAds(next, true) }}>
-            Load more
+            Load more listings
           </Button>
         </div>
       )}
-
-      {total > PAGE_SIZE && ads.length >= PAGE_SIZE && (
-        <div className="flex justify-center gap-2 mt-4">
-          <button onClick={() => { setPage((p) => Math.max(1, p - 1)); fetchAds(Math.max(1, page - 1)) }} disabled={page === 1} className="px-4 py-2 border border-border rounded-lg text-sm disabled:opacity-40">Prev</button>
-          <span className="px-4 py-2 text-sm text-text-muted">Page {page}</span>
-          <button onClick={() => { setPage((p) => p + 1); fetchAds(page + 1) }} disabled={ads.length < PAGE_SIZE} className="px-4 py-2 border border-border rounded-lg text-sm disabled:opacity-40">Next</button>
-        </div>
+      {!hasMore && ads.length > 0 && (
+        <p className="text-center text-xs text-text-muted mt-8">All {total} listings loaded.</p>
       )}
 
     </div>

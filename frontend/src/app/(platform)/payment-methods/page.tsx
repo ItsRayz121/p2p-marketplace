@@ -61,7 +61,7 @@ const TYPE_COLORS: Record<MethodType, string> = {
 
 // ─── Add Method Form ─────────────────────────────────────────────────────────
 
-const inputCls = 'w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-text-muted'
+const inputCls = 'w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-text-muted'
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (

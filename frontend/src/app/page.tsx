@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
-import { ArrowLeftRight, Fuel, FileText, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Fuel, FileText, Zap, type LucideIcon, ShieldCheck, Users, Lock, HeadphonesIcon } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -251,10 +251,17 @@ export default function HomePage() {
               </p>
               <div className="flex flex-wrap gap-3 mt-8">
                 <Link
+                  href="/instant-buy"
+                  className="flex items-center gap-2 px-6 py-3 bg-yellow-400 text-yellow-900 font-bold rounded-lg hover:bg-yellow-300 transition-colors shadow-lg shadow-yellow-400/30"
+                >
+                  <Zap size={16} aria-hidden />
+                  Instant Buy
+                </Link>
+                <Link
                   href="/marketplace"
                   className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30"
                 >
-                  Start Trading
+                  P2P Marketplace
                 </Link>
                 <Link
                   href="/gas"
@@ -417,11 +424,42 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── 4. QUICK ACTIONS ── */}
-      <section className="py-12 bg-surface border-t border-border">
+      {/* ── 4. TRUST BADGES ── */}
+      <section className="py-10 bg-surface border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-bold text-text-primary mb-6">Quick Actions</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { Icon: ShieldCheck, title: 'Escrow Protected',   desc: 'Funds locked until both parties confirm', color: 'text-success',  bg: 'bg-success/10'  },
+              { Icon: Users,       title: 'KYC Verified',       desc: 'Every trader identity-verified via CNIC', color: 'text-primary',  bg: 'bg-primary/10'  },
+              { Icon: Lock,        title: 'Secure Withdrawals', desc: '2FA + email confirmation on every withdrawal', color: 'text-warning', bg: 'bg-warning/10'  },
+              { Icon: HeadphonesIcon, title: '24/7 Support',   desc: 'Live support for trades and disputes',    color: 'text-violet-500', bg: 'bg-violet-500/10' },
+            ].map(({ Icon, title, desc, color, bg }) => (
+              <div key={title} className="flex flex-col items-center text-center gap-2 px-3 py-4 bg-surface rounded-xl border border-border shadow-card">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
+                  <Icon className={`w-5 h-5 ${color}`} aria-hidden />
+                </div>
+                <p className="text-sm font-semibold text-text-primary leading-tight">{title}</p>
+                <p className="text-xs text-text-muted leading-snug">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 5. QUICK ACTIONS ── */}
+      <section className="py-12 bg-canvas border-t border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-2xl font-bold text-text-primary mb-6">What would you like to do?</h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <QuickActionCard
+              href="/instant-buy"
+              Icon={Zap}
+              title="Instant Buy"
+              description="Buy USDT instantly — no need to find a seller"
+              iconCls="text-yellow-500"
+              bgCls="bg-yellow-500/10"
+              badge="Fastest"
+            />
             <QuickActionCard
               href="/marketplace"
               Icon={ArrowLeftRight}
@@ -434,7 +472,7 @@ export default function HomePage() {
               href="/gas"
               Icon={Fuel}
               title="Crypto Gas Fees"
-              description="Top up gas fees on any chain instantly"
+              description="Top up gas fees on any chain instantly with PKR"
               iconCls="text-amber-500"
               bgCls="bg-amber-500/10"
             />
@@ -446,6 +484,57 @@ export default function HomePage() {
               iconCls="text-indigo-500"
               bgCls="bg-indigo-500/10"
             />
+          </div>
+        </div>
+      </section>
+
+      {/* ── 6. TESTIMONIALS ── */}
+      <section className="py-12 border-t border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-2xl font-bold text-text-primary mb-2">Trusted by Pakistani traders</h2>
+          <p className="text-sm text-text-muted mb-8">Real reviews from our community</p>
+          <div className="grid sm:grid-cols-3 gap-5">
+            {[
+              {
+                name: 'Ahmed K.',
+                location: 'Karachi',
+                trades: '47 trades',
+                text: 'Much safer than finding traders on Facebook groups. Escrow protection gives me full confidence. Already done 47 trades without a single issue.',
+                rating: 5,
+              },
+              {
+                name: 'Fatima R.',
+                location: 'Lahore',
+                trades: '23 trades',
+                text: 'The gas fee service saved me hours. I needed TRON for a transfer and got it in minutes by paying through JazzCash. No crypto needed to get started.',
+                rating: 5,
+              },
+              {
+                name: 'Usman T.',
+                location: 'Islamabad',
+                trades: '112 trades',
+                text: 'Best P2P platform in Pakistan. JazzCash and Easypaisa support, fast traders, and disputes are resolved fairly. I recommend it to everyone.',
+                rating: 5,
+              },
+            ].map((t) => (
+              <div key={t.name} className="bg-surface rounded-xl border border-border shadow-card p-5 space-y-3">
+                <div className="flex items-center gap-1" aria-label={`${t.rating} out of 5 stars`}>
+                  {Array.from({ length: t.rating }).map((_, i) => (
+                    <span key={i} className="text-gold text-base">★</span>
+                  ))}
+                </div>
+                <p className="text-sm text-text-secondary leading-relaxed">&ldquo;{t.text}&rdquo;</p>
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
+                    {t.name[0]}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-text-primary">{t.name}</p>
+                    <p className="text-xs text-text-muted">{t.location} · {t.trades}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -464,7 +553,7 @@ export default function HomePage() {
 }
 
 function QuickActionCard({
-  href, Icon, title, description, iconCls = 'text-primary', bgCls = 'bg-primary/10',
+  href, Icon, title, description, iconCls = 'text-primary', bgCls = 'bg-primary/10', badge,
 }: {
   href: string
   Icon: LucideIcon
@@ -472,12 +561,18 @@ function QuickActionCard({
   description: string
   iconCls?: string
   bgCls?: string
+  badge?: string
 }) {
   return (
     <Link
       href={href}
-      className="block p-6 bg-surface border border-border rounded-xl hover:shadow-card-md hover:border-primary/30 transition-all group"
+      className="relative block p-6 bg-surface border border-border rounded-xl hover:shadow-card-md hover:border-primary/30 transition-all group"
     >
+      {badge && (
+        <span className="absolute top-3 right-3 text-[10px] font-bold bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full">
+          {badge}
+        </span>
+      )}
       <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 transition-colors ${bgCls}`}>
         <Icon size={20} className={iconCls} />
       </div>

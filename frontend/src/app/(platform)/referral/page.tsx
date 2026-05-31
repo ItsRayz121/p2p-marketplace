@@ -70,7 +70,32 @@ export default function ReferralPage() {
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Referral Program</h1>
-        <p className="text-sm text-text-muted">Invite friends and earn PKR rewards</p>
+        <p className="text-sm text-text-muted">Invite friends and earn <span className="font-semibold text-primary">PKR 500</span> per successful referral</p>
+      </div>
+
+      {/* Reward banner */}
+      <div className="bg-gradient-to-r from-primary/5 to-pink-500/5 border border-primary/20 rounded-xl p-5 space-y-3">
+        <h2 className="text-base font-bold text-text-primary">How much do you earn?</h2>
+        <div className="grid grid-cols-3 gap-3 text-sm">
+          <div className="bg-surface rounded-lg border border-border p-3 text-center">
+            <p className="text-xl font-black text-primary">PKR 500</p>
+            <p className="text-xs text-text-muted mt-0.5">Per referral</p>
+          </div>
+          <div className="bg-surface rounded-lg border border-border p-3 text-center">
+            <p className="text-xl font-black text-success">1 Trade</p>
+            <p className="text-xs text-text-muted mt-0.5">Requirement</p>
+          </div>
+          <div className="bg-surface rounded-lg border border-border p-3 text-center">
+            <p className="text-xl font-black text-warning">24 hrs</p>
+            <p className="text-xs text-text-muted mt-0.5">Payout time</p>
+          </div>
+        </div>
+        <div className="text-xs text-text-muted space-y-1 bg-surface rounded-lg border border-border px-3 py-2">
+          <p>• Your friend must register using your referral code or link.</p>
+          <p>• Reward is credited after their first completed trade.</p>
+          <p>• Payout lands in your RupChain wallet within 24 hours.</p>
+          <p>• No limit on the number of referrals.</p>
+        </div>
       </div>
 
       {/* Referral Code Card */}
@@ -151,9 +176,9 @@ export default function ReferralPage() {
         <h2 className="text-base font-semibold text-text-primary">How It Works</h2>
         {[
           { step: '1', text: 'Share your referral code or link with friends' },
-          { step: '2', text: 'Friend signs up using your code' },
-          { step: '3', text: 'Friend completes their first trade' },
-          { step: '4', text: 'You earn a PKR reward automatically' },
+          { step: '2', text: 'Friend signs up using your referral code' },
+          { step: '3', text: 'Friend completes their first trade on RupChain' },
+          { step: '4', text: 'You earn PKR 500 — credited to your wallet within 24 hours' },
         ].map((item) => (
           <div key={item.step} className="flex items-start gap-3">
             <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">

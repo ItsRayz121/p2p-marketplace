@@ -389,19 +389,60 @@ export default function KycPage() {
 
       {/* ── Pending ── */}
       {uiState === 'pending' && (
-        <div className="bg-warning/10 border border-warning/20 rounded-xl p-6 text-center space-y-3">
-          <div className="w-14 h-14 bg-warning/20 rounded-full flex items-center justify-center mx-auto">
-            <Clock size={26} className="text-warning" />
+        <div className="space-y-4">
+          <div className="bg-warning/10 border border-warning/20 rounded-xl p-6 space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-warning/20 rounded-full flex items-center justify-center flex-shrink-0">
+                <Clock size={26} className="text-warning" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-warning">Under Review</h2>
+                <p className="text-sm text-text-secondary mt-0.5">
+                  Your documents are being reviewed by our KYC team.
+                </p>
+              </div>
+            </div>
+
+            {/* Status timeline */}
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div className="bg-surface rounded-lg border border-border p-3 text-center">
+                <p className="text-xs text-text-muted mb-1">Submitted</p>
+                <p className="text-sm font-semibold text-text-primary">
+                  {lastDoc
+                    ? new Date(lastDoc.createdAt).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : '—'}
+                </p>
+              </div>
+              <div className="bg-surface rounded-lg border border-border p-3 text-center">
+                <p className="text-xs text-text-muted mb-1">Avg Review Time</p>
+                <p className="text-sm font-semibold text-success">~8 Hours</p>
+              </div>
+              <div className="bg-surface rounded-lg border border-border p-3 text-center">
+                <p className="text-xs text-text-muted mb-1">Status</p>
+                <p className="text-sm font-semibold text-warning">In Queue</p>
+              </div>
+            </div>
+
+            <div className="text-xs text-text-muted space-y-1 bg-surface rounded-lg border border-border px-3 py-2">
+              <p>• Make sure the photos you submitted are clear and unobstructed.</p>
+              <p>• You will receive an email notification once your KYC is approved or rejected.</p>
+              <p>• You can continue browsing the platform while your KYC is reviewed.</p>
+            </div>
           </div>
-          <h2 className="text-lg font-bold text-warning">Under Review</h2>
-          <p className="text-sm text-text-secondary">
-            Your documents are being reviewed. This usually takes 1-2 business days.
-          </p>
-          {lastDoc && (
-            <p className="text-xs text-text-muted">
-              Submitted {new Date(lastDoc.createdAt).toLocaleDateString()}
-            </p>
-          )}
+
+          {/* Contact support */}
+          <div className="bg-surface border border-border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-text-primary">Need help?</p>
+              <p className="text-xs text-text-muted mt-0.5">Contact support if your review takes longer than 24 hours.</p>
+            </div>
+            <a
+              href="mailto:support@rupchain.pk?subject=KYC Review Inquiry"
+              className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary-hover transition-colors"
+            >
+              Contact Support
+            </a>
+          </div>
         </div>
       )}
 
@@ -539,7 +580,7 @@ export default function KycPage() {
                     <select
                       value={link.platform}
                       onChange={(e) => updateSocialLink(i, 'platform', e.target.value)}
-                      className="w-36 px-2 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-36 px-2 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                     >
                       {SOCIAL_PLATFORMS.map((p) => <option key={p}>{p}</option>)}
                     </select>

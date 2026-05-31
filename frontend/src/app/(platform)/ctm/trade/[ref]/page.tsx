@@ -4,6 +4,7 @@ import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
+import { toast } from '@/lib/toast'
 
 const STATUS_STEPS = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'completed']
 
@@ -295,8 +296,15 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
   const handleSendMessage = async () => {
     if (!msgText.trim()) return
     setSendingMsg(true)
-    try { await ctmApi.sendMessage(ref, { message: msgText }); setMsgText(''); await fetchMessages() }
-    catch { /* ignore */ } finally { setSendingMsg(false) }
+    try {
+      await ctmApi.sendMessage(ref, { message: msgText })
+      setMsgText('')
+      await fetchMessages()
+    } catch (e: unknown) {
+      toast.error((e as Error).message ?? 'Failed to send message')
+    } finally {
+      setSendingMsg(false)
+    }
   }
 
   const handleOpenDispute = async () => {
