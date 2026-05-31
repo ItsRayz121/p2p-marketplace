@@ -420,7 +420,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
           <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
             {(['bids', 'trades'] as const).map((t) => (
               <button key={t} onClick={() => setActiveTab(t)}
-                className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-white text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+                className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-surface-alt text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
                 {t === 'bids'
                   ? `Pending Bids (${activity.bids.pendingCount})`
                   : `Trades (${activity.trades.activeCount + activity.trades.completedCount})`}
@@ -451,7 +451,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                               {bidActionId === bid.id ? '…' : 'Accept'}
                             </button>
                             <button onClick={() => handleRejectBid(bid.id)} disabled={bidActionId === bid.id}
-                              className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-white disabled:opacity-60 transition-colors">
+                              className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-surface-alt disabled:opacity-60 transition-colors">
                               Reject
                             </button>
                           </>
@@ -612,7 +612,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
                                   instantDeliveryAddress === a.address
                                     ? 'border-primary bg-primary text-white'
-                                    : 'border-border bg-white text-text-primary hover:border-primary/50'
+                                    : 'border-border bg-surface text-text-primary hover:border-primary/50'
                                 }`}
                               >
                                 {a.label}

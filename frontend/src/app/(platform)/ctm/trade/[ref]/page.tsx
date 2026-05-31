@@ -5,6 +5,8 @@ import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
+import { isTrustedImageUrl } from '@/lib/utils'
+import NextImage from 'next/image'
 
 const STATUS_STEPS = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'completed']
 
@@ -457,7 +459,11 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                 )}
               </div>
             )}
-            {p.fileUrl && <img src={p.fileUrl} alt="token transfer proof" className="max-h-40 rounded-lg object-contain border border-border" />}
+            {p.fileUrl && (
+              isTrustedImageUrl(p.fileUrl)
+                ? <NextImage src={p.fileUrl} alt="token transfer proof" width={320} height={160} className="max-h-40 w-auto rounded-lg object-contain border border-border" referrerPolicy="no-referrer" unoptimized />
+                : <p className="text-xs text-warning bg-warning/10 rounded px-2 py-1">Proof image from untrusted source.</p>
+            )}
             {p.description && <p className="text-xs text-text-muted">{p.description}</p>}
           </div>
         ))}
@@ -676,7 +682,11 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                     {paymentProofs.map((p) => (
                       <div key={p.id} className="border border-border rounded-xl p-3">
                         <p className="text-xs text-text-muted mb-2">{new Date(p.createdAt).toLocaleString()}</p>
-                        {p.fileUrl && <img src={p.fileUrl} alt="payment proof" className="max-h-40 rounded-lg object-contain border border-border" />}
+                        {p.fileUrl && (
+                          isTrustedImageUrl(p.fileUrl)
+                            ? <NextImage src={p.fileUrl} alt="payment proof" width={320} height={160} className="max-h-40 w-auto rounded-lg object-contain border border-border" referrerPolicy="no-referrer" unoptimized />
+                            : <p className="text-xs text-warning bg-warning/10 rounded px-2 py-1">Proof image from untrusted source.</p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -756,7 +766,9 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                             </div>
                           )}
                           {latestTokenProof.fileUrl && (
-                            <img src={latestTokenProof.fileUrl} alt="token transfer proof" className="max-h-40 rounded-lg object-contain border border-border" />
+                            isTrustedImageUrl(latestTokenProof.fileUrl)
+                              ? <NextImage src={latestTokenProof.fileUrl} alt="token transfer proof" width={320} height={160} className="max-h-40 w-auto rounded-lg object-contain border border-border" referrerPolicy="no-referrer" unoptimized />
+                              : <p className="text-xs text-warning bg-warning/10 rounded px-2 py-1">Proof image from untrusted source.</p>
                           )}
                         </div>
                       )}
@@ -820,7 +832,9 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                     <div className="bg-surface rounded-xl p-3 text-sm">
                       <p className="text-text-muted text-xs mb-2">Buyer has uploaded payment proof. Review then confirm.</p>
                       {paymentProofs[0]?.fileUrl && (
-                        <img src={paymentProofs[0].fileUrl} alt="payment proof" className="max-h-40 rounded-lg object-contain border border-border mb-2" />
+                        isTrustedImageUrl(paymentProofs[0].fileUrl)
+                          ? <NextImage src={paymentProofs[0].fileUrl} alt="payment proof" width={320} height={160} className="max-h-40 w-auto rounded-lg object-contain border border-border mb-2" referrerPolicy="no-referrer" unoptimized />
+                          : <p className="text-xs text-warning bg-warning/10 rounded px-2 py-1 mb-2">Proof image from untrusted source.</p>
                       )}
                     </div>
                     <button onClick={() => doAction(() => ctmApi.confirmPayment(ref))} disabled={actionLoading}

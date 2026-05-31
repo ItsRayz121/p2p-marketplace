@@ -23,6 +23,7 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { getTradeStatus } from '@/lib/tradeStatus'
+import { isTrustedImageUrl } from '@/lib/utils'
 import {
   FileText,
   Upload,
@@ -51,22 +52,6 @@ interface ChatMessage {
 
 const AUTO_RELEASE_HOURS = 2
 
-// Only allow images from our CDN origins to prevent open-redirect / foreign image injection.
-const ALLOWED_IMAGE_HOSTS = [
-  'res.cloudinary.com',
-  'amazonaws.com',
-  'cloudfront.net',
-]
-
-function isTrustedImageUrl(url: string | undefined): boolean {
-  if (!url) return false
-  try {
-    const { hostname } = new URL(url)
-    return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))
-  } catch {
-    return false
-  }
-}
 
 interface ExtendedTrade extends Trade {
   paymentProofUrl?: string

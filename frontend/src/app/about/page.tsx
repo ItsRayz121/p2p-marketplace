@@ -86,7 +86,7 @@ export default function AboutPage() {
             href="https://wa.me/+923000000000"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 bg-white border border-border text-text-primary px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-surface transition-colors"
+            className="inline-flex items-center justify-center gap-2 bg-surface border border-border text-text-primary px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-surface-alt transition-colors"
           >
             WhatsApp Support
           </a>

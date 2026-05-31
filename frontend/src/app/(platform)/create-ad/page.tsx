@@ -448,7 +448,7 @@ function CreateListingPageContent() {
                   const isMobile = m.type !== 'bank_transfer'
                   return (
                     <button type="button" key={m.id} onClick={() => toggleMethod(m.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'}`}>
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
                       <EntityLogo
                         type={isMobile ? 'payment_method' : 'bank'}
                         slug={isMobile ? (METHOD_LABELS[m.type] ?? m.type) : (m.bankName ?? 'bank')}

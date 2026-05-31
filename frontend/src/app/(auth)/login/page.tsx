@@ -223,13 +223,13 @@ function LoginInner() {
               </button>
               <Link
                 href={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
-                className="px-3 py-1.5 bg-white border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
+                className="px-3 py-1.5 bg-surface border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
               >
                 Enter verification code
               </Link>
               <button
                 type="button"
-                className="px-3 py-1.5 bg-white border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
+                className="px-3 py-1.5 bg-surface border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
                 onClick={handleResend}
               >
                 Resend verification email
