@@ -1,0 +1,70 @@
+'use client'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { useGasCtx, PHASE } from './GasContext'
+import { ChainLogo, CardHeader } from './GasPrimitives'
+
+export function GasPaymentChoice() {
+  const {
+    selectedChain, selectedToken, setPhase,
+    methodsLoading, computedUsd, computedPkr,
+  } = useGasCtx()
+
+  if (!selectedChain || !selectedToken) return null
+
+  return (
+    <div className="p-5 space-y-4">
+      <CardHeader onBack={() => setPhase(PHASE.ADDRESS)} title="Choose How You Want to Pay" sub="Select your preferred payment method" />
+
+      <div className="flex items-center gap-2 flex-wrap text-xs">
+        <span className="flex items-center gap-1.5 bg-surface-alt rounded-full px-3 py-1">
+          <ChainLogo chain={selectedChain} sizeCls="w-4 h-4" />
+          {selectedToken.symbol} · {selectedChain.networkLabel}
+        </span>
+        <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${computedUsd.toFixed(2)} USDT</span>
+        <span className="bg-green-100 text-green-700 rounded-full px-3 py-1 font-bold">≈ PKR {computedPkr.toFixed(0)}</span>
+      </div>
+
+      {methodsLoading && <LoadingState message="Loading payment options..." />}
+
+      {!methodsLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            onClick={() => setPhase(PHASE.PKR_METHOD)}
+            className="flex flex-col gap-3 p-5 rounded-xl border-2 border-border bg-surface hover:border-green-400 hover:shadow-card transition-all text-left group"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-xl shadow-card">₨</div>
+              <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">Easy & Fast</span>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-text-primary mb-0.5">Pay with PKR</p>
+              <p className="text-xs text-text-muted">Bank Transfer · Easypaisa · JazzCash</p>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
+              <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              No crypto needed
+            </div>
+          </button>
+
+          <button
+            onClick={() => setPhase(PHASE.CRYPTO_NETWORK)}
+            className="flex flex-col gap-3 p-5 rounded-xl border-2 border-border bg-surface hover:border-blue-400 hover:shadow-card transition-all text-left group"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-card">₮</div>
+              <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2.5 py-1 rounded-full">Low Fees</span>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-text-primary mb-0.5">Pay with Crypto</p>
+              <p className="text-xs text-text-muted">USDT BEP20 · USDT Aptos</p>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
+              <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              Instant payment detection
+            </div>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}

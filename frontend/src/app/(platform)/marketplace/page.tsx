@@ -15,6 +15,8 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
+import { PriceAlertsPanel } from '@/components/ui/PriceAlertsPanel'
+import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -320,6 +322,7 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null)
   const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])
   const [marketStats, setMarketStats] = useState<MarketStats | null>(null)
+  const [liveRate, setLiveRate] = useState<number | null>(null)
 
   const fetchAds = useCallback(async (p = 1, append = false) => {
     try {
@@ -395,6 +398,16 @@ export default function MarketplacePage() {
           todayTrades: s.todayTrades ?? 0,
           usdtRate: rate,
         })
+        if (rate) {
+          setLiveRate(rate)
+          // Check price alerts and fire notifications for any that triggered
+          const triggered = checkAlerts(rate)
+          for (const a of triggered) {
+            const msg = `USDT is now PKR ${rate.toLocaleString()} — your ${a.direction} PKR ${a.targetPkr.toLocaleString()} alert triggered.`
+            await requestAndNotify('RupChain Price Alert', msg)
+            toast.success(`Price alert: USDT ${a.direction === 'above' ? '↑' : '↓'} PKR ${a.targetPkr.toLocaleString()}`, msg)
+          }
+        }
       }
     } catch { /* stats are non-critical — suppress */ }
   }, [total])
@@ -412,9 +425,12 @@ export default function MarketplacePage() {
           <h1 className="text-2xl font-bold text-text-primary">USDT Marketplace</h1>
           <p className="text-text-muted text-sm">{total} listings available</p>
         </div>
-        <Link href="/create-ad" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center">
-          + Create Listing
-        </Link>
+        <div className="flex items-center gap-2">
+          <PriceAlertsPanel currentRate={liveRate} />
+          <Link href="/create-ad" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center">
+            + Create Listing
+          </Link>
+        </div>
       </div>
 
       {/* Stats strip */}

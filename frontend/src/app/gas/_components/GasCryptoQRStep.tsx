@@ -1,0 +1,258 @@
+'use client'
+import { Button } from '@/components/ui/Button'
+import { CopyButton } from '@/components/ui/CopyButton'
+import { CountdownTimer } from '@/components/ui/CountdownTimer'
+import { Badge } from '@/components/ui/Badge'
+import { useGasCtx, PHASE } from './GasContext'
+import { ProcessingTimeline, STATUS_LABELS, statusVariant } from './GasPrimitives'
+
+export function GasCryptoQRStep() {
+  const {
+    order, setOrder, setPhase, resetFlow,
+    cryptoMethods, qrFailed, setQrFailed,
+    paymentSent, setPaymentSent,
+    verifyOpen, setVerifyOpen,
+    verifyTxHash, setVerifyTxHash,
+    verifying, verifyError, verifySuccess,
+    handleVerifyPayment,
+    pollErrCount, setPollErrCount, pollOrder,
+  } = useGasCtx()
+
+  if (!order) return null
+
+  return (
+    <div className="p-5 space-y-4">
+      <div className="flex items-center justify-between pb-3 border-b border-border">
+        <p className="text-sm font-bold text-text-primary">Make Payment</p>
+        <Badge variant={statusVariant(order.status)} size="sm">{STATUS_LABELS[order.status] ?? order.status}</Badge>
+      </div>
+
+      {order.status === 'payment_pending' && (
+        <>
+          {/* Countdown */}
+          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2 text-amber-700 text-xs font-semibold">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Payment window
+            </div>
+            <CountdownTimer expiresAt={order.expiresAt} showLabel={false} onExpire={() => setOrder(o => o ? { ...o, status: 'expired' } : o)} />
+          </div>
+
+          {/* QR */}
+          <div className="flex flex-col items-center gap-2 py-2">
+            {qrFailed ? (
+              <div className="w-48 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+                <p className="text-xs text-amber-700 font-semibold mb-1">QR code unavailable</p>
+                <p className="text-xs text-amber-600">Copy the address below to pay.</p>
+              </div>
+            ) : (
+              <div className="w-48 h-48 rounded-xl overflow-hidden border-4 border-surface shadow-lg">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(order.paymentAddress)}`}
+                  alt="Payment QR Code"
+                  className="w-full h-full"
+                  onError={() => setQrFailed(true)}
+                />
+              </div>
+            )}
+            <p className="text-xs text-text-muted">{qrFailed ? 'Use the address and amount below' : 'Scan to get the address'}</p>
+          </div>
+
+          {/* Address */}
+          <div>
+            <p className="text-xs text-text-muted font-semibold mb-1.5">Send to Address</p>
+            <div className="bg-surface-alt rounded-xl p-3 flex items-start gap-2 border border-border">
+              <p className="text-xs font-mono text-text-primary break-all flex-1">{order.paymentAddress}</p>
+              <CopyButton text={order.paymentAddress} />
+            </div>
+          </div>
+
+          {/* Amount */}
+          <div>
+            <p className="text-xs text-text-muted font-semibold mb-1.5">Exact Amount — Send to Platform</p>
+            <div className="bg-surface-alt rounded-xl p-3 flex items-center justify-between border border-border">
+              <span className="text-lg font-bold text-text-primary">{order.paymentAmount} USDT</span>
+              <CopyButton text={order.paymentAmount} />
+            </div>
+            <p className="text-xs text-text-muted mt-1.5">
+              Send exactly this amount. Your wallet will also deduct a separate {order.paymentNetwork} transfer fee ({
+                (() => {
+                  const m = order.paymentNetwork === 'TRC20' ? cryptoMethods?.trc20
+                    : order.paymentNetwork === 'BEP20' ? cryptoMethods?.bep20
+                    : order.paymentNetwork === 'ERC20' ? cryptoMethods?.erc20
+                    : cryptoMethods?.aptos
+                  const fallback = order.paymentNetwork === 'TRC20' ? '~$1' : order.paymentNetwork === 'BEP20' ? '~$0.29' : order.paymentNetwork === 'ERC20' ? '~$2' : '~$0.01'
+                  return (m as { feeNativeDisplay?: string; fee?: string } | undefined)?.feeNativeDisplay ?? (m as { fee?: string } | undefined)?.fee ?? fallback
+                })()
+              }) when sending.
+            </p>
+          </div>
+
+          {/* Details row */}
+          <div className="bg-surface-alt rounded-xl p-3 text-xs space-y-1.5 border border-border">
+            <div className="flex justify-between"><span className="text-text-muted">Network</span><span className="font-bold text-text-primary">{order.paymentNetwork}</span></div>
+            <div className="flex justify-between"><span className="text-text-muted">Order ID</span><span className="font-mono text-text-secondary">{order.orderRef}</span></div>
+          </div>
+
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+            <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <p className="text-xs text-red-700 font-medium">
+              Send ONLY USDT on <strong>{order.paymentNetwork}</strong> network. Wrong network = permanent loss.
+            </p>
+          </div>
+
+          {pollErrCount >= 3 && (
+            <p className="text-xs text-amber-600 text-center">
+              Connection issue. <button className="underline font-semibold" onClick={() => { setPollErrCount(0); void pollOrder() }}>Refresh</button>
+            </p>
+          )}
+
+          {/* Payment sent / verify flow */}
+          {verifySuccess ? (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+              <p className="text-sm font-bold text-green-700 mb-0.5">Payment Submitted!</p>
+              <p className="text-xs text-green-600">{verifySuccess}</p>
+            </div>
+          ) : !paymentSent ? (
+            <button onClick={() => setPaymentSent(true)} className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors shadow-card">
+              I&apos;ve Sent the Payment
+            </button>
+          ) : !verifyOpen ? (
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                <p className="text-sm font-semibold text-primary">Payment Sent</p>
+              </div>
+              <p className="text-xs text-primary">We&apos;ll detect your payment automatically. If it doesn&apos;t confirm in a minute, paste your transaction hash to speed it up.</p>
+              <button onClick={() => setVerifyOpen(true)} className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors">
+                Enter Transaction Hash
+              </button>
+              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-primary/50 hover:text-primary text-center">
+                I haven&apos;t sent yet — go back
+              </button>
+            </div>
+          ) : (
+            <VerifyHashForm
+              verifyTxHash={verifyTxHash}
+              setVerifyTxHash={setVerifyTxHash}
+              verifyError={verifyError}
+              verifying={verifying}
+              handleVerifyPayment={handleVerifyPayment}
+              onClose={() => { setVerifyOpen(false); }}
+            />
+          )}
+        </>
+      )}
+
+      {order.status === 'payment_verified' && (
+        <div className="text-center py-4">
+          <p className="text-sm font-bold text-green-700 mb-1">Payment Verified</p>
+          <p className="text-xs text-text-muted">Your payment has been confirmed on-chain. Gas will be released shortly.</p>
+        </div>
+      )}
+
+      {(order.status === 'payment_detected' || order.status === 'sending') && (
+        <div>
+          <p className="text-xs font-bold text-text-muted uppercase tracking-wide mb-4">Processing</p>
+          <ProcessingTimeline status={order.status} isPkr={false} />
+        </div>
+      )}
+
+      {(order.status === 'expired' || order.status === 'failed') && (
+        <div className="text-center py-4">
+          <p className="text-base font-bold text-red-600 mb-2">{order.status === 'expired' ? 'Order Expired' : 'Order Failed'}</p>
+          {order.status === 'expired' ? (
+            <>
+              <p className="text-sm text-text-muted mb-3">Payment not received in time.</p>
+              {!verifyOpen && !verifySuccess ? (
+                <div className="mb-4 space-y-2">
+                  <p className="text-xs text-text-muted">Already sent the payment? We can still verify it.</p>
+                  <button onClick={() => setVerifyOpen(true)} className="text-xs text-blue-600 underline underline-offset-2 hover:text-blue-800 font-semibold">
+                    Enter transaction hash to verify
+                  </button>
+                </div>
+              ) : verifySuccess ? (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center mb-4">
+                  <p className="text-sm font-bold text-green-700 mb-0.5">Payment Verified!</p>
+                  <p className="text-xs text-green-600">{verifySuccess}</p>
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <VerifyHashForm
+                    verifyTxHash={verifyTxHash}
+                    setVerifyTxHash={setVerifyTxHash}
+                    verifyError={verifyError}
+                    verifying={verifying}
+                    handleVerifyPayment={handleVerifyPayment}
+                    onClose={() => setVerifyOpen(false)}
+                    label="Verify Your Payment"
+                    hint="Enter the transaction hash from your wallet. If you paid before the timer expired, we'll process your order."
+                    buttonLabel="Verify Payment"
+                  />
+                </div>
+              )}
+              <Button onClick={resetFlow}>Create New Order</Button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted mb-4">Something went wrong.</p>
+              <Button onClick={resetFlow}>Try Again</Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {(order.status === 'refund_pending' || order.status === 'refunded') && (
+        <div className="text-center py-4">
+          <p className="text-base font-bold text-amber-600 mb-1">{order.status === 'refund_pending' ? 'Refund Processing' : 'Refunded'}</p>
+          <p className="text-sm text-text-muted">{order.status === 'refund_pending' ? 'Your USDT refund is being processed.' : 'Your USDT has been refunded.'}</p>
+        </div>
+      )}
+
+      {order.status === 'delivered' && (
+        <Button className="w-full" onClick={() => setPhase(PHASE.COMPLETE)}>View Completion</Button>
+      )}
+    </div>
+  )
+}
+
+function VerifyHashForm({
+  verifyTxHash, setVerifyTxHash,
+  verifyError, verifying, handleVerifyPayment,
+  onClose,
+  label = 'Enter Transaction Hash',
+  hint = "Paste your transaction hash from your wallet or blockchain explorer. We'll verify and release your gas.",
+  buttonLabel = 'Confirm Payment',
+}: {
+  verifyTxHash: string
+  setVerifyTxHash: (v: string) => void
+  verifyError: string
+  verifying: boolean
+  handleVerifyPayment: () => Promise<void>
+  onClose: () => void
+  label?: string
+  hint?: string
+  buttonLabel?: string
+}) {
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold text-blue-800">{label}</p>
+        <button onClick={onClose} className="text-blue-400 hover:text-blue-600 text-lg leading-none" aria-label="Close">&times;</button>
+      </div>
+      <p className="text-xs text-blue-700">{hint}</p>
+      <input
+        type="text"
+        value={verifyTxHash}
+        onChange={e => setVerifyTxHash(e.target.value)}
+        placeholder="0x... transaction hash"
+        className="w-full text-xs font-mono bg-surface border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-text-disabled"
+      />
+      {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
+      <Button onClick={handleVerifyPayment} disabled={verifying || !verifyTxHash.trim()} className="w-full text-sm">
+        {verifying ? 'Verifying…' : buttonLabel}
+      </Button>
+    </div>
+  )
+}
