@@ -69,9 +69,37 @@ export function normalizePaymentMethod(slug: string): string {
   return slug.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
 }
 
+// Map display names → canonical DB slugs for banks.
+const BANK_ALIASES: Record<string, string> = {
+  'allied bank':                    'allied',
+  'bank alfalah':                   'bank_alfalah',
+  'meezan bank':                    'meezan',
+  'meezan bank (islamic)':          'meezan',
+  'standard chartered':             'standard_chartered',
+  'standard chartered pakistan':    'standard_chartered',
+  'askari bank':                    'askari',
+  'faysal bank':                    'faysal',
+  'js bank':                        'js_bank',
+  'bank of punjab':                 'bank_of_punjab',
+  'silk bank':                      'silk_bank',
+  'soneri bank':                    'soneri',
+  'summit bank':                    'summit_bank',
+  'national bank of pakistan (nbp)':'nbp',
+  'national bank of pakistan':      'nbp',
+  'habib bank limited':             'hbl',
+  'muslim commercial bank':         'mcb',
+  'united bank limited':            'ubl',
+}
+
+export function normalizeBank(slug: string): string {
+  const lower = slug.toLowerCase()
+  return BANK_ALIASES[lower] ?? lower
+}
+
 // ── Static CDN fallbacks ───────────────────────────────────────────────────────
-// TrustWallet open-source assets CDN — used only when no DB logo exists.
-// The EntityLogo component catches 404s and falls back to initials.
+// TrustWallet CDN for chains/tokens. PK payment methods and banks use
+// icon.horse / Google gstatic / worldvectorlogo — all verified working.
+// EntityLogo catches 404s and falls back to initials in all cases.
 
 export const CHAIN_LOGO_STATIC: Record<string, string> = {
   BSC:    'https://assets.trustwallet.com/blockchains/binance/info/logo.png',
@@ -108,6 +136,35 @@ export const TOKEN_LOGO_STATIC: Record<string, string> = {
   WBTC:  'https://assets.trustwallet.com/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png',
 }
 
+// icon.horse — high-quality icon CDN by domain
+// t2.gstatic.com — Google's favicon service at 128px (reliable, no auth)
+// cdn.worldvectorlogo.com — vector logo CDN
+
+export const PAYMENT_METHOD_LOGO_STATIC: Record<string, string> = {
+  jazzcash:  'https://icon.horse/icon/jazzcash.com.pk',
+  easypaisa: 'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://easypaisa.com.pk&size=128',
+  sadapay:   'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://sadapay.pk&size=128',
+  nayapay:   'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://nayapay.com&size=128',
+}
+
+export const BANK_LOGO_STATIC: Record<string, string> = {
+  hbl:                'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://hbl.com&size=128',
+  mcb:                'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://mcb.com.pk&size=128',
+  ubl:                'https://cdn.worldvectorlogo.com/logos/ubl-united-bank-limited-pakistan.svg',
+  allied:             'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://abl.com&size=128',
+  bank_alfalah:       'https://icon.horse/icon/bankalfalah.com',
+  meezan:             'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://meezanbank.com&size=128',
+  nbp:                'https://icon.horse/icon/nbp.com.pk',
+  standard_chartered: 'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://sc.com&size=128',
+  askari:             'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://askaribank.com.pk&size=128',
+  faysal:             'https://icon.horse/icon/faysalbank.com',
+  js_bank:            'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://jsbl.com&size=128',
+  bank_of_punjab:     'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://bop.com.pk&size=128',
+  silk_bank:          'https://icon.horse/icon/silkbank.com.pk',
+  soneri:             'https://icon.horse/icon/soneribank.com',
+  // summit_bank omitted — domain defunct, falls back to initials avatar
+}
+
 // ── DB-only resolver (no static CDN fallback) ────────────────────────────────
 // Used by EntityLogo to build a deduped candidate list, so each URL tier is
 // tried independently rather than merged into one opaque string.
@@ -130,7 +187,10 @@ export function resolveLogoDbOnly(
       const key = normalizePaymentMethod(slug)
       return dbMap.payment_method[key] ?? dbMap.payment_method[slug.toLowerCase()] ?? null
     }
-    case 'bank':           return dbMap.bank[slug.toLowerCase()] ?? null
+    case 'bank': {
+      const key = normalizeBank(slug)
+      return dbMap.bank[key] ?? dbMap.bank[slug.toLowerCase()] ?? null
+    }
     case 'wallet_provider': return dbMap.wallet_provider[slug.toLowerCase()] ?? null
     default: return null
   }
@@ -148,6 +208,14 @@ export function resolveLogoStatic(type: EntityType, slug: string): string | null
     case 'token': {
       const key = normalizeToken(slug)
       return TOKEN_LOGO_STATIC[key] ?? TOKEN_LOGO_STATIC[slug.toUpperCase()] ?? null
+    }
+    case 'payment_method': {
+      const key = normalizePaymentMethod(slug)
+      return PAYMENT_METHOD_LOGO_STATIC[key] ?? PAYMENT_METHOD_LOGO_STATIC[slug.toLowerCase()] ?? null
+    }
+    case 'bank': {
+      const key = normalizeBank(slug)
+      return BANK_LOGO_STATIC[key] ?? BANK_LOGO_STATIC[slug.toLowerCase()] ?? null
     }
     default: return null
   }
