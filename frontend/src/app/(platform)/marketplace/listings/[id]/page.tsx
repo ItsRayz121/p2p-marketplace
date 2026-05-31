@@ -217,7 +217,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
-  if (loading) return <div className="max-w-3xl mx-auto px-4 py-12 animate-pulse"><div className="bg-white rounded-xl h-64 border border-border" /></div>
+  if (loading) return <div className="max-w-3xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-64 border border-border" /></div>
   if (!ad) return <div className="max-w-3xl mx-auto px-4 py-12 text-center text-text-muted">Listing not found.</div>
 
   const isMine = user?.id === ad.user.id
@@ -242,7 +242,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
           type="button"
           key={dt}
           onClick={() => onSelect(selected === dt ? '' : dt)}
-          className={`py-2 text-sm rounded-xl border font-semibold transition-colors ${selected === dt ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+          className={`py-2 text-sm rounded-xl border font-semibold transition-colors ${selected === dt ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
         >
           {DELIVERY_LABELS[dt] ?? dt}
         </button>
@@ -578,7 +578,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 {tradePaymentMethods.map((m) => (
                   <button type="button" key={m.id}
                     onClick={() => setInstantPaymentMethod(instantPaymentMethod === m.id ? '' : m.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'}`}>
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
                     <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
                     <span className="text-sm font-medium text-text-primary">{m.label}</span>
                     <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantPaymentMethod === m.id ? 'border-primary bg-primary' : 'border-border'}`}>
@@ -738,7 +738,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 {tradePaymentMethods.map((m) => (
                   <button type="button" key={m.id}
                     onClick={() => setConfirmPaymentMethod(confirmPaymentMethod === m.id ? '' : m.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${confirmPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-surface'}`}>
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${confirmPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
                     <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
                     <span className="text-sm font-medium text-text-primary">{m.label}</span>
                     <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${confirmPaymentMethod === m.id ? 'border-primary bg-primary' : 'border-border'}`}>

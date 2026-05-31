@@ -30,10 +30,9 @@ import {
 
 const NAV_ITEMS: { href: string; Icon: React.ElementType; label: string; shortLabel?: string }[] = [
   { href: '/marketplace', Icon: ArrowLeftRight, label: 'USDT Marketplace', shortLabel: 'Market' },
-  { href: '/ctm',         Icon: Coins,        label: 'Community Tokens', shortLabel: 'Tokens' },
-  { href: '/gas',         Icon: Fuel,               label: 'Crypto Gas Fees',  shortLabel: 'Gas'    },
-  { href: '/leaderboard', Icon: Trophy,             label: 'Leaderboard'                            },
-  { href: '/dashboard',   Icon: LayoutGrid,         label: 'Dashboard'                              },
+  { href: '/ctm',         Icon: Coins,          label: 'Community Tokens', shortLabel: 'Tokens' },
+  { href: '/gas',         Icon: Fuel,           label: 'Crypto Gas Fees',  shortLabel: 'Gas'    },
+  { href: '/dashboard',   Icon: LayoutGrid,     label: 'Dashboard'                              },
 ]
 
 const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; iconCls: string; bgCls: string }[] = [

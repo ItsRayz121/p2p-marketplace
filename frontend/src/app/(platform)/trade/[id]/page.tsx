@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import NextImage from 'next/image'
 import { tradesApi } from '@/lib/api'
 import type { Trade } from '@/lib/api'
 import { analytics } from '@/lib/analytics'
@@ -49,6 +50,23 @@ interface ChatMessage {
 }
 
 const AUTO_RELEASE_HOURS = 2
+
+// Only allow images from our CDN origins to prevent open-redirect / foreign image injection.
+const ALLOWED_IMAGE_HOSTS = [
+  'res.cloudinary.com',
+  'amazonaws.com',
+  'cloudfront.net',
+]
+
+function isTrustedImageUrl(url: string | undefined): boolean {
+  if (!url) return false
+  try {
+    const { hostname } = new URL(url)
+    return ALLOWED_IMAGE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))
+  } catch {
+    return false
+  }
+}
 
 interface ExtendedTrade extends Trade {
   paymentProofUrl?: string
@@ -753,13 +771,23 @@ export default function TradePage() {
                 {trade.paymentProofUrl && (
                   <div className="pt-3 border-t border-border">
                     <p className="text-xs text-text-muted mb-2">Payment Proof</p>
-                    <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-                      <img
-                        src={trade.paymentProofUrl}
-                        alt="Payment proof"
-                        className="w-full max-w-xs rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer"
-                      />
-                    </a>
+                    {isTrustedImageUrl(trade.paymentProofUrl) ? (
+                      <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
+                        <NextImage
+                          src={trade.paymentProofUrl}
+                          alt="Payment proof"
+                          width={320}
+                          height={240}
+                          className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover"
+                          referrerPolicy="no-referrer"
+                          unoptimized
+                        />
+                      </a>
+                    ) : (
+                      <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">
+                        Payment proof URL is from an untrusted source and cannot be displayed.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

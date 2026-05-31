@@ -56,7 +56,7 @@ function OtpInput({ digits, disabled, error, onChange, onKeyDown, onPaste, input
           disabled={disabled}
           aria-label={`Digit ${i + 1}`}
           className={cn(
-            'w-12 h-14 text-center text-xl font-semibold rounded-lg border bg-white text-text-primary',
+            'w-12 h-14 text-center text-xl font-semibold rounded-lg border bg-surface text-text-primary',
             'transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0',
             error
               ? 'border-danger focus:ring-danger/30'

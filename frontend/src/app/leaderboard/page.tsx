@@ -120,7 +120,7 @@ export default function LeaderboardPage() {
             key={t.id}
             onClick={() => setTradeType(t.id)}
             className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              tradeType === t.id ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
+              tradeType === t.id ? 'bg-surface-alt text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {t.label}
@@ -135,7 +135,7 @@ export default function LeaderboardPage() {
             key={p.id}
             onClick={() => setPeriod(p.id)}
             className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              period === p.id ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
+              period === p.id ? 'bg-surface-alt text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {p.label}

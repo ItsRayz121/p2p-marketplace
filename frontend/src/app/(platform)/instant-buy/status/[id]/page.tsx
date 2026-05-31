@@ -101,8 +101,8 @@ export default function InstantBuyStatusPage() {
                     done
                       ? 'bg-primary border-primary text-white'
                       : active
-                      ? 'bg-white border-primary text-primary'
-                      : 'bg-white border-border text-text-muted'
+                      ? 'bg-surface border-primary text-primary'
+                      : 'bg-surface border-border text-text-muted'
                   }`}
                 >
                   {done ? (

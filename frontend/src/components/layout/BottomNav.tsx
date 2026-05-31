@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/useAuth'
 import {
   Home,
   ArrowLeftRight,
@@ -55,8 +56,13 @@ const ctmNavItem: NavItem = {
 
 export default function BottomNav() {
   const pathname = usePathname()
+  const { user } = useAuth()
 
-  const navItems = [...baseNavItems.slice(0, 4), ctmNavItem, baseNavItems[4]]
+  // Only show CTM to KYC-approved users — new users see a clean 5-item nav
+  const kycApproved = user?.kycStatus === 'approved'
+  const navItems = kycApproved
+    ? [...baseNavItems.slice(0, 4), ctmNavItem, baseNavItems[4]]
+    : baseNavItems
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'

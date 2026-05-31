@@ -198,7 +198,7 @@ function NewTradePageContent() {
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
               placeholder={`${ad.minOrder} – ${ad.maxOrder}`}
-              className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:ring-2 bg-white ${
+              className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:ring-2 bg-surface ${
                 amountError ? 'border-danger focus:ring-danger/30' : 'border-border focus:ring-primary'
               }`}
             />
@@ -225,7 +225,7 @@ function NewTradePageContent() {
                 className={`inline-flex items-center gap-1.5 px-3 py-2.5 text-sm rounded-lg border transition-colors ${
                   paymentMethod === pm
                     ? 'bg-primary/10 border-primary text-primary font-medium'
-                    : 'border-border text-text-secondary hover:border-primary/40 bg-white'
+                    : 'border-border text-text-secondary hover:border-primary/40 bg-surface'
                 }`}
               >
                 <EntityLogo
@@ -254,7 +254,7 @@ function NewTradePageContent() {
                 className={`px-2 py-2.5 text-xs rounded-lg border transition-colors ${
                   deliveryMethod === m
                     ? 'bg-primary/10 border-primary text-primary font-medium'
-                    : 'border-border text-text-secondary hover:border-primary/40 bg-white'
+                    : 'border-border text-text-secondary hover:border-primary/40 bg-surface'
                 }`}
               >
                 {m === 'blockchain' ? 'Wallet Address' : m === 'email' ? 'Email' : 'Username'}
@@ -271,7 +271,7 @@ function NewTradePageContent() {
                 value={deliveryAddress}
                 onChange={(e) => setDeliveryAddress(e.target.value)}
                 placeholder={deliveryPlaceholder(deliveryMethod)}
-                className="w-full px-3 py-2.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                className="w-full px-3 py-2.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-surface"
               />
               <p className="mt-1 text-xs text-text-muted">
                 The seller will send {ad.coin} to this address after confirming your payment.

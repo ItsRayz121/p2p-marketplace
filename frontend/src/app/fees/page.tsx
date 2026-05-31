@@ -33,7 +33,7 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-border">
+        <tbody className="bg-surface divide-y divide-border">
           {rows.map((row, i) => (
             <tr key={i} className="hover:bg-surface/50 transition-colors">
               {row.map((cell, j) => (

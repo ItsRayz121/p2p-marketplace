@@ -48,7 +48,7 @@ export default function ReferralLandingPage() {
         </div>
 
         {/* Referral Code */}
-        <div className="bg-white border-2 border-primary rounded-2xl p-6 space-y-2">
+        <div className="bg-surface border-2 border-primary rounded-2xl p-6 space-y-2">
           <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Your Referral Code</p>
           <p className="text-4xl font-black text-primary tracking-widest">{code}</p>
           <p className="text-sm text-text-muted">Use this code when signing up to get started with a bonus</p>

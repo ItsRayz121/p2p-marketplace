@@ -257,7 +257,7 @@ function CreateListingPageContent() {
           <div className="flex gap-3">
             {(['sell', 'buy'] as const).map((s) => (
               <button type="button" key={s} onClick={() => set('side', s)}
-                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}>
+                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
                 {s === 'sell' ? 'Sell USDT' : 'Buy USDT'}
               </button>
             ))}
@@ -276,7 +276,7 @@ function CreateListingPageContent() {
           <div className="flex flex-wrap gap-2">
             {NETWORKS.map((n) => (
               <button type="button" key={n.value} onClick={() => set('network', n.value)}
-                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${form.network === n.value ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}>
+                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${form.network === n.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
                 {n.label}
               </button>
             ))}
@@ -293,7 +293,7 @@ function CreateListingPageContent() {
               { value: 'float', label: 'Float (Market %)' },
             ] as const).map((pt) => (
               <button type="button" key={pt.value} onClick={() => set('priceType', pt.value)}
-                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.priceType === pt.value ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}>
+                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.priceType === pt.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
                 {pt.label}
               </button>
             ))}
@@ -391,7 +391,7 @@ function CreateListingPageContent() {
                       : [...f.tokenDeliveryTypes, opt.value],
                     settlementMethod: '',
                   }))}
-                  className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${selected ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-primary hover:bg-surface'}`}
+                  className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${selected ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
                 >
                   {opt.label}
                 </button>
@@ -485,7 +485,7 @@ function CreateListingPageContent() {
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Trade window</label>
           <select value={form.tradeWindow} onChange={(e) => set('tradeWindow', parseInt(e.target.value))}
-            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30">
+            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30">
             {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m} minutes</option>)}
           </select>
         </div>
