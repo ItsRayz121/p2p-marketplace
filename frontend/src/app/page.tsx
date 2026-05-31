@@ -1,6 +1,12 @@
+// Force dynamic rendering — prevents Next.js from attempting to pre-render
+// this page during the Vercel build (which would require the backend to be
+// reachable). Fresh marketplace data on every request is correct for a live
+// trading platform.
+export const dynamic = 'force-dynamic'
+
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowLeftRight, Fuel, FileText, Zap, ShieldCheck, Users, Lock, HeadphonesIcon } from 'lucide-react'
+import { ArrowLeftRight, Fuel, FileText, Zap, ShieldCheck, Users, Lock, Headphones } from 'lucide-react'
 import { RateCalculator } from './_components/home/RateCalculator'
 import { AnimatedStatsBar } from './_components/home/AnimatedStatsBar'
 import { TopAdsSection } from './_components/home/TopAdsSection'
@@ -42,10 +48,10 @@ async function getHomeData(): Promise<HomeData> {
   const api = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
   const [rateRes, statsRes, topAdsRes, configRes] = await Promise.allSettled([
-    fetch(`${api}/api/v1/marketplace/rate?coin=USDT`, { next: { revalidate: 60 } }),
-    fetch(`${api}/api/v1/marketplace/stats`,          { next: { revalidate: 300 } }),
-    fetch(`${api}/api/v1/marketplace/top-ads`,        { next: { revalidate: 60 } }),
-    fetch(`${api}/api/v1/config`,                     { next: { revalidate: 3600 } }),
+    fetch(`${api}/api/v1/marketplace/rate?coin=USDT`, { cache: 'no-store' }),
+    fetch(`${api}/api/v1/marketplace/stats`,          { cache: 'no-store' }),
+    fetch(`${api}/api/v1/marketplace/top-ads`,        { cache: 'no-store' }),
+    fetch(`${api}/api/v1/config`,                     { cache: 'no-store' }),
   ])
 
   async function json<T>(r: PromiseSettledResult<Response>): Promise<T | null> {
@@ -171,7 +177,7 @@ export default async function HomePage() {
               { Icon: ShieldCheck,     title: 'Escrow Protected',   desc: 'Funds locked until both parties confirm',        color: 'text-success',    bg: 'bg-success/10'    },
               { Icon: Users,           title: 'KYC Verified',       desc: 'Every trader identity-verified via CNIC',        color: 'text-primary',    bg: 'bg-primary/10'    },
               { Icon: Lock,            title: 'Secure Withdrawals', desc: '2FA + email confirmation on every withdrawal',   color: 'text-warning',    bg: 'bg-warning/10'    },
-              { Icon: HeadphonesIcon,  title: '24/7 Support',       desc: 'Live support for trades and disputes',           color: 'text-violet-500', bg: 'bg-violet-500/10' },
+              { Icon: Headphones,      title: '24/7 Support',       desc: 'Live support for trades and disputes',           color: 'text-violet-500', bg: 'bg-violet-500/10' },
             ].map(({ Icon, title, desc, color, bg }) => (
               <div key={title} className="flex flex-col items-center text-center gap-2 px-3 py-4 bg-surface rounded-xl border border-border shadow-card">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>

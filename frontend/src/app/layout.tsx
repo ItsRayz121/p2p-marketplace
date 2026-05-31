@@ -42,7 +42,7 @@ export const metadata: Metadata = {
       'Pakistan\'s trusted P2P crypto marketplace. Trade USDT safely with JazzCash, Easypaisa, and bank transfer. Escrow-protected, KYC-verified.',
     images: [
       {
-        url: '/og-image.png',
+        url: '/opengraph-image',
         width: 1200,
         height: 630,
         alt: 'RupChain — Pakistan P2P Crypto Marketplace',
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'RupChain — Buy & Sell Crypto in Pakistan',
     description: 'Pakistan\'s trusted P2P crypto marketplace. Trade USDT with JazzCash & Easypaisa.',
-    images: ['/og-image.png'],
+    images: ['/opengraph-image'],
   },
   robots: {
     index: true,
@@ -73,18 +73,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const crispId = process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID
 
   return (
-    // suppressHydrationWarning is required because the anti-FOUC script
-    // adds/removes the "dark" class on <html> before React hydrates, which
-    // would otherwise cause a hydration mismatch warning.
+    // suppressHydrationWarning: the anti-FOUC script adds/removes .dark on
+    // <html> before React hydrates, which would otherwise cause a mismatch.
     <html lang="en" suppressHydrationWarning>
-      {/* Anti-FOUC: runs synchronously before first paint — reads localStorage
-          and applies .dark class before any CSS or React renders.
-          dangerouslySetInnerHTML is intentional here; this is a trusted inline
-          script with no user-controlled content. */}
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
-      </head>
       <body className="min-h-screen bg-canvas antialiased">
+        {/* Anti-FOUC theme script — must be the very first child of <body>
+            so it runs synchronously before any paint or React hydration.
+            Not wrapped in <head> because Next.js App Router owns <head>
+            via the metadata export; using a manual <head> causes a build error. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <Providers>
           {children}
           <Toaster />
