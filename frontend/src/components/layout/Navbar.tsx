@@ -9,6 +9,7 @@ import { notificationsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import {
   ArrowLeftRight,
   Coins,
@@ -122,7 +123,10 @@ export default function Navbar() {
           </nav>
 
           {/* Right actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {/* Theme toggle — visible to all users */}
+            <ThemeToggle />
+
             {!user ? (
               <>
                 <Link

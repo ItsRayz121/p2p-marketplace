@@ -3,6 +3,7 @@ import Script from 'next/script'
 import './globals.css'
 import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
+import { THEME_SCRIPT } from '@/lib/theme'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
 
@@ -72,7 +73,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const crispId = process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID
 
   return (
-    <html lang="en">
+    // suppressHydrationWarning is required because the anti-FOUC script
+    // adds/removes the "dark" class on <html> before React hydrates, which
+    // would otherwise cause a hydration mismatch warning.
+    <html lang="en" suppressHydrationWarning>
+      {/* Anti-FOUC: runs synchronously before first paint — reads localStorage
+          and applies .dark class before any CSS or React renders.
+          dangerouslySetInnerHTML is intentional here; this is a trusted inline
+          script with no user-controlled content. */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-canvas antialiased">
         <Providers>
           {children}

@@ -49,23 +49,23 @@ const config: Config = {
         },
 
         // ── Surface / background hierarchy ───────────────────────────────────
-        // canvas     → page background (body)
-        // surface    → card / panel background
-        // surface-alt→ inset / subtle background (input fields, code, tags)
-        canvas:        '#f8fafc',
-        surface:       '#ffffff',
-        'surface-alt': '#f1f5f9',
+        // Defined as CSS variables so dark mode tokens update automatically.
+        // RGB channel format (no rgb() wrapper) enables Tailwind opacity modifiers:
+        //   bg-surface/50, bg-surface-alt/60, etc.
+        canvas:        'rgb(var(--color-canvas) / <alpha-value>)',
+        surface:       'rgb(var(--color-surface) / <alpha-value>)',
+        'surface-alt': 'rgb(var(--color-surface-alt) / <alpha-value>)',
 
         // ── Border hierarchy ─────────────────────────────────────────────────
-        'border-subtle': '#e2e8f0',   // hairline dividers
-        border:          '#cbd5e1',   // default border
-        'border-strong': '#94a3b8',   // active / focus border
+        'border-subtle': 'rgb(var(--color-border-subtle) / <alpha-value>)',
+        border:          'rgb(var(--color-border) / <alpha-value>)',
+        'border-strong': 'rgb(var(--color-border-strong) / <alpha-value>)',
 
         // ── Text hierarchy ────────────────────────────────────────────────────
-        'text-primary':   '#0f172a',
-        'text-secondary': '#475569',
-        'text-muted':     '#94a3b8',
-        'text-disabled':  '#cbd5e1',
+        'text-primary':   'rgb(var(--color-text-primary) / <alpha-value>)',
+        'text-secondary': 'rgb(var(--color-text-secondary) / <alpha-value>)',
+        'text-muted':     'rgb(var(--color-text-muted) / <alpha-value>)',
+        'text-disabled':  'rgb(var(--color-text-disabled) / <alpha-value>)',
       },
 
       // ── Shadows ──────────────────────────────────────────────────────────────
