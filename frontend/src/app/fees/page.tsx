@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { walletApi, marketplaceApi } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Gift } from 'lucide-react'
@@ -109,29 +110,32 @@ export default function FeesPage() {
         />
       </section>
 
-      {/* Withdrawal Fees */}
+      {/* Escrow Wallet Withdrawal Fees */}
       <section>
-        <h2 className="text-lg font-bold text-text-primary mb-3">Withdrawal Fees</h2>
+        <h2 className="text-lg font-bold text-text-primary mb-3">Escrow Wallet Withdrawal Fees</h2>
         <Table
-          headers={['Coin', 'Network', 'Fee']}
+          headers={['Coin', 'Network', 'Withdrawal Fee']}
           rows={Object.entries(withdrawalFees).flatMap(([coin, networks]) =>
             Object.entries(networks).map(([network, fee]) => [coin, network, fee])
           )}
         />
-        <p className="text-xs text-text-muted mt-2">Withdrawal fees cover blockchain network costs and may vary based on network congestion.</p>
+        <p className="text-xs text-text-muted mt-2">These fees cover blockchain network withdrawal costs from the RupChain escrow wallet and may vary based on network conditions.</p>
       </section>
 
-      {/* KYC Limits */}
+      {/* Crypto Gas Fees */}
       <section>
-        <h2 className="text-lg font-bold text-text-primary mb-3">Daily Transaction Limits</h2>
+        <h2 className="text-lg font-bold text-text-primary mb-3">Crypto Gas Fees (Instant Gas Buy)</h2>
         <Table
-          headers={['KYC Level', 'Daily Buy Limit', 'Daily Withdrawal Limit']}
+          headers={['Charge', 'Amount']}
           rows={[
-            ['Unverified', 'PKR 0', 'Not allowed'],
-            ['Basic KYC', `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`, `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`],
-            ['Enhanced KYC', `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`, `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`],
+            ['On-chain gas value', 'At live market rate'],
+            ['Platform service fee', '~0.25 USDT per order'],
           ]}
         />
+        <p className="text-xs text-text-muted mt-2">
+          When you buy gas instantly, you pay the live on-chain value of the gas tokens plus a small flat platform service fee (typically ~0.25 USDT, varies by chain). The exact total is shown live before you confirm on the{' '}
+          <Link href="/gas" className="text-primary hover:underline">Crypto Gas Fees</Link> page.
+        </p>
       </section>
 
       {/* Referral */}
@@ -152,23 +156,19 @@ export default function FeesPage() {
         </div>
       </section>
 
-      {/* Gas Refill */}
+      {/* Account Limits */}
       <section>
-        <h2 className="text-lg font-bold text-text-primary mb-3">Gas Refill Service (TRX)</h2>
+        <h2 className="text-lg font-bold text-text-primary mb-3">Account Limits</h2>
+        <p className="text-sm text-text-muted mb-3">These are account transaction limits based on your KYC level — not fees.</p>
         <Table
-          headers={['Tier', 'TRX Amount', 'Price (USDT)']}
+          headers={['KYC Level', 'Daily Buy Limit', 'Daily Withdrawal Limit']}
           rows={[
-            ['SMALL', '10 TRX', '~1.00 USDT'],
-            ['MEDIUM', '50 TRX', '~4.50 USDT'],
-            ['LARGE', '100 TRX', '~8.50 USDT'],
+            ['Unverified', 'PKR 0', 'Not allowed'],
+            ['Basic KYC', `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`, `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`],
+            ['Enhanced KYC', `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`, `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`],
           ]}
         />
-        <p className="text-xs text-text-muted mt-2">Prices update in real-time based on TRX/USDT market rate.</p>
       </section>
-
-      <p className="text-xs text-text-muted text-center">
-        Fees are subject to change. Last updated: {new Date().toLocaleDateString()}
-      </p>
     </div>
   )
 }
