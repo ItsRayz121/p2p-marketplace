@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { Bell } from 'lucide-react'
+import { PushToggle } from '@/components/ui/PushToggle'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -177,7 +178,7 @@ export default function NotificationsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Notifications</h1>
           {unread > 0 && (
@@ -189,6 +190,12 @@ export default function NotificationsPage() {
             {markingAll ? <Spinner size="sm" /> : 'Mark all read'}
           </Button>
         )}
+      </div>
+
+      {/* Push notification opt-in banner */}
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+        <p className="text-sm text-text-muted">Get alerts even when you leave this page</p>
+        <PushToggle />
       </div>
 
       {notifications.length === 0 ? (

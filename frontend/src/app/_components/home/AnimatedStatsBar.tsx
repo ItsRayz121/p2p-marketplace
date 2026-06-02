@@ -9,10 +9,10 @@ interface MarketStats {
 }
 
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
-  const [display, setDisplay] = useState(value)
+  const [display, setDisplay] = useState(value || 0)
 
   useEffect(() => {
-    if (value === 0) return
+    if (!value) return
     const duration = 1200
     const steps = 40
     const increment = value / steps
@@ -27,7 +27,7 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 
   return (
     <span>
-      {prefix}{display.toLocaleString()}{suffix}
+      {prefix}{(display || 0).toLocaleString()}{suffix}
     </span>
   )
 }
