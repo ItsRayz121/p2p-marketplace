@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
-import { UserCircle, CheckCircle, Star, Trophy, Gem } from 'lucide-react'
+import { UserCircle, CheckCircle, Star, Trophy, Gem, Medal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type TraderBadge = 'new' | 'active' | 'trusted' | 'top' | 'elite'
@@ -21,55 +21,55 @@ interface BadgeConfig {
 const BADGE_CONFIG: BadgeConfig[] = [
   {
     badge:       'new',
-    label:       'New Trader',
-    Icon:        UserCircle,
-    color:       'text-text-secondary',
-    bgColor:     'bg-surface-alt',
-    borderColor: 'border-border',
-    iconColor:   'text-text-muted',
+    label:       'Bronze',
+    Icon:        Medal,
+    color:       'text-amber-700',
+    bgColor:     'bg-amber-50 dark:bg-amber-950/30',
+    borderColor: 'border-amber-300',
+    iconColor:   'text-amber-600',
     minTrades:   0,
     minRate:     0,
   },
   {
     badge:       'active',
-    label:       'Active Trader',
+    label:       'Silver',
     Icon:        CheckCircle,
-    color:       'text-primary',
-    bgColor:     'bg-primary/10',
-    borderColor: 'border-primary/30',
-    iconColor:   'text-primary',
+    color:       'text-slate-500',
+    bgColor:     'bg-slate-100 dark:bg-slate-800/40',
+    borderColor: 'border-slate-300',
+    iconColor:   'text-slate-400',
     minTrades:   5,
     minRate:     0.80,
   },
   {
     badge:       'trusted',
-    label:       'Trusted Trader',
+    label:       'Gold',
     Icon:        Star,
-    color:       'text-warning',
-    bgColor:     'bg-warning/10',
-    borderColor: 'border-warning/30',
-    iconColor:   'text-warning',
+    color:       'text-yellow-600',
+    bgColor:     'bg-yellow-50 dark:bg-yellow-900/20',
+    borderColor: 'border-yellow-300',
+    iconColor:   'text-yellow-500',
     minTrades:   50,
     minRate:     0.90,
   },
   {
     badge:       'top',
-    label:       'Top Trader',
+    label:       'Diamond',
     Icon:        Trophy,
-    color:       'text-orange-600',
-    bgColor:     'bg-orange-50',
-    borderColor: 'border-orange-200',
-    iconColor:   'text-orange-500',
+    color:       'text-cyan-600',
+    bgColor:     'bg-cyan-50 dark:bg-cyan-900/20',
+    borderColor: 'border-cyan-300',
+    iconColor:   'text-cyan-500',
     minTrades:   200,
     minRate:     0.95,
   },
   {
     badge:       'elite',
-    label:       'Elite Trader',
+    label:       'Elite',
     Icon:        Gem,
     color:       'text-purple-700',
-    bgColor:     'bg-purple-50',
-    borderColor: 'border-purple-200',
+    bgColor:     'bg-purple-50 dark:bg-purple-900/20',
+    borderColor: 'border-purple-300',
     iconColor:   'text-purple-600',
     minTrades:   500,
     minRate:     0.98,
@@ -223,7 +223,7 @@ export function TraderLevelCard({
 
       {badge === 'elite' && (
         <div className={cn('text-center text-sm font-semibold rounded-lg py-2', cfg.color, cfg.bgColor)}>
-          Maximum level reached — Elite Trader
+          Maximum level reached — Elite 💎
         </div>
       )}
 

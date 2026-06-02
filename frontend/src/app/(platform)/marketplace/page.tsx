@@ -35,6 +35,15 @@ interface Filters {
 }
 
 
+function formatVolumePKR(pkr: string | null | undefined): string | null {
+  if (!pkr) return null
+  const n = parseFloat(pkr)
+  if (isNaN(n) || n < 10_000) return null
+  if (n >= 1_00_00_000) return `₨${(n / 1_00_00_000).toFixed(1)}Cr`
+  if (n >= 1_00_000)   return `₨${(n / 1_00_000).toFixed(1)}L`
+  return `₨${Math.round(n / 1_000)}K`
+}
+
 function responseTimeLabel(mins: number | null | undefined): { text: string; cls: string } | null {
   if (mins == null) return null
   if (mins <  5)  return { text: '⚡ < 5 min',  cls: 'text-success font-semibold' }
@@ -81,6 +90,11 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
 
   const activity = activeLabel(ad.seller?.lastSeenAt ?? null)
   const responseTime = responseTimeLabel(stats?.avgResponseMinutes)
+  const releaseTime = stats?.avgReleaseMinutes != null
+    ? { text: `🔓 ${stats.avgReleaseMinutes}m release`, cls: 'text-text-muted' }
+    : null
+  const volume = formatVolumePKR(stats?.totalVolumePKR)
+  const totalReviews = stats?.totalReviews ?? 0
   const isSell     = ad.side === 'sell'
   const userAction = isSell ? 'BUY' : 'SELL'
   const accentCls  = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
@@ -161,7 +175,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             )}
           </div>
 
-          {/* Stats row: completion · rating · completed trades */}
+          {/* Stats row: completion · rating · reviews · trades · volume */}
           <div className="flex items-center gap-2 text-xs flex-wrap">
             {completionPct !== null && (
               <span className={`font-bold ${completionColor}`}>
@@ -172,16 +186,27 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
               <span className="flex items-center gap-0.5 text-text-muted">
                 <span className="text-gold">★</span>
                 {rating.toFixed(1)}
+                {totalReviews > 0 && (
+                  <span className="text-text-muted/70 ml-0.5">({totalReviews})</span>
+                )}
               </span>
             )}
-            <span className="text-text-muted">{completedTrades} done</span>
+            <span className="text-text-muted">{completedTrades} trades</span>
+            {volume && (
+              <span className="text-text-muted/70">{volume}</span>
+            )}
           </div>
 
-          {/* Response time + active status */}
+          {/* Response time + release time + active status */}
           <div className="flex items-center gap-2 flex-wrap mt-1">
             {responseTime && (
               <span className={`text-[10px] ${responseTime.cls}`}>
                 {responseTime.text}
+              </span>
+            )}
+            {releaseTime && (
+              <span className={`text-[10px] ${releaseTime.cls}`}>
+                {releaseTime.text}
               </span>
             )}
             {activity && (

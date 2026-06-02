@@ -761,8 +761,8 @@ export async function adminRoutes(app: FastifyInstance) {
       include: {
         trade: {
           include: {
-            buyer: { select: { email: true } },
-            seller: { select: { email: true } },
+            buyer: { select: { id: true, email: true } },
+            seller: { select: { id: true, email: true } },
           },
         },
       },
@@ -771,6 +771,9 @@ export async function adminRoutes(app: FastifyInstance) {
     if (dispute.status === 'resolved') {
       throw new AppError('ALREADY_RESOLVED', 'Dispute is already resolved', 400)
     }
+
+    const winnerId = parsed.data.winner === 'buyer' ? dispute.trade.buyer.id : dispute.trade.seller.id
+    const loserId  = parsed.data.winner === 'buyer' ? dispute.trade.seller.id : dispute.trade.buyer.id
 
     await db.$transaction(async (tx) => {
       await tx.dispute.update({
@@ -782,6 +785,17 @@ export async function adminRoutes(app: FastifyInstance) {
           resolvedAt: new Date(),
           resolvedBy: req.user!.id,
         },
+      })
+      // Increment dispute win/loss counts for both parties
+      await tx.tradeStats.upsert({
+        where: { userId: winnerId },
+        create: { userId: winnerId, disputesWon: 1 },
+        update: { disputesWon: { increment: 1 } },
+      })
+      await tx.tradeStats.upsert({
+        where: { userId: loserId },
+        create: { userId: loserId, disputesLost: 1 },
+        update: { disputesLost: { increment: 1 } },
       })
     })
 

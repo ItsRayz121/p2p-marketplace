@@ -25,6 +25,7 @@ import {
   Gift,
   LogOut,
   ChevronDown,
+  Heart,
 } from 'lucide-react'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; ic
   { href: '/settings',    Icon: Settings,                 label: 'Settings',         iconCls: 'text-slate-500',   bgCls: 'bg-slate-400/10'  },
   { href: '/leaderboard', Icon: Trophy,                    label: 'Leaderboard',      iconCls: 'text-yellow-500',  bgCls: 'bg-yellow-500/10' },
   { href: '/referral',    Icon: Gift,                      label: 'Referral',         iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'   },
+  { href: '/favorites',   Icon: Heart,                     label: 'Favorites',        iconCls: 'text-red-500',     bgCls: 'bg-red-500/10'    },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────

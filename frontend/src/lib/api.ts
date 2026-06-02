@@ -468,6 +468,9 @@ export interface MarketplaceAd {
       completedTrades: number
       avgRating: string
       avgResponseMinutes: number | null
+      avgReleaseMinutes: number | null
+      totalVolumePKR: string | null
+      totalReviews: number | null
     } | null
     hasCollateral: boolean
   }
@@ -625,6 +628,15 @@ export const marketplaceApi = {
       : ''
     return apiRequest<{ ads: MarketplaceAd[]; total: number; page: number; limit: number }>('/marketplace/ads' + qs)
   },
+}
+
+export const favoritesApi = {
+  getFavorites: () =>
+    apiRequest<unknown[]>('/users/me/favorites'),
+  addFavorite: (username: string) =>
+    apiRequest<{ isFavorited: boolean }>(`/users/${encodeURIComponent(username)}/favorite`, { method: 'POST' }),
+  removeFavorite: (username: string) =>
+    apiRequest<{ isFavorited: boolean }>(`/users/${encodeURIComponent(username)}/favorite`, { method: 'DELETE' }),
 }
 
 export const walletApi = {

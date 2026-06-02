@@ -60,6 +60,14 @@ export async function userRoutes(app: FastifyInstance) {
 
     if (!user) throw new AppError('NOT_FOUND', 'User not found', 404)
 
+    // Check if the authenticated viewer has favorited this trader
+    const viewerId = (req as { user?: { id: string } }).user?.id
+    const isFavorited = viewerId && viewerId !== user.id
+      ? !!(await db.userFavorite.findUnique({
+          where: { userId_favoritedUserId: { userId: viewerId, favoritedUserId: user.id } },
+        }))
+      : false
+
     // Fetch last 10 ratings where this user was rated
     const ratings = await db.tradeRating.findMany({
       where: { ratedUserId: user.id },
@@ -98,6 +106,7 @@ export async function userRoutes(app: FastifyInstance) {
     const profile = {
       ...user,
       verifiedEmail: user.isEmailVerified,
+      isFavorited,
       socialLinks: user.socialLinksPublic ? user.socialLinks : null,
       ratings: enrichedRatings,
       activeAds: user.ads.map((ad) => ({
@@ -158,6 +167,93 @@ export async function userRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: null })
   })
 
+  // ─── Favorites ────────────────────────────────────────────────────────────────
+
+  // POST /api/users/:username/favorite — add trader to favorites
+  app.post('/users/:username/favorite', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { username } = req.params as { username: string }
+
+    const target = await db.user.findUnique({ where: { username }, select: { id: true } })
+    if (!target) throw new AppError('NOT_FOUND', 'User not found', 404)
+    if (target.id === userId) throw new AppError('VALIDATION_ERROR', 'Cannot favorite yourself', 400)
+
+    await db.userFavorite.upsert({
+      where: { userId_favoritedUserId: { userId, favoritedUserId: target.id } },
+      create: { userId, favoritedUserId: target.id },
+      update: {},
+    })
+    return reply.send({ success: true, data: { isFavorited: true } })
+  })
+
+  // DELETE /api/users/:username/favorite — remove from favorites
+  app.delete('/users/:username/favorite', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { username } = req.params as { username: string }
+
+    const target = await db.user.findUnique({ where: { username }, select: { id: true } })
+    if (!target) throw new AppError('NOT_FOUND', 'User not found', 404)
+
+    await db.userFavorite.deleteMany({ where: { userId, favoritedUserId: target.id } })
+    return reply.send({ success: true, data: { isFavorited: false } })
+  })
+
+  // GET /api/users/me/favorites — list my favorited traders + their active ads
+  app.get('/users/me/favorites', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+
+    const favs = await db.userFavorite.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        favOf: {
+          select: {
+            id: true,
+            username: true,
+            lastSeenAt: true,
+            tradeStats: {
+              select: {
+                badge: true,
+                completedTrades: true,
+                completionRate: true,
+                avgRating: true,
+                avgResponseMinutes: true,
+              },
+            },
+            merchant: { select: { id: true, status: true } },
+            ads: {
+              where: { status: 'active' },
+              orderBy: { createdAt: 'desc' },
+              take: 3,
+              select: {
+                id: true, side: true, coin: true, price: true,
+                availableAmount: true, minOrder: true, maxOrder: true, paymentMethods: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    return reply.send({
+      success: true,
+      data: favs.map((f) => ({
+        favoritedAt: f.createdAt,
+        trader: {
+          ...f.favOf,
+          lastSeenAt: f.favOf.lastSeenAt?.toISOString() ?? null,
+          ads: (f.favOf.ads as Array<{ id: string; side: string; coin: string; price: { toString(): string }; availableAmount: { toString(): string }; minOrder: { toString(): string }; maxOrder: { toString(): string }; paymentMethods: string[] }>).map((ad) => ({
+            ...ad,
+            price: ad.price.toString(),
+            availableAmount: ad.availableAmount.toString(),
+            minOrder: ad.minOrder.toString(),
+            maxOrder: ad.maxOrder.toString(),
+          })),
+        },
+      })),
+    })
+  })
+
   // ─── User Rank ─────────────────────────────────────────────────────────────
 
   // GET /api/users/me/rank — authenticated
@@ -168,11 +264,11 @@ export async function userRoutes(app: FastifyInstance) {
 
     // Badge tier thresholds for progress display
     const BADGE_THRESHOLDS = {
-      new: { minTrades: 0, label: 'New Trader' },
-      active: { minTrades: 5, label: 'Active Trader' },
-      trusted: { minTrades: 25, label: 'Trusted Trader' },
-      top: { minTrades: 100, label: 'Top Trader' },
-      elite: { minTrades: 500, label: 'Elite Trader' },
+      new: { minTrades: 0, label: 'Bronze' },
+      active: { minTrades: 5, label: 'Silver' },
+      trusted: { minTrades: 50, label: 'Gold' },
+      top: { minTrades: 200, label: 'Diamond' },
+      elite: { minTrades: 500, label: 'Elite' },
     } as const
 
     const completedTrades = stats?.completedTrades ?? 0

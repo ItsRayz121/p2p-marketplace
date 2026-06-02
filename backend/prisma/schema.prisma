@@ -442,6 +442,8 @@ model User {
   ctmBids                CtmBid[]              @relation("CtmBidder")
   ctmListingBids         CtmListingBid[]       @relation("CtmListingBidder")
   adBids                 AdBid[]               @relation("AdBidder")
+  favorites              UserFavorite[]         @relation("FavoritingUser")
+  favoritedBy            UserFavorite[]         @relation("FavoritedTrader")
 
   @@index([email])
   @@index([username])
@@ -1094,7 +1096,22 @@ model TradeStats {
   badgeLabel         String      @default("New Trader")
   badgeOverride      Boolean     @default(false)
   avgResponseMinutes Int?        // median seller response time in minutes (null = not enough data)
+  avgReleaseMinutes  Int?        // median time from payment_confirmed to crypto_released (null = not enough data)
+  disputesWon        Int         @default(0)
+  disputesLost       Int         @default(0)
   lastUpdated        DateTime    @updatedAt
+}
+
+model UserFavorite {
+  id              String   @id @default(cuid())
+  userId          String
+  favBy           User     @relation("FavoritingUser", fields: [userId], references: [id], onDelete: Cascade)
+  favoritedUserId String
+  favOf           User     @relation("FavoritedTrader", fields: [favoritedUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, favoritedUserId])
+  @@index([userId])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

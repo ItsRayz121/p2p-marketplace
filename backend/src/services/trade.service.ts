@@ -65,6 +65,41 @@ async function recalcSellerResponseTime(tx: Prisma.TransactionClient, sellerId: 
   })
 }
 
+async function recalcSellerReleaseTime(tx: Prisma.TransactionClient, sellerId: string) {
+  const recentTrades = await tx.trade.findMany({
+    where: {
+      sellerId,
+      status: 'crypto_released',
+      paymentConfirmedAt: { not: null },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 20,
+    select: { paymentConfirmedAt: true, updatedAt: true },
+  })
+
+  const times = recentTrades
+    .map((t) => {
+      if (!t.paymentConfirmedAt) return null
+      const mins = Math.round((t.updatedAt.getTime() - t.paymentConfirmedAt.getTime()) / 60_000)
+      return mins > 0 ? mins : null
+    })
+    .filter((v): v is number => v !== null)
+
+  if (times.length === 0) return
+
+  times.sort((a, b) => a - b)
+  const mid = Math.floor(times.length / 2)
+  const median = times.length % 2 !== 0
+    ? times[mid]!
+    : Math.round((times[mid - 1]! + times[mid]!) / 2)
+
+  await tx.tradeStats.upsert({
+    where: { userId: sellerId },
+    create: { userId: sellerId, avgReleaseMinutes: median },
+    update: { avgReleaseMinutes: median },
+  })
+}
+
 async function upsertTradeStats(
   tx: Prisma.TransactionClient,
   userId: string,
@@ -372,8 +407,9 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     await upsertTradeStats(tx, buyerId, true, rows.fiatAmount)
     await upsertTradeStats(tx, rows.sellerId, true, rows.fiatAmount)
 
-    // Recalculate seller's median response time from last 20 trades
+    // Recalculate seller's median response + release times from last 20 trades
     await recalcSellerResponseTime(tx, rows.sellerId)
+    await recalcSellerReleaseTime(tx, rows.sellerId)
   })
 
   // Queue badge recalculation for both

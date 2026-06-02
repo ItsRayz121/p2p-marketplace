@@ -11,11 +11,11 @@ function computeBadge(
   completionRate: number,
 ): { badge: string; badgeLabel: string } {
   const rate = Number(completionRate)
-  if (totalTrades >= 500 && rate >= 0.98) return { badge: 'elite', badgeLabel: 'Elite Trader' }
-  if (totalTrades >= 200 && rate >= 0.95) return { badge: 'top', badgeLabel: 'Top Trader' }
-  if (totalTrades >= 50 && rate >= 0.9) return { badge: 'trusted', badgeLabel: 'Trusted Trader' }
-  if (totalTrades >= 5 && rate >= 0.8) return { badge: 'active', badgeLabel: 'Active Trader' }
-  return { badge: 'new', badgeLabel: 'New Trader' }
+  if (totalTrades >= 500 && rate >= 0.98) return { badge: 'elite', badgeLabel: 'Elite' }
+  if (totalTrades >= 200 && rate >= 0.95) return { badge: 'top', badgeLabel: 'Diamond' }
+  if (totalTrades >= 50 && rate >= 0.9) return { badge: 'trusted', badgeLabel: 'Gold' }
+  if (totalTrades >= 5 && rate >= 0.8) return { badge: 'active', badgeLabel: 'Silver' }
+  return { badge: 'new', badgeLabel: 'Bronze' }
 }
 
 function computeTrustScore(
@@ -122,8 +122,8 @@ export async function recalculateUserBadge(userId: string): Promise<void> {
         direction === 'upgraded' ? 'badge_upgraded' : 'badge_downgraded',
         direction === 'upgraded' ? `Badge upgraded to ${badgeLabel}!` : `Your badge changed to ${badgeLabel}`,
         direction === 'upgraded'
-          ? `Congratulations! You've earned the ${badgeLabel} badge.`
-          : `Your trader badge has changed to ${badgeLabel}. Maintain your completion rate to upgrade.`,
+          ? `Congratulations! You've reached ${badgeLabel} tier.`
+          : `Your trader tier changed to ${badgeLabel}. Maintain your completion rate to upgrade.`,
         { badge, previousBadge: current.badge },
       )
     }

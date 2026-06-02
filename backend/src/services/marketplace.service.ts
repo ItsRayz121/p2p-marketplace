@@ -39,6 +39,9 @@ export interface SellerInfo {
     completedTrades: number
     avgRating: string
     avgResponseMinutes: number | null
+    avgReleaseMinutes: number | null
+    totalVolumePKR: string | null
+    totalReviews: number | null
   } | null
   hasCollateral: boolean
 }
@@ -279,6 +282,9 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
           completedTrades: true,
           avgRating: true,
           avgResponseMinutes: true,
+          avgReleaseMinutes: true,
+          totalVolumePKR: true,
+          totalReviews: true,
         },
       },
       collateralLocks: {
@@ -341,6 +347,9 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
               completedTrades: stats.completedTrades,
               avgRating: stats.avgRating.toString(),
               avgResponseMinutes: stats.avgResponseMinutes ?? null,
+              avgReleaseMinutes: stats.avgReleaseMinutes ?? null,
+              totalVolumePKR: stats.totalVolumePKR?.toString() ?? null,
+              totalReviews: stats.totalReviews ?? null,
             }
           : null,
         hasCollateral: ad.user.collateralLocks.length > 0,
@@ -467,6 +476,9 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
           completedTrades: true,
           avgRating: true,
           avgResponseMinutes: true,
+          avgReleaseMinutes: true,
+          totalVolumePKR: true,
+          totalReviews: true,
         },
       },
       collateralLocks: {
@@ -540,6 +552,9 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
               completedTrades: stats.completedTrades,
               avgRating: stats.avgRating.toString(),
               avgResponseMinutes: stats.avgResponseMinutes ?? null,
+              avgReleaseMinutes: stats.avgReleaseMinutes ?? null,
+              totalVolumePKR: stats.totalVolumePKR?.toString() ?? null,
+              totalReviews: stats.totalReviews ?? null,
             }
           : null,
         hasCollateral: ad.user.collateralLocks.length > 0,
