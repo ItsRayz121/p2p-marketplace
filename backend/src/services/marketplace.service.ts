@@ -420,7 +420,7 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     referralRewardPkr: parseFloat(map['referral_reward_pkr'] ?? '0'),
     homeFaqs,
     kycLimitBasicDaily: parseFloat(map['kyc_limit_basic_daily'] ?? '50000'),
-    kycLimitEnhancedDaily: parseFloat(map['kyc_limit_enhanced_daily'] ?? '500000'),
+    kycLimitEnhancedDaily: parseFloat(map['kyc_limit_enhanced_daily'] ?? '200000'),
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 60)
