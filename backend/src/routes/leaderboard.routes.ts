@@ -249,6 +249,22 @@ export async function leaderboardRoutes(app: FastifyInstance) {
       total = count
     }
 
+    // Batch-enrich entries with fullName (all branches output userId)
+    if (Array.isArray(entries) && entries.length > 0) {
+      const userIds = (entries as { userId?: string }[]).map((e) => e.userId).filter(Boolean) as string[]
+      if (userIds.length > 0) {
+        const users = await db.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, fullName: true },
+        })
+        const fullNameMap = new Map(users.map((u) => [u.id, u.fullName]))
+        entries = (entries as { userId?: string }[]).map((e) => ({
+          ...e,
+          fullName: e.userId ? (fullNameMap.get(e.userId) ?? null) : null,
+        }))
+      }
+    }
+
     return reply.send({
       success: true,
       data: { type, period, tradeType, entries, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },

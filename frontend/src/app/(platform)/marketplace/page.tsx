@@ -76,12 +76,17 @@ function activeLabel(lastSeenAt: string | null): { text: string; cls: string } |
   return null
 }
 
+function memberSince(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
 function AdRow({ ad }: { ad: MarketplaceAd }) {
   const methods = ad.paymentMethods ?? []
   const stats = ad.seller?.tradeStats
   const rating = parseFloat(stats?.avgRating ?? '0')
   const completedTrades = stats?.completedTrades ?? 0
-  // API returns completion rate as decimal 0–1; multiply to get percentage
   const completionPct = stats?.completionRate != null ? parseFloat(stats.completionRate) * 100 : null
   const completionColor =
     completionPct === null ? '' :
@@ -90,71 +95,42 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
 
   const activity = activeLabel(ad.seller?.lastSeenAt ?? null)
   const responseTime = responseTimeLabel(stats?.avgResponseMinutes)
-  const releaseTime = stats?.avgReleaseMinutes != null
-    ? { text: `🔓 ${stats.avgReleaseMinutes}m release`, cls: 'text-text-muted' }
-    : null
-  const volume = formatVolumePKR(stats?.totalVolumePKR)
   const totalReviews = stats?.totalReviews ?? 0
   const isSell     = ad.side === 'sell'
   const userAction = isSell ? 'BUY' : 'SELL'
   const accentCls  = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
   const chipCls    = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
   const priceCls   = isSell ? 'text-emerald-600' : 'text-blue-600'
+  const profileHref = `/profile/${ad.seller?.username}`
 
   return (
     <div className={`bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
 
-        {/* USDT logo + coin/network */}
-        <div className="flex items-center gap-3 sm:w-44">
-          <EntityLogo type="token" slug="USDT" size="lg" />
-          <div>
-            <p className="font-semibold text-text-primary text-sm">{ad.coin}</p>
-            <p className="text-xs text-text-muted">{ad.network}</p>
-            <span className={`inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
-              {userAction}
-            </span>
-          </div>
-        </div>
-
-        {/* Price + available + listing age */}
-        <div className="sm:flex-1">
-          <p className={`text-xl font-bold ${priceCls}`}>PKR {Number(ad.price).toLocaleString()}</p>
-          <p className="text-xs text-text-muted">per {ad.coin}</p>
-          <p className="text-xs text-text-muted mt-0.5">
-            <span className="font-medium">{ad.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
-            {Number(ad.availableAmount).toFixed(4)} {ad.coin}
-          </p>
-          <p className="text-xs text-text-muted mt-0.5">Listed {listingAge(ad.createdAt)}</p>
-        </div>
-
-        {/* Limits + trade window */}
-        <div className="sm:w-44">
-          <p className="text-xs text-text-muted">Order Limit</p>
-          <p className="text-sm font-medium text-text-primary">
-            {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()} {ad.coin}
-          </p>
-          <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
-            <Clock size={10} className="flex-shrink-0" />
-            {ad.tradeWindow} min window
-          </p>
-        </div>
-
-        {/* Seller trust block */}
-        <div className="sm:w-48">
-          {/* Name + avatar row */}
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <UserAvatar name={ad.seller?.fullName || ad.seller?.username || 'A'} size="xs" />
-            <Link
-              href={`/profile/${ad.seller?.username}`}
-              className="text-sm font-semibold text-text-primary hover:text-primary hover:underline truncate"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {ad.seller?.fullName || ad.seller?.username || 'Anonymous'}
+        {/* ── 1. TRADER IDENTITY (first & most prominent) ── */}
+        <div className="sm:w-52 flex-shrink-0">
+          {/* Avatar + name row */}
+          <div className="flex items-center gap-2 mb-1.5">
+            <Link href={profileHref} onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+              <UserAvatar name={ad.seller?.fullName || ad.seller?.username || 'A'} size="sm" />
             </Link>
+            <div className="min-w-0">
+              <Link
+                href={profileHref}
+                className="text-sm font-bold text-text-primary hover:text-primary hover:underline block truncate leading-tight"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {ad.seller?.fullName || ad.seller?.username || 'Anonymous'}
+              </Link>
+              {ad.seller?.joinedAt && (
+                <p className="text-[10px] text-text-muted leading-tight">
+                  Since {memberSince(ad.seller.joinedAt)}
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Merchant + Badge + collateral row */}
+          {/* Merchant + Badge + collateral chips */}
           <div className="flex items-center gap-1 flex-wrap mb-1.5">
             {ad.seller?.isMerchant && ad.seller?.merchantId && (
               <Link
@@ -175,51 +151,74 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             )}
           </div>
 
-          {/* Stats row: completion · rating · reviews · trades · volume */}
+          {/* Trust metrics: completion · rating (clickable) · trades */}
           <div className="flex items-center gap-2 text-xs flex-wrap">
             {completionPct !== null && (
               <span className={`font-bold ${completionColor}`}>
                 {completionPct.toFixed(0)}%
               </span>
             )}
-            {rating > 0 && (
-              <span className="flex items-center gap-0.5 text-text-muted">
+            {rating > 0 ? (
+              <Link
+                href={profileHref}
+                className="flex items-center gap-0.5 text-text-muted hover:text-primary transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <span className="text-gold">★</span>
                 {rating.toFixed(1)}
                 {totalReviews > 0 && (
                   <span className="text-text-muted/70 ml-0.5">({totalReviews})</span>
                 )}
-              </span>
-            )}
+              </Link>
+            ) : null}
             <span className="text-text-muted">{completedTrades} trades</span>
-            {volume && (
-              <span className="text-text-muted/70">{volume}</span>
-            )}
           </div>
 
-          {/* Response time + release time + active status */}
+          {/* Online status + response time */}
           <div className="flex items-center gap-2 flex-wrap mt-1">
-            {responseTime && (
-              <span className={`text-[10px] ${responseTime.cls}`}>
-                {responseTime.text}
-              </span>
-            )}
-            {releaseTime && (
-              <span className={`text-[10px] ${releaseTime.cls}`}>
-                {releaseTime.text}
-              </span>
-            )}
             {activity && (
-              <span className={`text-[10px] ${activity.cls}`}>
-                {activity.text}
-              </span>
+              <span className={`text-[10px] ${activity.cls}`}>{activity.text}</span>
+            )}
+            {responseTime && (
+              <span className={`text-[10px] ${responseTime.cls}`}>{responseTime.text}</span>
             )}
           </div>
         </div>
 
-        {/* Payment methods */}
+        {/* ── 2. COIN + PRICE ── */}
+        <div className="sm:flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <EntityLogo type="token" slug="USDT" size="md" />
+            <div>
+              <p className="font-semibold text-text-primary text-sm leading-tight">{ad.coin}</p>
+              <p className="text-xs text-text-muted">{ad.network}</p>
+            </div>
+            <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
+              {userAction}
+            </span>
+          </div>
+          <p className={`text-xl font-bold ${priceCls}`}>PKR {Number(ad.price).toLocaleString()}</p>
+          <p className="text-xs text-text-muted mt-0.5">
+            {ad.side === 'buy' ? 'Wanted' : 'Available'}: {Number(ad.availableAmount).toFixed(4)} {ad.coin}
+          </p>
+          <p className="text-xs text-text-muted/60 mt-0.5">Listed {listingAge(ad.createdAt)}</p>
+        </div>
+
+        {/* ── 3. LIMITS + WINDOW ── */}
+        <div className="sm:w-40 flex-shrink-0">
+          <p className="text-xs text-text-muted">Order Limit</p>
+          <p className="text-sm font-medium text-text-primary">
+            {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()} {ad.coin}
+          </p>
+          <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
+            <Clock size={10} className="flex-shrink-0" />
+            {ad.tradeWindow} min window
+          </p>
+        </div>
+
+        {/* ── 4. PAYMENT METHODS ── */}
         {methods.length > 0 && (
-          <div className="sm:w-36">
+          <div className="sm:w-32 flex-shrink-0">
             <p className="text-xs text-text-muted mb-1">Payment</p>
             <div className="flex flex-wrap gap-1">
               {methods.slice(0, 3).map((pm) => (
@@ -237,7 +236,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           </div>
         )}
 
-        {/* CTA */}
+        {/* ── 5. CTA ── */}
         {parseFloat(ad.availableAmount) > 0 ? (
           <Link
             href={`/marketplace/listings/${ad.id}`}
@@ -290,7 +289,7 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
               <span className="font-semibold text-text-primary">
                 {parseFloat(t.amount).toFixed(2)} {t.coin}
               </span>
-              <span className="text-text-muted">{t.buyerUsername} ← {t.sellerUsername}</span>
+              <span className="text-text-muted">{t.buyerFullName || t.buyerUsername} ← {t.sellerFullName || t.sellerUsername}</span>
               <span className="text-text-muted/60">{tradeFeedAge(t.completedAt)}</span>
             </span>
           ))}

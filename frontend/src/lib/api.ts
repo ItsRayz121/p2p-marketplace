@@ -460,6 +460,7 @@ export interface MarketplaceAd {
     fullName: string | null
     badge: string
     lastSeenAt: string | null
+    joinedAt: string | null
     isMerchant: boolean
     merchantId: string | null
     merchantName: string | null
@@ -484,6 +485,8 @@ export interface RecentTrade {
   completedAt: string
   buyerUsername: string
   sellerUsername: string
+  buyerFullName: string | null
+  sellerFullName: string | null
 }
 
 export interface KycDocument {

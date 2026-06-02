@@ -93,28 +93,52 @@ function CandidateCard({
 
   return (
     <div
-      className={`border rounded-xl p-3 flex flex-col items-center gap-2 text-center transition-all
-        ${state === 'ok' ? 'border-border hover:border-primary bg-white cursor-pointer' : 'border-border/30 opacity-30'}
+      className={`border rounded-xl p-3 flex flex-col items-center gap-2 text-center transition-all w-36
+        ${state === 'ok' ? 'border-border hover:border-primary bg-white shadow-sm' : 'border-border/30 opacity-25'}
       `}
-      style={{ minWidth: 90 }}
     >
+      {/* Logo — larger preview */}
       <img
         src={candidate.url}
         alt={candidate.domain}
-        className="w-10 h-10 rounded-lg object-contain"
+        className="w-16 h-16 rounded-xl object-contain"
         onLoad={() => setState('ok')}
         onError={() => setState('error')}
       />
       {state === 'ok' && (
         <>
-          <div className="text-[10px] text-text-muted leading-tight break-all">{candidate.domain}</div>
-          <div className="text-[10px] text-text-muted/60">{candidate.source}</div>
-          <button
-            onClick={() => onSelect(candidate.url)}
-            className="text-xs font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg px-3 py-1 transition-colors"
+          {/* Domain — clickable to verify it opens */}
+          <a
+            href={`https://${candidate.domain}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] text-primary hover:underline leading-tight break-all font-medium"
+            title={`Open ${candidate.domain}`}
           >
-            Use this
-          </button>
+            {candidate.domain}
+          </a>
+          {/* Source badge */}
+          <span className="text-[10px] text-text-muted/70 bg-surface border border-border px-1.5 py-0.5 rounded-full leading-tight">
+            {candidate.source}
+          </span>
+          {/* Actions row */}
+          <div className="flex gap-1.5 w-full">
+            <button
+              onClick={() => onSelect(candidate.url)}
+              className="flex-1 text-xs font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg px-2 py-1 transition-colors"
+            >
+              Use this
+            </button>
+            <a
+              href={candidate.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs font-medium text-text-muted hover:text-primary border border-border rounded-lg px-2 py-1 transition-colors"
+              title="Open logo URL in new tab"
+            >
+              ↗
+            </a>
+          </div>
         </>
       )}
     </div>
@@ -498,12 +522,15 @@ export default function AdminLogosPage() {
                     }`}
                   >
                     <td className="px-4 py-3">
-                      <EntityLogo
-                        type={entry.type as EntityType}
-                        slug={entry.slug}
-                        size="md"
-                        logoUrl={entry.logoUrl}
-                      />
+                      <a href={entry.logoUrl} target="_blank" rel="noreferrer" title="Open logo in new tab">
+                        <EntityLogo
+                          type={entry.type as EntityType}
+                          slug={entry.slug}
+                          size="lg"
+                          logoUrl={entry.logoUrl}
+                          className="hover:opacity-80 transition-opacity"
+                        />
+                      </a>
                     </td>
                     <td className="px-4 py-3">
                       <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded font-medium">

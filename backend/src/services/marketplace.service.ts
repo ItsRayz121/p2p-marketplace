@@ -31,6 +31,7 @@ export interface SellerInfo {
   fullName: string | null
   badge: string
   lastSeenAt: string | null
+  joinedAt: string | null
   isMerchant: boolean
   merchantId: string | null
   merchantName: string | null
@@ -219,6 +220,8 @@ export interface RecentTrade {
   completedAt: string
   buyerUsername: string
   sellerUsername: string
+  buyerFullName: string | null
+  sellerFullName: string | null
 }
 
 export async function getRecentTrades(): Promise<RecentTrade[]> {
@@ -241,8 +244,8 @@ export async function getRecentTrades(): Promise<RecentTrade[]> {
       amount: true,
       coin: true,
       updatedAt: true,
-      buyer: { select: { username: true } },
-      seller: { select: { username: true } },
+      buyer: { select: { username: true, fullName: true } },
+      seller: { select: { username: true, fullName: true } },
     },
   })
 
@@ -253,6 +256,8 @@ export async function getRecentTrades(): Promise<RecentTrade[]> {
     completedAt: t.updatedAt.toISOString(),
     buyerUsername: t.buyer.username,
     sellerUsername: t.seller.username,
+    buyerFullName: t.buyer.fullName ?? null,
+    sellerFullName: t.seller.fullName ?? null,
   }))
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 30)
@@ -275,6 +280,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
       id: true,
       username: true,
       fullName: true,
+      createdAt: true,
       lastSeenAt: true,
       tradeStats: {
         select: {
@@ -340,6 +346,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
         fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
+        joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',
         merchantId: merchant?.status === 'approved' ? (merchant.id ?? null) : null,
         merchantName: merchant?.status === 'approved' ? (merchant.businessName ?? null) : null,
@@ -471,6 +478,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       id: true,
       username: true,
       fullName: true,
+      createdAt: true,
       lastSeenAt: true,
       tradeStats: {
         select: {
@@ -547,6 +555,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
         fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
+        joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',
         merchantId: merchant?.status === 'approved' ? (merchant.id ?? null) : null,
         merchantName: merchant?.status === 'approved' ? (merchant.businessName ?? null) : null,

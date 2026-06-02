@@ -164,8 +164,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── 2. STATS BAR — client island (animated numbers) ── */}
-      {stats && <AnimatedStatsBar stats={stats} />}
+      {/* ── 2. STATS BAR — only show when there is real data ── */}
+      {stats && (stats.totalUsers > 0 || stats.totalTrades > 0 || parseFloat(stats.totalVolume) > 0) && (
+        <AnimatedStatsBar stats={stats} />
+      )}
 
       {/* ── 3. TOP ADS — client island (tab toggle) ── */}
       <TopAdsSection topAds={topAds} />

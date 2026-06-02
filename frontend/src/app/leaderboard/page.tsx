@@ -17,6 +17,7 @@ interface LeaderboardEntry {
   rank: number
   userId: string
   username: string
+  fullName?: string | null
   badge?: string | null
   badgeLabel?: string | null
   totalTrades?: number | null
@@ -173,9 +174,9 @@ export default function LeaderboardPage() {
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${rankBadgeCls}`}>
                           #{rankNum}
                         </div>
-                        <UserAvatar name={entry.username ?? '?'} size={isFirst ? 'lg' : 'md'} />
+                        <UserAvatar name={entry.fullName || entry.username || '?'} size={isFirst ? 'lg' : 'md'} />
                         <div>
-                          <p className={`font-bold text-text-primary truncate max-w-[120px] ${isFirst ? 'text-base' : 'text-sm'}`}>{entry.username}</p>
+                          <p className={`font-bold text-text-primary truncate max-w-[120px] ${isFirst ? 'text-base' : 'text-sm'}`}>{entry.fullName || entry.username}</p>
                           <p className="text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
                           {entry.totalVolumePKR != null && (
                             <p className="text-xs font-semibold text-text-secondary mt-0.5">
@@ -212,11 +213,14 @@ export default function LeaderboardPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <UserAvatar name={entry.username ?? '?'} size="sm" />
-                              <span className="text-sm font-medium text-text-primary">
-                                {entry.username}
-                                {isMe && <span className="ml-1 text-primary text-xs">(you)</span>}
-                              </span>
+                              <UserAvatar name={entry.fullName || entry.username || '?'} size="sm" />
+                              <div>
+                                <span className="text-sm font-medium text-text-primary">
+                                  {entry.fullName || entry.username}
+                                  {isMe && <span className="ml-1 text-primary text-xs">(you)</span>}
+                                </span>
+                                {entry.fullName && <p className="text-xs text-text-muted">@{entry.username}</p>}
+                              </div>
                             </div>
                           </td>
                           <td className="px-4 py-3">
@@ -251,10 +255,10 @@ export default function LeaderboardPage() {
                       <div className="flex-shrink-0 w-8 text-center">
                         <RankDisplay rank={entry.rank} />
                       </div>
-                      <UserAvatar name={entry.username ?? '?'} size="sm" />
+                      <UserAvatar name={entry.fullName || entry.username || '?'} size="sm" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-text-primary truncate">
-                          {entry.username}
+                          {entry.fullName || entry.username}
                           {isMe && <span className="ml-1 text-primary text-xs">(you)</span>}
                         </p>
                         <p className="text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
