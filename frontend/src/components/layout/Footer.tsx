@@ -41,6 +41,7 @@ export default function Footer() {
               <FooterLink href="/kyc">KYC Verification</FooterLink>
               <FooterLink href="/referral">Referral — Earn 10 BKR</FooterLink>
               <FooterLink href="/leaderboard">Leaderboard</FooterLink>
+              <FooterLink href="/levels">Trader Levels & Badges</FooterLink>
             </nav>
           </div>
 

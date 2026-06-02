@@ -385,6 +385,10 @@ export default function DashboardPage() {
 
       {/* ── 7. Trader Badge ── */}
       <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-text-primary">Your Trader Level</h2>
+          <Link href="/levels" className="text-xs text-primary hover:underline">How levels work</Link>
+        </div>
         <TraderLevelCard
           badge={effectiveBadge}
           trustScore={user?.tradeStats?.trustScore ?? summary?.tradeStats?.trustScore ?? 0}
