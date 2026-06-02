@@ -13,7 +13,8 @@ interface FeeSchedule {
 interface PlatformConfig {
   p2pMakerFee?: string
   p2pTakerFee?: string
-  kycLimits?: { basic?: number; enhanced?: number }
+  kycLimitBasicDaily?: number
+  kycLimitEnhancedDaily?: number
   referralReward?: string
   [key: string]: unknown
 }
@@ -72,7 +73,10 @@ export default function FeesPage() {
   const makerFee = config?.p2pMakerFee ?? '0%'
   const takerFee = config?.p2pTakerFee ?? '0%'
   const referralReward = config?.referralReward ?? '10 BKR'
-  const kycLimits = config?.kycLimits ?? { basic: 50000, enhanced: 500000 }
+  const kycLimits = {
+    basic: config?.kycLimitBasicDaily ?? 50000,
+    enhanced: config?.kycLimitEnhancedDaily ?? 200000,
+  }
 
   const withdrawalFees = feeSchedule?.withdrawalFees ?? {
     USDT: { TRC20: '1 USDT', ERC20: '5 USDT', BEP20: '0.5 USDT' },
@@ -125,7 +129,7 @@ export default function FeesPage() {
           rows={[
             ['Unverified', 'PKR 0', 'Not allowed'],
             ['Basic KYC', `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`, `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`],
-            ['Enhanced KYC', `PKR ${(kycLimits.enhanced ?? 500000).toLocaleString()}`, `PKR ${(kycLimits.enhanced ?? 500000).toLocaleString()}`],
+            ['Enhanced KYC', `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`, `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`],
           ]}
         />
       </section>

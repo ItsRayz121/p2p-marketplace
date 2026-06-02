@@ -10,6 +10,7 @@ import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../servi
 import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
+import { getPublicConfig } from '../services/marketplace.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
 import { processDepositEvent, creditDetectedDeposit } from '../services/depositWatcher.service'
 import { refreshDepositFromRpc } from '../services/depositReconcile.service'
@@ -394,6 +395,78 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
+  // POST /admin/stats/recalculate — enqueue a TradeStats/badge recalc for every
+  // user who has participated in any trade (USDT, CTM, or Gas). Use this to
+  // repair stale rows: the dashboard/KYC card read the persisted
+  // TradeStats.completedTrades, which is only refreshed when the badge job runs.
+  // CTM/Gas recalc triggers were added after some trades already completed, so
+  // those rows can lag the live leaderboard count until a recalc fires. This
+  // endpoint forces a recalc for everyone. Idempotent and safe to re-run.
+  app.post('/admin/stats/recalculate', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const adminId = req.user!.id
+
+    // Optional single-user target: { userId?: string }
+    const body = (req.body ?? {}) as { userId?: string }
+
+    let userIds: string[]
+    if (body.userId) {
+      userIds = [body.userId]
+    } else {
+      const [usdt, ctm, gas] = await Promise.all([
+        db.trade.findMany({ select: { buyerId: true, sellerId: true } }),
+        db.ctmTrade.findMany({ select: { buyerId: true, sellerId: true } }),
+        db.gasFeeOrder.findMany({ where: { userId: { not: null } }, select: { userId: true } }),
+      ])
+      const set = new Set<string>()
+      for (const t of usdt) { set.add(t.buyerId); set.add(t.sellerId) }
+      for (const t of ctm) { set.add(t.buyerId); set.add(t.sellerId) }
+      for (const o of gas) { if (o.userId) set.add(o.userId) }
+      userIds = [...set]
+    }
+
+    await Promise.all(
+      userIds.map((userId) => queues.badgeRecalculate.add('recalc', { userId }).catch(() => {})),
+    )
+
+    log.info({ adminId, count: userIds.length }, 'TradeStats recalc enqueued for all users via admin endpoint')
+    void createAuditLog(adminId, 'TRADE_STATS_RECALC', 'TradeStats', body.userId ?? 'all', { count: userIds.length })
+
+    return reply.code(202).send({
+      success: true,
+      data: { enqueued: userIds.length, message: 'Recalculation jobs enqueued. Stats refresh as the badge worker processes them.' },
+    })
+  })
+
+  // POST /admin/users/sync-kyc-limits — set every approved user's daily limit to
+  // match their KYC tier (basic / enhanced) from platform config. One-time repair
+  // for users approved before tier-based limits were enforced. Idempotent.
+  app.post('/admin/users/sync-kyc-limits', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const adminId = req.user!.id
+    const cfg = await getPublicConfig()
+
+    const [enhanced, basic] = await Promise.all([
+      db.user.updateMany({
+        where: { kycStatus: 'approved', kycLevel: 'enhanced' },
+        data: { dailyBuyLimit: cfg.kycLimitEnhancedDaily, dailySellLimit: cfg.kycLimitEnhancedDaily },
+      }),
+      db.user.updateMany({
+        where: { kycStatus: 'approved', kycLevel: 'basic' },
+        data: { dailyBuyLimit: cfg.kycLimitBasicDaily, dailySellLimit: cfg.kycLimitBasicDaily },
+      }),
+    ])
+
+    log.info({ adminId, enhanced: enhanced.count, basic: basic.count }, 'KYC daily limits synced via admin endpoint')
+    void createAuditLog(adminId, 'KYC_LIMITS_SYNCED', 'User', 'all', {
+      enhanced: enhanced.count, basic: basic.count,
+      enhancedLimit: cfg.kycLimitEnhancedDaily, basicLimit: cfg.kycLimitBasicDaily,
+    })
+
+    return reply.send({
+      success: true,
+      data: { updatedEnhanced: enhanced.count, updatedBasic: basic.count },
+    })
+  })
+
   // ── KYC ───────────────────────────────────────────────────────────────────
 
   app.get('/admin/kyc/queue', { preHandler: [authenticate, adminOrSuperOrKyc] }, async (req, reply) => {
@@ -443,6 +516,11 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const kycLevel = submission.tier === 'enhanced' ? 'enhanced' : 'basic'
 
+    // Apply the tier's daily transaction limit so Enhanced KYC actually grants
+    // higher limits (single source of truth: platform config, with safe defaults).
+    const cfg = await getPublicConfig()
+    const dailyLimit = kycLevel === 'enhanced' ? cfg.kycLimitEnhancedDaily : cfg.kycLimitBasicDaily
+
     await db.$transaction(async (tx) => {
       await tx.kycSubmission.update({
         where: { id },
@@ -450,7 +528,12 @@ export async function adminRoutes(app: FastifyInstance) {
       })
       await tx.user.update({
         where: { id: submission.userId },
-        data: { kycStatus: 'approved', kycLevel },
+        data: {
+          kycStatus: 'approved',
+          kycLevel,
+          dailyBuyLimit: dailyLimit,
+          dailySellLimit: dailyLimit,
+        },
       })
     })
 
