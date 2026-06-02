@@ -49,7 +49,7 @@ function AdCard({ ad }: { ad: MarketplaceAd }) {
             Limit: PKR {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()}
           </p>
           <div className="flex flex-wrap gap-1 mt-2">
-            {ad.paymentMethods.map((pm) => (
+            {(ad.paymentMethods ?? []).map((pm) => (
               <Badge key={pm} variant="default" size="sm">
                 <EntityLogo
                   type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
