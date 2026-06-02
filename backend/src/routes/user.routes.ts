@@ -93,13 +93,14 @@ export async function userRoutes(app: FastifyInstance) {
     const reviewerIds = [...new Set(ratings.map((r) => r.ratedByUserId))]
     const reviewers = await db.user.findMany({
       where: { id: { in: reviewerIds } },
-      select: { id: true, username: true },
+      select: { id: true, username: true, fullName: true },
     })
-    const reviewerMap = Object.fromEntries(reviewers.map((u) => [u.id, u.username]))
+    const reviewerMap = Object.fromEntries(reviewers.map((u) => [u.id, { username: u.username, fullName: u.fullName }]))
 
     const enrichedRatings = ratings.map((r) => ({
       ...r,
-      reviewerUsername: reviewerMap[r.ratedByUserId] ?? 'Unknown',
+      reviewerUsername: reviewerMap[r.ratedByUserId]?.username ?? 'Unknown',
+      reviewerFullName: reviewerMap[r.ratedByUserId]?.fullName ?? null,
     }))
 
     // Hide social links if user has opted out

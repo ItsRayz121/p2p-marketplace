@@ -54,6 +54,7 @@ interface TraderProfile {
     tags: string[]
     createdAt: string
     reviewerUsername: string
+    reviewerFullName: string | null
     trade: { orderRef: string; coin: string }
   }>
   activeAds: Array<{
@@ -368,9 +369,9 @@ export default function TraderProfilePage() {
               <div key={r.id} className="border-b border-border last:border-0 pb-4 last:pb-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2">
-                    <UserAvatar name={r.reviewerUsername} size="xs" />
+                    <UserAvatar name={r.reviewerFullName || r.reviewerUsername} size="xs" />
                     <StarRow rating={r.rating} />
-                    <span className="text-xs text-text-muted font-medium">{r.reviewerUsername}</span>
+                    <span className="text-xs text-text-muted font-medium">{r.reviewerFullName || r.reviewerUsername}</span>
                   </div>
                   <span className="text-xs text-text-muted">{timeAgo(r.createdAt)}</span>
                 </div>

@@ -187,8 +187,8 @@ export default function OrdersPage() {
                 {trades.map((t) => {
                   const isBuyer = t.buyerId === user?.id
                   const counterparty = isBuyer
-                    ? (t.seller?.username || 'Seller')
-                    : (t.buyer?.username || 'Buyer')
+                    ? (t.seller?.fullName || t.seller?.username || 'Seller')
+                    : (t.buyer?.fullName || t.buyer?.username || 'Buyer')
                   return (
                     <tr
                       key={t.id}
@@ -230,8 +230,8 @@ export default function OrdersPage() {
             {trades.map((t) => {
               const isBuyer = t.buyerId === user?.id
               const counterparty = isBuyer
-                ? (t.seller?.username || 'Seller')
-                : (t.buyer?.username || 'Buyer')
+                ? (t.seller?.fullName || t.seller?.username || 'Seller')
+                : (t.buyer?.fullName || t.buyer?.username || 'Buyer')
               return (
                 <Link key={t.id} href={`/trade/${t.id}`}>
                   <div className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">

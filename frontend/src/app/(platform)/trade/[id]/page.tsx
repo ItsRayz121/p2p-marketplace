@@ -540,7 +540,7 @@ export default function TradePage() {
   const canCancel = isUserBuyer && trade.status === 'payment_pending'
   const canDispute = ['payment_uploaded', 'payment_confirmed'].includes(trade.status)
   const counterpartyUser = isUserBuyer ? trade.seller : trade.buyer
-  const counterparty = counterpartyUser?.username || (isUserBuyer ? 'Seller' : 'Buyer')
+  const counterparty = counterpartyUser?.fullName || counterpartyUser?.username || (isUserBuyer ? 'Seller' : 'Buyer')
   const counterpartyBadge = (counterpartyUser?.tradeStats?.badge ?? 'new') as TraderBadge
   const counterpartyStats = counterpartyUser?.tradeStats
   const counterpartyKycVerified = counterpartyUser?.kycLevel === 'basic' || counterpartyUser?.kycLevel === 'enhanced'

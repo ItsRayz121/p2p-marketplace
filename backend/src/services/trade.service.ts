@@ -724,8 +724,8 @@ export async function getTrades(userId: string, params: GetTradesParams) {
       orderBy: { createdAt: 'desc' },
       include: {
         ad: { select: { id: true, side: true, coin: true, network: true } },
-        buyer: { select: { id: true, username: true } },
-        seller: { select: { id: true, username: true } },
+        buyer: { select: { id: true, username: true, fullName: true } },
+        seller: { select: { id: true, username: true, fullName: true } },
       },
     }),
     db.trade.count({ where }),
@@ -741,13 +741,13 @@ export async function getTradeById(tradeId: string, userId: string, role: string
       ad: true,
       buyer: {
         select: {
-          id: true, username: true, kycStatus: true,
+          id: true, username: true, fullName: true, kycStatus: true,
           tradeStats: { select: { badge: true, badgeLabel: true, trustScore: true, completedTrades: true, completionRate: true } },
         },
       },
       seller: {
         select: {
-          id: true, username: true, kycStatus: true,
+          id: true, username: true, fullName: true, kycStatus: true,
           tradeStats: { select: { badge: true, badgeLabel: true, trustScore: true, completedTrades: true, completionRate: true } },
         },
       },

@@ -140,10 +140,10 @@ function NewTradePageContent() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center">
-              {(ad.user?.username || 'U').charAt(0).toUpperCase()}
+              {(ad.user?.fullName || ad.user?.username || 'U').charAt(0).toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-semibold text-text-primary">{ad.user?.username || 'Anonymous'}</p>
+              <p className="text-sm font-semibold text-text-primary">{ad.user?.fullName || ad.user?.username || 'Anonymous'}</p>
               <Badge variant="success" size="sm">Active</Badge>
             </div>
           </div>

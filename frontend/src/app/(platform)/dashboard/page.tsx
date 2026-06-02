@@ -142,7 +142,7 @@ export default function DashboardPage() {
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  const displayName = user?.username || user?.fullName || 'Trader'
+  const displayName = user?.fullName || user?.username || 'Trader'
 
   const kycStatus = user?.kycStatus ?? 'none'
   const dailyUsed = user?.dailyBuyUsed ?? 0
@@ -331,8 +331,8 @@ export default function DashboardPage() {
             (trades ?? []).slice(0, 5).map((t) => {
               const isUserBuyer = t.buyerId === user?.id
               const counterparty = isUserBuyer
-                ? (t.seller?.username || 'Seller')
-                : (t.buyer?.username || 'Buyer')
+                ? (t.seller?.fullName || t.seller?.username || 'Seller')
+                : (t.buyer?.fullName || t.buyer?.username || 'Buyer')
               const ts = getTradeStatus(t.status)
               return (
                 <Link key={t.id} href={`/trade/${t.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-surface-alt/60 transition-colors">
