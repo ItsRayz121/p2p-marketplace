@@ -139,9 +139,9 @@ export default function AdminRatingsPage() {
                     </td>
                     <td className="px-4 py-3 text-text-secondary max-w-xs">
                       <p className="truncate">{r.comment || '—'}</p>
-                      {r.tags.length > 0 && (
+                      {(r.tags ?? []).length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {r.tags.map((t) => (
+                          {(r.tags ?? []).map((t) => (
                             <span key={t} className="text-[10px] bg-surface px-1.5 py-0.5 rounded-full text-text-muted">{t}</span>
                           ))}
                         </div>

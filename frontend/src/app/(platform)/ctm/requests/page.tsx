@@ -149,7 +149,7 @@ export default function RequestBoardPage() {
                 </div>
                 {r.note && <p className="text-sm text-text-muted mt-3 border-t border-border pt-3">{r.note}</p>}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {r.paymentMethods.map((m) => (
+                  {(r.paymentMethods ?? []).map((m) => (
                     <span key={m} className="inline-flex items-center gap-1 text-xs bg-surface px-2 py-0.5 rounded-full border border-border">
                       <EntityLogo type={PK_MOBILE_METHODS.includes(m) ? 'payment_method' : 'bank'} slug={m} size="xs" className="flex-shrink-0" />
                       {m}

@@ -374,9 +374,9 @@ export default function TraderProfilePage() {
                   </div>
                   <span className="text-xs text-text-muted">{timeAgo(r.createdAt)}</span>
                 </div>
-                {r.tags.length > 0 && (
+                {(r.tags ?? []).length > 0 && (
                   <div className="flex flex-wrap gap-1 mb-1.5">
-                    {r.tags.map((tag) => (
+                    {(r.tags ?? []).map((tag) => (
                       <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-surface text-text-secondary border border-border">{tag}</span>
                     ))}
                   </div>

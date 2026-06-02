@@ -233,11 +233,11 @@ function UsdtAdsTab() {
                       {parseFloat(ad.minOrder).toLocaleString()} – {parseFloat(ad.maxOrder).toLocaleString()}
                     </p>
                   </div>
-                  {ad.paymentMethods.length > 0 && (
+                  {(ad.paymentMethods ?? []).length > 0 && (
                     <div className="col-span-2">
                       <p className="text-text-muted text-xs mb-1">Payment Methods</p>
                       <div className="flex flex-wrap gap-1">
-                        {ad.paymentMethods.map((pm) => (
+                        {(ad.paymentMethods ?? []).map((pm) => (
                           <span key={pm} className="inline-flex items-center gap-1 text-xs bg-surface border border-border px-2 py-0.5 rounded-full text-text-muted">
                             <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
                             {pm}

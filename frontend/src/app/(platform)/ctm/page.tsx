@@ -133,7 +133,7 @@ function ListingRow({ listing, onViewMerchant }: { listing: Listing; onViewMerch
   const trades = listing.merchantProfile.completedCtmTrades
   const methods = listing.resolvedPaymentMethods?.length
     ? listing.resolvedPaymentMethods
-    : listing.paymentMethods.map((pm) => ({ id: pm, type: 'other', label: pm }))
+    : (listing.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm }))
 
   const isSell    = listing.side === 'sell'
   const accentCls = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'

@@ -156,7 +156,7 @@ export default function BrowseListingsPage() {
             const trades = l.merchantProfile.completedCtmTrades
             const methods = l.resolvedPaymentMethods?.length
               ? l.resolvedPaymentMethods
-              : l.paymentMethods.map((pm) => ({ id: pm, type: 'other', label: pm }))
+              : (l.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm }))
 
             return (
               <div key={l.id} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">

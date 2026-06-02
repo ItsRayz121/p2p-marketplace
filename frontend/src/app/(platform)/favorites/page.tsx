@@ -129,9 +129,9 @@ export default function FavoritesPage() {
                   </div>
 
                   {/* Active ads preview */}
-                  {trader.ads.length > 0 && (
+                  {(trader.ads ?? []).length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {trader.ads.map((ad) => (
+                      {(trader.ads ?? []).map((ad) => (
                         <Link
                           key={ad.id}
                           href={`/trade/new?adId=${ad.id}`}

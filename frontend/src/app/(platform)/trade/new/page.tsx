@@ -171,7 +171,7 @@ function NewTradePageContent() {
         )}
 
         <div className="mt-3 flex flex-wrap gap-1">
-          {ad.paymentMethods.map((pm) => (
+          {(ad.paymentMethods ?? []).map((pm) => (
             <Badge key={pm} variant="default" size="sm">
               <EntityLogo
                 type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
