@@ -1,23 +1,19 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { ctmApi } from '@/lib/api'
-import type { RecentTrade } from '@/lib/api'
+import { ctmApi, marketplaceApi } from '@/lib/api'
+import type { RecentTrade, MarketRateToken } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { UserAvatar } from '@/components/ui/UserAvatar'
+import { BadgeChip } from '@/components/ui/TraderLevelCard'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
-import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles } from 'lucide-react'
+import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck, Coins } from 'lucide-react'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const PAGE_SIZE = 20
-
-const TIER_COLORS: Record<string, string> = {
-  new: 'bg-surface-alt text-text-secondary',
-  basic: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
-  elite: 'bg-primary/10 text-primary',
-}
 
 interface CtmToken {
   id: string
@@ -34,15 +30,34 @@ interface Listing {
   availableAmount: string
   minOrderTokens: string
   maxOrderTokens: string
+  tradeWindowMins?: number
+  createdAt?: string
   paymentMethods: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
-  token: { id: string; slug: string; name: string; symbol: string; logoUrl?: string; riskTier: string }
+  token: {
+    id: string
+    slug: string
+    name: string
+    symbol: string
+    logoUrl?: string
+    riskTier: string
+    communityVerified?: boolean
+    status?: string
+  }
   merchantProfile: {
     tier: string
     totalCtmTrades: number
     completedCtmTrades: number
     ctmAvgRating: string
-    user: { id: string; username: string; fullName: string | null }
+    merchant?: { id: string; status: string; businessName: string | null } | null
+    user: {
+      id: string
+      username: string
+      fullName: string | null
+      createdAt?: string | null
+      lastSeenAt?: string | null
+      tradeStats?: { badge: string; completionRate: string } | null
+    }
   }
 }
 
@@ -61,6 +76,44 @@ function tradeFeedAge(iso: string): string {
   if (mins < 60) return `${mins}m ago`
   const hrs = Math.floor(mins / 60)
   return hrs < 24 ? `${hrs}h ago` : `${Math.floor(hrs / 24)}d ago`
+}
+
+function listingAge(dateStr: string | undefined): string | null {
+  if (!dateStr) return null
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1)  return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+function activeLabel(lastSeenAt: string | null | undefined): { text: string; cls: string } | null {
+  if (!lastSeenAt) return null
+  const diff = Date.now() - new Date(lastSeenAt).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 10)  return { text: 'Online now',          cls: 'text-success' }
+  if (mins < 60)  return { text: `Active ${mins}m ago`, cls: 'text-success' }
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 6)    return { text: `Active ${hrs}h ago`,  cls: 'text-text-muted' }
+  if (hrs < 24)   return { text: 'Active today',        cls: 'text-text-muted' }
+  const days = Math.floor(hrs / 24)
+  if (days <= 3)  return { text: `Active ${days}d ago`, cls: 'text-text-muted' }
+  return null
+}
+
+function memberSince(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
+/** Compact USDT formatting — more precision for sub-dollar token values. */
+function fmtUsdt(n: number): string {
+  const max = n !== 0 && Math.abs(n) < 1 ? 6 : 2
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: max })
 }
 
 // ─── Stats Strip ─────────────────────────────────────────────────────────────
@@ -128,9 +181,33 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
 
 // ─── Listing Card ─────────────────────────────────────────────────────────────
 
-function ListingRow({ listing, onViewMerchant }: { listing: Listing; onViewMerchant: (id: string) => void }) {
-  const rating = parseFloat(listing.merchantProfile.ctmAvgRating)
-  const trades = listing.merchantProfile.completedCtmTrades
+function ListingRow({
+  listing,
+  marketRate,
+  onViewMerchant,
+}: {
+  listing: Listing
+  marketRate?: MarketRateToken
+  onViewMerchant: (id: string) => void
+}) {
+  const mp = listing.merchantProfile
+  const user = mp.user
+  const sym = listing.token.symbol
+
+  const rating = parseFloat(mp.ctmAvgRating)
+  const trades = mp.completedCtmTrades
+  const completionPct = mp.totalCtmTrades > 0 ? (mp.completedCtmTrades / mp.totalCtmTrades) * 100 : null
+  const completionColor =
+    completionPct === null ? '' :
+    completionPct >= 90    ? 'text-success' :
+    completionPct >= 70    ? 'text-warning' : 'text-danger'
+
+  const badge = (user.tradeStats?.badge ?? 'new') as TraderBadge
+  const isMerchant = mp.merchant?.status === 'approved'
+  const activity = activeLabel(user.lastSeenAt)
+  const age = listingAge(listing.createdAt)
+  const displayName = user.fullName || user.username || 'Anonymous'
+
   const methods = listing.resolvedPaymentMethods?.length
     ? listing.resolvedPaymentMethods
     : (listing.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm }))
@@ -140,66 +217,159 @@ function ListingRow({ listing, onViewMerchant }: { listing: Listing; onViewMerch
   const chipCls   = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
   const priceCls  = isSell ? 'text-emerald-600' : 'text-blue-600'
 
+  // Order-limit PKR equivalent — derived from this listing's own price.
+  const price  = Number(listing.pricePerUnit)
+  const minTok = Number(listing.minOrderTokens)
+  const maxTok = Number(listing.maxOrderTokens)
+  const minPkr = price * minTok
+  const maxPkr = price * maxTok
+
+  const usdtRate = marketRate?.averageUsdtRate ?? null
+  const pkrRate  = marketRate?.averagePkrRate ?? null
+  const hasConversion = usdtRate !== null || pkrRate !== null
+
+  const openProfile = () => onViewMerchant(user.id)
+
   return (
     <div className={`bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
 
-        {/* Token */}
-        <div className="flex items-center gap-3 sm:w-44">
-          <EntityLogo type="token" slug={listing.token.symbol} size="lg" logoUrl={listing.token.logoUrl} />
-          <div>
-            <p className="font-semibold text-text-primary text-sm">{listing.token.name}</p>
-            <p className="text-xs text-text-muted">{listing.token.symbol}</p>
-            <span className={`inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
+        {/* ── 1. TRADER IDENTITY (first & most prominent) ── */}
+        <div className="sm:w-52 flex-shrink-0">
+          {/* Avatar + name row */}
+          <div className="flex items-center gap-2 mb-1.5">
+            <button type="button" onClick={openProfile} className="flex-shrink-0 cursor-pointer">
+              <UserAvatar name={displayName} size="sm" />
+            </button>
+            <div className="min-w-0">
+              <button
+                type="button"
+                onClick={openProfile}
+                className="text-sm font-bold text-text-primary hover:text-primary hover:underline block truncate leading-tight text-left cursor-pointer"
+              >
+                {displayName}
+              </button>
+              {user.createdAt && (
+                <p className="text-[10px] text-text-muted leading-tight">Since {memberSince(user.createdAt)}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Merchant + trader badge chips */}
+          <div className="flex items-center gap-1 flex-wrap mb-1.5">
+            {isMerchant && mp.merchant?.id && (
+              <Link
+                href={`/merchant/${mp.merchant.id}`}
+                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full hover:bg-primary/20 transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ShieldCheck size={9} />
+                Merchant
+              </Link>
+            )}
+            <BadgeChip badge={badge} />
+          </div>
+
+          {/* Trust metrics: completion · rating (clickable) · trades */}
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            {completionPct !== null && (
+              <span className={`font-bold ${completionColor}`}>{completionPct.toFixed(0)}%</span>
+            )}
+            {rating > 0 ? (
+              <button
+                type="button"
+                onClick={openProfile}
+                className="flex items-center gap-0.5 text-text-muted hover:text-primary transition-colors cursor-pointer"
+              >
+                <span className="text-gold">★</span>
+                {rating.toFixed(1)}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={openProfile}
+              className="text-text-muted hover:text-primary transition-colors cursor-pointer"
+            >
+              {trades} trades
+            </button>
+          </div>
+
+          {/* Online status */}
+          {activity && (
+            <div className="mt-1">
+              <span className={`text-[10px] ${activity.cls}`}>{activity.text}</span>
+            </div>
+          )}
+        </div>
+
+        {/* ── 2. TOKEN + PRICE ── */}
+        <div className="sm:flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <EntityLogo type="token" slug={sym} size="md" logoUrl={listing.token.logoUrl} />
+            <div className="min-w-0">
+              <p className="font-semibold text-text-primary text-sm leading-tight truncate">{listing.token.name}</p>
+              <p className="text-xs text-text-muted">{sym}</p>
+            </div>
+            <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
               {isSell ? 'BUY' : 'SELL'}
             </span>
           </div>
-        </div>
 
-        {/* Price + amount */}
-        <div className="sm:flex-1">
-          <p className={`text-xl font-bold ${priceCls}`}>PKR {Number(listing.pricePerUnit).toLocaleString()}</p>
-          <p className="text-xs text-text-muted">per {listing.token.symbol}</p>
+          {/* Token badges — distinguish CTM listings from USDT / Gas */}
+          <div className="flex items-center gap-1 flex-wrap mb-1">
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-pink-600 bg-pink-500/10 px-1.5 py-0.5 rounded-full">
+              <Coins size={9} />
+              Community Token
+            </span>
+            {listing.token.communityVerified && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-success bg-success/10 px-1.5 py-0.5 rounded-full">
+                <BadgeCheck size={9} />
+                Verified
+              </span>
+            )}
+          </div>
+
+          <p className={`text-xl font-bold ${priceCls}`}>PKR {price.toLocaleString()}</p>
+          <p className="text-xs text-text-muted">per {sym}</p>
           <p className="text-xs text-text-muted mt-0.5">
             <span className="font-medium">{listing.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
-            {Number(listing.availableAmount).toLocaleString()} {listing.token.symbol}
+            {Number(listing.availableAmount).toLocaleString()} {sym}
           </p>
+
+          {/* Internal CTM market estimate — hidden gracefully when unavailable */}
+          {hasConversion && (
+            <p className="text-[11px] text-text-muted/80 mt-0.5">
+              {usdtRate !== null && <>1 {sym} ≈ {fmtUsdt(usdtRate)} USDT</>}
+              {usdtRate !== null && pkrRate !== null && <span className="mx-1">·</span>}
+              {pkrRate !== null && <>≈ PKR {pkrRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</>}
+            </p>
+          )}
+
+          {age && <p className="text-xs text-text-muted/60 mt-0.5">Listed {age}</p>}
         </div>
 
-        {/* Order limits */}
-        <div className="sm:w-44">
+        {/* ── 3. ORDER LIMIT (tokens + PKR equivalent) ── */}
+        <div className="sm:w-44 flex-shrink-0">
           <p className="text-xs text-text-muted">Order Limit</p>
           <p className="text-sm font-medium text-text-primary">
-            {Number(listing.minOrderTokens).toLocaleString()} – {Number(listing.maxOrderTokens).toLocaleString()} {listing.token.symbol}
+            {minTok.toLocaleString()} – {maxTok.toLocaleString()} {sym}
           </p>
+          {price > 0 && (
+            <p className="text-[11px] text-text-muted/80">
+              ≈ PKR {minPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })} – PKR {maxPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </p>
+          )}
+          {listing.tradeWindowMins != null && (
+            <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
+              <Clock size={10} className="flex-shrink-0" />
+              {listing.tradeWindowMins} min window
+            </p>
+          )}
         </div>
 
-        {/* Merchant */}
-        <div className="sm:w-40">
-          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <span className="text-sm font-medium text-text-primary">{listing.merchantProfile.user.fullName || listing.merchantProfile.user.username}</span>
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
-              {listing.merchantProfile.tier}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => onViewMerchant(listing.merchantProfile.user.id)}
-            className="flex items-center gap-1 hover:underline cursor-pointer text-left"
-          >
-            {rating > 0 ? (
-              <span className="text-xs text-text-muted">
-                <span className="text-yellow-400">★</span> {rating.toFixed(1)} · {trades} trades
-              </span>
-            ) : (
-              <span className="text-xs text-text-muted">{trades} trades</span>
-            )}
-          </button>
-        </div>
-
-        {/* Payment methods */}
+        {/* ── 4. PAYMENT METHODS ── */}
         {methods.length > 0 && (
-          <div className="sm:w-36">
+          <div className="sm:w-32 flex-shrink-0">
             <p className="text-xs text-text-muted mb-1">Payment</p>
             <div className="flex flex-wrap gap-1">
               {methods.slice(0, 3).map((pm) => (
@@ -217,14 +387,14 @@ function ListingRow({ listing, onViewMerchant }: { listing: Listing; onViewMerch
           </div>
         )}
 
-        {/* CTA */}
+        {/* ── 5. CTA ── */}
         <Link
           href={`/ctm/listings/${listing.id}`}
           className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
             isSell ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'
           }`}
         >
-          {isSell ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
+          {isSell ? `Buy ${sym}` : `Sell ${sym}`}
         </Link>
       </div>
     </div>
@@ -249,6 +419,7 @@ export default function CtmHomePage() {
   const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])
   const [ctmStats, setCtmStats] = useState<CtmStats | null>(null)
   const [tokens, setTokens] = useState<CtmToken[]>([])
+  const [rateMap, setRateMap] = useState<Record<string, MarketRateToken>>({})
   const [profileUserId, setProfileUserId] = useState<string | null>(null)
 
   const fetchListings = useCallback(async (p = 1, append = false) => {
@@ -298,14 +469,20 @@ export default function CtmHomePage() {
 
   const fetchMeta = useCallback(async () => {
     try {
-      const [statsRes, tradesRes, tokensRes] = await Promise.allSettled([
+      const [statsRes, tradesRes, tokensRes, ratesRes] = await Promise.allSettled([
         ctmApi.getStats(),
         ctmApi.getRecentTrades(),
         ctmApi.getTokens({ limit: 50 }),
+        marketplaceApi.getMarketRatesSummary(),
       ])
       if (statsRes.status === 'fulfilled') setCtmStats(statsRes.value)
       if (tradesRes.status === 'fulfilled') setRecentTrades(tradesRes.value)
       if (tokensRes.status === 'fulfilled') setTokens((tokensRes.value as { tokens: CtmToken[] }).tokens ?? [])
+      if (ratesRes.status === 'fulfilled') {
+        const map: Record<string, MarketRateToken> = {}
+        for (const t of ratesRes.value.communityTokens) map[t.symbol] = t
+        setRateMap(map)
+      }
     } catch { /* silently fail */ }
   }, [])
 
@@ -435,7 +612,7 @@ export default function CtmHomePage() {
       ) : (
         <div className="space-y-3">
           {listings.map((l) => (
-            <ListingRow key={l.id} listing={l} onViewMerchant={setProfileUserId} />
+            <ListingRow key={l.id} listing={l} marketRate={rateMap[l.token.symbol]} onViewMerchant={setProfileUserId} />
           ))}
         </div>
       )}

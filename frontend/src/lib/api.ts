@@ -489,6 +489,22 @@ export interface RecentTrade {
   sellerFullName?: string | null
 }
 
+export interface MarketRateToken {
+  symbol: string
+  name: string
+  slug: string
+  averageUsdtRate: number | null
+  averagePkrRate: number | null
+  listingCount: number
+}
+
+export interface MarketRatesSummary {
+  usdt: { averagePkrRate: number | null; listingCount: number }
+  communityTokens: MarketRateToken[]
+  gasFees: MarketRateToken[]
+  updatedAt: string
+}
+
 export interface KycDocument {
   id: string
   userId: string
@@ -622,6 +638,8 @@ export const marketplaceApi = {
     apiRequest<Record<string, unknown>>('/marketplace/config'),
   getRecentTrades: () =>
     apiRequest<RecentTrade[]>('/marketplace/recent-trades'),
+  getMarketRatesSummary: () =>
+    apiRequest<MarketRatesSummary>('/marketplace/rates/summary'),
   getAds: (params?: Record<string, string | number | undefined>) => {
     const qs = params
       ? '?' + new URLSearchParams(

@@ -155,7 +155,7 @@ export async function getListings(filters: ListingsFilter = {}) {
       take: limit,
       orderBy,
       include: {
-        token: { select: { id: true, slug: true, name: true, symbol: true, logoUrl: true, riskTier: true } },
+        token: { select: { id: true, slug: true, name: true, symbol: true, logoUrl: true, riskTier: true, communityVerified: true, status: true } },
         merchantProfile: {
           select: {
             id: true,
@@ -163,7 +163,17 @@ export async function getListings(filters: ListingsFilter = {}) {
             totalCtmTrades: true,
             completedCtmTrades: true,
             ctmAvgRating: true,
-            user: { select: { id: true, username: true, fullName: true } },
+            merchant: { select: { id: true, status: true, businessName: true } },
+            user: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+                createdAt: true,
+                lastSeenAt: true,
+                tradeStats: { select: { badge: true, completionRate: true } },
+              },
+            },
           },
         },
       },
