@@ -457,6 +457,7 @@ export interface MarketplaceAd {
   seller: {
     id: string
     username: string
+    fullName: string | null
     badge: string
     lastSeenAt: string | null
     isMerchant: boolean

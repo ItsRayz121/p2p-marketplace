@@ -144,13 +144,13 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
         <div className="sm:w-48">
           {/* Name + avatar row */}
           <div className="flex items-center gap-1.5 mb-1.5">
-            <UserAvatar name={ad.seller?.username ?? 'A'} size="xs" />
+            <UserAvatar name={ad.seller?.fullName || ad.seller?.username || 'A'} size="xs" />
             <Link
               href={`/profile/${ad.seller?.username}`}
               className="text-sm font-semibold text-text-primary hover:text-primary hover:underline truncate"
               onClick={(e) => e.stopPropagation()}
             >
-              {ad.seller?.username ?? 'Anonymous'}
+              {ad.seller?.fullName || ad.seller?.username || 'Anonymous'}
             </Link>
           </div>
 

@@ -70,7 +70,7 @@ export default function ReferralPage() {
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Referral Program</h1>
-        <p className="text-sm text-text-muted">Invite friends and earn <span className="font-semibold text-primary">PKR 500</span> per successful referral</p>
+        <p className="text-sm text-text-muted">Invite friends and earn <span className="font-semibold text-primary">10 BKR</span> per successful referral</p>
       </div>
 
       {/* Reward banner */}
@@ -78,7 +78,7 @@ export default function ReferralPage() {
         <h2 className="text-base font-bold text-text-primary">How much do you earn?</h2>
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div className="bg-surface rounded-lg border border-border p-3 text-center">
-            <p className="text-xl font-black text-primary">PKR 500</p>
+            <p className="text-xl font-black text-primary">10 BKR</p>
             <p className="text-xs text-text-muted mt-0.5">Per referral</p>
           </div>
           <div className="bg-surface rounded-lg border border-border p-3 text-center">
@@ -178,7 +178,7 @@ export default function ReferralPage() {
           { step: '1', text: 'Share your referral code or link with friends' },
           { step: '2', text: 'Friend signs up using your referral code' },
           { step: '3', text: 'Friend completes their first trade on RupChain' },
-          { step: '4', text: 'You earn PKR 500 — credited to your wallet within 24 hours' },
+          { step: '4', text: 'You earn 10 BKR — credited to your wallet within 24 hours' },
         ].map((item) => (
           <div key={item.step} className="flex items-start gap-3">
             <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">

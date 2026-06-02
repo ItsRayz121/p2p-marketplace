@@ -28,6 +28,7 @@ export interface PlatformStats {
 export interface SellerInfo {
   id: string
   username: string
+  fullName: string | null
   badge: string
   lastSeenAt: string | null
   isMerchant: boolean
@@ -273,6 +274,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
     select: {
       id: true,
       username: true,
+      fullName: true,
       lastSeenAt: true,
       tradeStats: {
         select: {
@@ -335,6 +337,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
       seller: {
         id: ad.user.id,
         username: ad.user.username,
+        fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',
@@ -467,6 +470,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     select: {
       id: true,
       username: true,
+      fullName: true,
       lastSeenAt: true,
       tradeStats: {
         select: {
@@ -540,6 +544,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       seller: {
         id: ad.user.id,
         username: ad.user.username,
+        fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',

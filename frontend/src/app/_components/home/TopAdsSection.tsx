@@ -25,9 +25,9 @@ function AdCard({ ad }: { ad: MarketplaceAd }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <UserAvatar name={seller?.username || 'Anonymous'} size="sm" />
+            <UserAvatar name={seller?.fullName || seller?.username || 'Anonymous'} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-text-primary truncate">{seller?.username || 'Anonymous'}</p>
+              <p className="text-sm font-semibold text-text-primary truncate">{seller?.fullName || seller?.username || 'Anonymous'}</p>
               <div className="flex items-center gap-2 text-xs mt-0.5">
                 {completionPct !== null && (
                   <span className={`font-bold ${completionColor(completionPct)}`}>{completionPct.toFixed(0)}%</span>
@@ -106,9 +106,23 @@ export function TopAdsSection({ topAds }: { topAds: TopAds | null }) {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {ads.map((ad) => <AdCard key={ad.id} ad={ad} />)}
             {ads.length === 0 && (
-              <p className="col-span-full text-center text-sm text-text-muted py-8">
-                No offers available right now.
-              </p>
+              <div className="col-span-full flex flex-col items-center justify-center py-12 text-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-text-primary">No active offers available</p>
+                  <p className="text-xs text-text-muted mt-1">Be the first to create a trading offer</p>
+                </div>
+                <Link
+                  href="/create-ad"
+                  className="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  Create Offer
+                </Link>
+              </div>
             )}
           </div>
         ) : (

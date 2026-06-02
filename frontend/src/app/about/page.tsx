@@ -1,12 +1,13 @@
-import { CreditCard, Zap, ShieldCheck, BadgeDollarSign, TrendingUp, CheckCircle } from 'lucide-react'
+import { CreditCard, Coins, ShieldCheck, BadgeDollarSign, TrendingUp, Fuel, CheckCircle } from 'lucide-react'
 
 const FEATURES = [
-  { Icon: ShieldCheck,     title: 'Trade Protection',   desc: 'All trades are monitored by RupChain. Crypto is only released after the seller confirms payment receipt.' },
-  { Icon: CreditCard,      title: 'Local Payments',     desc: 'Pay and receive with JazzCash, Easypaisa, and all major Pakistani banks.' },
-  { Icon: Zap,             title: 'Instant Buy',        desc: 'Buy USDT, BTC, ETH, and more in minutes without finding a counterparty.' },
-  { Icon: ShieldCheck,     title: 'KYC Verified',       desc: 'Our KYC system ensures all traders are verified, creating a trusted community.' },
-  { Icon: BadgeDollarSign, title: 'Zero Trading Fees',  desc: '0% maker and taker fees on all P2P trades — we only earn on premium services.' },
-  { Icon: TrendingUp,      title: 'Real-time Prices',   desc: 'Live market rates ensure you always get a fair deal based on current market conditions.' },
+  { Icon: ShieldCheck,     title: 'Trade Protection',      desc: 'All trades are monitored by RupChain. Crypto is only released after the seller confirms payment receipt.' },
+  { Icon: CreditCard,      title: 'Local Payments',        desc: 'Pay and receive with JazzCash, Easypaisa, and all major Pakistani banks.' },
+  { Icon: Coins,           title: 'Community Tokens',      desc: 'Trade BKR, SIDRA, and other community tokens directly with verified counterparties.' },
+  { Icon: ShieldCheck,     title: 'KYC Verified',          desc: 'Our KYC system ensures all traders are verified, creating a trusted community.' },
+  { Icon: BadgeDollarSign, title: 'Zero P2P Trading Fees', desc: '0% maker and taker fees on all P2P trades.' },
+  { Icon: Fuel,            title: 'Crypto Gas Fees',       desc: 'Top up gas fees on any chain instantly by paying with PKR through JazzCash or Easypaisa.' },
+  { Icon: TrendingUp,      title: 'Real-time Prices',      desc: 'Live market rates ensure you always get a fair deal based on current market conditions.' },
 ]
 
 export default function AboutPage() {

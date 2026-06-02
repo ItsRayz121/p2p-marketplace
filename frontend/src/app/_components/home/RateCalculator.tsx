@@ -1,6 +1,8 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { StalenessBadge } from '@/components/ui/StalenessBadge'
+import { ArrowLeftRight, Coins, Fuel } from 'lucide-react'
 
 interface Props {
   initialRate: number | null
@@ -25,8 +27,50 @@ export function RateCalculator({ initialRate, initialUpdatedAt }: Props) {
 
   if (!initialRate) {
     return (
-      <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6 shadow-card-lg">
-        <p className="text-sm text-red-400">Rate unavailable. Check back soon.</p>
+      <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6 shadow-card-lg space-y-4">
+        <h2 className="text-base font-semibold text-white">Market Snapshot</h2>
+        <p className="text-xs text-slate-400">Estimated average rates from active listings</p>
+
+        <div className="space-y-3">
+          <Link
+            href="/marketplace"
+            className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center">
+                <ArrowLeftRight size={13} className="text-blue-400" />
+              </div>
+              <span className="text-sm font-medium text-white">USDT Marketplace</span>
+            </div>
+            <span className="text-xs text-slate-400">View rates →</span>
+          </Link>
+
+          <Link
+            href="/ctm"
+            className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-pink-500/20 flex items-center justify-center">
+                <Coins size={13} className="text-pink-400" />
+              </div>
+              <span className="text-sm font-medium text-white">Community Tokens</span>
+            </div>
+            <span className="text-xs text-slate-400">View rates →</span>
+          </Link>
+
+          <Link
+            href="/gas"
+            className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center">
+                <Fuel size={13} className="text-amber-400" />
+              </div>
+              <span className="text-sm font-medium text-white">Crypto Gas Fees</span>
+            </div>
+            <span className="text-xs text-slate-400">View rates →</span>
+          </Link>
+        </div>
       </div>
     )
   }
@@ -75,7 +119,8 @@ export function RateCalculator({ initialRate, initialUpdatedAt }: Props) {
       <div className="mt-3 flex items-center justify-center gap-2">
         <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
         <p className="text-xs text-slate-400 text-center">
-          1 USDT = <span className="text-white font-semibold">PKR {initialRate.toLocaleString()}</span>
+          Avg Market Rate: <span className="text-white font-semibold">1 USDT ≈ PKR {initialRate.toLocaleString()}</span>
+          <span className="text-slate-500 ml-1">(estimated)</span>
         </p>
       </div>
     </div>

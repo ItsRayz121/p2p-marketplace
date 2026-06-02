@@ -25,10 +25,9 @@ export default function Footer() {
           <div>
             <h3 className="text-xs font-bold text-text-primary uppercase tracking-wide mb-3">Products</h3>
             <nav className="space-y-2">
-              <FooterLink href="/instant-buy">Instant Buy</FooterLink>
-              <FooterLink href="/marketplace">P2P Marketplace</FooterLink>
-              <FooterLink href="/gas">Crypto Gas Fees</FooterLink>
+              <FooterLink href="/marketplace">USDT Marketplace</FooterLink>
               <FooterLink href="/ctm">Community Tokens</FooterLink>
+              <FooterLink href="/gas">Crypto Gas Fees</FooterLink>
               <FooterLink href="/fees">Fee Schedule</FooterLink>
             </nav>
           </div>
@@ -40,7 +39,7 @@ export default function Footer() {
               <FooterLink href="/register">Create Account</FooterLink>
               <FooterLink href="/login">Sign In</FooterLink>
               <FooterLink href="/kyc">KYC Verification</FooterLink>
-              <FooterLink href="/referral">Referral — Earn PKR 500</FooterLink>
+              <FooterLink href="/referral">Referral — Earn 10 BKR</FooterLink>
               <FooterLink href="/leaderboard">Leaderboard</FooterLink>
             </nav>
           </div>

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowLeftRight, Fuel, FileText, Zap, ShieldCheck, Users, Lock, Headphones } from 'lucide-react'
+import { ArrowLeftRight, Fuel, FileText, Coins, ShieldCheck, Users, Lock, Headphones } from 'lucide-react'
 import { RateCalculator } from './_components/home/RateCalculator'
 import { AnimatedStatsBar } from './_components/home/AnimatedStatsBar'
 import { TopAdsSection } from './_components/home/TopAdsSection'
@@ -136,17 +136,18 @@ export default async function HomePage() {
               </p>
               <div className="flex flex-wrap gap-3 mt-8">
                 <Link
-                  href="/instant-buy"
-                  className="flex items-center gap-2 px-6 py-3 bg-yellow-400 text-yellow-900 font-bold rounded-lg hover:bg-yellow-300 transition-colors shadow-lg shadow-yellow-400/30"
+                  href="/marketplace"
+                  className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30"
                 >
-                  <Zap size={16} aria-hidden />
-                  Instant Buy
+                  <ArrowLeftRight size={16} aria-hidden />
+                  USDT Marketplace
                 </Link>
                 <Link
-                  href="/marketplace"
-                  className="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30"
+                  href="/ctm"
+                  className="flex items-center gap-2 px-6 py-3 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm"
                 >
-                  P2P Marketplace
+                  <Coins size={16} aria-hidden />
+                  Community Tokens
                 </Link>
                 <Link
                   href="/gas"
@@ -196,10 +197,10 @@ export default async function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold text-text-primary mb-6">What would you like to do?</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <QuickActionCard href="/instant-buy" Icon={Zap}          title="Instant Buy"      description="Buy USDT instantly — no need to find a seller"          iconCls="text-yellow-500" bgCls="bg-yellow-500/10" badge="Fastest" />
-            <QuickActionCard href="/marketplace" Icon={ArrowLeftRight} title="P2P Marketplace" description="Browse buy and sell offers from verified traders"        iconCls="text-blue-500"   bgCls="bg-blue-500/10"   />
-            <QuickActionCard href="/gas"          Icon={Fuel}          title="Crypto Gas Fees" description="Top up gas fees on any chain instantly with PKR"        iconCls="text-amber-500"  bgCls="bg-amber-500/10"  />
-            <QuickActionCard href="/fees"         Icon={FileText}      title="View Fees"       description="Transparent fee schedule for all transactions"         iconCls="text-indigo-500" bgCls="bg-indigo-500/10" />
+            <QuickActionCard href="/marketplace" Icon={ArrowLeftRight} title="USDT Marketplace"    description="Browse buy and sell USDT offers from verified traders"   iconCls="text-blue-500"   bgCls="bg-blue-500/10"   />
+            <QuickActionCard href="/ctm"         Icon={Coins}          title="Community Tokens"    description="Trade community tokens like BKR, SIDRA and more"         iconCls="text-pink-500"   bgCls="bg-pink-500/10"   />
+            <QuickActionCard href="/gas"          Icon={Fuel}           title="Crypto Gas Fees"     description="Top up gas fees on any chain instantly with PKR"         iconCls="text-amber-500"  bgCls="bg-amber-500/10"  />
+            <QuickActionCard href="/fees"         Icon={FileText}       title="View Fees"           description="Transparent fee schedule for all transactions"          iconCls="text-indigo-500" bgCls="bg-indigo-500/10" />
           </div>
         </div>
       </section>

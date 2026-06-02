@@ -8,13 +8,11 @@ import { Gift } from 'lucide-react'
 
 interface FeeSchedule {
   withdrawalFees?: Record<string, Record<string, string>>
-  instantBuyFees?: Record<string, string>
 }
 
 interface PlatformConfig {
   p2pMakerFee?: string
   p2pTakerFee?: string
-  instantBuyFee?: Record<string, string>
   kycLimits?: { basic?: number; enhanced?: number }
   referralReward?: string
   [key: string]: unknown
@@ -73,7 +71,7 @@ export default function FeesPage() {
 
   const makerFee = config?.p2pMakerFee ?? '0%'
   const takerFee = config?.p2pTakerFee ?? '0%'
-  const referralReward = config?.referralReward ?? 'PKR 100'
+  const referralReward = config?.referralReward ?? '10 BKR'
   const kycLimits = config?.kycLimits ?? { basic: 50000, enhanced: 500000 }
 
   const withdrawalFees = feeSchedule?.withdrawalFees ?? {
@@ -82,10 +80,6 @@ export default function FeesPage() {
     ETH: { ERC20: '0.003 ETH' },
     BNB: { BEP20: '0.001 BNB' },
     TRX: { TRC20: '1 TRX' },
-  }
-
-  const instantBuyFees: Record<string, string> = (config?.instantBuyFee as Record<string, string>) ?? {
-    USDT: '1%', BTC: '1.5%', ETH: '1.5%', BNB: '1.5%', TRX: '1%',
   }
 
   return (
@@ -108,15 +102,6 @@ export default function FeesPage() {
             ['Maker Fee (Ad Creator)', makerFee === '0' || makerFee === '0%' ? '0% — Free' : makerFee],
             ['Taker Fee (Trade Initiator)', takerFee === '0' || takerFee === '0%' ? '0% — Free' : takerFee],
           ]}
-        />
-      </section>
-
-      {/* Instant Buy */}
-      <section>
-        <h2 className="text-lg font-bold text-text-primary mb-3">Instant Buy Fees</h2>
-        <Table
-          headers={['Coin', 'Fee']}
-          rows={Object.entries(instantBuyFees).map(([coin, fee]) => [coin, fee])}
         />
       </section>
 
@@ -157,7 +142,7 @@ export default function FeesPage() {
               <p className="text-base font-bold text-text-primary">
                 Earn {referralReward} per referral
               </p>
-              <p className="text-sm text-text-muted">Paid when your referral completes their first trade.</p>
+              <p className="text-sm text-text-muted">BKR credited to your wallet when your referral completes their first trade.</p>
             </div>
           </div>
         </div>

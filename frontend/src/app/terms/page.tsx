@@ -61,7 +61,7 @@
             title: '5. Fees & Payments',
             content: [
               'P2P trading fees are currently 0% for both makers and takers.',
-              'Instant Buy and other premium services carry fees as listed on our Fees page.',
+              'Gas refill and other services carry fees as listed on our Fees page.',
               'Network withdrawal fees apply and are subject to blockchain conditions.',
               'We reserve the right to modify our fee structure with 7 days\' notice.',
             ],

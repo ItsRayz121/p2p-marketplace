@@ -30,7 +30,7 @@ interface TraderProfile {
     totalTrades: number
     completedTrades: number
     completionRate: number
-    avgRating: number
+    avgRating: number | string
     badge: string
     badgeLabel: string
     trustScore: number
@@ -155,7 +155,7 @@ export default function TraderProfilePage() {
   const stats = profile.tradeStats
   const badge = (stats?.badge ?? 'new') as TraderBadge
   const successRate = stats ? ((stats.completionRate ?? 0) * 100).toFixed(0) : '—'
-  const avgRating = stats?.avgRating ? stats.avgRating.toFixed(1) : '—'
+  const avgRating = stats?.avgRating ? Number(stats.avgRating).toFixed(1) : '—'
   const completedTrades = stats?.completedTrades ?? 0
   const totalReviews = stats?.totalReviews ?? 0
   const responseMinutes = stats?.avgResponseMinutes ?? null
@@ -197,8 +197,8 @@ export default function TraderProfilePage() {
 
   // SEO: update page title
   useEffect(() => {
-    document.title = `${profile.username} — Trader Profile | RupChain`
-  }, [profile.username])
+    document.title = `${profile.fullName || profile.username} — Trader Profile | RupChain`
+  }, [profile.fullName, profile.username])
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
@@ -206,13 +206,13 @@ export default function TraderProfilePage() {
       <div className="bg-surface shadow-card rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-start gap-4">
           <div className="relative flex-shrink-0">
-            <UserAvatar name={profile.username} size="xl" />
+            <UserAvatar name={profile.fullName || profile.username} size="xl" />
             <span className={`absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-surface ${onlineInfo.dot}`} />
           </div>
           <div className="flex-1 min-w-0">
             {/* Name row */}
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-bold text-text-primary">{profile.username}</h1>
+              <h1 className="text-xl font-bold text-text-primary">{profile.fullName || profile.username}</h1>
               <BadgeChip badge={badge} />
               {profile.merchant?.status === 'approved' && (
                 <Badge variant="success" size="sm">Verified Merchant</Badge>
@@ -229,8 +229,8 @@ export default function TraderProfilePage() {
               )}
             </div>
 
-            {/* Online status */}
-            <p className="text-xs text-text-muted mt-0.5">{onlineInfo.text}</p>
+            {/* Username + Online status */}
+            <p className="text-xs text-text-muted mt-0.5">@{profile.username} · {onlineInfo.text}</p>
 
             {/* Verification row */}
             <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-text-muted">

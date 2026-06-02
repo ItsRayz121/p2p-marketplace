@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { dashboardApi, tradesApi, notificationsApi, marketplaceApi, instantBuyApi, gasApi } from '@/lib/api'
+import { dashboardApi, tradesApi, notificationsApi, marketplaceApi, gasApi } from '@/lib/api'
 import type { WalletBalance, Trade, Notification } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
@@ -20,7 +20,6 @@ import {
   Wallet,
   Gift,
   Bell,
-  Zap,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { EntityLogo } from '@/components/ui/EntityLogo'
@@ -33,8 +32,8 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
 }
 
 const QUICK_ACTIONS = [
-  { href: '/instant-buy', label: 'Instant Buy',      Icon: Zap,           iconCls: 'text-yellow-600',  bgCls: 'bg-yellow-100'  },
-  { href: '/marketplace', label: 'P2P Market',       Icon: ArrowLeftRight, iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
+  { href: '/marketplace', label: 'USDT Market',      Icon: ArrowLeftRight, iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
+  { href: '/ctm',         label: 'Tokens',           Icon: Coins,          iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
   { href: '/gas',         label: 'Gas Fees',         Icon: Fuel,           iconCls: 'text-amber-600',   bgCls: 'bg-amber-100'   },
   { href: '/wallet',      label: 'Wallet',           Icon: Wallet,         iconCls: 'text-cyan-600',    bgCls: 'bg-cyan-100'    },
   { href: '/orders',      label: 'My Trades',        Icon: ClipboardList,  iconCls: 'text-emerald-600', bgCls: 'bg-emerald-100' },
@@ -57,15 +56,6 @@ interface DashboardSummary {
   ctmCompletedTrades?: number
   gasCompletedOrders?: number
   crossPlatformCompletionRate?: number | null
-}
-
-interface InstantOrder {
-  id: string
-  status: string
-  coin: string
-  amount: string
-  amountPkr: string
-  createdAt: string
 }
 
 interface RecentGasOrder {
@@ -110,7 +100,6 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [instantOrders, setInstantOrders] = useState<InstantOrder[]>([])
   const [gasOrders, setGasOrders] = useState<RecentGasOrder[]>([])
   const [usdtRate, setUsdtRate] = useState<number>(0)
   const [usdtRateSource, setUsdtRateSource] = useState<string>('')
@@ -119,18 +108,16 @@ export default function DashboardPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [summaryRes, tradesRes, notifRes, instantRes, gasRes] = await Promise.allSettled([
+      const [summaryRes, tradesRes, notifRes, gasRes] = await Promise.allSettled([
         dashboardApi.getSummary(),
         tradesApi.getMyTrades({ limit: 5 }),
         notificationsApi.getAll({ limit: 5, unreadOnly: true }),
-        instantBuyApi.getMyOrders({ limit: 3 }),
         gasApi.getOrderHistory({ limit: 3, page: 1 }),
       ])
 
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value)
       if (tradesRes.status === 'fulfilled') setTrades(tradesRes.value.trades ?? [])
       if (notifRes.status === 'fulfilled') setNotifications(notifRes.value.notifications ?? [])
-      if (instantRes.status === 'fulfilled') setInstantOrders(instantRes.value.orders ?? [])
       if (gasRes.status === 'fulfilled') setGasOrders((gasRes.value.orders ?? []).slice(0, 3) as RecentGasOrder[])
 
       // USDT rate for PKR equivalent — optional, never block dashboard render.
@@ -397,29 +384,6 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ── 6. Recent Instant Buy ── */}
-      {(instantOrders ?? []).length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-text-primary">Recent Instant Buy</h2>
-            <Link href="/instant-buy" className="text-xs text-primary hover:underline">View all</Link>
-          </div>
-          <div className="bg-surface rounded-xl border border-border shadow-card divide-y divide-border">
-            {(instantOrders ?? []).slice(0, 3).map((o) => {
-              const s = getTradeStatus(o.status)
-              return (
-                <div key={o.id} className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge>
-                    <span className="text-sm text-text-primary">{parseFloat(o.amount).toFixed(4)} {o.coin}</span>
-                  </div>
-                  <span className="text-xs text-text-muted">{timeAgo(o.createdAt)}</span>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
 
       {/* ── 7. Trader Badge ── */}
       <section>
