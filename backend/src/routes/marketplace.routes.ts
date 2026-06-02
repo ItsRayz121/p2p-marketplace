@@ -16,6 +16,12 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data })
   })
 
+  // Internal listing-based rate summary — powers the homepage market calculator
+  app.get('/rates/summary', async (_req, reply) => {
+    const data = await marketplaceService.getMarketRatesSummary()
+    return reply.send({ success: true, data })
+  })
+
   app.get('/stats', async (_req, reply) => {
     const data = await marketplaceService.getStats()
     return reply.send({ success: true, data })

@@ -2,6 +2,7 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { Errors } from '../lib/errors'
 import { Prisma } from '@prisma/client'
+import { isPubliclyVisible, type ChainReadinessState } from '../lib/gas/chainMeta'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -583,4 +584,167 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     limit,
     totalPages: Math.ceil(total / limit),
   }
+}
+
+// ─── Market Rates Summary (internal listing-based) ──────────────────────────────
+//
+// Powers the homepage "RupChain Market Calculator". Every rate is derived from
+// RupChain's own active listings — NO external price API is consulted:
+//   • USDT      — average PKR price across active USDT marketplace ads
+//   • CTM       — average pricePerUnit (PKR) across active listings, per token
+//   • Gas fees  — platform selling price of each public chain's native gas token
+//
+// USD→PKR conversions use the internal USDT marketplace average (falling back to
+// the cached rate:USD_PKR only when no active USDT listings exist).
+
+export interface MarketRateUsdt {
+  averagePkrRate: number | null
+  listingCount: number
+}
+
+export interface MarketRateToken {
+  symbol: string
+  name: string
+  slug: string
+  averageUsdtRate: number | null
+  averagePkrRate: number | null
+  listingCount: number
+}
+
+export interface MarketRatesSummary {
+  usdt: MarketRateUsdt
+  communityTokens: MarketRateToken[]
+  gasFees: MarketRateToken[]
+  updatedAt: string
+}
+
+const STABLE_SYMBOLS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP'])
+
+// Reads a native token's live USD price from Redis (same source the gas page
+// uses). Stablecoins are pegged 1:1. Returns 0 when no usable price is cached —
+// callers treat 0 as "no rate available" and never show a fabricated price.
+async function readUsdPrice(symbol: string): Promise<number> {
+  const sym = symbol.toUpperCase()
+  if (STABLE_SYMBOLS.has(sym)) return 1
+  const raw = await redis.get(`rate:${sym}`)
+  if (!raw) return 0
+  try {
+    const parsed = JSON.parse(raw) as { usdPrice?: number }
+    return parsed.usdPrice && parsed.usdPrice > 0 ? parsed.usdPrice : 0
+  } catch {
+    return 0
+  }
+}
+
+export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
+  const cacheKey = 'market-rates-summary'
+  const cached = await redis.get(cacheKey)
+  if (cached) {
+    try {
+      return JSON.parse(cached) as MarketRatesSummary
+    } catch {
+      // fall through
+    }
+  }
+
+  const now = new Date()
+
+  // ── 1. USDT marketplace — average PKR price across active listings ──
+  const usdtAgg = await db.ad.aggregate({
+    where: { status: 'active', coin: 'USDT' },
+    _avg: { price: true },
+    _count: { _all: true },
+  })
+  const usdtAvgPkr = usdtAgg._avg.price ? Number(usdtAgg._avg.price) : null
+  const usdtCount = usdtAgg._count._all
+
+  // USD→PKR conversion factor: prefer the internal USDT listing average; fall
+  // back to the cached rate:USD_PKR only when no active USDT listings exist.
+  let usdPkr: number | null = usdtAvgPkr && usdtAvgPkr > 0 ? usdtAvgPkr : null
+  if (usdPkr === null) {
+    const raw = await redis.get('rate:USD_PKR')
+    const parsed = raw ? parseFloat(raw) : NaN
+    usdPkr = !isNaN(parsed) && parsed > 0 ? parsed : null
+  }
+
+  // ── 2. Community tokens — average price per unit (PKR) per token ──
+  const ctmGroups = await db.ctmListing.groupBy({
+    by: ['tokenId'],
+    where: {
+      status: 'active',
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
+    _avg: { pricePerUnit: true },
+    _count: { _all: true },
+  })
+
+  const tokenIds = ctmGroups.map((g) => g.tokenId)
+  const tokens = tokenIds.length
+    ? await db.ctmToken.findMany({
+        where: { id: { in: tokenIds } },
+        select: { id: true, symbol: true, name: true, slug: true },
+      })
+    : []
+  const tokenMap = new Map(tokens.map((t) => [t.id, t]))
+
+  const communityTokens: MarketRateToken[] = ctmGroups
+    .map((g): MarketRateToken | null => {
+      const meta = tokenMap.get(g.tokenId)
+      if (!meta) return null
+      const avgPkr = g._avg.pricePerUnit ? Number(g._avg.pricePerUnit) : null
+      return {
+        symbol: meta.symbol,
+        name: meta.name,
+        slug: meta.slug,
+        averagePkrRate: avgPkr,
+        averageUsdtRate: avgPkr !== null && usdPkr ? avgPkr / usdPkr : null,
+        listingCount: g._count._all,
+      }
+    })
+    .filter((x): x is MarketRateToken => x !== null)
+    .sort((a, b) => b.listingCount - a.listingCount)
+
+  // ── 3. Gas fees — platform price of each public chain's native gas token ──
+  // Gas is a platform-run service (not a P2P listing market), so the "rate" is
+  // the live native-token price the platform sells at — exactly what the /gas
+  // page quotes. PKR is derived via the internal USD→PKR factor above.
+  const gasChains = await db.gasChainConfig.findMany({
+    where: { isActive: true },
+    orderBy: { displayOrder: 'asc' },
+    include: {
+      tokens: {
+        where: { isActive: true, tokenType: 'native' },
+        orderBy: { displayOrder: 'asc' },
+        take: 1,
+      },
+    },
+  })
+
+  const gasFees: MarketRateToken[] = []
+  for (const chain of gasChains) {
+    const state = (chain.readinessState ?? 'inactive') as ChainReadinessState
+    if (!isPubliclyVisible(state)) continue
+    const native = chain.tokens[0]
+    if (!native) continue
+    const usd = await readUsdPrice(native.priceSymbol)
+    if (usd <= 0) continue // never show a fabricated price
+    gasFees.push({
+      symbol: chain.symbol,
+      name: `${chain.name} Gas`,
+      slug: chain.slug,
+      averageUsdtRate: usd,
+      averagePkrRate: usdPkr ? usd * usdPkr : null,
+      listingCount: 1,
+    })
+  }
+
+  const result: MarketRatesSummary = {
+    usdt: { averagePkrRate: usdtAvgPkr, listingCount: usdtCount },
+    communityTokens,
+    gasFees,
+    updatedAt: now.toISOString(),
+  }
+
+  await redis.set(cacheKey, JSON.stringify(result), 'EX', 60)
+  return result
 }

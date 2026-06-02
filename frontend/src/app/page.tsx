@@ -34,8 +34,6 @@ interface FaqItem {
 }
 
 interface HomeData {
-  rate: number | null
-  rateUpdatedAt: string | null
   stats: MarketStats | null
   topAds: TopAds | null
   faqs: FaqItem[]
@@ -47,11 +45,10 @@ async function getHomeData(): Promise<HomeData> {
   // Use NEXT_PUBLIC_API_URL in production; fall back to local backend in dev.
   const api = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
-  const [rateRes, statsRes, topAdsRes, configRes] = await Promise.allSettled([
-    fetch(`${api}/api/v1/marketplace/rate?coin=USDT`, { cache: 'no-store' }),
-    fetch(`${api}/api/v1/marketplace/stats`,          { cache: 'no-store' }),
-    fetch(`${api}/api/v1/marketplace/top-ads`,        { cache: 'no-store' }),
-    fetch(`${api}/api/v1/config`,                     { cache: 'no-store' }),
+  const [statsRes, topAdsRes, configRes] = await Promise.allSettled([
+    fetch(`${api}/api/v1/marketplace/stats`,   { cache: 'no-store' }),
+    fetch(`${api}/api/v1/marketplace/top-ads`, { cache: 'no-store' }),
+    fetch(`${api}/api/v1/config`,              { cache: 'no-store' }),
   ])
 
   async function json<T>(r: PromiseSettledResult<Response>): Promise<T | null> {
@@ -59,17 +56,14 @@ async function getHomeData(): Promise<HomeData> {
     try { return (await r.value.json()) as T } catch { return null }
   }
 
-  const rateData  = await json<{ rate: number; updatedAt: string }>(rateRes)
   const statsData = await json<MarketStats>(statsRes)
   const topAdsData= await json<TopAds>(topAdsRes)
   const config    = await json<Record<string, unknown>>(configRes)
 
   return {
-    rate:          rateData?.rate    ?? null,
-    rateUpdatedAt: rateData?.updatedAt ?? null,
-    stats:         statsData,
-    topAds:        topAdsData,
-    faqs:          Array.isArray(config?.home_faqs) ? (config!.home_faqs as FaqItem[]) : [],
+    stats:  statsData,
+    topAds: topAdsData,
+    faqs:   Array.isArray(config?.home_faqs) ? (config!.home_faqs as FaqItem[]) : [],
   }
 }
 
@@ -108,7 +102,7 @@ function QuickActionCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HomePage() {
-  const { rate, rateUpdatedAt, stats, topAds, faqs } = await getHomeData()
+  const { stats, topAds, faqs } = await getHomeData()
 
   return (
     <div className="min-h-screen bg-surface">
@@ -158,8 +152,8 @@ export default async function HomePage() {
               </div>
             </div>
 
-            {/* Rate calculator — client island */}
-            <RateCalculator initialRate={rate} initialUpdatedAt={rateUpdatedAt} />
+            {/* Market calculator — client island */}
+            <RateCalculator />
           </div>
         </div>
       </section>
