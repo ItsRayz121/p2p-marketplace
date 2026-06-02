@@ -39,41 +39,79 @@ const BADGE_ORDER = ['new', 'active', 'trusted', 'top', 'elite']
 
 export async function recalculateUserBadge(userId: string): Promise<void> {
   try {
-    const [trades, userRow] = await Promise.all([
-      db.trade.findMany({
-        where: { OR: [{ buyerId: userId }, { sellerId: userId }] },
-        select: { status: true },
-      }),
-      db.user.findUnique({ where: { id: userId }, select: { createdAt: true } }),
-    ])
+    // Query all three trade sources in parallel — every trade on the platform counts
+    const [usdtTrades, ctmTrades, gasOrders, userRow, usdtRatingAgg, ctmRatingAgg, usdtVolumeAgg, ctmVolumeAgg, gasVolumeAgg] =
+      await Promise.all([
+        db.trade.findMany({
+          where: { OR: [{ buyerId: userId }, { sellerId: userId }] },
+          select: { status: true },
+        }),
+        db.ctmTrade.findMany({
+          where: { OR: [{ buyerId: userId }, { sellerId: userId }] },
+          select: { status: true },
+        }),
+        db.gasFeeOrder.findMany({
+          where: { userId },
+          select: { status: true },
+        }),
+        db.user.findUnique({ where: { id: userId }, select: { createdAt: true } }),
+        db.tradeRating.aggregate({
+          where: { ratedUserId: userId },
+          _avg: { rating: true },
+          _count: { rating: true },
+        }),
+        db.ctmTradeRating.aggregate({
+          where: { ratedUserId: userId },
+          _avg: { rating: true },
+          _count: { rating: true },
+        }),
+        db.trade.aggregate({
+          where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'crypto_released' },
+          _sum: { fiatAmount: true },
+        }),
+        db.ctmTrade.aggregate({
+          where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'completed' },
+          _sum: { fiatAmount: true },
+        }),
+        db.gasFeeOrder.aggregate({
+          where: { userId, status: 'delivered' },
+          _sum: { pkrAmount: true },
+        }),
+      ])
 
     const accountAgeDays = userRow
       ? (Date.now() - userRow.createdAt.getTime()) / 86_400_000
       : 0
 
-    const total = trades.length
-    const completed = trades.filter((t) => t.status === 'crypto_released').length
-    const cancelled = trades.filter((t) => t.status === 'cancelled').length
+    // Unified counts across USDT P2P + CTM + Gas
+    const usdtCompleted = usdtTrades.filter((t) => t.status === 'crypto_released').length
+    const usdtCancelled = usdtTrades.filter((t) => t.status === 'cancelled').length
+    const ctmCompleted = ctmTrades.filter((t) => t.status === 'completed').length
+    const ctmCancelled = ctmTrades.filter((t) => t.status === 'cancelled').length
+    const gasCompleted = gasOrders.filter((o) => o.status === 'delivered').length
+
+    const total = usdtTrades.length + ctmTrades.length + gasOrders.length
+    const completed = usdtCompleted + ctmCompleted + gasCompleted
+    const cancelled = usdtCancelled + ctmCancelled
     const completionRate = total > 0 ? completed / total : 0
 
-    // Get average rating
-    const ratingAgg = await db.tradeRating.aggregate({
-      where: { ratedUserId: userId },
-      _avg: { rating: true },
-      _count: { rating: true },
-    })
-    const avgRating = Number(ratingAgg._avg.rating ?? 0)
-    const totalReviews = ratingAgg._count.rating
+    // Combined ratings: weighted average of USDT TradeRating + CTM CtmTradeRating
+    const usdtRatingCount = usdtRatingAgg._count.rating
+    const ctmRatingCount = ctmRatingAgg._count.rating
+    const totalReviews = usdtRatingCount + ctmRatingCount
+    const avgRating =
+      totalReviews > 0
+        ? (Number(usdtRatingAgg._avg.rating ?? 0) * usdtRatingCount +
+            Number(ctmRatingAgg._avg.rating ?? 0) * ctmRatingCount) /
+          totalReviews
+        : 0
 
-    // Get volume
-    const volumeAgg = await db.trade.aggregate({
-      where: {
-        OR: [{ buyerId: userId }, { sellerId: userId }],
-        status: 'crypto_released',
-      },
-      _sum: { fiatAmount: true },
-    })
-    const totalVolumePKR = volumeAgg._sum.fiatAmount ?? new Prisma.Decimal(0)
+    // Combined PKR volume across all three sources
+    const totalVolumePKR = new Prisma.Decimal(
+      Number(usdtVolumeAgg._sum.fiatAmount ?? 0) +
+        Number(ctmVolumeAgg._sum.fiatAmount ?? 0) +
+        Number(gasVolumeAgg._sum.pkrAmount ?? 0),
+    )
 
     const { badge, badgeLabel } = computeBadge(completed, completionRate)
     const trustScore = computeTrustScore(completionRate, avgRating, completed, accountAgeDays)

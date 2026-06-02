@@ -152,10 +152,8 @@ export default function DashboardPage() {
   const emailVerified = user?.isEmailVerified ?? false
   const kycApproved = kycStatus === 'approved'
   const hasBalance = (summary?.wallets ?? []).some((b) => parseFloat(b.available) > 0)
-  const totalCompletedTrades =
-    (summary?.tradeStats?.completedTrades ?? 0) +
-    (summary?.ctmCompletedTrades ?? 0) +
-    (summary?.gasCompletedOrders ?? 0)
+  // tradeStats.completedTrades is now the unified count (USDT + CTM + Gas)
+  const totalCompletedTrades = summary?.tradeStats?.completedTrades ?? 0
   const hasCompletedTrade = totalCompletedTrades > 0
 
   const crossPlatformCompletionRate =

@@ -58,8 +58,8 @@ export async function leaderboardRoutes(app: FastifyInstance) {
 
     if (type === 'traders') {
       if (tradeType === 'all') {
-        // Overall: union of all three trade sources queried live.
-        // TradeStats is NOT used here — it only has USDT history and would miss CTM/Gas trades.
+        // Overall: union of all three trade sources queried live for accurate per-period filtering.
+        // TradeStats holds unified totals but lacks per-period granularity, so we still query live here.
         const [ctmTrades, usdtTrades, gasOrders] = await Promise.all([
           db.ctmTrade.findMany({
             where: {

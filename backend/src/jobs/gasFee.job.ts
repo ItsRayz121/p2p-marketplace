@@ -87,6 +87,10 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
 
     logger.info({ orderId, deliveryTxHash, chain: order.chain }, 'Gas fee delivered successfully')
     await notifyMerchantWebhook(orderId, 'delivered')
+    // Gas orders count toward user trade stats — trigger unified badge recalculate
+    if (order.userId) {
+      queues.badgeRecalculate.add('recalc', { userId: order.userId }).catch(() => {})
+    }
     void createAdminNotif({
       category: 'GAS',
       title: `Gas Sent — ${Number(order.gasAmountNative).toFixed(6)} ${order.chain}`,

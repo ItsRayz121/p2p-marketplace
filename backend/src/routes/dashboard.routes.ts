@@ -8,7 +8,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
   app.get('/dashboard/summary', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
 
-    const [user, wallets, recentTrades, recentOrders, usdtRate, notifications, tradeStats, ctmCompletedTrades, gasCompletedOrders, ctmTerminalCount, gasTerminalCount] =
+    const [user, wallets, recentTrades, recentOrders, usdtRate, notifications, tradeStats, ctmCompletedTrades, gasCompletedOrders] =
       await Promise.all([
         db.user.findUnique({
           where: { id: userId },
@@ -67,8 +67,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
           orderBy: { createdAt: 'desc' },
         }),
 
+        // TradeStats is now the single source of truth: includes USDT + CTM + Gas
         db.tradeStats.findUnique({ where: { userId } }),
 
+        // Kept separately for the breakdown display (how many trades per marketplace)
         db.ctmTrade.count({
           where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'completed' },
         }),
@@ -76,23 +78,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
         db.gasFeeOrder.count({
           where: { userId, status: 'delivered' },
         }),
-
-        // CTM terminal count for cross-platform completion rate
-        db.ctmTrade.count({
-          where: {
-            OR: [{ buyerId: userId }, { sellerId: userId }],
-            status: { in: ['completed', 'cancelled', 'disputed', 'dispute_resolved', 'expired'] },
-          },
-        }),
-
-        // Gas terminal count for cross-platform completion rate
-        db.gasFeeOrder.count({
-          where: { userId, status: { in: ['delivered', 'expired', 'failed', 'refunded'] } },
-        }),
       ])
 
-    const crossCompleted = (tradeStats?.completedTrades ?? 0) + ctmCompletedTrades + gasCompletedOrders
-    const crossTotal = (tradeStats?.totalTrades ?? 0) + ctmTerminalCount + gasTerminalCount
+    // TradeStats now covers all three marketplaces, so no cross-add needed
+    const crossTotal = tradeStats?.totalTrades ?? 0
+    const crossCompleted = tradeStats?.completedTrades ?? 0
     const crossPlatformCompletionRate = crossTotal > 0 ? crossCompleted / crossTotal : null
 
     return reply.send({
