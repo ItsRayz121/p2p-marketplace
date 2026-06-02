@@ -42,7 +42,7 @@ interface Listing {
     totalCtmTrades: number
     completedCtmTrades: number
     ctmAvgRating: string
-    user: { id: string; username: string }
+    user: { id: string; username: string; fullName: string | null }
   }
 }
 
@@ -177,7 +177,7 @@ function ListingRow({ listing, onViewMerchant }: { listing: Listing; onViewMerch
         {/* Merchant */}
         <div className="sm:w-40">
           <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <span className="text-sm font-medium text-text-primary">{listing.merchantProfile.user.username}</span>
+            <span className="text-sm font-medium text-text-primary">{listing.merchantProfile.user.fullName || listing.merchantProfile.user.username}</span>
             <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
               {listing.merchantProfile.tier}
             </span>

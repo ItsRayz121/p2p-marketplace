@@ -24,7 +24,7 @@ interface Listing {
     totalCtmTrades: number
     completedCtmTrades: number
     ctmAvgRating: string
-    user: { id: string; username: string }
+    user: { id: string; username: string; fullName: string | null }
   }
 }
 
@@ -190,7 +190,7 @@ export default function BrowseListingsPage() {
                   <div className="sm:w-36">
                     <p className="text-xs text-text-muted mb-0.5">Merchant</p>
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-sm font-medium text-text-primary">{l.merchantProfile.user.username}</span>
+                      <span className="text-sm font-medium text-text-primary">{l.merchantProfile.user.fullName || l.merchantProfile.user.username}</span>
                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TIER_COLORS[l.merchantProfile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
                         {l.merchantProfile.tier}
                       </span>

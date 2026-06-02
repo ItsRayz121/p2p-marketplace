@@ -163,7 +163,7 @@ export async function getListings(filters: ListingsFilter = {}) {
             totalCtmTrades: true,
             completedCtmTrades: true,
             ctmAvgRating: true,
-            user: { select: { id: true, username: true } },
+            user: { select: { id: true, username: true, fullName: true } },
           },
         },
       },

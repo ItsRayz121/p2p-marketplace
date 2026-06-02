@@ -84,7 +84,7 @@ interface Listing {
   terms: string
   status: string
   token: { id: string; name: string; symbol: string; logoUrl?: string; riskTier: string; settlementType: string; description: string }
-  merchantProfile: { id: string; tier: string; totalCtmTrades: number; completedCtmTrades: number; ctmAvgRating: string; user: { id: string; username: string } }
+  merchantProfile: { id: string; tier: string; totalCtmTrades: number; completedCtmTrades: number; ctmAvgRating: string; user: { id: string; username: string; fullName: string | null } }
 }
 
 const DELIVERY_LABELS: Record<string, string> = {
@@ -366,10 +366,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         </button>
         {merchantOpen && (
           <div className="flex items-center gap-3 mt-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center">{listing.merchantProfile.user.username.charAt(0).toUpperCase()}</div>
+            <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center">{(listing.merchantProfile.user.fullName || listing.merchantProfile.user.username).charAt(0).toUpperCase()}</div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-text-primary">{listing.merchantProfile.user.username}</span>
+                <span className="font-semibold text-text-primary">{listing.merchantProfile.user.fullName || listing.merchantProfile.user.username}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[listing.merchantProfile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>{listing.merchantProfile.tier}</span>
               </div>
               <p className="text-xs text-text-muted flex items-center gap-1">{listing.merchantProfile.completedCtmTrades} completed · <Star size={10} className="text-warning fill-warning" />{Number(listing.merchantProfile.ctmAvgRating).toFixed(1)}</p>

@@ -90,8 +90,8 @@ interface Trade {
   escrowAddress?: string; escrowAmount?: string; escrowCurrency?: string
   escrowTxHash?: string; escrowConfirmedAt?: string
   token: { name: string; symbol: string; logoUrl?: string; riskTier: string; explorerUrl?: string }
-  buyer: { id: string; username: string }
-  seller: { id: string; username: string }
+  buyer: { id: string; username: string; fullName: string | null }
+  seller: { id: string; username: string; fullName: string | null }
   listing?: { side: string }
   proofs: Array<{ id: string; proofType: string; fileUrl?: string; txHash?: string; uploadedBy: string; description?: string; createdAt: string }>
   dispute?: { id: string; reason: string; description: string; status: string; resolution?: string; winner?: string }
@@ -786,8 +786,8 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
               <StepCard stepNum={4} title="Complete & Rate" state={s4}
                 summary="Trade complete"
                 expanded={expandedSteps.has(4)} onToggle={() => toggleStep(4)}>
-                {ratingOpen ? ratingPanel(trade.seller.username) : (
-                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.seller.username} ratingError={ratingError} onOpenRating={() => setRatingOpen(true)} />
+                {ratingOpen ? ratingPanel(trade.seller.fullName || trade.seller.username) : (
+                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.seller.fullName || trade.seller.username} ratingError={ratingError} onOpenRating={() => setRatingOpen(true)} />
                 )}
               </StepCard>
             </>
@@ -916,9 +916,9 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
                   </div>
                 )}
                 {trade.status === 'completed' && !ratingOpen && (
-                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.buyer.username} ratingError={ratingError} onOpenRating={() => setRatingOpen(true)} />
+                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.buyer.fullName || trade.buyer.username} ratingError={ratingError} onOpenRating={() => setRatingOpen(true)} />
                 )}
-                {ratingOpen && ratingPanel(trade.buyer.username)}
+                {ratingOpen && ratingPanel(trade.buyer.fullName || trade.buyer.username)}
               </StepCard>
             </>
           )}
@@ -966,7 +966,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
         {/* Right: Chat */}
         <div className="lg:col-span-2 flex flex-col bg-surface shadow-card border border-border rounded-xl overflow-hidden" style={{ maxHeight: '70vh' }}>
           <div className="p-4 border-b border-border font-semibold text-text-primary text-sm">
-            Chat — {trade.buyer.username} & {trade.seller.username}
+            Chat — {trade.buyer.fullName || trade.buyer.username} & {trade.seller.fullName || trade.seller.username}
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((m) => {

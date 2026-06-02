@@ -51,8 +51,8 @@ export async function getTradeByRef(tradeRef: string, userId: string, role: stri
     where: { tradeRef },
     include: {
       token: true,
-      buyer: { select: { id: true, username: true } },
-      seller: { select: { id: true, username: true } },
+      buyer: { select: { id: true, username: true, fullName: true } },
+      seller: { select: { id: true, username: true, fullName: true } },
       listing: true,
       request: true,
       proofs: { orderBy: { createdAt: 'asc' } },
