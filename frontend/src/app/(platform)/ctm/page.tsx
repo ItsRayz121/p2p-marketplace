@@ -116,7 +116,7 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
               <span className="font-semibold text-text-primary">
                 {parseFloat(t.amount).toLocaleString()} {t.coin}
               </span>
-              <span className="text-text-muted">{t.buyerUsername} ← {t.sellerUsername}</span>
+              <span className="text-text-muted">{t.buyerFullName || t.buyerUsername} ← {t.sellerFullName || t.sellerUsername}</span>
               <span className="text-text-muted/60">{tradeFeedAge(t.completedAt)}</span>
             </span>
           ))}

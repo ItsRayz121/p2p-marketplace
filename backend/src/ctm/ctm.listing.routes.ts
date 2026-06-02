@@ -72,8 +72,8 @@ export async function ctmListingRoutes(app: FastifyInstance) {
         tokenAmount: true,
         completedAt: true,
         token: { select: { symbol: true } },
-        buyer: { select: { username: true } },
-        seller: { select: { username: true } },
+        buyer: { select: { username: true, fullName: true } },
+        seller: { select: { username: true, fullName: true } },
       },
     })
     return reply.send({
@@ -85,6 +85,8 @@ export async function ctmListingRoutes(app: FastifyInstance) {
         completedAt: (t.completedAt ?? new Date()).toISOString(),
         buyerUsername: t.buyer.username,
         sellerUsername: t.seller.username,
+        buyerFullName: t.buyer.fullName ?? null,
+        sellerFullName: t.seller.fullName ?? null,
       })),
     })
   })
