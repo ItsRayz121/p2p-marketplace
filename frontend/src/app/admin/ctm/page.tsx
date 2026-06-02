@@ -110,7 +110,7 @@ export default function AdminCtmDashboardPage() {
       </div>
 
       {/* Top tokens */}
-      {stats.topTokens.length > 0 && (
+      {(stats.topTokens ?? []).length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">Top Tokens by Volume</h2>
           <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
@@ -123,7 +123,7 @@ export default function AdminCtmDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {stats.topTokens.map((t) => (
+                {(stats.topTokens ?? []).map((t) => (
                   <tr key={t.id} className="hover:bg-surface/50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">

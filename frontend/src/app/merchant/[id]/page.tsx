@@ -194,7 +194,7 @@ export default function MerchantProfilePage({ params }: { params: Promise<{ id: 
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
                         {isSell ? 'SELLING' : 'BUYING'}
                       </span>
-                      {ad.paymentMethods.slice(0, 3).map((pm) => (
+                      {(ad.paymentMethods ?? []).slice(0, 3).map((pm) => (
                         <span key={pm} className="inline-flex items-center gap-1 text-xs bg-surface-alt border border-border rounded-full px-2 py-0.5">
                           <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" />
                           {pm}

@@ -330,7 +330,7 @@ export default function TraderProfilePage() {
                   {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()} PKR
                 </span>
                 <div className="flex flex-wrap gap-1">
-                  {ad.paymentMethods.slice(0, 2).map((pm) => (
+                  {(ad.paymentMethods ?? []).slice(0, 2).map((pm) => (
                     <span key={pm} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>{pm}</span>
                   ))}
                 </div>

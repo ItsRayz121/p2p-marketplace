@@ -79,7 +79,7 @@ interface TopAds {
 export function TopAdsSection({ topAds }: { topAds: TopAds | null }) {
   const [adsTab, setAdsTab] = useState<'buy' | 'sell'>('buy')
 
-  const ads = topAds ? (adsTab === 'buy' ? topAds.buys : topAds.sells) : []
+  const ads = topAds ? (adsTab === 'buy' ? (topAds.buys ?? []) : (topAds.sells ?? [])) : []
 
   return (
     <section className="py-12">

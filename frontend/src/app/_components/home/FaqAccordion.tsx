@@ -8,15 +8,16 @@ interface FaqItem {
 
 export function FaqAccordion({ items }: { items: FaqItem[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null)
+  const safeItems = items ?? []
 
-  if (!items.length) return null
+  if (!safeItems.length) return null
 
   return (
     <section className="py-12">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         <h2 className="text-2xl font-bold text-text-primary mb-6">Frequently Asked Questions</h2>
         <div className="space-y-2">
-          {items.map((item, i) => (
+          {safeItems.map((item, i) => (
             <div key={i} className="border border-border rounded-lg overflow-hidden">
               <button
                 className="w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium text-text-primary hover:bg-surface transition-colors"
