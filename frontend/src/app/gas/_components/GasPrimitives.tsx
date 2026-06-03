@@ -4,6 +4,21 @@ import NextImage from 'next/image'
 import { Spinner } from '@/components/ui/Spinner'
 import type { GasChain, GasToken, GasPkrMethods } from '@/lib/api'
 import { PKR_METHOD_META, type PkrMethodKey } from './GasContext'
+import { resolveLogoStatic } from '@/lib/logoRegistry'
+
+// Builds an ordered, deduped list of logo URLs to try, dropping any that have
+// already failed. Mirrors EntityLogo's tiered resolution so chains/tokens fall
+// back to the static CDN before the gradient-initials placeholder.
+function firstLiveUrl(candidates: (string | null | undefined)[], failed: Set<string>): string | null {
+  const seen = new Set<string>()
+  for (const url of candidates) {
+    if (url && !seen.has(url)) {
+      seen.add(url)
+      if (!failed.has(url)) return url
+    }
+  }
+  return null
+}
 
 // ─── Chain / token category colours ──────────────────────────────────────────
 
@@ -136,12 +151,17 @@ export function ProcessingTimeline({ status, isPkr }: { status: string; isPkr: b
 // ─── Chain logo ───────────────────────────────────────────────────────────────
 
 export function ChainLogo({ chain, sizeCls = 'w-11 h-11' }: { chain: GasChain; sizeCls?: string }) {
-  const [imgError, setImgError] = useState(false)
-  if (chain.logoUrl && !imgError) {
+  const [failed, setFailed] = useState<Set<string>>(() => new Set())
+  // custom (DB) logo → static network CDN (by symbol or category) → gradient.
+  const url = firstLiveUrl(
+    [chain.logoUrl, resolveLogoStatic('chain', chain.symbol), resolveLogoStatic('chain', chain.category)],
+    failed,
+  )
+  if (url) {
     return (
-      <NextImage src={chain.logoUrl} alt={chain.symbol} width={44} height={44}
+      <NextImage src={url} alt={chain.symbol} width={44} height={44}
         className={`${sizeCls} rounded-full object-contain`}
-        onError={() => setImgError(true)} unoptimized />
+        onError={() => setFailed((prev) => new Set([...prev, url]))} unoptimized />
     )
   }
   return (
@@ -154,12 +174,17 @@ export function ChainLogo({ chain, sizeCls = 'w-11 h-11' }: { chain: GasChain; s
 // ─── Token logo ───────────────────────────────────────────────────────────────
 
 export function TokenLogo({ token, cat, sizeCls = 'w-10 h-10' }: { token: GasToken; cat: string; sizeCls?: string }) {
-  const [imgError, setImgError] = useState(false)
-  if (token.logoUrl && !imgError) {
+  const [failed, setFailed] = useState<Set<string>>(() => new Set())
+  // custom (DB) logo → static token CDN → chain CDN for the token's category → gradient.
+  const url = firstLiveUrl(
+    [token.logoUrl, resolveLogoStatic('token', token.symbol), resolveLogoStatic('chain', cat)],
+    failed,
+  )
+  if (url) {
     return (
-      <NextImage src={token.logoUrl} alt={token.symbol} width={40} height={40}
+      <NextImage src={url} alt={token.symbol} width={40} height={40}
         className={`${sizeCls} rounded-full object-contain`}
-        onError={() => setImgError(true)} unoptimized />
+        onError={() => setFailed((prev) => new Set([...prev, url]))} unoptimized />
     )
   }
   return (

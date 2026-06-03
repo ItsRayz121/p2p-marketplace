@@ -9,10 +9,13 @@ import { createAdminNotif } from '../services/adminNotification.service'
 
 const submitKycSchema = z.object({
   tier: z.enum(['basic', 'enhanced']),
-  cnicNumber: z.string().regex(/^\d{5}-\d{7}-\d$|^\d{13}$/, 'Invalid CNIC format (expected XXXXX-XXXXXXX-X or 13 digits)'),
-  frontUrl: z.string().url(),
-  backUrl: z.string().url(),
-  selfieUrl: z.string().url(),
+  // CNIC details + document photos are only collected for Basic (Level 1). For
+  // Enhanced (Level 2) these are reused from the user's approved Level 1
+  // submission — see submitKyc — so they are optional here.
+  cnicNumber: z.string().regex(/^\d{5}-\d{7}-\d$|^\d{13}$/, 'Invalid CNIC format (expected XXXXX-XXXXXXX-X or 13 digits)').optional(),
+  frontUrl: z.string().url().optional(),
+  backUrl: z.string().url().optional(),
+  selfieUrl: z.string().url().optional(),
   videoUrl: z.string().url().optional(),
   socialLinks: z
     .array(
@@ -23,6 +26,11 @@ const submitKycSchema = z.object({
     )
     .optional(),
 })
+  // Basic KYC still requires CNIC number + front/back/selfie photos.
+  .refine((d) => d.tier !== 'basic' || (!!d.cnicNumber && !!d.frontUrl && !!d.backUrl && !!d.selfieUrl), {
+    message: 'Basic KYC requires your CNIC number and front, back, and selfie photos',
+    path: ['frontUrl'],
+  })
   .refine((d) => d.tier !== 'enhanced' || (d.socialLinks?.filter((l) => l.url.trim()).length ?? 0) >= 2, {
     message: 'Enhanced KYC requires at least 2 social media profiles',
     path: ['socialLinks'],
@@ -48,18 +56,23 @@ export async function kycRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { socialLinks, videoUrl, ...kycCore } = parsed.data
+    const { tier, cnicNumber, frontUrl, backUrl, selfieUrl, videoUrl, socialLinks } = parsed.data
+    // Build the payload with only defined fields (exactOptionalPropertyTypes).
     const submission = await submitKyc(userId, {
-      ...kycCore,
+      tier,
+      ...(cnicNumber ? { cnicNumber } : {}),
+      ...(frontUrl ? { frontUrl } : {}),
+      ...(backUrl ? { backUrl } : {}),
+      ...(selfieUrl ? { selfieUrl } : {}),
       ...(videoUrl ? { videoUrl } : {}),
       ...(socialLinks ? { socialLinks } : {}),
     })
     void createAdminNotif({
       category: 'KYC',
       title:    'New KYC Submission',
-      body:     `User submitted ${kycCore.tier} KYC. Submission ID: ${submission.id}`,
+      body:     `User submitted ${tier} KYC. Submission ID: ${submission.id}`,
       href:     `/admin/kyc`,
-      metadata: { userId, submissionId: submission.id, tier: kycCore.tier },
+      metadata: { userId, submissionId: submission.id, tier },
     })
     return reply.code(201).send({ success: true, data: submission })
   })

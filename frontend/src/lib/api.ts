@@ -918,10 +918,12 @@ export const kycApi = {
     apiRequest<{ status: string; level: string | null; latestSubmission: KycDocument | null }>('/kyc/status'),
   submit: (data: {
     tier: 'basic' | 'enhanced'
-    cnicNumber: string
-    frontUrl: string
-    backUrl: string
-    selfieUrl: string
+    // CNIC + document photos are required for Basic only; Enhanced reuses the
+    // approved Level 1 documents server-side.
+    cnicNumber?: string
+    frontUrl?: string
+    backUrl?: string
+    selfieUrl?: string
     videoUrl?: string
     socialLinks?: Array<{ platform: string; url: string }>
   }) =>
@@ -1956,7 +1958,7 @@ export const ctmApi = {
 
   // Stats & feed
   getStats: () =>
-    apiRequest<{ activeListings: number; todayTrades: number; totalTokens: number }>('/ctm/stats'),
+    apiRequest<{ activeListings: number; todayTrades: number; totalTrades: number; totalTokens: number }>('/ctm/stats'),
   getRecentTrades: () =>
     apiRequest<RecentTrade[]>('/ctm/recent-trades'),
 

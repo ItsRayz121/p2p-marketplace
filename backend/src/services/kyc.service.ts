@@ -29,17 +29,43 @@ export async function submitKyc(
   userId: string,
   data: {
     tier: 'basic' | 'enhanced'
-    cnicNumber: string
-    frontUrl: string
-    backUrl: string
-    selfieUrl: string
+    cnicNumber?: string
+    frontUrl?: string
+    backUrl?: string
+    selfieUrl?: string
     videoUrl?: string
     socialLinks?: Array<{ platform: string; url: string }>
   },
 ) {
-  assertCloudinaryUrl(data.frontUrl, 'frontUrl')
-  assertCloudinaryUrl(data.backUrl, 'backUrl')
-  assertCloudinaryUrl(data.selfieUrl, 'selfieUrl')
+  // Enhanced (Level 2) reuses the already-approved Level 1 identity documents so
+  // users don't re-upload their CNIC/selfie. Pull them from the prior approved
+  // submission rather than asking again.
+  let { frontUrl, backUrl, selfieUrl } = data
+  let cnicHash: string
+
+  if (data.tier === 'enhanced') {
+    const approvedBasic = await db.kycSubmission.findFirst({
+      where: { userId, status: 'approved' },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!approvedBasic) {
+      throw new AppError('KYC_LEVEL1_REQUIRED', 'Complete Level 1 verification before upgrading to Level 2', 400)
+    }
+    // Reuse approved Level 1 documents and CNIC hash.
+    frontUrl = approvedBasic.frontUrl
+    backUrl = approvedBasic.backUrl
+    selfieUrl = approvedBasic.selfieUrl
+    cnicHash = approvedBasic.cnicNumberHash
+  } else {
+    if (!data.cnicNumber || !frontUrl || !backUrl || !selfieUrl) {
+      throw new AppError('VALIDATION_ERROR', 'Basic KYC requires your CNIC number and front, back, and selfie photos', 400)
+    }
+    cnicHash = hashCnic(data.cnicNumber)
+  }
+
+  assertCloudinaryUrl(frontUrl, 'frontUrl')
+  assertCloudinaryUrl(backUrl, 'backUrl')
+  assertCloudinaryUrl(selfieUrl, 'selfieUrl')
   if (data.videoUrl) assertCloudinaryUrl(data.videoUrl, 'videoUrl')
 
   // Rate limit: max 3 submissions per 24h
@@ -50,15 +76,15 @@ export async function submitKyc(
     throw new AppError('RATE_LIMIT', 'Too many KYC submissions. Try again tomorrow.', 429)
   }
 
-  // Hash CNIC — never store plaintext
-  const cnicHash = hashCnic(data.cnicNumber)
-
-  // Prevent CNIC reuse across approved users
-  const existingApproved = await db.kycSubmission.findFirst({
-    where: { cnicNumberHash: cnicHash, status: 'approved', userId: { not: userId } },
-  })
-  if (existingApproved) {
-    throw new AppError('CNIC_DUPLICATE', 'This CNIC is already registered with another account', 400)
+  // Prevent CNIC reuse across approved users (basic only — enhanced reuses the
+  // user's own already-validated CNIC hash).
+  if (data.tier === 'basic') {
+    const existingApproved = await db.kycSubmission.findFirst({
+      where: { cnicNumberHash: cnicHash, status: 'approved', userId: { not: userId } },
+    })
+    if (existingApproved) {
+      throw new AppError('CNIC_DUPLICATE', 'This CNIC is already registered with another account', 400)
+    }
   }
 
   const user = await db.user.findUnique({
@@ -72,9 +98,9 @@ export async function submitKyc(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tier: data.tier as any,
       status: 'pending',
-      frontUrl: data.frontUrl,
-      backUrl: data.backUrl,
-      selfieUrl: data.selfieUrl,
+      frontUrl,
+      backUrl,
+      selfieUrl,
       videoUrl: data.videoUrl ?? null,
       cnicNumberHash: cnicHash,
       socialLinks: data.socialLinks ?? [],

@@ -291,15 +291,18 @@ export default function KycPage() {
       setSubmitError('Please select a KYC tier.')
       return
     }
-    if (!frontUrl || !backUrl || !selfieUrl || !cnicNumber) {
-      setSubmitError('Please fill all required fields and upload all documents.')
-      return
-    }
-    if (!isValidCnic(cnicNumber)) {
-      setSubmitError('CNIC format must be XXXXX-XXXXXXX-X (e.g. 42201-1234567-8).')
-      return
-    }
-    if (selectedTier === 'enhanced') {
+    if (selectedTier === 'basic') {
+      // Level 1 collects CNIC details + document photos.
+      if (!frontUrl || !backUrl || !selfieUrl || !cnicNumber) {
+        setSubmitError('Please fill all required fields and upload all documents.')
+        return
+      }
+      if (!isValidCnic(cnicNumber)) {
+        setSubmitError('CNIC format must be XXXXX-XXXXXXX-X (e.g. 42201-1234567-8).')
+        return
+      }
+    } else {
+      // Level 2 reuses approved Level 1 identity docs — only video + socials.
       const validLinks = socialLinks.filter((l) => l.url.trim())
       if (validLinks.length < 2) {
         setSubmitError('Enhanced KYC requires at least 2 social media profiles.')
@@ -317,10 +320,8 @@ export default function KycPage() {
       const validLinks = socialLinks.filter((l) => l.url.trim())
       await kycApi.submit({
         tier: selectedTier,
-        cnicNumber,
-        frontUrl,
-        backUrl,
-        selfieUrl,
+        // Level 1 only — Level 2 reuses the already-approved identity documents.
+        ...(selectedTier === 'basic' ? { cnicNumber, frontUrl, backUrl, selfieUrl } : {}),
         ...(selectedTier === 'enhanced' && videoUrl ? { videoUrl } : {}),
         ...(selectedTier === 'enhanced' && validLinks.length > 0 ? { socialLinks: validLinks } : {}),
       })
@@ -521,10 +522,26 @@ export default function KycPage() {
             <p className="text-xs text-text-muted">Review typically takes 1–2 business days. Ensure photos are well-lit and all text is readable.</p>
           </div>
 
-          <h2 className="text-base font-semibold text-text-primary">Choose Verification Level</h2>
+          <h2 className="text-base font-semibold text-text-primary">Start with Level 1</h2>
+          {/* Level 2 (Enhanced) is an upgrade that reuses your approved Level 1
+              documents, so it only unlocks after Basic KYC is approved. */}
           <div className="grid sm:grid-cols-2 gap-4">
             <TierCard tier="basic" onSelect={() => handleSelectTier('basic')} />
-            <TierCard tier="enhanced" onSelect={() => handleSelectTier('enhanced')} />
+            <div className="bg-surface shadow-card rounded-xl border-2 border-dashed border-border p-6 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/10">
+                  <ShieldPlus size={20} className="text-amber-500" aria-hidden />
+                </div>
+                <Badge variant="default" size="sm">Level 2</Badge>
+              </div>
+              <h3 className="text-base font-bold text-text-primary mb-3">Enhanced KYC</h3>
+              <ul className="text-sm text-text-secondary space-y-2 mb-4 flex-1">
+                <li className="flex gap-2"><span className="text-text-muted">+</span> Short video verification</li>
+                <li className="flex gap-2"><span className="text-text-muted">+</span> 2+ social media profiles</li>
+                <li className="flex gap-2"><span className="text-text-muted">+</span> Daily limit: PKR 200,000</li>
+              </ul>
+              <p className="text-xs text-text-muted">Unlocks after your Level 1 verification is approved — your CNIC and selfie are reused automatically.</p>
+            </div>
           </div>
         </div>
       )}
@@ -543,56 +560,70 @@ export default function KycPage() {
             </h2>
           </div>
 
-          {/* CNIC Number */}
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-1">CNIC Number</label>
-            <input
-              type="text"
-              value={cnicNumber}
-              onChange={(e) => setCnicNumber(formatCnic(e.target.value))}
-              placeholder="XXXXX-XXXXXXX-X"
-              maxLength={15}
-              className={`w-full px-4 py-3 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary ${
-                cnicNumber && !isValidCnic(cnicNumber) ? 'border-danger/60 bg-danger/5' : 'border-border'
-              }`}
-            />
-            {cnicNumber && !isValidCnic(cnicNumber) ? (
-              <p className="text-xs text-danger mt-1">Format: XXXXX-XXXXXXX-X (e.g. 42201-1234567-8)</p>
-            ) : (
-              <p className="text-xs text-text-muted mt-1">Your CNIC number will be securely hashed on our servers.</p>
-            )}
-          </div>
+          {/* Level 1 (Basic) — CNIC details + document photos. Level 2 reuses
+              the already-approved Level 1 documents, so these are not shown. */}
+          {selectedTier === 'basic' && (
+            <>
+              {/* CNIC Number */}
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">CNIC Number</label>
+                <input
+                  type="text"
+                  value={cnicNumber}
+                  onChange={(e) => setCnicNumber(formatCnic(e.target.value))}
+                  placeholder="XXXXX-XXXXXXX-X"
+                  maxLength={15}
+                  className={`w-full px-4 py-3 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary ${
+                    cnicNumber && !isValidCnic(cnicNumber) ? 'border-danger/60 bg-danger/5' : 'border-border'
+                  }`}
+                />
+                {cnicNumber && !isValidCnic(cnicNumber) ? (
+                  <p className="text-xs text-danger mt-1">Format: XXXXX-XXXXXXX-X (e.g. 42201-1234567-8)</p>
+                ) : (
+                  <p className="text-xs text-text-muted mt-1">Your CNIC number will be securely hashed on our servers.</p>
+                )}
+              </div>
 
-          {/* Document uploads */}
-          <FileUploadField
-            label="CNIC Front"
-            hint="Clear photo of the front side of your CNIC"
-            uploadType="kyc-front"
-            onUploaded={setFrontUrl}
-          />
+              {/* Document uploads */}
+              <FileUploadField
+                label="CNIC Front"
+                hint="Clear photo of the front side of your CNIC"
+                uploadType="kyc-front"
+                onUploaded={setFrontUrl}
+              />
 
-          <FileUploadField
-            label="CNIC Back"
-            hint="Clear photo of the back side of your CNIC"
-            uploadType="kyc-back"
-            onUploaded={setBackUrl}
-          />
+              <FileUploadField
+                label="CNIC Back"
+                hint="Clear photo of the back side of your CNIC"
+                uploadType="kyc-back"
+                onUploaded={setBackUrl}
+              />
 
-          <FileUploadField
-            label="Selfie"
-            hint="A clear, well-lit selfie of your face"
-            uploadType="kyc-selfie"
-            onUploaded={setSelfieUrl}
-          />
+              <FileUploadField
+                label="Selfie"
+                hint="A clear, well-lit selfie of your face"
+                uploadType="kyc-selfie"
+                onUploaded={setSelfieUrl}
+              />
+            </>
+          )}
 
-          {/* Enhanced: short verification video */}
+          {/* Enhanced: reuse-notice + short verification video */}
           {selectedTier === 'enhanced' && (
-            <FileUploadField
-              label="Video Verification"
-              hint="A short video of yourself (e.g. say your name and today's date)"
-              uploadType="kyc-video"
-              onUploaded={setVideoUrl}
-            />
+            <>
+              <div className="bg-success/5 border border-success/20 rounded-lg px-4 py-3 flex items-start gap-2">
+                <span className="text-success mt-0.5">✓</span>
+                <p className="text-xs text-text-secondary">
+                  Your CNIC and selfie from Level 1 are already verified and reused automatically. Level 2 only needs a short video and your social profiles.
+                </p>
+              </div>
+              <FileUploadField
+                label="Video Verification"
+                hint="A short video of yourself (e.g. say your name and today's date)"
+                uploadType="kyc-video"
+                onUploaded={setVideoUrl}
+              />
+            </>
           )}
 
           {/* Enhanced: social links */}
@@ -641,16 +672,15 @@ export default function KycPage() {
           <div className="bg-surface rounded-lg p-4">
             <p className="text-xs font-medium text-text-muted mb-3">Submission Checklist</p>
             <div className="space-y-2">
-              {[
+              {(selectedTier === 'enhanced' ? [
+                { label: 'At least 2 social links', done: socialLinks.filter((l) => l.url.trim()).length >= 2 },
+                { label: 'Verification video uploaded', done: !!videoUrl },
+              ] : [
                 { label: 'CNIC number entered', done: !!cnicNumber },
                 { label: 'CNIC front uploaded', done: !!frontUrl },
                 { label: 'CNIC back uploaded', done: !!backUrl },
                 { label: 'Selfie uploaded', done: !!selfieUrl },
-                ...(selectedTier === 'enhanced' ? [
-                  { label: 'At least 2 social links', done: socialLinks.filter((l) => l.url.trim()).length >= 2 },
-                  { label: 'Verification video uploaded', done: !!videoUrl },
-                ] : []),
-              ].map((item, i) => (
+              ]).map((item, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${item.done ? 'bg-success text-white' : 'border border-border'}`}>
                     {item.done && (

@@ -61,6 +61,22 @@ export const PK_BANK_PILLS = [
 
 export const ALL_PAYMENT_METHODS = [...PK_MOBILE_METHODS, ...PK_BANK_PILLS]
 
+// Detects opaque internal identifiers (e.g. Prisma CUIDs like
+// "cmpjsaw550046b7ohzs6fkfvl") that must never be shown to users in listing
+// cards. These look like a long lowercase-alphanumeric run with no spaces.
+export function isOpaqueId(value: string): boolean {
+  const v = value.trim()
+  if (v.includes(' ')) return false
+  // CUID / CUID2 style: starts with a letter, 20+ chars, only [a-z0-9]
+  return /^[a-z][a-z0-9]{19,}$/.test(v)
+}
+
+// Filters a list of payment-method labels down to human-readable names,
+// dropping any opaque IDs so raw identifiers never leak into the UI.
+export function cleanPaymentLabels<T extends { label: string }>(methods: T[]): T[] {
+  return methods.filter((m) => m.label && !isOpaqueId(m.label))
+}
+
 // Returns a Tailwind className string for a payment method badge chip
 export function getPaymentMethodColor(method: string): string {
   if (method === 'JazzCash') return 'bg-orange-100 text-orange-700'

@@ -7,7 +7,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
@@ -84,7 +84,8 @@ function memberSince(dateStr: string | null | undefined): string {
 }
 
 function AdRow({ ad }: { ad: MarketplaceAd }) {
-  const methods = ad.paymentMethods ?? []
+  // Never render opaque internal IDs as payment-method chips.
+  const methods = (ad.paymentMethods ?? []).filter((pm) => !isOpaqueId(pm))
   const stats = ad.seller?.tradeStats
   const rating = parseFloat(stats?.avgRating ?? '0')
   const completedTrades = stats?.completedTrades ?? 0
@@ -284,6 +285,9 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
   if (!trades.length) return null
   // Duplicate list for seamless infinite scroll
   const items = [...trades, ...trades]
+  // Constant, readable scroll speed regardless of trade count (~6s per trade) —
+  // shared with the CTM ticker so both markets scroll at the same pace.
+  const marqueeDuration = Math.max(trades.length * 6, 30)
   return (
     <div className="relative bg-surface border border-border rounded-xl overflow-hidden mb-4">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-surface-alt">
@@ -291,7 +295,7 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
         <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Recent Trades</span>
       </div>
       <div className="flex overflow-hidden">
-        <div className="flex gap-3 px-3 py-2 animate-[marquee_40s_linear_infinite] whitespace-nowrap">
+        <div className="flex gap-3 px-3 py-2 whitespace-nowrap" style={{ animation: `marquee ${marqueeDuration}s linear infinite` }}>
           {items.map((t, i) => (
             <span
               key={`${t.id}-${i}`}
@@ -315,7 +319,7 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
 
 interface MarketStats {
   totalListings: number
-  todayTrades: number
+  totalTrades: number
   usdtRate: number | null
 }
 
@@ -329,7 +333,7 @@ function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
       <span className="w-px h-3 bg-border hidden sm:block" />
       <span className="flex items-center gap-1">
         <CheckCircle2 size={11} className="text-success" />
-        <span className="font-semibold text-success">{stats.todayTrades}</span> trades completed today
+        <span className="font-semibold text-success">{stats.totalTrades}</span> trades completed
       </span>
       {stats.usdtRate !== null && (
         <>
@@ -431,7 +435,7 @@ export default function MarketplacePage() {
         const rate = rateRes.status === 'fulfilled' ? rateRes.value.rate : null
         setMarketStats({
           totalListings: total,
-          todayTrades: s.todayTrades ?? 0,
+          totalTrades: s.totalTrades ?? 0,
           usdtRate: rate,
         })
         if (rate) {

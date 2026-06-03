@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPaymentLabels } from '@/lib/pkPaymentMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
@@ -154,9 +154,11 @@ export default function BrowseListingsPage() {
           {listings.map((l) => {
             const rating = parseFloat(l.merchantProfile.ctmAvgRating)
             const trades = l.merchantProfile.completedCtmTrades
-            const methods = l.resolvedPaymentMethods?.length
-              ? l.resolvedPaymentMethods
-              : (l.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm }))
+            const methods = cleanPaymentLabels(
+              l.resolvedPaymentMethods?.length
+                ? l.resolvedPaymentMethods
+                : (l.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm })),
+            )
 
             return (
               <div key={l.id} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">

@@ -53,12 +53,13 @@ export async function ctmListingRoutes(app: FastifyInstance) {
   app.get('/ctm/stats', async (_req, reply) => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const [activeListings, todayTrades, totalTokens] = await Promise.all([
+    const [activeListings, todayTrades, totalTrades, totalTokens] = await Promise.all([
       db.ctmListing.count({ where: { status: 'active' } }),
       db.ctmTrade.count({ where: { status: 'completed', completedAt: { gte: today } } }),
+      db.ctmTrade.count({ where: { status: 'completed' } }),
       db.ctmToken.count({ where: { status: 'approved' } }),
     ])
-    return reply.send({ success: true, data: { activeListings, todayTrades, totalTokens } })
+    return reply.send({ success: true, data: { activeListings, todayTrades, totalTrades, totalTokens } })
   })
 
   // GET /ctm/recent-trades — recent completed trades feed
