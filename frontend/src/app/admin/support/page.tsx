@@ -3,6 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiRequest } from '@/lib/api'
 import { fmtDateTime } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
+import { useSSE } from '@/hooks/useSSE'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
@@ -55,8 +56,19 @@ export default function AdminSupportPage() {
     setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }), 0)
   }, [])
 
-  usePolling(fetchConversations, 8_000)
-  usePolling(async () => { if (activeId) await fetchThread(activeId) }, 5_000, activeId !== null)
+  // SSE is primary; polling is a slower fallback in case a push is missed.
+  usePolling(fetchConversations, 15_000)
+  usePolling(async () => { if (activeId) await fetchThread(activeId) }, 12_000, activeId !== null)
+
+  // Instant inbox updates when a user sends a message
+  useSSE(
+    useCallback((event: { type: string; payload?: unknown }) => {
+      if (event.type !== 'support_message') return
+      fetchConversations()
+      const convId = (event.payload as { conversationId?: string } | undefined)?.conversationId
+      if (activeId && convId === activeId) fetchThread(activeId)
+    }, [fetchConversations, fetchThread, activeId]),
+  )
 
   function openConversation(id: string) {
     setActiveId(id)

@@ -4,6 +4,22 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { Errors } from '../lib/errors'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { sseEmit } from '../lib/sse'
+import { notify } from '../lib/notify'
+
+// Push a support-chat SSE event to every connected admin / super-admin so the
+// admin inbox updates instantly when a user sends a message.
+async function emitToAdmins(data: unknown): Promise<void> {
+  try {
+    const admins = await db.user.findMany({
+      where: { role: { in: ['admin', 'super_admin'] } },
+      select: { id: true },
+    })
+    for (const a of admins) sseEmit(a.id, data)
+  } catch {
+    /* best-effort */
+  }
+}
 
 const MAX_BODY = 2000
 
@@ -75,6 +91,12 @@ export async function supportRoutes(app: FastifyInstance) {
     await db.supportConversation.update({
       where: { id: conversation.id },
       data: { lastMessageAt: new Date(), unreadByAdmin: true, status: 'open' },
+    })
+
+    // Instant push to any admin viewing the inbox (SSE)
+    void emitToAdmins({
+      type: 'support_message',
+      payload: { scope: 'admin', conversationId: conversation.id, sender: 'user' },
     })
 
     // Notify admins in the admin panel (only on the first unread message of a thread)
@@ -202,6 +224,25 @@ export async function supportRoutes(app: FastifyInstance) {
         where: { id },
         data: { lastMessageAt: new Date(), unreadByUser: true, unreadByAdmin: false },
       })
+
+      // Instant push to the user's chat widget (SSE)
+      sseEmit(conversation.userId, {
+        type: 'support_message',
+        payload: {
+          scope: 'user',
+          conversationId: id,
+          message: { id: message.id, sender: 'admin', body: message.body, createdAt: message.createdAt },
+        },
+      })
+
+      // Persistent bell notification + web-push so the user notices even with the widget closed
+      notify(
+        conversation.userId,
+        'support',
+        'New reply from Support',
+        body.slice(0, 140),
+        { conversationId: id },
+      )
 
       return reply.send({
         success: true,
