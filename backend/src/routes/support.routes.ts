@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { Errors } from '../lib/errors'
+import { createAdminNotif } from '../services/adminNotification.service'
 
 const MAX_BODY = 2000
 
@@ -64,6 +65,9 @@ export async function supportRoutes(app: FastifyInstance) {
     if (!conversation) {
       conversation = await db.supportConversation.create({ data: { userId } })
     }
+    // Was this conversation already awaiting an admin reply? If so, don't fire a
+    // second admin notification for rapid follow-up messages.
+    const alreadyUnread = conversation.unreadByAdmin
 
     const message = await db.supportMessage.create({
       data: { conversationId: conversation.id, sender: 'user', senderId: userId, body },
@@ -72,6 +76,22 @@ export async function supportRoutes(app: FastifyInstance) {
       where: { id: conversation.id },
       data: { lastMessageAt: new Date(), unreadByAdmin: true, status: 'open' },
     })
+
+    // Notify admins in the admin panel (only on the first unread message of a thread)
+    if (!alreadyUnread) {
+      const sender = await db.user.findUnique({
+        where: { id: userId },
+        select: { fullName: true, username: true, email: true },
+      })
+      const name = sender ? displayName(sender) : 'A user'
+      void createAdminNotif({
+        category: 'SYSTEM',
+        title: 'New support message',
+        body: `${name}: ${body.slice(0, 120)}`,
+        href: '/admin/support',
+        metadata: { userId, conversationId: conversation.id },
+      })
+    }
 
     return reply.send({
       success: true,

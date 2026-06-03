@@ -1,14 +1,31 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { walletApi, marketplaceApi, apiRequest } from '@/lib/api'
+import { marketplaceApi, apiRequest } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Gift } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FeeSchedule {
-  withdrawalFees?: Record<string, Record<string, string>>
+type WithdrawalFeeMap = Record<string, Record<string, string>>
+
+// Backend /wallet/fee-schedule returns a flat config array. Withdrawal (escrow)
+// fees live under keys shaped `network_fee_<COIN>_<NETWORK>` with the fee amount
+// (in that coin) as the value. Transform them into a coin → network → label map.
+function buildWithdrawalFees(configs: Array<{ key: string; value: string }>): WithdrawalFeeMap | null {
+  const map: WithdrawalFeeMap = {}
+  for (const { key, value } of configs) {
+    if (!key.startsWith('network_fee_')) continue
+    const rest = key.slice('network_fee_'.length)
+    const sep = rest.indexOf('_')
+    if (sep <= 0) continue
+    const coin = rest.slice(0, sep)
+    const network = rest.slice(sep + 1)
+    if (!coin || !network || !value) continue
+    map[coin] = map[coin] ?? {}
+    map[coin][network] = `${value} ${coin}`
+  }
+  return Object.keys(map).length > 0 ? map : null
 }
 
 interface PlatformConfig {
@@ -57,23 +74,20 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function FeesPage() {
-  const [feeSchedule, setFeeSchedule] = useState<FeeSchedule | null>(null)
+  const [withdrawalFeesCfg, setWithdrawalFeesCfg] = useState<WithdrawalFeeMap | null>(null)
   const [config, setConfig] = useState<PlatformConfig | null>(null)
   const [gasChains, setGasChains] = useState<GasChain[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.allSettled([
-      walletApi.getTransactions({ limit: 1 }).catch(() => null),
-      marketplaceApi.getConfig(),
-    ]).then(([, cfgRes]) => {
-      if (cfgRes.status === 'fulfilled') setConfig(cfgRes.value as PlatformConfig)
-    }).finally(() => setLoading(false))
+    marketplaceApi.getConfig()
+      .then((cfg) => setConfig(cfg as PlatformConfig))
+      .catch(() => {})
+      .finally(() => setLoading(false))
 
-    // Try to get fee schedule
-    fetch('/api/v1/wallet/fee-schedule', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d) setFeeSchedule(d as FeeSchedule) })
+    // Real escrow withdrawal fees from platform config (network_fee_* keys)
+    apiRequest<Array<{ key: string; value: string }>>('/wallet/fee-schedule')
+      .then((configs) => { if (Array.isArray(configs)) setWithdrawalFeesCfg(buildWithdrawalFees(configs)) })
       .catch(() => {})
 
     // Per-network gas platform service fees (real config)
@@ -91,7 +105,7 @@ export default function FeesPage() {
     enhanced: config?.kycLimitEnhancedDaily ?? 200000,
   }
 
-  const withdrawalFees = feeSchedule?.withdrawalFees ?? {
+  const withdrawalFees = withdrawalFeesCfg ?? {
     USDT: { TRC20: '1 USDT', ERC20: '5 USDT', BEP20: '0.5 USDT' },
     BTC: { Bitcoin: '0.0001 BTC' },
     ETH: { ERC20: '0.003 ETH' },
