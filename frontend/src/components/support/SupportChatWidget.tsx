@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import { MessageCircle, X, Send } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { useSSE } from '@/hooks/useSSE'
 import { supportChatApi, SUPPORT_CHAT_OPEN_EVENT, type SupportMessage } from '@/lib/supportChat'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 
@@ -33,13 +34,25 @@ export default function SupportChatWidget() {
     return () => window.removeEventListener(SUPPORT_CHAT_OPEN_EVENT, handler)
   }, [])
 
-  // Poll: every 5s while open, every 30s while closed (to surface the unread dot)
+  // Instant delivery: when the backend pushes a support message over SSE, pull
+  // the latest thread and surface the unread dot if the widget is closed.
+  useSSE(
+    useCallback((event: { type: string; payload?: unknown }) => {
+      if (event.type !== 'support_message') return
+      const scope = (event.payload as { scope?: string } | undefined)?.scope
+      if (scope && scope !== 'user') return
+      refresh()
+      if (!open) setUnread(true)
+    }, [refresh, open]),
+  )
+
+  // Fallback poll (SSE is primary): every 20s, keeps the dot fresh if a push is missed
   useEffect(() => {
     if (!isAuthenticated) return
     refresh()
-    const interval = setInterval(refresh, open ? 5_000 : 30_000)
+    const interval = setInterval(refresh, 20_000)
     return () => clearInterval(interval)
-  }, [isAuthenticated, open, refresh])
+  }, [isAuthenticated, refresh])
 
   // Mark read + scroll to bottom when opened or messages change
   useEffect(() => {
