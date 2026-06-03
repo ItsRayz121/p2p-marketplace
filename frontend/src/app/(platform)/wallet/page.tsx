@@ -23,7 +23,7 @@ import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAccount } from 'wagmi'
-import { Wallet, ArrowUpDown, Lock, Clock } from 'lucide-react'
+import { ArrowUpDown, Lock, Clock } from 'lucide-react'
 import { toast } from '@/lib/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1350,11 +1350,14 @@ export default function WalletPage() {
         <p className="text-xs text-text-muted mb-3">Held in your RupChain account. Used for withdrawals, listings, and merchant collateral. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
         {(() => {
           const displayBalances = balances.filter((b) => SUPPORTED_PLATFORM_NETWORKS.has(b.network ?? ''))
-          return displayBalances.length === 0 ? (
-            <EmptyState icon={Wallet} title="No balances" description="Make a deposit to get started" />
-          ) : (
+          // Always show at least the primary USDT wallet, even at zero balance, so
+          // the wallet never looks broken/missing. Users see their wallet exists,
+          // the balance is empty, and they can deposit right away.
+          const DEFAULT_BALANCE: WalletBalance = { coin: 'USDT', network: 'BEP20', available: '0', locked: '0', total: '0' }
+          const cards = displayBalances.length === 0 ? [DEFAULT_BALANCE] : displayBalances
+          return (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {displayBalances.map((b) => {
+              {cards.map((b) => {
                 const coinColor: Record<string, { bg: string; text: string }> = {
                   USDT: { bg: 'bg-emerald-500/10', text: 'text-emerald-600' },
                   BNB:  { bg: 'bg-yellow-500/10',  text: 'text-yellow-600'  },

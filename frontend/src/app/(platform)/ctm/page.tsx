@@ -9,9 +9,9 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
-import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPaymentLabels } from '@/lib/pkPaymentMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
-import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck, Coins } from 'lucide-react'
+import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck } from 'lucide-react'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const PAGE_SIZE = 20
@@ -66,6 +66,7 @@ interface Listing {
 interface CtmStats {
   activeListings: number
   todayTrades: number
+  totalTrades: number
   totalTokens: number
 }
 
@@ -130,7 +131,7 @@ function CtmStatsStrip({ stats, total }: { stats: CtmStats; total: number }) {
       <span className="w-px h-3 bg-border hidden sm:block" />
       <span className="flex items-center gap-1">
         <CheckCircle2 size={11} className="text-success" />
-        <span className="font-semibold text-success">{stats.todayTrades}</span> trades completed today
+        <span className="font-semibold text-success">{stats.totalTrades}</span> trades completed
       </span>
       <span className="w-px h-3 bg-border hidden sm:block" />
       <span className="flex items-center gap-1">
@@ -154,6 +155,11 @@ function CtmStatsStrip({ stats, total }: { stats: CtmStats; total: number }) {
 function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
   if (!trades.length) return null
   const items = [...trades, ...trades]
+  // Keep a constant, readable scroll speed regardless of how many trades there
+  // are: the marquee shifts by one full copy of the list (translateX -50%), so
+  // tying the duration to the item count fixes the per-trade pace (~6s each).
+  // This keeps the CTM ticker in sync with the USDT Marketplace ticker.
+  const marqueeDuration = Math.max(trades.length * 6, 30)
   return (
     <div className="relative bg-surface border border-border rounded-xl overflow-hidden mb-4">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-surface-alt">
@@ -161,7 +167,7 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
         <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Recent Trades</span>
       </div>
       <div className="flex overflow-hidden">
-        <div className="flex gap-3 px-3 py-2 animate-[marquee_40s_linear_infinite] whitespace-nowrap">
+        <div className="flex gap-3 px-3 py-2 whitespace-nowrap" style={{ animation: `marquee ${marqueeDuration}s linear infinite` }}>
           {items.map((t, i) => (
             <span
               key={`${t.id}-${i}`}
@@ -214,9 +220,11 @@ function ListingRow({
     username: user.username,
   })
 
-  const methods = listing.resolvedPaymentMethods?.length
-    ? listing.resolvedPaymentMethods
-    : (listing.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm }))
+  const methods = cleanPaymentLabels(
+    listing.resolvedPaymentMethods?.length
+      ? listing.resolvedPaymentMethods
+      : (listing.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm })),
+  )
 
   const isSell    = listing.side === 'sell'
   const accentCls = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
@@ -237,11 +245,11 @@ function ListingRow({
   const openProfile = () => onViewMerchant(user.id)
 
   return (
-    <div className={`bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+    <div className={`bg-surface shadow-card border border-border rounded-xl p-3 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
 
         {/* ── 1. TRADER IDENTITY (first & most prominent) ── */}
-        <div className="sm:w-52 flex-shrink-0">
+        <div className="sm:w-48 flex-shrink-0">
           {/* Avatar + name row */}
           <div className="flex items-center gap-2 mb-1.5">
             <button type="button" onClick={openProfile} className="flex-shrink-0 cursor-pointer">
@@ -321,19 +329,17 @@ function ListingRow({
             </span>
           </div>
 
-          {/* Token badges — distinguish CTM listings from USDT / Gas */}
-          <div className="flex items-center gap-1 flex-wrap mb-1">
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-pink-600 bg-pink-500/10 px-1.5 py-0.5 rounded-full">
-              <Coins size={9} />
-              Community Token
-            </span>
-            {listing.token.communityVerified && (
+          {/* "Community Token" badge intentionally omitted — users are already
+              inside the Community Token Market, so it's redundant. Keep only the
+              Verified badge when applicable. */}
+          {listing.token.communityVerified && (
+            <div className="flex items-center gap-1 flex-wrap mb-1">
               <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-success bg-success/10 px-1.5 py-0.5 rounded-full">
                 <BadgeCheck size={9} />
                 Verified
               </span>
-            )}
-          </div>
+            </div>
+          )}
 
           <p className={`text-xl font-bold ${priceCls}`}>PKR {price.toLocaleString()}</p>
           <p className="text-xs text-text-muted">per {sym}</p>
@@ -355,7 +361,7 @@ function ListingRow({
         </div>
 
         {/* ── 3. ORDER LIMIT (tokens + PKR equivalent) ── */}
-        <div className="sm:w-44 flex-shrink-0">
+        <div className="sm:w-40 flex-shrink-0">
           <p className="text-xs text-text-muted">Order Limit</p>
           <p className="text-sm font-medium text-text-primary">
             {minTok.toLocaleString()} – {maxTok.toLocaleString()} {sym}
@@ -616,7 +622,7 @@ export default function CtmHomePage() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {listings.map((l) => (
             <ListingRow key={l.id} listing={l} marketRate={rateMap[l.token.symbol]} onViewMerchant={setProfileUserId} />
           ))}
