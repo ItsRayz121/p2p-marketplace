@@ -177,6 +177,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           readinessState,
           badge,
           capabilities,
+          platformFeeUsdt: c.platformFeeUsdt,
           tokenCount:     c.tokens.length,
         }
       }),

@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
-import { getPaymentMethodColor } from '@/lib/pkPaymentMethods'
+import { getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Clock, Zap, Heart } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
@@ -20,6 +21,7 @@ interface TraderProfile {
   username: string
   isFavorited: boolean
   fullName: string
+  avatarUrl: string | null
   role: string
   kycStatus: string
   kycLevel: string
@@ -55,6 +57,7 @@ interface TraderProfile {
     createdAt: string
     reviewerUsername: string
     reviewerFullName: string | null
+    reviewerAvatarUrl: string | null
     trade: { orderRef: string; coin: string }
   }>
   activeAds: Array<{
@@ -135,6 +138,25 @@ export default function TraderProfilePage() {
     if (profile) setFavorited(profile.isFavorited)
   }, [profile])
 
+  // SEO: keep the page title in sync. Must run on every render (even while
+  // loading) so it stays above the early returns below — moving it below them
+  // changes the hook count between renders and crashes with React error #310.
+  useEffect(() => {
+    if (profile) {
+      document.title = `${profile.fullName || profile.username} — Trader Profile | RupChain`
+    }
+  }, [profile])
+
+  // Deep-link support: marketplace cards link to #reviews / #trades. Scroll there
+  // once data has loaded (the section isn't in the DOM until then).
+  useEffect(() => {
+    if (!profile) return
+    const hash = window.location.hash.slice(1)
+    if (!hash) return
+    const el = document.getElementById(hash)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [profile])
+
   async function toggleFavorite() {
     if (!me) return
     setFavLoading(true)
@@ -196,18 +218,13 @@ export default function TraderProfilePage() {
 
   const onlineInfo = onlineStatus(profile.lastSeenAt)
 
-  // SEO: update page title
-  useEffect(() => {
-    document.title = `${profile.fullName || profile.username} — Trader Profile | RupChain`
-  }, [profile.fullName, profile.username])
-
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
       {/* Header */}
       <div className="bg-surface shadow-card rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-start gap-4">
           <div className="relative flex-shrink-0">
-            <UserAvatar name={profile.fullName || profile.username} size="xl" />
+            <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" />
             <span className={`absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-surface ${onlineInfo.dot}`} />
           </div>
           <div className="flex-1 min-w-0">
@@ -279,7 +296,7 @@ export default function TraderProfilePage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div id="trades" className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3 scroll-mt-20">
         {([
           { label: 'Trades', value: completedTrades },
           { label: 'Success Rate', value: `${successRate}%` },
@@ -332,7 +349,10 @@ export default function TraderProfilePage() {
                 </span>
                 <div className="flex flex-wrap gap-1">
                   {(ad.paymentMethods ?? []).slice(0, 2).map((pm) => (
-                    <span key={pm} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>{pm}</span>
+                    <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
+                      <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
+                      {pm}
+                    </span>
                   ))}
                 </div>
                 <Link href={`/trade/new?adId=${ad.id}`} className="ml-auto">
@@ -346,7 +366,7 @@ export default function TraderProfilePage() {
 
       {/* Ratings */}
       {profile.ratings.length > 0 && (
-        <div className="bg-surface shadow-card rounded-xl border border-border p-5">
+        <div id="reviews" className="bg-surface shadow-card rounded-xl border border-border p-5 scroll-mt-20">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-text-primary">
               Reviews <span className="text-text-muted font-normal">({totalReviews > 0 ? totalReviews : profile.ratings.length})</span>
@@ -369,7 +389,7 @@ export default function TraderProfilePage() {
               <div key={r.id} className="border-b border-border last:border-0 pb-4 last:pb-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2">
-                    <UserAvatar name={r.reviewerFullName || r.reviewerUsername} size="xs" />
+                    <UserAvatar name={r.reviewerFullName || r.reviewerUsername} avatarUrl={r.reviewerAvatarUrl} size="xs" />
                     <StarRow rating={r.rating} />
                     <span className="text-xs text-text-muted font-medium">{r.reviewerFullName || r.reviewerUsername}</span>
                   </div>

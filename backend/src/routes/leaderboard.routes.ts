@@ -249,18 +249,19 @@ export async function leaderboardRoutes(app: FastifyInstance) {
       total = count
     }
 
-    // Batch-enrich entries with fullName (all branches output userId)
+    // Batch-enrich entries with fullName + avatarUrl (all branches output userId)
     if (Array.isArray(entries) && entries.length > 0) {
       const userIds = (entries as { userId?: string }[]).map((e) => e.userId).filter(Boolean) as string[]
       if (userIds.length > 0) {
         const users = await db.user.findMany({
           where: { id: { in: userIds } },
-          select: { id: true, fullName: true },
+          select: { id: true, fullName: true, avatarUrl: true },
         })
-        const fullNameMap = new Map(users.map((u) => [u.id, u.fullName]))
+        const userMap = new Map(users.map((u) => [u.id, u]))
         entries = (entries as { userId?: string }[]).map((e) => ({
           ...e,
-          fullName: e.userId ? (fullNameMap.get(e.userId) ?? null) : null,
+          fullName: e.userId ? (userMap.get(e.userId)?.fullName ?? null) : null,
+          avatarUrl: e.userId ? (userMap.get(e.userId)?.avatarUrl ?? null) : null,
         }))
       }
     }

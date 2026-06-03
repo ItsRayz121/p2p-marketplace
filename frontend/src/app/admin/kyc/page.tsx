@@ -23,6 +23,8 @@ interface KycSubmission {
   frontUrl?: string
   backUrl?: string
   selfieUrl?: string
+  videoUrl?: string | null
+  socialLinks?: Array<{ platform: string; url: string }>
   createdAt: string
   reviewedAt?: string
 }
@@ -298,10 +300,29 @@ export default function KycQueuePage() {
                       </a>
                     </div>
                   )}
+                  {selected.videoUrl && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-text-muted">Verification Video</p>
+                      <video src={selected.videoUrl} controls className="rounded-lg w-full aspect-video object-contain border border-border bg-surface" />
+                    </div>
+                  )}
                   {!selected.frontUrl && !selected.backUrl && !selected.selfieUrl && (
                     <p className="text-sm text-text-muted col-span-3">No documents uploaded</p>
                   )}
                 </div>
+                {selected.socialLinks && selected.socialLinks.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-text-muted mb-1">Social Profiles</p>
+                    <ul className="space-y-1">
+                      {selected.socialLinks.map((l, i) => (
+                        <li key={i} className="text-sm">
+                          <span className="text-text-muted">{l.platform}:</span>{' '}
+                          <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{l.url}</a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Notes for approval */}

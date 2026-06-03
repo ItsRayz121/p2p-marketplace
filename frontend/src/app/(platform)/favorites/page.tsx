@@ -5,6 +5,7 @@ import { apiRequest } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -16,6 +17,8 @@ interface FavoriteTrader {
   trader: {
     id: string
     username: string
+    fullName: string | null
+    avatarUrl: string | null
     lastSeenAt: string | null
     tradeStats: {
       badge: string
@@ -24,7 +27,7 @@ interface FavoriteTrader {
       avgRating: string | number
       avgResponseMinutes: number | null
     } | null
-    merchant: { id: string; status: string } | null
+    merchant: { id: string; status: string; businessName: string | null } | null
     ads: Array<{
       id: string
       side: string
@@ -100,13 +103,18 @@ export default function FavoritesPage() {
               ? (parseFloat(String(stats.completionRate)) * 100).toFixed(0)
               : null
             const rating = stats?.avgRating ? parseFloat(String(stats.avgRating)).toFixed(1) : null
+            const traderName = traderDisplayName({
+              fullName: trader.fullName,
+              merchantName: trader.merchant?.status === 'approved' ? trader.merchant.businessName : null,
+              username: trader.username,
+            })
 
             return (
               <div key={trader.id} className="bg-surface shadow-card border border-border rounded-xl p-4">
                 <div className="flex flex-wrap items-start gap-4">
                   {/* Avatar + online */}
                   <div className="relative flex-shrink-0">
-                    <UserAvatar name={trader.username} size="md" />
+                    <UserAvatar name={traderName} avatarUrl={trader.avatarUrl} size="md" />
                     <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-surface ${onlineDot(trader.lastSeenAt)}`} />
                   </div>
 
@@ -114,7 +122,7 @@ export default function FavoritesPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Link href={`/profile/${trader.username}`} className="font-semibold text-text-primary hover:underline">
-                        {trader.username}
+                        {traderName}
                       </Link>
                       <BadgeChip badge={badge} />
                       {trader.merchant?.status === 'approved' && (

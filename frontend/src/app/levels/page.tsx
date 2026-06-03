@@ -41,7 +41,7 @@ const KYC_TIERS: KycTier[] = [
     Icon: ShieldCheck,
     accent: 'text-blue-500',
     bg: 'bg-blue-500/10',
-    requirements: ['CNIC front & back photos', 'Selfie holding your CNIC'],
+    requirements: ['CNIC front & back photos', 'A simple selfie'],
     benefits: [
       'Unlocks trading, wallet, ads, Community Tokens & Gas',
       'Buy, sell and withdraw crypto',
@@ -55,7 +55,7 @@ const KYC_TIERS: KycTier[] = [
     Icon: ShieldPlus,
     accent: 'text-amber-500',
     bg: 'bg-amber-500/10',
-    requirements: ['Everything in Basic', '2 or more social media profile links'],
+    requirements: ['Everything in Basic', '2 or more social media profile links', 'Short video verification'],
     benefits: [
       'Daily limit raised to PKR 200,000',
       'Higher Trust Score & faster badge progression',

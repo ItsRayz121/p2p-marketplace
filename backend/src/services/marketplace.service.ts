@@ -30,6 +30,7 @@ export interface SellerInfo {
   id: string
   username: string
   fullName: string | null
+  avatarUrl: string | null
   badge: string
   lastSeenAt: string | null
   joinedAt: string | null
@@ -281,6 +282,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
       id: true,
       username: true,
       fullName: true,
+      avatarUrl: true,
       createdAt: true,
       lastSeenAt: true,
       tradeStats: {
@@ -345,6 +347,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
         id: ad.user.id,
         username: ad.user.username,
         fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
+        avatarUrl: (ad.user as { avatarUrl?: string | null }).avatarUrl ?? null,
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
@@ -479,6 +482,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       id: true,
       username: true,
       fullName: true,
+      avatarUrl: true,
       createdAt: true,
       lastSeenAt: true,
       tradeStats: {
@@ -554,6 +558,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
         id: ad.user.id,
         username: ad.user.username,
         fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
+        avatarUrl: (ad.user as { avatarUrl?: string | null }).avatarUrl ?? null,
         badge: stats?.badge ?? 'new',
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
@@ -649,14 +654,21 @@ export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
 
   const now = new Date()
 
-  // ── 1. USDT marketplace — average PKR price across active listings ──
-  const usdtAgg = await db.ad.aggregate({
+  // Only the latest 20 active/updated listings feed each average, so the rate
+  // reflects current market conditions rather than stale historical listings.
+  const RATE_SAMPLE_SIZE = 20
+
+  // ── 1. USDT marketplace — average PKR price across the latest 20 active listings ──
+  const usdtListings = await db.ad.findMany({
     where: { status: 'active', coin: 'USDT' },
-    _avg: { price: true },
-    _count: { _all: true },
+    orderBy: { updatedAt: 'desc' },
+    take: RATE_SAMPLE_SIZE,
+    select: { price: true },
   })
-  const usdtAvgPkr = usdtAgg._avg.price ? Number(usdtAgg._avg.price) : null
-  const usdtCount = usdtAgg._count._all
+  const usdtCount = usdtListings.length
+  const usdtAvgPkr = usdtCount > 0
+    ? usdtListings.reduce((sum, l) => sum + Number(l.price), 0) / usdtCount
+    : null
 
   // USD→PKR conversion factor: prefer the internal USDT listing average; fall
   // back to the cached rate:USD_PKR only when no active USDT listings exist.
@@ -667,18 +679,18 @@ export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
     usdPkr = !isNaN(parsed) && parsed > 0 ? parsed : null
   }
 
-  // ── 2. Community tokens — average price per unit (PKR) per token ──
-  const ctmGroups = await db.ctmListing.groupBy({
+  // ── 2. Community tokens — average price across the latest 20 active listings per token ──
+  // First find which tokens currently have active listings, then average each
+  // token's most-recently-updated 20 listings (not its entire history).
+  const ctmTokenIds = await db.ctmListing.groupBy({
     by: ['tokenId'],
     where: {
       status: 'active',
       OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
     },
-    _avg: { pricePerUnit: true },
-    _count: { _all: true },
   })
 
-  const tokenIds = ctmGroups.map((g) => g.tokenId)
+  const tokenIds = ctmTokenIds.map((g) => g.tokenId)
   const tokens = tokenIds.length
     ? await db.ctmToken.findMany({
         where: { id: { in: tokenIds } },
@@ -687,20 +699,36 @@ export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
     : []
   const tokenMap = new Map(tokens.map((t) => [t.id, t]))
 
-  const communityTokens: MarketRateToken[] = ctmGroups
-    .map((g): MarketRateToken | null => {
-      const meta = tokenMap.get(g.tokenId)
-      if (!meta) return null
-      const avgPkr = g._avg.pricePerUnit ? Number(g._avg.pricePerUnit) : null
-      return {
-        symbol: meta.symbol,
-        name: meta.name,
-        slug: meta.slug,
-        averagePkrRate: avgPkr,
-        averageUsdtRate: avgPkr !== null && usdPkr ? avgPkr / usdPkr : null,
-        listingCount: g._count._all,
-      }
-    })
+  const communityTokens: MarketRateToken[] = (
+    await Promise.all(
+      tokenIds.map(async (tokenId): Promise<MarketRateToken | null> => {
+        const meta = tokenMap.get(tokenId)
+        if (!meta) return null
+        const listings = await db.ctmListing.findMany({
+          where: {
+            tokenId,
+            status: 'active',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: RATE_SAMPLE_SIZE,
+          select: { pricePerUnit: true },
+        })
+        const count = listings.length
+        const avgPkr = count > 0
+          ? listings.reduce((sum, l) => sum + Number(l.pricePerUnit), 0) / count
+          : null
+        return {
+          symbol: meta.symbol,
+          name: meta.name,
+          slug: meta.slug,
+          averagePkrRate: avgPkr,
+          averageUsdtRate: avgPkr !== null && usdPkr ? avgPkr / usdPkr : null,
+          listingCount: count,
+        }
+      }),
+    )
+  )
     .filter((x): x is MarketRateToken => x !== null)
     .sort((a, b) => b.listingCount - a.listingCount)
 

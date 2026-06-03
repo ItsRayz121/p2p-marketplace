@@ -79,7 +79,12 @@ export async function ctmMerchantRoutes(app: FastifyInstance) {
     const profile = await db.ctmMerchantProfile.findUnique({
       where: { userId },
       include: {
-        user: { select: { id: true, username: true } },
+        user: {
+          select: {
+            id: true, username: true, fullName: true, avatarUrl: true,
+            merchant: { select: { businessName: true, status: true } },
+          },
+        },
         listings: {
           where: { status: 'active' },
           take: 10,
@@ -99,19 +104,24 @@ export async function ctmMerchantRoutes(app: FastifyInstance) {
     const raterIds = [...new Set(ratings.map((r) => r.ratedByUserId))]
     const raters = await db.user.findMany({
       where: { id: { in: raterIds } },
-      select: { id: true, username: true },
+      select: { id: true, username: true, fullName: true, avatarUrl: true },
     })
-    const raterMap = new Map(raters.map((u) => [u.id, u.username]))
+    const raterMap = new Map(raters.map((u) => [u.id, u]))
 
-    const reviews = ratings.map((r) => ({
-      id: r.id,
-      rating: r.rating,
-      comment: r.comment,
-      tags: r.tags,
-      createdAt: r.createdAt,
-      raterUsername: raterMap.get(r.ratedByUserId) ?? 'anonymous',
-      tradeRef: r.trade?.tradeRef ?? null,
-    }))
+    const reviews = ratings.map((r) => {
+      const rater = raterMap.get(r.ratedByUserId)
+      return {
+        id: r.id,
+        rating: r.rating,
+        comment: r.comment,
+        tags: r.tags,
+        createdAt: r.createdAt,
+        raterUsername: rater?.username ?? 'anonymous',
+        raterFullName: rater?.fullName ?? null,
+        raterAvatarUrl: rater?.avatarUrl ?? null,
+        tradeRef: r.trade?.tradeRef ?? null,
+      }
+    })
 
     return reply.send({ success: true, data: { ...profile, reviews } })
   })

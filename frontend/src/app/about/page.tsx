@@ -1,4 +1,5 @@
 import { CreditCard, Coins, ShieldCheck, BadgeDollarSign, TrendingUp, Fuel, CheckCircle } from 'lucide-react'
+import { supportMailto } from '@/lib/contact'
 
 const FEATURES = [
   { Icon: ShieldCheck,     title: 'Trade Protection',      desc: 'All trades are monitored by RupChain. Crypto is only released after the seller confirms payment receipt.' },
@@ -78,20 +79,16 @@ export default function AboutPage() {
         <p className="text-sm text-text-muted">Have questions or need support? We're here to help.</p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <a
-            href="mailto:support@rupchain.pk"
+            href={supportMailto('RupChain Support')}
             className="inline-flex items-center justify-center gap-2 bg-primary text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Email Support
           </a>
-          <a
-            href="https://wa.me/+923000000000"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 bg-surface border border-border text-text-primary px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-surface-alt transition-colors"
-          >
-            WhatsApp Support
-          </a>
+          <span className="inline-flex items-center justify-center gap-2 bg-surface border border-border text-text-muted px-4 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed">
+            Telegram — Coming soon
+          </span>
         </div>
+        <p className="text-xs text-text-muted">More channels coming soon: WhatsApp · Telegram · Facebook · X · Instagram</p>
       </section>
     </div>
   )

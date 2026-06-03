@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { traderDisplayName } from '@/lib/traderName'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import type { MarketplaceAd } from '@/lib/api'
 
@@ -19,15 +20,16 @@ function AdCard({ ad }: { ad: MarketplaceAd }) {
   const completionPct = stats?.completionRate ? parseFloat(stats.completionRate) * 100 : null
   const completedTrades = stats?.completedTrades ?? 0
   const rating = stats?.avgRating ? parseFloat(stats.avgRating) : 0
+  const sellerName = traderDisplayName({ fullName: seller?.fullName, merchantName: seller?.merchantName, username: seller?.username })
 
   return (
     <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <UserAvatar name={seller?.fullName || seller?.username || 'Anonymous'} size="sm" />
+            <UserAvatar name={sellerName} avatarUrl={seller?.avatarUrl} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-text-primary truncate">{seller?.fullName || seller?.username || 'Anonymous'}</p>
+              <p className="text-sm font-semibold text-text-primary truncate">{sellerName}</p>
               <div className="flex items-center gap-2 text-xs mt-0.5">
                 {completionPct !== null && (
                   <span className={`font-bold ${completionColor(completionPct)}`}>{completionPct.toFixed(0)}%</span>

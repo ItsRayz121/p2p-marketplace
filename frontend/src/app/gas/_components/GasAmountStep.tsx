@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader } from './GasPrimitives'
+import { supportMailto } from '@/lib/contact'
 
 export function GasAmountStep() {
   const {
@@ -96,7 +97,7 @@ export function GasAmountStep() {
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           Max order value: <span className="font-bold ml-1">${maxUsd} USDT</span> per transaction
         </div>
-        <a href="mailto:support@rupchain.pk?subject=Gas Fee Large Order" className="underline hover:no-underline whitespace-nowrap flex-shrink-0">
+        <a href={supportMailto('Gas Fee Large Order')} className="underline hover:no-underline whitespace-nowrap flex-shrink-0">
           Need more?
         </a>
       </div>

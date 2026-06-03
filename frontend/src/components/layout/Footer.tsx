@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
+import { SUPPORT_EMAIL } from '@/lib/contact'
 
 export default function Footer() {
   return (
@@ -17,7 +18,7 @@ export default function Footer() {
               Pakistan&apos;s trusted P2P crypto marketplace. Buy and sell USDT safely with escrow protection.
             </p>
             <p className="text-xs text-text-muted mt-3">
-              Registered in Pakistan · support@rupchain.pk
+              Registered in Pakistan · {SUPPORT_EMAIL}
             </p>
           </div>
 
@@ -39,7 +40,7 @@ export default function Footer() {
               <FooterLink href="/register">Create Account</FooterLink>
               <FooterLink href="/login">Sign In</FooterLink>
               <FooterLink href="/kyc">KYC Verification</FooterLink>
-              <FooterLink href="/referral">Referral — Earn 10 BKR</FooterLink>
+              <FooterLink href="/referral">Referral Program</FooterLink>
               <FooterLink href="/leaderboard">Leaderboard</FooterLink>
               <FooterLink href="/levels">Trader Levels & Badges</FooterLink>
             </nav>

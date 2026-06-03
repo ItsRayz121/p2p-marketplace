@@ -10,6 +10,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp } from 'lucide-react'
@@ -102,6 +103,11 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
   const chipCls    = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
   const priceCls   = isSell ? 'text-emerald-600' : 'text-blue-600'
   const profileHref = `/profile/${ad.seller?.username}`
+  const sellerName = traderDisplayName({
+    fullName: ad.seller?.fullName,
+    merchantName: ad.seller?.merchantName,
+    username: ad.seller?.username,
+  })
 
   return (
     <div className={`bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
@@ -112,7 +118,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           {/* Avatar + name row */}
           <div className="flex items-center gap-2 mb-1.5">
             <Link href={profileHref} onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-              <UserAvatar name={ad.seller?.fullName || ad.seller?.username || 'A'} size="sm" />
+              <UserAvatar name={sellerName} avatarUrl={ad.seller?.avatarUrl} size="sm" />
             </Link>
             <div className="min-w-0">
               <Link
@@ -120,7 +126,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
                 className="text-sm font-bold text-text-primary hover:text-primary hover:underline block truncate leading-tight"
                 onClick={(e) => e.stopPropagation()}
               >
-                {ad.seller?.fullName || ad.seller?.username || 'Anonymous'}
+                {sellerName}
               </Link>
               {ad.seller?.joinedAt && (
                 <p className="text-[10px] text-text-muted leading-tight">
@@ -160,7 +166,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             )}
             {rating > 0 ? (
               <Link
-                href={profileHref}
+                href={`${profileHref}#reviews`}
                 className="flex items-center gap-0.5 text-text-muted hover:text-primary transition-colors"
                 onClick={(e) => e.stopPropagation()}
               >
@@ -171,7 +177,13 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
                 )}
               </Link>
             ) : null}
-            <span className="text-text-muted">{completedTrades} trades</span>
+            <Link
+              href={`${profileHref}#trades`}
+              className="text-text-muted hover:text-primary transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {completedTrades} trades
+            </Link>
           </div>
 
           {/* Online status + response time */}

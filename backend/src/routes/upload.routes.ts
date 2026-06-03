@@ -12,15 +12,24 @@ import { getMe } from '../services/auth.service'
 // Import cloudinary so it's already configured (cloudinary.ts does the config)
 import '../lib/cloudinary'
 
-const presignSchema = z.object({
-  type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'merchant-proof', 'avatar']),
-  mimeType: z.string().regex(/^image\/(jpeg|png|webp)$/, 'Only JPEG, PNG, and WebP are allowed'),
-})
+const presignSchema = z
+  .object({
+    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'merchant-proof', 'avatar', 'kyc-video']),
+    mimeType: z.string(),
+  })
+  .refine(
+    (d) =>
+      d.type === 'kyc-video'
+        ? /^video\/(mp4|quicktime|webm)$/.test(d.mimeType)
+        : /^image\/(jpeg|png|webp)$/.test(d.mimeType),
+    { message: 'Unsupported file type for this upload' },
+  )
 
 const folderMap: Record<string, string> = {
   'kyc-front': CLOUDINARY_FOLDERS.KYC_FRONT,
   'kyc-back': CLOUDINARY_FOLDERS.KYC_BACK,
   'kyc-selfie': CLOUDINARY_FOLDERS.KYC_SELFIE,
+  'kyc-video': CLOUDINARY_FOLDERS.KYC_VIDEO,
   'payment-proof': CLOUDINARY_FOLDERS.PAYMENT_PROOF,
   'merchant-proof': CLOUDINARY_FOLDERS.MERCHANT_PROOF,
   'avatar': CLOUDINARY_FOLDERS.AVATAR,
@@ -40,6 +49,7 @@ export async function uploadRoutes(app: FastifyInstance) {
 
     const { type } = parsed.data
     const folder = folderMap[type]!
+    const resourceType = type === 'kyc-video' ? 'video' : 'image'
     const publicId = randomUUID()
     const timestamp = Math.round(Date.now() / 1000)
 
@@ -49,7 +59,7 @@ export async function uploadRoutes(app: FastifyInstance) {
     return reply.send({
       success: true,
       data: {
-        url: `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+        url: `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
         fields: {
           api_key: env.CLOUDINARY_API_KEY,
           timestamp,
@@ -57,7 +67,7 @@ export async function uploadRoutes(app: FastifyInstance) {
           folder,
           signature,
         },
-        publicUrl: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/${folder}/${publicId}`,
+        publicUrl: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/${folder}/${publicId}`,
       },
     })
   })

@@ -1,14 +1,31 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { walletApi, marketplaceApi } from '@/lib/api'
+import { marketplaceApi, apiRequest } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Gift } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FeeSchedule {
-  withdrawalFees?: Record<string, Record<string, string>>
+type WithdrawalFeeMap = Record<string, Record<string, string>>
+
+// Backend /wallet/fee-schedule returns a flat config array. Withdrawal (escrow)
+// fees live under keys shaped `network_fee_<COIN>_<NETWORK>` with the fee amount
+// (in that coin) as the value. Transform them into a coin → network → label map.
+function buildWithdrawalFees(configs: Array<{ key: string; value: string }>): WithdrawalFeeMap | null {
+  const map: WithdrawalFeeMap = {}
+  for (const { key, value } of configs) {
+    if (!key.startsWith('network_fee_')) continue
+    const rest = key.slice('network_fee_'.length)
+    const sep = rest.indexOf('_')
+    if (sep <= 0) continue
+    const coin = rest.slice(0, sep)
+    const network = rest.slice(sep + 1)
+    if (!coin || !network || !value) continue
+    map[coin] = map[coin] ?? {}
+    map[coin][network] = `${value} ${coin}`
+  }
+  return Object.keys(map).length > 0 ? map : null
 }
 
 interface PlatformConfig {
@@ -16,8 +33,15 @@ interface PlatformConfig {
   p2pTakerFee?: string
   kycLimitBasicDaily?: number
   kycLimitEnhancedDaily?: number
-  referralReward?: string
   [key: string]: unknown
+}
+
+interface GasChain {
+  slug: string
+  name: string
+  symbol: string
+  networkLabel: string
+  platformFeeUsdt: number
 }
 
 // ─── Table ────────────────────────────────────────────────────────────────────
@@ -50,22 +74,25 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function FeesPage() {
-  const [feeSchedule, setFeeSchedule] = useState<FeeSchedule | null>(null)
+  const [withdrawalFeesCfg, setWithdrawalFeesCfg] = useState<WithdrawalFeeMap | null>(null)
   const [config, setConfig] = useState<PlatformConfig | null>(null)
+  const [gasChains, setGasChains] = useState<GasChain[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.allSettled([
-      walletApi.getTransactions({ limit: 1 }).catch(() => null),
-      marketplaceApi.getConfig(),
-    ]).then(([, cfgRes]) => {
-      if (cfgRes.status === 'fulfilled') setConfig(cfgRes.value as PlatformConfig)
-    }).finally(() => setLoading(false))
+    marketplaceApi.getConfig()
+      .then((cfg) => setConfig(cfg as PlatformConfig))
+      .catch(() => {})
+      .finally(() => setLoading(false))
 
-    // Try to get fee schedule
-    fetch('/api/v1/wallet/fee-schedule', { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d) setFeeSchedule(d as FeeSchedule) })
+    // Real escrow withdrawal fees from platform config (network_fee_* keys)
+    apiRequest<Array<{ key: string; value: string }>>('/wallet/fee-schedule')
+      .then((configs) => { if (Array.isArray(configs)) setWithdrawalFeesCfg(buildWithdrawalFees(configs)) })
+      .catch(() => {})
+
+    // Per-network gas platform service fees (real config)
+    apiRequest<{ chains: GasChain[] }>('/gas-fee/chains')
+      .then((d) => { if (d?.chains) setGasChains(d.chains) })
       .catch(() => {})
   }, [])
 
@@ -73,13 +100,12 @@ export default function FeesPage() {
 
   const makerFee = config?.p2pMakerFee ?? '0%'
   const takerFee = config?.p2pTakerFee ?? '0%'
-  const referralReward = config?.referralReward ?? '10 BKR'
   const kycLimits = {
     basic: config?.kycLimitBasicDaily ?? 50000,
     enhanced: config?.kycLimitEnhancedDaily ?? 200000,
   }
 
-  const withdrawalFees = feeSchedule?.withdrawalFees ?? {
+  const withdrawalFees = withdrawalFeesCfg ?? {
     USDT: { TRC20: '1 USDT', ERC20: '5 USDT', BEP20: '0.5 USDT' },
     BTC: { Bitcoin: '0.0001 BTC' },
     ETH: { ERC20: '0.003 ETH' },
@@ -125,16 +151,31 @@ export default function FeesPage() {
       {/* Crypto Gas Fees */}
       <section>
         <h2 className="text-lg font-bold text-text-primary mb-3">Crypto Gas Fees (Instant Gas Buy)</h2>
-        <Table
-          headers={['Charge', 'Amount']}
-          rows={[
-            ['On-chain gas value', 'At live market rate'],
-            ['Platform service fee', '~0.25 USDT per order'],
-          ]}
-        />
+        <p className="text-sm text-text-muted mb-3">
+          When you buy gas instantly you pay the live on-chain value of the gas tokens plus a flat
+          platform service fee that depends on the network. The exact total is always shown before you confirm.
+        </p>
+        {gasChains.length > 0 ? (
+          <Table
+            headers={['Network', 'Token', 'Platform Service Fee']}
+            rows={gasChains.map((c) => [
+              c.name,
+              c.symbol,
+              `${c.platformFeeUsdt} USDT`,
+            ])}
+          />
+        ) : (
+          <Table
+            headers={['Charge', 'Amount']}
+            rows={[
+              ['On-chain gas value', 'At live market rate'],
+              ['Platform service fee', 'Varies by network (shown before you confirm)'],
+            ]}
+          />
+        )}
         <p className="text-xs text-text-muted mt-2">
-          When you buy gas instantly, you pay the live on-chain value of the gas tokens plus a small flat platform service fee (typically ~0.25 USDT, varies by chain). The exact total is shown live before you confirm on the{' '}
-          <Link href="/gas" className="text-primary hover:underline">Crypto Gas Fees</Link> page.
+          On-chain gas value is charged at the live market rate. See the{' '}
+          <Link href="/gas" className="text-primary hover:underline">Crypto Gas Fees</Link> page for the live total.
         </p>
       </section>
 
@@ -148,9 +189,12 @@ export default function FeesPage() {
             </div>
             <div>
               <p className="text-base font-bold text-text-primary">
-                Earn {referralReward} per referral
+                Referral rewards — coming soon
               </p>
-              <p className="text-sm text-text-muted">BKR credited to your wallet when your referral completes their first trade.</p>
+              <p className="text-sm text-text-muted">
+                Rewards are reviewed and approved by our team based on your referrals&apos; completed
+                trading activity. There are no automatic cash payouts.
+              </p>
             </div>
           </div>
         </div>

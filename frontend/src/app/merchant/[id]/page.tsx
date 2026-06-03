@@ -97,7 +97,7 @@ export default function MerchantProfilePage({ params }: { params: Promise<{ id: 
       {/* Header card */}
       <div className="bg-surface shadow-card rounded-xl border border-border p-6">
         <div className="flex flex-wrap items-start gap-5">
-          <UserAvatar name={merchant.user.username} size="xl" className="flex-shrink-0" />
+          <UserAvatar name={merchant.businessName || merchant.user.fullName || merchant.user.username} avatarUrl={merchant.user.avatarUrl} size="xl" className="flex-shrink-0" />
 
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">

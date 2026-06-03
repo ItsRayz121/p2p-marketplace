@@ -1,8 +1,12 @@
 import type { Job } from 'bullmq'
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
-import { notify } from '../lib/notify'
 
+// NOTE: Automatic referral cash rewards are DISABLED.
+// Previously this job credited the referrer's wallet from platform funds on the
+// referred user's first trade. That is a financial-loss risk, so it has been
+// replaced with a `pending` ReferralReward record for manual admin approval.
+// No money moves automatically. See referral.routes.ts / admin review flow.
 export async function processReferralPayout(job: Job) {
   const { userId } = job.data as { userId: string; tradeId?: string }
 
@@ -22,31 +26,21 @@ export async function processReferralPayout(job: Job) {
   }
 
   if (user.firstTradeBonusPaid) {
-    logger.debug({ userId }, 'Referral payout: bonus already paid — skipping')
+    logger.debug({ userId }, 'Referral payout: already recorded — skipping')
     return
   }
 
   const config = await db.platformConfig.findUnique({ where: { key: 'referral_first_trade_bonus' } })
-  const bonus = parseFloat(config?.value ?? '5')
+  const bonus = parseFloat(config?.value ?? '0')
 
+  // Record the qualifying referral as PENDING for admin review — do NOT credit any wallet.
   await db.$transaction(async (tx) => {
-    const referrerWallet = await tx.wallet.findFirst({
-      where: { userId: user.referredById!, coin: 'USDT' },
-    })
-    if (!referrerWallet) throw new Error(`Referrer wallet not found for userId: ${user.referredById}`)
-
-    await tx.wallet.update({
-      where: { id: referrerWallet.id },
-      data: { balance: { increment: bonus } },
-    })
-
     await tx.referralReward.create({
       data: {
         referrerId: user.referredById!,
         referredId: userId,
         rewardAmount: bonus,
-        status: 'paid',
-        paidAt: new Date(),
+        status: 'pending',
       },
     })
 
@@ -56,13 +50,8 @@ export async function processReferralPayout(job: Job) {
     })
   })
 
-  notify(
-    user.referredById,
-    'referral',
-    'Referral Bonus!',
-    `You earned ${bonus} USDT because someone you referred completed their first trade.`,
-    { bonus, coin: 'USDT', referredUserId: userId },
+  logger.info(
+    { referrerId: user.referredById, referredId: userId },
+    'Referral qualifying trade recorded as pending (admin-approved rewards only)',
   )
-
-  logger.info({ referrerId: user.referredById, referredId: userId, bonus }, 'Referral payout processed')
 }

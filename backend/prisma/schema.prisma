@@ -444,6 +444,7 @@ model User {
   adBids                 AdBid[]               @relation("AdBidder")
   favorites              UserFavorite[]         @relation("FavoritingUser")
   favoritedBy            UserFavorite[]         @relation("FavoritedTrader")
+  supportConversations   SupportConversation[]
 
   @@index([email])
   @@index([username])
@@ -759,6 +760,7 @@ model KycSubmission {
   frontUrl        String
   backUrl         String
   selfieUrl       String
+  videoUrl        String?
   cnicNumberHash  String
   socialLinks     Json              @default("[]")
   rejectionReason String?           @db.VarChar(500)
@@ -931,6 +933,37 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, isRead])
+}
+
+// ── LIVE SUPPORT CHAT ──────────────────────────────────────────────────────
+// User-to-admin support conversations. One open conversation per user; admins
+// reply from the admin panel. Delivery is via polling (see support routes).
+
+model SupportConversation {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        String           @default("open") // open | closed
+  lastMessageAt DateTime         @default(now())
+  unreadByAdmin Boolean          @default(false)
+  unreadByUser  Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  messages      SupportMessage[]
+
+  @@index([userId])
+  @@index([status, lastMessageAt])
+}
+
+model SupportMessage {
+  id             String              @id @default(cuid())
+  conversationId String
+  conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         String              // "user" | "admin"
+  senderId       String?
+  body           String
+  createdAt      DateTime            @default(now())
+
+  @@index([conversationId, createdAt])
 }
 
 model PushSubscription {

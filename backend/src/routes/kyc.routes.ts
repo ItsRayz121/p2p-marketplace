@@ -13,6 +13,7 @@ const submitKycSchema = z.object({
   frontUrl: z.string().url(),
   backUrl: z.string().url(),
   selfieUrl: z.string().url(),
+  videoUrl: z.string().url().optional(),
   socialLinks: z
     .array(
       z.object({
@@ -22,6 +23,14 @@ const submitKycSchema = z.object({
     )
     .optional(),
 })
+  .refine((d) => d.tier !== 'enhanced' || (d.socialLinks?.filter((l) => l.url.trim()).length ?? 0) >= 2, {
+    message: 'Enhanced KYC requires at least 2 social media profiles',
+    path: ['socialLinks'],
+  })
+  .refine((d) => d.tier !== 'enhanced' || !!d.videoUrl, {
+    message: 'Enhanced KYC requires a short verification video',
+    path: ['videoUrl'],
+  })
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -39,9 +48,10 @@ export async function kycRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { socialLinks, ...kycCore } = parsed.data
+    const { socialLinks, videoUrl, ...kycCore } = parsed.data
     const submission = await submitKyc(userId, {
       ...kycCore,
+      ...(videoUrl ? { videoUrl } : {}),
       ...(socialLinks ? { socialLinks } : {}),
     })
     void createAdminNotif({

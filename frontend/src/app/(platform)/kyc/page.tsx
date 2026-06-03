@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Clock, ShieldCheck, ShieldPlus } from 'lucide-react'
 import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
+import { supportMailto } from '@/lib/contact'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ function TierCard({
         {isBasic ? (
           <>
             <li className="flex gap-2"><span className="text-success">✓</span> CNIC Front &amp; Back photos</li>
-            <li className="flex gap-2"><span className="text-success">✓</span> Selfie with CNIC</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> Simple selfie</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Unlocks trading, wallet, ads, CTM &amp; gas</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Daily limit: PKR 50,000</li>
           </>
@@ -81,6 +82,7 @@ function TierCard({
           <>
             <li className="flex gap-2"><span className="text-success">✓</span> Everything in Basic</li>
             <li className="flex gap-2"><span className="text-success">✓</span> 2+ social media profiles</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> Short video verification</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Daily limit: PKR 200,000</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Higher trust score + faster badge progression</li>
           </>
@@ -100,9 +102,12 @@ function FileUploadField({
 }: {
   label: string
   hint: string
-  uploadType: 'kyc-front' | 'kyc-back' | 'kyc-selfie'
+  uploadType: 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video'
   onUploaded: (url: string) => void
 }) {
+  const isVideo = uploadType === 'kyc-video'
+  const maxBytes = isVideo ? 50 * 1024 * 1024 : MAX_FILE_SIZE
+  const maxLabel = isVideo ? '50 MB' : '10 MB'
   const { upload, uploading, error } = useFileUpload(uploadType)
   const [preview, setPreview] = useState<string | null>(null)
   const [uploaded, setUploaded] = useState(false)
@@ -121,11 +126,11 @@ function FileUploadField({
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > maxBytes) {
       setPreview(null)
       setUploaded(false)
       e.target.value = ''
-      setSizeError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 10 MB.`)
+      setSizeError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max ${maxLabel}.`)
       return
     }
     setSizeError(null)
@@ -160,8 +165,12 @@ function FileUploadField({
           </div>
         ) : preview ? (
           <div className="space-y-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="Preview" className="h-24 object-cover rounded-lg mx-auto" />
+            {isVideo ? (
+              <video src={preview} className="h-24 rounded-lg mx-auto" controls />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={preview} alt="Preview" className="h-24 object-cover rounded-lg mx-auto" />
+            )}
             {uploaded ? (
               <p className="text-xs text-success font-medium">Uploaded — pending admin review</p>
             ) : error ? (
@@ -177,10 +186,10 @@ function FileUploadField({
                 d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
-            <p className="text-xs text-text-muted">Tap to upload (JPEG / PNG / WebP, max 10 MB)</p>
+            <p className="text-xs text-text-muted">{isVideo ? 'Tap to upload (MP4 / MOV / WebM, max 50 MB)' : 'Tap to upload (JPEG / PNG / WebP, max 10 MB)'}</p>
           </div>
         )}
-        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleChange} />
+        <input type="file" accept={isVideo ? 'video/mp4,video/quicktime,video/webm' : 'image/jpeg,image/png,image/webp'} className="hidden" onChange={handleChange} />
       </label>
       {(sizeError || error) && (
         <div className="mt-1 flex items-center justify-between gap-2">
@@ -218,7 +227,13 @@ export default function KycPage() {
   const [frontUrl, setFrontUrl] = useState('')
   const [backUrl, setBackUrl] = useState('')
   const [selfieUrl, setSelfieUrl] = useState('')
-  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([{ platform: 'Facebook', url: '' }])
+  const [videoUrl, setVideoUrl] = useState('')
+  // Show three social-profile fields by default for Enhanced KYC (min 2 required).
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([
+    { platform: 'Facebook', url: '' },
+    { platform: 'Instagram', url: '' },
+    { platform: 'Twitter/X', url: '' },
+  ])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -290,6 +305,10 @@ export default function KycPage() {
         setSubmitError('Enhanced KYC requires at least 2 social media profiles.')
         return
       }
+      if (!videoUrl) {
+        setSubmitError('Enhanced KYC requires a short verification video.')
+        return
+      }
     }
 
     setSubmitting(true)
@@ -302,6 +321,7 @@ export default function KycPage() {
         frontUrl,
         backUrl,
         selfieUrl,
+        ...(selectedTier === 'enhanced' && videoUrl ? { videoUrl } : {}),
         ...(selectedTier === 'enhanced' && validLinks.length > 0 ? { socialLinks: validLinks } : {}),
       })
       analytics.kycSubmitted({ level: selectedTier })
@@ -437,7 +457,7 @@ export default function KycPage() {
               <p className="text-xs text-text-muted mt-0.5">Contact support if your review takes longer than 24 hours.</p>
             </div>
             <a
-              href="mailto:support@rupchain.pk?subject=KYC Review Inquiry"
+              href={supportMailto('KYC Review Inquiry')}
               className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary-hover transition-colors"
             >
               Contact Support
@@ -475,7 +495,7 @@ export default function KycPage() {
                   Basic KYC (Level 1)
                 </p>
                 <ul className="space-y-1.5">
-                  {['CNIC front photo (clear, unobstructed)', 'CNIC back photo', 'Selfie holding your CNIC'].map((item, i) => (
+                  {['CNIC front photo (clear, unobstructed)', 'CNIC back photo', 'A simple selfie'].map((item, i) => (
                     <li key={i} className="flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
                       <span>{item}</span>
@@ -489,7 +509,7 @@ export default function KycPage() {
                   Enhanced KYC (Level 2)
                 </p>
                 <ul className="space-y-1.5">
-                  {['Everything in Basic', '2 or more social media profile links'].map((item, i) => (
+                  {['Everything in Basic', '2 or more social media profile links', 'Short video verification upload'].map((item, i) => (
                     <li key={i} className="flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-amber-500/10 text-amber-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">+</span>
                       <span>{item}</span>
@@ -559,11 +579,21 @@ export default function KycPage() {
           />
 
           <FileUploadField
-            label="Selfie with CNIC"
-            hint="Hold your CNIC next to your face, clearly showing both"
+            label="Selfie"
+            hint="A clear, well-lit selfie of your face"
             uploadType="kyc-selfie"
             onUploaded={setSelfieUrl}
           />
+
+          {/* Enhanced: short verification video */}
+          {selectedTier === 'enhanced' && (
+            <FileUploadField
+              label="Video Verification"
+              hint="A short video of yourself (e.g. say your name and today's date)"
+              uploadType="kyc-video"
+              onUploaded={setVideoUrl}
+            />
+          )}
 
           {/* Enhanced: social links */}
           {selectedTier === 'enhanced' && (
@@ -618,6 +648,7 @@ export default function KycPage() {
                 { label: 'Selfie uploaded', done: !!selfieUrl },
                 ...(selectedTier === 'enhanced' ? [
                   { label: 'At least 2 social links', done: socialLinks.filter((l) => l.url.trim()).length >= 2 },
+                  { label: 'Verification video uploaded', done: !!videoUrl },
                 ] : []),
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-2">

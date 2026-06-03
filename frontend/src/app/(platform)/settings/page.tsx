@@ -12,6 +12,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { Lock, Camera } from 'lucide-react'
+import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
@@ -469,7 +470,7 @@ export default function SettingsPage() {
             <p className="text-sm font-semibold text-text-primary mb-1">Delete Account</p>
             <p className="text-sm text-text-muted mb-3">
               To request account deletion, please contact our support team at{' '}
-              <a href="mailto:support@RupChain.pk" className="text-primary underline">support@RupChain.pk</a>{' '}
+              <a href={supportMailto('Account Deletion Request')} className="text-primary underline">{SUPPORT_EMAIL}</a>{' '}
               from your registered email address.
             </p>
             <Button variant="secondary" disabled className="opacity-50">

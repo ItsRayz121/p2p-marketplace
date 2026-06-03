@@ -724,8 +724,8 @@ export async function getTrades(userId: string, params: GetTradesParams) {
       orderBy: { createdAt: 'desc' },
       include: {
         ad: { select: { id: true, side: true, coin: true, network: true } },
-        buyer: { select: { id: true, username: true, fullName: true } },
-        seller: { select: { id: true, username: true, fullName: true } },
+        buyer: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+        seller: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       },
     }),
     db.trade.count({ where }),

@@ -67,9 +67,9 @@
           {
             title: '6. Your Rights',
             items: [
-              { label: 'Access', desc: 'You can request a copy of all personal data we hold about you by emailing privacy@RupChain.pk.' },
+              { label: 'Access', desc: 'You can request a copy of all personal data we hold about you by emailing fazalelahi5577@gmail.com.' },
               { label: 'Correction', desc: 'You can update your profile information at any time from Settings.' },
-              { label: 'Deletion', desc: 'You may request account deletion by contacting support@RupChain.pk. Some data may be retained as required by law.' },
+              { label: 'Deletion', desc: 'You may request account deletion by contacting fazalelahi5577@gmail.com. Some data may be retained as required by law.' },
               { label: 'Portability', desc: 'You may request your trade history and transaction data in machine-readable format.' },
               { label: 'Withdrawal of Consent', desc: 'You may withdraw consent for optional data processing at any time, though this may limit platform functionality.' },
             ],
@@ -109,7 +109,7 @@
 
         <div className="bg-surface border border-border rounded-xl p-5 text-sm text-text-muted space-y-1">
           <p className="font-semibold text-text-primary">Privacy Inquiries</p>
-          <p>Email: <a href="mailto:privacy@RupChain.pk" className="text-primary underline">privacy@RupChain.pk</a></p>
+          <p>Email: <a href="mailto:fazalelahi5577@gmail.com" className="text-primary underline">fazalelahi5577@gmail.com</a></p>
           <p>We aim to respond to all privacy requests within 30 days.</p>
         </div>
       </div>

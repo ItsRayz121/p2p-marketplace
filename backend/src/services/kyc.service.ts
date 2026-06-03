@@ -1,3 +1,9 @@
+// KYC verification provider decision (2026-06):
+// There is no genuinely free + practical third-party KYC/identity provider for
+// Pakistani CNIC verification (Onfido, Sumsub, Persona, etc. are all paid; NADRA
+// Verisys is gated/commercial). We therefore keep manual admin review — Level 1
+// (CNIC front/back + simple selfie) and Level 2 (social links + verification
+// video) are reviewed in the admin KYC queue. Revisit if a free provider appears.
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
@@ -27,12 +33,14 @@ export async function submitKyc(
     frontUrl: string
     backUrl: string
     selfieUrl: string
+    videoUrl?: string
     socialLinks?: Array<{ platform: string; url: string }>
   },
 ) {
   assertCloudinaryUrl(data.frontUrl, 'frontUrl')
   assertCloudinaryUrl(data.backUrl, 'backUrl')
   assertCloudinaryUrl(data.selfieUrl, 'selfieUrl')
+  if (data.videoUrl) assertCloudinaryUrl(data.videoUrl, 'videoUrl')
 
   // Rate limit: max 3 submissions per 24h
   const rateLimitKey = `kyc_submit:${userId}`
@@ -67,6 +75,7 @@ export async function submitKyc(
       frontUrl: data.frontUrl,
       backUrl: data.backUrl,
       selfieUrl: data.selfieUrl,
+      videoUrl: data.videoUrl ?? null,
       cnicNumberHash: cnicHash,
       socialLinks: data.socialLinks ?? [],
     },

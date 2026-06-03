@@ -101,4 +101,79 @@ export async function dashboardRoutes(app: FastifyInstance) {
       },
     })
   })
+
+  // GET /api/dashboard/trading-analytics
+  // Combined trading history across all three marketplaces: USDT P2P, CTM, and Gas.
+  app.get('/dashboard/trading-analytics', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+
+    const [
+      usdtTotal, usdtCompleted, usdtVolume,
+      ctmTotal, ctmCompleted, ctmVolume,
+      gasTotal, gasDelivered, gasSpend,
+      ctmProfile,
+    ] = await Promise.all([
+      db.trade.count({ where: { OR: [{ buyerId: userId }, { sellerId: userId }] } }),
+      db.trade.count({ where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'crypto_released' } }),
+      db.trade.aggregate({
+        where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'crypto_released' },
+        _sum: { fiatAmount: true },
+      }),
+
+      db.ctmTrade.count({ where: { OR: [{ buyerId: userId }, { sellerId: userId }] } }),
+      db.ctmTrade.count({ where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'completed' } }),
+      db.ctmTrade.aggregate({
+        where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'completed' },
+        _sum: { fiatAmount: true },
+      }),
+
+      db.gasFeeOrder.count({ where: { userId } }),
+      db.gasFeeOrder.count({ where: { userId, status: 'delivered' } }),
+      db.gasFeeOrder.aggregate({
+        where: { userId, status: 'delivered' },
+        _sum: { gasAmountUSD: true },
+      }),
+
+      db.ctmMerchantProfile.findUnique({
+        where: { userId },
+        select: { tier: true, ctmAvgRating: true, isActive: true },
+      }),
+    ])
+
+    const usdtVolumePkr = Number(usdtVolume._sum?.fiatAmount ?? 0)
+    const ctmVolumePkr = Number(ctmVolume._sum?.fiatAmount ?? 0)
+
+    const totalTrades = usdtTotal + ctmTotal + gasTotal
+    const totalCompleted = usdtCompleted + ctmCompleted + gasDelivered
+
+    return reply.send({
+      success: true,
+      data: {
+        combined: {
+          totalTrades,
+          completedTrades: totalCompleted,
+          completionRate: totalTrades > 0 ? totalCompleted / totalTrades : null,
+          totalVolumePkr: (usdtVolumePkr + ctmVolumePkr).toFixed(2),
+        },
+        usdt: {
+          totalTrades: usdtTotal,
+          completedTrades: usdtCompleted,
+          volumePkr: usdtVolumePkr.toFixed(2),
+        },
+        ctm: {
+          totalTrades: ctmTotal,
+          completedTrades: ctmCompleted,
+          volumePkr: ctmVolumePkr.toFixed(2),
+          tier: ctmProfile?.tier ?? null,
+          avgRating: ctmProfile?.ctmAvgRating ? Number(ctmProfile.ctmAvgRating).toFixed(2) : null,
+          isMerchant: !!ctmProfile,
+        },
+        gas: {
+          totalOrders: gasTotal,
+          deliveredOrders: gasDelivered,
+          spentUsd: Number(gasSpend._sum?.gasAmountUSD ?? 0).toFixed(2),
+        },
+      },
+    })
+  })
 }

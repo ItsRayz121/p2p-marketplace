@@ -1,6 +1,8 @@
 ﻿'use client'
 import { useState } from 'react'
 import Link from 'next/link'
+import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
+import { openSupportChat } from '@/lib/supportChat'
 
 const FAQS = [
   {
@@ -140,18 +142,13 @@ export default function HelpPage() {
         </div>
         <div className="flex gap-3 flex-shrink-0">
           <button
-            onClick={() => {
-              // Opens Crisp chat if widget is loaded
-              if (typeof window !== 'undefined' && (window as Window & { $crisp?: { push: (args: unknown[]) => void } }).$crisp) {
-                (window as Window & { $crisp?: { push: (args: unknown[]) => void } }).$crisp!.push(['do', 'chat:open'])
-              }
-            }}
+            onClick={() => openSupportChat()}
             className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
           >
             Live Chat
           </button>
           <a
-            href="mailto:support@RupChain.pk"
+            href={supportMailto('RupChain Support')}
             className="px-4 py-2 text-sm font-medium border border-border text-text-primary rounded-lg hover:bg-surface transition-colors"
           >
             Email Us
@@ -178,7 +175,7 @@ export default function HelpPage() {
         <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
         <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
         <Link href="/fees" className="hover:text-primary transition-colors">Fee Schedule</Link>
-        <a href="mailto:support@RupChain.pk" className="hover:text-primary transition-colors">support@RupChain.pk</a>
+        <a href={supportMailto('RupChain Support')} className="hover:text-primary transition-colors">{SUPPORT_EMAIL}</a>
       </div>
     </div>
   )
