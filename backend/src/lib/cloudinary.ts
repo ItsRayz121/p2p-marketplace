@@ -15,6 +15,7 @@ export const CLOUDINARY_FOLDERS = {
   KYC_FRONT: 'rupchain/kyc/front',
   KYC_BACK: 'rupchain/kyc/back',
   KYC_SELFIE: 'rupchain/kyc/selfie',
+  KYC_VIDEO: 'rupchain/kyc/video',
   PAYMENT_PROOF: 'rupchain/payment-proof',
   MERCHANT_PROOF: 'rupchain/merchant/proof',
   CTM_PAYMENT_PROOF: 'rupchain/ctm/payment-proof',

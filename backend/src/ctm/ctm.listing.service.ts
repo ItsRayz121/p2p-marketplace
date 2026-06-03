@@ -169,6 +169,7 @@ export async function getListings(filters: ListingsFilter = {}) {
                 id: true,
                 username: true,
                 fullName: true,
+                avatarUrl: true,
                 createdAt: true,
                 lastSeenAt: true,
                 tradeStats: { select: { badge: true, completionRate: true } },

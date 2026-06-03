@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { adsApi, ctmApi } from '@/lib/api'
+import { adsApi, ctmApi, dashboardApi } from '@/lib/api'
+import type { TradingAnalytics } from '@/lib/api'
 import type { Ad } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -14,7 +15,6 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Spinner } from '@/components/ui/Spinner'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
-import { useAuth } from '@/hooks/useAuth'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,29 +30,6 @@ interface CtmListing {
   paymentMethods: string[]
   createdAt: string
   token: { id: string; name: string; symbol: string; logoUrl?: string }
-}
-
-interface MerchantProfile {
-  id: string
-  tier: string
-  isActive: boolean
-  totalCtmTrades: number
-  completedCtmTrades: number
-  disputedCtmTrades: number
-  ctmAvgRating: string
-  ctmDisputeRate: string
-  lastActiveAt?: string
-  listings: Array<{
-    id: string
-    listingRef: string
-    side: string
-    status: string
-    pricePerUnit: string
-    availableAmount: string
-    totalAmount: string
-    token: { name: string; symbol: string }
-  }>
-  user: { username: string; email: string }
 }
 
 type Tab = 'usdt' | 'ctm' | 'analytics'
@@ -72,20 +49,6 @@ const AD_STATUS_LABELS: Record<string, string> = {
   inactive: 'Inactive',
 }
 const adStatusLabel = (s: string) => AD_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
-
-const TIER_COLORS: Record<string, string> = {
-  new: 'bg-surface-alt text-text-secondary',
-  basic: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
-  elite: 'bg-primary/10 text-primary',
-}
-
-const TIER_NEXT: Record<string, { requirement: string }> = {
-  new: { requirement: '10 completed trades to upgrade to Basic' },
-  basic: { requirement: 'Apply to admin for Verified tier' },
-  verified: { requirement: '200 completed trades + <2% dispute rate for Elite' },
-  elite: { requirement: 'You are at the highest tier!' },
-}
 
 function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
   return (
@@ -415,163 +378,104 @@ function CtmListingsTab() {
   )
 }
 
-// ─── Tab: Merchant Analytics ──────────────────────────────────────────────────
+// ─── Tab: Trading Analytics ───────────────────────────────────────────────────
+// Combined trading history & stats across all three marketplaces: USDT P2P,
+// Community Tokens (CTM), and Crypto Gas Fees.
 
-function MerchantAnalyticsTab() {
-  const { user } = useAuth()
-  const [profile, setProfile] = useState<MerchantProfile | null>(null)
+function TradingAnalyticsTab() {
+  const [data, setData] = useState<TradingAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    ctmApi.getMyCtmProfile()
-      .then((res) => setProfile(res as MerchantProfile))
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load profile'))
+    dashboardApi.getTradingAnalytics()
+      .then(setData)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load analytics'))
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return (
     <div className="space-y-4 animate-pulse">
-      <div className="bg-surface shadow-card border border-border rounded-xl h-32" />
+      <div className="bg-surface shadow-card border border-border rounded-xl h-24" />
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-20" />)}
       </div>
     </div>
   )
 
-  if (error || !profile) return (
+  if (error || !data) return (
     <div className="text-center py-16">
-      <p className="text-text-muted mb-4">{error || 'No CTM merchant profile found.'}</p>
-      <Link href="/ctm/merchant-setup" className="bg-primary text-white px-5 py-2.5 rounded-xl font-semibold text-sm">
-        Register as Merchant
-      </Link>
+      <p className="text-text-muted">{error || 'Failed to load analytics.'}</p>
     </div>
   )
 
-  const completionRate = profile.totalCtmTrades > 0
-    ? Math.round((profile.completedCtmTrades / profile.totalCtmTrades) * 100)
-    : 0
-  const disputeRate = Math.round(parseFloat(profile.ctmDisputeRate) * 100)
-  const avgRating = parseFloat(profile.ctmAvgRating)
-  const activeListings = profile.listings.filter((l) => l.status === 'active')
-  const tierNext = TIER_NEXT[profile.tier] ?? TIER_NEXT.elite
+  const fmtPkr = (v: string) => `PKR ${Number(v).toLocaleString()}`
+  const combinedRate = data.combined.completionRate != null ? Math.round(data.combined.completionRate * 100) : null
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <p className="text-sm text-text-muted">@{user?.username}</p>
-        <Link href="/ctm/listings/create" className="bg-primary text-white px-4 py-2 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">
-          + New Listing
-        </Link>
-      </div>
-
-      {/* Status banner */}
-      <div className={`rounded-xl p-4 border ${profile.isActive ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${profile.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
-            <div>
-              <p className={`font-semibold text-sm ${profile.isActive ? 'text-green-800' : 'text-red-800'}`}>
-                {profile.isActive ? 'Active Merchant' : 'Account Suspended'}
-              </p>
-              <p className={`text-xs ${profile.isActive ? 'text-green-700' : 'text-red-700'}`}>
-                {profile.isActive ? 'Your listings are visible to buyers.' : 'Contact support to restore your account.'}
-              </p>
-            </div>
-          </div>
-          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${TIER_COLORS[profile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
-            {profile.tier.charAt(0).toUpperCase() + profile.tier.slice(1)} Tier
-          </span>
+      {/* Combined summary */}
+      <div className="bg-gradient-to-r from-primary/5 to-pink-500/5 border border-primary/20 rounded-xl p-5">
+        <h2 className="font-semibold text-text-primary mb-3">All Marketplaces — Combined</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard label="Total Trades" value={data.combined.totalTrades} />
+          <StatCard label="Completed" value={combinedRate != null ? `${data.combined.completedTrades} (${combinedRate}%)` : data.combined.completedTrades} accent="text-green-700" />
+          <StatCard label="Total Volume" value={fmtPkr(data.combined.totalVolumePkr)} />
+          <StatCard label="Gas Spend" value={`$${data.gas.spentUsd}`} sub="USDT" />
         </div>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Total Trades" value={profile.totalCtmTrades} />
-        <StatCard label="Completed" value={`${profile.completedCtmTrades} (${completionRate}%)`} accent="text-green-700" />
-        <StatCard
-          label="Dispute Rate"
-          value={`${disputeRate}%`}
-          sub={profile.disputedCtmTrades > 0 ? `${profile.disputedCtmTrades} disputed` : 'No disputes'}
-          accent={disputeRate > 5 ? 'text-red-600' : 'text-text-primary'}
-        />
-        <StatCard
-          label="Avg Rating"
-          value={avgRating > 0 ? `${avgRating.toFixed(1)} ★` : 'No ratings'}
-          sub={avgRating > 0 ? `${profile.totalCtmTrades} reviews` : undefined}
-          accent={avgRating >= 4 ? 'text-yellow-600' : 'text-text-primary'}
-        />
-      </div>
-
-      {/* Tier progress */}
-      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-text-primary">Tier Progress</h2>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[profile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>
-            {profile.tier}
-          </span>
-        </div>
-        <p className="text-sm text-text-muted">{tierNext.requirement}</p>
-        {profile.tier !== 'elite' && (
-          <div className="mt-3 bg-surface rounded-full h-2 overflow-hidden">
-            <div
-              className="h-2 rounded-full bg-primary transition-all"
-              style={{ width: `${Math.min(100, (profile.completedCtmTrades / (profile.tier === 'new' ? 10 : 200)) * 100)}%` }}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Active listings */}
+      {/* USDT marketplace */}
       <div className="bg-surface shadow-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-text-primary">Active CTM Listings ({activeListings.length})</h2>
+          <h2 className="font-semibold text-text-primary">USDT Marketplace</h2>
+          <Link href="/marketplace" className="text-sm text-primary hover:underline">Open →</Link>
         </div>
-        {activeListings.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-text-muted text-sm mb-3">You have no active listings.</p>
-            <Link href="/ctm/listings/create" className="text-sm text-primary hover:underline">Create your first listing →</Link>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {activeListings.map((l) => {
-              const fillPct = parseFloat(l.totalAmount) > 0
-                ? Math.round(((parseFloat(l.totalAmount) - parseFloat(l.availableAmount)) / parseFloat(l.totalAmount)) * 100)
-                : 0
-              return (
-                <Link key={l.id} href={`/ctm/listings/${l.id}`} className="flex items-center justify-between p-3 bg-surface rounded-xl hover:bg-border/30 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${l.side === 'sell' ? 'bg-green-500' : 'bg-blue-500'}`} />
-                    <div>
-                      <p className="text-sm font-medium text-text-primary">
-                        {l.side === 'sell' ? 'Selling' : 'Buying'} {l.token.symbol}
-                      </p>
-                      <p className="text-xs text-text-muted">
-                        PKR {Number(l.pricePerUnit).toLocaleString()} · {Number(l.availableAmount).toFixed(4)} {l.token.symbol} left
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-text-muted mb-1">{fillPct}% filled</p>
-                    <div className="w-20 bg-surface rounded-full h-1.5 border border-border">
-                      <div className="h-1.5 rounded-full bg-primary" style={{ width: `${fillPct}%` }} />
-                    </div>
-                  </div>
-                </Link>
-              )
-            })}
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="Trades" value={data.usdt.totalTrades} />
+          <StatCard label="Completed" value={data.usdt.completedTrades} accent="text-green-700" />
+          <StatCard label="Volume" value={fmtPkr(data.usdt.volumePkr)} />
+        </div>
+      </div>
+
+      {/* Community Tokens */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-text-primary">Community Tokens (CTM)</h2>
+          <Link href="/ctm" className="text-sm text-primary hover:underline">Open →</Link>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="Trades" value={data.ctm.totalTrades} />
+          <StatCard label="Completed" value={data.ctm.completedTrades} accent="text-green-700" />
+          <StatCard label="Volume" value={fmtPkr(data.ctm.volumePkr)} />
+        </div>
+        {data.ctm.isMerchant && (
+          <div className="flex items-center gap-3 mt-4 text-xs text-text-muted">
+            {data.ctm.tier && <span className="px-2 py-0.5 rounded-full bg-surface-alt font-medium">{data.ctm.tier} tier</span>}
+            {data.ctm.avgRating && Number(data.ctm.avgRating) > 0 && <span>{data.ctm.avgRating} ★ avg rating</span>}
           </div>
         )}
+      </div>
+
+      {/* Gas fees */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-text-primary">Crypto Gas Fees</h2>
+          <Link href="/gas" className="text-sm text-primary hover:underline">Open →</Link>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="Orders" value={data.gas.totalOrders} />
+          <StatCard label="Delivered" value={data.gas.deliveredOrders} accent="text-green-700" />
+          <StatCard label="Total Spent" value={`$${data.gas.spentUsd}`} sub="USDT" />
+        </div>
       </div>
 
       {/* Quick links */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
           { label: 'My CTM Trades', href: '/ctm/my-trades', desc: 'View trade history' },
-          { label: 'Incoming Bids', href: '/ctm/incoming-bids', desc: 'Accept or reject bids' },
-          { label: 'My Bids', href: '/ctm/my-bids', desc: 'Bids you have placed' },
-          { label: 'My Requests', href: '/ctm/my-requests', desc: 'Buy requests you posted' },
-          { label: 'Browse Market', href: '/ctm/listings', desc: 'See other listings' },
+          { label: 'My USDT Orders', href: '/orders', desc: 'P2P order history' },
+          { label: 'Browse Market', href: '/marketplace', desc: 'See USDT listings' },
         ].map((l) => (
           <Link key={l.href} href={l.href} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card transition-shadow">
             <p className="font-semibold text-text-primary text-sm">{l.label}</p>
@@ -588,7 +492,7 @@ function MerchantAnalyticsTab() {
 const TABS: { id: Tab; label: string; Icon: typeof Tag }[] = [
   { id: 'usdt',      label: 'USDT Ads',           Icon: Tag       },
   { id: 'ctm',       label: 'CTM Listings',        Icon: LayoutList },
-  { id: 'analytics', label: 'Merchant Analytics',  Icon: BarChart3 },
+  { id: 'analytics', label: 'Trading Analytics',  Icon: BarChart3 },
 ]
 
 // ─── Inner page (reads search params) ────────────────────────────────────────
@@ -633,7 +537,7 @@ function MyAdsInner() {
 
       {activeTab === 'usdt'      && <UsdtAdsTab />}
       {activeTab === 'ctm'       && <CtmListingsTab />}
-      {activeTab === 'analytics' && <MerchantAnalyticsTab />}
+      {activeTab === 'analytics' && <TradingAnalyticsTab />}
     </div>
   )
 }

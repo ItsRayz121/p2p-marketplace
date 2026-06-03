@@ -6,6 +6,7 @@ import type { RecentTrade, MarketRateToken } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
@@ -54,6 +55,7 @@ interface Listing {
       id: string
       username: string
       fullName: string | null
+      avatarUrl?: string | null
       createdAt?: string | null
       lastSeenAt?: string | null
       tradeStats?: { badge: string; completionRate: string } | null
@@ -206,7 +208,11 @@ function ListingRow({
   const isMerchant = mp.merchant?.status === 'approved'
   const activity = activeLabel(user.lastSeenAt)
   const age = listingAge(listing.createdAt)
-  const displayName = user.fullName || user.username || 'Anonymous'
+  const displayName = traderDisplayName({
+    fullName: user.fullName,
+    merchantName: isMerchant ? mp.merchant?.businessName : null,
+    username: user.username,
+  })
 
   const methods = listing.resolvedPaymentMethods?.length
     ? listing.resolvedPaymentMethods
@@ -239,7 +245,7 @@ function ListingRow({
           {/* Avatar + name row */}
           <div className="flex items-center gap-2 mb-1.5">
             <button type="button" onClick={openProfile} className="flex-shrink-0 cursor-pointer">
-              <UserAvatar name={displayName} size="sm" />
+              <UserAvatar name={displayName} avatarUrl={user.avatarUrl} size="sm" />
             </button>
             <div className="min-w-0">
               <button

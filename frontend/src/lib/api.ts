@@ -458,6 +458,7 @@ export interface MarketplaceAd {
     id: string
     username: string
     fullName: string | null
+    avatarUrl: string | null
     badge: string
     lastSeenAt: string | null
     joinedAt?: string | null
@@ -513,6 +514,7 @@ export interface KycDocument {
   frontUrl?: string
   backUrl?: string
   selfieUrl?: string
+  videoUrl?: string | null
   rejectionReason?: string | null
   notes?: string | null
   createdAt: string
@@ -920,6 +922,7 @@ export const kycApi = {
     frontUrl: string
     backUrl: string
     selfieUrl: string
+    videoUrl?: string
     socialLinks?: Array<{ platform: string; url: string }>
   }) =>
     apiRequest<KycDocument>('/kyc/submit', { method: 'POST', body: JSON.stringify(data) }),
@@ -966,6 +969,15 @@ export const dashboardApi = {
     }>('/dashboard/summary'),
   getRecentActivity: () =>
     apiRequest<{ activities: Array<{ type: string; description: string; createdAt: string }> }>('/dashboard/activity'),
+  getTradingAnalytics: () =>
+    apiRequest<TradingAnalytics>('/dashboard/trading-analytics'),
+}
+
+export interface TradingAnalytics {
+  combined: { totalTrades: number; completedTrades: number; completionRate: number | null; totalVolumePkr: string }
+  usdt: { totalTrades: number; completedTrades: number; volumePkr: string }
+  ctm: { totalTrades: number; completedTrades: number; volumePkr: string; tier: string | null; avgRating: string | null; isMerchant: boolean }
+  gas: { totalOrders: number; deliveredOrders: number; spentUsd: string }
 }
 
 export const merchantsApi = {
@@ -991,6 +1003,8 @@ export const merchantsApi = {
       user: {
         id: string
         username: string
+        fullName: string | null
+        avatarUrl: string | null
         createdAt: string
         tradeStats: {
           totalTrades: number

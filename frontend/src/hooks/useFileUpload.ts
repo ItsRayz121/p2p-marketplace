@@ -2,10 +2,12 @@
 import { useState, useCallback } from 'react'
 import { apiRequest } from '@/lib/api'
 
-type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'payment-proof' | 'merchant-proof' | 'avatar' | 'chat-image'
+type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video' | 'payment-proof' | 'merchant-proof' | 'avatar' | 'chat-image'
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
-const MAX_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm']
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024 // 50 MB
 
 interface UseFileUploadReturn {
   upload: (file: File) => Promise<string>
@@ -32,14 +34,20 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
   const upload = useCallback(async (file: File): Promise<string> => {
     setError(null)
 
-    if (!ALLOWED_TYPES.includes(file.type as typeof ALLOWED_TYPES[number])) {
-      const msg = 'Only JPEG, PNG, and WebP images are allowed.'
+    const isVideo = type === 'kyc-video'
+    const allowed = isVideo ? ALLOWED_VIDEO_TYPES : ALLOWED_IMAGE_TYPES
+    const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES
+
+    if (!allowed.includes(file.type)) {
+      const msg = isVideo
+        ? 'Only MP4, MOV, and WebM videos are allowed.'
+        : 'Only JPEG, PNG, and WebP images are allowed.'
       setError(msg)
       throw new Error(msg)
     }
 
-    if (file.size > MAX_SIZE_BYTES) {
-      const msg = 'File size must be 10 MB or less.'
+    if (file.size > maxBytes) {
+      const msg = `File size must be ${isVideo ? '50' : '10'} MB or less.`
       setError(msg)
       throw new Error(msg)
     }

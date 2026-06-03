@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { ctmApi } from '@/lib/api'
+import { UserAvatar } from '@/components/ui/UserAvatar'
+import { traderDisplayName } from '@/lib/traderName'
 
 interface Review {
   id: string
@@ -9,6 +11,8 @@ interface Review {
   tags: string[]
   createdAt: string
   raterUsername: string
+  raterFullName: string | null
+  raterAvatarUrl: string | null
   tradeRef: string | null
 }
 
@@ -17,7 +21,13 @@ interface Profile {
   totalCtmTrades: number
   completedCtmTrades: number
   ctmAvgRating: string
-  user: { id: string; username: string }
+  user: {
+    id: string
+    username: string
+    fullName: string | null
+    avatarUrl: string | null
+    merchant: { businessName: string | null; status: string } | null
+  }
   reviews: Review[]
 }
 
@@ -85,12 +95,22 @@ export function MerchantProfileModal({ userId, onClose }: { userId: string; onCl
             <>
               {/* Header */}
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-lg">
-                  {profile.user.username.charAt(0).toUpperCase()}
-                </div>
+                <UserAvatar
+                  name={traderDisplayName({
+                    fullName: profile.user.fullName,
+                    merchantName: profile.user.merchant?.status === 'approved' ? profile.user.merchant.businessName : null,
+                    username: profile.user.username,
+                  })}
+                  avatarUrl={profile.user.avatarUrl}
+                  size="lg"
+                />
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-text-primary">{profile.user.username}</span>
+                    <span className="font-semibold text-text-primary">{traderDisplayName({
+                      fullName: profile.user.fullName,
+                      merchantName: profile.user.merchant?.status === 'approved' ? profile.user.merchant.businessName : null,
+                      username: profile.user.username,
+                    })}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[profile.tier] ?? 'bg-gray-100 text-gray-700'}`}>{profile.tier}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
@@ -123,8 +143,13 @@ export function MerchantProfileModal({ userId, onClose }: { userId: string; onCl
                       <div key={r.id} className="border border-border rounded-xl p-3">
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
+                            <UserAvatar
+                              name={traderDisplayName({ fullName: r.raterFullName, username: r.raterUsername })}
+                              avatarUrl={r.raterAvatarUrl}
+                              size="xs"
+                            />
                             <StarRow rating={r.rating} />
-                            <span className="text-xs font-medium text-text-primary">{r.raterUsername}</span>
+                            <span className="text-xs font-medium text-text-primary">{traderDisplayName({ fullName: r.raterFullName, username: r.raterUsername })}</span>
                           </div>
                           <span className="text-xs text-text-muted">{new Date(r.createdAt).toLocaleDateString()}</span>
                         </div>

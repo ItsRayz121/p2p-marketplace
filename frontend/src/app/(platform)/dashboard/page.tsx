@@ -165,9 +165,27 @@ export default function DashboardPage() {
 
   const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
 
-  const usdtBalance = (summary?.wallets ?? []).find((b) => b.coin === 'USDT')
+  // Aggregate raw wallet rows by coin (a coin can have rows on multiple networks)
+  // so we never render duplicate/phantom cards or collide on React keys.
+  const portfolioCards = (() => {
+    const byCoin = new Map<string, { coin: string; available: number; locked: number }>()
+    for (const w of summary?.wallets ?? []) {
+      const prev = byCoin.get(w.coin) ?? { coin: w.coin, available: 0, locked: 0 }
+      prev.available += parseFloat(w.available ?? '0') || 0
+      prev.locked += parseFloat(w.locked ?? '0') || 0
+      byCoin.set(w.coin, prev)
+    }
+    // Always show a USDT card (0.0000 if the user has none); show other coins
+    // (BNB / gas tokens) only when there is a real non-zero balance.
+    if (!byCoin.has('USDT')) byCoin.set('USDT', { coin: 'USDT', available: 0, locked: 0 })
+    return [...byCoin.values()]
+      .filter((c) => c.coin === 'USDT' || c.available + c.locked > 0)
+      .sort((a, b) => (a.coin === 'USDT' ? -1 : b.coin === 'USDT' ? 1 : 0))
+  })()
+
+  const usdtBalance = portfolioCards.find((b) => b.coin === 'USDT')
   const totalPortfolioPkr = usdtRate > 0 && usdtBalance
-    ? parseFloat(usdtBalance.available ?? '0') * usdtRate
+    ? usdtBalance.available * usdtRate
     : null
 
   const notifIconColor: Record<string, string> = {
@@ -233,17 +251,17 @@ export default function DashboardPage() {
       {/* ── 2. Portfolio ── */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Portfolio</h2>
-        {summary?.wallets && summary.wallets.length > 0 ? (
+        {portfolioCards.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {summary.wallets.map((b) => (
+            {portfolioCards.map((b) => (
               <div key={b.coin} className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">
                 <div className="flex items-center gap-2 mb-2">
                   <EntityLogo type="token" slug={b.coin} size="sm" className="flex-shrink-0" />
                   <span className="text-sm font-medium text-text-primary">{b.coin}</span>
                 </div>
                 {(() => {
-                  const avail = parseFloat(b.available ?? '0') || 0
-                  const locked = parseFloat(b.locked ?? '0') || 0
+                  const avail = b.available
+                  const locked = b.locked
                   const total = avail + locked
                   const pkr = avail * usdtRate
                   return (

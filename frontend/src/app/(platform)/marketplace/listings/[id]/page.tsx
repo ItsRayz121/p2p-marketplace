@@ -1,8 +1,10 @@
 'use client'
 import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { adsApi, apiRequest, ApiError, tradesApi, walletApi } from '@/lib/api'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { traderDisplayName } from '@/lib/traderName'
 import type { AdActivity, SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
@@ -53,7 +55,7 @@ interface AdDetail {
   tradeWindow: number
   terms: string
   status: string
-  user: { id: string; username: string; tradeStats?: { totalTrades: number; completedTrades: number; completionRate: string } | null }
+  user: { id: string; username: string; fullName?: string | null; avatarUrl?: string | null; tradeStats?: { totalTrades: number; completedTrades: number; completionRate: string } | null }
 }
 
 type MyActiveBid = NonNullable<AdActivity['myBid']>
@@ -300,9 +302,11 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </button>
         {sellerOpen && (
           <div className="flex items-center gap-3 mt-3">
-            <UserAvatar name={ad.user.username} size="md" />
+            <Link href={`/profile/${ad.user.username}`} className="flex-shrink-0">
+              <UserAvatar name={traderDisplayName({ fullName: ad.user.fullName, username: ad.user.username })} avatarUrl={ad.user.avatarUrl} size="md" />
+            </Link>
             <div>
-              <p className="font-semibold text-text-primary">{ad.user.username}</p>
+              <Link href={`/profile/${ad.user.username}`} className="font-semibold text-text-primary hover:text-primary hover:underline">{traderDisplayName({ fullName: ad.user.fullName, username: ad.user.username })}</Link>
               {ad.user.tradeStats && (
                 <p className="text-xs text-text-muted">
                   {ad.user.tradeStats.completedTrades} completed ·{' '}

@@ -283,6 +283,8 @@ export async function getPublicMerchant(merchantId: string) {
         select: {
           id: true,
           username: true,
+          fullName: true,
+          avatarUrl: true,
           createdAt: true,
           tradeStats: {
             select: {

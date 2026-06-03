@@ -71,7 +71,7 @@ export async function adRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const ad = await db.ad.findUnique({
       where: { id },
-      include: { user: { select: { id: true, username: true, fullName: true, tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true } } } } },
+      include: { user: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true } } } } },
     })
     if (!ad) throw new AppError('NOT_FOUND', 'Ad not found', 404)
     if (ad.coin !== 'USDT') {

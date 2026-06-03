@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { walletApi, marketplaceApi } from '@/lib/api'
+import { walletApi, marketplaceApi, apiRequest } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Gift } from 'lucide-react'
 
@@ -16,8 +16,15 @@ interface PlatformConfig {
   p2pTakerFee?: string
   kycLimitBasicDaily?: number
   kycLimitEnhancedDaily?: number
-  referralReward?: string
   [key: string]: unknown
+}
+
+interface GasChain {
+  slug: string
+  name: string
+  symbol: string
+  networkLabel: string
+  platformFeeUsdt: number
 }
 
 // ─── Table ────────────────────────────────────────────────────────────────────
@@ -52,6 +59,7 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
 export default function FeesPage() {
   const [feeSchedule, setFeeSchedule] = useState<FeeSchedule | null>(null)
   const [config, setConfig] = useState<PlatformConfig | null>(null)
+  const [gasChains, setGasChains] = useState<GasChain[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -67,13 +75,17 @@ export default function FeesPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d) setFeeSchedule(d as FeeSchedule) })
       .catch(() => {})
+
+    // Per-network gas platform service fees (real config)
+    apiRequest<{ chains: GasChain[] }>('/gas-fee/chains')
+      .then((d) => { if (d?.chains) setGasChains(d.chains) })
+      .catch(() => {})
   }, [])
 
   if (loading) return <LoadingState message="Loading fee schedule..." />
 
   const makerFee = config?.p2pMakerFee ?? '0%'
   const takerFee = config?.p2pTakerFee ?? '0%'
-  const referralReward = config?.referralReward ?? '10 BKR'
   const kycLimits = {
     basic: config?.kycLimitBasicDaily ?? 50000,
     enhanced: config?.kycLimitEnhancedDaily ?? 200000,
@@ -125,16 +137,31 @@ export default function FeesPage() {
       {/* Crypto Gas Fees */}
       <section>
         <h2 className="text-lg font-bold text-text-primary mb-3">Crypto Gas Fees (Instant Gas Buy)</h2>
-        <Table
-          headers={['Charge', 'Amount']}
-          rows={[
-            ['On-chain gas value', 'At live market rate'],
-            ['Platform service fee', '~0.25 USDT per order'],
-          ]}
-        />
+        <p className="text-sm text-text-muted mb-3">
+          When you buy gas instantly you pay the live on-chain value of the gas tokens plus a flat
+          platform service fee that depends on the network. The exact total is always shown before you confirm.
+        </p>
+        {gasChains.length > 0 ? (
+          <Table
+            headers={['Network', 'Token', 'Platform Service Fee']}
+            rows={gasChains.map((c) => [
+              c.name,
+              c.symbol,
+              `${c.platformFeeUsdt} USDT`,
+            ])}
+          />
+        ) : (
+          <Table
+            headers={['Charge', 'Amount']}
+            rows={[
+              ['On-chain gas value', 'At live market rate'],
+              ['Platform service fee', 'Varies by network (shown before you confirm)'],
+            ]}
+          />
+        )}
         <p className="text-xs text-text-muted mt-2">
-          When you buy gas instantly, you pay the live on-chain value of the gas tokens plus a small flat platform service fee (typically ~0.25 USDT, varies by chain). The exact total is shown live before you confirm on the{' '}
-          <Link href="/gas" className="text-primary hover:underline">Crypto Gas Fees</Link> page.
+          On-chain gas value is charged at the live market rate. See the{' '}
+          <Link href="/gas" className="text-primary hover:underline">Crypto Gas Fees</Link> page for the live total.
         </p>
       </section>
 
@@ -148,9 +175,12 @@ export default function FeesPage() {
             </div>
             <div>
               <p className="text-base font-bold text-text-primary">
-                Earn {referralReward} per referral
+                Referral rewards — coming soon
               </p>
-              <p className="text-sm text-text-muted">BKR credited to your wallet when your referral completes their first trade.</p>
+              <p className="text-sm text-text-muted">
+                Rewards are reviewed and approved by our team based on your referrals&apos; completed
+                trading activity. There are no automatic cash payouts.
+              </p>
             </div>
           </div>
         </div>

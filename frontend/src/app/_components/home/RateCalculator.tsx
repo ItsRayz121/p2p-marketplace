@@ -159,7 +159,7 @@ function UsdtCalculator({ usdt }: { usdt: MarketRateUsdt }) {
 
       <RateFooter
         lines={[`1 USDT ≈ PKR ${fmtPkr(rate as number)}`]}
-        depth={`Based on ${usdt.listingCount} active listing${usdt.listingCount === 1 ? '' : 's'}`}
+        depth={`Based on latest ${usdt.listingCount} active listing${usdt.listingCount === 1 ? '' : 's'}`}
         note="Final trade rate may vary by listing."
       />
     </div>
@@ -228,7 +228,7 @@ function CtmCalculator({ tokens }: { tokens: MarketRateToken[] }) {
           token.averageUsdtRate !== null ? `1 ${token.symbol} ≈ ${fmtUsdt(token.averageUsdtRate)} USDT` : null,
           token.averagePkrRate !== null ? `1 ${token.symbol} ≈ PKR ${fmtPkr(token.averagePkrRate)}` : null,
         ]}
-        depth={`Based on ${token.listingCount} active listing${token.listingCount === 1 ? '' : 's'}`}
+        depth={`Based on latest ${token.listingCount} active listing${token.listingCount === 1 ? '' : 's'}`}
         note="Final trade rate may vary by listing."
       />
     </div>
