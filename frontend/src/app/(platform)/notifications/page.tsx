@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { notificationsApi } from '@/lib/api'
 import type { Notification } from '@/lib/api'
 import { useSSE } from '@/hooks/useSSE'
+import { openSupportChat } from '@/lib/supportChat'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -159,6 +160,11 @@ export default function NotificationsPage() {
     if (!notif.isRead) {
       notificationsApi.markRead(notif.id).catch(() => {})
       setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, isRead: true } : n))
+    }
+    // Support replies open the live chat widget rather than navigating
+    if (notif.type === 'support') {
+      openSupportChat()
+      return
     }
     const target = getNavTarget(notif)
     if (target) router.push(target)
