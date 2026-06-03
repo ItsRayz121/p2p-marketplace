@@ -186,9 +186,8 @@ export default function OrdersPage() {
               <tbody className="divide-y divide-border">
                 {trades.map((t) => {
                   const isBuyer = t.buyerId === user?.id
-                  const counterparty = isBuyer
-                    ? (t.seller?.fullName || t.seller?.username || 'Seller')
-                    : (t.buyer?.fullName || t.buyer?.username || 'Buyer')
+                  const cp = isBuyer ? t.seller : t.buyer
+                  const counterparty = cp?.fullName || cp?.username || (isBuyer ? 'Seller' : 'Buyer')
                   return (
                     <tr
                       key={t.id}
@@ -205,7 +204,7 @@ export default function OrdersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <UserAvatar name={counterparty} size="xs" />
+                          <UserAvatar name={counterparty} avatarUrl={cp?.avatarUrl} size="xs" />
                           <span className="text-sm font-medium text-primary hover:underline">{counterparty}</span>
                         </div>
                       </td>
@@ -229,9 +228,8 @@ export default function OrdersPage() {
           <div className="sm:hidden space-y-3">
             {trades.map((t) => {
               const isBuyer = t.buyerId === user?.id
-              const counterparty = isBuyer
-                ? (t.seller?.fullName || t.seller?.username || 'Seller')
-                : (t.buyer?.fullName || t.buyer?.username || 'Buyer')
+              const cp = isBuyer ? t.seller : t.buyer
+              const counterparty = cp?.fullName || cp?.username || (isBuyer ? 'Seller' : 'Buyer')
               return (
                 <Link key={t.id} href={`/trade/${t.id}`}>
                   <div className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">
@@ -239,7 +237,7 @@ export default function OrdersPage() {
                       <div>
                         {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
                         <div className="flex items-center gap-1.5 mt-1">
-                          <UserAvatar name={counterparty} size="xs" />
+                          <UserAvatar name={counterparty} avatarUrl={cp?.avatarUrl} size="xs" />
                           <p className="text-sm font-medium text-text-primary">{counterparty}</p>
                         </div>
                         <p className={`text-xs font-medium mt-0.5 ${isBuyer ? 'text-emerald-600' : 'text-blue-600'}`}>{isBuyer ? 'You bought' : 'You sold'}</p>
