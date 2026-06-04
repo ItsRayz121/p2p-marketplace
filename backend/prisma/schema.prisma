@@ -606,6 +606,8 @@ model Trade {
   buyerDeliveryMethod  String?     // 'blockchain' | 'email' | 'username' | 'internal'
   buyerDeliveryAddress String?     // the receiving address / email / username
   sellerTxHash         String?
+  txVerificationStatus String?   // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
+  txVerificationDetails Json?    // { chain, rpcChecked, txStatus, expectedReceiver, actualReceiver, expectedAmount, actualAmount, confirmations, tokenContract, verifiedAt }
   escrowReleased     Boolean     @default(false)
   cancelledBy        String?
   cancelReason       String?
@@ -627,6 +629,7 @@ model Trade {
   @@index([orderRef])
   @@index([adId])
   @@index([status, expiresAt])
+  @@index([sellerTxHash])
 }
 
 model AdBid {
@@ -1900,6 +1903,8 @@ model CtmTradeProof {
   fileUrl         String?
   fileHash        String?
   txHash          String?
+  txVerificationStatus String?  // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
+  txVerificationDetails Json?
   description     String?      @db.VarChar(500)
   isAdminReviewed Boolean      @default(false)
   adminNote       String?      @db.VarChar(500)

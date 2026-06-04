@@ -31,6 +31,15 @@ export interface EvmTxReceipt {
   transactionHash: string
 }
 
+export interface EvmTxLog {
+  /** The contract address that emitted this log. */
+  address: string
+  topics: string[]
+  data: string
+  transactionHash: string
+  logIndex: string
+}
+
 export interface EvmTxBasic {
   hash: string
   from: string
@@ -105,6 +114,84 @@ export async function getTransactionReceipt(
     to: raw.to ?? null,
     transactionHash: raw.transactionHash,
   }
+}
+
+export interface EvmReceiptWithLogs extends EvmTxReceipt {
+  logs: EvmTxLog[]
+}
+
+export async function getTransactionReceiptWithLogs(
+  rpcUrl: string,
+  chain: string,
+  txHash: string,
+): Promise<EvmReceiptWithLogs | null> {
+  const raw = await rpcCall<{
+    status?: string
+    blockNumber?: string
+    from?: string
+    to?: string | null
+    transactionHash?: string
+    logs?: Array<{
+      address?: string
+      topics?: string[]
+      data?: string
+      transactionHash?: string
+      logIndex?: string
+    }>
+  } | null>(rpcUrl, chain, 'eth_getTransactionReceipt', [txHash])
+  if (!raw) return null
+  if (!raw.status || !raw.blockNumber || !raw.from || !raw.transactionHash) {
+    logger.warn({ chain, txHash }, 'eth_getTransactionReceipt (with logs) missing required fields')
+    return null
+  }
+  if (raw.status !== '0x0' && raw.status !== '0x1') {
+    throw new EvmRpcError(chain, 'eth_getTransactionReceipt', `unexpected status ${raw.status}`)
+  }
+  const logs: EvmTxLog[] = (raw.logs ?? []).map((l) => ({
+    address: (l.address ?? '').toLowerCase(),
+    topics: l.topics ?? [],
+    data: l.data ?? '0x',
+    transactionHash: l.transactionHash ?? txHash,
+    logIndex: l.logIndex ?? '0x0',
+  }))
+  return {
+    status: raw.status,
+    blockNumber: BigInt(raw.blockNumber),
+    from: raw.from,
+    to: raw.to ?? null,
+    transactionHash: raw.transactionHash,
+    logs,
+  }
+}
+
+// keccak256("Transfer(address,address,uint256)")
+const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+
+/**
+ * Parse all ERC20 Transfer events in a receipt's logs for a specific token contract.
+ * Returns { from, to, value } for every Transfer log that matches.
+ */
+export function parseErc20Transfers(
+  logs: EvmTxLog[],
+  tokenContract: string,
+): Array<{ from: string; to: string; value: bigint }> {
+  const contractLower = tokenContract.toLowerCase()
+  const results: Array<{ from: string; to: string; value: bigint }> = []
+  for (const log of logs) {
+    if (log.address !== contractLower) continue
+    if (log.topics.length < 3) continue
+    if (log.topics[0]?.toLowerCase() !== ERC20_TRANSFER_TOPIC) continue
+    const from = '0x' + (log.topics[1] ?? '').slice(-40)
+    const to = '0x' + (log.topics[2] ?? '').slice(-40)
+    let value: bigint
+    try {
+      value = log.data === '0x' || log.data === '' ? 0n : BigInt(log.data)
+    } catch {
+      continue
+    }
+    results.push({ from, to, value })
+  }
+  return results
 }
 
 export async function getTransactionByHash(

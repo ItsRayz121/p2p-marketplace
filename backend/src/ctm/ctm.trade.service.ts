@@ -3,6 +3,8 @@ import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { decrementLockedAmount } from './ctm.listing.service'
 import { queues } from '../queues/definitions'
+import { verifyTradeTx } from '../services/blockchainVerification.service'
+import { logger } from '../lib/logger'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -119,12 +121,75 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
   description?: string
   proofType: 'screenshot' | 'txhash' | 'uid_receipt' | 'video' | 'other'
 }) {
-  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  const trade = await db.ctmTrade.findUnique({
+    where: { tradeRef },
+    include: { token: { select: { symbol: true, network: true, contractAddress: true, settlementType: true } } },
+  })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only seller can upload token proof', 403)
   if (trade.status !== 'seller_transferring') throw new AppError('CONFLICT', `Cannot upload token proof in status: ${trade.status}`, 409)
 
-  const confirmDeadlineAt = new Date(Date.now() + 30 * 60 * 1000) // buyer has 30 min to confirm
+  // ── On-chain verification for txhash proofs on ON_CHAIN settlements ──────────
+  let txVerificationStatus: string | undefined
+  let txVerificationDetails: Record<string, unknown> | undefined
+
+  if (proofData.proofType === 'txhash' && proofData.txHash && trade.token.network) {
+    const txHashNorm = proofData.txHash.trim().toLowerCase()
+
+    // Duplicate guard across CTM proofs
+    const dupeProof = await db.ctmTradeProof.findFirst({
+      where: { txHash: txHashNorm, trade: { id: { not: trade.id } } },
+      select: { tradeId: true },
+    })
+    if (dupeProof) {
+      throw new AppError(
+        'DUPLICATE_TX_HASH',
+        'This transaction hash has already been submitted as proof for another trade',
+        400,
+      )
+    }
+
+    // Buyer's receiving address comes from buyerSettlementId (ON_CHAIN trades)
+    const buyerWallet = trade.buyerSettlementId ?? ''
+
+    if (buyerWallet) {
+      try {
+        const result = await verifyTradeTx(
+          txHashNorm,
+          trade.token.symbol,
+          trade.token.network,
+          trade.tokenAmount,
+          buyerWallet,
+        )
+        txVerificationStatus = result.status
+        txVerificationDetails = result.details
+
+        logger.info(
+          { tradeRef, txHash: txHashNorm, verificationStatus: result.status },
+          'CTM uploadTokenProof: blockchain verification result',
+        )
+
+        if (result.status === 'reverted') {
+          throw new AppError('TX_REVERTED', 'The transaction was reverted on-chain — no tokens were transferred.', 400)
+        }
+        if (result.status === 'mismatch_receiver') {
+          throw new AppError('TX_WRONG_RECEIVER', `Transaction does not send tokens to the buyer's address. ${result.message}`, 400)
+        }
+        if (result.status === 'mismatch_amount') {
+          throw new AppError('TX_WRONG_AMOUNT', `Token amount sent is less than the trade amount. ${result.message}`, 400)
+        }
+      } catch (err) {
+        if (err instanceof AppError) throw err
+        logger.warn({ err, tradeRef, txHash: txHashNorm }, 'CTM uploadTokenProof: verifier threw unexpectedly')
+        txVerificationStatus = 'rpc_error'
+      }
+    } else {
+      txVerificationStatus = 'skipped'
+      txVerificationDetails = { reason: 'no_buyer_settlement_address' }
+    }
+  }
+
+  const confirmDeadlineAt = new Date(Date.now() + 30 * 60 * 1000)
 
   await db.$transaction([
     db.ctmTrade.update({
@@ -138,7 +203,9 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
         proofType: proofData.proofType,
         fileUrl: proofData.fileUrl ?? null,
         fileHash: proofData.fileHash ?? null,
-        txHash: proofData.txHash ?? null,
+        txHash: proofData.txHash ? proofData.txHash.trim().toLowerCase() : null,
+        txVerificationStatus: txVerificationStatus ?? null,
+        txVerificationDetails: (txVerificationDetails as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         description: proofData.description ?? 'Token transfer proof',
       },
     }),

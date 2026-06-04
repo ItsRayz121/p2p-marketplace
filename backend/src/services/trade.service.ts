@@ -9,6 +9,8 @@ import { queues } from '../queues/definitions'
 import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
+import { verifyTradeTx, assertNoDuplicateTradeTxHash } from './blockchainVerification.service'
+import { logger } from '../lib/logger'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -343,6 +345,79 @@ export async function confirmPayment(tradeId: string, actorId: string, role: str
 }
 
 export async function markCryptoSent(tradeId: string, sellerId: string, txHash: string) {
+  const txHashNorm = txHash.trim().toLowerCase()
+
+  // Load trade outside the transaction so we can run async blockchain RPC calls
+  // before acquiring the DB lock — RPC calls can take several seconds.
+  const tradeForVerify = await db.trade.findUnique({
+    where: { id: tradeId },
+    select: { id: true, status: true, sellerId: true, coin: true, network: true, amount: true, buyerWalletAddress: true, buyerDeliveryAddress: true, buyerDeliveryMethod: true },
+  })
+  if (!tradeForVerify) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (tradeForVerify.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
+  if (tradeForVerify.status !== 'payment_confirmed') {
+    throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${tradeForVerify.status}`, 400)
+  }
+
+  // ── Duplicate hash guard ──────────────────────────────────────────────────────
+  // The same on-chain tx can only prove one trade. Block replay before RPC calls.
+  await assertNoDuplicateTradeTxHash(txHashNorm, tradeId)
+
+  // ── On-chain verification ─────────────────────────────────────────────────────
+  // Resolve the buyer's destination address: blockchain delivery takes priority
+  // over the generic buyerWalletAddress field (which may hold a legacy value).
+  const buyerWallet =
+    (tradeForVerify.buyerDeliveryMethod === 'blockchain' && tradeForVerify.buyerDeliveryAddress)
+      ? tradeForVerify.buyerDeliveryAddress
+      : tradeForVerify.buyerWalletAddress
+
+  let verificationResult
+  try {
+    verificationResult = await verifyTradeTx(
+      txHashNorm,
+      tradeForVerify.coin,
+      tradeForVerify.network,
+      tradeForVerify.amount,
+      buyerWallet,
+    )
+  } catch (err) {
+    // Unexpected errors from the verifier must not silently swallow — if it's
+    // an AppError we already threw a user-visible error; rethrow anything else.
+    throw err
+  }
+
+  logger.info(
+    { tradeId, txHash: txHashNorm, verificationStatus: verificationResult.status, chain: tradeForVerify.network },
+    'markCryptoSent: blockchain verification result',
+  )
+
+  // ── Rejection gate ────────────────────────────────────────────────────────────
+  // Block definitive fraud signals. Uncertain outcomes (RPC down, tx pending,
+  // non-EVM chain) let the submission through — the buyer retains the final
+  // release gate and can open a dispute if something looks wrong.
+  if (verificationResult.status === 'reverted') {
+    throw new AppError(
+      'TX_REVERTED',
+      'The transaction was reverted on-chain — no tokens were transferred. Please check the blockchain explorer and resubmit a successful transaction.',
+      400,
+    )
+  }
+  if (verificationResult.status === 'mismatch_receiver') {
+    throw new AppError(
+      'TX_WRONG_RECEIVER',
+      `The transaction does not send tokens to the buyer's wallet address. ${verificationResult.message}`,
+      400,
+    )
+  }
+  if (verificationResult.status === 'mismatch_amount') {
+    throw new AppError(
+      'TX_WRONG_AMOUNT',
+      `The transaction amount is less than the trade amount. ${verificationResult.message}`,
+      400,
+    )
+  }
+
+  // ── Commit to DB ──────────────────────────────────────────────────────────────
   const updated = await db.$transaction(async (tx: Tx) => {
     const rows = await tx.$queryRaw<Array<{ id: string; status: string; sellerId: string; buyerId: string }>>`
       SELECT id, status, "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE
@@ -351,17 +426,28 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
     if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
     if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
     if (trade.status !== 'payment_confirmed') {
-      throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${trade.status}`, 400)
+      throw new AppError('INVALID_STATUS', `Trade status changed concurrently: ${trade.status}`, 400)
     }
 
     return tx.trade.update({
       where: { id: tradeId },
-      data: { status: 'crypto_sent', sellerTxHash: txHash },
+      data: {
+        status: 'crypto_sent',
+        sellerTxHash: txHashNorm,
+        txVerificationStatus: verificationResult.status,
+        txVerificationDetails: verificationResult.details as Prisma.InputJsonValue,
+      },
     })
   })
 
-  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', 'The seller has sent the crypto. Please verify and release once received.', { tradeId }, tradeId)
-  createAdminNotif({ category: 'TRADE', title: 'Token Transfer Proof Submitted', body: `Trade #${updated.orderRef} — seller submitted token transfer hash.`, href: `/admin/trades/${tradeId}` })
+  const verifiedLabel = verificationResult.status === 'verified' ? ' (on-chain verified ✓)' : ''
+  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', `The seller has sent the crypto${verifiedLabel}. Please verify and release once received.`, { tradeId, txVerificationStatus: verificationResult.status }, tradeId)
+  createAdminNotif({
+    category: 'TRADE',
+    title: `Token Transfer Proof Submitted — ${verificationResult.status.toUpperCase()}`,
+    body: `Trade #${updated.orderRef} — seller submitted tx hash. Verification: ${verificationResult.status}. ${verificationResult.message}`,
+    href: `/admin/trades/${tradeId}`,
+  })
   return updated
 }
 

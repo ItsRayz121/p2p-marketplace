@@ -61,6 +61,7 @@ interface ExtendedTrade extends Trade {
   buyerDeliveryMethod?: string
   buyerDeliveryAddress?: string
   ratedByMe?: boolean
+  txVerificationStatus?: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -829,9 +830,34 @@ export default function TradePage() {
                   )
                 )}
                 {trade.sellerTxHash && (
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
-                    <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
+                        {trade.txVerificationStatus === 'verified' && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 border border-green-200 rounded px-2 py-0.5">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            On-chain verified
+                          </span>
+                        )}
+                        {trade.txVerificationStatus === 'pending' && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-0.5">
+                            ⏳ Confirming on-chain
+                          </span>
+                        )}
+                        {(trade.txVerificationStatus === 'skipped' || trade.txVerificationStatus === 'rpc_error') && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-text-muted bg-surface border border-border rounded px-2 py-0.5">
+                            ⚠ Verify manually on explorer
+                          </span>
+                        )}
+                        {trade.txVerificationStatus === 'not_found' && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-0.5">
+                            ⚠ Tx not found — pending or invalid
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -880,6 +906,7 @@ export default function TradePage() {
 
             {showCryptoSentForm && !isUserBuyer && (
               <div className="space-y-3">
+                <p className="text-xs text-text-muted">Enter the exact blockchain transaction hash for the transfer you sent to the buyer&apos;s wallet. The system will verify the transaction on-chain.</p>
                 <input
                   type="text"
                   value={txHash}
@@ -900,6 +927,11 @@ export default function TradePage() {
             {isUserBuyer && trade.status === 'crypto_sent' && (
               <>
                 <AutoReleaseCountdown updatedAt={trade.updatedAt} hoursWindow={AUTO_RELEASE_HOURS} />
+                {trade.txVerificationStatus && trade.txVerificationStatus !== 'verified' && (
+                  <p className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2">
+                    ⚠ The transaction hash has not been independently verified on-chain. Please check the explorer link before releasing.
+                  </p>
+                )}
                 <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>
                   I Received the Crypto — Release
                 </Button>
