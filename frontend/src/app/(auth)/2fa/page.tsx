@@ -59,6 +59,8 @@ export default function TwoFaPage() {
         const message =
           err instanceof ApiError && err.code === 'INVALID_OTP'
             ? 'Invalid authentication code. Please try again.'
+            : err instanceof ApiError && err.status === 401
+            ? 'Session expired. Please go back and log in again.'
             : err instanceof Error
             ? err.message
             : 'Verification failed. Please try again.'

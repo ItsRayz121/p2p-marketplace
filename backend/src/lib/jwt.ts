@@ -72,7 +72,7 @@ export function signAccessToken(
 export function signPreAuthToken(
   payload: Omit<PreAuthTokenPayload, 'type' | 'iat' | 'exp'>,
 ): string {
-  return signJwt({ ...payload, type: 'pre_auth' }, env.JWT_REFRESH_SECRET, 5 * 60)
+  return signJwt({ ...payload, type: 'pre_auth' }, env.JWT_REFRESH_SECRET, 10 * 60)
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload | null {
