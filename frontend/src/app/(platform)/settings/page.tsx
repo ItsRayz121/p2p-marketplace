@@ -318,9 +318,15 @@ function SecurityTab() {
               <label className="text-sm font-medium text-text-primary block mb-1.5">Enter 6-digit code</label>
               <Input
                 value={twoFaCode}
-                onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, '').slice(0, 6)
+                  setTwoFaCode(v)
+                  if (v.length === 6 && !twoFaLoading) setTimeout(handleEnable2fa, 0)
+                }}
                 placeholder="000000"
                 maxLength={6}
+                inputMode="numeric"
+                autoComplete="one-time-code"
               />
             </div>
             {twoFaError && <p className="text-sm text-danger">{twoFaError}</p>}
@@ -336,9 +342,15 @@ function SecurityTab() {
               <label className="text-sm font-medium text-text-primary block mb-1.5">Enter TOTP code to disable</label>
               <Input
                 value={twoFaCode}
-                onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, '').slice(0, 6)
+                  setTwoFaCode(v)
+                  if (v.length === 6 && !twoFaLoading) setTimeout(handleDisable2fa, 0)
+                }}
                 placeholder="000000"
                 maxLength={6}
+                inputMode="numeric"
+                autoComplete="one-time-code"
               />
             </div>
             {twoFaError && <p className="text-sm text-danger">{twoFaError}</p>}
