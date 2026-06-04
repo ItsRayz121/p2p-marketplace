@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { chainDisplayName } from '@/lib/chainDisplayName'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -215,7 +216,7 @@ function LiveBalancesPanel() {
                 <div className="flex items-center justify-between gap-1 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <EntityLogo type="chain" slug={w.chain} size="sm" />
-                    <span className="font-bold text-xs text-text-primary truncate">{w.chain}</span>
+                    <span className="font-bold text-xs text-text-primary truncate">{chainDisplayName(w.chain)}</span>
                     <span className="text-[10px] text-text-muted shrink-0">{w.nativeSymbol}</span>
                     <span className={cn(
                       'w-1.5 h-1.5 rounded-full shrink-0',
@@ -608,7 +609,7 @@ export default function GasWalletActivityPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <EntityLogo type="chain" slug={entry.chain} size="xs" />
-                          <Badge variant="default" size="sm">{entry.chain}</Badge>
+                          <Badge variant="default" size="sm">{chainDisplayName(entry.chain)}</Badge>
                         </div>
                       </td>
 

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
 import { useAuthStore } from '@/store/auth.store'
+import { chainDisplayName } from '@/lib/chainDisplayName'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,7 +228,7 @@ function WalletCard({
           {/* Title row */}
           <div className="flex items-center gap-2 mb-2">
             <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${walletHealthDot(wallet.status)}`} />
-            <h2 className="text-sm font-semibold text-text-primary">{wallet.chain} Hot Wallet</h2>
+            <h2 className="text-sm font-semibold text-text-primary">{chainDisplayName(wallet.chain)} Hot Wallet</h2>
             <Badge variant={walletStatusVariant(wallet.status)} size="sm">
               {walletStatusLabel(wallet.status, wallet.pauseReason)}
             </Badge>
@@ -357,7 +358,7 @@ function AnalyticsPanel({ analytics }: { analytics: GasAnalytics }) {
             <tbody className="divide-y divide-border">
               {analytics.chainStats.sort((a, b) => b.total - a.total).map((c) => (
                 <tr key={c.chain} className="py-1.5">
-                  <td className="py-1.5 font-medium text-text-primary">{c.chain}</td>
+                  <td className="py-1.5 font-medium text-text-primary">{chainDisplayName(c.chain)}</td>
                   <td className="py-1.5 text-right text-success">{c.delivered}</td>
                   <td className="py-1.5 text-right text-danger">{c.failed}</td>
                   <td className="py-1.5 text-right font-medium">
@@ -1004,7 +1005,7 @@ export default function GasAdminPage() {
             <strong>Hot wallet paused:</strong>{' '}
             {stats.wallets
               .filter(w => w.status === 'paused')
-              .map(w => `${w.chain} (${w.pauseReason === 'manual' ? 'manually' : 'low balance'})`)
+              .map(w => `${chainDisplayName(w.chain)} (${w.pauseReason === 'manual' ? 'manually' : 'low balance'})`)
               .join(', ')}.
             {' '}New orders are paused on these chains.
           </span>
@@ -1017,8 +1018,8 @@ export default function GasAdminPage() {
           <svg className="w-5 h-5 flex-shrink-0 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>
             <strong>Price unavailable:</strong>{' '}
-            {stats.wallets.filter(w => w.status === 'price_unavailable').map(w => w.chain).join(', ')}.
-            {' '}Cannot evaluate balance thresholds — check price feed (rate:POL / rate:MATIC in Redis).
+            {stats.wallets.filter(w => w.status === 'price_unavailable').map(w => `${chainDisplayName(w.chain)} (${w.nativeSymbol})`).join(', ')}.
+            {' '}Live balance is fetched successfully, but USD value cannot be calculated yet. Price feed will sync automatically.
           </span>
         </div>
       )}

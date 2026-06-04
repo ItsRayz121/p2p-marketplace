@@ -41,49 +41,108 @@ const CHAIN_PRICE_SYMBOL: Record<GasChainId, string> = {
 }
 
 // POL ↔ MATIC legacy compatibility: if either Redis key is missing, try the other.
-// Accepted legacy aliases for Polygon: MATIC, WMATIC → resolved to POL.
 const PRICE_SYMBOL_ALIASES: Record<string, string> = {
   POL:   'MATIC',
   MATIC: 'POL',
 }
 
-async function readPkrRate(symbol: string): Promise<number> {
+// CoinGecko IDs used only for the live-fetch fallback when all Redis paths fail.
+const CHAIN_GECKO_IDS: Partial<Record<GasChainId, string>> = {
+  TRON:     'tron',
+  BSC:      'binancecoin',
+  ETHEREUM: 'ethereum',
+  BASE:     'ethereum',
+  ARB:      'ethereum',
+  OP:       'ethereum',
+  MATIC:    'matic-network',
+  AVAX:     'avalanche-2',
+  SOL:      'solana',
+  TON:      'the-open-network',
+  SUI:      'sui',
+}
+
+interface CoinEntry { pkrRate: number; usdPrice: number }
+
+async function readCoinEntry(symbol: string): Promise<CoinEntry> {
   const raw = await redis.get(`rate:${symbol}`)
-  if (!raw) return 0
-  return (JSON.parse(raw) as { rate: number }).rate
+  if (!raw) return { pkrRate: 0, usdPrice: 0 }
+  const parsed = JSON.parse(raw) as { rate?: number; usdPrice?: number }
+  return { pkrRate: parsed.rate ?? 0, usdPrice: parsed.usdPrice ?? 0 }
 }
 
 export async function getNativeUsdPrice(chain: GasChainId): Promise<number> {
-  const symbol   = CHAIN_PRICE_SYMBOL[chain]
-  const usdPkrStr = await redis.get('rate:USD_PKR')
-  const usdPkr    = usdPkrStr ? parseFloat(usdPkrStr) : 0
+  const symbol = CHAIN_PRICE_SYMBOL[chain]
 
-  let pkrRate = await readPkrRate(symbol)
+  let entry = await readCoinEntry(symbol)
 
-  // Fallback: if primary symbol has no cached price, try the alias (POL↔MATIC)
-  if (pkrRate === 0) {
+  // Fallback: if primary symbol has no data, try the alias (POL↔MATIC)
+  if (entry.usdPrice === 0 && entry.pkrRate === 0) {
     const alias = PRICE_SYMBOL_ALIASES[symbol]
     if (alias) {
-      pkrRate = await readPkrRate(alias)
-      if (pkrRate > 0) {
+      const aliasEntry = await readCoinEntry(alias)
+      if (aliasEntry.usdPrice > 0 || aliasEntry.pkrRate > 0) {
+        entry = aliasEntry
         logger.debug({ chain, primarySymbol: symbol, fallbackAlias: alias },
-          '[POL/MATIC] resolved price via alias fallback')
+          '[gas-price] alias fallback resolved price')
       }
     }
   }
 
-  const usdPrice = usdPkr > 0 && pkrRate > 0 ? pkrRate / usdPkr : 0
+  // Path 1: usdPrice is stored directly in the Redis JSON — most reliable, no
+  // dependency on rate:USD_PKR being present.
+  if (entry.usdPrice > 0) {
+    logger.debug({ chain, symbol, usdPrice: entry.usdPrice }, '[gas-price] from redis usdPrice field')
+    return entry.usdPrice
+  }
 
-  logger.debug({
-    chain,
-    detectedNativeSymbol: symbol,    // display symbol used for price lookup
-    resolvedPricingSymbol: pkrRate > 0 ? symbol : (PRICE_SYMBOL_ALIASES[symbol] ?? symbol),
-    fetchedUsdPrice: usdPrice,
-    usdPkr,
-    pkrRate,
-  }, '[debug] getNativeUsdPrice')
+  // Path 2: convert PKR rate using rate:USD_PKR
+  if (entry.pkrRate > 0) {
+    const usdPkrStr = await redis.get('rate:USD_PKR')
+    const usdPkr = usdPkrStr ? parseFloat(usdPkrStr) : 0
+    if (usdPkr > 0) {
+      const usdPrice = entry.pkrRate / usdPkr
+      logger.debug({ chain, symbol, usdPrice, pkrRate: entry.pkrRate, usdPkr }, '[gas-price] from pkr conversion')
+      return usdPrice
+    }
+  }
 
-  return usdPrice
+  // Path 3: live CoinGecko fetch — last resort when Redis has nothing.
+  // Writes back to Redis (30 min TTL) so subsequent calls hit the cache.
+  const geckoId = CHAIN_GECKO_IDS[chain]
+  if (geckoId) {
+    try {
+      const isPro = !!env.COINGECKO_API_KEY
+      const base = isPro ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3'
+      const headers: Record<string, string> = isPro ? { 'x-cg-pro-api-key': env.COINGECKO_API_KEY! } : {}
+      const res = await fetch(`${base}/simple/price?ids=${geckoId}&vs_currencies=usd`, {
+        headers,
+        signal: AbortSignal.timeout(8000),
+      })
+      if (res.ok) {
+        const data = (await res.json()) as Record<string, { usd?: number }>
+        const price = data[geckoId]?.usd
+        if (price && price > 0) {
+          const usdPkrStr = await redis.get('rate:USD_PKR')
+          const usdPkr = usdPkrStr ? parseFloat(usdPkrStr) : 278.5
+          const pkrRate = price * usdPkr
+          const now = new Date().toISOString()
+          const val = JSON.stringify({ rate: pkrRate, usdPrice: price, updatedAt: now, source: 'gas-balance-live' })
+          await redis.set(`rate:${symbol}`, val, 'EX', 1800)
+          const alias = PRICE_SYMBOL_ALIASES[symbol]
+          if (alias) await redis.set(`rate:${alias}`, val, 'EX', 1800)
+          logger.info({ chain, symbol, geckoId, usdPrice: price, pkrRate, redisKey: `rate:${symbol}` },
+            '[gas-price] live-fetched from CoinGecko and cached in Redis')
+          return price
+        }
+      }
+    } catch (err) {
+      logger.warn({ chain, symbol, geckoId, err: err instanceof Error ? err.message : String(err) },
+        '[gas-price] live CoinGecko fetch failed')
+    }
+  }
+
+  logger.warn({ chain, symbol }, '[gas-price] all price paths failed — returning 0')
+  return 0
 }
 
 // ── TRON balance ──────────────────────────────────────────────────────────────
