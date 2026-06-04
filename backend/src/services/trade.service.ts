@@ -9,7 +9,13 @@ import { queues } from '../queues/definitions'
 import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
-import { verifyTradeTx, assertNoDuplicateTradeTxHash } from './blockchainVerification.service'
+import {
+  verifyTradeTx,
+  assertNoDuplicateTradeTxHash,
+  HARD_REJECT_STATUSES,
+  ADMIN_REVIEW_STATUSES,
+  RELEASE_ALLOWED_STATUSES,
+} from './blockchainVerification.service'
 import { logger } from '../lib/logger'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -392,28 +398,32 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
   )
 
   // ── Rejection gate ────────────────────────────────────────────────────────────
-  // Block definitive fraud signals. Uncertain outcomes (RPC down, tx pending,
-  // non-EVM chain) let the submission through — the buyer retains the final
-  // release gate and can open a dispute if something looks wrong.
-  if (verificationResult.status === 'reverted') {
+  // Hard-reject any status that is definitively wrong or unconfirmed.
+  // A fake/wrong/unconfirmed hash must NEVER move the trade forward.
+  if (HARD_REJECT_STATUSES.includes(verificationResult.status)) {
+    const userMessages: Record<string, string> = {
+      reverted: 'The transaction was reverted on-chain — no tokens were transferred. Check the explorer and resubmit a successful transaction.',
+      mismatch_receiver: `The transaction does not send tokens to the buyer's wallet. ${verificationResult.message}`,
+      mismatch_amount: `The transferred amount is less than the trade amount. ${verificationResult.message}`,
+      failed: `Transaction verification failed. ${verificationResult.message}`,
+      not_found: 'Transaction not found on this blockchain. Please ensure you submitted the correct hash and the transaction is confirmed, then resubmit.',
+      pending: 'Transaction is not yet confirmed on-chain. Please wait for at least one block confirmation and resubmit.',
+    }
     throw new AppError(
-      'TX_REVERTED',
-      'The transaction was reverted on-chain — no tokens were transferred. Please check the blockchain explorer and resubmit a successful transaction.',
+      'TX_VERIFICATION_FAILED',
+      userMessages[verificationResult.status] ?? verificationResult.message,
       400,
     )
   }
-  if (verificationResult.status === 'mismatch_receiver') {
-    throw new AppError(
-      'TX_WRONG_RECEIVER',
-      `The transaction does not send tokens to the buyer's wallet address. ${verificationResult.message}`,
-      400,
-    )
-  }
-  if (verificationResult.status === 'mismatch_amount') {
-    throw new AppError(
-      'TX_WRONG_AMOUNT',
-      `The transaction amount is less than the trade amount. ${verificationResult.message}`,
-      400,
+
+  // Admin-review path: tx hash is stored, trade moves to crypto_sent, but buyer
+  // is BLOCKED from releasing until an admin calls approve-tx-verification.
+  // Applies to: skipped (non-EVM chain) and rpc_error (our node was down).
+  const requiresAdminReview = ADMIN_REVIEW_STATUSES.includes(verificationResult.status)
+  if (requiresAdminReview) {
+    logger.warn(
+      { tradeId, txHash: txHashNorm, status: verificationResult.status },
+      'markCryptoSent: tx requires admin review before buyer can release',
     )
   }
 
@@ -440,12 +450,16 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
     })
   })
 
-  const verifiedLabel = verificationResult.status === 'verified' ? ' (on-chain verified ✓)' : ''
-  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', `The seller has sent the crypto${verifiedLabel}. Please verify and release once received.`, { tradeId, txVerificationStatus: verificationResult.status }, tradeId)
+  const verifiedLabel = verificationResult.status === 'verified'
+    ? ' (on-chain verified ✓)'
+    : requiresAdminReview
+      ? ' — awaiting admin verification before you can release'
+      : ''
+  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', `The seller has sent the crypto${verifiedLabel}.`, { tradeId, txVerificationStatus: verificationResult.status }, tradeId)
   createAdminNotif({
     category: 'TRADE',
-    title: `Token Transfer Proof Submitted — ${verificationResult.status.toUpperCase()}`,
-    body: `Trade #${updated.orderRef} — seller submitted tx hash. Verification: ${verificationResult.status}. ${verificationResult.message}`,
+    title: `Tx Proof Submitted — ${verificationResult.status.toUpperCase()}${requiresAdminReview ? ' ⚠ NEEDS REVIEW' : ''}`,
+    body: `Trade #${updated.orderRef} — seller tx hash. Verification: ${verificationResult.status}. ${verificationResult.message}${requiresAdminReview ? ' Admin must approve before buyer can release.' : ''}`,
     href: `/admin/trades/${tradeId}`,
   })
   return updated
@@ -461,6 +475,21 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     },
   })
   if (!tradeDetails) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  // ── Verification gate ─────────────────────────────────────────────────────────
+  // txVerificationStatus = null means a legacy trade created before the
+  // verification system was deployed — allow it through for backward compat.
+  const vs = tradeDetails.txVerificationStatus
+  if (vs !== null && vs !== undefined && !RELEASE_ALLOWED_STATUSES.includes(vs as never)) {
+    const isAdminReview = ADMIN_REVIEW_STATUSES.includes(vs as never)
+    throw new AppError(
+      'TX_NOT_VERIFIED',
+      isAdminReview
+        ? 'This trade is pending admin verification of the transaction hash. Release will be available once an admin approves the transaction.'
+        : `Cannot release — transaction verification status is "${vs}". Please contact support.`,
+      400,
+    )
+  }
 
   await db.$transaction(async (tx: Tx) => {
     // SELECT FOR UPDATE prevents concurrent release from double-completing

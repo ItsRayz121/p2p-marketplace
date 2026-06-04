@@ -3,7 +3,7 @@ import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { decrementLockedAmount } from './ctm.listing.service'
 import { queues } from '../queues/definitions'
-import { verifyTradeTx } from '../services/blockchainVerification.service'
+import { verifyTradeTx, HARD_REJECT_STATUSES, ADMIN_REVIEW_STATUSES, RELEASE_ALLOWED_STATUSES } from '../services/blockchainVerification.service'
 import { logger } from '../lib/logger'
 
 type JsonValue = Prisma.InputJsonValue
@@ -169,14 +169,16 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
           'CTM uploadTokenProof: blockchain verification result',
         )
 
-        if (result.status === 'reverted') {
-          throw new AppError('TX_REVERTED', 'The transaction was reverted on-chain — no tokens were transferred.', 400)
-        }
-        if (result.status === 'mismatch_receiver') {
-          throw new AppError('TX_WRONG_RECEIVER', `Transaction does not send tokens to the buyer's address. ${result.message}`, 400)
-        }
-        if (result.status === 'mismatch_amount') {
-          throw new AppError('TX_WRONG_AMOUNT', `Token amount sent is less than the trade amount. ${result.message}`, 400)
+        if (HARD_REJECT_STATUSES.includes(result.status)) {
+          const msgs: Record<string, string> = {
+            reverted: 'Transaction was reverted on-chain — no tokens transferred.',
+            mismatch_receiver: `Transaction sends to wrong address. ${result.message}`,
+            mismatch_amount: `Amount sent is below the trade amount. ${result.message}`,
+            not_found: 'Transaction not found on chain. Ensure it is confirmed and resubmit.',
+            pending: 'Transaction is not yet confirmed. Wait for confirmation and resubmit.',
+            failed: result.message,
+          }
+          throw new AppError('TX_VERIFICATION_FAILED', msgs[result.status] ?? result.message, 400)
         }
       } catch (err) {
         if (err instanceof AppError) throw err
@@ -215,10 +217,36 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
 }
 
 export async function confirmReceipt(tradeRef: string, buyerId: string) {
-  const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { listing: true } })
+  const trade = await db.ctmTrade.findUnique({
+    where: { tradeRef },
+    include: {
+      listing: true,
+      proofs: { orderBy: { createdAt: 'desc' }, take: 1 },
+    },
+  })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only buyer can confirm receipt', 403)
   if (trade.status !== 'proof_submitted') throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${trade.status}`, 409)
+
+  // Check the latest txhash proof's verification status
+  const latestProof = trade.proofs[0]
+  if (latestProof?.proofType === 'txhash' && latestProof.txVerificationStatus) {
+    const vs = latestProof.txVerificationStatus
+    if (!RELEASE_ALLOWED_STATUSES.includes(vs as never) && !ADMIN_REVIEW_STATUSES.includes(vs as never)) {
+      throw new AppError(
+        'TX_NOT_VERIFIED',
+        `Cannot confirm receipt — transaction proof verification status is "${vs}". The transaction was rejected. Ask the seller to resubmit a valid transaction.`,
+        400,
+      )
+    }
+    if (ADMIN_REVIEW_STATUSES.includes(vs as never)) {
+      throw new AppError(
+        'TX_PENDING_REVIEW',
+        'Cannot confirm receipt — this trade is pending admin verification of the transaction hash.',
+        400,
+      )
+    }
+  }
 
   await db.$transaction(async (tx: Tx) => {
     await tx.ctmTrade.update({

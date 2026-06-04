@@ -715,6 +715,52 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
+  // POST /admin/trades/:id/approve-tx-verification
+  // Manually approve a pending tx hash for chains we cannot verify automatically
+  // (non-EVM) or when our RPC was unavailable. Unlocks the buyer's release button.
+  app.post('/admin/trades/:id/approve-tx-verification', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({
+      reason: z.string().min(5).max(500),
+    })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'reason required', 400)
+
+    const trade = await db.trade.findUnique({
+      where: { id },
+      select: { id: true, status: true, txVerificationStatus: true, sellerTxHash: true, orderRef: true },
+    })
+    if (!trade) throw Errors.NOT_FOUND('Trade')
+    if (trade.status !== 'crypto_sent') {
+      throw new AppError('INVALID_STATUS', `Trade must be in crypto_sent status to approve verification (current: ${trade.status})`, 400)
+    }
+    const allowedToApprove = ['skipped', 'rpc_error', 'pending', 'not_found']
+    if (trade.txVerificationStatus && !allowedToApprove.includes(trade.txVerificationStatus)) {
+      throw new AppError('INVALID_STATUS', `Trade txVerificationStatus is "${trade.txVerificationStatus}" — only skipped/rpc_error/pending/not_found can be admin-approved`, 400)
+    }
+
+    await db.trade.update({
+      where: { id },
+      data: {
+        txVerificationStatus: 'admin_verified',
+        txVerificationDetails: {
+          adminVerifiedBy: req.user!.id,
+          adminVerifiedAt: new Date().toISOString(),
+          adminReason: parsed.data.reason,
+          previousStatus: trade.txVerificationStatus,
+        },
+      },
+    })
+    await createAuditLog(req.user!.id, 'TRADE_TX_VERIFICATION_APPROVED', 'Trade', id, {
+      sellerTxHash: trade.sellerTxHash,
+      previousStatus: trade.txVerificationStatus,
+      reason: parsed.data.reason,
+    })
+
+    log.info({ tradeId: id, adminId: req.user!.id, orderRef: trade.orderRef }, 'Admin approved tx verification — buyer can now release')
+    return reply.send({ success: true, message: 'Transaction verification approved. Buyer can now release the trade.' })
+  })
+
   // ── Disputes ───────────────────────────────────────────────────────────────
 
   app.get('/admin/disputes', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {

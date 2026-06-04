@@ -38,8 +38,9 @@ export const QUEUE_NAMES = {
   CTM_ESCROW_MONITOR:       'ctm-escrow-monitor',
   CTM_INACTIVE_PAUSE:       'ctm-inactive-pause',
   CTM_BID_EXPIRY:           'ctm-bid-expiry',
-  GAS_PAYMENT_POLLER:           'gas-payment-poller',
-  GAS_HOT_WALLET_DEPOSIT_POLL:  'gas-hot-wallet-deposit-poll',
+  GAS_PAYMENT_POLLER:               'gas-payment-poller',
+  GAS_HOT_WALLET_DEPOSIT_POLL:      'gas-hot-wallet-deposit-poll',
+  WITHDRAWAL_CONFIRMATION_WATCHER:  'withdrawal-confirmation-watcher',
 } as const
 
 export const queues = {
@@ -109,6 +110,10 @@ export const queues = {
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
   gasHotWalletDepositPoll: new Queue(QUEUE_NAMES.GAS_HOT_WALLET_DEPOSIT_POLL, {
+    connection,
+    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
+  }),
+  withdrawalConfirmationWatcher: new Queue(QUEUE_NAMES.WITHDRAWAL_CONFIRMATION_WATCHER, {
     connection,
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),

@@ -924,19 +924,44 @@ export default function TradePage() {
             )}
 
             {/* Buyer: release escrow (crypto_sent) */}
-            {isUserBuyer && trade.status === 'crypto_sent' && (
-              <>
-                <AutoReleaseCountdown updatedAt={trade.updatedAt} hoursWindow={AUTO_RELEASE_HOURS} />
-                {trade.txVerificationStatus && trade.txVerificationStatus !== 'verified' && (
-                  <p className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2">
-                    ⚠ The transaction hash has not been independently verified on-chain. Please check the explorer link before releasing.
-                  </p>
-                )}
-                <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>
-                  I Received the Crypto — Release
-                </Button>
-              </>
-            )}
+            {isUserBuyer && trade.status === 'crypto_sent' && (() => {
+              const vs = trade.txVerificationStatus
+              // null/undefined = legacy trade (pre-verification) → allow
+              const canRelease = !vs || vs === 'verified' || vs === 'admin_verified'
+              const isAdminReview = vs === 'skipped' || vs === 'rpc_error'
+              const isPending = vs === 'pending' || vs === 'not_found'
+              return (
+                <>
+                  <AutoReleaseCountdown updatedAt={trade.updatedAt} hoursWindow={AUTO_RELEASE_HOURS} />
+                  {isAdminReview && (
+                    <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 space-y-1">
+                      <p className="font-semibold">⏳ Pending admin verification</p>
+                      <p className="text-xs">The transaction hash could not be verified automatically (chain not supported or RPC unavailable). An admin must review and approve it before you can release.</p>
+                    </div>
+                  )}
+                  {isPending && (
+                    <div className="rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800 space-y-1">
+                      <p className="font-semibold">⚠ Transaction not confirmed</p>
+                      <p className="text-xs">The submitted transaction hash was not found or is still pending on-chain. The seller must resubmit a confirmed transaction hash. Do not release until you see the funds in your wallet.</p>
+                    </div>
+                  )}
+                  {vs === 'verified' && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+                      <p className="font-semibold">✓ On-chain verified</p>
+                      <p className="text-xs">The transaction was independently verified on the blockchain. You may release once you have confirmed receipt.</p>
+                    </div>
+                  )}
+                  <Button
+                    fullWidth
+                    loading={actionLoading}
+                    disabled={!canRelease || actionLoading}
+                    onClick={() => setShowReleaseModal(true)}
+                  >
+                    {canRelease ? 'I Received the Crypto — Release' : 'Release Locked — Pending Verification'}
+                  </Button>
+                </>
+              )
+            })()}
 
             {/* Dispute */}
             {canDispute && !showDisputeForm && (

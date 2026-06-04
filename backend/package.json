@@ -23,7 +23,9 @@
     "check:chains": "ts-node src/scripts/validateChainSync.ts",
     "check:chains:rpc": "ts-node src/scripts/validateChainSync.ts --rpc",
     "verify:token": "ts-node src/scripts/verifyToken.ts",
-    "seed:chains": "ts-node --project tsconfig.json prisma/seeds/depositChains.seed.ts"
+    "seed:chains": "ts-node --project tsconfig.json prisma/seeds/depositChains.seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fastify/cookie": "^9.3.1",
@@ -60,7 +62,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "tsx": "^4.16.2"
+    "tsx": "^4.16.2",
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=20.0.0"

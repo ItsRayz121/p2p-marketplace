@@ -21,6 +21,7 @@ import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
+import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
 import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -245,6 +246,16 @@ export function startWorkers() {
 
   createWorker(QUEUE_NAMES.GAS_HOT_WALLET_DEPOSIT_POLL, async () => {
     await runHotWalletDepositPoller()
+  }, { max: 1, duration: 60_000 })
+
+  // Withdrawal confirmation watcher — runs every 2 minutes, checks sent EVM
+  // withdrawals for on-chain confirmation and alerts on reverted/stuck txs.
+  queues.withdrawalConfirmationWatcher
+    .add('watch', {}, { repeat: { every: 2 * 60_000 }, jobId: 'withdrawal-confirmation-watcher-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule withdrawal confirmation watcher'))
+
+  createWorker(QUEUE_NAMES.WITHDRAWAL_CONFIRMATION_WATCHER, async () => {
+    await runWithdrawalConfirmationWatcher()
   }, { max: 1, duration: 60_000 })
 
   logger.info('BullMQ workers ready')
