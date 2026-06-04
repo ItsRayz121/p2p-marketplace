@@ -1001,6 +1001,181 @@ function WithdrawalFeesPanel({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   )
 }
 
+// ─── Non-EVM Hot Wallet Setup Panel ──────────────────────────────────────────
+
+const NON_EVM_BACKEND_IDS = new Set(['SOL', 'TON', 'SUI'])
+
+interface HotWalletRow {
+  id: string
+  chain: string
+  address: string
+  isActive: boolean
+}
+
+function NonEvmSetupPanel({
+  chains,
+  isSuperAdmin,
+  onFlash,
+}: {
+  chains: AdminGasChain[]
+  isSuperAdmin: boolean
+  onFlash: (msg: string) => void
+}) {
+  const nonEvmChains = chains.filter(
+    (c) => c.backendChainId && NON_EVM_BACKEND_IDS.has(c.backendChainId),
+  )
+
+  const [wallets, setWallets] = useState<Record<string, HotWalletRow | null | undefined>>({})
+  const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [msgs, setMsgs] = useState<Record<string, { text: string; ok: boolean }>>({})
+
+  const chainKey = nonEvmChains.map((c) => c.backendChainId).join(',')
+
+  useEffect(() => {
+    if (!nonEvmChains.length) return
+    setWallets({})
+    void Promise.all(
+      nonEvmChains.map(async (c) => {
+        try {
+          const { wallets: ws } = await adminApi.listHotWallets(c.backendChainId!)
+          setWallets((prev) => ({ ...prev, [c.backendChainId!]: ws[0] ?? null }))
+        } catch {
+          setWallets((prev) => ({ ...prev, [c.backendChainId!]: null }))
+        }
+      }),
+    )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chainKey])
+
+  if (nonEvmChains.length === 0) return null
+
+  async function handleSeed(backendChainId: string) {
+    setBusy((b) => ({ ...b, [backendChainId]: true }))
+    setMsgs((m) => ({ ...m, [backendChainId]: { text: '', ok: true } }))
+    try {
+      const result = await adminApi.addHotWallet(backendChainId)
+      setWallets((w) => ({
+        ...w,
+        [backendChainId]: { id: result.id, chain: backendChainId, address: result.address, isActive: false },
+      }))
+      setMsgs((m) => ({
+        ...m,
+        [backendChainId]: { text: `Wallet seeded: ${result.address} — fund it, then click Activate.`, ok: true },
+      }))
+      onFlash(`${backendChainId} hot wallet created. Fund the address then activate it.`)
+    } catch (e) {
+      setMsgs((m) => ({
+        ...m,
+        [backendChainId]: { text: e instanceof Error ? e.message : 'Seed failed', ok: false },
+      }))
+    } finally {
+      setBusy((b) => ({ ...b, [backendChainId]: false }))
+    }
+  }
+
+  async function handleToggle(backendChainId: string, walletId: string) {
+    setBusy((b) => ({ ...b, [backendChainId]: true }))
+    setMsgs((m) => ({ ...m, [backendChainId]: { text: '', ok: true } }))
+    try {
+      const result = await adminApi.toggleHotWallet(walletId)
+      setWallets((w) => ({
+        ...w,
+        [backendChainId]: { ...w[backendChainId]!, isActive: result.isActive },
+      }))
+      onFlash(`${backendChainId} hot wallet ${result.isActive ? 'activated' : 'deactivated'}.`)
+    } catch (e) {
+      setMsgs((m) => ({
+        ...m,
+        [backendChainId]: { text: e instanceof Error ? e.message : 'Action failed', ok: false },
+      }))
+    } finally {
+      setBusy((b) => ({ ...b, [backendChainId]: false }))
+    }
+  }
+
+  return (
+    <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <h3 className="text-sm font-semibold text-text-primary">Non-EVM Hot Wallet Setup</h3>
+        <p className="text-xs text-text-muted mt-0.5">
+          SOL, TON, and SUI require a hot wallet DB row derived from your mnemonic before they can be activated.
+          Seed → Fund → Activate, then set the chain to Active.
+        </p>
+      </div>
+      <div className="divide-y divide-border">
+        {nonEvmChains.map((chain) => {
+          const bid = chain.backendChainId!
+          const wallet = wallets[bid]
+          const isBusy = busy[bid] ?? false
+          const msg = msgs[bid]
+          const loading = !(bid in wallets)
+
+          return (
+            <div key={bid} className="px-5 py-4 flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  {chain.logoUrl && (
+                    <img src={chain.logoUrl} alt={chain.name} className="w-5 h-5 rounded-full object-contain" />
+                  )}
+                  <span className="font-medium text-text-primary text-sm">{chain.name}</span>
+                  <Badge variant="default" size="sm">{bid}</Badge>
+                  {loading ? (
+                    <Badge variant="default" size="sm">Checking…</Badge>
+                  ) : wallet?.isActive ? (
+                    <Badge variant="success" size="sm">Hot Wallet Active ✓</Badge>
+                  ) : wallet ? (
+                    <Badge variant="warning" size="sm">Seeded — Not Active</Badge>
+                  ) : (
+                    <Badge variant="danger" size="sm">No Hot Wallet</Badge>
+                  )}
+                  {chain.isActive && <Badge variant="success" size="sm">Chain Active</Badge>}
+                </div>
+
+                {wallet?.address && (
+                  <p className="text-xs font-mono text-text-muted break-all mt-0.5">{wallet.address}</p>
+                )}
+                {!wallet && !loading && (
+                  <p className="text-xs text-text-muted mt-0.5">
+                    No hot wallet yet. Seed to derive address from your mnemonic, fund it with {bid}, then activate.
+                  </p>
+                )}
+                {wallet && !wallet.isActive && (
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Fund the address above with {bid}, then click Activate Wallet. Once active, you can enable the chain.
+                  </p>
+                )}
+                {msg?.text && (
+                  <p className={`text-xs mt-1 ${msg.ok ? 'text-success' : 'text-danger'}`}>{msg.text}</p>
+                )}
+              </div>
+
+              {isSuperAdmin && !loading && (
+                <div className="flex-shrink-0 flex gap-2">
+                  {!wallet && (
+                    <Button size="sm" variant="secondary" disabled={isBusy} onClick={() => void handleSeed(bid)}>
+                      {isBusy ? 'Seeding…' : 'Seed Wallet'}
+                    </Button>
+                  )}
+                  {wallet && (
+                    <Button
+                      size="sm"
+                      variant={wallet.isActive ? 'ghost' : 'secondary'}
+                      disabled={isBusy}
+                      onClick={() => void handleToggle(bid, wallet.id)}
+                    >
+                      {isBusy ? '…' : wallet.isActive ? 'Deactivate' : 'Activate Wallet'}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GasChainsAdminPage() {
@@ -1316,6 +1491,10 @@ export default function GasChainsAdminPage() {
               <Button onClick={openAddChain} size="sm">+ Add Chain</Button>
             )}
           </div>
+
+          {!chainsLoading && !chainsError && (
+            <NonEvmSetupPanel chains={chains} isSuperAdmin={isSuperAdmin} onFlash={flash} />
+          )}
 
           {chainsLoading && <LoadingState message="Loading chains..." />}
           {chainsError && <ErrorState title={chainsError} onRetry={fetchChains} />}
