@@ -83,7 +83,7 @@ export default function TwoFaPage() {
     }
 
     const filled = next.join('')
-    if (filled.length === OTP_LENGTH && !filled.includes('')) {
+    if (next.every((d) => d.length === 1)) {
       submitCode(filled)
     }
   }
