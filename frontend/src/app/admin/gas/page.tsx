@@ -44,7 +44,8 @@ interface GasWallet {
   balance: number | null
   balanceUsd: number | null
   nativeSymbol: string
-  status: 'healthy' | 'low' | 'paused' | 'unavailable'
+  status: 'healthy' | 'low' | 'paused' | 'unavailable' | 'rpc_error' | 'price_unavailable'
+  pauseReason: 'manual' | 'low_balance' | null
   alertThresholdUsd: number | null
   pauseThresholdUsd: number | null
   lastBalanceRefreshAt: string | null
@@ -126,16 +127,21 @@ function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' 
 function walletStatusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
   if (s === 'healthy') return 'success'
   if (s === 'low') return 'warning'
-  if (s === 'paused') return 'danger'
+  if (s === 'price_unavailable') return 'warning'
+  if (s === 'paused' || s === 'rpc_error') return 'danger'
   return 'default'
 }
 
-function walletStatusLabel(s: string): string {
+function walletStatusLabel(s: string, pauseReason?: string | null): string {
+  if (s === 'paused' && pauseReason === 'manual') return 'Manually Paused'
+  if (s === 'paused' && pauseReason === 'low_balance') return 'Low Balance Paused'
   const labels: Record<string, string> = {
-    healthy:     'Healthy',
-    low:         'Low Balance',
-    paused:      'Paused',
-    unavailable: 'Balance Unknown',
+    healthy:           'Healthy',
+    low:               'Low Balance',
+    paused:            'Paused',
+    unavailable:       'Balance Unknown',
+    rpc_error:         'RPC Error',
+    price_unavailable: 'Price Unavailable',
   }
   return labels[s] ?? s
 }
@@ -143,7 +149,8 @@ function walletStatusLabel(s: string): string {
 function walletHealthDot(s: string): string {
   if (s === 'healthy') return 'bg-green-500'
   if (s === 'low') return 'bg-yellow-400'
-  if (s === 'paused') return 'bg-red-500'
+  if (s === 'price_unavailable') return 'bg-orange-400'
+  if (s === 'paused' || s === 'rpc_error') return 'bg-red-500'
   return 'bg-gray-400'
 }
 
@@ -210,8 +217,9 @@ function WalletCard({
 
   return (
     <div className={`bg-surface border rounded-xl p-5 ${
-      wallet.status === 'paused' ? 'border-danger/40 bg-red-50/30'
+      wallet.status === 'paused' || wallet.status === 'rpc_error' ? 'border-danger/40 bg-red-50/30'
       : wallet.status === 'low' ? 'border-warning/40 bg-yellow-50/30'
+      : wallet.status === 'price_unavailable' ? 'border-orange-400/40 bg-orange-50/30'
       : 'border-border'
     }`}>
       <div className="flex items-start justify-between gap-4">
@@ -221,9 +229,8 @@ function WalletCard({
             <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${walletHealthDot(wallet.status)}`} />
             <h2 className="text-sm font-semibold text-text-primary">{wallet.chain} Hot Wallet</h2>
             <Badge variant={walletStatusVariant(wallet.status)} size="sm">
-              {walletStatusLabel(wallet.status)}
+              {walletStatusLabel(wallet.status, wallet.pauseReason)}
             </Badge>
-            {!wallet.isActive && <Badge variant="danger" size="sm">Admin Paused</Badge>}
           </div>
 
           {/* Address */}
@@ -242,8 +249,11 @@ function WalletCard({
                 {wallet.balance !== null
                   ? `${fmtNative(wallet.balance)} ${wallet.nativeSymbol}`
                   : 'Unknown'}
-                {wallet.balanceUsd != null &&
-                  <span className="ml-1 font-normal text-text-muted">(~${wallet.balanceUsd.toFixed(2)})</span>
+                {wallet.balanceUsd != null && wallet.balanceUsd > 0
+                  ? <span className="ml-1 font-normal text-text-muted">(~${wallet.balanceUsd.toFixed(2)})</span>
+                  : wallet.balance !== null && wallet.status === 'price_unavailable'
+                  ? <span className="ml-1 font-normal text-orange-500 italic">(price unavailable)</span>
+                  : null
                 }
               </span>
             </div>
@@ -992,8 +1002,35 @@ export default function GasAdminPage() {
           <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>
             <strong>Hot wallet paused:</strong>{' '}
-            {stats.wallets.filter(w => w.status === 'paused').map(w => w.chain).join(', ')}.
+            {stats.wallets
+              .filter(w => w.status === 'paused')
+              .map(w => `${w.chain} (${w.pauseReason === 'manual' ? 'manually' : 'low balance'})`)
+              .join(', ')}.
             {' '}New orders are paused on these chains.
+          </span>
+        </div>
+      )}
+
+      {/* ── Price Unavailable Warning ────────────────────────────────────────── */}
+      {stats?.wallets?.some(w => w.status === 'price_unavailable') && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
+          <svg className="w-5 h-5 flex-shrink-0 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span>
+            <strong>Price unavailable:</strong>{' '}
+            {stats.wallets.filter(w => w.status === 'price_unavailable').map(w => w.chain).join(', ')}.
+            {' '}Cannot evaluate balance thresholds — check price feed (rate:POL / rate:MATIC in Redis).
+          </span>
+        </div>
+      )}
+
+      {/* ── RPC Error Warning ────────────────────────────────────────────────── */}
+      {stats?.wallets?.some(w => w.status === 'rpc_error') && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
+          <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span>
+            <strong>RPC error:</strong>{' '}
+            {stats.wallets.filter(w => w.status === 'rpc_error').map(w => w.chain).join(', ')}.
+            {' '}Balance fetch failed — use &ldquo;Test RPC&rdquo; to diagnose.
           </span>
         </div>
       )}

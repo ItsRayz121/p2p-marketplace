@@ -2740,25 +2740,51 @@ export async function adminRoutes(app: FastifyInstance) {
     const wallets = await Promise.all(
       allWallets.map(async (w) => {
         const chainConfig = GAS_CHAINS[fromDbChain(w.chain)]
-        const [balanceCached, isPaused, balanceUsdCached] = await Promise.all([
+        const [balanceCached, isPaused, balanceUsdCached, rpcError] = await Promise.all([
           redisClient.get(`gas_wallet_balance:${w.chain}`),
           redisClient.get(`gas_wallet_paused:${w.chain}`),
           redisClient.get(`gas_wallet_balance_usd:${w.chain}`),
+          redisClient.get(`gas_wallet_error:${w.chain}`),
         ])
         const balance = balanceCached ? parseFloat(balanceCached) : null
         const cfg = statsThresholdMap[w.chain as string]
         const alertThresholdUsd = cfg?.alertThresholdUsd ?? null
         const pauseThresholdUsd = cfg?.pauseThresholdUsd ?? null
+        // Guard: only multiply by price if price > 0; a 0 price means "unavailable",
+        // not "worth zero" — multiplying gives balanceUsd=0 which triggers false pauses.
         const balanceUsd = balanceUsdCached
           ? parseFloat(balanceUsdCached)
           : balance !== null && chainConfig
-          ? await getNativeUsdPrice(fromDbChain(w.chain)).then((p) => balance * p).catch(() => null)
+          ? await getNativeUsdPrice(fromDbChain(w.chain)).then((p) => p > 0 ? balance * p : null).catch(() => null)
           : null
-        let status: 'healthy' | 'low' | 'paused' | 'unavailable' = 'healthy'
-        if (!w.isActive || isPaused) status = 'paused'
-        else if (balanceUsd === null) status = 'unavailable'
-        else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
-        else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
+
+        let status: 'healthy' | 'low' | 'paused' | 'unavailable' | 'rpc_error' | 'price_unavailable' = 'healthy'
+        let pauseReason: 'manual' | 'low_balance' | null = null
+
+        if (!w.isActive) {
+          // Admin explicitly disabled this chain via the toggle button
+          status = 'paused'
+          pauseReason = 'manual'
+        } else if (balance === null) {
+          // Balance fetch has never succeeded or RPC is down
+          status = rpcError ? 'rpc_error' : 'unavailable'
+        } else if (balanceUsd === null) {
+          // Balance is known but USD price is unavailable — cannot evaluate USD thresholds.
+          // Fall back to the stale auto-pause key only as a last resort so we don't show
+          // "healthy" for a chain that was genuinely paused before the price feed went down.
+          status = isPaused ? 'paused' : 'price_unavailable'
+          if (isPaused) pauseReason = 'low_balance'
+        } else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) {
+          // Live USD balance below pause threshold — definitive auto-pause
+          status = 'paused'
+          pauseReason = 'low_balance'
+        } else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) {
+          status = 'low'
+        }
+        // else: healthy (default)
+        // NOTE: when balanceUsd IS computable and above thresholds we intentionally
+        // ignore any stale gas_wallet_paused key — the live threshold check wins.
+
         return {
           chain:                w.chain,
           address:              w.address,
@@ -2767,6 +2793,7 @@ export async function adminRoutes(app: FastifyInstance) {
           balanceUsd,
           nativeSymbol:         chainConfig?.nativeSymbol ?? w.chain,
           status,
+          pauseReason,
           alertThresholdUsd,
           pauseThresholdUsd,
           lastBalanceRefreshAt: w.lastBalanceRefreshAt ?? null,
@@ -2859,7 +2886,10 @@ export async function adminRoutes(app: FastifyInstance) {
       db.gasHotWallet.update({ where: { id: wallet.id }, data: { lastBalanceRefreshAt: new Date() } }),
     ])
 
-    const isPaused = await redisClient.get(`gas_wallet_paused:${chain}`)
+    const [isPaused, rpcError] = await Promise.all([
+      redisClient.get(`gas_wallet_paused:${chain}`),
+      redisClient.get(`gas_wallet_error:${chain}`),
+    ])
     const dbThreshold = await db.gasChainConfig.findFirst({
       where: { backendChainId: chain },
       select: { alertThresholdUsd: true, pauseThresholdUsd: true },
@@ -2871,15 +2901,41 @@ export async function adminRoutes(app: FastifyInstance) {
     if (balanceUsd !== null) {
       await redisClient.set(`gas_wallet_balance_usd:${chain}`, String(balanceUsd.toFixed(4)), 'EX', 1800)
     }
-    let status: 'healthy' | 'low' | 'paused' | 'unavailable' = 'healthy'
-    if (!wallet.isActive || isPaused) status = 'paused'
-    else if (balanceUsd === null) status = 'unavailable'
-    else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
-    else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
+
+    // Re-evaluate and update the auto-pause key based on the fresh balance so
+    // that the manual Refresh Balance button immediately reflects reality.
+    if (balanceUsd !== null) {
+      if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) {
+        await redisClient.set(`gas_wallet_paused:${chain}`, '1', 'EX', 360)
+      } else {
+        await redisClient.del(`gas_wallet_paused:${chain}`)
+      }
+    }
+
+    let status: 'healthy' | 'low' | 'paused' | 'unavailable' | 'rpc_error' | 'price_unavailable' = 'healthy'
+    let pauseReason: 'manual' | 'low_balance' | null = null
+
+    if (!wallet.isActive) {
+      status = 'paused'
+      pauseReason = 'manual'
+    } else if (balanceUsd === null && isPaused) {
+      // Price unavailable — respect stale auto-pause rather than showing healthy
+      status = 'paused'
+      pauseReason = 'low_balance'
+    } else if (balanceUsd === null && rpcError) {
+      status = 'rpc_error'
+    } else if (balanceUsd === null) {
+      status = 'price_unavailable'
+    } else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) {
+      status = 'paused'
+      pauseReason = 'low_balance'
+    } else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) {
+      status = 'low'
+    }
 
     return reply.send({
       success: true,
-      data: { chain, balance, balanceUsd, nativeSymbol: chainConfig.nativeSymbol, status, alertThresholdUsd, pauseThresholdUsd },
+      data: { chain, balance, balanceUsd, nativeSymbol: chainConfig.nativeSymbol, status, pauseReason, alertThresholdUsd, pauseThresholdUsd },
     })
   })
 
