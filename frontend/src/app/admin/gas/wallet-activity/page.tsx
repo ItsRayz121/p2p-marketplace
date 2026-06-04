@@ -64,8 +64,23 @@ const ENTRY_TYPE_COLORS: Record<string, string> = {
   external_hot_wallet_deposit: 'text-purple-700 bg-purple-50',
 }
 
-const CHAINS = ['TRON', 'BSC', 'ETH', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'APT']
 const ENTRY_TYPES = Object.keys(ENTRY_TYPE_LABELS)
+
+// Hook: fetch active gas chains from DB so dropdowns include SOL/TON/SUI automatically
+function useGasChainIds() {
+  const [chainIds, setChainIds] = useState<string[]>([])
+  useEffect(() => {
+    adminApi.getGasChains().then(({ chains }) => {
+      const ids = chains
+        .filter((c) => c.backendChainId)
+        .map((c) => c.backendChainId as string)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .sort()
+      setChainIds(ids)
+    }).catch(() => {})
+  }, [])
+  return chainIds
+}
 
 const EXPLORER_URL: Record<string, string> = {
   TRON:  'https://tronscan.org/#/address/',
@@ -262,7 +277,7 @@ function LiveBalancesPanel() {
 
 // ─── Manual Deposit Form ──────────────────────────────────────────────────────
 
-function ManualDepositForm({ onSuccess }: { onSuccess: () => void }) {
+function ManualDepositForm({ onSuccess, chains }: { onSuccess: () => void; chains: string[] }) {
   const [open, setOpen]           = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]         = useState<string | null>(null)
@@ -339,7 +354,7 @@ function ManualDepositForm({ onSuccess }: { onSuccess: () => void }) {
                   required
                 >
                   <option value="">Select chain…</option>
-                  {CHAINS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {chains.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
@@ -420,6 +435,7 @@ function ManualDepositForm({ onSuccess }: { onSuccess: () => void }) {
 export default function GasWalletActivityPage() {
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin = user?.role === 'super_admin'
+  const gasChainIds = useGasChainIds()
 
   const [items, setItems]     = useState<LedgerEntry[]>([])
   const [total, setTotal]     = useState(0)
@@ -480,7 +496,7 @@ export default function GasWalletActivityPage() {
         <div className="flex items-center gap-2">
           <p className="text-sm text-text-muted">{total.toLocaleString()} records</p>
           {isSuperAdmin && (
-            <ManualDepositForm onSuccess={() => fetchActivity(1)} />
+            <ManualDepositForm onSuccess={() => fetchActivity(1)} chains={gasChainIds} />
           )}
         </div>
       </div>
@@ -507,7 +523,7 @@ export default function GasWalletActivityPage() {
             onChange={(e) => setChain(e.target.value)}
           >
             <option value="">All chains</option>
-            {CHAINS.map((c) => <option key={c} value={c}>{c}</option>)}
+            {gasChainIds.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <select
             className="border border-border rounded-lg px-3 py-2 text-sm"

@@ -125,13 +125,15 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
 
       {/* Chain search */}
       <div className="relative">
-        <label className="block text-sm font-medium text-slate-700 mb-1">Search chain (EVM auto-lookup)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          Search chain <span className="font-normal text-slate-400">(EVM auto-lookup — or skip and fill manually for SOL/TON/SUI/TRON)</span>
+        </label>
         <input
           type="text"
           value={query}
           onChange={e => handleQueryChange(e.target.value)}
           onFocus={() => results.length > 0 && setShowDropdown(true)}
-          placeholder="e.g. ZetaChain, Linea, Scroll…"
+          placeholder="e.g. ZetaChain, Linea — or type manually for SOL/TON/SUI"
           className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         {searching && (
@@ -174,6 +176,12 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               {FAMILIES.map(f => <option key={f}>{f}</option>)}
             </select>
+            {family !== 'EVM' && (
+              <p className="text-xs text-blue-600 mt-1">
+                Non-EVM chain — auto-lookup is EVM-only. Fill all fields manually below.
+                After creating, go to Gas → Chains to assign a Backend Chain ID and seed the hot wallet.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Native Symbol *</label>
