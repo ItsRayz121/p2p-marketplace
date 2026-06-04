@@ -11,7 +11,7 @@
  *   - Stored address is public data derived from the public key (safe to cache).
  */
 
-import { WalletContractV4 } from '@ton/ton'
+import { Address, WalletContractV4 } from '@ton/ton'
 import { env } from '../env'
 import { decryptGasSeed, gasWalletIsConfigured } from './gasWalletService'
 import { deriveSlip10Ed25519, ed25519PublicKeyFromSeed } from './nonEvmDerivation'
@@ -25,7 +25,21 @@ const TON_SLIP10_PATH = "m/44'/607'/0'/0'"
 // (this is the format we generate — not the user-friendly bounceable/non-bounceable form)
 const TON_RAW_ADDR_RE = /^0:[0-9a-f]{64}$/i
 
-// ── Address validation ────────────────────────────────────────────────────────
+// ── Address format helpers ────────────────────────────────────────────────────
+
+/**
+ * Convert a raw TON address (0:hex64) to user-friendly non-bounceable format (UQ...).
+ * Non-bounceable is standard for deposit addresses — TON sent to a non-existent
+ * bounceable address bounces back; non-bounceable prevents that.
+ */
+export function tonRawToFriendly(rawAddr: string): string {
+  try {
+    const addr = Address.parse(rawAddr)
+    return addr.toString({ bounceable: false, urlSafe: true })
+  } catch {
+    return rawAddr // fallback: return as-is if parsing fails
+  }
+}
 
 export function validateTonAddress(addr: string): boolean {
   // Accept raw format (0:hex64) or user-friendly format (48-char base64url)
@@ -83,6 +97,13 @@ export function getTonHotWalletAddress(): string | null {
 
 export function clearTonAddressCache(): void {
   _tonAddressCache = null
+}
+
+/** Returns the TON hot wallet address in user-friendly non-bounceable format (UQ...). */
+export function getTonHotWalletFriendlyAddress(): string | null {
+  const raw = getTonHotWalletAddress()
+  if (!raw) return null
+  return tonRawToFriendly(raw)
 }
 
 // ── Startup validation ────────────────────────────────────────────────────────

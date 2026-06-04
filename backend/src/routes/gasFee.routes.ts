@@ -136,8 +136,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
   app.get('/gas-fee/chains', async (_req, reply) => {
     const dbChains = await db.gasChainConfig.findMany({
+      where: { isVisibleToUsers: true },
       orderBy: { displayOrder: 'asc' },
-      include: { tokens: { where: { isActive: true }, orderBy: { displayOrder: 'asc' } } },
+      include: { tokens: { where: { isActive: true, isVisibleToUsers: true }, orderBy: { displayOrder: 'asc' } } },
     })
 
     const chains = await Promise.all(
@@ -198,9 +199,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
     if (!chainCfg) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' not found`, 404)
     if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' is not currently active`, 400)
+    if (!chainCfg.isVisibleToUsers) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' is not available`, 400)
 
     const tokens = await db.gasTokenConfig.findMany({
-      where: { chainConfigId: chainCfg.id },
+      where: { chainConfigId: chainCfg.id, isVisibleToUsers: true },
       orderBy: [{ isActive: 'desc' }, { displayOrder: 'asc' }],
     })
 

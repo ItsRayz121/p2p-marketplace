@@ -1207,6 +1207,7 @@ export default function GasChainsAdminPage() {
   const [confirmDeleteChain, setConfirmDeleteChain] = useState<AdminGasChain | null>(null)
   const [confirmDeleteToken, setConfirmDeleteToken] = useState<AdminGasToken | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [togglingVisibility, setTogglingVisibility] = useState<Record<string, boolean>>({})
 
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -1334,6 +1335,20 @@ export default function GasChainsAdminPage() {
     }
   }
 
+  async function toggleChainVisibility(c: AdminGasChain) {
+    setTogglingVisibility((prev) => ({ ...prev, [c.id]: true }))
+    setErrorMsg(null)
+    try {
+      await adminApi.toggleGasChainVisibility(c.id, !c.isVisibleToUsers)
+      flash(`Chain "${c.name}" ${c.isVisibleToUsers ? 'hidden from users' : 'shown to users'}.`)
+      fetchChains()
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to update visibility')
+    } finally {
+      setTogglingVisibility((prev) => ({ ...prev, [c.id]: false }))
+    }
+  }
+
   // ── Token CRUD ──────────────────────────────────────────────────────────────
 
   function openAddToken(preselectedChainId?: string) {
@@ -1420,6 +1435,20 @@ export default function GasChainsAdminPage() {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to delete token')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function toggleTokenVisibility(t: AdminGasToken) {
+    setTogglingVisibility((prev) => ({ ...prev, [t.id]: true }))
+    setErrorMsg(null)
+    try {
+      await adminApi.toggleGasTokenVisibility(t.id, !t.isVisibleToUsers)
+      flash(`Token "${t.name}" ${t.isVisibleToUsers ? 'hidden from users' : 'shown to users'}.`)
+      fetchTokens()
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to update token visibility')
+    } finally {
+      setTogglingVisibility((prev) => ({ ...prev, [t.id]: false }))
     }
   }
 
@@ -1558,9 +1587,14 @@ export default function GasChainsAdminPage() {
                         </td>
                         <td className="px-4 py-3 text-text-muted">{c._count?.tokens ?? c.tokens?.length ?? 0}</td>
                         <td className="px-4 py-3">
-                          <Badge variant={c.isActive ? 'success' : 'default'} size="sm">
-                            {c.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
+                          <div className="flex flex-col gap-1">
+                            <Badge variant={c.isActive ? 'success' : 'default'} size="sm">
+                              {c.isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                            <Badge variant={c.isVisibleToUsers !== false ? 'outline' : 'warning'} size="sm">
+                              {c.isVisibleToUsers !== false ? 'Visible' : 'Hidden'}
+                            </Badge>
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           {c.readinessState === 'stable'
@@ -1573,10 +1607,18 @@ export default function GasChainsAdminPage() {
                           }
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
                             <Button size="sm" variant="ghost" onClick={() => openEditChain(c)}>Edit</Button>
                             <Button size="sm" variant="ghost" onClick={() => { setTab('tokens'); openAddToken(c.id) }}>
                               + Token
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={togglingVisibility[c.id]}
+                              onClick={() => void toggleChainVisibility(c)}
+                            >
+                              {c.isVisibleToUsers !== false ? 'Hide' : 'Show'}
                             </Button>
                             {isSuperAdmin && (
                               <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteChain(c)}>
@@ -1658,13 +1700,26 @@ export default function GasChainsAdminPage() {
                         <td className="px-4 py-3 text-xs text-text-muted">{getEffectiveMax(t)}</td>
                         <td className="px-4 py-3 text-text-muted text-xs">{presetDisplay(t.presetAmounts)}</td>
                         <td className="px-4 py-3">
-                          <Badge variant={t.isActive ? 'success' : 'default'} size="sm">
-                            {t.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
+                          <div className="flex flex-col gap-1">
+                            <Badge variant={t.isActive ? 'success' : 'default'} size="sm">
+                              {t.isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                            <Badge variant={t.isVisibleToUsers !== false ? 'outline' : 'warning'} size="sm">
+                              {t.isVisibleToUsers !== false ? 'Visible' : 'Hidden'}
+                            </Badge>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
                             <Button size="sm" variant="ghost" onClick={() => openEditToken(t)}>Edit</Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={togglingVisibility[t.id]}
+                              onClick={() => void toggleTokenVisibility(t)}
+                            >
+                              {t.isVisibleToUsers !== false ? 'Hide' : 'Show'}
+                            </Button>
                             {isSuperAdmin && (
                               <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteToken(t)}>Delete</Button>
                             )}
@@ -1712,8 +1767,8 @@ export default function GasChainsAdminPage() {
         onClose={() => setConfirmDeleteChain(null)}
         onConfirm={() => { if (confirmDeleteChain) void deleteChain(confirmDeleteChain) }}
         title={`Delete Gas Chain: ${confirmDeleteChain?.name ?? ''}`}
-        description="This will delete the gas chain and all its tokens. Orders referencing these tokens cannot be deleted. This action cannot be undone."
-        confirmLabel="Delete"
+        description="Deleting this chain may break historical records and cannot be undone. Use the Hide button instead if you only want to remove it from user-facing pages — it stays in admin and can be shown again later."
+        confirmLabel="Delete Anyway"
         confirmVariant="danger"
       />
 
@@ -1722,8 +1777,8 @@ export default function GasChainsAdminPage() {
         onClose={() => setConfirmDeleteToken(null)}
         onConfirm={() => { if (confirmDeleteToken) void deleteToken(confirmDeleteToken) }}
         title={`Delete Token: ${confirmDeleteToken?.name ?? ''}`}
-        description="This will delete the token. Existing orders referencing it will remain intact. This action cannot be undone."
-        confirmLabel="Delete"
+        description="Deleting this token may affect historical records. Use the Hide button instead to remove it from users without losing the config. Existing orders will remain intact."
+        confirmLabel="Delete Anyway"
         confirmVariant="danger"
       />
     </div>

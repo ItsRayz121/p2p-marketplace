@@ -2338,9 +2338,14 @@ export async function adminRoutes(app: FastifyInstance) {
         else if (balanceUsd === null) status = 'unavailable'
         else if (pauseThresholdUsd !== null && balanceUsd <= pauseThresholdUsd) status = 'paused'
         else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) status = 'low'
+        // For TON, also expose user-friendly (UQ...) address for display
+        const { tonRawToFriendly } = await import('../lib/gas/tonWalletService')
+        const friendlyAddress = w.chain === 'TON' ? tonRawToFriendly(w.address) : null
+
         return {
           chain:                w.chain,
           address:              w.address,
+          friendlyAddress,
           isActive:             w.isActive,
           balance,
           balanceUsd,
@@ -3353,6 +3358,7 @@ export async function adminRoutes(app: FastifyInstance) {
       defaultMinAmount:   z.number().positive().nullable().default(null),
       defaultMaxUsdValue: z.number().positive().nullable().default(null),
       isActive:           z.boolean().default(false),
+      isVisibleToUsers:   z.boolean().default(true),
       readinessState:     z.enum(['inactive', 'testing', 'beta', 'stable']).default('inactive'),
       displayOrder:       z.number().int().default(0),
     })
@@ -3365,7 +3371,8 @@ export async function adminRoutes(app: FastifyInstance) {
         backendChainId: d.backendChainId, platformFeeUsdt: d.platformFeeUsdt,
         alertThresholdUsd: d.alertThresholdUsd, pauseThresholdUsd: d.pauseThresholdUsd,
         defaultMinAmount: d.defaultMinAmount, defaultMaxUsdValue: d.defaultMaxUsdValue,
-        isActive: d.isActive, readinessState: d.readinessState, displayOrder: d.displayOrder,
+        isActive: d.isActive, isVisibleToUsers: d.isVisibleToUsers,
+        readinessState: d.readinessState, displayOrder: d.displayOrder,
       },
     })
     await createAuditLog(req.user!.id, 'GAS_CHAIN_CREATED', 'GasChainConfig', chain.id, { slug: chain.slug })
@@ -3402,6 +3409,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('defaultMinAmount' in body) updateData.defaultMinAmount = body.defaultMinAmount != null ? Math.max(0, Number(body.defaultMinAmount)) : null
     if ('defaultMaxUsdValue' in body) updateData.defaultMaxUsdValue = body.defaultMaxUsdValue != null ? Math.max(0, Number(body.defaultMaxUsdValue)) : null
     if ('isActive' in body) updateData.isActive = body.isActive
+    if ('isVisibleToUsers' in body) updateData.isVisibleToUsers = body.isVisibleToUsers
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
     if ('readinessState' in body) {
       const validStates = ['inactive', 'testing', 'beta', 'stable']
@@ -3468,6 +3476,11 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('isActive' in updateData) {
       await createAuditLog(req.user!.id, activating ? 'GAS_CHAIN_ACTIVATED' : 'GAS_CHAIN_DEACTIVATED', 'GasChainConfig', id, {
         slug: chain.slug, isActive: updateData.isActive,
+      })
+    }
+    if ('isVisibleToUsers' in updateData) {
+      await createAuditLog(req.user!.id, updateData.isVisibleToUsers ? 'GAS_CHAIN_SHOWN' : 'GAS_CHAIN_HIDDEN', 'GasChainConfig', id, {
+        slug: chain.slug, isVisibleToUsers: updateData.isVisibleToUsers,
       })
     }
     await createAuditLog(req.user!.id, 'GAS_CHAIN_UPDATED', 'GasChainConfig', id, updateData)
@@ -3571,6 +3584,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('maxUsdValue' in body) updateData.maxUsdValue = body.maxUsdValue != null ? Number(body.maxUsdValue) : null
     if ('presetAmounts' in body) updateData.presetAmounts = body.presetAmounts
     if ('isActive' in body) updateData.isActive = body.isActive
+    if ('isVisibleToUsers' in body) updateData.isVisibleToUsers = body.isVisibleToUsers
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
 
     const updated = await db.gasTokenConfig.update({ where: { id }, data: updateData })

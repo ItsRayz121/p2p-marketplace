@@ -1264,6 +1264,7 @@ model GasChainConfig {
   defaultMinAmount  Decimal?         @db.Decimal(18, 8) // Default min amount for tokens under this chain
   defaultMaxUsdValue Decimal?        @db.Decimal(10, 4) // Default max USD value for tokens under this chain
   isActive          Boolean          @default(true)
+  isVisibleToUsers  Boolean          @default(true)  // false = hidden from all user-facing APIs and UI
   // Feature readiness state: inactive | testing | beta | stable
   // inactive = hidden from public UI; stable = fully operational
   readinessState    String           @default("inactive")
@@ -1288,6 +1289,7 @@ model GasTokenConfig {
   maxUsdValue     Decimal?       @db.Decimal(10, 4) // Override; null = inherit from parent chain default
   presetAmounts   Json           // number[] e.g. [10, 50, 100, 200]
   isActive        Boolean        @default(true)
+  isVisibleToUsers Boolean       @default(true)  // false = hidden from user-facing APIs and dropdowns
   displayOrder    Int            @default(0)
   orders          GasFeeOrder[]
   createdAt       DateTime       @default(now())

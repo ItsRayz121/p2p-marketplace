@@ -1422,6 +1422,7 @@ export interface AdminGasChain {
   defaultMinAmount: number | null
   defaultMaxUsdValue: number | null
   isActive: boolean
+  isVisibleToUsers: boolean
   readinessState: string
   displayOrder: number
   createdAt: string
@@ -1444,6 +1445,7 @@ export interface AdminGasToken {
   maxUsdValue: string | number | null  // null = inherit from parent chain
   presetAmounts: number[]
   isActive: boolean
+  isVisibleToUsers: boolean
   displayOrder: number
   createdAt: string
   updatedAt: string
@@ -1842,6 +1844,8 @@ export const adminApi = {
     apiRequest<AdminGasChain>(`/admin/gas/chains/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteGasChain: (id: string) =>
     apiRequest<void>(`/admin/gas/chains/${id}`, { method: 'DELETE' }),
+  toggleGasChainVisibility: (id: string, isVisibleToUsers: boolean) =>
+    apiRequest<AdminGasChain>(`/admin/gas/chains/${id}`, { method: 'PATCH', body: JSON.stringify({ isVisibleToUsers }) }),
 
   // Gas Token Config CRUD
   getGasTokens: (chainId?: string) =>
@@ -1852,6 +1856,8 @@ export const adminApi = {
     apiRequest<AdminGasToken>(`/admin/gas/tokens/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteGasToken: (id: string) =>
     apiRequest<void>(`/admin/gas/tokens/${id}`, { method: 'DELETE' }),
+  toggleGasTokenVisibility: (id: string, isVisibleToUsers: boolean) =>
+    apiRequest<AdminGasToken>(`/admin/gas/tokens/${id}`, { method: 'PATCH', body: JSON.stringify({ isVisibleToUsers }) }),
 
   // Phase 4 — Reconciliation
   listReconciliationRuns: (page = 1, limit = 20) =>
