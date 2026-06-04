@@ -46,7 +46,7 @@ const PRICE_SYMBOL_ALIASES: Record<string, string> = {
   MATIC: 'POL',
 }
 
-// CoinGecko IDs used only for the live-fetch fallback when all Redis paths fail.
+// CoinGecko IDs used for the live-fetch fallback when all Redis paths fail.
 const CHAIN_GECKO_IDS: Partial<Record<GasChainId, string>> = {
   TRON:     'tron',
   BSC:      'binancecoin',
@@ -59,6 +59,22 @@ const CHAIN_GECKO_IDS: Partial<Record<GasChainId, string>> = {
   SOL:      'solana',
   TON:      'the-open-network',
   SUI:      'sui',
+}
+
+// CoinPaprika IDs used as a second live-fetch fallback (avoids CoinGecko rate limits).
+// IMPORTANT: CoinPaprika uses different slugs from CoinGecko — 'matic-polygon', NOT 'matic-network'.
+const CHAIN_PAPRIKA_IDS: Partial<Record<GasChainId, string>> = {
+  TRON:     'trx-tron',
+  BSC:      'bnb-binance-coin',
+  ETHEREUM: 'eth-ethereum',
+  BASE:     'eth-ethereum',
+  ARB:      'eth-ethereum',
+  OP:       'eth-ethereum',
+  MATIC:    'matic-polygon',
+  AVAX:     'avax-avalanche',
+  SOL:      'sol-solana',
+  TON:      'ton-the-open-network',
+  SUI:      'sui-sui',
 }
 
 interface CoinEntry { pkrRate: number; usdPrice: number }
@@ -138,6 +154,36 @@ export async function getNativeUsdPrice(chain: GasChainId): Promise<number> {
     } catch (err) {
       logger.warn({ chain, symbol, geckoId, err: err instanceof Error ? err.message : String(err) },
         '[gas-price] live CoinGecko fetch failed')
+    }
+  }
+
+  // Path 3b: CoinPaprika — free, no key required, avoids CoinGecko rate limits.
+  const paprikaId = CHAIN_PAPRIKA_IDS[chain]
+  if (paprikaId) {
+    try {
+      const res = await fetch(`https://api.coinpaprika.com/v1/tickers/${paprikaId}`, {
+        signal: AbortSignal.timeout(8000),
+      })
+      if (res.ok) {
+        const data = (await res.json()) as { quotes?: { USD?: { price?: number } } }
+        const price = data.quotes?.USD?.price
+        if (price && price > 0) {
+          const usdPkrStr = await redis.get('rate:USD_PKR')
+          const usdPkr = usdPkrStr ? parseFloat(usdPkrStr) : 278.5
+          const pkrRate = price * usdPkr
+          const now = new Date().toISOString()
+          const val = JSON.stringify({ rate: pkrRate, usdPrice: price, updatedAt: now, source: 'gas-balance-coinpaprika' })
+          await redis.set(`rate:${symbol}`, val, 'EX', 1800)
+          const alias = PRICE_SYMBOL_ALIASES[symbol]
+          if (alias) await redis.set(`rate:${alias}`, val, 'EX', 1800)
+          logger.info({ chain, symbol, paprikaId, usdPrice: price, redisKey: `rate:${symbol}` },
+            '[gas-price] live-fetched from CoinPaprika and cached in Redis')
+          return price
+        }
+      }
+    } catch (err) {
+      logger.warn({ chain, symbol, paprikaId, err: err instanceof Error ? err.message : String(err) },
+        '[gas-price] CoinPaprika fetch failed')
     }
   }
 

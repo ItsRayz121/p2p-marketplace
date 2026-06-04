@@ -397,6 +397,59 @@ async function fetchBnbUsdPrice(): Promise<DedicatedResult | null> {
   return null
 }
 
+async function fetchPolUsdPrice(): Promise<DedicatedResult | null> {
+  const attempts: Array<{ name: string; fn: () => Promise<number> }> = [
+    { name: 'coinpaprika',     fn: () => fetchCoinPaprikaTicker('matic-polygon') },  // CoinPaprika ID for POL/MATIC
+    { name: 'cryptocompare',   fn: async () => {
+        // CryptoCompare still uses the legacy MATIC ticker for this asset
+        const res = await fetch('https://min-api.cryptocompare.com/data/price?fsym=MATIC&tsyms=USD', { signal: AbortSignal.timeout(8000) })
+        if (!res.ok) throw new Error(`CryptoCompare HTTP ${res.status}`)
+        const data = (await res.json()) as { USD?: number }
+        if (!data.USD) throw new Error('CryptoCompare: no MATIC/POL price')
+        return data.USD
+      },
+    },
+    { name: 'coingecko-single', fn: () => fetchCoinGeckoSingle('matic-network') },
+  ]
+  for (const { name, fn } of attempts) {
+    try {
+      const price = await fn()
+      logger.info({ source: name, coin: 'POL', price }, 'POL price from dedicated fetcher')
+      return { price, source: name }
+    } catch (err) {
+      logger.warn({ source: name, err: err instanceof Error ? err.message : String(err) }, 'POL dedicated fetcher failed — trying next')
+    }
+  }
+  logger.error('All dedicated POL fetchers failed — rate:POL/rate:MATIC will not be updated this cycle')
+  return null
+}
+
+async function fetchTonUsdPrice(): Promise<DedicatedResult | null> {
+  const attempts: Array<{ name: string; fn: () => Promise<number> }> = [
+    { name: 'coinpaprika',     fn: () => fetchCoinPaprikaTicker('ton-the-open-network') },
+    { name: 'cryptocompare',   fn: async () => {
+        const res = await fetch('https://min-api.cryptocompare.com/data/price?fsym=TON&tsyms=USD', { signal: AbortSignal.timeout(8000) })
+        if (!res.ok) throw new Error(`CryptoCompare HTTP ${res.status}`)
+        const data = (await res.json()) as { USD?: number }
+        if (!data.USD) throw new Error('CryptoCompare: no TON price')
+        return data.USD
+      },
+    },
+    { name: 'coingecko-single', fn: () => fetchCoinGeckoSingle('the-open-network') },
+  ]
+  for (const { name, fn } of attempts) {
+    try {
+      const price = await fn()
+      logger.info({ source: name, coin: 'TON', price }, 'TON price from dedicated fetcher')
+      return { price, source: name }
+    } catch (err) {
+      logger.warn({ source: name, err: err instanceof Error ? err.message : String(err) }, 'TON dedicated fetcher failed — trying next')
+    }
+  }
+  logger.error('All dedicated TON fetchers failed — rate:TON will not be updated this cycle')
+  return null
+}
+
 // Fetch a batch of coins not covered by the winning bulk source (e.g. MATIC/TON/SUI/APT/NEAR
 // when Kraken wins). Tries CoinGecko batch first, then individual CoinPaprika calls.
 // Returns { coin → usdPrice } for coins successfully fetched.
@@ -464,8 +517,8 @@ async function fetchMissingCoins(
 
   // Attempt 3: CoinPaprika individual calls for any still-missing coins
   const PAPRIKA_IDS: Record<string, string> = {
-    MATIC: 'matic-network',
-    POL:   'matic-network',  // POL = renamed MATIC; same CoinPaprika ID
+    MATIC: 'matic-polygon',   // CoinPaprika ID — NOT 'matic-network' (that is CoinGecko's slug)
+    POL:   'matic-polygon',   // same CoinPaprika coin
     TON:   'ton-the-open-network',
     SUI:   'sui-sui',
     APT:   'apt-aptos',
@@ -618,8 +671,26 @@ export async function updateRates(): Promise<void> {
       const result = await fetchBnbUsdPrice()
       if (result) { priceMap['BNB'] = result.price; coinSources['BNB'] = result.source }
     }
+    // Kraken (common Railway winner) has no POLUSDT or TONUSDT pairs.
+    // Give POL and TON their own dedicated fetcher chains so they never depend
+    // solely on fetchMissingCoins (which uses CoinGecko batch that rate-limits on free tier).
+    if (!priceMap['POL'] && !priceMap['MATIC']) {
+      logger.warn({ source: priceSource }, 'POL/MATIC missing from bulk — running dedicated POL fetcher')
+      const result = await fetchPolUsdPrice()
+      if (result) {
+        priceMap['POL']   = result.price
+        priceMap['MATIC'] = result.price   // mirror alias immediately
+        coinSources['POL']   = result.source
+        coinSources['MATIC'] = result.source
+      }
+    }
+    if (!priceMap['TON']) {
+      logger.warn({ source: priceSource }, 'TON missing from bulk — running dedicated TON fetcher')
+      const result = await fetchTonUsdPrice()
+      if (result) { priceMap['TON'] = result.price; coinSources['TON'] = result.source }
+    }
 
-    // 2c. Patch any remaining coins still missing (e.g. MATIC/TON/SUI/APT/NEAR when
+    // 2c. Patch any remaining coins still missing (e.g. SUI/APT/NEAR when
     // Kraken wins). Uses CoinGecko targeted batch → CoinPaprika per-coin fallback.
     const missingAfterDedicated = Object.keys(COINGECKO_IDS).filter(s => !priceMap[s])
     if (missingAfterDedicated.length > 0) {
