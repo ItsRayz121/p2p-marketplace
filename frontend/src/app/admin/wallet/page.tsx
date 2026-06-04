@@ -225,25 +225,18 @@ export default function WalletPage() {
                         </Badge>
                         {!w.isActive && <Badge variant="outline" size="sm">Inactive</Badge>}
                       </div>
-                      {w.chain === 'TON' && (w as { friendlyAddress?: string | null }).friendlyAddress ? (
-                        <div className="space-y-0.5 mb-1">
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-text-muted w-10 shrink-0">UQ</span>
-                            <p className="font-mono text-xs text-text-secondary break-all">{(w as { friendlyAddress?: string | null }).friendlyAddress}</p>
-                            <CopyButton text={(w as { friendlyAddress?: string | null }).friendlyAddress!} />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-text-muted w-10 shrink-0">Raw</span>
-                            <p className="font-mono text-xs text-text-muted break-all">{w.address}</p>
-                            <CopyButton text={w.address} />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 mb-1">
-                          <p className="font-mono text-xs text-text-secondary">{w.address}</p>
-                          <CopyButton text={w.address} />
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1 mb-1">
+                        <p className="font-mono text-xs text-text-secondary break-all">
+                          {w.chain === 'TON' && (w as { friendlyAddress?: string | null }).friendlyAddress
+                            ? (w as { friendlyAddress?: string | null }).friendlyAddress
+                            : w.address}
+                        </p>
+                        <CopyButton text={
+                          w.chain === 'TON' && (w as { friendlyAddress?: string | null }).friendlyAddress
+                            ? (w as { friendlyAddress?: string | null }).friendlyAddress!
+                            : w.address
+                        } />
+                      </div>
                       <div className="flex items-center gap-4 text-xs text-text-muted">
                         <span>
                           Balance: {w.balance !== null ? `${w.balance.toLocaleString()} ${w.nativeSymbol}` : 'Not fetched'}
