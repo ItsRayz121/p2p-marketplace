@@ -605,7 +605,7 @@ model Trade {
   buyerWalletAddress   String      @default("")
   buyerDeliveryMethod  String?     // 'blockchain' | 'email' | 'username' | 'internal'
   buyerDeliveryAddress String?     // the receiving address / email / username
-  sellerTxHash         String?
+  sellerTxHash         String?   @unique
   txVerificationStatus String?   // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
   txVerificationDetails Json?    // { chain, rpcChecked, txStatus, expectedReceiver, actualReceiver, expectedAmount, actualAmount, confirmations, tokenContract, verifiedAt }
   escrowReleased     Boolean     @default(false)
@@ -629,7 +629,6 @@ model Trade {
   @@index([orderRef])
   @@index([adId])
   @@index([status, expiresAt])
-  @@index([sellerTxHash])
 }
 
 model AdBid {

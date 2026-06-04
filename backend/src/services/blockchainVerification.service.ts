@@ -22,8 +22,7 @@
 import { Decimal } from '@prisma/client/runtime/library'
 import { AppError } from '../lib/errors'
 import { logger } from '../lib/logger'
-import { getChainByNetworkLabel } from './chainRegistry.service'
-import { getRpcUrl } from '../lib/chains'
+import { getChainByNetworkLabel, getRpcUrl } from './chainRegistry.service'
 import {
   getTransactionReceiptWithLogs,
   getTransactionByHash,
@@ -247,7 +246,6 @@ export async function verifyTradeTx(
 
     // Amount check: value is raw token units, convert to human-readable
     const decimals = tokenCfg!.decimals
-    const divisor = BigInt(10 ** decimals)
     const actualAmountRaw = matchingTransfer.value
     // Compare in raw units to avoid float rounding
     const expectedRaw = BigInt(expectedAmount.times(new Decimal(10).pow(decimals)).toFixed(0))
@@ -268,8 +266,6 @@ export async function verifyTradeTx(
         },
       }
     }
-
-    void divisor // silence unused warning
 
     return {
       status: 'verified',
@@ -349,7 +345,7 @@ function formatNative(wei: bigint): string {
 }
 
 function formatTokenAmount(raw: bigint, decimals: number): string {
-  const divisor = BigInt(10 ** decimals)
+  const divisor = 10n ** BigInt(decimals)
   const whole = raw / divisor
   const remainder = raw % divisor
   if (remainder === 0n) return whole.toString()
