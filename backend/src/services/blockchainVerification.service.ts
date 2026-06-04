@@ -100,9 +100,21 @@ export async function verifyTradeTx(
     return verifyTronTx(txHash, coin, chain, new Decimal(amount.toString()), buyerWallet)
   }
 
+  // Chains that are on the roadmap but do not yet have an automated verifier.
+  // Returning 'skipped' means markCryptoSent stores the hash and notifies admin;
+  // the trade is held until an admin manually approves via approve-tx-verification.
+  const PLANNED_FAMILIES: Record<string, string> = {
+    SOL:   'Solana — verifier not yet implemented',
+    TON:   'TON — verifier not yet implemented',
+    SUI:   'SUI — verifier not yet implemented',
+    APTOS: 'Aptos — verifier not yet implemented',
+  }
+  const plannedMsg = PLANNED_FAMILIES[(chain.family as string).toUpperCase()]
   return {
     status: 'skipped',
-    message: `On-chain verification for ${chain.family} chains is not yet automated — admin must verify manually`,
+    message: plannedMsg
+      ? `${plannedMsg}. Admin must verify the transaction manually.`
+      : `On-chain verification for ${chain.family} chains is not yet supported. Admin must verify manually.`,
     details: { chain: chain.id, rpcChecked: false },
   }
 }
@@ -166,6 +178,26 @@ async function verifyEvmTx(
     const confirmations = currentBlock >= receipt.blockNumber
       ? Number(currentBlock - receipt.blockNumber + 1n)
       : 0
+
+    // ── Reorg protection ──────────────────────────────────────────────────────
+    // A mined tx can still be reorged out until it has >= chain.minConfirmations
+    // blocks on top of it. Return 'pending' (a HARD_REJECT status) so the seller
+    // is forced to wait and resubmit once the tx is deep enough in the chain.
+    if (confirmations < chain!.minConfirmations) {
+      return {
+        status: 'pending',
+        message: `Transaction mined but only ${confirmations} of ${chain!.minConfirmations} required confirmations. Please wait and resubmit once fully confirmed.`,
+        details: {
+          chain: chain!.id,
+          rpcChecked: true,
+          txStatus: receipt.status as '0x1',
+          expectedReceiver: buyerWallet,
+          confirmations,
+          threshold: chain!.minConfirmations,
+          tokenContract: (tokenCfg as { address: string | null } | null)?.address ?? null,
+        },
+      }
+    }
 
     const baseDetails = {
       chain: chain!.id,
@@ -308,12 +340,6 @@ async function tronApiGet<T>(path: string): Promise<T> {
   }
 }
 
-// Tron hex address (41xxxxxxxx or 0x41xxxxxxxx) → lowercase hex without prefix
-function tronHexToNormalized(hex: string): string {
-  const h = hex.replace(/^0x/, '').toLowerCase()
-  return h.startsWith('41') ? h.slice(2) : h
-}
-
 // TRC20 transfer selector: keccak256("transfer(address,uint256)") first 4 bytes
 const TRC20_TRANSFER_SELECTOR = 'a9059cbb'
 
@@ -372,16 +398,18 @@ async function verifyTronTx(
         }
       }
       const toHex = contract?.parameter?.value?.to_address ?? ''
-      const actualReceiverNorm = tronHexToNormalized(toHex)
-      const buyerNorm = tronHexToNormalized(buyerWallet.replace(/^T/, '')) // base58 handling below
-      // Compare normalized hex — best effort for TRON address formats
-      // NOTE: full base58↔hex conversion would require bs58check; hex comparison is sufficient
-      // when both sides are hex. If buyer supplies base58, we record skipped detail.
-      if (actualReceiverNorm !== buyerNorm && toHex.toLowerCase() !== buyerWallet.toLowerCase()) {
+      // Convert the hex to_address (41…) to base58 (T…) using TronWeb for
+      // a proper format-agnostic comparison with the buyer's wallet address.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const TW = require('tronweb') as { address: { fromHex(h: string): string } }
+      let actualReceiver58: string
+      try { actualReceiver58 = TW.address.fromHex(toHex) } catch { actualReceiver58 = toHex }
+
+      if (actualReceiver58.toLowerCase() !== buyerWallet.toLowerCase()) {
         return {
           status: 'mismatch_receiver',
-          message: `TRX sent to ${toHex} — expected buyer wallet ${buyerWallet}.`,
-          details: { chain: chain!.id, rpcChecked: true, expectedReceiver: buyerWallet, actualReceiver: toHex },
+          message: `TRX sent to ${actualReceiver58} — expected buyer wallet ${buyerWallet}.`,
+          details: { chain: chain!.id, rpcChecked: true, expectedReceiver: buyerWallet, actualReceiver: actualReceiver58 },
         }
       }
       const amountSun = contract?.parameter?.value?.amount ?? 0
@@ -412,13 +440,29 @@ async function verifyTronTx(
 
     const contractAddrHex = contract?.parameter?.value?.contract_address ?? ''
     const tc = tokenCfg as { address: string; decimals: number }
-    // Normalise token contract address for comparison
-    const tcAddrNorm = tronHexToNormalized(tc.address.replace(/^T/, ''))
-    const contractNorm = tronHexToNormalized(contractAddrHex)
-    if (contractNorm !== tcAddrNorm && contractAddrHex.toLowerCase() !== tc.address.toLowerCase()) {
+
+    // Normalise both addresses to base58 via TronWeb so we can compare regardless
+    // of whether the DB stores base58 (TR7NHqje…) or hex (41a614f8…).
+    // TronWeb.address.fromHex returns base58; toHex returns '41…' hex.
+    let contractAddrBase58: string
+    let tcAddrBase58: string
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const TW = require('tronweb') as { address: { fromHex(h: string): string } }
+      contractAddrBase58 = TW.address.fromHex(contractAddrHex)
+      tcAddrBase58 = tc.address.startsWith('T') && tc.address.length === 34
+        ? tc.address
+        : TW.address.fromHex(tc.address)
+    } catch {
+      // Conversion failed — fall through and rely on events API comparison only
+      contractAddrBase58 = contractAddrHex
+      tcAddrBase58 = tc.address
+    }
+
+    if (contractAddrBase58.toLowerCase() !== tcAddrBase58.toLowerCase()) {
       return {
         status: 'mismatch_receiver',
-        message: `Token contract ${contractAddrHex} does not match expected ${tc.address} for ${coin}.`,
+        message: `Token contract ${contractAddrBase58} does not match expected ${tcAddrBase58} for ${coin}.`,
         details: { chain: chain!.id, rpcChecked: true, expectedReceiver: buyerWallet, tokenContract: tc.address },
       }
     }
@@ -533,11 +577,25 @@ export async function assertNoDuplicateTradeTxHash(
   txHash: string,
   excludeTradeId: string,
 ): Promise<void> {
+  // Check P2P trades
   const dupe = await findDuplicateTradeTxHash(txHash, excludeTradeId)
   if (dupe) {
     throw new AppError(
       'DUPLICATE_TX_HASH',
       `Transaction hash has already been submitted for trade ${dupe.orderRef} — each transaction can only be used once.`,
+      400,
+    )
+  }
+
+  // Cross-table: check CTM proofs so the same hash can't prove a P2P trade AND a CTM trade
+  const ctmDupe = await db.ctmTradeProof.findFirst({
+    where: { txHash },
+    select: { tradeId: true },
+  })
+  if (ctmDupe) {
+    throw new AppError(
+      'DUPLICATE_TX_HASH',
+      `Transaction hash has already been submitted as proof for a CTM trade — each transaction can only be used once.`,
       400,
     )
   }

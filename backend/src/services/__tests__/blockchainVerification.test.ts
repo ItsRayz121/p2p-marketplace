@@ -42,6 +42,9 @@ vi.mock('../../lib/prisma', () => ({
     trade: {
       findFirst: vi.fn(),
     },
+    ctmTradeProof: {
+      findFirst: vi.fn(),
+    },
   },
 }))
 
@@ -57,6 +60,8 @@ const mockGetChain = vi.mocked(chainRegistry.getChainByNetworkLabel)
 const mockGetRpcUrl = vi.mocked(chainRegistry.getRpcUrl)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockTradeFindFirst = db.trade.findFirst as unknown as ReturnType<typeof vi.fn>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockCtmProofFindFirst = (db as any).ctmTradeProof.findFirst as ReturnType<typeof vi.fn>
 
 // Import the module under test AFTER mocks are set up
 import { verifyTradeTx, assertNoDuplicateTradeTxHash } from '../blockchainVerification.service'
@@ -103,6 +108,9 @@ beforeEach(() => {
   mockGetChain.mockResolvedValue(BSC_CHAIN)
   mockGetRpcUrl.mockReturnValue('https://bsc-dataseed.binance.org')
   mockGetBlock.mockResolvedValue(CURRENT_BLOCK)
+  // Default: no duplicates in either table
+  mockTradeFindFirst.mockResolvedValue(null)
+  mockCtmProofFindFirst.mockResolvedValue(null)
 })
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -193,11 +201,21 @@ describe('verifyTradeTx', () => {
   })
 
   it('7b. same tx hash for same trade → does not throw', async () => {
-    mockTradeFindFirst.mockResolvedValue(null) // no OTHER trade has this hash
+    mockTradeFindFirst.mockResolvedValue(null)
+    mockCtmProofFindFirst.mockResolvedValue(null)
 
     await expect(
       assertNoDuplicateTradeTxHash(TX_HASH, 'current-trade-id')
     ).resolves.toBeUndefined()
+  })
+
+  it('7c. cross-table: hash already used in CTM proof → throws DUPLICATE_TX_HASH', async () => {
+    mockTradeFindFirst.mockResolvedValue(null)          // not in P2P trades
+    mockCtmProofFindFirst.mockResolvedValue({ tradeId: 'ctm-trade-abc' }) // but IS in CTM
+
+    await expect(
+      assertNoDuplicateTradeTxHash(TX_HASH, 'current-trade-id')
+    ).rejects.toThrow('CTM trade')
   })
 
   it('8. non-EVM chain (TRON) → skipped', async () => {
@@ -225,6 +243,30 @@ describe('verifyTradeTx', () => {
 
     expect(result.status).toBe('rpc_error')
     expect(result.details.rpcChecked).toBe(false)
+  })
+
+  it('reorg-protection: mined tx with insufficient confirmations → pending', async () => {
+    // blockNumber 996, currentBlock 1000 → only 5 confirmations; BSC needs 15
+    mockGetReceipt.mockResolvedValue({ ...GOOD_RECEIPT, blockNumber: 996n })
+    mockParseTransfers.mockReturnValue([GOOD_TRANSFER])
+
+    const result = await verifyTradeTx(TX_HASH, 'USDT', 'BEP20', TRADE_AMOUNT, BUYER_WALLET)
+
+    expect(result.status).toBe('pending')
+    expect(result.details.confirmations).toBe(5)
+    expect(result.details.threshold).toBe(15)
+    expect(result.message).toContain('5 of 15')
+  })
+
+  it('reorg-protection: tx at exactly minConfirmations → verified (boundary)', async () => {
+    // blockNumber 986, currentBlock 1000 → exactly 15 confirmations (= BSC threshold)
+    mockGetReceipt.mockResolvedValue({ ...GOOD_RECEIPT, blockNumber: 986n })
+    mockParseTransfers.mockReturnValue([GOOD_TRANSFER])
+
+    const result = await verifyTradeTx(TX_HASH, 'USDT', 'BEP20', TRADE_AMOUNT, BUYER_WALLET)
+
+    expect(result.status).toBe('verified')
+    expect(result.details.confirmations).toBe(15)
   })
 
   it('10. valid tx — correct receiver + full amount → verified', async () => {
@@ -292,6 +334,12 @@ describe('rejection gate constants', () => {
     expect(ADMIN_REVIEW_STATUSES).toContain('rpc_error')
     expect(HARD_REJECT_STATUSES).not.toContain('skipped')
     expect(HARD_REJECT_STATUSES).not.toContain('rpc_error')
+  })
+
+  it('pending (low confirmations) is in HARD_REJECT_STATUSES — reorg guard enforced', async () => {
+    const { HARD_REJECT_STATUSES } = await import('../blockchainVerification.service')
+    // 'pending' covers both mempool and low-confirmation cases; must always hard-reject
+    expect(HARD_REJECT_STATUSES).toContain('pending')
   })
 
   it('only verified and admin_verified allow release', async () => {

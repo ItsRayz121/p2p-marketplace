@@ -1910,6 +1910,7 @@ model CtmTradeProof {
   createdAt       DateTime     @default(now())
 
   @@index([tradeId])
+  @@index([txHash])
 }
 
 model CtmTradeMessage {

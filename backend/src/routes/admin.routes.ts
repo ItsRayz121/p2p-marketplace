@@ -2482,6 +2482,61 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── Tx-verification override audit ────────────────────────────────────────
+  // GET /admin/reports/tx-verification-overrides
+  // Returns all manual "approve-tx-verification" override events so operators
+  // can audit admin behaviour and detect abuse. Includes a spike flag when
+  // more than SPIKE_THRESHOLD overrides occurred in the last 24 hours.
+  app.get('/admin/reports/tx-verification-overrides', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+    const SPIKE_THRESHOLD = 10          // alert if > 10 overrides in any rolling 24h window
+    const ROLLING_WINDOW_MS = 24 * 3_600_000
+
+    const [logs, total, last24h] = await Promise.all([
+      db.auditLog.findMany({
+        where: { action: 'TRADE_TX_VERIFICATION_APPROVED' },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: { actor: { select: { id: true, username: true, email: true } } },
+      }),
+      db.auditLog.count({ where: { action: 'TRADE_TX_VERIFICATION_APPROVED' } }),
+      db.auditLog.count({
+        where: {
+          action: 'TRADE_TX_VERIFICATION_APPROVED',
+          createdAt: { gte: new Date(Date.now() - ROLLING_WINDOW_MS) },
+        },
+      }),
+    ])
+
+    const spikeDetected = last24h > SPIKE_THRESHOLD
+
+    const overrides = logs.map((l) => ({
+      id:         l.id,
+      adminId:    l.actorId,
+      adminName:  l.actor.username,
+      adminEmail: l.actor.email,
+      tradeId:    l.targetId,
+      reason:     (l.metadata as Record<string, unknown>)?.reason ?? null,
+      txHash:     (l.metadata as Record<string, unknown>)?.sellerTxHash ?? null,
+      prevStatus: (l.metadata as Record<string, unknown>)?.previousStatus ?? null,
+      createdAt:  l.createdAt,
+    }))
+
+    return reply.send({
+      success: true,
+      data: {
+        overrides,
+        total,
+        last24hCount: last24h,
+        spikeDetected,
+        spikeThreshold: SPIKE_THRESHOLD,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      },
+    })
+  })
+
   // ── Gas Fee Admin ──────────────────────────────────────────────────────────
 
   app.get('/admin/gas/orders', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
