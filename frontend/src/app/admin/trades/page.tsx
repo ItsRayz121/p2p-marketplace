@@ -165,14 +165,13 @@ export default function TradesPage() {
           className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="all">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="active">Active</option>
-          <option value="paid">Paid</option>
-          <option value="payment_uploaded">Payment Uploaded</option>
-          <option value="released">Released</option>
+          <option value="payment_pending">Awaiting Payment</option>
+          <option value="payment_uploaded">Proof Uploaded</option>
+          <option value="payment_confirmed">Payment Confirmed</option>
+          <option value="crypto_sent">Crypto Sent</option>
+          <option value="crypto_released">Completed</option>
           <option value="disputed">Disputed</option>
           <option value="cancelled">Cancelled</option>
-          <option value="expired">Expired</option>
         </select>
         <div className="w-36">
           <Input

@@ -65,6 +65,7 @@ export default function UsersPage() {
 
   const [selected, setSelected] = useState<AdminUser | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<UserTab>('profile')
   const [actionReason, setActionReason] = useState('')
   const [confirmBan, setConfirmBan] = useState(false)
@@ -98,6 +99,7 @@ export default function UsersPage() {
   usePolling(fetchUsers, 60_000)
 
   async function openUserModal(u: AdminUser) {
+    // Show modal immediately with list data so it feels snappy
     setSelected(u)
     setActiveTab('profile')
     setActionReason('')
@@ -106,6 +108,17 @@ export default function UsersPage() {
     setBadgeOverrideValue((u.tradeStats?.badge ?? 'new') as TraderBadge)
     setBadgeOverrideReason('')
     setModalOpen(true)
+    // Then fetch full detail (trades, referrals, gas, etc.) and merge in
+    setDetailLoading(true)
+    try {
+      const full = await adminApi.getUser(u.id) as AdminUser
+      setSelected((prev) => prev?.id === u.id ? { ...prev, ...full } : prev)
+      if (full.tradeStats?.badge) setBadgeOverrideValue(full.tradeStats.badge as TraderBadge)
+    } catch {
+      // Non-fatal — list data already shown
+    } finally {
+      setDetailLoading(false)
+    }
   }
 
   async function handleBan() {
@@ -321,6 +334,9 @@ export default function UsersPage() {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="User Details" size="lg">
         {selected && (
           <div className="space-y-5">
+            {detailLoading && (
+              <p className="text-xs text-text-muted animate-pulse">Loading full profile…</p>
+            )}
             {/* Tabs */}
             <div className="flex gap-1 border-b border-border">
               {(['profile', 'trades', 'kyc'] as UserTab[]).map((tab) => (

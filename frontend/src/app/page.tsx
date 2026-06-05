@@ -61,7 +61,7 @@ async function getHomeData(): Promise<HomeData> {
   const [statsRes, topAdsRes, configRes, topCtmRes] = await Promise.allSettled([
     fetch(`${api}/api/v1/marketplace/stats`,   { cache: 'no-store' }),
     fetch(`${api}/api/v1/marketplace/top-ads`, { cache: 'no-store' }),
-    fetch(`${api}/api/v1/config`,              { cache: 'no-store' }),
+    fetch(`${api}/api/v1/marketplace/config`,   { cache: 'no-store' }),
     fetch(`${api}/api/v1/ctm/listings?limit=6&side=sell&status=active`, { cache: 'no-store' }),
   ])
 
