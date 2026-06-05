@@ -1,9 +1,13 @@
 ﻿'use client'
 import { useState, useCallback, useEffect } from 'react'
-import { adminApi } from '@/lib/api'
+import { adminApi, apiRequest } from '@/lib/api'
 import { fmtNumber } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { Button } from '@/components/ui/Button'
+import { RefreshCw } from 'lucide-react'
+
+interface TradeSummary { allTime: number; period: number }
 
 interface AnalyticsData {
   userGrowth?: Array<{ date: string; newUsers: number }>
@@ -16,6 +20,12 @@ interface AnalyticsData {
     completionRate: number
     tradeCount: number
   }>
+  summary?: {
+    p2p: TradeSummary
+    ctm: TradeSummary
+    gas: TradeSummary
+    total: TradeSummary
+  }
 }
 
 type Period = '7d' | '30d' | '90d'
@@ -40,6 +50,8 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState<Period>('30d')
+  const [recalculating, setRecalculating] = useState(false)
+  const [recalcMsg, setRecalcMsg] = useState<string | null>(null)
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true)
@@ -57,6 +69,20 @@ export default function AnalyticsPage() {
   useEffect(() => {
     fetchAnalytics()
   }, [fetchAnalytics])
+
+  async function handleRecalculate() {
+    setRecalculating(true)
+    setRecalcMsg(null)
+    try {
+      await apiRequest('/admin/stats/recalculate', { method: 'POST', body: JSON.stringify({}) })
+      setRecalcMsg('Stats recalculation queued for all users. Refresh in a minute.')
+      setTimeout(fetchAnalytics, 3000)
+    } catch (e) {
+      setRecalcMsg(e instanceof Error ? e.message : 'Recalculation failed')
+    } finally {
+      setRecalculating(false)
+    }
+  }
 
   const maxVolume = data?.tradeVolume
     ? Math.max(...data.tradeVolume.map((d) => parseFloat(d.volume) || 0), 1)
@@ -84,7 +110,7 @@ export default function AnalyticsPage() {
           <h1 className="text-2xl font-bold text-text-primary">Analytics</h1>
           <p className="text-text-muted text-sm mt-0.5">Platform performance metrics</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {(['7d', '30d', '90d'] as Period[]).map((p) => (
             <button
               key={p}
@@ -98,8 +124,42 @@ export default function AnalyticsPage() {
               {p}
             </button>
           ))}
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={recalculating}
+            onClick={handleRecalculate}
+            title="Re-compute badges, completion rates, and volume for all users"
+          >
+            <RefreshCw size={13} className="mr-1.5" />
+            Recalculate Stats
+          </Button>
         </div>
+        {recalcMsg && (
+          <p className={`w-full text-xs mt-1 ${recalcMsg.includes('failed') ? 'text-danger' : 'text-success'}`}>{recalcMsg}</p>
+        )}
       </div>
+
+      {/* Summary cards */}
+      {data?.summary && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {([
+            { label: 'P2P Trades', key: 'p2p', color: 'text-primary' },
+            { label: 'CTM Trades', key: 'ctm', color: 'text-success' },
+            { label: 'Gas Orders', key: 'gas', color: 'text-warning' },
+            { label: 'All Completed', key: 'total', color: 'text-text-primary' },
+          ] as const).map(({ label, key, color }) => {
+            const s = data.summary![key]
+            return (
+              <div key={key} className="bg-surface shadow-card rounded-xl border border-border p-4">
+                <p className="text-xs text-text-muted">{label}</p>
+                <p className={`text-2xl font-bold mt-1 ${color}`}>{s.allTime.toLocaleString()}</p>
+                <p className="text-xs text-text-muted mt-0.5">+{s.period} this period</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {loading ? (
         <LoadingState message="Loading analytics..." />

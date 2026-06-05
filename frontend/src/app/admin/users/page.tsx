@@ -30,11 +30,20 @@ interface AdminUser extends Omit<AuthUser, 'tradeStats'> {
   isBanned?: boolean
   isSuspended?: boolean
   tradeCount?: number
+  liveTradeCount?: number
+  ctmBuyCount?: number
+  ctmSellCount?: number
+  gasOrderCount?: number
+  referralCount?: number
   banReason?: string
   suspendReason?: string
-  trades?: Array<{ id: string; coin: string; amount: string; status: string; createdAt: string }>
+  trades?: Array<{ id: string; orderRef?: string; coin: string; amount: string; fiatAmount?: string; status: string; createdAt: string }>
+  sellTrades?: Array<{ id: string; orderRef?: string; coin: string; amount: string; fiatAmount?: string; status: string; createdAt: string }>
+  gasFeeOrders?: Array<{ id: string; chain: string; gasAmountUSD?: string; status: string; createdAt: string }>
   kycSubmissions?: Array<{ id: string; level: string; status: string; createdAt: string }>
   tradeStats?: AdminTradeStats | null
+  referredBy?: { id: string; username: string; email: string } | null
+  referrals?: Array<{ id: string; username: string; email: string; createdAt: string; kycStatus: string }>
 }
 
 interface UsersResponse {
@@ -369,6 +378,29 @@ export default function UsersPage() {
                     <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
                   </div>
                   <div>
+                    <p className="text-text-muted">Total Trades</p>
+                    <p className="text-text-primary font-medium">
+                      {selected.liveTradeCount ?? selected.tradeCount ?? 0}
+                      {(selected.ctmBuyCount || selected.ctmSellCount || selected.gasOrderCount) ? (
+                        <span className="text-xs text-text-muted ml-1">
+                          (P2P: {(selected.trades?.length ?? 0) + (selected.sellTrades?.length ?? 0)} · CTM: {(selected.ctmBuyCount ?? 0) + (selected.ctmSellCount ?? 0)} · Gas: {selected.gasOrderCount ?? 0})
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                  {selected.referredBy && (
+                    <div>
+                      <p className="text-text-muted">Referred By</p>
+                      <p className="text-text-primary">{selected.referredBy.username} <span className="text-xs text-text-muted">({selected.referredBy.email})</span></p>
+                    </div>
+                  )}
+                  {(selected.referralCount ?? 0) > 0 && (
+                    <div>
+                      <p className="text-text-muted">Users Invited</p>
+                      <p className="text-text-primary font-medium">{selected.referralCount}</p>
+                    </div>
+                  )}
+                  <div>
                     <p className="text-text-muted">Account Status</p>
                     {selected.isBanned ? (
                       <Badge variant="danger">Banned — {selected.banReason}</Badge>
@@ -486,24 +518,80 @@ export default function UsersPage() {
             )}
 
             {activeTab === 'trades' && (
-              <div>
-                {!selected.trades || selected.trades.length === 0 ? (
-                  <EmptyState icon={ClipboardList} title="No trades" description="This user has no trade history." />
-                ) : (
-                  <div className="divide-y divide-border">
-                    {selected.trades.slice(0, 10).map((t) => (
-                      <div key={t.id} className="py-2.5 flex items-center justify-between text-sm">
-                        <div>
-                          <p className="font-mono text-xs text-text-muted">{t.id.slice(0, 8)}...</p>
-                          <p className="text-text-primary">{t.amount} {t.coin}</p>
+              <div className="space-y-4">
+                {/* P2P Buy Trades */}
+                {selected.trades && selected.trades.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">P2P Buys ({selected.trades.length})</p>
+                    <div className="divide-y divide-border">
+                      {selected.trades.slice(0, 8).map((t) => (
+                        <div key={t.id} className="py-2 flex items-center justify-between text-sm">
+                          <div>
+                            <p className="font-mono text-xs text-text-muted">{t.orderRef ?? t.id.slice(0, 8)}</p>
+                            <p className="text-text-primary">{t.amount} {t.coin} {t.fiatAmount ? `· PKR ${Number(t.fiatAmount).toLocaleString()}` : ''}</p>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="default" size="sm">{tradeStatusLabelUser(t.status)}</Badge>
+                            <p className="text-xs text-text-muted mt-0.5">{fmtDate(t.createdAt)}</p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <Badge variant="default" size="sm">{tradeStatusLabelUser(t.status)}</Badge>
-                          <p className="text-xs text-text-muted mt-0.5">{fmtDate(t.createdAt)}</p>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
+                )}
+                {/* P2P Sell Trades */}
+                {selected.sellTrades && selected.sellTrades.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">P2P Sells ({selected.sellTrades.length})</p>
+                    <div className="divide-y divide-border">
+                      {selected.sellTrades.slice(0, 8).map((t) => (
+                        <div key={t.id} className="py-2 flex items-center justify-between text-sm">
+                          <div>
+                            <p className="font-mono text-xs text-text-muted">{t.orderRef ?? t.id.slice(0, 8)}</p>
+                            <p className="text-text-primary">{t.amount} {t.coin} {t.fiatAmount ? `· PKR ${Number(t.fiatAmount).toLocaleString()}` : ''}</p>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="default" size="sm">{tradeStatusLabelUser(t.status)}</Badge>
+                            <p className="text-xs text-text-muted mt-0.5">{fmtDate(t.createdAt)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Gas Orders */}
+                {selected.gasFeeOrders && selected.gasFeeOrders.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">Gas Orders ({selected.gasOrderCount ?? selected.gasFeeOrders.length})</p>
+                    <div className="divide-y divide-border">
+                      {selected.gasFeeOrders.slice(0, 5).map((g) => (
+                        <div key={g.id} className="py-2 flex items-center justify-between text-sm">
+                          <div>
+                            <p className="font-mono text-xs text-text-muted">{g.chain}</p>
+                            <p className="text-text-primary">{g.gasAmountUSD ? `$${Number(g.gasAmountUSD).toFixed(4)}` : 'N/A'} gas</p>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="default" size="sm">{g.status}</Badge>
+                            <p className="text-xs text-text-muted mt-0.5">{fmtDate(g.createdAt)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* CTM summary */}
+                {((selected.ctmBuyCount ?? 0) + (selected.ctmSellCount ?? 0)) > 0 && (
+                  <div className="bg-surface border border-border rounded-lg px-4 py-3 text-sm">
+                    <p className="font-medium text-text-primary">CTM Community Trades</p>
+                    <p className="text-text-muted text-xs mt-0.5">
+                      {selected.ctmBuyCount ?? 0} buys · {selected.ctmSellCount ?? 0} sells
+                      {' — see /admin/ctm/trades for detail'}
+                    </p>
+                  </div>
+                )}
+                {!selected.trades?.length && !selected.sellTrades?.length && !selected.gasFeeOrders?.length &&
+                  !(selected.ctmBuyCount) && !(selected.ctmSellCount) && (
+                  <EmptyState icon={ClipboardList} title="No trades" description="This user has no trade history." />
                 )}
               </div>
             )}
