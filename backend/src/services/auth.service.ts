@@ -42,6 +42,7 @@ export interface RegisterInput {
   fullName: string
   referralCode?: string
   intendedRole?: string
+  ip?: string
 }
 
 export interface LoginInput {
@@ -209,7 +210,7 @@ const USER_SELECT = {
 // ─── Service Methods ──────────────────────────────────────────────────────────
 
 export async function register(input: RegisterInput): Promise<{ message: string }> {
-  const { email, password, fullName, referralCode, intendedRole } = input
+  const { email, password, fullName, referralCode, intendedRole, ip } = input
 
   // Check email uniqueness
   const existing = await db.user.findUnique({ where: { email }, select: { id: true } })
@@ -241,6 +242,7 @@ export async function register(input: RegisterInput): Promise<{ message: string 
         username,
         referralCode: userReferralCode,
         ...(referredById ? { referredById } : {}),
+        ...(ip ? { registrationIp: ip } : {}),
         intendedRole: intendedRole ?? 'user',
         termsAcceptedAt: new Date(),
         termsVersion: 'v1.0',

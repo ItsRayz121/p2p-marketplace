@@ -1543,6 +1543,17 @@ export const adminApi = {
     apiRequest<unknown[]>('/admin/referrals/top-inviters'),
   getReferralChain: (userId: string) =>
     apiRequest<unknown>(`/admin/referrals/${userId}`),
+  getSuspiciousReferrals: () =>
+    apiRequest<unknown[]>('/admin/referrals/suspicious'),
+  exportReferralsCsv: async () => {
+    const token = useAuthStore.getState().accessToken
+    const res = await fetch(`${API_BASE}/api/v1/admin/referrals/export`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+      credentials: 'include',
+    })
+    if (!res.ok) throw new Error('Export failed')
+    return res.blob()
+  },
 
   getTrades: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ trades: Trade[]; total: number }>('/admin/trades' + buildQs(params)),

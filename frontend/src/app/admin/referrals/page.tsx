@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
-import { Users } from 'lucide-react'
+import { Users, AlertTriangle, Download } from 'lucide-react'
 
 interface ReferredUser {
   id: string
@@ -43,12 +43,22 @@ interface ReferralChain {
   }>
 }
 
-type Tab = 'referred' | 'inviters'
+interface SuspiciousGroup {
+  ip: string
+  userIds: string[]
+  usernames: string[]
+  emails: string[]
+  createdAts: string[]
+  referredByIds: (string | null)[]
+}
+
+type Tab = 'referred' | 'inviters' | 'suspicious'
 
 export default function ReferralsPage() {
   const [tab, setTab] = useState<Tab>('referred')
   const [referrals, setReferrals] = useState<ReferredUser[]>([])
   const [inviters, setInviters] = useState<TopInviter[]>([])
+  const [suspicious, setSuspicious] = useState<SuspiciousGroup[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -56,6 +66,7 @@ export default function ReferralsPage() {
   const [error, setError] = useState<string | null>(null)
   const [chainUser, setChainUser] = useState<ReferralChain | null>(null)
   const [chainLoading, setChainLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const limit = 20
 
   const fetchReferrals = useCallback(async () => {
@@ -87,10 +98,24 @@ export default function ReferralsPage() {
     }
   }, [])
 
+  const fetchSuspicious = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await adminApi.getSuspiciousReferrals() as SuspiciousGroup[]
+      setSuspicious(data ?? [])
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load suspicious patterns')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (tab === 'referred') fetchReferrals()
-    else fetchInviters()
-  }, [tab, fetchReferrals, fetchInviters])
+    else if (tab === 'inviters') fetchInviters()
+    else fetchSuspicious()
+  }, [tab, fetchReferrals, fetchInviters, fetchSuspicious])
 
   async function viewChain(userId: string) {
     setChainLoading(true)
@@ -102,26 +127,55 @@ export default function ReferralsPage() {
     }
   }
 
+  async function handleExportCsv() {
+    setExporting(true)
+    try {
+      const blob = await adminApi.exportReferralsCsv()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'referrals.csv'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // silently fail — user will notice no download
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const totalPages = Math.ceil(total / limit)
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Referrals</h1>
-        <p className="text-text-muted text-sm mt-0.5">Track who invited whom and referral activity</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Referrals</h1>
+          <p className="text-text-muted text-sm mt-0.5">Track who invited whom and referral activity</p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void handleExportCsv()}
+          disabled={exporting}
+        >
+          <Download className="w-4 h-4 mr-1.5" />
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </Button>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2">
-        {(['referred', 'inviters'] as Tab[]).map((t) => (
+        {(['referred', 'inviters', 'suspicious'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); setPage(1) }}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors border ${
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors border flex items-center gap-1.5 ${
               tab === t ? 'bg-primary text-white border-primary' : 'bg-white border-border text-text-secondary hover:bg-surface'
             }`}
           >
-            {t === 'referred' ? 'Referred Users' : 'Top Inviters'}
+            {t === 'suspicious' && <AlertTriangle className="w-3.5 h-3.5" />}
+            {t === 'referred' ? 'Referred Users' : t === 'inviters' ? 'Top Inviters' : 'Suspicious'}
           </button>
         ))}
       </div>
@@ -144,7 +198,7 @@ export default function ReferralsPage() {
       {loading ? (
         <LoadingState message="Loading referrals…" />
       ) : error ? (
-        <ErrorState title={error} onRetry={tab === 'referred' ? fetchReferrals : fetchInviters} />
+        <ErrorState title={error} onRetry={tab === 'referred' ? fetchReferrals : tab === 'inviters' ? fetchInviters : fetchSuspicious} />
       ) : tab === 'referred' ? (
         referrals.length === 0 ? (
           <EmptyState icon={Users} title="No referred users" description="No users have signed up via a referral link yet." />
@@ -205,7 +259,7 @@ export default function ReferralsPage() {
             )}
           </div>
         )
-      ) : (
+      ) : tab === 'inviters' ? (
         inviters.length === 0 ? (
           <EmptyState icon={Users} title="No inviters yet" description="No users have referred others yet." />
         ) : (
@@ -241,6 +295,62 @@ export default function ReferralsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )
+      ) : (
+        // Suspicious tab
+        suspicious.length === 0 ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="No suspicious patterns found"
+            description="No referred users share a registration IP with their referrer."
+          />
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-text-muted">
+              {suspicious.length} IP {suspicious.length === 1 ? 'address' : 'addresses'} where multiple accounts (including a referral pair) registered from the same IP.
+            </p>
+            {suspicious.map((group) => {
+              const idSet = new Set(group.userIds)
+              return (
+                <div key={group.ip} className="bg-surface shadow-card rounded-xl border border-warning/30 overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-warning/5 border-b border-warning/20">
+                    <AlertTriangle className="w-4 h-4 text-warning" />
+                    <span className="font-mono text-sm font-medium text-text-primary">{group.ip}</span>
+                    <span className="text-xs text-text-muted ml-1">— {group.userIds.length} accounts</span>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {group.userIds.map((id, idx) => {
+                      const isReferred = group.referredByIds[idx] !== null
+                      const referrerInGroup = isReferred && idSet.has(group.referredByIds[idx]!)
+                      return (
+                        <div key={id} className="flex items-center gap-3 px-4 py-3 text-sm">
+                          <div className="flex-1">
+                            <p className="font-medium text-text-primary">{group.usernames[idx]}</p>
+                            <p className="text-xs text-text-muted">{group.emails[idx]}</p>
+                          </div>
+                          <div className="text-xs text-text-muted">{fmtDate(group.createdAts[idx])}</div>
+                          {referrerInGroup && (
+                            <span className="text-xs font-medium bg-danger/10 text-danger border border-danger/20 rounded px-2 py-0.5">
+                              referred by same IP
+                            </span>
+                          )}
+                          {isReferred && !referrerInGroup && (
+                            <span className="text-xs text-text-muted bg-surface border border-border rounded px-2 py-0.5">
+                              referred (external)
+                            </span>
+                          )}
+                          {!isReferred && (
+                            <span className="text-xs text-text-muted">no referral</span>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => void viewChain(id)}>Chain</Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )
       )}

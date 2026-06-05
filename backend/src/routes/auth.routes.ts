@@ -113,6 +113,7 @@ export async function authRoutes(app: FastifyInstance) {
         ...coreFields,
         ...(referralCode ? { referralCode } : {}),
         ...(intendedRole ? { intendedRole } : {}),
+        ip: req.ip,
       })
       return reply.status(201).send({ success: true, data: result })
     },

@@ -621,6 +621,84 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: user })
   })
 
+  // GET /admin/referrals/suspicious — same-IP clusters within referral relationships
+  app.get('/admin/referrals/suspicious', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    // Find users who share registrationIp AND are in a referral relationship (one referred the other)
+    const flagged = await db.$queryRaw<Array<{
+      ip: string
+      userIds: string[]
+      usernames: string[]
+      emails: string[]
+      createdAts: Date[]
+      referredByIds: (string | null)[]
+    }>>`
+      SELECT
+        u."registrationIp" AS ip,
+        array_agg(u.id ORDER BY u."createdAt") AS "userIds",
+        array_agg(u.username ORDER BY u."createdAt") AS "usernames",
+        array_agg(u.email ORDER BY u."createdAt") AS "emails",
+        array_agg(u."createdAt" ORDER BY u."createdAt") AS "createdAts",
+        array_agg(u."referredById" ORDER BY u."createdAt") AS "referredByIds"
+      FROM "User" u
+      WHERE u."registrationIp" IS NOT NULL
+      GROUP BY u."registrationIp"
+      HAVING COUNT(*) > 1
+        AND COUNT(*) FILTER (WHERE u."referredById" IS NOT NULL) > 0
+      ORDER BY COUNT(*) DESC
+      LIMIT 200
+    `
+
+    // Filter: at least one user in the group is referred by another in the same group
+    const suspicious = flagged.filter((group) => {
+      const idSet = new Set(group.userIds)
+      return group.referredByIds.some((rid) => rid && idSet.has(rid))
+    })
+
+    return reply.send({ success: true, data: suspicious })
+  })
+
+  // GET /admin/referrals/export — CSV download of all referred users
+  app.get('/admin/referrals/export', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const users = await db.user.findMany({
+      where: { referredById: { not: null } },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true,
+        kycStatus: true,
+        kycLevel: true,
+        referralCode: true,
+        registrationIp: true,
+        referredBy: { select: { id: true, username: true, email: true } },
+        tradeStats: { select: { completedTrades: true, totalVolumePKR: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    const header = 'id,username,email,joined,kycStatus,kycLevel,referralCode,referrerId,referrerUsername,referrerEmail,completedTrades,totalVolumePKR,registrationIp'
+    const rows = users.map((u) => [
+      u.id,
+      `"${u.username}"`,
+      `"${u.email}"`,
+      u.createdAt.toISOString(),
+      u.kycStatus,
+      u.kycLevel,
+      u.referralCode,
+      u.referredBy?.id ?? '',
+      `"${u.referredBy?.username ?? ''}"`,
+      `"${u.referredBy?.email ?? ''}"`,
+      u.tradeStats?.completedTrades ?? 0,
+      u.tradeStats?.totalVolumePKR?.toString() ?? '0',
+      u.registrationIp ?? '',
+    ].join(','))
+
+    const csv = [header, ...rows].join('\n')
+    reply.header('Content-Type', 'text/csv')
+    reply.header('Content-Disposition', 'attachment; filename="referrals.csv"')
+    return reply.send(csv)
+  })
+
   // ── KYC ───────────────────────────────────────────────────────────────────
 
   app.get('/admin/kyc/queue', { preHandler: [authenticate, adminOrSuperOrKyc] }, async (req, reply) => {
