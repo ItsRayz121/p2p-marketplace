@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { marketplaceApi, apiRequest } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { PageBackNav } from '@/components/ui/PageBackNav'
 import { Gift } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -105,16 +106,12 @@ export default function FeesPage() {
     enhanced: config?.kycLimitEnhancedDaily ?? 200000,
   }
 
-  const withdrawalFees = withdrawalFeesCfg ?? {
-    USDT: { TRC20: '1 USDT', ERC20: '5 USDT', BEP20: '0.5 USDT' },
-    BTC: { Bitcoin: '0.0001 BTC' },
-    ETH: { ERC20: '0.003 ETH' },
-    BNB: { BEP20: '0.001 BNB' },
-    TRX: { TRC20: '1 TRX' },
-  }
+  // Only show fees from dynamic config; no hardcoded fallback with unsupported coins
+  const withdrawalFees = withdrawalFeesCfg
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 pb-12 space-y-8">
+      <PageBackNav />
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Fee Schedule</h1>
         <p className="text-sm text-text-muted mt-1">Transparent pricing with no hidden fees</p>
@@ -139,12 +136,16 @@ export default function FeesPage() {
       {/* Escrow Wallet Withdrawal Fees */}
       <section>
         <h2 className="text-lg font-bold text-text-primary mb-3">Escrow Wallet Withdrawal Fees</h2>
-        <Table
-          headers={['Coin', 'Network', 'Withdrawal Fee']}
-          rows={Object.entries(withdrawalFees).flatMap(([coin, networks]) =>
-            Object.entries(networks).map(([network, fee]) => [coin, network, fee])
-          )}
-        />
+        {withdrawalFees && Object.keys(withdrawalFees).length > 0 ? (
+          <Table
+            headers={['Coin', 'Network', 'Withdrawal Fee']}
+            rows={Object.entries(withdrawalFees).flatMap(([coin, networks]) =>
+              Object.entries(networks).map(([network, fee]) => [coin.toUpperCase(), network.toUpperCase(), fee])
+            )}
+          />
+        ) : (
+          <p className="text-sm text-text-muted py-4 text-center">Withdrawal fee schedule loading…</p>
+        )}
         <p className="text-xs text-text-muted mt-2">These fees cover blockchain network withdrawal costs from the RupChain escrow wallet and may vary based on network conditions.</p>
       </section>
 

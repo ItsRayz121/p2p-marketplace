@@ -8,16 +8,37 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 
-const FAMILIES = ['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC'] as const
+const FAMILIES = ['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC', 'APT'] as const
 type Family = typeof FAMILIES[number]
 
+interface ChainTemplate {
+  label: string
+  name: string
+  slug: string
+  family: Family
+  nativeSymbol: string
+  networkLabel: string
+  minConf: number
+  explorerBase: string
+  rpcEnvVar: string
+}
+
+const NON_EVM_TEMPLATES: ChainTemplate[] = [
+  { label: 'Solana', name: 'Solana', slug: 'solana', family: 'SOL', nativeSymbol: 'SOL', networkLabel: 'SOL', minConf: 32, explorerBase: 'https://solscan.io/tx', rpcEnvVar: 'SOL_RPC_URL' },
+  { label: 'TON', name: 'TON', slug: 'ton', family: 'TON', nativeSymbol: 'TON', networkLabel: 'TON', minConf: 1, explorerBase: 'https://tonscan.org/tx', rpcEnvVar: 'TON_RPC_URL' },
+  { label: 'SUI', name: 'SUI', slug: 'sui', family: 'SUI', nativeSymbol: 'SUI', networkLabel: 'SUI', minConf: 1, explorerBase: 'https://suiexplorer.com/txblock', rpcEnvVar: 'SUI_RPC_URL' },
+  { label: 'TRON', name: 'TRON', slug: 'tron', family: 'TRON', nativeSymbol: 'TRX', networkLabel: 'TRC20', minConf: 20, explorerBase: 'https://tronscan.org/#/transaction', rpcEnvVar: 'TRON_RPC_URL' },
+  { label: 'Aptos', name: 'Aptos', slug: 'aptos', family: 'APT', nativeSymbol: 'APT', networkLabel: 'APT', minConf: 1, explorerBase: 'https://explorer.aptoslabs.com/txn', rpcEnvVar: 'APT_RPC_URL' },
+  { label: 'Bitcoin', name: 'Bitcoin', slug: 'bitcoin', family: 'BTC', nativeSymbol: 'BTC', networkLabel: 'Bitcoin', minConf: 3, explorerBase: 'https://mempool.space/tx', rpcEnvVar: 'BTC_RPC_URL' },
+]
+
 const ADDRESS_TYPE_FOR_FAMILY: Record<Family, string> = {
-  EVM: 'EVM', TRON: 'TRC20', SOL: 'SOL', TON: 'TON', SUI: 'SUI', BTC: 'BTC_BECH32',
+  EVM: 'EVM', TRON: 'TRC20', SOL: 'SOL', TON: 'TON', SUI: 'SUI', BTC: 'BTC_BECH32', APT: 'APT',
 }
 
 // Maps deposit chain family → gas chain category (used when "Also add to Gas" is checked)
 const FAMILY_TO_GAS_CATEGORY: Record<Family, string> = {
-  EVM: 'ethereum', TRON: 'tron', SOL: 'solana', TON: 'ton', SUI: 'sui', BTC: 'bitcoin',
+  EVM: 'ethereum', TRON: 'tron', SOL: 'solana', TON: 'ton', SUI: 'sui', BTC: 'bitcoin', APT: 'aptos',
 }
 
 // ── Add Chain Form ─────────────────────────────────────────────────────────────
@@ -54,6 +75,19 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
     setNetworkLabel(r.networkLabel)
     setExplorerBase(r.explorerBase ?? '')
     if (r.publicRpc) setRpcEnvVar('')
+  }
+
+  function applyTemplate(t: ChainTemplate) {
+    setQuery(t.name)
+    setSelected(null)
+    setName(t.name)
+    setSlug(t.slug)
+    setFamily(t.family)
+    setNativeSymbol(t.nativeSymbol)
+    setNetworkLabel(t.networkLabel)
+    setMinConf(String(t.minConf))
+    setExplorerBase(t.explorerBase)
+    setRpcEnvVar(t.rpcEnvVar)
   }
 
   function handleQueryChange(v: string) {
@@ -123,10 +157,27 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
     <div className="bg-surface shadow-card rounded-xl border border-border p-6 space-y-5">
       <h2 className="text-lg font-semibold text-slate-900">Add New Blockchain</h2>
 
+      {/* Non-EVM quick templates */}
+      <div>
+        <p className="text-sm font-medium text-slate-700 mb-2">Quick templates <span className="text-slate-400 font-normal">(click to pre-fill for non-EVM chains)</span></p>
+        <div className="flex flex-wrap gap-2">
+          {NON_EVM_TEMPLATES.map((t) => (
+            <button
+              key={t.slug}
+              type="button"
+              onClick={() => applyTemplate(t)}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 hover:bg-blue-50 hover:border-blue-400 transition-colors"
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Chain search */}
       <div className="relative">
         <label className="block text-sm font-medium text-slate-700 mb-1">
-          Search chain <span className="font-normal text-slate-400">(EVM auto-lookup — or skip and fill manually for SOL/TON/SUI/TRON)</span>
+          Search chain <span className="font-normal text-slate-400">(EVM auto-lookup — or use a quick template above / fill manually)</span>
         </label>
         <input
           type="text"

@@ -6,15 +6,9 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 
 interface AnalyticsData {
-  userGrowth?: Array<{ date: string; newUsers: number; totalUsers?: number }>
+  userGrowth?: Array<{ date: string; newUsers: number }>
   tradeVolume?: Array<{ date: string; volume: string; count: number }>
-  badgeDistribution?: {
-    new?: number
-    active?: number
-    trusted?: number
-    top?: number
-    elite?: number
-  }
+  badgeDistribution?: Record<string, number>
   topTraders?: Array<{
     username: string
     badge?: string
@@ -22,7 +16,6 @@ interface AnalyticsData {
     completionRate: number
     tradeCount: number
   }>
-  revenueByDay?: Array<{ date: string; revenue: string }>
 }
 
 type Period = '7d' | '30d' | '90d'
@@ -224,7 +217,7 @@ export default function AnalyticsPage() {
                       <tr key={t.username} className="hover:bg-surface/50">
                         <td className="px-4 py-3 text-text-muted font-medium">{i + 1}</td>
                         <td className="px-4 py-3 font-medium text-text-primary">{t.username}</td>
-                        <td className="px-4 py-3 capitalize text-text-secondary">{t.badge || 'â€”'}</td>
+                        <td className="px-4 py-3 capitalize text-text-secondary">{t.badge ?? 'new'}</td>
                         <td className="px-4 py-3 font-medium text-text-primary">${fmtNumber(t.volume)}</td>
                         <td className="px-4 py-3 text-text-secondary">{t.tradeCount}</td>
                         <td className="px-4 py-3">

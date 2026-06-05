@@ -126,9 +126,12 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   )
 }
 
+import { StaticPageNav } from '@/components/ui/StaticPageNav'
+
 export default function HelpPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10 pb-16">
+      <StaticPageNav />
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-black text-text-primary">Help Centre</h1>
         <p className="text-text-muted mt-2 text-sm">Answers to the most common questions about RupChain</p>

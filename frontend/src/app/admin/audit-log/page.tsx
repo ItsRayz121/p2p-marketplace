@@ -68,7 +68,7 @@ export default function AuditLogPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Audit Log</h1>
-        <p className="text-text-muted text-sm mt-0.5">{total.toLocaleString()} entries â€” immutable record of admin actions</p>
+        <p className="text-text-muted text-sm mt-0.5">{total.toLocaleString()} entries &mdash; immutable record of admin actions</p>
       </div>
 
       {entries.length === 0 ? (
@@ -101,7 +101,7 @@ export default function AuditLogPage() {
                         {entry.action}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-muted">{entry.ip || 'â€”'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-text-muted">{entry.ip ?? 'N/A'}</td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => setSelected(entry)}>
                         Details
@@ -145,7 +145,7 @@ export default function AuditLogPage() {
               </div>
               <div>
                 <p className="text-text-muted">IP Address</p>
-                <p className="font-mono text-text-secondary">{selected.ip || 'â€”'}</p>
+                <p className="font-mono text-text-secondary">{selected.ip ?? 'N/A'}</p>
               </div>
               {selected.userAgent && (
                 <div className="col-span-2">

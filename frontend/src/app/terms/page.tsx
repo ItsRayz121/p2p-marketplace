@@ -1,8 +1,11 @@
-﻿export default function TermsPage() {
+﻿import { StaticPageNav } from '@/components/ui/StaticPageNav'
+
+export default function TermsPage() {
   const lastUpdated = '1 January 2025'
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10 pb-16">
+      <StaticPageNav />
       <div className="mb-8">
         <h1 className="text-3xl font-black text-text-primary">Terms of Service</h1>
         <p className="text-sm text-text-muted mt-1">Last updated: {lastUpdated}</p>

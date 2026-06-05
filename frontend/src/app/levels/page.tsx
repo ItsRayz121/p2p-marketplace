@@ -4,6 +4,7 @@ import {
   Medal, CheckCircle, Star, Trophy, Gem,
   ShieldCheck, ShieldPlus, TrendingUp, Award, type LucideIcon,
 } from 'lucide-react'
+import { StaticPageNav } from '@/components/ui/StaticPageNav'
 
 export const metadata: Metadata = {
   title: 'Trader Levels & Badges — RupChain',
@@ -103,6 +104,7 @@ function fmtRate(rate: number) {
 export default function LevelsPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 pb-16 space-y-12">
+      <StaticPageNav />
       {/* Header */}
       <header className="text-center space-y-3">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 text-primary mx-auto">

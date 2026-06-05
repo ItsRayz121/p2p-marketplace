@@ -1,5 +1,6 @@
 import { CreditCard, Coins, ShieldCheck, BadgeDollarSign, TrendingUp, Fuel, CheckCircle } from 'lucide-react'
 import { supportMailto } from '@/lib/contact'
+import { StaticPageNav } from '@/components/ui/StaticPageNav'
 
 const FEATURES = [
   { Icon: ShieldCheck,     title: 'Trade Protection',      desc: 'All trades are monitored by RupChain. Crypto is only released after the seller confirms payment receipt.' },
@@ -14,6 +15,7 @@ const FEATURES = [
 export default function AboutPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10 pb-16 space-y-10">
+      <StaticPageNav />
       {/* Hero */}
       <div className="text-center space-y-3">
         <div className="w-16 h-16 rounded-2xl bg-primary text-white font-black text-2xl flex items-center justify-center mx-auto">P</div>

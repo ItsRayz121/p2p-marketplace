@@ -77,10 +77,16 @@ async function createAuditLog(
   targetType: string,
   targetId: string,
   details: Record<string, unknown>,
+  ipAddress?: string,
+  userAgent?: string,
 ) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const meta: any = { ...details }
+  if (ipAddress) meta._ip = ipAddress
+  if (userAgent) meta._ua = userAgent
   await db.auditLog.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: { actorId: adminId, action, targetType, targetId, metadata: details as any },
+    data: { actorId: adminId, action, targetType, targetId, metadata: meta },
   })
 }
 
@@ -254,6 +260,14 @@ export async function adminRoutes(app: FastifyInstance) {
           isSuspended: true,
           createdAt: true,
           tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true, totalVolumePKR: true, badge: true, badgeLabel: true, trustScore: true, badgeOverride: true } },
+          _count: {
+            select: {
+              trades: true,
+              sellTrades: true,
+              ctmBuyTrades: true,
+              ctmSellTrades: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -262,27 +276,79 @@ export async function adminRoutes(app: FastifyInstance) {
       db.user.count({ where }),
     ])
 
+    // Enrich with accurate live trade count (buy + sell, P2P + CTM)
+    const enrichedUsers = users.map((u) => ({
+      ...u,
+      tradeCount: (u._count.trades ?? 0) + (u._count.sellTrades ?? 0) + (u._count.ctmBuyTrades ?? 0) + (u._count.ctmSellTrades ?? 0),
+    }))
+
     return reply.send({
       success: true,
-      data: { users, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      data: { users: enrichedUsers, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
   })
 
   app.get('/admin/users/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const user = await db.user.findUnique({
-      where: { id },
-      include: {
-        tradeStats: true,
-        trades: { take: 10, orderBy: { createdAt: 'desc' }, select: { id: true, orderRef: true, coin: true, amount: true, fiatAmount: true, status: true, createdAt: true } },
-        kycSubmissions: { orderBy: { createdAt: 'desc' } },
-        merchant: true,
-        wallets: true,
-        fraudFlags: { where: { status: 'open' } },
+
+    const [user, ctmBuyCount, ctmSellCount, gasCount, referrals] = await Promise.all([
+      db.user.findUnique({
+        where: { id },
+        include: {
+          tradeStats: true,
+          trades: {
+            take: 20,
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, orderRef: true, coin: true, amount: true, fiatAmount: true, status: true, createdAt: true },
+          },
+          sellTrades: {
+            take: 20,
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, orderRef: true, coin: true, amount: true, fiatAmount: true, status: true, createdAt: true },
+          },
+          kycSubmissions: { orderBy: { createdAt: 'desc' } },
+          merchant: true,
+          wallets: true,
+          fraudFlags: { where: { status: 'open' } },
+          adminNotes: { orderBy: { createdAt: 'desc' }, take: 10 },
+          referredBy: { select: { id: true, username: true, email: true } },
+          referrals: { select: { id: true, username: true, email: true, createdAt: true, kycStatus: true }, take: 20 },
+          gasFeeOrders: {
+            take: 10,
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, chain: true, gasAmountUSD: true, status: true, createdAt: true },
+          },
+        },
+      }),
+      db.ctmTrade.count({ where: { buyerId: id } }),
+      db.ctmTrade.count({ where: { sellerId: id } }),
+      db.gasFeeOrder.count({ where: { userId: id } }),
+      db.user.findMany({
+        where: { referredById: id },
+        select: { id: true, username: true, email: true, createdAt: true, kycStatus: true },
+        take: 50,
+      }),
+    ])
+
+    if (!user) throw Errors.NOT_FOUND('User')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const u = user as any
+    const p2pBuyCount  = (u.trades?.length ?? 0) as number
+    const p2pSellCount = (u.sellTrades?.length ?? 0) as number
+    const liveTradeCount = p2pBuyCount + p2pSellCount + ctmBuyCount + ctmSellCount
+
+    return reply.send({
+      success: true,
+      data: {
+        ...user,
+        liveTradeCount,
+        ctmBuyCount,
+        ctmSellCount,
+        gasOrderCount: gasCount,
+        referralCount: referrals.length,
       },
     })
-    if (!user) throw Errors.NOT_FOUND('User')
-    return reply.send({ success: true, data: user })
   })
 
   app.post('/admin/users/:id/ban', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
@@ -465,6 +531,98 @@ export async function adminRoutes(app: FastifyInstance) {
       success: true,
       data: { updatedEnhanced: enhanced.count, updatedBasic: basic.count },
     })
+  })
+
+  // ── Referrals ──────────────────────────────────────────────────────────────
+
+  app.get('/admin/referrals', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+    const search = query.search?.trim()
+
+    const where: Prisma.UserWhereInput = { referredById: { not: null } }
+    if (search) {
+      where.OR = [
+        { username: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { referredBy: { username: { contains: search, mode: 'insensitive' } } },
+        { referredBy: { email: { contains: search, mode: 'insensitive' } } },
+      ]
+    }
+
+    const [referred, total] = await Promise.all([
+      db.user.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          createdAt: true,
+          kycStatus: true,
+          kycLevel: true,
+          referralCode: true,
+          referredBy: { select: { id: true, username: true, email: true } },
+          tradeStats: { select: { completedTrades: true, totalVolumePKR: true } },
+          _count: { select: { trades: true, sellTrades: true, ctmBuyTrades: true, ctmSellTrades: true, referrals: true } },
+        },
+      }),
+      db.user.count({ where }),
+    ])
+
+    const enriched = referred.map((u) => ({
+      ...u,
+      liveTradeCount: (u._count.trades ?? 0) + (u._count.sellTrades ?? 0) + (u._count.ctmBuyTrades ?? 0) + (u._count.ctmSellTrades ?? 0),
+    }))
+
+    return reply.send({ success: true, data: { referrals: enriched, total, pagination: { page, limit, total, pages: Math.ceil(total / limit) } } })
+  })
+
+  // GET /admin/referrals/top-inviters
+  app.get('/admin/referrals/top-inviters', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const inviters = await db.user.findMany({
+      where: { referrals: { some: {} } },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        kycStatus: true,
+        referralCode: true,
+        _count: { select: { referrals: true } },
+      },
+      orderBy: { referrals: { _count: 'desc' } },
+      take: 25,
+    })
+    return reply.send({ success: true, data: inviters })
+  })
+
+  // GET /admin/referrals/:userId — full chain for one user
+  app.get('/admin/referrals/:userId', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { userId } = req.params as { userId: string }
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true,
+        kycStatus: true,
+        referralCode: true,
+        referredBy: { select: { id: true, username: true, email: true, referredBy: { select: { id: true, username: true, email: true } } } },
+        referrals: {
+          select: {
+            id: true, username: true, email: true, createdAt: true, kycStatus: true,
+            _count: { select: { trades: true, sellTrades: true, ctmBuyTrades: true, ctmSellTrades: true } },
+            referrals: { select: { id: true, username: true, email: true, createdAt: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    })
+    if (!user) throw Errors.NOT_FOUND('User')
+    return reply.send({ success: true, data: user })
   })
 
   // ── KYC ───────────────────────────────────────────────────────────────────
@@ -656,12 +814,25 @@ export async function adminRoutes(app: FastifyInstance) {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
 
-    const where: Record<string, unknown> = {}
-    if (query.status) where.status = query.status
+    const where: Prisma.TradeWhereInput = {}
+    if (query.status && query.status !== 'all') where.status = query.status as Prisma.EnumTradeStatusFilter
+    if (query.coin) where.coin = { equals: query.coin.toUpperCase() }
+    if (query.dateFrom || query.dateTo) {
+      where.createdAt = {
+        ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+        ...(query.dateTo ? { lte: new Date(query.dateTo + 'T23:59:59') } : {}),
+      }
+    }
     if (query.search) {
+      const s = query.search.trim()
       where.OR = [
-        { orderRef: { contains: query.search, mode: 'insensitive' } },
-        { coin: { contains: query.search, mode: 'insensitive' } },
+        { id: { contains: s, mode: 'insensitive' } },
+        { orderRef: { contains: s, mode: 'insensitive' } },
+        { coin: { contains: s, mode: 'insensitive' } },
+        { buyer: { username: { contains: s, mode: 'insensitive' } } },
+        { buyer: { email: { contains: s, mode: 'insensitive' } } },
+        { seller: { username: { contains: s, mode: 'insensitive' } } },
+        { seller: { email: { contains: s, mode: 'insensitive' } } },
       ]
     }
 
@@ -682,8 +853,30 @@ export async function adminRoutes(app: FastifyInstance) {
 
     return reply.send({
       success: true,
-      data: { trades, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      data: { trades, total, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
+  })
+
+  // GET /admin/trades/:id — full trade detail for admin investigation
+  app.get('/admin/trades/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const trade = await db.trade.findUnique({
+      where: { id },
+      include: {
+        buyer: { select: { id: true, username: true, email: true, kycStatus: true, kycLevel: true } },
+        seller: { select: { id: true, username: true, email: true, kycStatus: true, kycLevel: true } },
+        messages: { orderBy: { createdAt: 'asc' }, select: { id: true, senderId: true, message: true, attachmentUrl: true, createdAt: true } },
+        dispute: {
+          include: {
+            messages: { orderBy: { createdAt: 'asc' }, select: { id: true, senderId: true, message: true, createdAt: true } },
+          },
+        },
+        ratings: { select: { id: true, rating: true, comment: true, ratedByUserId: true, createdAt: true } },
+        ad: { select: { id: true, side: true, price: true, paymentMethods: true, coin: true, network: true } },
+      },
+    })
+    if (!trade) throw Errors.NOT_FOUND('Trade')
+    return reply.send({ success: true, data: trade })
   })
 
   app.post('/admin/trades/:id/confirm-payment', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
@@ -2227,35 +2420,91 @@ export async function adminRoutes(app: FastifyInstance) {
     const days = daysMap[period]
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
 
-    const [badgeDistribution, topTraders, newUsers, completedTrades] = await Promise.all([
-      db.tradeStats.groupBy({
-        by: ['badge'],
-        _count: { badge: true },
-      }),
+    const [badgeRows, topTraderRows, recentUsers, recentTrades, recentCtmTrades] = await Promise.all([
+      db.tradeStats.groupBy({ by: ['badge'], _count: { badge: true } }),
       db.tradeStats.findMany({
-        orderBy: { totalVolumePKR: 'desc' },
-        take: 10,
-        include: { user: { select: { username: true } } },
+        orderBy: { completedTrades: 'desc' },
+        take: 15,
+        include: { user: { select: { username: true, kycStatus: true } } },
       }),
-      db.user.count({ where: { createdAt: { gte: since } } }),
-      db.trade.count({ where: { status: 'crypto_released', updatedAt: { gte: since } } }),
+      db.user.findMany({
+        where: { createdAt: { gte: since } },
+        select: { createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      db.trade.findMany({
+        where: { status: 'crypto_released', updatedAt: { gte: since } },
+        select: { updatedAt: true, fiatAmount: true },
+        orderBy: { updatedAt: 'asc' },
+      }),
+      db.ctmTrade.findMany({
+        where: { status: 'completed', updatedAt: { gte: since } },
+        select: { updatedAt: true, fiatAmount: true },
+        orderBy: { updatedAt: 'asc' },
+      }),
     ])
+
+    // Build day-keyed maps for time series
+    function dayKey(d: Date) {
+      return d.toISOString().slice(0, 10)
+    }
+
+    const userGrowthMap: Record<string, number> = {}
+    for (const u of recentUsers) {
+      const k = dayKey(u.createdAt)
+      userGrowthMap[k] = (userGrowthMap[k] ?? 0) + 1
+    }
+
+    const tradeVolumeMap: Record<string, { count: number; volume: number }> = {}
+    for (const t of [...recentTrades, ...recentCtmTrades]) {
+      const k = dayKey(t.updatedAt)
+      if (!tradeVolumeMap[k]) tradeVolumeMap[k] = { count: 0, volume: 0 }
+      tradeVolumeMap[k].count += 1
+      tradeVolumeMap[k].volume += t.fiatAmount ? parseFloat(t.fiatAmount.toString()) : 0
+    }
+
+    const userGrowth = Object.entries(userGrowthMap).map(([date, newUsers]) => ({ date, newUsers }))
+    const tradeVolume = Object.entries(tradeVolumeMap).map(([date, { count, volume }]) => ({
+      date,
+      count,
+      // Convert PKR volume to approximate USD (rough 1 USD ≈ 280 PKR)
+      volume: (volume / 280).toFixed(2),
+    }))
+
+    // Badge distribution as object for frontend
+    const badgeDistribution: Record<string, number> = {}
+    for (const b of badgeRows) badgeDistribution[b.badge] = b._count.badge
+
+    // Top traders: use TradeStats but enrich with live counts
+    const topTradersWithLive = await Promise.all(
+      topTraderRows.slice(0, 10).map(async (t) => {
+        const [liveP2p, liveCTM, liveGas] = await Promise.all([
+          db.trade.count({ where: { OR: [{ buyerId: t.userId }, { sellerId: t.userId }], status: 'crypto_released' } }),
+          db.ctmTrade.count({ where: { OR: [{ buyerId: t.userId }, { sellerId: t.userId }], status: 'completed' } }),
+          db.gasFeeOrder.count({ where: { userId: t.userId, status: 'delivered' } }),
+        ])
+        const totalCompleted = liveP2p + liveCTM + liveGas
+        const totalAllTrades = Math.max(t.totalTrades, totalCompleted)
+        const completionRate = totalAllTrades > 0 ? Math.round((totalCompleted / totalAllTrades) * 100) : 0
+        return {
+          username: t.user.username,
+          badge: t.badge || 'new',
+          volume: t.totalVolumePKR ? (parseFloat(t.totalVolumePKR.toString()) / 280).toFixed(2) : '0',
+          tradeCount: totalCompleted,
+          completionRate,
+        }
+      }),
+    )
 
     return reply.send({
       success: true,
       data: {
         period,
         since,
-        newUsers,
-        completedTrades,
-        badgeDistribution: badgeDistribution.map((b) => ({ badge: b.badge, count: b._count.badge })),
-        topTraders: topTraders.map((t) => ({
-          userId: t.userId,
-          username: t.user.username,
-          totalVolumePKR: t.totalVolumePKR,
-          completedTrades: t.completedTrades,
-          badge: t.badge,
-        })),
+        userGrowth,
+        tradeVolume,
+        badgeDistribution,
+        topTraders: topTradersWithLive.filter((t) => t.tradeCount > 0 || parseFloat(t.volume) > 0).sort((a, b) => b.tradeCount - a.tradeCount),
       },
     })
   })
@@ -2467,14 +2716,19 @@ export async function adminRoutes(app: FastifyInstance) {
       db.auditLog.count({ where }),
     ])
 
-    const entries = logs.map((l) => ({
-      id:        l.id,
-      userId:    l.actorId,
-      user:      l.actor,
-      action:    l.action,
-      details:   l.metadata,
-      createdAt: l.createdAt,
-    }))
+    const entries = logs.map((l) => {
+      const meta = l.metadata as Record<string, unknown> | null
+      return {
+        id:        l.id,
+        userId:    l.actorId,
+        user:      l.actor,
+        action:    l.action,
+        details:   l.metadata,
+        ip:        meta?._ip ?? null,
+        userAgent: meta?._ua ?? null,
+        createdAt: l.createdAt,
+      }
+    })
 
     return reply.send({
       success: true,

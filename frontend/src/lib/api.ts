@@ -1536,8 +1536,18 @@ export const adminApi = {
     apiRequest<void>(`/admin/merchants/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Trades
+  // Referrals
+  getReferrals: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ referrals: unknown[]; total: number }>('/admin/referrals' + buildQs(params)),
+  getTopInviters: () =>
+    apiRequest<unknown[]>('/admin/referrals/top-inviters'),
+  getReferralChain: (userId: string) =>
+    apiRequest<unknown>(`/admin/referrals/${userId}`),
+
   getTrades: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ trades: Trade[]; total: number }>('/admin/trades' + buildQs(params)),
+  getTrade: (id: string) =>
+    apiRequest<unknown>(`/admin/trades/${id}`),
   adminConfirmPayment: (id: string) =>
     apiRequest<Trade>(`/admin/trades/${id}/confirm-payment`, { method: 'POST' }),
   adminCancelTrade: (id: string) =>

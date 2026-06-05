@@ -33,9 +33,22 @@ interface FaqItem {
   answer: string
 }
 
+interface CtmTopListing {
+  id: string
+  token: { id: string; name: string; symbol: string; logoUrl?: string }
+  side: 'buy' | 'sell'
+  pricePerUnit: string
+  availableAmount: string
+  minOrderPkr?: string
+  maxOrderPkr?: string
+  paymentMethods: string[]
+  merchantProfile: { user: { username: string; avatarUrl?: string } }
+}
+
 interface HomeData {
   stats: MarketStats | null
   topAds: TopAds | null
+  topCtm: CtmTopListing[] | null
   faqs: FaqItem[]
 }
 
@@ -45,10 +58,11 @@ async function getHomeData(): Promise<HomeData> {
   // Use NEXT_PUBLIC_API_URL in production; fall back to local backend in dev.
   const api = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
-  const [statsRes, topAdsRes, configRes] = await Promise.allSettled([
+  const [statsRes, topAdsRes, configRes, topCtmRes] = await Promise.allSettled([
     fetch(`${api}/api/v1/marketplace/stats`,   { cache: 'no-store' }),
     fetch(`${api}/api/v1/marketplace/top-ads`, { cache: 'no-store' }),
     fetch(`${api}/api/v1/config`,              { cache: 'no-store' }),
+    fetch(`${api}/api/v1/ctm/listings?limit=6&side=sell&status=active`, { cache: 'no-store' }),
   ])
 
   async function json<T>(r: PromiseSettledResult<Response>): Promise<T | null> {
@@ -56,13 +70,15 @@ async function getHomeData(): Promise<HomeData> {
     try { return (await r.value.json()) as T } catch { return null }
   }
 
-  const statsData = await json<MarketStats>(statsRes)
-  const topAdsData= await json<TopAds>(topAdsRes)
-  const config    = await json<Record<string, unknown>>(configRes)
+  const statsData  = await json<MarketStats>(statsRes)
+  const topAdsData = await json<TopAds>(topAdsRes)
+  const config     = await json<Record<string, unknown>>(configRes)
+  const ctmData    = await json<{ listings: CtmTopListing[] }>(topCtmRes)
 
   return {
     stats:  statsData,
     topAds: topAdsData,
+    topCtm: ctmData?.listings ?? null,
     faqs:   Array.isArray(config?.home_faqs) ? (config!.home_faqs as FaqItem[]) : [],
   }
 }
@@ -102,7 +118,7 @@ function QuickActionCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HomePage() {
-  const { stats, topAds, faqs } = await getHomeData()
+  const { stats, topAds, topCtm, faqs } = await getHomeData()
 
   return (
     <div className="min-h-screen bg-surface">
@@ -164,7 +180,7 @@ export default async function HomePage() {
       )}
 
       {/* ── 3. TOP ADS — client island (tab toggle) ── */}
-      <TopAdsSection topAds={topAds} />
+      <TopAdsSection topAds={topAds} topCtm={topCtm} />
 
       {/* ── 4. TRUST BADGES ── */}
       <section className="py-10 bg-surface border-t border-border">

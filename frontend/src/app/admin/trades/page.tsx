@@ -1,5 +1,6 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
+import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
@@ -7,7 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
-import { ClipboardList } from 'lucide-react'
+import { ClipboardList, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Input } from '@/components/ui/Input'
@@ -62,6 +63,7 @@ export default function TradesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [coinFilter, setCoinFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -83,6 +85,7 @@ export default function TradesPage() {
       if (coinFilter) params.coin = coinFilter
       if (dateFrom) params.dateFrom = dateFrom
       if (dateTo) params.dateTo = dateTo
+      if (search.trim()) params.search = search.trim()
       const data = await adminApi.getTrades(params) as TradesResponse
       setTrades(data.trades ?? [])
       setTotal(data.total ?? 0)
@@ -92,7 +95,7 @@ export default function TradesPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, statusFilter, coinFilter, dateFrom, dateTo])
+  }, [page, statusFilter, coinFilter, dateFrom, dateTo, search])
 
   usePolling(fetchTrades, 30_000)
 
@@ -149,6 +152,13 @@ export default function TradesPage() {
 
       {/* Filters */}
       <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-3">
+        <div className="w-56">
+          <Input
+            placeholder="Search trade ID, buyer, seller…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+          />
+        </div>
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
@@ -183,11 +193,11 @@ export default function TradesPage() {
           onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
           className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
         />
-        {(statusFilter !== 'all' || coinFilter || dateFrom || dateTo) && (
+        {(statusFilter !== 'all' || coinFilter || dateFrom || dateTo || search) && (
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => { setStatusFilter('all'); setCoinFilter(''); setDateFrom(''); setDateTo(''); setPage(1) }}
+            onClick={() => { setStatusFilter('all'); setCoinFilter(''); setDateFrom(''); setDateTo(''); setSearch(''); setPage(1) }}
           >
             Clear
           </Button>
@@ -215,8 +225,15 @@ export default function TradesPage() {
               <tbody className="divide-y divide-border">
                 {trades.map((t) => (
                   <tr key={t.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">
-                      {t.id.slice(0, 8)}...
+                    <td className="px-4 py-3 font-mono text-xs">
+                      <Link
+                        href={`/admin/trades/${t.id}`}
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                        title={t.id}
+                      >
+                        {t.id.slice(0, 10)}…
+                        <ExternalLink size={11} className="opacity-60" />
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-text-primary">{t.buyer?.username || t.buyerId.slice(0, 8)}</p>
