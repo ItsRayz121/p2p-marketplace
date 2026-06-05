@@ -116,6 +116,7 @@ export const CHAIN_LOGO_STATIC: Record<string, string> = {
   BTC:    'https://assets.trustwallet.com/blockchains/bitcoin/info/logo.png',
   XRP:    'https://assets.trustwallet.com/blockchains/ripple/info/logo.png',
   COSMOS: 'https://assets.trustwallet.com/blockchains/cosmos/info/logo.png',
+  APTOS:  'https://assets.trustwallet.com/blockchains/aptos/info/logo.png',
 }
 
 export const TOKEN_LOGO_STATIC: Record<string, string> = {
@@ -134,6 +135,7 @@ export const TOKEN_LOGO_STATIC: Record<string, string> = {
   XRP:   'https://assets.trustwallet.com/blockchains/ripple/info/logo.png',
   DAI:   'https://assets.trustwallet.com/blockchains/ethereum/assets/0x6B175474E89094C44Da98b954EedeAC495271d0F/logo.png',
   WBTC:  'https://assets.trustwallet.com/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png',
+  APT:   'https://assets.trustwallet.com/blockchains/aptos/info/logo.png',
 }
 
 // icon.horse — high-quality icon CDN by domain

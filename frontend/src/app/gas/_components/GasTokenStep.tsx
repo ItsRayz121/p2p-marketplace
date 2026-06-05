@@ -41,7 +41,7 @@ export function GasTokenStep() {
                     : 'border-border bg-surface-alt hover:border-primary/20'
                 }`}
               >
-                <TokenLogo token={t} cat={selectedChain.category} sizeCls="w-12 h-12" />
+                <TokenLogo token={t} cat={selectedChain.category} chainLogoUrl={selectedChain.logoUrl} sizeCls="w-12 h-12" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-bold text-text-primary">{t.name}</p>

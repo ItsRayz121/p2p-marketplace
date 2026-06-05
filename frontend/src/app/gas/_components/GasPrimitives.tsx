@@ -173,11 +173,13 @@ export function ChainLogo({ chain, sizeCls = 'w-11 h-11' }: { chain: GasChain; s
 
 // ─── Token logo ───────────────────────────────────────────────────────────────
 
-export function TokenLogo({ token, cat, sizeCls = 'w-10 h-10' }: { token: GasToken; cat: string; sizeCls?: string }) {
+export function TokenLogo({ token, cat, chainLogoUrl, sizeCls = 'w-10 h-10' }: {
+  token: GasToken; cat: string; chainLogoUrl?: string | null; sizeCls?: string
+}) {
   const [failed, setFailed] = useState<Set<string>>(() => new Set())
-  // custom (DB) logo → static token CDN → chain CDN for the token's category → gradient.
+  // custom (DB) logo → static token CDN → chain's DB logo (native tokens) → chain CDN → gradient.
   const url = firstLiveUrl(
-    [token.logoUrl, resolveLogoStatic('token', token.symbol), resolveLogoStatic('chain', cat)],
+    [token.logoUrl, resolveLogoStatic('token', token.symbol), chainLogoUrl, resolveLogoStatic('chain', cat)],
     failed,
   )
   if (url) {
@@ -217,6 +219,54 @@ export function PkrMethodIcon({ methodKey, pkrMethods, sizeCls = 'w-12 h-12' }: 
   return (
     <div className={`${sizeCls} rounded-xl bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0`}>
       {meta.abbr}
+    </div>
+  )
+}
+
+// ─── Payment network logo (crypto payment step) ───────────────────────────────
+// Maps BEP20 → BSC chain slug, APTOS → APTOS, etc., so CDN URLs resolve.
+
+const PAYMENT_NETWORK_CHAIN_SLUG: Record<string, string> = {
+  BEP20: 'BSC',
+  APTOS: 'APTOS',
+  ERC20: 'ETH',
+  TRC20: 'TRON',
+}
+
+const PAYMENT_NETWORK_GRADIENT: Record<string, string> = {
+  BEP20: 'from-yellow-400 to-yellow-600',
+  APTOS: 'from-teal-500 to-cyan-700',
+  ERC20: 'from-blue-400 to-blue-600',
+  TRC20: 'from-red-400 to-red-600',
+}
+
+const PAYMENT_NETWORK_ABBR: Record<string, string> = {
+  BEP20: 'BNB',
+  APTOS: 'APT',
+  ERC20: 'ETH',
+  TRC20: 'TRX',
+}
+
+export function PaymentNetworkLogo({ networkKey, logoUrl, sizeCls = 'w-12 h-12' }: {
+  networkKey: string
+  logoUrl: string | null | undefined
+  sizeCls?: string
+}) {
+  const [failed, setFailed] = useState<Set<string>>(() => new Set())
+  const chainSlug = PAYMENT_NETWORK_CHAIN_SLUG[networkKey] ?? networkKey
+  const url = firstLiveUrl([logoUrl, resolveLogoStatic('chain', chainSlug)], failed)
+  const gradient = PAYMENT_NETWORK_GRADIENT[networkKey] ?? 'from-gray-400 to-gray-600'
+  const abbr = PAYMENT_NETWORK_ABBR[networkKey] ?? networkKey.slice(0, 3)
+  if (url) {
+    return (
+      <NextImage src={url} alt={networkKey} width={48} height={48}
+        className={`${sizeCls} rounded-xl object-contain flex-shrink-0`}
+        onError={() => setFailed((prev) => new Set([...prev, url]))} unoptimized />
+    )
+  }
+  return (
+    <div className={`${sizeCls} rounded-xl bg-gradient-to-br ${gradient} text-white font-bold text-sm flex items-center justify-center flex-shrink-0`}>
+      {abbr}
     </div>
   )
 }

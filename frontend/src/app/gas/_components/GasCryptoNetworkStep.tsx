@@ -1,7 +1,7 @@
 'use client'
 import { Button } from '@/components/ui/Button'
 import { useGasCtx, PHASE } from './GasContext'
-import { CardHeader } from './GasPrimitives'
+import { CardHeader, PaymentNetworkLogo } from './GasPrimitives'
 
 export function GasCryptoNetworkStep() {
   const {
@@ -29,10 +29,7 @@ export function GasCryptoNetworkStep() {
                 : 'border-border bg-surface hover:border-primary/20'
               }`}
             >
-              {cryptoMethods?.bep20?.logoUrl
-                ? <img src={cryptoMethods.bep20.logoUrl} alt="BEP20" className="w-12 h-12 rounded-xl object-contain flex-shrink-0" />
-                : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">BNB</div>
-              }
+              <PaymentNetworkLogo networkKey="BEP20" logoUrl={cryptoMethods?.bep20?.logoUrl} />
               <div className="flex-1">
                 <p className="text-sm font-bold text-text-primary">USDT BEP20</p>
                 <p className="text-xs text-text-muted">
@@ -60,10 +57,7 @@ export function GasCryptoNetworkStep() {
                 selectedCryptoNetwork === 'APTOS' ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:border-primary/20'
               }`}
             >
-              {cryptoMethods?.aptos?.logoUrl
-                ? <img src={cryptoMethods.aptos.logoUrl} alt="Aptos" className="w-12 h-12 rounded-xl object-contain flex-shrink-0" />
-                : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">APT</div>
-              }
+              <PaymentNetworkLogo networkKey="APTOS" logoUrl={cryptoMethods?.aptos?.logoUrl} />
               <div className="flex-1">
                 <p className="text-sm font-bold text-text-primary">USDT Aptos</p>
                 <p className="text-xs text-text-muted">Aptos Network · ~$0.01 network fee</p>
