@@ -17,14 +17,12 @@ export default function AdminCtmDisputesPage() {
   const [winner, setWinner] = useState<'buyer' | 'seller' | 'split'>('buyer')
   const [resolution, setResolution] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [statusFilter, setStatusFilter] = useState('open')
 
   const fetchDisputes = async () => {
     try {
-      const res = await fetch(`/api/v1/ctm/trades/admin/all?status=disputed&limit=50`, { credentials: 'include' })
-      const data = await res.json()
-      // Extract disputes from trade data
-      const trades = data.data?.trades ?? []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await ctmApi.adminGetTrades({ status: 'disputed', limit: 50 }) as any
+      const trades = data.trades ?? []
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const d = trades.filter((t: any) => t.dispute).map((t: any) => ({ ...t.dispute, trade: t }))
       setDisputes(d)

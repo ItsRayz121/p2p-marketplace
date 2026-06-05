@@ -16,7 +16,7 @@ interface ReferredUser {
   email: string
   createdAt: string
   kycStatus: string
-  kycLevel: number
+  kycLevel: string
   referralCode: string
   liveTradeCount: number
   referredBy?: { id: string; username: string; email: string }
@@ -234,7 +234,7 @@ export default function ReferralsPage() {
                       <td className="px-4 py-3 text-text-secondary">{fmtDate(u.createdAt)}</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs font-medium ${u.kycStatus === 'approved' ? 'text-success' : u.kycStatus === 'rejected' ? 'text-danger' : 'text-warning'}`}>
-                          {u.kycStatus} (L{u.kycLevel ?? 0})
+                          {u.kycStatus} (L{u.kycLevel === 'enhanced' ? 2 : u.kycLevel === 'basic' ? 1 : 0})
                         </span>
                       </td>
                       <td className="px-4 py-3 text-text-secondary">{u.liveTradeCount}</td>

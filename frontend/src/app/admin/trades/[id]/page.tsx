@@ -128,7 +128,7 @@ export default function TradeDetailPage() {
           <dl>
             <Row label="Username" value={buyer?.username} />
             <Row label="Email" value={buyer?.email} />
-            <Row label="KYC" value={`${buyer?.kycStatus ?? 'N/A'} (L${buyer?.kycLevel ?? 0})`} />
+            <Row label="KYC" value={`${buyer?.kycStatus ?? 'N/A'} (L${buyer?.kycLevel === 'enhanced' ? 2 : buyer?.kycLevel === 'basic' ? 1 : 0})`} />
             <Row label="Delivery Method" value={trade.buyerDeliveryMethod} />
             <Row label="Delivery Address" value={trade.buyerDeliveryAddress} />
           </dl>
@@ -144,7 +144,7 @@ export default function TradeDetailPage() {
           <dl>
             <Row label="Username" value={seller?.username} />
             <Row label="Email" value={seller?.email} />
-            <Row label="KYC" value={`${seller?.kycStatus ?? 'N/A'} (L${seller?.kycLevel ?? 0})`} />
+            <Row label="KYC" value={`${seller?.kycStatus ?? 'N/A'} (L${seller?.kycLevel === 'enhanced' ? 2 : seller?.kycLevel === 'basic' ? 1 : 0})`} />
           </dl>
           {seller?.id && (
             <div className="mt-3">
