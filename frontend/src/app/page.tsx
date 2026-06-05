@@ -65,21 +65,28 @@ async function getHomeData(): Promise<HomeData> {
     fetch(`${api}/api/v1/ctm/listings?limit=6&side=sell&status=active`, { cache: 'no-store' }),
   ])
 
+  // All backend routes wrap responses in { success: true, data: ... } — unwrap here.
   async function json<T>(r: PromiseSettledResult<Response>): Promise<T | null> {
     if (r.status !== 'fulfilled' || !r.value.ok) return null
-    try { return (await r.value.json()) as T } catch { return null }
+    try {
+      const body = await r.value.json() as { success?: boolean; data?: T } | T
+      if (body && typeof body === 'object' && 'data' in body && body.data !== undefined) {
+        return (body as { data: T }).data
+      }
+      return body as T
+    } catch { return null }
   }
 
   const statsData  = await json<MarketStats>(statsRes)
   const topAdsData = await json<TopAds>(topAdsRes)
   const config     = await json<Record<string, unknown>>(configRes)
-  const ctmData    = await json<{ listings: CtmTopListing[] }>(topCtmRes)
+  const ctmData    = await json<{ listings: CtmTopListing[]; total: number }>(topCtmRes)
 
   return {
     stats:  statsData,
     topAds: topAdsData,
     topCtm: ctmData?.listings ?? null,
-    faqs:   Array.isArray(config?.home_faqs) ? (config!.home_faqs as FaqItem[]) : [],
+    faqs:   Array.isArray(config?.homeFaqs) ? (config!.homeFaqs as FaqItem[]) : [],
   }
 }
 

@@ -76,6 +76,7 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
 
 export default function FeesPage() {
   const [withdrawalFeesCfg, setWithdrawalFeesCfg] = useState<WithdrawalFeeMap | null>(null)
+  const [withdrawalFeesFetched, setWithdrawalFeesFetched] = useState(false)
   const [config, setConfig] = useState<PlatformConfig | null>(null)
   const [gasChains, setGasChains] = useState<GasChain[]>([])
   const [loading, setLoading] = useState(true)
@@ -90,6 +91,7 @@ export default function FeesPage() {
     apiRequest<Array<{ key: string; value: string }>>('/wallet/fee-schedule')
       .then((configs) => { if (Array.isArray(configs)) setWithdrawalFeesCfg(buildWithdrawalFees(configs)) })
       .catch(() => {})
+      .finally(() => setWithdrawalFeesFetched(true))
 
     // Per-network gas platform service fees (real config)
     apiRequest<{ chains: GasChain[] }>('/gas-fee/chains')
@@ -143,8 +145,10 @@ export default function FeesPage() {
               Object.entries(networks).map(([network, fee]) => [coin.toUpperCase(), network.toUpperCase(), fee])
             )}
           />
+        ) : withdrawalFeesFetched ? (
+          <p className="text-sm text-text-muted py-4 text-center">No withdrawal fees configured.</p>
         ) : (
-          <p className="text-sm text-text-muted py-4 text-center">Withdrawal fee schedule loading…</p>
+          <p className="text-sm text-text-muted py-4 text-center">Loading…</p>
         )}
         <p className="text-xs text-text-muted mt-2">These fees cover blockchain network withdrawal costs from the RupChain escrow wallet and may vary based on network conditions.</p>
       </section>

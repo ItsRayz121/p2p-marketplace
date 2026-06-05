@@ -159,7 +159,7 @@ export default function MerchantKycPage() {
                       <p className="text-xs text-text-muted">{sub.user?.email}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-text-primary">{sub.businessName || 'â€”'}</p>
+                      <p className="text-text-primary">{sub.businessName || '—'}</p>
                       {sub.description && (
                         <p className="text-xs text-text-muted truncate max-w-xs">{sub.description}</p>
                       )}
@@ -210,11 +210,11 @@ export default function MerchantKycPage() {
               </div>
               <div>
                 <p className="text-text-muted">Business Name</p>
-                <p className="text-text-primary">{selected.businessName || 'â€”'}</p>
+                <p className="text-text-primary">{selected.businessName || '—'}</p>
               </div>
               <div className="col-span-2">
                 <p className="text-text-muted">Description</p>
-                <p className="text-text-secondary">{selected.description || 'â€”'}</p>
+                <p className="text-text-secondary">{selected.description || '—'}</p>
               </div>
               <div>
                 <p className="text-text-muted">Submitted</p>

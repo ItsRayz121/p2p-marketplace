@@ -118,7 +118,7 @@ function CtmListingCard({ listing }: { listing: CtmTopListing }) {
           </div>
         </div>
         <Link
-          href={`/community-tokens/listings/${listing.id}`}
+          href={`/ctm/listings/${listing.id}`}
           className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
         >
           Trade
@@ -142,7 +142,7 @@ export function TopAdsSection({ topAds, topCtm }: { topAds: TopAds | null; topCt
     ...(ctmListings.length > 0 ? [{ key: 'ctm' as const, label: 'Community Tokens' }] : []),
   ]
 
-  const viewAllHref = activeTab === 'ctm' ? '/community-tokens' : '/marketplace'
+  const viewAllHref = activeTab === 'ctm' ? '/ctm/listings' : '/marketplace'
 
   return (
     <section className="py-12">
@@ -171,7 +171,7 @@ export function TopAdsSection({ topAds, topCtm }: { topAds: TopAds | null; topCt
             {ctmListings.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-12 text-center gap-4">
                 <p className="text-sm font-medium text-text-primary">No active community token offers</p>
-                <Link href="/community-tokens" className="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors">
+                <Link href="/ctm" className="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors">
                   Browse Community Tokens
                 </Link>
               </div>

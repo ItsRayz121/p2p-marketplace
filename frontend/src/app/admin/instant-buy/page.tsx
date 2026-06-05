@@ -116,7 +116,7 @@ export default function InstantBuyPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Instant Buy â€” Admin Review</h1>
+        <h1 className="text-2xl font-bold text-text-primary">Instant Buy — Admin Review</h1>
         <p className="text-text-muted text-sm mt-0.5">{total} orders awaiting review</p>
       </div>
 
@@ -161,7 +161,7 @@ export default function InstantBuyPage() {
                           {o.ocrConfidence}%
                         </span>
                       ) : (
-                        <span className="text-text-muted">â€”</span>
+                        <span className="text-text-muted">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -170,7 +170,7 @@ export default function InstantBuyPage() {
                           {o.layer1Result}
                         </Badge>
                       ) : (
-                        <span className="text-text-muted">â€”</span>
+                        <span className="text-text-muted">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(o.createdAt)}</td>

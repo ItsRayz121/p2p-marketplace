@@ -291,7 +291,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/users/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
-    const [user, ctmBuyCount, ctmSellCount, gasCount, referrals] = await Promise.all([
+    const [user, ctmBuyCount, ctmSellCount, gasCount, referralCount] = await Promise.all([
       db.user.findUnique({
         where: { id },
         include: {
@@ -323,11 +323,7 @@ export async function adminRoutes(app: FastifyInstance) {
       db.ctmTrade.count({ where: { buyerId: id } }),
       db.ctmTrade.count({ where: { sellerId: id } }),
       db.gasFeeOrder.count({ where: { userId: id } }),
-      db.user.findMany({
-        where: { referredById: id },
-        select: { id: true, username: true, email: true, createdAt: true, kycStatus: true },
-        take: 50,
-      }),
+      db.user.count({ where: { referredById: id } }),
     ])
 
     if (!user) throw Errors.NOT_FOUND('User')
@@ -346,7 +342,7 @@ export async function adminRoutes(app: FastifyInstance) {
         ctmBuyCount,
         ctmSellCount,
         gasOrderCount: gasCount,
-        referralCount: referrals.length,
+        referralCount,
       },
     })
   })
@@ -2436,11 +2432,13 @@ export async function adminRoutes(app: FastifyInstance) {
         where: { status: 'crypto_released', updatedAt: { gte: since } },
         select: { updatedAt: true, fiatAmount: true },
         orderBy: { updatedAt: 'asc' },
+        take: 2000,
       }),
       db.ctmTrade.findMany({
         where: { status: 'completed', updatedAt: { gte: since } },
         select: { updatedAt: true, fiatAmount: true },
         orderBy: { updatedAt: 'asc' },
+        take: 2000,
       }),
     ])
 

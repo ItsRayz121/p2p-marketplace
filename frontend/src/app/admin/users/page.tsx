@@ -258,7 +258,7 @@ export default function UsersPage() {
                 {users.map((u) => (
                   <tr key={u.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{u.username || 'â€”'}</p>
+                      <p className="font-medium text-text-primary">{u.username || '—'}</p>
                       <p className="text-xs text-text-muted">{u.email}</p>
                     </td>
                     <td className="px-4 py-3">
@@ -334,7 +334,7 @@ export default function UsersPage() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <p className="text-text-muted">Username</p>
-                    <p className="font-medium text-text-primary">{selected.username || 'â€”'}</p>
+                    <p className="font-medium text-text-primary">{selected.username || '—'}</p>
                   </div>
                   <div>
                     <p className="text-text-muted">Email</p>
@@ -342,7 +342,7 @@ export default function UsersPage() {
                   </div>
                   <div>
                     <p className="text-text-muted">Full Name</p>
-                    <p className="text-text-primary">{selected.fullName || 'â€”'}</p>
+                    <p className="text-text-primary">{selected.fullName || '—'}</p>
                   </div>
                   <div>
                     <p className="text-text-muted">Role</p>
@@ -371,9 +371,9 @@ export default function UsersPage() {
                   <div>
                     <p className="text-text-muted">Account Status</p>
                     {selected.isBanned ? (
-                      <Badge variant="danger">Banned â€” {selected.banReason}</Badge>
+                      <Badge variant="danger">Banned — {selected.banReason}</Badge>
                     ) : selected.isSuspended ? (
-                      <Badge variant="warning">Suspended â€” {selected.suspendReason}</Badge>
+                      <Badge variant="warning">Suspended — {selected.suspendReason}</Badge>
                     ) : (
                       <Badge variant="success">Active</Badge>
                     )}
