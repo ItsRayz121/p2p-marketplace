@@ -203,17 +203,18 @@ export function PkrMethodIcon({ methodKey, pkrMethods, sizeCls = 'w-12 h-12' }: 
   pkrMethods: GasPkrMethods | null
   sizeCls?: string
 }) {
-  const [imgError, setImgError] = useState(false)
+  const [failed, setFailed] = useState<Set<string>>(() => new Set())
   const meta = PKR_METHOD_META[methodKey]
-  const logoUrl = pkrMethods
+  const dbLogoUrl = pkrMethods
     ? methodKey === 'bank_transfer' ? pkrMethods.bank.logoUrl : pkrMethods[methodKey as 'jazzcash' | 'easypaisa' | 'nayapay' | 'sadapay']?.logoUrl ?? null
     : null
-
-  if (logoUrl && !imgError) {
+  // DB logo → static CDN (icon.horse / gstatic) → text abbreviation
+  const url = firstLiveUrl([dbLogoUrl, resolveLogoStatic('payment_method', methodKey)], failed)
+  if (url) {
     return (
-      <NextImage src={logoUrl} alt={meta.label} width={48} height={48}
+      <NextImage src={url} alt={meta.label} width={48} height={48}
         className={`${sizeCls} rounded-xl object-contain flex-shrink-0`}
-        onError={() => setImgError(true)} unoptimized />
+        onError={() => setFailed((prev) => new Set([...prev, url]))} unoptimized />
     )
   }
   return (

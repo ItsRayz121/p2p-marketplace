@@ -2,7 +2,7 @@
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useGasCtx, PHASE } from './GasContext'
-import { CardHeader } from './GasPrimitives'
+import { CardHeader, TokenLogo } from './GasPrimitives'
 import { supportMailto } from '@/lib/contact'
 
 export function GasAmountStep() {
@@ -21,9 +21,12 @@ export function GasAmountStep() {
       <CardHeader onBack={() => setPhase(PHASE.TOKEN)} title="Choose Amount" />
 
       <div className="flex items-center justify-between bg-surface-alt rounded-xl px-4 py-3 text-sm">
-        <div>
-          <span className="text-text-muted">Market Price</span>
-          <p className="text-xs text-text-muted mt-0.5">1 {selectedToken.symbol}</p>
+        <div className="flex items-center gap-3">
+          <TokenLogo token={selectedToken} cat={selectedChain.category} chainLogoUrl={selectedChain.logoUrl} sizeCls="w-9 h-9" />
+          <div>
+            <span className="text-text-muted">Market Price</span>
+            <p className="text-xs text-text-muted mt-0.5">1 {selectedToken.symbol}</p>
+          </div>
         </div>
         <div className="text-right">
           <p className="font-bold text-text-primary">${priceUsd.toFixed(4)}</p>

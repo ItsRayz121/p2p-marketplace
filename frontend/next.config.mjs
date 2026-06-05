@@ -70,6 +70,12 @@ const nextConfig = {
       { protocol: 'https', hostname: 'raw.githubusercontent.com' },
       { protocol: 'https', hostname: 'cryptologos.cc' },
       { protocol: 'https', hostname: '*.cloudfront.net' },
+      // TrustWallet CDN — chain/token logo fallbacks
+      { protocol: 'https', hostname: 'assets.trustwallet.com' },
+      // Payment method logos
+      { protocol: 'https', hostname: 'icon.horse' },
+      { protocol: 'https', hostname: 't2.gstatic.com' },
+      { protocol: 'https', hostname: 'cdn.worldvectorlogo.com' },
     ],
   },
 }

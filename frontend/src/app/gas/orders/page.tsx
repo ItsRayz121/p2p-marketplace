@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { usePolling } from '@/hooks/usePolling'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,9 +142,10 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
       </div>
 
       {/* Chain + tier — hidden on mobile */}
-      <div className="hidden sm:block text-sm text-text-secondary">
+      <div className="hidden sm:flex items-center gap-1.5 text-sm text-text-secondary">
+        <EntityLogo type="chain" slug={order.chain} size="sm" />
         <span className="font-medium">{order.chain}</span>
-        <span className="text-text-muted ml-1 text-xs">/ {order.tier}</span>
+        <span className="text-text-muted text-xs">/ {order.tier}</span>
       </div>
 
       {/* Amount */}

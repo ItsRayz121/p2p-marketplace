@@ -2,7 +2,7 @@
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useGasCtx, PHASE } from './GasContext'
-import { CardHeader, validateAddress } from './GasPrimitives'
+import { CardHeader, validateAddress, ChainLogo, TokenLogo } from './GasPrimitives'
 
 export function GasAddressStep() {
   const {
@@ -41,8 +41,8 @@ export function GasAddressStep() {
       {/* Order Summary */}
       <div className="bg-surface-alt rounded-xl p-4 space-y-2 text-xs">
         <p className="font-bold text-text-muted uppercase tracking-wide mb-1">Order Summary</p>
-        <div className="flex justify-between"><span className="text-text-muted">Network</span><span className="font-semibold text-text-primary">{selectedChain.name}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Token</span><span className="font-semibold text-text-primary">{selectedToken.symbol}</span></div>
+        <div className="flex justify-between items-center"><span className="text-text-muted">Network</span><span className="font-semibold text-text-primary flex items-center gap-1.5"><ChainLogo chain={selectedChain} sizeCls="w-4 h-4" />{selectedChain.name}</span></div>
+        <div className="flex justify-between items-center"><span className="text-text-muted">Token</span><span className="font-semibold text-text-primary flex items-center gap-1.5"><TokenLogo token={selectedToken} cat={selectedChain.category} chainLogoUrl={selectedChain.logoUrl} sizeCls="w-4 h-4" />{selectedToken.symbol}</span></div>
         <div className="flex justify-between">
           <span className="text-text-muted">Amount</span>
           <span className="font-semibold text-text-primary">
