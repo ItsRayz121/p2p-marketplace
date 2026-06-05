@@ -117,6 +117,7 @@ export const CHAIN_LOGO_STATIC: Record<string, string> = {
   XRP:    'https://assets.trustwallet.com/blockchains/ripple/info/logo.png',
   COSMOS: 'https://assets.trustwallet.com/blockchains/cosmos/info/logo.png',
   APTOS:  'https://assets.trustwallet.com/blockchains/aptos/info/logo.png',
+  APT:    'https://assets.trustwallet.com/blockchains/aptos/info/logo.png',
 }
 
 export const TOKEN_LOGO_STATIC: Record<string, string> = {

@@ -37,6 +37,7 @@ const CAT_COLORS: Record<string, { gradient: string }> = {
   bitcoin:   { gradient: 'from-orange-400 to-orange-600' },
   xrp:       { gradient: 'from-slate-400 to-slate-600'   },
   cosmos:    { gradient: 'from-indigo-400 to-purple-600' },
+  aptos:     { gradient: 'from-teal-400 to-cyan-600'     },
 }
 
 export const CAT_LABELS: Record<string, string> = {
@@ -44,6 +45,7 @@ export const CAT_LABELS: Record<string, string> = {
   solana: 'Solana', sui: 'SUI', ton: 'TON', avalanche: 'Avalanche', polygon: 'Polygon',
   arbitrum: 'Arbitrum', optimism: 'Optimism', base: 'Base',
   bitcoin: 'Bitcoin', xrp: 'XRP Ledger', cosmos: 'Cosmos',
+  aptos: 'Aptos',
 }
 
 export function catGradient(cat: string): string {
