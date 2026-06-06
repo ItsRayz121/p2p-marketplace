@@ -89,6 +89,7 @@ function TradeDetailModal({
   onAction: () => void
 }) {
   const [trade, setTrade] = useState<CtmTradeDetail | null>(null)
+  const [chat, setChat] = useState<Array<{ id: string; senderId: string; senderUsername?: string; message: string; createdAt: string }>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -99,6 +100,10 @@ function TradeDetailModal({
       .then((d) => setTrade(d as CtmTradeDetail))
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load trade'))
       .finally(() => setLoading(false))
+    // Trade chat is a separate endpoint — fetch best-effort.
+    ctmApi.getMessages(tradeRef)
+      .then((m) => setChat(Array.isArray(m) ? (m as typeof chat) : []))
+      .catch(() => setChat([]))
   })
 
   async function adminAction(action: string) {
@@ -240,11 +245,11 @@ function TradeDetailModal({
           )}
 
           {/* Chat Messages */}
-          {(trade.messages?.length ?? 0) > 0 && (
+          {chat.length > 0 && (
             <div>
-              <p className="text-sm font-medium text-text-primary mb-2">Chat ({trade.messages!.length} messages)</p>
-              <div className="bg-surface rounded-xl border border-border p-3 max-h-52 overflow-y-auto space-y-2">
-                {trade.messages!.map((m, i) => {
+              <p className="text-sm font-medium text-text-primary mb-2">Chat ({chat.length} messages)</p>
+              <div className="bg-surface-alt/50 rounded-xl border border-border p-3 max-h-52 overflow-y-auto space-y-2">
+                {chat.map((m, i) => {
                   const isBuyer = m.senderId === trade.buyer.id
                   const isSeller = m.senderId === trade.seller.id
                   const label = isBuyer ? `${trade.buyer.username} (Buyer)` : isSeller ? `${trade.seller.username} (Seller)` : m.senderUsername ?? 'Admin'

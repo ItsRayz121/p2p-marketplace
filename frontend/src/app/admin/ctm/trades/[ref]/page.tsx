@@ -36,6 +36,7 @@ export default function AdminCtmTradeDetailPage() {
   const params = useParams()
   const ref = params?.ref as string
   const [trade, setTrade] = useState<any | null>(null)
+  const [messages, setMessages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -45,6 +46,11 @@ export default function AdminCtmTradeDetailPage() {
       const d = await ctmApi.getTrade(ref)
       setTrade(d)
       setError(null)
+      // Trade chat lives in a separate endpoint; fetch it best-effort.
+      try {
+        const msgs = await ctmApi.getMessages(ref)
+        setMessages(Array.isArray(msgs) ? msgs : [])
+      } catch { setMessages([]) }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load trade')
     } finally {
@@ -138,6 +144,36 @@ export default function AdminCtmTradeDetailPage() {
                 <div key={p.id ?? i} className="h-28 rounded-xl border border-border bg-surface-alt flex items-center justify-center text-xs text-text-muted">{p.proofType}</div>
               )
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Trade chat */}
+      {messages.length > 0 && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-sm font-medium text-text-primary mb-2">Trade Chat ({messages.length})</p>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {messages.map((m: any, i: number) => {
+              const isBuyer = m.senderId === trade.buyer.id
+              const isSeller = m.senderId === trade.seller.id
+              const label = isBuyer ? `${trade.buyer.username} (Buyer)` : isSeller ? `${trade.seller.username} (Seller)` : 'Admin'
+              return (
+                <div key={m.id ?? i} className={`flex ${isBuyer ? 'justify-start' : 'justify-end'}`}>
+                  <div className={`rounded-lg px-3 py-2 max-w-[80%] text-xs ${
+                    isBuyer ? 'bg-blue-50 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200'
+                      : isSeller ? 'bg-green-50 text-green-800 dark:bg-green-500/15 dark:text-green-200'
+                      : 'bg-purple-50 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200'
+                  }`}>
+                    <p className="font-semibold text-[10px] mb-0.5">{label}</p>
+                    <p>{m.message}</p>
+                    {m.attachmentUrl && (
+                      <a href={m.attachmentUrl} target="_blank" rel="noopener noreferrer" className="underline text-[10px]">attachment</a>
+                    )}
+                    <p className="text-[9px] opacity-60 mt-0.5">{fmtDt(m.createdAt)}</p>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

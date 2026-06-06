@@ -1,5 +1,6 @@
 import { db } from './prisma'
 import { logger } from './logger'
+import { getRequestContext } from './requestContext'
 
 /**
  * Persist an audit log entry. Shared by admin routes and user-facing flows
@@ -16,6 +17,9 @@ export async function recordAuditLog(
   details: Record<string, unknown> = {},
 ): Promise<void> {
   try {
+    // Pull caller IP / UA from the per-request context when available
+    // (user-initiated flows). Background jobs have no context → stays null.
+    const ctx = getRequestContext()
     await db.auditLog.create({
       data: {
         actorId,
@@ -24,6 +28,8 @@ export async function recordAuditLog(
         targetId,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         metadata: details as any,
+        ipAddress: ctx?.ip ?? null,
+        userAgent: ctx?.userAgent ? ctx.userAgent.slice(0, 500) : null,
       },
     })
   } catch (err) {

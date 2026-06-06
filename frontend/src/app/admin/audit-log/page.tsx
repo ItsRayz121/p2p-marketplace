@@ -29,6 +29,7 @@ function targetHref(type?: string | null, id?: string | null): string | null {
   const t = (type ?? '').toLowerCase()
   if (t === 'user') return `/admin/users/${id}`
   if (t === 'trade') return `/admin/trades/${id}`
+  if (t === 'withdrawal') return `/admin/withdrawals/${id}`
   return null
 }
 

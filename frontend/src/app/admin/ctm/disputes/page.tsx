@@ -32,6 +32,7 @@ export default function AdminCtmDisputesPage() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Dispute | null>(null)
   const [detail, setDetail] = useState<any | null>(null)
+  const [tradeMessages, setTradeMessages] = useState<any[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
   const [winner, setWinner] = useState<'buyer' | 'seller' | 'split'>('buyer')
   const [resolution, setResolution] = useState('')
@@ -89,10 +90,14 @@ export default function AdminCtmDisputesPage() {
   async function openDispute(d: Dispute) {
     setSelected(d); setWinner('buyer'); setResolution(''); setAckSettled(false)
     setEvidenceMsg(''); setEvidenceSent(false)
-    setDetail(null); setDetailLoading(true)
+    setDetail(null); setTradeMessages([]); setDetailLoading(true)
     try {
       const full = await ctmApi.getTrade(d.trade.tradeRef)
       setDetail(full)
+      try {
+        const msgs = await ctmApi.getMessages(d.trade.tradeRef)
+        setTradeMessages(Array.isArray(msgs) ? msgs : [])
+      } catch { setTradeMessages([]) }
     } catch {
       // fall back to the summary data we already have
     } finally {
@@ -118,7 +123,7 @@ export default function AdminCtmDisputesPage() {
   const buyerName = t?.buyer?.username ?? 'Buyer'
   const sellerName = t?.seller?.username ?? 'Seller'
   const proofs = detail?.proofs ?? selected?.trade.proofs ?? []
-  const messages = detail?.messages ?? []
+  const messages = tradeMessages
   const disputeMessages = detail?.dispute?.messages ?? []
 
   return (

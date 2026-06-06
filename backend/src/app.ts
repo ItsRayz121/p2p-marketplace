@@ -12,6 +12,7 @@ import { rateLimitRedis } from './lib/redis'
 import { registerRoutes } from './routes/index'
 import { AppError } from './lib/errors'
 import { csrfHook } from './lib/csrf'
+import { requestContext, resolveClientIp } from './lib/requestContext'
 
 export async function buildApp() {
   const app = Fastify({
@@ -69,9 +70,16 @@ export async function buildApp() {
   // CSRF protection — validates X-CSRF-Token on all unsafe methods
   app.addHook('onRequest', csrfHook)
 
-  // Request logging + propagate requestId to response
+  // Request logging + propagate requestId to response + seed request context
   app.addHook('onRequest', async (req, reply) => {
     reply.header('X-Request-Id', req.id)
+    // Seed AsyncLocalStorage so audit writes deep in the service layer can
+    // attribute the caller's IP / user-agent without threading params.
+    const ua = req.headers['user-agent']
+    requestContext.enterWith({
+      ip: resolveClientIp(req.headers as Record<string, unknown>, req.ip),
+      userAgent: typeof ua === 'string' ? ua : undefined,
+    })
     logger.info({
       requestId: req.id,
       method: req.method,
