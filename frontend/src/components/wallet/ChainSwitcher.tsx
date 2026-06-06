@@ -20,7 +20,7 @@ export function ChainSwitcher() {
           value={chainId ?? ''}
           onChange={(e) => switchChain({ chainId: Number(e.target.value) as (typeof SUPPORTED_CHAINS)[number]['id'] })}
           disabled={isPending}
-          className="px-3 py-1.5 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+          className="px-3 py-1.5 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
         >
           {!onSupportedChain && chainId != null && (
             <option value={chainId}>Unsupported (id {chainId})</option>

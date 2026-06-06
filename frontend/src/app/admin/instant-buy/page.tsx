@@ -266,7 +266,7 @@ export default function InstantBuyPage() {
                 onChange={(e) => setRejectReason(e.target.value)}
                 rows={2}
                 placeholder="Explain why this order is being rejected..."
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               />
             </div>
 

@@ -213,7 +213,7 @@ function SweepModal({ row, treasuryAddress, onConfirm, onClose, sweeping }: Swee
                 value={customAmount}
                 onChange={e => setCustomAmount(e.target.value)}
                 placeholder="0.000000"
-                className="bg-white border border-border rounded px-2 py-1 text-text-primary w-36 text-sm"
+                className="bg-surface border border-border rounded px-2 py-1 text-text-primary w-36 text-sm"
               />
               <span className="text-text-muted text-xs">{row.token} (max {fmtAmount(row.available)})</span>
             </div>
@@ -543,12 +543,12 @@ export default function PlatformRevenuePage() {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">Fee Collection History</h2>
           <div className="flex flex-wrap gap-2 text-xs">
-            <input type="text" placeholder="Token" value={feeToken} onChange={e => { setFeeToken(e.target.value.toUpperCase()); setFeePage(1) }} className="bg-white border border-border rounded px-2 py-1 text-text-primary placeholder-text-muted w-24" />
-            <input type="text" placeholder="Network" value={feeChain} onChange={e => { setFeeChain(e.target.value.toUpperCase()); setFeePage(1) }} className="bg-white border border-border rounded px-2 py-1 text-text-primary placeholder-text-muted w-28" />
-            <input type="date" value={feeFrom} onChange={e => { setFeeFrom(e.target.value); setFeePage(1) }} className="bg-white border border-border rounded px-2 py-1 text-text-primary w-34" />
+            <input type="text" placeholder="Token" value={feeToken} onChange={e => { setFeeToken(e.target.value.toUpperCase()); setFeePage(1) }} className="bg-surface border border-border rounded px-2 py-1 text-text-primary placeholder-text-muted w-24" />
+            <input type="text" placeholder="Network" value={feeChain} onChange={e => { setFeeChain(e.target.value.toUpperCase()); setFeePage(1) }} className="bg-surface border border-border rounded px-2 py-1 text-text-primary placeholder-text-muted w-28" />
+            <input type="date" value={feeFrom} onChange={e => { setFeeFrom(e.target.value); setFeePage(1) }} className="bg-surface border border-border rounded px-2 py-1 text-text-primary w-34" />
             <span className="text-text-muted self-center">→</span>
-            <input type="date" value={feeTo} onChange={e => { setFeeTo(e.target.value); setFeePage(1) }} className="bg-white border border-border rounded px-2 py-1 text-text-primary w-34" />
-            <input type="text" placeholder="Search TX" value={feeSearch} onChange={e => { setFeeSearch(e.target.value); setFeePage(1) }} className="bg-white border border-border rounded px-2 py-1 text-text-primary placeholder-text-muted w-36" />
+            <input type="date" value={feeTo} onChange={e => { setFeeTo(e.target.value); setFeePage(1) }} className="bg-surface border border-border rounded px-2 py-1 text-text-primary w-34" />
+            <input type="text" placeholder="Search TX" value={feeSearch} onChange={e => { setFeeSearch(e.target.value); setFeePage(1) }} className="bg-surface border border-border rounded px-2 py-1 text-text-primary placeholder-text-muted w-36" />
             {(feeToken || feeChain || feeFrom || feeTo || feeSearch) && (
               <button onClick={() => { setFeeToken(''); setFeeChain(''); setFeeFrom(''); setFeeTo(''); setFeeSearch(''); setFeePage(1) }} className="text-text-muted hover:text-text-primary border border-border rounded px-2 py-1">Clear</button>
             )}

@@ -327,12 +327,12 @@ export default function AdminCtmTradesPage() {
             placeholder="Search ref…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="border border-border rounded-lg px-3 py-2 text-sm bg-white w-36 focus:outline-none"
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary w-36 focus:outline-none"
           />
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-            className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none"
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none"
           >
             <option value="">All statuses</option>
             <option value="awaiting_payment">Awaiting Payment</option>

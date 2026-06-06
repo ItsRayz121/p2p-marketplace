@@ -269,7 +269,7 @@ export default function GasFlaggedPage() {
               {reviewing.order.ipAddress && (
                 <div className="flex justify-between">
                   <span className="text-text-muted">IP</span>
-                  <code className="text-xs bg-white px-1 rounded">{reviewing.order.ipAddress}</code>
+                  <code className="text-xs bg-surface-alt px-1 rounded">{reviewing.order.ipAddress}</code>
                 </div>
               )}
             </div>

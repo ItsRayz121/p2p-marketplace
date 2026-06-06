@@ -356,7 +356,7 @@ export default function WithdrawalsPage() {
             onClick={() => { setStatusFilter(tab.value); setPage(1); setLoading(true) }}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               statusFilter === tab.value
-                ? 'bg-white text-text-primary shadow-sm border border-border'
+                ? 'bg-surface text-text-primary shadow-sm border border-border'
                 : 'text-text-muted hover:text-text-primary'
             }`}
           >
@@ -593,13 +593,13 @@ export default function WithdrawalsPage() {
                     value={overrideNote}
                     onChange={(e) => setOverrideNote(e.target.value)}
                     placeholder="Override reason (e.g. known trusted user)"
-                    className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   <div className="flex gap-2 items-center">
                     <select
                       value={overrideTier ?? ''}
                       onChange={(e) => setOverrideTier(e.target.value ? Number(e.target.value) : null)}
-                      className="flex-1 px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="flex-1 px-2.5 py-1.5 border border-border rounded-lg text-xs bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
                       <option value="">Keep current tier (T{selected.tier ?? 3})</option>
                       <option value="1">Override to T1 (auto-approve)</option>
@@ -677,7 +677,7 @@ export default function WithdrawalsPage() {
                     onChange={(e) => setRejectReason(e.target.value)}
                     rows={2}
                     placeholder="Reason for emergency rejection..."
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                   />
                 </div>
                 <div className="flex gap-3 pt-2">
@@ -694,7 +694,7 @@ export default function WithdrawalsPage() {
                       value={holdReason}
                       onChange={(e) => setHoldReason(e.target.value)}
                       placeholder="Hold reason..."
-                      className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-warning"
+                      className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-warning"
                     />
                     <Button
                       variant="secondary"
@@ -729,7 +729,7 @@ export default function WithdrawalsPage() {
                     onChange={(e) => setRejectReason(e.target.value)}
                     rows={2}
                     placeholder="Reason for rejection..."
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                   />
                 </div>
                 <div className="flex gap-3 pt-2">
@@ -748,7 +748,7 @@ export default function WithdrawalsPage() {
                         value={holdReason}
                         onChange={(e) => setHoldReason(e.target.value)}
                         placeholder="Hold reason..."
-                        className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-warning"
+                        className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-warning"
                       />
                       <Button
                         variant="secondary"
@@ -850,7 +850,7 @@ export default function WithdrawalsPage() {
                 value={txHash}
                 onChange={(e) => setTxHash(e.target.value)}
                 placeholder="0x..."
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
@@ -863,7 +863,7 @@ export default function WithdrawalsPage() {
                 onChange={(e) => setAdminNote(e.target.value)}
                 rows={2}
                 placeholder="Any notes about this payout..."
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               />
             </div>
 
@@ -965,7 +965,7 @@ export default function WithdrawalsPage() {
                 onChange={(e) => setRefundReason(e.target.value)}
                 placeholder="e.g. Transaction hash was invalid — funds never sent on-chain"
                 rows={3}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               />
             </div>
             {actionError && <p className="text-sm text-danger">{actionError}</p>}
@@ -1014,7 +1014,7 @@ export default function WithdrawalsPage() {
                 onChange={(e) => setResolvedNote(e.target.value)}
                 rows={3}
                 placeholder="e.g. Manually refunded via bank transfer. Ref #12345. Confirmed with user via WhatsApp."
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               />
             </div>
             {actionError && (

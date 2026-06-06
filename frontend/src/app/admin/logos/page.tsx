@@ -94,7 +94,7 @@ function CandidateCard({
   return (
     <div
       className={`border rounded-xl p-3 flex flex-col items-center gap-2 text-center transition-all w-36
-        ${state === 'ok' ? 'border-border hover:border-primary bg-white shadow-sm' : 'border-border/30 opacity-25'}
+        ${state === 'ok' ? 'border-border hover:border-primary bg-surface shadow-sm' : 'border-border/30 opacity-25'}
       `}
     >
       {/* Logo — larger preview */}
@@ -309,7 +309,7 @@ export default function AdminLogosPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="e.g. Meezan Bank, meezanbank.com, SadaPay…"
-            className="flex-1 border border-blue-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+            className="flex-1 border border-blue-300 rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-400/40"
           />
           <button
             onClick={handleSearch}
@@ -379,7 +379,7 @@ export default function AdminLogosPage() {
             <select
               value={formType}
               onChange={(e) => { setFormType(e.target.value as EntityType); if (!isEditing) setFormSlug('') }}
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               {ENTITY_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -415,7 +415,7 @@ export default function AdminLogosPage() {
 
         {/* Live preview */}
         {formUrl && (
-          <div className="flex items-center gap-3 p-3 bg-white border border-border rounded-lg">
+          <div className="flex items-center gap-3 p-3 bg-surface border border-border rounded-lg">
             <EntityLogo type={formType} slug={formSlug || '?'} size="xl" logoUrl={formUrl} />
             <div>
               <p className="text-xs font-medium text-text-primary">Preview</p>
@@ -475,7 +475,7 @@ export default function AdminLogosPage() {
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="border border-border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none"
+              className="border border-border rounded-lg px-3 py-1.5 text-sm bg-surface text-text-primary focus:outline-none"
             >
               <option value="">All types</option>
               {ENTITY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}

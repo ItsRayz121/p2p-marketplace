@@ -706,7 +706,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex-shrink-0 h-14 bg-white border-b border-border flex items-center px-4 gap-4">
+        <header className="flex-shrink-0 h-14 bg-surface border-b border-border flex items-center px-4 gap-4">
           <button
             className="md:hidden p-2 rounded-lg text-text-secondary hover:bg-surface transition-colors"
             onClick={() => setMobileOpen(true)}
@@ -737,7 +737,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
             {/* Dropdown */}
             {bellOpen && (
-              <div className="absolute right-0 top-12 w-96 bg-white rounded-xl shadow-xl border border-border z-50 overflow-hidden">
+              <div className="absolute right-0 top-12 w-96 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                   <div className="flex items-center gap-2">

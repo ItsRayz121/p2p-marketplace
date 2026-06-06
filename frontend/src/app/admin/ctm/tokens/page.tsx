@@ -77,7 +77,7 @@ function ImageUploadField({
           placeholder="https://…"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary min-w-0"
+          className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary min-w-0"
         />
         <button
           type="button"
@@ -258,7 +258,7 @@ export default function AdminCtmTokensPage() {
         placeholder={opts?.placeholder ?? ''}
         value={addForm[key] as string}
         onChange={(e) => setAddForm((f) => ({ ...f, [key]: e.target.value }))}
-        className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+        className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
       />
     </div>
   )
@@ -268,8 +268,8 @@ export default function AdminCtmTokensPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-text-primary">CTM Tokens ({total})</h1>
         <div className="flex gap-2 flex-wrap">
-          <input type="text" placeholder="Search…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white w-40 focus:outline-none" />
-          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+          <input type="text" placeholder="Search…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary w-40 focus:outline-none" />
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
             <option value="">All statuses</option>
             <option value="approved">Approved</option>
             <option value="pending_review">Pending Review</option>
@@ -391,7 +391,7 @@ export default function AdminCtmTokensPage() {
                 <select
                   value={editForm.status}
                   onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="approved">Approved</option>
                   <option value="pending_review">Pending Review</option>
@@ -404,7 +404,7 @@ export default function AdminCtmTokensPage() {
                 <select
                   value={editForm.riskTier}
                   onChange={(e) => setEditForm((f) => ({ ...f, riskTier: e.target.value as typeof editForm.riskTier }))}
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -435,11 +435,11 @@ export default function AdminCtmTokensPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Symbol</label>
-                <input type="text" value={editForm.symbol} onChange={(e) => setEditForm((f) => ({ ...f, symbol: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" value={editForm.symbol} onChange={(e) => setEditForm((f) => ({ ...f, symbol: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
               <div className="sm:col-span-2">
                 <label className="block text-xs font-medium text-text-muted mb-1">Name</label>
-                <input type="text" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
             </div>
             <div>
@@ -448,7 +448,7 @@ export default function AdminCtmTokensPage() {
                 rows={3}
                 value={editForm.description}
                 onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
               />
             </div>
           </div>
@@ -459,7 +459,7 @@ export default function AdminCtmTokensPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Settlement Type</label>
-                <select value={editForm.settlementType} onChange={(e) => setEditForm((f) => ({ ...f, settlementType: e.target.value as typeof f.settlementType }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                <select value={editForm.settlementType} onChange={(e) => setEditForm((f) => ({ ...f, settlementType: e.target.value as typeof f.settlementType }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
                   <option value="MANUAL">Manual</option>
                   <option value="ON_CHAIN">On-Chain</option>
                   <option value="HYBRID">Hybrid</option>
@@ -467,11 +467,11 @@ export default function AdminCtmTokensPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Max Listing Amount</label>
-                <input type="text" placeholder="e.g. 100000" value={editForm.maxListingAmount} onChange={(e) => setEditForm((f) => ({ ...f, maxListingAmount: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="e.g. 100000" value={editForm.maxListingAmount} onChange={(e) => setEditForm((f) => ({ ...f, maxListingAmount: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Min Trade Amount (PKR)</label>
-                <input type="text" placeholder="e.g. 1000" value={editForm.minTradeAmountPkr} onChange={(e) => setEditForm((f) => ({ ...f, minTradeAmountPkr: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="e.g. 1000" value={editForm.minTradeAmountPkr} onChange={(e) => setEditForm((f) => ({ ...f, minTradeAmountPkr: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
             </div>
           </div>
@@ -482,15 +482,15 @@ export default function AdminCtmTokensPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Network</label>
-                <input type="text" placeholder="e.g. Ethereum" value={editForm.network} onChange={(e) => setEditForm((f) => ({ ...f, network: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="e.g. Ethereum" value={editForm.network} onChange={(e) => setEditForm((f) => ({ ...f, network: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Contract Address</label>
-                <input type="text" placeholder="0x…" value={editForm.contractAddress} onChange={(e) => setEditForm((f) => ({ ...f, contractAddress: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="0x…" value={editForm.contractAddress} onChange={(e) => setEditForm((f) => ({ ...f, contractAddress: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
               <div className="sm:col-span-2">
                 <label className="block text-xs font-medium text-text-muted mb-1">Explorer URL</label>
-                <input type="text" placeholder="https://explorer.sidrachain.com/tx/{hash}" value={editForm.explorerUrl} onChange={(e) => setEditForm((f) => ({ ...f, explorerUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="https://explorer.sidrachain.com/tx/{hash}" value={editForm.explorerUrl} onChange={(e) => setEditForm((f) => ({ ...f, explorerUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                 <p className="text-xs text-text-muted mt-1">
                   Use <code className="bg-surface px-1 py-0.5 rounded text-text-primary">{'{hash}'}</code> as placeholder, e.g. <span className="font-mono">https://tronscan.org/#/transaction/{'{hash}'}</span>. If omitted, hash is appended automatically.
                 </p>
@@ -514,19 +514,19 @@ export default function AdminCtmTokensPage() {
               />
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Official Website</label>
-                <input type="text" placeholder="https://…" value={editForm.officialWebsite} onChange={(e) => setEditForm((f) => ({ ...f, officialWebsite: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="https://…" value={editForm.officialWebsite} onChange={(e) => setEditForm((f) => ({ ...f, officialWebsite: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Twitter</label>
-                <input type="text" placeholder="https://twitter.com/…" value={editForm.officialTwitter} onChange={(e) => setEditForm((f) => ({ ...f, officialTwitter: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="https://twitter.com/…" value={editForm.officialTwitter} onChange={(e) => setEditForm((f) => ({ ...f, officialTwitter: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Telegram</label>
-                <input type="text" placeholder="https://t.me/…" value={editForm.officialTelegram} onChange={(e) => setEditForm((f) => ({ ...f, officialTelegram: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="https://t.me/…" value={editForm.officialTelegram} onChange={(e) => setEditForm((f) => ({ ...f, officialTelegram: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Whitepaper URL</label>
-                <input type="text" placeholder="https://…" value={editForm.whitePaperUrl} onChange={(e) => setEditForm((f) => ({ ...f, whitePaperUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary" />
+                <input type="text" placeholder="https://…" value={editForm.whitePaperUrl} onChange={(e) => setEditForm((f) => ({ ...f, whitePaperUrl: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
             </div>
           </div>
@@ -541,7 +541,7 @@ export default function AdminCtmTokensPage() {
                 placeholder="Internal risk notes…"
                 value={editForm.riskNotes}
                 onChange={(e) => setEditForm((f) => ({ ...f, riskNotes: e.target.value }))}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
               />
             </div>
           </div>
@@ -595,7 +595,7 @@ export default function AdminCtmTokensPage() {
                 placeholder="Brief description of the token…"
                 value={addForm.description}
                 onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
               />
             </div>
           </div>
@@ -606,7 +606,7 @@ export default function AdminCtmTokensPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Settlement Type<span className="text-red-500 ml-0.5">*</span></label>
-                <select value={addForm.settlementType} onChange={(e) => setAddForm((f) => ({ ...f, settlementType: e.target.value as typeof addForm.settlementType }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                <select value={addForm.settlementType} onChange={(e) => setAddForm((f) => ({ ...f, settlementType: e.target.value as typeof addForm.settlementType }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
                   <option value="MANUAL">Manual</option>
                   <option value="ON_CHAIN">On-Chain</option>
                   <option value="HYBRID">Hybrid</option>
@@ -614,7 +614,7 @@ export default function AdminCtmTokensPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Risk Tier</label>
-                <select value={addForm.riskTier} onChange={(e) => setAddForm((f) => ({ ...f, riskTier: e.target.value as typeof addForm.riskTier }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+                <select value={addForm.riskTier} onChange={(e) => setAddForm((f) => ({ ...f, riskTier: e.target.value as typeof addForm.riskTier }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -639,7 +639,7 @@ export default function AdminCtmTokensPage() {
                   placeholder="https://explorer.sidrachain.com/tx/{hash}"
                   value={addForm.explorerUrl}
                   onChange={(e) => setAddForm((f) => ({ ...f, explorerUrl: e.target.value }))}
-                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <p className="text-xs text-text-muted mt-1">
                   Use <code className="bg-surface px-1 py-0.5 rounded text-text-primary">{'{hash}'}</code> as placeholder, e.g. <span className="font-mono">https://tronscan.org/#/transaction/{'{hash}'}</span>. If omitted, hash is appended automatically.
@@ -679,7 +679,7 @@ export default function AdminCtmTokensPage() {
                 placeholder="Internal risk notes…"
                 value={addForm.riskNotes}
                 onChange={(e) => setAddForm((f) => ({ ...f, riskNotes: e.target.value }))}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
               />
             </div>
           </div>

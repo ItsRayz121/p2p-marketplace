@@ -149,7 +149,7 @@ export default function KycQueuePage() {
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
                 tierFilter === t
                   ? 'bg-primary text-white border-primary'
-                  : 'bg-white text-text-secondary border-border hover:bg-surface'
+                  : 'bg-surface text-text-secondary border-border hover:bg-surface'
               }`}
             >
               {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -335,7 +335,7 @@ export default function KycQueuePage() {
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
                   placeholder="Add notes for the user..."
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                 />
               </div>
 
@@ -349,7 +349,7 @@ export default function KycQueuePage() {
                   onChange={(e) => setRejectReason(e.target.value)}
                   rows={2}
                   placeholder="Explain why the submission is being rejected..."
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                 />
               </div>
 

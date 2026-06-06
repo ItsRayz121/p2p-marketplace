@@ -102,7 +102,7 @@ export function RecentDeposits() {
       <p className="text-xs text-text-muted mb-3">
         On-chain transfers to your RupChain addresses. Pending rows update as new blocks confirm.
       </p>
-      <div className="bg-white rounded-xl border border-border overflow-hidden divide-y divide-border">
+      <div className="bg-surface rounded-xl border border-border overflow-hidden divide-y divide-border">
         {rows.map((r) => (
           <div key={r.id} className="px-4 py-3 space-y-2">
             <div className="flex items-start justify-between gap-3 flex-wrap">

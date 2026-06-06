@@ -349,7 +349,7 @@ function AdminSettingsInner() {
             onClick={() => setActiveTab(t.id)}
             className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
               activeTab === t.id
-                ? 'bg-white text-text-primary shadow-sm'
+                ? 'bg-surface text-text-primary shadow-sm'
                 : 'text-text-muted hover:text-text-primary'
             }`}
           >

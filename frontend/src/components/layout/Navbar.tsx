@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { notificationsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import Image from 'next/image'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import {
@@ -90,14 +90,7 @@ export default function Navbar() {
 
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-            <Image
-              src="/brand/logo-icon.png"
-              alt="RupChain"
-              width={40}
-              height={40}
-              className="w-10 h-10 object-contain flex-shrink-0"
-              priority
-            />
+            <BrandLogo size={40} className="w-10 h-10" priority />
             <span className="hidden sm:block font-black text-xl text-text-primary tracking-normal leading-none">
               RupChain
             </span>

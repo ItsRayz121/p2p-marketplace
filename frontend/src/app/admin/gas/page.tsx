@@ -962,7 +962,7 @@ export default function GasAdminPage() {
                 key={p}
                 onClick={() => handleAnalyticsPeriod(p)}
                 className={`px-3 py-1 text-xs rounded-lg border font-medium transition-colors ${
-                  analyticsPeriod === p ? 'bg-primary text-white border-primary' : 'bg-white text-text-secondary border-border hover:bg-surface'
+                  analyticsPeriod === p ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface'
                 }`}
               >
                 {p === 'all' ? 'All Time' : p}
@@ -1064,7 +1064,7 @@ export default function GasAdminPage() {
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
               statusFilter === s
                 ? 'bg-primary text-white border-primary'
-                : 'bg-white text-text-secondary border-border hover:bg-surface'
+                : 'bg-surface text-text-secondary border-border hover:bg-surface'
             }`}
           >
             {s === 'all' ? 'All' : (STATUS_LABELS[s] ?? s)}

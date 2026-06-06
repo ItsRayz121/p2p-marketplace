@@ -74,7 +74,7 @@ export default function AdminCtmDisputesPage() {
           {disputes
             .sort((a, b) => (isEscalating(b) ? 1 : 0) - (isEscalating(a) ? 1 : 0))
             .map((d) => (
-              <div key={d.id} className={`bg-white border rounded-xl p-4 ${isEscalating(d) ? 'border-red-300 bg-red-50/30' : 'border-border'}`}>
+              <div key={d.id} className={`bg-surface border rounded-xl p-4 ${isEscalating(d) ? 'border-red-300 bg-red-50/30' : 'border-border'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">

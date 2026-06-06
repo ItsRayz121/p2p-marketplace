@@ -127,7 +127,7 @@ export default function MerchantKycPage() {
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border capitalize ${
               statusFilter === s
                 ? 'bg-primary text-white border-primary'
-                : 'bg-white text-text-secondary border-border hover:bg-surface'
+                : 'bg-surface text-text-secondary border-border hover:bg-surface'
             }`}
           >
             {s}
@@ -256,7 +256,7 @@ export default function MerchantKycPage() {
                 onChange={(e) => setRejectReason(e.target.value)}
                 rows={2}
                 placeholder="Why is this merchant application being rejected?"
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               />
             </div>
 

@@ -29,18 +29,45 @@ interface AnalyticsData {
 }
 
 type Period = '7d' | '30d' | '90d'
+type ChartTab = 'growth' | 'badges'
 
-function SimpleBar({ value, max, color }: { value: number; max: number; color: string }) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0
+/** Compact vertical bar chart. Bars scroll horizontally when there are many. */
+function VerticalBarChart({
+  bars,
+  valueSuffix = '',
+}: {
+  bars: Array<{ label: string; value: number; color: string }>
+  valueSuffix?: string
+}) {
+  const max = Math.max(...bars.map((b) => b.value), 1)
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex-1 h-4 bg-surface rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${color}`}
-          style={{ width: `${pct}%` }}
-        />
+    <div className="overflow-x-auto pb-1">
+      <div className="flex items-end gap-2 h-44 min-w-full pt-6">
+        {bars.map((b, i) => {
+          const pct = Math.round((b.value / max) * 100)
+          return (
+            <div
+              key={`${b.label}-${i}`}
+              className="group flex flex-1 min-w-[2.25rem] flex-col items-center gap-2"
+            >
+              <div className="relative flex w-full flex-1 items-end justify-center">
+                <span className="absolute -top-5 text-[11px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
+                  {b.value.toLocaleString()}
+                  {valueSuffix}
+                </span>
+                <div
+                  className={`w-full max-w-[2.25rem] rounded-t-md transition-all duration-500 ${b.color}`}
+                  style={{ height: `${Math.max(pct, 2)}%` }}
+                  title={`${b.label}: ${b.value.toLocaleString()}${valueSuffix}`}
+                />
+              </div>
+              <span className="max-w-[3.5rem] truncate text-center text-[10px] leading-tight text-text-muted">
+                {b.label}
+              </span>
+            </div>
+          )
+        })}
       </div>
-      <span className="text-sm text-text-secondary w-12 text-right">{value.toLocaleString()}</span>
     </div>
   )
 }
@@ -50,6 +77,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState<Period>('30d')
+  const [chartTab, setChartTab] = useState<ChartTab>('growth')
   const [recalculating, setRecalculating] = useState(false)
   const [recalcMsg, setRecalcMsg] = useState<string | null>(null)
 
@@ -87,21 +115,46 @@ export default function AnalyticsPage() {
   const maxVolume = data?.tradeVolume
     ? Math.max(...data.tradeVolume.map((d) => parseFloat(d.volume) || 0), 1)
     : 1
-  const maxUsers = data?.userGrowth
-    ? Math.max(...data.userGrowth.map((d) => d.newUsers), 1)
-    : 1
 
   const badgeTotals = data?.badgeDistribution
     ? Object.values(data.badgeDistribution).reduce((a, b) => a + (b || 0), 0)
     : 0
 
   const badgeColors: Record<string, string> = {
-    new: 'bg-primary/70',
-    active: 'bg-success/70',
-    trusted: 'bg-warning/70',
-    top: 'bg-gold/70',
-    elite: 'bg-danger/70',
+    new: 'bg-primary',
+    active: 'bg-success',
+    trusted: 'bg-warning',
+    top: 'bg-gold',
+    elite: 'bg-danger',
   }
+  // Stable display order for badge tiers (lowest → highest trust)
+  const badgeOrder = ['new', 'active', 'trusted', 'top', 'elite']
+
+  function fmtDay(date: string) {
+    return date
+      ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '—'
+  }
+
+  const growthBars = (data?.userGrowth ?? []).map((d) => ({
+    label: fmtDay(d.date),
+    value: d.newUsers,
+    color: 'bg-primary',
+  }))
+
+  const badgeBars = data?.badgeDistribution
+    ? Object.entries(data.badgeDistribution)
+        .sort(([a], [b]) => {
+          const ia = badgeOrder.indexOf(a)
+          const ib = badgeOrder.indexOf(b)
+          return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+        })
+        .map(([badge, count]) => ({
+          label: badge.charAt(0).toUpperCase() + badge.slice(1),
+          value: count || 0,
+          color: badgeColors[badge] || 'bg-primary',
+        }))
+    : []
 
   return (
     <div className="space-y-6">
@@ -118,7 +171,7 @@ export default function AnalyticsPage() {
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
                 period === p
                   ? 'bg-primary text-white border-primary'
-                  : 'bg-white text-text-secondary border-border hover:bg-surface'
+                  : 'bg-surface text-text-secondary border-border hover:bg-surface-alt'
               }`}
             >
               {p}
@@ -167,27 +220,72 @@ export default function AnalyticsPage() {
         <ErrorState title={error} onRetry={fetchAnalytics} />
       ) : (
         <div className="space-y-6">
-          {/* User Growth */}
-          {data?.userGrowth && data.userGrowth.length > 0 && (
-            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
-              <div className="px-5 py-4 border-b border-border">
-                <h2 className="font-semibold text-text-primary">User Growth</h2>
-              </div>
-              <div className="p-5 space-y-2">
-                {data.userGrowth.map((d) => (
-                  <div key={d.date} className="flex items-center gap-4 text-sm">
-                    <span className="text-text-muted w-24 flex-shrink-0">
-                      {d.date ? new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
-                    </span>
-                    <div className="flex-1">
-                      <SimpleBar value={d.newUsers} max={maxUsers} color="bg-primary" />
-                    </div>
-                    <span className="text-text-muted text-xs w-16 text-right">+{d.newUsers} new</span>
-                  </div>
-                ))}
-              </div>
+          {/* Tabbed compact chart: User Growth / Badge Distribution */}
+          <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+            <div className="flex items-center gap-1 border-b border-border px-3 pt-3">
+              {([
+                { key: 'growth', label: 'User Growth' },
+                { key: 'badges', label: 'Badge Distribution' },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setChartTab(t.key)}
+                  className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    chartTab === t.key
+                      ? 'bg-primary/10 text-primary border-b-2 border-primary'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
-          )}
+
+            {chartTab === 'growth' ? (
+              <div className="p-5">
+                <p className="mb-4 text-xs text-text-muted">
+                  Number of new users who registered each day over the selected range ({period}).
+                </p>
+                {growthBars.length > 0 ? (
+                  <VerticalBarChart bars={growthBars} valueSuffix=" new" />
+                ) : (
+                  <div className="py-10 text-center text-sm text-text-muted">
+                    No new users registered in the last {period}.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-5">
+                <p className="mb-4 text-xs text-text-muted">
+                  How all {badgeTotals.toLocaleString()} users are distributed across trust badge tiers.
+                  This reflects all users and is not affected by the {period} range.
+                </p>
+                {badgeBars.length > 0 ? (
+                  <>
+                    <VerticalBarChart bars={badgeBars} />
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                      {badgeBars.map((b) => (
+                        <div
+                          key={b.label}
+                          className="rounded-lg border border-border bg-surface-alt px-3 py-2 text-center"
+                        >
+                          <p className="text-xs font-medium capitalize text-text-secondary">{b.label}</p>
+                          <p className="text-lg font-bold text-text-primary">{b.value.toLocaleString()}</p>
+                          <p className="text-[11px] text-text-muted">
+                            {badgeTotals > 0 ? Math.round((b.value / badgeTotals) * 100) : 0}%
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-10 text-center text-sm text-text-muted">
+                    No badge data available yet.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Trade Volume */}
           {data?.tradeVolume && data.tradeVolume.length > 0 && (
@@ -216,7 +314,7 @@ export default function AnalyticsPage() {
                         </td>
                         <td className="px-4 py-2.5 text-text-secondary">{d.count}</td>
                         <td className="px-4 py-2.5">
-                          <div className="h-2 bg-surface rounded-full overflow-hidden">
+                          <div className="h-2 bg-surface-alt rounded-full overflow-hidden">
                             <div
                               className="h-full bg-success rounded-full"
                               style={{ width: `${Math.round((parseFloat(d.volume) / maxVolume) * 100)}%` }}
@@ -227,29 +325,6 @@ export default function AnalyticsPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
-          )}
-
-          {/* Badge Distribution */}
-          {data?.badgeDistribution && badgeTotals > 0 && (
-            <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
-              <div className="px-5 py-4 border-b border-border">
-                <h2 className="font-semibold text-text-primary">Badge Distribution</h2>
-                <p className="text-text-muted text-sm">{badgeTotals.toLocaleString()} total users</p>
-              </div>
-              <div className="p-5 space-y-4">
-                {Object.entries(data.badgeDistribution).map(([badge, count]) => (
-                  <div key={badge}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="capitalize font-medium text-text-primary">{badge}</span>
-                      <span className="text-text-muted">
-                        {count?.toLocaleString()} ({badgeTotals > 0 ? Math.round(((count || 0) / badgeTotals) * 100) : 0}%)
-                      </span>
-                    </div>
-                    <SimpleBar value={count || 0} max={badgeTotals} color={badgeColors[badge] || 'bg-primary/60'} />
-                  </div>
-                ))}
               </div>
             </div>
           )}

@@ -96,7 +96,7 @@ export default function AdminCtmMerchantsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-text-primary">CTM Merchants ({total})</h1>
         <div className="flex gap-2">
-          <select value={tierFilter} onChange={(e) => { setTierFilter(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none">
+          <select value={tierFilter} onChange={(e) => { setTierFilter(e.target.value); setPage(1) }} className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
             <option value="">All tiers</option>
             <option value="new">New</option>
             <option value="basic">Basic</option>
@@ -208,7 +208,7 @@ export default function AdminCtmMerchantsPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1.5">Suspend Duration</label>
-            <select value={suspendDays} onChange={(e) => setSuspendDays(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+            <select value={suspendDays} onChange={(e) => setSuspendDays(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
               <option value="1">1 day</option>
               <option value="3">3 days</option>
               <option value="7">7 days</option>
@@ -240,7 +240,7 @@ export default function AdminCtmMerchantsPage() {
       >
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">New Tier</label>
-          <select value={newTier} onChange={(e) => setNewTier(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+          <select value={newTier} onChange={(e) => setNewTier(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
             <option value="new">New</option>
             <option value="basic">Basic</option>
             <option value="verified">Verified</option>

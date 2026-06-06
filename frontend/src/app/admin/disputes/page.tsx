@@ -229,7 +229,7 @@ export default function DisputesPage() {
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
               statusFilter === f.value
                 ? 'bg-primary text-white border-primary'
-                : 'bg-white text-text-secondary border-border hover:bg-surface'
+                : 'bg-surface text-text-secondary border-border hover:bg-surface'
             }`}
           >
             {f.label}
@@ -463,7 +463,7 @@ export default function DisputesPage() {
                     <button
                       onClick={() => setWinner('buyer')}
                       className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
-                        winner === 'buyer' ? 'bg-primary text-white border-primary' : 'bg-white text-text-secondary border-border hover:bg-surface'
+                        winner === 'buyer' ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface'
                       }`}
                     >
                       Buyer — {selected.trade?.buyer?.username}
@@ -471,7 +471,7 @@ export default function DisputesPage() {
                     <button
                       onClick={() => setWinner('seller')}
                       className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
-                        winner === 'seller' ? 'bg-primary text-white border-primary' : 'bg-white text-text-secondary border-border hover:bg-surface'
+                        winner === 'seller' ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface'
                       }`}
                     >
                       Seller — {selected.trade?.seller?.username}
@@ -482,14 +482,14 @@ export default function DisputesPage() {
                     onChange={(e) => setResolution(e.target.value)}
                     rows={2}
                     placeholder="Resolution summary (required)..."
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                   />
                   <textarea
                     value={resolutionNote}
                     onChange={(e) => setResolutionNote(e.target.value)}
                     rows={1}
                     placeholder="Internal note (optional)..."
-                    className="w-full mt-1.5 px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    className="w-full mt-1.5 px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                   />
                   <Button
                     variant="primary"
@@ -511,7 +511,7 @@ export default function DisputesPage() {
                       onChange={(e) => setCloseNote(e.target.value)}
                       rows={2}
                       placeholder="Reason for closing..."
-                      className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-danger resize-none"
+                      className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-danger resize-none"
                     />
                     <div className="flex gap-2">
                       <Button variant="secondary" fullWidth onClick={() => setShowCloseForm(false)}>Cancel</Button>
@@ -533,7 +533,7 @@ export default function DisputesPage() {
                       onChange={(e) => setAdminNote(e.target.value)}
                       rows={2}
                       placeholder="Internal note visible in dispute messages..."
-                      className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                      className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                     />
                     <div className="flex gap-2">
                       <Button variant="secondary" fullWidth onClick={() => setShowNoteForm(false)}>Cancel</Button>

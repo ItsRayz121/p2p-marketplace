@@ -171,7 +171,7 @@ export default function ReferralsPage() {
             key={t}
             onClick={() => { setTab(t); setPage(1) }}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors border flex items-center gap-1.5 ${
-              tab === t ? 'bg-primary text-white border-primary' : 'bg-white border-border text-text-secondary hover:bg-surface'
+              tab === t ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:bg-surface-alt'
             }`}
           >
             {t === 'suspicious' && <AlertTriangle className="w-3.5 h-3.5" />}

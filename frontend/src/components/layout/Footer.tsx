@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import Image from 'next/image'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 
 export default function Footer() {
@@ -11,7 +11,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="col-span-2 sm:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-3">
-              <Image src="/brand/logo-icon.png" alt="RupChain" width={32} height={32} className="w-8 h-8 object-contain" />
+              <BrandLogo size={32} className="w-8 h-8" />
               <span className="font-black text-lg text-text-primary">RupChain</span>
             </Link>
             <p className="text-xs text-text-muted leading-relaxed">

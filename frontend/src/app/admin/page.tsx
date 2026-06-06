@@ -367,7 +367,7 @@ export default function AdminDashboardPage() {
             <Link
               key={link.href}
               href={link.href}
-              className="text-center py-2.5 px-3 rounded-lg bg-white border border-border hover:bg-surface hover:border-primary/30 text-text-secondary text-xs font-medium transition-colors"
+              className="text-center py-2.5 px-3 rounded-lg bg-surface border border-border hover:bg-surface hover:border-primary/30 text-text-secondary text-xs font-medium transition-colors"
             >
               {link.label}
             </Link>

@@ -69,7 +69,7 @@ export function PaymentMethodPicker({ selected, onChange, className }: PaymentMe
 
             {/* Methods */}
             {!isCollapsed && (
-              <div className="px-4 py-3 flex flex-wrap gap-2 border-t border-border bg-white">
+              <div className="px-4 py-3 flex flex-wrap gap-2 border-t border-border bg-surface">
                 {group.methods.map((m) => {
                   const isMobile = PK_MOBILE_METHODS.includes(m)
                   return (
@@ -81,7 +81,7 @@ export function PaymentMethodPicker({ selected, onChange, className }: PaymentMe
                         'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors',
                         selected.includes(m)
                           ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-white text-text-primary hover:bg-surface',
+                          : 'border-border bg-surface text-text-primary hover:bg-surface-alt',
                       )}
                     >
                       <EntityLogo
@@ -99,7 +99,7 @@ export function PaymentMethodPicker({ selected, onChange, className }: PaymentMe
 
             {/* Collapsed summary */}
             {isCollapsed && hasSelection && (
-              <div className="px-4 py-2 border-t border-border bg-white">
+              <div className="px-4 py-2 border-t border-border bg-surface">
                 <p className="text-xs text-text-muted">
                   Selected: <span className="text-primary font-medium">{groupSelected.join(', ')}</span>
                 </p>

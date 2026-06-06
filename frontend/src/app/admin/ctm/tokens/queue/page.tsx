@@ -154,13 +154,13 @@ export default function AdminTokenQueuePage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-text-primary mb-1">Settlement Type</label>
-            <select value={form.settlementType} onChange={(e) => setForm((f) => ({ ...f, settlementType: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+            <select value={form.settlementType} onChange={(e) => setForm((f) => ({ ...f, settlementType: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
               {SETTLEMENT_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-text-primary mb-1">Risk Tier</label>
-            <select value={form.riskTier} onChange={(e) => setForm((f) => ({ ...f, riskTier: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+            <select value={form.riskTier} onChange={(e) => setForm((f) => ({ ...f, riskTier: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none">
               {RISK_TIERS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>

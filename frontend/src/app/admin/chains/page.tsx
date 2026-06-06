@@ -191,7 +191,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
           <span className="absolute right-3 top-9 text-xs text-slate-400">Searching…</span>
         )}
         {showDropdown && (
-          <ul className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-auto text-sm">
+          <ul className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-lg shadow-lg max-h-56 overflow-auto text-sm">
             {results.map(r => (
               <li
                 key={r.chainId}

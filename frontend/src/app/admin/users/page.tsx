@@ -237,7 +237,7 @@ export default function UsersPage() {
         <select
           value={roleFilter}
           onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }}
-          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="">All Roles</option>
           <option value="user">User</option>
@@ -248,7 +248,7 @@ export default function UsersPage() {
         <select
           value={kycFilter}
           onChange={(e) => { setKycFilter(e.target.value); setPage(1) }}
-          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+          className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="">All KYC</option>
           <option value="none">None</option>
@@ -454,7 +454,7 @@ export default function UsersPage() {
                       <select
                         value={badgeOverrideValue}
                         onChange={(e) => setBadgeOverrideValue(e.target.value as TraderBadge)}
-                        className="px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
                       >
                         {(['new', 'active', 'trusted', 'top', 'elite'] as TraderBadge[]).map((b) => (
                           <option key={b} value={b}>{b.charAt(0).toUpperCase() + b.slice(1)}</option>
@@ -468,7 +468,7 @@ export default function UsersPage() {
                         placeholder="e.g. manual review"
                         value={badgeOverrideReason}
                         onChange={(e) => setBadgeOverrideReason(e.target.value)}
-                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
                       />
                     </div>
                     <Button size="sm" loading={badgeOverriding} onClick={handleBadgeOverride}>
@@ -490,7 +490,7 @@ export default function UsersPage() {
                     onChange={(e) => setActionReason(e.target.value)}
                     rows={2}
                     placeholder="Required for ban/suspend actions..."
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                   />
                 </div>
 

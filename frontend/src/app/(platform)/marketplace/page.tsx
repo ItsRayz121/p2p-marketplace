@@ -358,6 +358,14 @@ export default function MarketplacePage() {
   const [ads, setAds] = useState<MarketplaceAd[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+
+  // Honour ?side=buy|sell from deep links (e.g. homepage Top Offers → View Market)
+  useEffect(() => {
+    const side = new URLSearchParams(window.location.search).get('side')
+    if (side === 'buy' || side === 'sell') {
+      setFilters((f) => (f.side === side ? f : { ...f, side }))
+    }
+  }, [])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])

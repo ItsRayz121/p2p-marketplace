@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
-import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { PK_MOBILE_METHODS, isOpaqueId } from '@/lib/pkPaymentMethods'
 import type { MarketplaceAd } from '@/lib/api'
 
 function completionColor(pct: number) {
@@ -14,7 +14,13 @@ function completionColor(pct: number) {
   return 'text-danger'
 }
 
-function AdCard({ ad }: { ad: MarketplaceAd }) {
+/** Shorten long opaque strings (wallet addresses / UIDs) like `cmpj…6fkfvl`. */
+function shortLabel(value: string): string {
+  if (value.length <= 14) return value
+  return `${value.slice(0, 4)}…${value.slice(-6)}`
+}
+
+function AdCard({ ad, side }: { ad: MarketplaceAd; side: 'buy' | 'sell' }) {
   const seller = ad.seller
   const stats = seller?.tradeStats
   const completionPct = stats?.completionRate ? parseFloat(stats.completionRate) * 100 : null
@@ -51,7 +57,7 @@ function AdCard({ ad }: { ad: MarketplaceAd }) {
             Limit: PKR {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()}
           </p>
           <div className="flex flex-wrap gap-1 mt-2">
-            {(ad.paymentMethods ?? []).map((pm) => (
+            {(ad.paymentMethods ?? []).filter((pm) => pm && !isOpaqueId(pm)).map((pm) => (
               <Badge key={pm} variant="default" size="sm">
                 <EntityLogo
                   type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
@@ -63,10 +69,10 @@ function AdCard({ ad }: { ad: MarketplaceAd }) {
           </div>
         </div>
         <Link
-          href={`/marketplace/listings/${ad.id}`}
+          href={`/marketplace?side=${side}`}
           className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
         >
-          Trade
+          View Market
         </Link>
       </div>
     </div>
@@ -111,17 +117,24 @@ function CtmListingCard({ listing }: { listing: CtmTopListing }) {
               Limit: PKR {listing.minOrderPkr ? Number(listing.minOrderPkr).toLocaleString() : '0'} – {listing.maxOrderPkr ? Number(listing.maxOrderPkr).toLocaleString() : '∞'}
             </p>
           )}
-          <div className="flex flex-wrap gap-1 mt-2">
-            {(listing.paymentMethods ?? []).slice(0, 3).map((pm) => (
-              <Badge key={pm} variant="default" size="sm">{pm}</Badge>
-            ))}
-          </div>
+          {(() => {
+            // Drop opaque wallet addresses / UIDs; show only real payment labels.
+            const labels = (listing.paymentMethods ?? []).filter((pm) => pm && !isOpaqueId(pm)).slice(0, 3)
+            if (labels.length === 0) return null
+            return (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {labels.map((pm) => (
+                  <Badge key={pm} variant="default" size="sm">{shortLabel(pm)}</Badge>
+                ))}
+              </div>
+            )
+          })()}
         </div>
         <Link
-          href={`/ctm/listings/${listing.id}`}
+          href="/ctm/listings"
           className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
         >
-          Trade
+          Browse Offers
         </Link>
       </div>
     </div>
@@ -166,8 +179,8 @@ export function TopAdsSection({ topAds, topCtm }: { topAds: TopAds | null; topCt
         </div>
 
         {activeTab === 'ctm' ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {ctmListings.slice(0, 6).map((l) => <CtmListingCard key={l.id} listing={l} />)}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+            {ctmListings.slice(0, 3).map((l) => <CtmListingCard key={l.id} listing={l} />)}
             {ctmListings.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-12 text-center gap-4">
                 <p className="text-sm font-medium text-text-primary">No active community token offers</p>
@@ -178,8 +191,8 @@ export function TopAdsSection({ topAds, topCtm }: { topAds: TopAds | null; topCt
             )}
           </div>
         ) : topAds ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {p2pAds.map((ad) => <AdCard key={ad.id} ad={ad} />)}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+            {p2pAds.slice(0, 3).map((ad) => <AdCard key={ad.id} ad={ad} side={activeTab === 'sell' ? 'sell' : 'buy'} />)}
             {p2pAds.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-12 text-center gap-4">
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">

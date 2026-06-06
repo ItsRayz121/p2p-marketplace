@@ -204,7 +204,7 @@ export default function GasRequestsPage() {
         {(['all', 'pending', 'reviewing', 'completed', 'rejected'] as const).map((s) => (
           <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-              statusFilter === s ? 'bg-primary text-white border-primary' : 'bg-white text-text-secondary border-border hover:bg-surface'
+              statusFilter === s ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface'
             }`}>
             {s === 'all' ? 'All' : STATUS_LABELS[s as GasCustomRequest['status']]}
           </button>
@@ -224,7 +224,7 @@ export default function GasRequestsPage() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between bg-white border border-border rounded-xl px-4 py-3">
+        <div className="flex items-center justify-between bg-surface border border-border rounded-xl px-4 py-3">
           <p className="text-text-muted text-sm">Page {page} of {totalPages} · {total} requests</p>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>

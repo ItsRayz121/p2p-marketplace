@@ -31,7 +31,7 @@ export function Modal({ isOpen, onClose, title, size = 'md', children, footer }:
         />
         <Dialog.Content
           className={cn(
-            'fixed z-50 bg-white shadow-xl flex flex-col',
+            'fixed z-50 bg-surface shadow-xl flex flex-col',
             'focus:outline-none',
             // Mobile: bottom sheet capped at 90vh
             'bottom-0 inset-x-0 rounded-t-2xl max-h-[90vh]',

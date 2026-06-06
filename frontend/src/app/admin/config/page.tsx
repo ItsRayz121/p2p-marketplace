@@ -163,7 +163,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-const inputCls = 'w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-text-muted'
+const inputCls = 'w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-text-muted'
 const selectCls = inputCls + ' cursor-pointer'
 
 function MethodBadge({ configured }: { configured: boolean }) {
@@ -663,7 +663,7 @@ export default function ConfigPage() {
                             <input
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
-                              className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                              className="w-full px-2.5 py-1.5 border border-border rounded-lg text-xs font-mono bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
                               autoFocus
                               onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(row.key); if (e.key === 'Escape') setEditKey(null) }}
                             />

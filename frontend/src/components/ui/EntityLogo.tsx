@@ -69,7 +69,9 @@ export function EntityLogo({
       <img
         src={resolvedUrl}
         alt={slug}
-        className={cn(sizeClass, 'rounded-full object-cover flex-shrink-0', className)}
+        // bg-white keeps logos with transparent/dark artwork visible on any
+        // surface in both light and dark themes (safe container background).
+        className={cn(sizeClass, 'rounded-full object-cover flex-shrink-0 bg-white ring-1 ring-black/5', className)}
         onError={handleImgError}
       />
     )
