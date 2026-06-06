@@ -17,6 +17,7 @@ import {
   openDispute,
   cancelTrade,
   adminResolveDispute,
+  adminAddDisputeMessage,
   adminConfirmPayment,
   getAllTradesAdmin,
   sendMessage,
@@ -283,6 +284,15 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     await adminResolveDispute(req.user!.id, ref, parsed.data)
     return reply.send({ success: true })
+  })
+
+  // POST /ctm/trades/admin/:ref/dispute-message — admin requests evidence in dispute
+  app.post('/ctm/trades/admin/:ref/dispute-message', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { ref } = req.params as { ref: string }
+    const parsed = z.object({ message: z.string().min(1).max(2000) }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const msg = await adminAddDisputeMessage(req.user!.id, ref, parsed.data.message)
+    return reply.code(201).send({ success: true, data: msg })
   })
 
   // POST /ctm/trades/admin/:ref/confirm-payment — admin manually confirms payment

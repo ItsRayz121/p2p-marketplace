@@ -1,0 +1,170 @@
+'use client'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams } from 'next/navigation'
+import Link from 'next/link'
+import { ctmApi } from '@/lib/api'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Badge } from '@/components/ui/Badge'
+import { CtmStatusTimeline } from '@/components/admin/CtmStatusTimeline'
+import { ArrowLeft } from 'lucide-react'
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+function fmtDt(iso?: string) {
+  return iso ? new Date(iso).toLocaleString('en-PK', { dateStyle: 'short', timeStyle: 'short' }) : '—'
+}
+
+function statusTone(status: string): 'success' | 'warning' | 'danger' | 'default' {
+  if (['completed', 'dispute_resolved'].includes(status)) return 'success'
+  if (['cancelled', 'expired'].includes(status)) return 'default'
+  if (status === 'disputed') return 'danger'
+  return 'warning'
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null
+  return (
+    <div className="flex gap-2">
+      <span className="text-text-muted text-xs w-36 flex-shrink-0">{label}</span>
+      <span className="text-text-primary text-xs font-medium break-all">{value}</span>
+    </div>
+  )
+}
+
+export default function AdminCtmTradeDetailPage() {
+  const params = useParams()
+  const ref = params?.ref as string
+  const [trade, setTrade] = useState<any | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const d = await ctmApi.getTrade(ref)
+      setTrade(d)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load trade')
+    } finally {
+      setLoading(false)
+    }
+  }, [ref])
+
+  useEffect(() => { if (ref) load() }, [ref, load])
+
+  if (loading) return <LoadingState message="Loading trade..." />
+  if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={load} />
+
+  const proofs = trade.proofs ?? []
+  const disputeMessages = trade.dispute?.messages ?? []
+
+  return (
+    <div className="space-y-5">
+      <Link href="/admin/ctm/trades" className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-primary">
+        <ArrowLeft size={15} /> Back to CTM Trades
+      </Link>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-bold text-text-primary">CTM Trade #{trade.tradeRef.slice(-10)}</h1>
+        <Badge variant={statusTone(trade.status)} size="sm">{trade.status.replace(/_/g, ' ')}</Badge>
+      </div>
+
+      {/* Timeline */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+        <CtmStatusTimeline status={trade.status} />
+      </div>
+
+      {/* Parties + amounts */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-surface shadow-card rounded-xl p-3 border border-border">
+          <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Buyer</p>
+          <Link href={`/admin/users/${trade.buyer.id}`} className="font-semibold text-text-primary text-sm hover:text-primary hover:underline">{trade.buyer.username}</Link>
+          {trade.buyer.fullName && <p className="text-xs text-text-muted">{trade.buyer.fullName}</p>}
+        </div>
+        <div className="bg-surface shadow-card rounded-xl p-3 border border-border">
+          <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Seller</p>
+          <Link href={`/admin/users/${trade.seller.id}`} className="font-semibold text-text-primary text-sm hover:text-primary hover:underline">{trade.seller.username}</Link>
+          {trade.seller.fullName && <p className="text-xs text-text-muted">{trade.seller.fullName}</p>}
+        </div>
+        <div className="bg-surface shadow-card rounded-xl p-3 border border-border">
+          <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">PKR Amount</p>
+          <p className="font-bold text-text-primary">PKR {Number(trade.fiatAmount).toLocaleString()}</p>
+        </div>
+        <div className="bg-surface shadow-card rounded-xl p-3 border border-border">
+          <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Token</p>
+          <p className="font-bold text-text-primary">{Number(trade.tokenAmount).toLocaleString()} {trade.token?.symbol}</p>
+          {trade.pricePerUnit && <p className="text-xs text-text-muted">@ PKR {Number(trade.pricePerUnit).toLocaleString()}</p>}
+        </div>
+      </div>
+
+      {/* Trade details */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-4 space-y-1.5">
+        <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-2">Trade Details</p>
+        <InfoRow label="Ref" value={trade.tradeRef} />
+        <InfoRow label="Token" value={trade.token ? `${trade.token.name} (${trade.token.symbol})` : undefined} />
+        <InfoRow label="Settlement" value={trade.settlementType} />
+        <InfoRow label="Network" value={trade.listing?.networkLabel ?? trade.networkLabel} />
+        <InfoRow label="Seller receives" value={trade.listing?.receivingWalletAddress ?? trade.sellerWalletAddress} />
+        <InfoRow label="Payment method" value={trade.listing?.paymentMethods?.join(', ') ?? trade.paymentMethod} />
+        <InfoRow label="Created" value={fmtDt(trade.createdAt)} />
+        <InfoRow label="Expires" value={fmtDt(trade.expiresAt)} />
+        <InfoRow label="Completed" value={trade.completedAt ? fmtDt(trade.completedAt) : undefined} />
+      </div>
+
+      {/* Payment proof */}
+      {trade.paymentProofUrl && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-sm font-medium text-text-primary mb-2">Payment Proof</p>
+          <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
+            <img src={trade.paymentProofUrl} alt="Payment proof" className="max-h-64 object-contain rounded-xl border border-border" />
+          </a>
+        </div>
+      )}
+
+      {/* All proofs */}
+      {proofs.length > 0 && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-sm font-medium text-text-primary mb-2">Proofs ({proofs.length})</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {proofs.map((p: any, i: number) => (
+              p.fileUrl ? (
+                <a key={p.id ?? i} href={p.fileUrl} target="_blank" rel="noopener noreferrer">
+                  <img src={p.fileUrl} alt="proof" className="w-full h-28 object-cover rounded-xl border border-border" />
+                  <p className="text-xs text-text-muted mt-0.5">{p.proofType} · {fmtDt(p.createdAt)}</p>
+                </a>
+              ) : (
+                <div key={p.id ?? i} className="h-28 rounded-xl border border-border bg-surface-alt flex items-center justify-center text-xs text-text-muted">{p.proofType}</div>
+              )
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Dispute */}
+      {trade.dispute && (
+        <div className="bg-danger/5 border border-danger/30 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-danger text-sm">Dispute</p>
+              <Badge variant="danger" size="sm">{trade.dispute.status.replace(/_/g, ' ')}</Badge>
+            </div>
+            <Link href="/admin/ctm/disputes" className="text-xs text-primary hover:underline">Manage in Disputes →</Link>
+          </div>
+          <p className="text-danger text-xs">Reason: {String(trade.dispute.reason).replace(/_/g, ' ')}</p>
+          {trade.dispute.resolution && <p className="text-text-secondary text-xs">Resolution: {trade.dispute.resolution}</p>}
+          {disputeMessages.length > 0 && (
+            <div className="max-h-40 overflow-y-auto space-y-1 mt-2">
+              {disputeMessages.map((m: any, i: number) => (
+                <p key={m.id ?? i} className="text-xs text-text-secondary">
+                  <span className="text-text-muted">{fmtDt(m.createdAt)} · </span>{m.message}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

@@ -37,6 +37,9 @@ export default function AdminCtmDisputesPage() {
   const [resolution, setResolution] = useState('')
   const [ackSettled, setAckSettled] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [evidenceMsg, setEvidenceMsg] = useState('')
+  const [sendingEvidence, setSendingEvidence] = useState(false)
+  const [evidenceSent, setEvidenceSent] = useState(false)
 
   const fetchDisputes = async () => {
     try {
@@ -63,8 +66,29 @@ export default function AdminCtmDisputesPage() {
     return h > 36 && d.status === 'open'
   }
 
+  async function requestEvidence() {
+    if (!selected || !evidenceMsg.trim()) return
+    setSendingEvidence(true)
+    try {
+      await ctmApi.adminAddDisputeMessage(selected.trade.tradeRef, evidenceMsg.trim())
+      setEvidenceMsg('')
+      setEvidenceSent(true)
+      // refresh detail so the new message shows in the thread
+      try {
+        const full = await ctmApi.getTrade(selected.trade.tradeRef)
+        setDetail(full)
+      } catch { /* ignore */ }
+      setTimeout(() => setEvidenceSent(false), 3000)
+    } catch (err) {
+      alert((err as Error).message ?? 'Failed to send message')
+    } finally {
+      setSendingEvidence(false)
+    }
+  }
+
   async function openDispute(d: Dispute) {
     setSelected(d); setWinner('buyer'); setResolution(''); setAckSettled(false)
+    setEvidenceMsg(''); setEvidenceSent(false)
     setDetail(null); setDetailLoading(true)
     try {
       const full = await ctmApi.getTrade(d.trade.tradeRef)
@@ -264,6 +288,29 @@ export default function AdminCtmDisputesPage() {
                 <p className="text-text-secondary">{selected.resolution}</p>
               </div>
             )}
+
+            {/* ── Request more evidence ── */}
+            <div className="border-t border-border pt-4">
+              <label className="block text-sm font-medium text-text-primary mb-1.5">Request more evidence</label>
+              <p className="text-xs text-text-muted mb-2">Send a message to both buyer and seller asking for more information. This does not resolve the dispute.</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={evidenceMsg}
+                  onChange={(e) => setEvidenceMsg(e.target.value)}
+                  placeholder="e.g. Please upload your bank transfer receipt with timestamp"
+                  className="flex-1 border border-border rounded-xl px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button
+                  onClick={requestEvidence}
+                  disabled={sendingEvidence || !evidenceMsg.trim()}
+                  className="px-4 py-2 rounded-xl bg-surface-alt border border-border text-sm font-medium text-text-primary hover:bg-surface disabled:opacity-50"
+                >
+                  {sendingEvidence ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+              {evidenceSent && <p className="text-xs text-success mt-1.5">Message sent to both parties.</p>}
+            </div>
 
             {/* ── Ruling ── */}
             <div className="border-t border-border pt-4 space-y-3">

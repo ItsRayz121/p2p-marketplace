@@ -249,7 +249,7 @@ export default function AdminUserProfilePage() {
                   <tbody className="divide-y divide-border">
                     {data.ctmTrades.map((t: any) => (
                       <tr key={t.id} className="hover:bg-surface-alt/50">
-                        <td className="px-4 py-2 font-mono text-xs text-text-secondary">{t.tradeRef.slice(0, 10)}</td>
+                        <td className="px-4 py-2"><Link href={`/admin/ctm/trades/${t.tradeRef}`} className="font-mono text-xs text-primary hover:underline">{t.tradeRef.slice(0, 10)}</Link></td>
                         <td className="px-4 py-2 text-text-secondary">{t.token?.symbol ?? '—'}</td>
                         <td className="px-4 py-2 text-text-primary">{fmtNumber(t.tokenAmount)}</td>
                         <td className="px-4 py-2 text-text-secondary">{fmtNumber(t.fiatAmount)}</td>
@@ -301,7 +301,7 @@ export default function AdminUserProfilePage() {
                   <tbody className="divide-y divide-border">
                     {data.withdrawals.map((w: any) => (
                       <tr key={w.id} className="hover:bg-surface-alt/50">
-                        <td className="px-4 py-2 font-mono text-xs text-text-secondary">{w.orderRef}</td>
+                        <td className="px-4 py-2"><Link href={`/admin/withdrawals/${w.id}`} className="font-mono text-xs text-primary hover:underline">{w.orderRef}</Link></td>
                         <td className="px-4 py-2 text-text-secondary">{w.coin} ({w.network})</td>
                         <td className="px-4 py-2 text-text-primary">{fmtNumber(w.amount)}</td>
                         <td className="px-4 py-2 font-mono text-xs text-text-muted">{w.toAddress?.slice(0, 6)}…{w.toAddress?.slice(-4)}</td>

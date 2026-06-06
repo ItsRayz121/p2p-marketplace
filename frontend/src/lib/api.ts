@@ -1593,6 +1593,8 @@ export const adminApi = {
   // Backend returns { withdrawals: [...], pagination: { page, limit, total, pages } }
   getWithdrawals: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ withdrawals: unknown[]; pagination: { page: number; limit: number; total: number; pages: number } }>('/admin/withdrawals' + buildQs(params)),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getWithdrawal: (id: string) => apiRequest<any>(`/admin/withdrawals/${id}`),
   approveWithdrawal: (id: string) =>
     apiRequest<void>(`/admin/withdrawals/${id}/approve`, { method: 'POST' }),
   rejectWithdrawal: (id: string, data: { reason: string }) =>
@@ -2060,6 +2062,7 @@ export const ctmApi = {
   adminGetTrades: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ trades: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/trades/admin/all' + buildQs(params)),
   adminResolveDispute: (ref: string, data: object) => apiRequest<void>(`/ctm/trades/admin/${ref}/resolve-dispute`, { method: 'POST', body: JSON.stringify(data) }),
+  adminAddDisputeMessage: (ref: string, message: string) => apiRequest<unknown>(`/ctm/trades/admin/${ref}/dispute-message`, { method: 'POST', body: JSON.stringify({ message }) }),
   adminConfirmPayment: (ref: string) => apiRequest<void>(`/ctm/trades/admin/${ref}/confirm-payment`, { method: 'POST' }),
   adminForceRelease: (ref: string) => apiRequest<void>(`/ctm/trades/admin/${ref}/release`, { method: 'POST' }),
   adminGetMerchantQueue: (params?: Record<string, string | number | undefined>) =>

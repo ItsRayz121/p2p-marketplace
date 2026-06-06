@@ -455,7 +455,7 @@ export async function adminRoutes(app: FastifyInstance) {
       db.user.findMany({ where: { referredById: id }, orderBy: { createdAt: 'desc' }, take: 50, select: { id: true, username: true, email: true, kycStatus: true, createdAt: true } }),
       db.user.count({ where: { referredById: id } }),
       db.auditLog.findMany({ where: { actorId: id }, orderBy: { createdAt: 'desc' }, take: 25, select: { id: true, action: true, targetType: true, targetId: true, ipAddress: true, createdAt: true } }),
-      db.auditLog.findMany({ where: { targetType: 'user', targetId: id }, orderBy: { createdAt: 'desc' }, take: 25, select: { id: true, action: true, actorId: true, ipAddress: true, createdAt: true } }),
+      db.auditLog.findMany({ where: { targetType: { in: ['User', 'user'] }, targetId: id }, orderBy: { createdAt: 'desc' }, take: 25, select: { id: true, action: true, actorId: true, ipAddress: true, createdAt: true } }),
     ])
 
     // Blend ratings from both marketplaces into one average
@@ -2138,6 +2138,17 @@ export async function adminRoutes(app: FastifyInstance) {
       success: true,
       data: { withdrawals, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
+  })
+
+  // GET /admin/withdrawals/:id — single withdrawal detail (read-only)
+  app.get('/admin/withdrawals/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const withdrawal = await db.withdrawal.findUnique({
+      where: { id },
+      include: { user: { select: { id: true, username: true, email: true } } },
+    })
+    if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
+    return reply.send({ success: true, data: withdrawal })
   })
 
   // Tier-aware approve: tier 1/2 → single approval; tier 3/4 → dual approval.

@@ -401,6 +401,31 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${tradeRef} has been resolved. Winner: ${data.winner}.`, { tradeRef })
 }
 
+/**
+ * Admin posts a message into a CTM dispute thread — used to request more
+ * evidence from the buyer/seller. Both parties are notified. Does not change
+ * trade or dispute status.
+ */
+export async function adminAddDisputeMessage(adminId: string, tradeRef: string, message: string) {
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: true } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (!trade.dispute) throw new AppError('NOT_FOUND', 'No dispute found for this trade', 404)
+
+  const msg = await db.ctmDisputeMessage.create({
+    data: { disputeId: trade.dispute.id, senderId: adminId, message },
+  })
+
+  await db.auditLog.create({
+    data: { actorId: adminId, action: 'CTM_DISPUTE_MESSAGE', targetType: 'CtmTrade', targetId: trade.id, metadata: { tradeRef, message } as JsonValue },
+  }).catch(() => {})
+
+  const body = `An admin requested more information on disputed trade ${tradeRef}: ${message}`
+  notify(trade.buyerId, 'CTM_DISPUTE_MESSAGE', 'Admin requested evidence', body, { tradeRef })
+  notify(trade.sellerId, 'CTM_DISPUTE_MESSAGE', 'Admin requested evidence', body, { tradeRef })
+
+  return msg
+}
+
 export async function adminConfirmPayment(adminId: string, tradeRef: string) {
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
