@@ -1,29 +1,47 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { Modal } from '@/components/ui/Modal'
+import { Badge } from '@/components/ui/Badge'
+import { Spinner } from '@/components/ui/Spinner'
+import { AlertTriangle, ShieldAlert } from 'lucide-react'
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 interface Dispute {
   id: string; reason: string; description: string; status: string
   openedById: string; escalatedAt?: string; createdAt: string; resolution?: string; winner?: string
-  trade: { id: string; tradeRef: string; tokenId: string; fiatAmount: string; buyerId: string; sellerId: string; status: string; proofs: Array<{ fileUrl?: string; proofType: string; uploadedBy: string; createdAt: string }> }
+  trade: {
+    id: string; tradeRef: string; tokenId: string; fiatAmount: string; tokenAmount?: string; pricePerUnit?: string
+    buyerId: string; sellerId: string; status: string
+    buyer?: { id: string; username: string }
+    seller?: { id: string; username: string }
+    token?: { name: string; symbol: string }
+    proofs: Array<{ fileUrl?: string; proofType: string; uploadedBy: string; createdAt: string }>
+  }
+}
+
+function fmtDt(iso: string) {
+  return new Date(iso).toLocaleString('en-PK', { dateStyle: 'short', timeStyle: 'short' })
 }
 
 export default function AdminCtmDisputesPage() {
   const [disputes, setDisputes] = useState<Dispute[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Dispute | null>(null)
+  const [detail, setDetail] = useState<any | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [winner, setWinner] = useState<'buyer' | 'seller' | 'split'>('buyer')
   const [resolution, setResolution] = useState('')
+  const [ackSettled, setAckSettled] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const fetchDisputes = async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = await ctmApi.adminGetTrades({ status: 'disputed', limit: 50 }) as any
       const trades = data.trades ?? []
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const d = trades.filter((t: any) => t.dispute).map((t: any) => ({ ...t.dispute, trade: t }))
       setDisputes(d)
     } catch {
@@ -45,12 +63,25 @@ export default function AdminCtmDisputesPage() {
     return h > 36 && d.status === 'open'
   }
 
+  async function openDispute(d: Dispute) {
+    setSelected(d); setWinner('buyer'); setResolution(''); setAckSettled(false)
+    setDetail(null); setDetailLoading(true)
+    try {
+      const full = await ctmApi.getTrade(d.trade.tradeRef)
+      setDetail(full)
+    } catch {
+      // fall back to the summary data we already have
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
   const handleResolve = async () => {
-    if (!selected || !resolution.trim()) return
+    if (!selected || !resolution.trim() || !ackSettled) return
     setSubmitting(true)
     try {
       await ctmApi.adminResolveDispute(selected.trade.tradeRef, { winner, resolution })
-      setSelected(null); setResolution('')
+      setSelected(null); setResolution(''); setAckSettled(false)
       await fetchDisputes()
     } catch (err: unknown) {
       alert((err as Error).message ?? 'Failed to resolve dispute')
@@ -59,33 +90,52 @@ export default function AdminCtmDisputesPage() {
     }
   }
 
+  const t = detail ?? selected?.trade
+  const buyerName = t?.buyer?.username ?? 'Buyer'
+  const sellerName = t?.seller?.username ?? 'Seller'
+  const proofs = detail?.proofs ?? selected?.trade.proofs ?? []
+  const messages = detail?.messages ?? []
+  const disputeMessages = detail?.dispute?.messages ?? []
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div>
         <h1 className="text-2xl font-bold text-text-primary">CTM Disputes ({disputes.length})</h1>
+        <p className="text-text-muted text-sm mt-0.5">Review evidence, rule on the outcome, then settle funds manually and record the decision.</p>
       </div>
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : disputes.length === 0 ? (
-        <div className="text-center py-16 text-text-muted">No open disputes.</div>
+        <div className="bg-surface border border-border rounded-xl py-16 text-center">
+          <ShieldAlert className="w-8 h-8 text-text-muted mx-auto mb-2" />
+          <p className="text-text-primary font-medium">No open disputes</p>
+          <p className="text-text-muted text-sm mt-1">CTM token trades that buyers or sellers escalate will appear here for review.</p>
+        </div>
       ) : (
         <div className="space-y-3">
           {disputes
             .sort((a, b) => (isEscalating(b) ? 1 : 0) - (isEscalating(a) ? 1 : 0))
             .map((d) => (
-              <div key={d.id} className={`bg-surface border rounded-xl p-4 ${isEscalating(d) ? 'border-red-300 bg-red-50/30' : 'border-border'}`}>
+              <div key={d.id} className={`bg-surface border rounded-xl p-4 ${isEscalating(d) ? 'border-danger/40 bg-danger/5' : 'border-border'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <p className="font-semibold text-text-primary">#{d.trade.tradeRef.slice(-8)}</p>
-                      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{d.reason.replace(/_/g, ' ')}</span>
-                      {isEscalating(d) && <span className="text-xs bg-red-600 text-white px-2 py-0.5 rounded-full animate-pulse">⚠ Escalating</span>}
+                      <Badge variant="danger" size="sm">{d.reason.replace(/_/g, ' ')}</Badge>
+                      {d.trade.token?.symbol && <Badge variant="default" size="sm">{d.trade.token.symbol}</Badge>}
+                      {isEscalating(d) && (
+                        <span className="inline-flex items-center gap-1 text-xs bg-danger text-white px-2 py-0.5 rounded-full">
+                          <AlertTriangle className="w-3 h-3" /> Escalating
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-text-muted line-clamp-2">{d.description}</p>
-                    <p className="text-xs text-text-muted mt-1">Opened {hoursAgo(d.createdAt)} · PKR {Number(d.trade.fiatAmount).toLocaleString()}</p>
+                    <p className="text-xs text-text-muted mt-1">
+                      {d.trade.buyer?.username} vs {d.trade.seller?.username} · Opened {hoursAgo(d.createdAt)} · PKR {Number(d.trade.fiatAmount).toLocaleString()}
+                    </p>
                   </div>
-                  <button onClick={() => { setSelected(d); setWinner('buyer'); setResolution('') }} className="bg-primary text-white text-sm px-4 py-2 rounded-lg hover:bg-primary/90 flex-shrink-0">Resolve</button>
+                  <button onClick={() => void openDispute(d)} className="bg-primary text-white text-sm px-4 py-2 rounded-lg hover:bg-primary/90 flex-shrink-0">Review & Resolve</button>
                 </div>
               </div>
             ))}
@@ -96,55 +146,154 @@ export default function AdminCtmDisputesPage() {
       <Modal
         isOpen={!!selected}
         onClose={() => setSelected(null)}
-        title={selected ? `Resolve Dispute — #${selected.trade.tradeRef.slice(-8)}` : 'Resolve Dispute'}
+        title={selected ? `Dispute — #${selected.trade.tradeRef.slice(-8)}` : 'Dispute'}
         size="lg"
         footer={
           <div className="flex gap-3">
-            <button onClick={() => setSelected(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-            <button onClick={handleResolve} disabled={submitting || !resolution.trim()} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
-              {submitting ? 'Resolving…' : 'Resolve Dispute'}
+            <button onClick={() => setSelected(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface-alt">Cancel</button>
+            <button onClick={handleResolve} disabled={submitting || !resolution.trim() || !ackSettled} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+              {submitting ? 'Recording…' : `Record ruling: ${winner}`}
             </button>
           </div>
         }
       >
         {selected && (
           <div className="space-y-5">
-            <div className="bg-surface rounded-xl p-4 text-sm space-y-1">
-              <p className="font-medium text-text-primary">{selected.reason.replace(/_/g, ' ')}</p>
-              <p className="text-text-muted">{selected.description}</p>
+            {detailLoading && (
+              <div className="flex items-center gap-2 text-xs text-text-muted"><Spinner size="sm" /> Loading full trade detail…</div>
+            )}
+
+            {/* Parties + amounts */}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-surface-alt/50 border border-border rounded-xl p-3">
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Buyer</p>
+                {t?.buyer?.id
+                  ? <Link href={`/admin/users/${t.buyer.id}`} className="font-semibold text-text-primary hover:text-primary hover:underline">{buyerName}</Link>
+                  : <p className="font-semibold text-text-primary">{buyerName}</p>}
+              </div>
+              <div className="bg-surface-alt/50 border border-border rounded-xl p-3">
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Seller</p>
+                {t?.seller?.id
+                  ? <Link href={`/admin/users/${t.seller.id}`} className="font-semibold text-text-primary hover:text-primary hover:underline">{sellerName}</Link>
+                  : <p className="font-semibold text-text-primary">{sellerName}</p>}
+              </div>
+              <div className="bg-surface-alt/50 border border-border rounded-xl p-3">
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">PKR Amount</p>
+                <p className="font-bold text-text-primary">PKR {Number(selected.trade.fiatAmount).toLocaleString()}</p>
+              </div>
+              <div className="bg-surface-alt/50 border border-border rounded-xl p-3">
+                <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Token</p>
+                <p className="font-bold text-text-primary">
+                  {t?.tokenAmount ? Number(t.tokenAmount).toLocaleString() : ''} {t?.token?.symbol ?? ''}
+                </p>
+                {(detail?.networkLabel || detail?.listing?.networkLabel) && (
+                  <p className="text-xs text-text-muted">{detail?.listing?.networkLabel ?? detail?.networkLabel}</p>
+                )}
+              </div>
             </div>
 
-            {selected.trade.proofs?.length > 0 && (
+            {/* Reason + description */}
+            <div className="bg-danger/5 border border-danger/30 rounded-xl p-4 text-sm space-y-1">
+              <p className="font-medium text-danger">Reason: {selected.reason.replace(/_/g, ' ')}</p>
+              <p className="text-text-secondary">{selected.description}</p>
+              <p className="text-xs text-text-muted">Opened by {selected.openedById === selected.trade.buyerId ? buyerName : selected.openedById === selected.trade.sellerId ? sellerName : 'a party'} · {fmtDt(selected.createdAt)}</p>
+            </div>
+
+            {/* Payment method */}
+            {(detail?.listing?.paymentMethods?.length || detail?.paymentMethod) && (
+              <div className="text-sm">
+                <p className="text-text-muted text-xs mb-1">Payment method</p>
+                <p className="text-text-primary">{detail?.listing?.paymentMethods?.join(', ') ?? detail?.paymentMethod}</p>
+              </div>
+            )}
+
+            {/* Evidence / proofs */}
+            {proofs.length > 0 ? (
               <div className="space-y-2">
-                <p className="text-sm font-medium text-text-primary">Evidence</p>
+                <p className="text-sm font-medium text-text-primary">Evidence ({proofs.length})</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {selected.trade.proofs.map((p, i) => (
+                  {proofs.map((p: any, i: number) => (
                     p.fileUrl ? (
                       <a key={i} href={p.fileUrl} target="_blank" rel="noopener noreferrer">
                         <img src={p.fileUrl} alt="proof" className="w-full h-32 object-cover rounded-xl border border-border" />
                         <p className="text-xs text-text-muted mt-1">{p.proofType} · {new Date(p.createdAt).toLocaleDateString()}</p>
                       </a>
-                    ) : null
+                    ) : (
+                      <div key={i} className="h-32 rounded-xl border border-border bg-surface-alt flex items-center justify-center text-xs text-text-muted">{p.proofType}</div>
+                    )
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted">No proof files were attached to this trade.</p>
+            )}
+
+            {/* Trade chat */}
+            {messages.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-text-primary mb-2">Trade chat ({messages.length})</p>
+                <div className="bg-surface-alt/50 rounded-xl border border-border p-3 max-h-40 overflow-y-auto space-y-1.5">
+                  {messages.map((m: any, i: number) => (
+                    <p key={m.id ?? i} className="text-xs text-text-secondary">
+                      <span className="font-semibold">{m.senderId === t?.buyer?.id ? buyerName : m.senderId === t?.seller?.id ? sellerName : 'Admin'}:</span> {m.message}
+                      <span className="text-text-muted ml-1">{fmtDt(m.createdAt)}</span>
+                    </p>
                   ))}
                 </div>
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Winner</label>
-              <div className="flex gap-2">
-                {(['buyer', 'seller', 'split'] as const).map((w) => (
-                  <button key={w} type="button" onClick={() => setWinner(w)}
-                    className={`flex-1 py-2 rounded-xl border text-sm font-medium transition-colors ${winner === w ? 'border-primary bg-primary text-white' : 'border-border text-text-primary hover:bg-surface'}`}>
-                    {w.charAt(0).toUpperCase() + w.slice(1)}
-                  </button>
-                ))}
+            {/* Dispute messages */}
+            {disputeMessages.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-text-primary mb-2">Dispute messages ({disputeMessages.length})</p>
+                <div className="bg-surface-alt/50 rounded-xl border border-border p-3 max-h-40 overflow-y-auto space-y-1.5">
+                  {disputeMessages.map((m: any, i: number) => (
+                    <p key={m.id ?? i} className="text-xs text-text-secondary">
+                      <span className="text-text-muted">{fmtDt(m.createdAt)} · </span>{m.message}
+                    </p>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Resolution Note *</label>
-              <textarea rows={4} value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="Explain the resolution decision…" className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none" />
+            {/* Previous resolution if re-opened */}
+            {selected.resolution && (
+              <div className="text-sm bg-surface-alt/50 border border-border rounded-xl p-3">
+                <p className="text-text-muted text-xs mb-0.5">Previous resolution note</p>
+                <p className="text-text-secondary">{selected.resolution}</p>
+              </div>
+            )}
+
+            {/* ── Ruling ── */}
+            <div className="border-t border-border pt-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">Ruling</label>
+                <div className="flex gap-2">
+                  {(['buyer', 'seller', 'split'] as const).map((w) => (
+                    <button key={w} type="button" onClick={() => setWinner(w)}
+                      className={`flex-1 py-2 rounded-xl border text-sm font-medium transition-colors ${winner === w ? 'border-primary bg-primary text-white' : 'border-border text-text-primary hover:bg-surface-alt'}`}>
+                      {w === 'buyer' ? `In favour of ${buyerName}` : w === 'seller' ? `In favour of ${sellerName}` : 'Split'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">Resolution note *</label>
+                <textarea rows={3} value={resolution} onChange={(e) => setResolution(e.target.value)}
+                  placeholder="Explain the decision and what settlement was performed (min 10 chars)…"
+                  className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
+              </div>
+
+              {/* Manual-settlement acknowledgment — escrow release is NOT automated */}
+              <label className="flex items-start gap-2 text-xs text-text-secondary bg-warning/10 border border-warning/30 rounded-xl p-3 cursor-pointer">
+                <input type="checkbox" checked={ackSettled} onChange={(e) => setAckSettled(e.target.checked)} className="mt-0.5" />
+                <span>
+                  I understand this records the ruling and updates the trade status only — it does <strong>not</strong> move
+                  any tokens or funds. I confirm the agreed tokens/refund have been (or will be) settled manually.
+                </span>
+              </label>
             </div>
           </div>
         )}

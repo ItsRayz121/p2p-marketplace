@@ -151,12 +151,14 @@ export default function GasReconciliationPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Reconciliation</h1>
-          <p className="text-text-muted text-sm mt-0.5">Detect divergence between the ledger and on-chain reality.</p>
+          <p className="text-text-muted text-sm mt-0.5">
+            Each run checks gas orders <strong>delivered in the last 7 days</strong> against their on-chain delivery records and flags any mismatch.
+          </p>
         </div>
         {isSuperAdmin && (
           <div className="flex items-center gap-2">
             <select
-              className="border border-border rounded-lg px-3 py-2 text-sm"
+              className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary"
               value={triggerChain}
               onChange={(e) => setTriggerChain(e.target.value)}
             >
@@ -250,25 +252,37 @@ export default function GasReconciliationPage() {
 
               {selectedRun && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div className="bg-surface rounded-lg p-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div className="bg-surface-alt/60 rounded-lg p-3">
+                      <p className="text-text-muted text-xs">Run At</p>
+                      <p className="font-medium text-text-primary text-xs">{fmt(selectedRun.ranAt)}</p>
+                    </div>
+                    <div className="bg-surface-alt/60 rounded-lg p-3">
                       <p className="text-text-muted text-xs">Chain</p>
-                      <p className="font-medium">{selectedRun.chain ?? 'All'}</p>
+                      <p className="font-medium text-text-primary">{selectedRun.chain ?? 'All chains'}</p>
                     </div>
-                    <div className="bg-surface rounded-lg p-3">
+                    <div className="bg-surface-alt/60 rounded-lg p-3">
                       <p className="text-text-muted text-xs">Orders Checked</p>
-                      <p className="font-medium">{selectedRun.ordersChecked} / {selectedRun.totalOrders}</p>
+                      <p className="font-medium text-text-primary">{selectedRun.ordersChecked} / {selectedRun.totalOrders}</p>
                     </div>
-                    <div className="bg-surface rounded-lg p-3">
-                      <p className="text-text-muted text-xs">Discrepancies</p>
-                      <p className={`font-medium ${selectedRun.discrepancyCount > 0 ? 'text-danger' : 'text-success'}`}>
-                        {selectedRun.discrepancyCount}
-                      </p>
+                    <div className="bg-surface-alt/60 rounded-lg p-3">
+                      <p className="text-text-muted text-xs">Status</p>
+                      <Badge variant={statusVariant(selectedRun.status)} size="sm">{reconStatusLabel(selectedRun.status)}</Badge>
                     </div>
                   </div>
 
-                  {selectedRun.discrepancies.length === 0 ? (
-                    <EmptyState icon={CheckCircle2} title="No discrepancies" description="All checked orders matched on-chain state." />
+                  {selectedRun.notes && (
+                    <p className="text-xs text-text-muted">Notes: {selectedRun.notes}</p>
+                  )}
+
+                  {selectedRun.totalOrders === 0 ? (
+                    <EmptyState
+                      icon={CheckCircle2}
+                      title="No eligible orders were found for this run"
+                      description="No gas orders were delivered on the selected chain(s) in the last 7 days, so there was nothing to reconcile. This is normal during quiet periods."
+                    />
+                  ) : selectedRun.discrepancies.length === 0 ? (
+                    <EmptyState icon={CheckCircle2} title="No discrepancies" description={`All ${selectedRun.ordersChecked} checked order(s) matched their on-chain delivery records.`} />
                   ) : (
                     <div className="space-y-3">
                       <h3 className="font-semibold text-text-primary text-sm">Discrepancies</h3>
@@ -279,7 +293,7 @@ export default function GasReconciliationPage() {
                               <Badge variant={d.resolvedAt ? 'success' : 'danger'} size="sm" className="mr-2">
                                 {d.resolvedAt ? 'Resolved' : 'Open'}
                               </Badge>
-                              <code className="text-xs bg-surface px-1.5 py-0.5 rounded">{d.type}</code>
+                              <code className="text-xs bg-surface-alt px-1.5 py-0.5 rounded text-text-secondary">{d.type}</code>
                             </div>
                             {!d.resolvedAt && isSuperAdmin && (
                               <Button size="sm" variant="ghost" onClick={() => setResolvingId(d.id)}>Resolve</Button>
@@ -287,7 +301,7 @@ export default function GasReconciliationPage() {
                           </div>
                           <p className="text-sm text-text-primary">{d.description}</p>
                           {d.orderId && (
-                            <p className="text-xs text-text-muted">Order: <code className="bg-surface px-1 py-0.5 rounded">{d.orderId}</code></p>
+                            <p className="text-xs text-text-muted">Order: <code className="bg-surface-alt px-1 py-0.5 rounded text-text-secondary">{d.orderId}</code></p>
                           )}
                           {d.adminNote && (
                             <p className="text-xs text-text-muted italic">Note: {d.adminNote}</p>
@@ -299,7 +313,7 @@ export default function GasReconciliationPage() {
                           {resolvingId === d.id && (
                             <div className="flex gap-2 pt-1">
                               <input
-                                className="flex-1 border border-border rounded-lg px-3 py-1.5 text-sm"
+                                className="flex-1 border border-border rounded-lg px-3 py-1.5 text-sm bg-surface text-text-primary"
                                 placeholder="Admin note (required)"
                                 value={resolveNote}
                                 onChange={(e) => setResolveNote(e.target.value)}

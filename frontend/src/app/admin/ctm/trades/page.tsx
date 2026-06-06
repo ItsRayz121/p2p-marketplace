@@ -1,11 +1,56 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
+
+// Happy-path lifecycle of a CTM trade, in order. Terminal states (cancelled /
+// expired / disputed) are handled separately.
+const CTM_TIMELINE: Array<{ key: string; label: string }> = [
+  { key: 'awaiting_payment', label: 'Created' },
+  { key: 'payment_uploaded', label: 'Payment sent' },
+  { key: 'payment_confirmed', label: 'Payment confirmed' },
+  { key: 'seller_transferring', label: 'Transferring' },
+  { key: 'proof_submitted', label: 'Proof submitted' },
+  { key: 'completed', label: 'Released' },
+]
+
+function StatusTimeline({ status }: { status: string }) {
+  const terminalBad = ['cancelled', 'expired'].includes(status)
+  const disputed = ['disputed', 'dispute_resolved'].includes(status)
+  // dispute_resolved counts as released for progress purposes
+  const effective = status === 'dispute_resolved' ? 'completed' : status
+  const reachedIdx = CTM_TIMELINE.findIndex((s) => s.key === effective)
+  return (
+    <div>
+      <div className="flex items-center">
+        {CTM_TIMELINE.map((step, i) => {
+          const done = reachedIdx >= 0 && i <= reachedIdx
+          return (
+            <div key={step.key} className="flex items-center flex-1 last:flex-none">
+              <div className="flex flex-col items-center">
+                <div className={`w-3 h-3 rounded-full ${done ? 'bg-primary' : 'bg-surface-alt border border-border'}`} />
+                <span className={`mt-1 text-[9px] text-center leading-tight ${done ? 'text-text-secondary' : 'text-text-muted'}`}>{step.label}</span>
+              </div>
+              {i < CTM_TIMELINE.length - 1 && (
+                <div className={`h-0.5 flex-1 mx-1 ${reachedIdx > i ? 'bg-primary' : 'bg-surface-alt'}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {(terminalBad || disputed) && (
+        <p className={`mt-2 text-xs font-medium ${disputed ? 'text-danger' : 'text-text-muted'}`}>
+          {disputed ? 'This trade went to dispute.' : `Trade ${status}.`}
+        </p>
+      )}
+    </div>
+  )
+}
 
 const STATUS_COLORS: Record<string, string> = {
   awaiting_payment:    'bg-yellow-100 text-yellow-700',
@@ -153,7 +198,7 @@ function TradeDetailModal({
 
           {/* Status + Timer */}
           <div className="flex items-center gap-3 flex-wrap">
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[trade.status] ?? 'bg-gray-100 text-gray-600'}`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[trade.status] ?? 'bg-surface-alt text-text-secondary'}`}>
               {trade.status.replace(/_/g, ' ')}
             </span>
             {!isDone && (
@@ -164,16 +209,21 @@ function TradeDetailModal({
             )}
           </div>
 
+          {/* Status timeline */}
+          <div className="bg-surface-alt/50 border border-border rounded-xl p-4">
+            <StatusTimeline status={trade.status} />
+          </div>
+
           {/* Parties + Trade Info */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-surface rounded-xl p-3 space-y-1.5 border border-border">
               <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Buyer</p>
-              <p className="font-semibold text-text-primary text-sm">{trade.buyer.username}</p>
+              <Link href={`/admin/users/${trade.buyer.id}`} className="font-semibold text-text-primary text-sm hover:text-primary hover:underline">{trade.buyer.username}</Link>
               {trade.buyer.fullName && <p className="text-xs text-text-muted">{trade.buyer.fullName}</p>}
             </div>
             <div className="bg-surface rounded-xl p-3 space-y-1.5 border border-border">
               <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Seller</p>
-              <p className="font-semibold text-text-primary text-sm">{trade.seller.username}</p>
+              <Link href={`/admin/users/${trade.seller.id}`} className="font-semibold text-text-primary text-sm hover:text-primary hover:underline">{trade.seller.username}</Link>
               {trade.seller.fullName && <p className="text-xs text-text-muted">{trade.seller.fullName}</p>}
             </div>
             <div className="bg-surface rounded-xl p-3 border border-border">
@@ -244,7 +294,7 @@ function TradeDetailModal({
                   return (
                     <div key={m.id ?? i} className={`text-xs flex gap-2 ${isBuyer ? '' : 'flex-row-reverse'}`}>
                       <div className={`rounded-lg px-2.5 py-1.5 max-w-[80%] ${
-                        isBuyer ? 'bg-blue-50 text-blue-800' : isSeller ? 'bg-green-50 text-green-800' : 'bg-purple-50 text-purple-800'
+                        isBuyer ? 'bg-blue-50 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200' : isSeller ? 'bg-green-50 text-green-800 dark:bg-green-500/15 dark:text-green-200' : 'bg-purple-50 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200'
                       }`}>
                         <p className="font-semibold text-[10px] mb-0.5">{label}</p>
                         <p>{m.message}</p>
@@ -259,17 +309,20 @@ function TradeDetailModal({
 
           {/* Dispute */}
           {trade.dispute && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <p className="font-semibold text-red-700 text-sm">Dispute</p>
-                <Badge variant="danger" size="sm">{trade.dispute.status.replace(/_/g, ' ')}</Badge>
+            <div className="bg-danger/5 border border-danger/30 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-danger text-sm">Dispute</p>
+                  <Badge variant="danger" size="sm">{trade.dispute.status.replace(/_/g, ' ')}</Badge>
+                </div>
+                <Link href="/admin/ctm/disputes" className="text-xs text-primary hover:underline">Manage in Disputes →</Link>
               </div>
-              <p className="text-red-600 text-xs">Reason: {trade.dispute.reason.replace(/_/g, ' ')}</p>
+              <p className="text-danger text-xs">Reason: {trade.dispute.reason.replace(/_/g, ' ')}</p>
               {(trade.dispute.messages?.length ?? 0) > 0 && (
                 <div className="max-h-32 overflow-y-auto space-y-1 mt-2">
                   {trade.dispute.messages!.map((m, i) => (
-                    <p key={m.id ?? i} className="text-xs text-red-700">
-                      <span className="text-red-400">{fmtDt(m.createdAt)} · </span>
+                    <p key={m.id ?? i} className="text-xs text-text-secondary">
+                      <span className="text-text-muted">{fmtDt(m.createdAt)} · </span>
                       {m.message}
                     </p>
                   ))}
@@ -372,7 +425,11 @@ export default function AdminCtmTradesPage() {
                 <tr key={t.id} className="hover:bg-surface/50 transition-colors">
                   <td className="px-4 py-3 font-mono text-xs text-text-primary">#{t.tradeRef.slice(-10)}</td>
                   <td className="px-4 py-3">
-                    <p className="text-text-primary text-xs">{t.buyer.username} → {t.seller.username}</p>
+                    <p className="text-xs">
+                      <Link href={`/admin/users/${t.buyer.id}`} className="text-text-primary hover:text-primary hover:underline">{t.buyer.username}</Link>
+                      <span className="text-text-muted"> → </span>
+                      <Link href={`/admin/users/${t.seller.id}`} className="text-text-primary hover:text-primary hover:underline">{t.seller.username}</Link>
+                    </p>
                     {t.token && <p className="text-text-muted text-xs">{t.token.symbol}</p>}
                   </td>
                   <td className="px-4 py-3 text-text-primary font-medium">

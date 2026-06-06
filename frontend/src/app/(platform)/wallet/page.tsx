@@ -1,6 +1,6 @@
 ﻿'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { walletApi, marketplaceApi, userPaymentMethodsApi } from '@/lib/api'
+import { walletApi, marketplaceApi, userPaymentMethodsApi, ctmApi } from '@/lib/api'
 import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
@@ -1046,13 +1046,23 @@ const DELIVERY_NETWORKS = [
   { value: 'Gate',    label: 'Gate UID',       placeholder: 'Your Gate.io UID' },
 ]
 
+// Network value used to tag CTM-token delivery addresses; the token symbol is
+// stored in `coin` so each token's address is distinct.
+const CTM_NETWORK = 'CTM'
+
+interface CtmTokenOption { symbol: string; name: string }
+
 function SavedDeliveryAddressesSection() {
   const [addresses, setAddresses] = useState<SavedDeliveryAddress[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [adding, setAdding] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [form, setForm] = useState({ network: 'BEP20', address: '', label: '' })
+
+  // category: 'crypto' (wallets / exchange UIDs) | 'ctm' (community tokens)
+  const [category, setCategory] = useState<'crypto' | 'ctm'>('crypto')
+  const [form, setForm] = useState({ network: 'BEP20', tokenSymbol: '', address: '', label: '' })
+  const [ctmTokens, setCtmTokens] = useState<CtmTokenOption[]>([])
 
   const load = useCallback(async () => {
     try {
@@ -1061,21 +1071,38 @@ function SavedDeliveryAddressesSection() {
     } catch { /* ignore */ } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  // Load active CTM tokens so the CTM category dropdown is data-driven (not
+  // hardcoded to a single token).
+  const loadCtmTokens = useCallback(async () => {
+    try {
+      const res = await ctmApi.getTokens({ limit: 100 }) as { tokens?: Array<{ symbol?: string; name?: string }> }
+      const opts = (res.tokens ?? [])
+        .filter((t) => t.symbol && t.name)
+        .map((t) => ({ symbol: t.symbol as string, name: t.name as string }))
+      setCtmTokens(opts)
+    } catch { /* ignore — CTM category just shows empty */ }
+  }, [])
+
+  useEffect(() => { load(); loadCtmTokens() }, [load, loadCtmTokens])
 
   const resetForm = () => {
-    setForm({ network: 'BEP20', address: '', label: '' })
+    setForm({ network: 'BEP20', tokenSymbol: ctmTokens[0]?.symbol ?? '', address: '', label: '' })
+    setCategory('crypto')
     setFormError(null)
     setShowForm(false)
   }
 
   const handleAdd = async () => {
+    if (category === 'ctm' && !form.tokenSymbol) { setFormError('Select a token'); return }
     if (!form.address.trim()) { setFormError('Address / UID is required'); return }
     if (!form.label.trim()) { setFormError('Label is required'); return }
     setAdding(true)
     setFormError(null)
     try {
-      const saved = await walletApi.addSavedAddress({ coin: 'USDT', network: form.network, address: form.address.trim(), label: form.label.trim() })
+      const payload = category === 'ctm'
+        ? { coin: form.tokenSymbol, network: CTM_NETWORK, address: form.address.trim(), label: form.label.trim() }
+        : { coin: 'USDT', network: form.network, address: form.address.trim(), label: form.label.trim() }
+      const saved = await walletApi.addSavedAddress(payload)
       setAddresses((prev) => [saved, ...prev])
       resetForm()
     } catch (err) {
@@ -1094,16 +1121,39 @@ function SavedDeliveryAddressesSection() {
   }
 
   const selectedNetwork = DELIVERY_NETWORKS.find((n) => n.value === form.network)
+  const cryptoAddrs = addresses.filter((a) => a.network !== CTM_NETWORK)
+  const ctmAddrs = addresses.filter((a) => a.network === CTM_NETWORK)
+
+  const renderList = (list: SavedDeliveryAddress[]) => (
+    <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border overflow-hidden">
+      {list.map((a) => (
+        <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-text-primary">{a.label}</span>
+              <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium">
+                {a.network === CTM_NETWORK ? a.coin : a.network}
+              </span>
+            </div>
+            <p className="font-mono text-xs text-text-muted truncate mt-0.5">{a.address}</p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => handleRemove(a.id)} className="text-danger hover:text-danger flex-shrink-0">
+            Remove
+          </Button>
+        </div>
+      ))}
+    </div>
+  )
 
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-base font-semibold text-text-primary">Saved Delivery Addresses</h2>
-          <p className="text-xs text-text-muted mt-0.5">Your wallet addresses and exchange UIDs — auto-fill when starting a trade</p>
+          <p className="text-xs text-text-muted mt-0.5">Your wallet addresses, exchange UIDs and community-token accounts — auto-fill when starting a trade</p>
         </div>
         {!showForm && (
-          <Button size="sm" variant="secondary" onClick={() => setShowForm(true)}>+ Add Address</Button>
+          <Button size="sm" variant="secondary" onClick={() => { setForm((f) => ({ ...f, tokenSymbol: ctmTokens[0]?.symbol ?? '' })); setShowForm(true) }}>+ Add Address</Button>
         )}
       </div>
 
@@ -1116,50 +1166,90 @@ function SavedDeliveryAddressesSection() {
 
           {formError && <p className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg px-3 py-2">{formError}</p>}
 
+          {/* Category */}
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-2">Type</label>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-              {DELIVERY_NETWORKS.map((n) => (
+            <label className="block text-xs font-medium text-text-muted mb-2">Category</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { key: 'crypto', label: 'Crypto (Wallet / Exchange UID)' },
+                { key: 'ctm', label: 'CTM Token' },
+              ] as const).map((c) => (
                 <button
-                  key={n.value}
-                  onClick={() => setForm((f) => ({ ...f, network: n.value }))}
-                  className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
-                    form.network === n.value
-                      ? 'border-primary bg-primary/5 text-primary'
-                      : 'border-border bg-surface text-text-primary hover:border-primary/50'
+                  key={c.key}
+                  onClick={() => { setCategory(c.key); setFormError(null) }}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                    category === c.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'
                   }`}
                 >
-                  {n.label}
+                  {c.label}
                 </button>
               ))}
             </div>
           </div>
 
+          {category === 'crypto' ? (
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-2">Type</label>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {DELIVERY_NETWORKS.map((n) => (
+                  <button
+                    key={n.value}
+                    onClick={() => setForm((f) => ({ ...f, network: n.value }))}
+                    className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                      form.network === n.value
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border bg-surface text-text-primary hover:border-primary/50'
+                    }`}
+                  >
+                    {n.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Token</label>
+              {ctmTokens.length === 0 ? (
+                <p className="text-xs text-text-muted bg-surface-alt rounded-lg px-3 py-2">No community tokens are active yet. Check back once tokens are listed.</p>
+              ) : (
+                <select
+                  value={form.tokenSymbol}
+                  onChange={(e) => setForm((f) => ({ ...f, tokenSymbol: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {ctmTokens.map((t) => (
+                    <option key={t.symbol} value={t.symbol}>{t.name} ({t.symbol})</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1">
-              {selectedNetwork?.label ?? 'Address / UID'}
+              {category === 'ctm' ? `${form.tokenSymbol || 'Token'} deposit address / account` : (selectedNetwork?.label ?? 'Address / UID')}
             </label>
             <input
               type="text"
               value={form.address}
               onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-              placeholder={selectedNetwork?.placeholder ?? 'Address or UID'}
-              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder={category === 'ctm' ? 'Your deposit address or account ID for this token' : (selectedNetwork?.placeholder ?? 'Address or UID')}
+              className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Label</label>
+            <label className="block text-xs font-medium text-text-muted mb-1">Label (optional)</label>
             <input
               type="text"
               value={form.label}
               onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-              placeholder='e.g. "My Main Binance" or "Trading Wallet"'
-              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder='e.g. "My Main Binance" or "Sidra wallet"'
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
-          <Button fullWidth size="sm" loading={adding} onClick={handleAdd}>Save Address</Button>
+          <Button fullWidth size="sm" loading={adding} onClick={handleAdd} disabled={category === 'ctm' && ctmTokens.length === 0}>Save Address</Button>
         </div>
       )}
 
@@ -1168,24 +1258,22 @@ function SavedDeliveryAddressesSection() {
       ) : addresses.length === 0 ? (
         <div className="bg-surface shadow-card border border-border rounded-xl px-4 py-8 text-center">
           <p className="text-sm text-text-muted">No saved addresses yet.</p>
-          <p className="text-xs text-text-muted mt-1">Save your wallet addresses and exchange UIDs once — select them instantly in every trade.</p>
+          <p className="text-xs text-text-muted mt-1">Save your wallet addresses, exchange UIDs and community-token accounts once — select them instantly in every trade.</p>
         </div>
       ) : (
-        <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border overflow-hidden">
-          {addresses.map((a) => (
-            <div key={a.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-text-primary">{a.label}</span>
-                  <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium">{a.network}</span>
-                </div>
-                <p className="font-mono text-xs text-text-muted truncate mt-0.5">{a.address}</p>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => handleRemove(a.id)} className="text-danger hover:text-danger flex-shrink-0">
-                Remove
-              </Button>
-            </div>
-          ))}
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Crypto Addresses</p>
+            {cryptoAddrs.length ? renderList(cryptoAddrs) : (
+              <p className="text-xs text-text-muted bg-surface border border-border rounded-xl px-4 py-3">No crypto wallet or exchange UID saved.</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">CTM Token Addresses</p>
+            {ctmAddrs.length ? renderList(ctmAddrs) : (
+              <p className="text-xs text-text-muted bg-surface border border-border rounded-xl px-4 py-3">No community-token delivery address saved.</p>
+            )}
+          </div>
         </div>
       )}
     </section>
