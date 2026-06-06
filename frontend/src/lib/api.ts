@@ -1504,6 +1504,9 @@ export const adminApi = {
     apiRequest<{ users: AuthUser[]; total: number }>('/admin/users' + buildQs(params)),
   getUser: (id: string) =>
     apiRequest<AuthUser>(`/admin/users/${id}`),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getUserProfile: (id: string) =>
+    apiRequest<any>(`/admin/users/${id}/profile`),
   updateUser: (id: string, data: Partial<AuthUser>) =>
     apiRequest<AuthUser>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   banUser: (id: string, data: { reason: string }) =>

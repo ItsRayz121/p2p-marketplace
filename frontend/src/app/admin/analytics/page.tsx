@@ -1,5 +1,6 @@
 ﻿'use client'
 import { useState, useCallback, useEffect } from 'react'
+import Link from 'next/link'
 import { adminApi, apiRequest } from '@/lib/api'
 import { fmtNumber } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -14,6 +15,7 @@ interface AnalyticsData {
   tradeVolume?: Array<{ date: string; volume: string; count: number }>
   badgeDistribution?: Record<string, number>
   topTraders?: Array<{
+    userId?: string
     username: string
     badge?: string
     volume: string
@@ -351,7 +353,13 @@ export default function AnalyticsPage() {
                     {data.topTraders.map((t, i) => (
                       <tr key={t.username} className="hover:bg-surface/50">
                         <td className="px-4 py-3 text-text-muted font-medium">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium text-text-primary">{t.username}</td>
+                        <td className="px-4 py-3 font-medium">
+                          {t.userId ? (
+                            <Link href={`/admin/users/${t.userId}`} className="text-text-primary hover:text-primary hover:underline">{t.username}</Link>
+                          ) : (
+                            <span className="text-text-primary">{t.username}</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 capitalize text-text-secondary">{t.badge ?? 'new'}</td>
                         <td className="px-4 py-3 font-medium text-text-primary">${fmtNumber(t.volume)}</td>
                         <td className="px-4 py-3 text-text-secondary">{t.tradeCount}</td>

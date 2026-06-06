@@ -1,5 +1,6 @@
 ﻿'use client'
 import { useState, useCallback, useEffect } from 'react'
+import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -14,10 +15,21 @@ interface AuditEntry {
   userId: string
   user?: { email: string; username: string }
   action: string
+  targetType?: string | null
+  targetId?: string | null
   details: unknown
-  ip?: string
-  userAgent?: string
+  ip?: string | null
+  userAgent?: string | null
   createdAt: string
+}
+
+// Build a clickable link for an audit target where one makes sense.
+function targetHref(type?: string | null, id?: string | null): string | null {
+  if (!id) return null
+  const t = (type ?? '').toLowerCase()
+  if (t === 'user') return `/admin/users/${id}`
+  if (t === 'trade') return `/admin/trades/${id}`
+  return null
 }
 
 interface AuditLogResponse {
@@ -93,7 +105,9 @@ export default function AuditLogPage() {
                       {fmtDateTime(entry.createdAt)}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-text-primary font-medium">{entry.user?.username || 'Unknown'}</p>
+                      <Link href={`/admin/users/${entry.userId}`} className="text-text-primary font-medium hover:text-primary hover:underline">
+                        {entry.user?.username || 'Unknown'}
+                      </Link>
                       <p className="text-xs text-text-muted">{entry.user?.email}</p>
                     </td>
                     <td className="px-4 py-3">
@@ -101,7 +115,7 @@ export default function AuditLogPage() {
                         {entry.action}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-muted">{entry.ip ?? 'N/A'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-text-muted">{entry.ip ?? 'Not captured'}</td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => setSelected(entry)}>
                         Details
@@ -127,42 +141,72 @@ export default function AuditLogPage() {
 
       {/* Detail modal */}
       <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Audit Entry Details" size="lg">
-        {selected && (
-          <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-text-muted">Admin</p>
-                <p className="font-medium text-text-primary">{selected.user?.username || selected.userId}</p>
-                <p className="text-xs text-text-muted">{selected.user?.email}</p>
-              </div>
-              <div>
-                <p className="text-text-muted">Timestamp</p>
-                <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
-              </div>
-              <div>
-                <p className="text-text-muted">Action</p>
-                <p className={`font-mono font-medium ${actionColor(selected.action)}`}>{selected.action}</p>
-              </div>
-              <div>
-                <p className="text-text-muted">IP Address</p>
-                <p className="font-mono text-text-secondary">{selected.ip ?? 'N/A'}</p>
-              </div>
-              {selected.userAgent && (
-                <div className="col-span-2">
-                  <p className="text-text-muted">User Agent</p>
-                  <p className="text-xs text-text-secondary break-all">{selected.userAgent}</p>
+        {selected && (() => {
+          const tHref = targetHref(selected.targetType, selected.targetId)
+          const hasDetails = selected.details && typeof selected.details === 'object' && Object.keys(selected.details as object).length > 0
+          return (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-text-muted">Admin</p>
+                  <Link href={`/admin/users/${selected.userId}`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                    {selected.user?.username || selected.userId}
+                  </Link>
+                  <p className="text-xs text-text-muted">{selected.user?.email}</p>
                 </div>
-              )}
-            </div>
+                <div>
+                  <p className="text-text-muted">Timestamp</p>
+                  <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-text-muted">Action</p>
+                  <p className={`font-mono font-medium ${actionColor(selected.action)}`}>{selected.action}</p>
+                </div>
+                <div>
+                  <p className="text-text-muted">Target</p>
+                  {selected.targetId ? (
+                    tHref ? (
+                      <Link href={tHref} className="text-primary hover:underline">
+                        {selected.targetType}: <span className="font-mono">{selected.targetId}</span>
+                      </Link>
+                    ) : (
+                      <p className="text-text-secondary">
+                        {selected.targetType ?? '—'}: <span className="font-mono text-xs">{selected.targetId}</span>
+                      </p>
+                    )
+                  ) : (
+                    <p className="text-text-muted">—</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-text-muted">IP Address</p>
+                  <p className="font-mono text-text-secondary">{selected.ip ?? 'Not captured'}</p>
+                </div>
+                {selected.userAgent && (
+                  <div className="col-span-2">
+                    <p className="text-text-muted">User Agent</p>
+                    <p className="text-xs text-text-secondary break-all">{selected.userAgent}</p>
+                  </div>
+                )}
+              </div>
 
-            <div>
-              <p className="text-text-muted mb-2">Details</p>
-              <pre className="bg-surface rounded-xl p-4 text-xs font-mono text-text-secondary overflow-auto max-h-60 whitespace-pre-wrap break-all">
-                {JSON.stringify(selected.details, null, 2)}
-              </pre>
+              <div>
+                {hasDetails ? (
+                  <details className="group" open>
+                    <summary className="cursor-pointer text-text-muted mb-2 select-none hover:text-text-secondary">
+                      Raw metadata
+                    </summary>
+                    <pre className="bg-surface-alt rounded-xl p-4 text-xs font-mono text-text-secondary overflow-auto max-h-60 whitespace-pre-wrap break-all">
+                      {JSON.stringify(selected.details, null, 2)}
+                    </pre>
+                  </details>
+                ) : (
+                  <p className="text-text-muted text-xs">No additional metadata was recorded for this action.</p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
       </Modal>
     </div>
   )

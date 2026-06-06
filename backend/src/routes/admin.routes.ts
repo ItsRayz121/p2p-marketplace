@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { cloudinary, CLOUDINARY_FOLDERS } from '../lib/cloudinary'
@@ -71,6 +71,21 @@ function paginationParams(query: Record<string, string>) {
   return { page, limit, skip }
 }
 
+/**
+ * Resolve the real client IP, preferring proxy headers set by Cloudflare /
+ * Railway over the raw socket. trustProxy is enabled so req.ip already parses
+ * X-Forwarded-For, but cf-connecting-ip / x-real-ip are honoured first.
+ */
+function clientIp(req: FastifyRequest): string {
+  const cf = req.headers['cf-connecting-ip']
+  if (typeof cf === 'string' && cf.trim()) return cf.trim()
+  const xr = req.headers['x-real-ip']
+  if (typeof xr === 'string' && xr.trim()) return xr.trim()
+  const xff = req.headers['x-forwarded-for']
+  if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0]!.trim()
+  return req.ip
+}
+
 async function createAuditLog(
   adminId: string,
   action: string,
@@ -80,13 +95,19 @@ async function createAuditLog(
   ipAddress?: string,
   userAgent?: string,
 ) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const meta: any = { ...details }
-  if (ipAddress) meta._ip = ipAddress
-  if (userAgent) meta._ua = userAgent
   await db.auditLog.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: { actorId: adminId, action, targetType, targetId, metadata: meta },
+    data: {
+      actorId: adminId,
+      action,
+      targetType,
+      targetId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      metadata: { ...details } as any,
+      // Persist IP / UA into their dedicated columns so the Audit Log UI can
+      // display them (previously buried in metadata._ip and never shown).
+      ipAddress: ipAddress ?? null,
+      userAgent: userAgent ? userAgent.slice(0, 500) : null,
+    },
   })
 }
 
@@ -347,6 +368,158 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── Full user intelligence profile (read-only aggregation) ──────────────────
+  // Powers /admin/users/:id — one central page joining every record tied to a
+  // user: trades (P2P/CTM/gas), wallet movements, disputes, ratings, referrals,
+  // saved payment/delivery details and audit trail.
+  app.get('/admin/users/:id/profile', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+
+    const user = await db.user.findUnique({
+      where: { id },
+      include: {
+        tradeStats: true,
+        merchant: true,
+        ctmMerchantProfile: true,
+        referredBy: { select: { id: true, username: true, email: true } },
+        fraudFlags: { orderBy: { createdAt: 'desc' }, take: 20 },
+        adminNotes: { orderBy: { createdAt: 'desc' }, take: 20 },
+        paymentMethods: { orderBy: { createdAt: 'desc' } },
+        savedAddresses: true,
+      },
+    })
+    if (!user) throw Errors.NOT_FOUND('User')
+
+    const userOr = { OR: [{ buyerId: id }, { sellerId: id }] }
+
+    const [
+      p2pTrades, ctmTrades, gasOrders,
+      withdrawals, deposits,
+      p2pStatus, ctmBuyStatus, ctmSellStatus, gasStatus,
+      p2pDisputes, ctmDisputes,
+      ratingsReceived, ctmRatingsReceived, ratingAgg, ctmRatingAgg,
+      referrals, referralCount,
+      auditByUser, auditTargetingUser,
+    ] = await Promise.all([
+      db.trade.findMany({
+        where: { OR: [{ buyerId: id }, { sellerId: id }] },
+        orderBy: { createdAt: 'desc' }, take: 30,
+        select: { id: true, orderRef: true, coin: true, amount: true, fiatAmount: true, status: true, createdAt: true, buyerId: true, sellerId: true },
+      }),
+      db.ctmTrade.findMany({
+        where: userOr,
+        orderBy: { createdAt: 'desc' }, take: 30,
+        select: { id: true, tradeRef: true, tokenAmount: true, pricePerUnit: true, fiatAmount: true, status: true, createdAt: true, buyerId: true, sellerId: true, token: { select: { symbol: true, name: true } } },
+      }),
+      db.gasFeeOrder.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' }, take: 30,
+        select: { id: true, orderRef: true, chain: true, gasAmountUSD: true, status: true, createdAt: true },
+      }),
+      db.withdrawal.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' }, take: 30,
+        select: { id: true, orderRef: true, coin: true, network: true, amount: true, fee: true, status: true, toAddress: true, txHash: true, createdAt: true },
+      }),
+      db.deposit.findMany({
+        where: { userId: id },
+        orderBy: { detectedAt: 'desc' }, take: 30,
+        select: { id: true, txHash: true, chain: true, symbol: true, amount: true, status: true, detectedAt: true, creditedAt: true },
+      }),
+      db.trade.groupBy({ by: ['status'], where: { OR: [{ buyerId: id }, { sellerId: id }] }, _count: { status: true } }),
+      db.ctmTrade.groupBy({ by: ['status'], where: { buyerId: id }, _count: { status: true } }),
+      db.ctmTrade.groupBy({ by: ['status'], where: { sellerId: id }, _count: { status: true } }),
+      db.gasFeeOrder.groupBy({ by: ['status'], where: { userId: id }, _count: { status: true } }),
+      db.dispute.findMany({
+        where: { trade: { OR: [{ buyerId: id }, { sellerId: id }] } },
+        orderBy: { createdAt: 'desc' }, take: 20,
+        select: { id: true, reason: true, status: true, winner: true, openedById: true, resolvedAt: true, createdAt: true, trade: { select: { orderRef: true } } },
+      }),
+      db.ctmDispute.findMany({
+        where: { trade: userOr },
+        orderBy: { createdAt: 'desc' }, take: 20,
+        select: { id: true, reason: true, status: true, winner: true, openedById: true, resolvedAt: true, createdAt: true, trade: { select: { tradeRef: true } } },
+      }),
+      db.tradeRating.findMany({
+        where: { ratedUserId: id, hidden: false },
+        orderBy: { createdAt: 'desc' }, take: 20,
+        select: { id: true, rating: true, comment: true, tags: true, ratedByUserId: true, createdAt: true },
+      }),
+      db.ctmTradeRating.findMany({
+        where: { ratedUserId: id },
+        orderBy: { createdAt: 'desc' }, take: 20,
+        select: { id: true, rating: true, comment: true, tags: true, ratedByUserId: true, createdAt: true },
+      }),
+      db.tradeRating.aggregate({ where: { ratedUserId: id, hidden: false }, _avg: { rating: true }, _count: { rating: true } }),
+      db.ctmTradeRating.aggregate({ where: { ratedUserId: id }, _avg: { rating: true }, _count: { rating: true } }),
+      db.user.findMany({ where: { referredById: id }, orderBy: { createdAt: 'desc' }, take: 50, select: { id: true, username: true, email: true, kycStatus: true, createdAt: true } }),
+      db.user.count({ where: { referredById: id } }),
+      db.auditLog.findMany({ where: { actorId: id }, orderBy: { createdAt: 'desc' }, take: 25, select: { id: true, action: true, targetType: true, targetId: true, ipAddress: true, createdAt: true } }),
+      db.auditLog.findMany({ where: { targetType: 'user', targetId: id }, orderBy: { createdAt: 'desc' }, take: 25, select: { id: true, action: true, actorId: true, ipAddress: true, createdAt: true } }),
+    ])
+
+    // Blend ratings from both marketplaces into one average
+    const rCount = (ratingAgg._count.rating ?? 0) + (ctmRatingAgg._count.rating ?? 0)
+    const rSum = (Number(ratingAgg._avg.rating ?? 0) * (ratingAgg._count.rating ?? 0))
+      + (Number(ctmRatingAgg._avg.rating ?? 0) * (ctmRatingAgg._count.rating ?? 0))
+    const avgRating = rCount > 0 ? Number((rSum / rCount).toFixed(2)) : null
+
+    const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000)
+    const isOnline = !!user.lastSeenAt && user.lastSeenAt > onlineThreshold
+
+    const ts = user.tradeStats
+    return reply.send({
+      success: true,
+      data: {
+        profile: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName,
+          avatarUrl: user.avatarUrl,
+          role: user.role,
+          kycStatus: user.kycStatus,
+          kycLevel: user.kycLevel,
+          createdAt: user.createdAt,
+          lastSeenAt: user.lastSeenAt,
+          isOnline,
+          registrationIp: user.registrationIp,
+          isBanned: user.isBanned,
+          isSuspended: user.isSuspended,
+          suspendReason: user.suspendReason,
+          referralCode: user.referralCode,
+          isMerchant: !!user.merchant,
+          merchantName: user.merchant?.businessName ?? null,
+          isCtmMerchant: !!user.ctmMerchantProfile,
+          badge: ts?.badge ?? 'new',
+          badgeLabel: ts?.badgeLabel ?? null,
+          trustScore: ts?.trustScore ?? null,
+          completionRate: ts ? Number(ts.completionRate) : null,
+          completedTrades: ts?.completedTrades ?? 0,
+          totalTrades: ts?.totalTrades ?? 0,
+          avgRating,
+          ratingCount: rCount,
+        },
+        summary: {
+          p2pStatus, ctmBuyStatus, ctmSellStatus, gasStatus,
+          referralCount,
+        },
+        p2pTrades, ctmTrades, gasOrders,
+        withdrawals, deposits,
+        paymentMethods: user.paymentMethods,
+        savedAddresses: user.savedAddresses,
+        disputes: { p2p: p2pDisputes, ctm: ctmDisputes },
+        ratings: { p2p: ratingsReceived, ctm: ctmRatingsReceived },
+        referrals,
+        referredBy: user.referredBy,
+        auditByUser,
+        auditTargetingUser,
+        adminNotes: user.adminNotes,
+        fraudFlags: user.fraudFlags,
+      },
+    })
+  })
+
   app.post('/admin/users/:id/ban', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500) })
@@ -357,7 +530,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!user) throw Errors.NOT_FOUND('User')
 
     await db.user.update({ where: { id }, data: { isBanned: true, suspendReason: parsed.data.reason } })
-    await createAuditLog(req.user!.id, 'USER_BANNED', 'User', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'USER_BANNED', 'User', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -367,7 +540,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const user = await db.user.findUnique({ where: { id }, select: { email: true } })
     if (!user) throw Errors.NOT_FOUND('User')
     await db.user.update({ where: { id }, data: { isBanned: false, isSuspended: false, suspendReason: null } })
-    await createAuditLog(req.user!.id, 'USER_UNBANNED', 'User', id, {}, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'USER_UNBANNED', 'User', id, {}, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 
@@ -378,7 +551,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
 
     await db.user.update({ where: { id }, data: { isSuspended: true, suspendReason: parsed.data.reason } })
-    await createAuditLog(req.user!.id, 'USER_SUSPENDED', 'User', id, { reason: parsed.data.reason, until: parsed.data.until }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'USER_SUSPENDED', 'User', id, { reason: parsed.data.reason, until: parsed.data.until }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -410,7 +583,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     })
 
-    await createAuditLog(req.user!.id, 'COLLATERAL_SEIZED', 'User', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'COLLATERAL_SEIZED', 'User', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 
@@ -452,7 +625,7 @@ export async function adminRoutes(app: FastifyInstance) {
       badge: parsed.data.badge,
       reason: parsed.data.reason ?? null,
       clearOverride: parsed.data.clearOverride ?? false,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -769,7 +942,7 @@ export async function adminRoutes(app: FastifyInstance) {
       })
     })
 
-    await createAuditLog(req.user!.id, 'KYC_APPROVED', 'KycSubmission', id, { userId: submission.userId, level: kycLevel }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'KYC_APPROVED', 'KycSubmission', id, { userId: submission.userId, level: kycLevel }, clientIp(req), req.headers['user-agent'] as string | undefined)
     await sendKycEmail('approved', submission.user.email, { level: kycLevel })
     notify(submission.userId, 'kyc', 'KYC Approved', 'Your identity has been verified. You now have full platform access.', { tier: kycLevel })
 
@@ -797,7 +970,7 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { kycStatus: 'rejected' },
     })
 
-    await createAuditLog(req.user!.id, 'KYC_REJECTED', 'KycSubmission', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'KYC_REJECTED', 'KycSubmission', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     await sendKycEmail('rejected', submission.user.email, { reason: parsed.data.reason })
     notify(submission.userId, 'kyc', 'KYC Rejected', `Your KYC submission was rejected. Reason: ${parsed.data.reason}`, { rejectionReason: parsed.data.reason })
 
@@ -854,7 +1027,7 @@ export async function adminRoutes(app: FastifyInstance) {
       },
     })
 
-    await createAuditLog(req.user!.id, 'MERCHANT_KYC_APPROVED', 'MerchantKycSubmission', id, { userId: submission.userId }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'MERCHANT_KYC_APPROVED', 'MerchantKycSubmission', id, { userId: submission.userId }, clientIp(req), req.headers['user-agent'] as string | undefined)
     await sendKycEmail('merchant_approved', user.email)
 
     return reply.send({ success: true })
@@ -876,7 +1049,7 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { status: 'rejected', rejectionReason: parsed.data.reason, reviewedAt: new Date(), reviewedBy: req.user!.id },
     })
 
-    await createAuditLog(req.user!.id, 'MERCHANT_KYC_REJECTED', 'MerchantKycSubmission', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'MERCHANT_KYC_REJECTED', 'MerchantKycSubmission', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     if (user) await sendKycEmail('merchant_rejected', user.email, { reason: parsed.data.reason })
 
     return reply.send({ success: true })
@@ -962,7 +1135,7 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: 'payment_confirmed' },
     })
-    await createAuditLog(req.user!.id, 'TRADE_PAYMENT_CONFIRMED_ADMIN', 'Trade', id, {}, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'TRADE_PAYMENT_CONFIRMED_ADMIN', 'Trade', id, {}, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -977,7 +1150,7 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: 'cancelled', cancelReason: parsed.data.reason, cancelledBy: req.user!.id, cancelledAt: new Date() },
     })
-    await createAuditLog(req.user!.id, 'TRADE_CANCELLED_ADMIN', 'Trade', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'TRADE_CANCELLED_ADMIN', 'Trade', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -1022,7 +1195,7 @@ export async function adminRoutes(app: FastifyInstance) {
       sellerTxHash: trade.sellerTxHash,
       previousStatus: trade.txVerificationStatus,
       reason: parsed.data.reason,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     log.info({ tradeId: id, adminId: req.user!.id, orderRef: trade.orderRef }, 'Admin approved tx verification — buyer can now release')
     return reply.send({ success: true, message: 'Transaction verification approved. Buyer can now release the trade.' })
@@ -1121,7 +1294,7 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: 'resolved', resolution: parsed.data.note, resolvedAt: new Date(), resolvedBy: req.user!.id },
     })
-    await createAuditLog(req.user!.id, 'DISPUTE_CLOSED', 'Dispute', id, { note: parsed.data.note }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'DISPUTE_CLOSED', 'Dispute', id, { note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 
@@ -1138,7 +1311,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await db.disputeMessage.create({
       data: { disputeId: id, senderId: req.user!.id, message: `[Admin Note] ${parsed.data.note}` },
     })
-    await createAuditLog(req.user!.id, 'DISPUTE_NOTE_ADDED', 'Dispute', id, { note: parsed.data.note }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'DISPUTE_NOTE_ADDED', 'Dispute', id, { note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 
@@ -1198,7 +1371,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'DISPUTE_RESOLVED', 'Dispute', id, {
       winner: parsed.data.winner,
       resolution: parsed.data.resolution,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     await Promise.allSettled([
       // Simple notification emails — reuse admin alert as fallback
@@ -1259,7 +1432,7 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: 'completed', verificationStatus: 'layer2_approved', incomingTxHash: parsed.data.txHash },
     })
-    await createAuditLog(req.user!.id, 'INSTANT_BUY_APPROVED', 'InstantBuyOrder', id, { txHash: parsed.data.txHash }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'INSTANT_BUY_APPROVED', 'InstantBuyOrder', id, { txHash: parsed.data.txHash }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -1280,7 +1453,7 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: 'rejected', verificationStatus: 'layer2_rejected', rejectionReason: parsed.data.reason },
     })
-    await createAuditLog(req.user!.id, 'INSTANT_BUY_REJECTED', 'InstantBuyOrder', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'INSTANT_BUY_REJECTED', 'InstantBuyOrder', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -2081,7 +2254,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     })
 
-    await createAuditLog(req.user!.id, 'WITHDRAWAL_REJECTED', 'Withdrawal', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_REJECTED', 'Withdrawal', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     await sendWithdrawalEmail('rejected', withdrawal.user.email, {
       amount: withdrawal.amount.toString(),
       coin: withdrawal.coin,
@@ -2108,7 +2281,7 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { status: 'on_hold', onHoldBy: req.user!.id, onHoldReason: parsed.data.reason },
     })
-    await createAuditLog(req.user!.id, 'WITHDRAWAL_HELD', 'Withdrawal', id, { reason: parsed.data.reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_HELD', 'Withdrawal', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, message: 'Withdrawal placed on hold.' })
   })
 
@@ -2131,7 +2304,7 @@ export async function adminRoutes(app: FastifyInstance) {
         secondApprovedBy: null,
       },
     })
-    await createAuditLog(req.user!.id, 'WITHDRAWAL_HOLD_RELEASED', 'Withdrawal', id, {}, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'WITHDRAWAL_HOLD_RELEASED', 'Withdrawal', id, {}, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, message: 'Hold released. Withdrawal returned to pending.' })
   })
 
@@ -2155,7 +2328,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'WITHDRAWAL_MANUALLY_RESOLVED', 'Withdrawal', id, {
       note: parsed.data.note,
       previousStatus: withdrawal.status,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, message: 'Withdrawal marked as resolved.' })
   })
 
@@ -2190,7 +2363,7 @@ export async function adminRoutes(app: FastifyInstance) {
       note: parsed.data.note,
       originalTier: withdrawal.tier,
       newTier,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, message: 'Risk override applied.' })
   })
 
@@ -2319,7 +2492,7 @@ export async function adminRoutes(app: FastifyInstance) {
       coin: withdrawal.coin,
       amount: withdrawal.amount.toString(),
       toAddress: withdrawal.toAddress,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     // Record platform fee in the gas ledger (same as auto-send path).
     // The fee stays physically in the hot wallet — only `amount` goes on-chain.
@@ -2422,7 +2595,7 @@ export async function adminRoutes(app: FastifyInstance) {
       userId: withdrawal.userId,
       coin: withdrawal.coin,
       amount: withdrawal.amount.toString(),
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     await sendWithdrawalEmail('rejected', withdrawal.user.email, {
       amount: withdrawal.amount.toString(),
@@ -2480,7 +2653,7 @@ export async function adminRoutes(app: FastifyInstance) {
       create: { key: parsed.data.key, value: parsed.data.value },
       update: { value: parsed.data.value },
     })
-    await createAuditLog(req.user!.id, 'CONFIG_UPDATED', 'PlatformConfig', updated.id, { key: parsed.data.key, value: parsed.data.value }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'CONFIG_UPDATED', 'PlatformConfig', updated.id, { key: parsed.data.key, value: parsed.data.value }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true, data: updated })
   })
@@ -2571,6 +2744,7 @@ export async function adminRoutes(app: FastifyInstance) {
         const totalAllTrades = Math.max(t.totalTrades, totalCompleted)
         const completionRate = totalAllTrades > 0 ? Math.round((totalCompleted / totalAllTrades) * 100) : 0
         return {
+          userId: t.userId,
           username: t.user.username,
           badge: t.badge || 'new',
           volume: t.totalVolumePKR ? (parseFloat(t.totalVolumePKR.toString()) / 280).toFixed(2) : '0',
@@ -2627,7 +2801,7 @@ export async function adminRoutes(app: FastifyInstance) {
       coin: parsed.data.coin,
       network: parsed.data.network,
       address: parsed.data.address,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true, data: config })
   })
@@ -2807,16 +2981,22 @@ export async function adminRoutes(app: FastifyInstance) {
     ])
 
     const entries = logs.map((l) => {
-      const meta = l.metadata as Record<string, unknown> | null
+      const meta = (l.metadata ?? {}) as Record<string, unknown>
+      // Strip legacy _ip/_ua keys from the displayed metadata — they now live in
+      // dedicated columns and would otherwise duplicate in the raw JSON view.
+      const { _ip, _ua, ...cleanMeta } = meta as Record<string, unknown> & { _ip?: unknown; _ua?: unknown }
       return {
-        id:        l.id,
-        userId:    l.actorId,
-        user:      l.actor,
-        action:    l.action,
-        details:   l.metadata,
-        ip:        meta?._ip ?? null,
-        userAgent: meta?._ua ?? null,
-        createdAt: l.createdAt,
+        id:         l.id,
+        userId:     l.actorId,
+        user:       l.actor,
+        action:     l.action,
+        targetType: l.targetType,
+        targetId:   l.targetId,
+        details:    cleanMeta,
+        // Prefer the dedicated column; fall back to legacy metadata for old rows.
+        ip:         l.ipAddress ?? (typeof _ip === 'string' ? _ip : null),
+        userAgent:  l.userAgent ?? (typeof _ua === 'string' ? _ua : null),
+        createdAt:  l.createdAt,
       }
     })
 
@@ -3042,7 +3222,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     await createAuditLog(req.user!.id, 'GAS_MANUAL_LEDGER_ENTRY', 'GasLedgerEntry', entry.id, {
       chain: body.chain, nativeAmount: body.nativeAmount, txHash: body.txHash ?? null,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.code(201).send({ success: true, data: entry })
   })
@@ -3064,7 +3244,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus: 'failed' }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus: 'failed' }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -3089,7 +3269,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'GAS_ORDER_REFUNDED', 'GasFeeOrder', id, {
       previousStatus: order.status,
       orderRef: order.orderRef,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -3300,7 +3480,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const { redis: redisClient } = await import('../lib/redis')
     await redisClient.set(`gas_wallet_balance:${chain}`, String(balanceTRX), 'EX', 1800)
-    await createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_OVERRIDE', 'GasHotWallet', chain, { balanceTRX }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_WALLET_BALANCE_OVERRIDE', 'GasHotWallet', chain, { balanceTRX }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -3406,7 +3586,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'GAS_CHAIN_TOGGLED', 'GasHotWallet', wallet.id, {
       chain,
       isActive: newIsActive,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true, data: { chain, isActive: newIsActive } })
   })
@@ -3452,7 +3632,7 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { status: 'payment_detected', paymentTxHash: txHash },
     })
     await queues.gasFee.add('deliver', { orderId }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_UNATTRIBUTED_ATTRIBUTED', 'GasFeeOrder', orderId, { txHash }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_UNATTRIBUTED_ATTRIBUTED', 'GasFeeOrder', orderId, { txHash }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -3820,7 +4000,7 @@ export async function adminRoutes(app: FastifyInstance) {
         readinessState: d.readinessState, displayOrder: d.displayOrder,
       },
     })
-    await createAuditLog(req.user!.id, 'GAS_CHAIN_CREATED', 'GasChainConfig', chain.id, { slug: chain.slug }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_CHAIN_CREATED', 'GasChainConfig', chain.id, { slug: chain.slug }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.code(201).send({ success: true, data: chain })
   })
 
@@ -3916,7 +4096,7 @@ export async function adminRoutes(app: FastifyInstance) {
         pauseThresholdUsd: updateData.pauseThresholdUsd ?? chain.pauseThresholdUsd,
         prev_alertThresholdUsd: chain.alertThresholdUsd,
         prev_pauseThresholdUsd: chain.pauseThresholdUsd,
-      }, req.ip, req.headers['user-agent'] as string | undefined)
+      }, clientIp(req), req.headers['user-agent'] as string | undefined)
     }
     if ('isActive' in updateData) {
       await createAuditLog(req.user!.id, activating ? 'GAS_CHAIN_ACTIVATED' : 'GAS_CHAIN_DEACTIVATED', 'GasChainConfig', id, {
@@ -3947,7 +4127,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await db.gasChainConfig.delete({ where: { id } })
-    await createAuditLog(req.user!.id, 'GAS_CHAIN_DELETED', 'GasChainConfig', id, { slug: chain.slug }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_CHAIN_DELETED', 'GasChainConfig', id, { slug: chain.slug }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 
@@ -3999,7 +4179,7 @@ export async function adminRoutes(app: FastifyInstance) {
         presetAmounts: d.presetAmounts, isActive: d.isActive, displayOrder: d.displayOrder,
       },
     })
-    await createAuditLog(req.user!.id, 'GAS_TOKEN_CREATED', 'GasTokenConfig', token.id, { symbol: token.symbol, chain: chain.slug }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_TOKEN_CREATED', 'GasTokenConfig', token.id, { symbol: token.symbol, chain: chain.slug }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.code(201).send({ success: true, data: token })
   })
 
@@ -4049,7 +4229,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await db.gasTokenConfig.delete({ where: { id } })
-    await createAuditLog(req.user!.id, 'GAS_TOKEN_DELETED', 'GasTokenConfig', id, { symbol: token.symbol }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_TOKEN_DELETED', 'GasTokenConfig', id, { symbol: token.symbol }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 
@@ -4118,7 +4298,7 @@ export async function adminRoutes(app: FastifyInstance) {
       newStatus:  'payment_detected',
       paymentCoin: order.paymentCoin,
       pkrAmount:  order.pkrAmount?.toString() ?? null,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { status: 'payment_detected' } })
   })
 
@@ -4137,7 +4317,7 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!order) throw Errors.NOT_FOUND('Gas fee order')
       throw new AppError('CONFLICT', `Order is in '${order.status}' — can only reject payment_uploaded PKR orders`, 409)
     }
-    await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, { reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { status: 'failed' } })
   })
 
@@ -4169,7 +4349,7 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('CONFLICT', 'Order was already processed by another admin', 409)
     }
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_PAYMENT_MANUALLY_CONFIRMED', 'GasFeeOrder', id, { txHash, wasAutoVerified }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_PAYMENT_MANUALLY_CONFIRMED', 'GasFeeOrder', id, { txHash, wasAutoVerified }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { status: 'payment_detected' } })
   })
 
@@ -4189,7 +4369,7 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!order) throw Errors.NOT_FOUND('Gas fee order')
       throw new AppError('CONFLICT', `Order is in '${order.status}' — can only cancel pending, uploaded, or verified orders`, 409)
     }
-    await createAuditLog(req.user!.id, 'GAS_ORDER_CANCELLED', 'GasFeeOrder', id, { reason }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_ORDER_CANCELLED', 'GasFeeOrder', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { status: 'failed' } })
   })
 
@@ -4288,7 +4468,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     await createAuditLog(req.user!.id, 'GAS_RPC_TESTED', 'GasHotWallet', wallet.id, {
       chain, rpcOk: rpcResult.reachable, signerOk, addressMatch,
-    }, req.ip, req.headers['user-agent'] as string | undefined)
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({
       success: true,
@@ -5019,7 +5199,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const { chain } = (req.body ?? {}) as { chain?: string }
     // Enqueue rather than run inline to avoid HTTP timeout on large datasets
     await queues.gasReconciliation.add('manual-trigger', { chain: chain ?? null }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_RECONCILIATION_TRIGGERED', 'GasReconciliation', 'manual', { chain: chain ?? 'all' }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_RECONCILIATION_TRIGGERED', 'GasReconciliation', 'manual', { chain: chain ?? 'all' }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.code(202).send({ success: true, data: { queued: true, message: `Reconciliation queued for ${chain ?? 'all chains'}` } })
   })
 
@@ -5027,7 +5207,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const { adminNote } = (req.body ?? {}) as { adminNote?: string }
     const updated = await resolveDiscrepancy(id, req.user!.id, adminNote)
-    await createAuditLog(req.user!.id, 'GAS_DISCREPANCY_RESOLVED', 'GasReconciliationDiscrepancy', id, { adminNote }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_DISCREPANCY_RESOLVED', 'GasReconciliationDiscrepancy', id, { adminNote }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: updated })
   })
 
@@ -5050,7 +5230,7 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', 'status must be reviewed_ok or reviewed_blocked', 400)
     }
     const updated = await reviewFlaggedOrder(id, body.status, req.user!.id, body.adminNote)
-    await createAuditLog(req.user!.id, 'GAS_FLAGGED_ORDER_REVIEWED', 'GasFlaggedOrder', id, { status: body.status, adminNote: body.adminNote }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_FLAGGED_ORDER_REVIEWED', 'GasFlaggedOrder', id, { status: body.status, adminNote: body.adminNote }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: updated })
   })
 
@@ -5070,7 +5250,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const apiKey = await db.merchantApiKey.findUnique({ where: { id: body.apiKeyId }, select: { id: true } })
     if (!apiKey) throw Errors.NOT_FOUND('Merchant API key')
     const account = await createMerchantAccount(body)
-    await createAuditLog(req.user!.id, 'GAS_MERCHANT_ACCOUNT_CREATED', 'GasMerchantAccount', account.id, { name: body.name }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_MERCHANT_ACCOUNT_CREATED', 'GasMerchantAccount', account.id, { name: body.name }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.code(201).send({ success: true, data: account })
   })
 
@@ -5100,7 +5280,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const { adminNote } = (req.body ?? {}) as { adminNote?: string }
     const settlement = await approveSettlement(id, req.user!.id, adminNote)
-    await createAuditLog(req.user!.id, 'GAS_SETTLEMENT_APPROVED', 'GasMerchantSettlement', id, { adminNote }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_SETTLEMENT_APPROVED', 'GasMerchantSettlement', id, { adminNote }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: settlement })
   })
 
@@ -5195,7 +5375,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const wallet = await db.gasHotWallet.create({
         data: { chain: dbChain, address, hdIndex: 0, weight: 0, isActive: false },
       })
-      await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain: dbChain, hdIndex: 0, address }, req.ip, req.headers['user-agent'] as string | undefined)
+      await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain: dbChain, hdIndex: 0, address }, clientIp(req), req.headers['user-agent'] as string | undefined)
       return reply.code(201).send({ success: true, data: wallet })
     }
 
@@ -5213,7 +5393,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const wallet = await db.gasHotWallet.create({
       data: { chain: dbChain, address, hdIndex: nextIndex, weight: 0, isActive: false },
     })
-    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain: dbChain, hdIndex: nextIndex, address }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain: dbChain, hdIndex: nextIndex, address }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.code(201).send({ success: true, data: wallet })
   })
 
@@ -5231,7 +5411,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     const updated = await db.gasHotWallet.update({ where: { id }, data: { isActive: !wallet.isActive } })
-    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_TOGGLED', 'GasHotWallet', id, { chain: wallet.chain, hdIndex: wallet.hdIndex, isActive: updated.isActive }, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_TOGGLED', 'GasHotWallet', id, { chain: wallet.chain, hdIndex: wallet.hdIndex, isActive: updated.isActive }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { id: updated.id, isActive: updated.isActive } })
   })
 
@@ -5646,7 +5826,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const rating = await db.tradeRating.findUnique({ where: { id } })
     if (!rating) throw Errors.NOT_FOUND('Rating')
     await db.tradeRating.update({ where: { id }, data: { hidden: true } })
-    await createAuditLog(req.user!.id, 'RATING_HIDDEN', 'TradeRating', id, {}, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'RATING_HIDDEN', 'TradeRating', id, {}, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 
@@ -5655,7 +5835,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const rating = await db.tradeRating.findUnique({ where: { id } })
     if (!rating) throw Errors.NOT_FOUND('Rating')
     await db.tradeRating.update({ where: { id }, data: { hidden: false } })
-    await createAuditLog(req.user!.id, 'RATING_UNHIDDEN', 'TradeRating', id, {}, req.ip, req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'RATING_UNHIDDEN', 'TradeRating', id, {}, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
 

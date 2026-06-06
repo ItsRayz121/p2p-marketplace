@@ -1,5 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
+import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -220,13 +221,13 @@ export default function ReferralsPage() {
                   {referrals.map((u) => (
                     <tr key={u.id} className="hover:bg-surface/50 transition-colors">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-text-primary">{u.username}</p>
+                        <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
                         <p className="text-xs text-text-muted">{u.email}</p>
                       </td>
                       <td className="px-4 py-3">
                         {u.referredBy ? (
                           <>
-                            <p className="text-text-primary">{u.referredBy.username}</p>
+                            <Link href={`/admin/users/${u.referredBy.id}`} className="text-primary hover:underline">{u.referredBy.username}</Link>
                             <p className="text-xs text-text-muted">{u.referredBy.email}</p>
                           </>
                         ) : <span className="text-text-muted">—</span>}
@@ -280,14 +281,18 @@ export default function ReferralsPage() {
                   <tr key={u.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3 text-text-muted font-medium">{i + 1}</td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{u.username}</p>
+                      <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
                       <p className="text-xs text-text-muted">{u.email}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs font-medium ${u.kycStatus === 'approved' ? 'text-success' : 'text-warning'}`}>{u.kycStatus}</span>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">{u.referralCode}</td>
-                    <td className="px-4 py-3 font-bold text-text-primary">{u._count.referrals}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => void viewChain(u.id)} className="font-bold text-primary hover:underline" title="View invited users">
+                        {u._count.referrals}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => void viewChain(u.id)}>Chain</Button>
                     </td>
@@ -326,7 +331,7 @@ export default function ReferralsPage() {
                       return (
                         <div key={id} className="flex items-center gap-3 px-4 py-3 text-sm">
                           <div className="flex-1">
-                            <p className="font-medium text-text-primary">{group.usernames[idx]}</p>
+                            <Link href={`/admin/users/${id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{group.usernames[idx]}</Link>
                             <p className="text-xs text-text-muted">{group.emails[idx]}</p>
                           </div>
                           <div className="text-xs text-text-muted">{fmtDate(group.createdAts[idx])}</div>
@@ -392,7 +397,7 @@ export default function ReferralsPage() {
                       <div key={r.id} className="border border-border rounded-lg p-3">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="font-medium text-text-primary">{r.username}</p>
+                            <Link href={`/admin/users/${r.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{r.username}</Link>
                             <p className="text-xs text-text-muted">{r.email} · Joined {fmtDate(r.createdAt)} · KYC: {r.kycStatus}</p>
                           </div>
                           <div className="text-right text-xs">
