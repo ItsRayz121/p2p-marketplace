@@ -197,7 +197,7 @@ export default function ConfigPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [walletOpen, setWalletOpen] = useState(true)
+  const [walletOpen, setWalletOpen] = useState(false) // Phase 9: collapsed by default like other sections
   const [emiOpen, setEmiOpen] = useState(false)
   const [bankOpen, setBankOpen] = useState(false)
   const [cryptoOpen, setCryptoOpen] = useState(false)
