@@ -131,6 +131,10 @@ export default function AnalyticsPage() {
   }
   // Stable display order for badge tiers (lowest → highest trust)
   const badgeOrder = ['new', 'active', 'trusted', 'top', 'elite']
+  // Internal badge keys → user-facing tier labels.
+  const badgeLabels: Record<string, string> = {
+    new: 'Bronze', active: 'Silver', trusted: 'Gold', top: 'Diamond', elite: 'Elite',
+  }
 
   function fmtDay(date: string) {
     return date
@@ -152,7 +156,7 @@ export default function AnalyticsPage() {
           return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
         })
         .map(([badge, count]) => ({
-          label: badge.charAt(0).toUpperCase() + badge.slice(1),
+          label: badgeLabels[badge] ?? (badge.charAt(0).toUpperCase() + badge.slice(1)),
           value: count || 0,
           color: badgeColors[badge] || 'bg-primary',
         }))

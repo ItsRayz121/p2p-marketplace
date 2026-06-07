@@ -2722,6 +2722,12 @@ export async function adminRoutes(app: FastifyInstance) {
       const k = dayKey(u.createdAt)
       userGrowthMap[k] = (userGrowthMap[k] ?? 0) + 1
     }
+    // Dense series: include every day in the window (0 for no-signup days) so the
+    // chart always renders a full axis instead of looking empty/broken.
+    for (let i = 0; i < days; i++) {
+      const k = dayKey(new Date(Date.now() - i * 24 * 60 * 60 * 1000))
+      if (!(k in userGrowthMap)) userGrowthMap[k] = 0
+    }
 
     const tradeVolumeMap: Record<string, { count: number; volume: number }> = {}
     for (const t of [...recentTrades, ...recentCtmTrades]) {
@@ -2731,7 +2737,9 @@ export async function adminRoutes(app: FastifyInstance) {
       tradeVolumeMap[k].volume += t.fiatAmount ? parseFloat(t.fiatAmount.toString()) : 0
     }
 
-    const userGrowth = Object.entries(userGrowthMap).map(([date, newUsers]) => ({ date, newUsers }))
+    const userGrowth = Object.entries(userGrowthMap)
+      .map(([date, newUsers]) => ({ date, newUsers }))
+      .sort((a, b) => a.date.localeCompare(b.date))
     const tradeVolume = Object.entries(tradeVolumeMap).map(([date, { count, volume }]) => ({
       date,
       count,
@@ -2739,9 +2747,18 @@ export async function adminRoutes(app: FastifyInstance) {
       volume: (volume / 280).toFixed(2),
     }))
 
-    // Badge distribution as object for frontend
-    const badgeDistribution: Record<string, number> = {}
-    for (const b of badgeRows) badgeDistribution[b.badge] = b._count.badge
+    // Badge distribution: always include every tier (0 default) and fold users
+    // who have no TradeStats row yet into the entry tier ('new'/Bronze) so the
+    // breakdown reflects the whole user base, not just users who have traded.
+    const badgeDistribution: Record<string, number> = { new: 0, active: 0, trusted: 0, top: 0, elite: 0 }
+    let statsUserCount = 0
+    for (const b of badgeRows) {
+      badgeDistribution[b.badge] = (badgeDistribution[b.badge] ?? 0) + b._count.badge
+      statsUserCount += b._count.badge
+    }
+    const totalUserCount = await db.user.count()
+    const usersWithoutStats = Math.max(0, totalUserCount - statsUserCount)
+    badgeDistribution.new = (badgeDistribution.new ?? 0) + usersWithoutStats
 
     // Top traders: use TradeStats but enrich with live counts
     const topTradersWithLive = await Promise.all(
