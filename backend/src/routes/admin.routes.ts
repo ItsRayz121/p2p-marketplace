@@ -3116,12 +3116,19 @@ export async function adminRoutes(app: FastifyInstance) {
     if (query.from)       andClauses.push({ createdAt: { gte: new Date(query.from) } })
     if (query.to)         andClauses.push({ createdAt: { lte: new Date(query.to) } })
     if (query.search) {
+      const s = query.search
       andClauses.push({
         OR: [
-          { txHash:      { contains: query.search, mode: 'insensitive' } },
-          { fromAddress: { contains: query.search, mode: 'insensitive' } },
-          { toAddress:   { contains: query.search, mode: 'insensitive' } },
-          { notes:       { contains: query.search, mode: 'insensitive' } },
+          { txHash:      { contains: s, mode: 'insensitive' } },
+          { fromAddress: { contains: s, mode: 'insensitive' } },
+          { toAddress:   { contains: s, mode: 'insensitive' } },
+          { notes:       { contains: s, mode: 'insensitive' } },
+          // Related gas order: order ref, recipient address, and the user behind it
+          { relatedOrder: { orderRef:  { contains: s, mode: 'insensitive' } } },
+          { relatedOrder: { toAddress: { contains: s, mode: 'insensitive' } } },
+          { relatedOrder: { user: { username: { contains: s, mode: 'insensitive' } } } },
+          { relatedOrder: { user: { email:    { contains: s, mode: 'insensitive' } } } },
+          { relatedOrder: { user: { fullName: { contains: s, mode: 'insensitive' } } } },
         ],
       })
     }

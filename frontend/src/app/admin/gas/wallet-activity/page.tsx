@@ -83,16 +83,30 @@ function useGasChainIds() {
   return chainIds
 }
 
-const EXPLORER_URL: Record<string, string> = {
-  TRON:  'https://tronscan.org/#/address/',
-  BSC:   'https://bscscan.com/address/',
-  ETH:   'https://etherscan.io/address/',
-  BASE:  'https://basescan.org/address/',
-  ARB:   'https://arbiscan.io/address/',
-  OP:    'https://optimistic.etherscan.io/address/',
-  MATIC: 'https://polygonscan.com/address/',
-  AVAX:  'https://snowtrace.io/address/',
-  APT:   'https://explorer.aptoslabs.com/account/',
+// Per-chain explorer base URLs for an address and a transaction. Covers EVM and
+// non-EVM (Solana/TON/SUI/Aptos/Tron) chains so every hash is clickable.
+const EXPLORER: Record<string, { address: string; tx: string }> = {
+  TRON:  { address: 'https://tronscan.org/#/address/',      tx: 'https://tronscan.org/#/transaction/' },
+  BSC:   { address: 'https://bscscan.com/address/',         tx: 'https://bscscan.com/tx/' },
+  ETH:   { address: 'https://etherscan.io/address/',        tx: 'https://etherscan.io/tx/' },
+  BASE:  { address: 'https://basescan.org/address/',        tx: 'https://basescan.org/tx/' },
+  ARB:   { address: 'https://arbiscan.io/address/',         tx: 'https://arbiscan.io/tx/' },
+  OP:    { address: 'https://optimistic.etherscan.io/address/', tx: 'https://optimistic.etherscan.io/tx/' },
+  MATIC: { address: 'https://polygonscan.com/address/',     tx: 'https://polygonscan.com/tx/' },
+  AVAX:  { address: 'https://snowtrace.io/address/',        tx: 'https://snowtrace.io/tx/' },
+  APT:   { address: 'https://explorer.aptoslabs.com/account/', tx: 'https://explorer.aptoslabs.com/txn/' },
+  SOL:   { address: 'https://solscan.io/account/',          tx: 'https://solscan.io/tx/' },
+  TON:   { address: 'https://tonviewer.com/',               tx: 'https://tonviewer.com/transaction/' },
+  SUI:   { address: 'https://suivision.xyz/account/',       tx: 'https://suivision.xyz/txblock/' },
+}
+
+function explorerAddressUrl(chain: string, address: string): string | null {
+  const e = EXPLORER[chain]
+  return e ? `${e.address}${address}` : null
+}
+function explorerTxUrl(chain: string, hash: string): string | null {
+  const e = EXPLORER[chain]
+  return e ? `${e.tx}${hash}` : null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -112,7 +126,7 @@ function isInflow(entryType: string) {
 
 // ─── Live Balances Panel ──────────────────────────────────────────────────────
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, title = 'Copy address' }: { text: string; title?: string }) {
   const [copied, setCopied] = useState(false)
   function copy() {
     void navigator.clipboard.writeText(text).then(() => {
@@ -123,7 +137,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      title="Copy address"
+      title={title}
       className="ml-1 shrink-0 text-text-muted hover:text-text-primary transition-colors"
     >
       {copied ? (
@@ -200,8 +214,7 @@ function LiveBalancesPanel() {
       {!loading && balances.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 divide-x divide-y divide-border">
           {balances.map((w) => {
-            const explorerBase = EXPLORER_URL[w.chain]
-            const explorerLink = explorerBase ? `${explorerBase}${w.address}` : null
+            const explorerLink = explorerAddressUrl(w.chain, w.address)
             const visibleTokens = (w.tokens ?? [])
               .filter((t) => t.balanceFormatted > 0)
               .sort((a, b) => b.balanceFormatted - a.balanceFormatted)
@@ -511,7 +524,7 @@ export default function GasWalletActivityPage() {
           <div className="lg:col-span-2 flex gap-2">
             <input
               className="flex-1 border border-border rounded-lg px-3 py-2 text-sm"
-              placeholder="Search tx hash, address, notes…"
+              placeholder="Search tx hash, order ID, user, address, notes…"
               value={draftSearch}
               onChange={(e) => setDraftSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && applySearch()}
@@ -628,23 +641,29 @@ export default function GasWalletActivityPage() {
                       <td className="px-4 py-3">
                         {entry.txHash ? (
                           (() => {
-                            const explorerBase = EXPLORER_URL[entry.chain]
-                            const txExplorer = explorerBase
-                              ? (entry.chain === 'TRON'
-                                  ? `https://tronscan.org/#/transaction/${entry.txHash}`
-                                  : entry.chain === 'APT'
-                                    ? `https://explorer.aptoslabs.com/txn/${entry.txHash}`
-                                    : `${explorerBase.replace('/address/', '/tx/')}${entry.txHash}`)
-                              : null
-                            return txExplorer ? (
-                              <a href={txExplorer} target="_blank" rel="noopener noreferrer"
-                                className="font-mono text-[11px] text-primary hover:underline" title={entry.txHash}>
-                                {shortHash(entry.txHash)}
-                              </a>
-                            ) : (
-                              <span className="font-mono text-[11px] text-text-secondary" title={entry.txHash}>
-                                {shortHash(entry.txHash)}
-                              </span>
+                            const txExplorer = explorerTxUrl(entry.chain, entry.txHash)
+                            return (
+                              <div className="flex items-center gap-1">
+                                {txExplorer ? (
+                                  <a href={txExplorer} target="_blank" rel="noopener noreferrer"
+                                    className="font-mono text-[11px] text-primary hover:underline" title={entry.txHash}>
+                                    {shortHash(entry.txHash)}
+                                  </a>
+                                ) : (
+                                  <span className="font-mono text-[11px] text-text-secondary" title={entry.txHash}>
+                                    {shortHash(entry.txHash)}
+                                  </span>
+                                )}
+                                <CopyButton text={entry.txHash} title="Copy tx hash" />
+                                {txExplorer && (
+                                  <a href={txExplorer} target="_blank" rel="noopener noreferrer"
+                                    title="Open in explorer" className="shrink-0 text-text-muted hover:text-primary transition-colors">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
+                                )}
+                              </div>
                             )
                           })()
                         ) : (
