@@ -141,21 +141,54 @@ function CtmListingCard({ listing }: { listing: CtmTopListing }) {
   )
 }
 
-type MainTab = 'buy' | 'sell' | 'ctm'
+interface GasChainSummary {
+  id: string
+  slug: string
+  name: string
+  symbol: string
+  logoUrl?: string | null
+  platformFeeUsdt?: string | null
+  isAvailable?: boolean
+}
 
-export function TopAdsSection({ topAds, topCtm }: { topAds: TopAds | null; topCtm?: CtmTopListing[] | null }) {
+function GasChainCard({ chain }: { chain: GasChainSummary }) {
+  const fee = chain.platformFeeUsdt ? Number(chain.platformFeeUsdt) : null
+  return (
+    <Link
+      href="/gas"
+      className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md hover:border-primary/30 transition-all flex items-center gap-3"
+    >
+      <EntityLogo type="chain" slug={chain.symbol || chain.slug} size="lg" logoUrl={chain.logoUrl ?? undefined} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-text-primary truncate">{chain.name}</p>
+        <p className="text-xs text-text-muted">{chain.symbol}</p>
+        {fee !== null && (
+          <p className="text-xs text-text-secondary mt-1">From <span className="font-semibold text-text-primary">${fee.toFixed(2)}</span></p>
+        )}
+      </div>
+      {chain.isAvailable === false && <Badge variant="default" size="sm">Soon</Badge>}
+    </Link>
+  )
+}
+
+type MainTab = 'buy' | 'sell' | 'ctm' | 'gas'
+
+export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | null; topCtm?: CtmTopListing[] | null; topGas?: GasChainSummary[] | null }) {
   const [activeTab, setActiveTab] = useState<MainTab>('buy')
 
   const p2pAds = topAds ? (activeTab === 'buy' ? (topAds.buys ?? []) : (topAds.sells ?? [])) : []
   const ctmListings = topCtm ?? []
+  const gasChains = topGas ?? []
 
   const tabs: { key: MainTab; label: string }[] = [
     { key: 'buy',  label: 'Buy USDT' },
     { key: 'sell', label: 'Sell USDT' },
     ...(ctmListings.length > 0 ? [{ key: 'ctm' as const, label: 'Community Tokens' }] : []),
+    ...(gasChains.length > 0 ? [{ key: 'gas' as const, label: 'Crypto Gas Fees' }] : []),
   ]
 
-  const viewAllHref = activeTab === 'ctm' ? '/ctm/listings' : '/marketplace'
+  const viewAllHref = activeTab === 'ctm' ? '/ctm/listings' : activeTab === 'gas' ? '/gas' : '/marketplace'
+  const viewAllLabel = activeTab === 'ctm' ? 'View all tokens' : activeTab === 'gas' ? 'View all gas services' : 'View all offers'
 
   return (
     <section className="py-12">
@@ -178,7 +211,19 @@ export function TopAdsSection({ topAds, topCtm }: { topAds: TopAds | null; topCt
           ))}
         </div>
 
-        {activeTab === 'ctm' ? (
+        {activeTab === 'gas' ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+            {gasChains.slice(0, 6).map((c) => <GasChainCard key={c.id} chain={c} />)}
+            {gasChains.length === 0 && (
+              <div className="col-span-full flex flex-col items-center justify-center py-12 text-center gap-4">
+                <p className="text-sm font-medium text-text-primary">No gas services available yet</p>
+                <Link href="/gas" className="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors">
+                  Explore Gas Fees
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'ctm' ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
             {ctmListings.slice(0, 3).map((l) => <CtmListingCard key={l.id} listing={l} />)}
             {ctmListings.length === 0 && (
@@ -223,7 +268,7 @@ export function TopAdsSection({ topAds, topCtm }: { topAds: TopAds | null; topCt
 
         <div className="mt-6 text-center">
           <Link href={viewAllHref} className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
-            View all offers
+            {viewAllLabel}
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>

@@ -45,10 +45,21 @@ interface CtmTopListing {
   merchantProfile: { user: { username: string; avatarUrl?: string } }
 }
 
+interface GasChainSummary {
+  id: string
+  slug: string
+  name: string
+  symbol: string
+  logoUrl?: string | null
+  platformFeeUsdt?: string | null
+  isAvailable?: boolean
+}
+
 interface HomeData {
   stats: MarketStats | null
   topAds: TopAds | null
   topCtm: CtmTopListing[] | null
+  topGas: GasChainSummary[] | null
   faqs: FaqItem[]
 }
 
@@ -58,11 +69,12 @@ async function getHomeData(): Promise<HomeData> {
   // Use NEXT_PUBLIC_API_URL in production; fall back to local backend in dev.
   const api = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
 
-  const [statsRes, topAdsRes, configRes, topCtmRes] = await Promise.allSettled([
+  const [statsRes, topAdsRes, configRes, topCtmRes, gasRes] = await Promise.allSettled([
     fetch(`${api}/api/v1/marketplace/stats`,   { cache: 'no-store' }),
     fetch(`${api}/api/v1/marketplace/top-ads`, { cache: 'no-store' }),
     fetch(`${api}/api/v1/marketplace/config`,   { cache: 'no-store' }),
     fetch(`${api}/api/v1/ctm/listings?limit=6&side=sell&status=active`, { cache: 'no-store' }),
+    fetch(`${api}/api/v1/gas-fee/chains`, { cache: 'no-store' }),
   ])
 
   // All backend routes wrap responses in { success: true, data: ... } — unwrap here.
@@ -81,11 +93,13 @@ async function getHomeData(): Promise<HomeData> {
   const topAdsData = await json<TopAds>(topAdsRes)
   const config     = await json<Record<string, unknown>>(configRes)
   const ctmData    = await json<{ listings: CtmTopListing[]; total: number }>(topCtmRes)
+  const gasData    = await json<{ chains: GasChainSummary[] }>(gasRes)
 
   return {
     stats:  statsData,
     topAds: topAdsData,
     topCtm: ctmData?.listings ?? null,
+    topGas: gasData?.chains ?? null,
     faqs:   Array.isArray(config?.homeFaqs) ? (config!.homeFaqs as FaqItem[]) : [],
   }
 }
@@ -125,7 +139,7 @@ function QuickActionCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HomePage() {
-  const { stats, topAds, topCtm, faqs } = await getHomeData()
+  const { stats, topAds, topCtm, topGas, faqs } = await getHomeData()
 
   return (
     <div className="min-h-screen bg-surface">
@@ -187,7 +201,7 @@ export default async function HomePage() {
       )}
 
       {/* ── 3. TOP ADS — client island (tab toggle) ── */}
-      <TopAdsSection topAds={topAds} topCtm={topCtm} />
+      <TopAdsSection topAds={topAds} topCtm={topCtm} topGas={topGas} />
 
       {/* ── 4. TRUST BADGES ── */}
       <section className="py-10 bg-surface border-t border-border">
