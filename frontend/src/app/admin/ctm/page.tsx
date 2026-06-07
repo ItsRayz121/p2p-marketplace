@@ -63,7 +63,7 @@ export default function AdminCtmDashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-text-primary">CTM Overview</h1>
         <div className="flex gap-2">
-          <Link href="/admin/ctm/merchants" className="text-sm border border-border px-3 py-1.5 rounded-lg hover:bg-surface">Merchants</Link>
+          {/* Phase 3: CTM Merchants hidden from platform direction; route kept for re-enable */}
           <Link href="/admin/ctm/trades" className="text-sm border border-border px-3 py-1.5 rounded-lg hover:bg-surface">Trades</Link>
           <Link href="/admin/ctm/disputes" className="text-sm border border-border px-3 py-1.5 rounded-lg hover:bg-surface">Disputes</Link>
         </div>
@@ -147,7 +147,7 @@ export default function AdminCtmDashboardPage() {
         {[
           { href: '/admin/ctm/tokens', label: 'Manage Tokens' },
           { href: '/admin/ctm/tokens/queue', label: 'Token Queue' },
-          { href: '/admin/ctm/merchants', label: 'Merchant Queue' },
+          // Phase 3: Merchant Queue hidden from platform direction; route kept for re-enable
           { href: '/admin/ctm/proofs', label: 'Proof Review' },
         ].map((item) => (
           <Link key={item.href} href={item.href} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center text-sm font-medium text-text-primary hover:shadow-sm hover:border-primary/30 transition-all">

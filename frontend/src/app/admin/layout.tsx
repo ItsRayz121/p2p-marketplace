@@ -13,6 +13,8 @@ interface NavItem {
   href: string
   roles: AdminRole[]
   icon: React.ReactNode
+  /** Hidden from the sidebar but route + code kept intact (re-enable by removing). */
+  hidden?: boolean
 }
 
 interface NavGroup {
@@ -120,6 +122,7 @@ const navGroups: NavGroup[] = [
         label: 'Merchant KYC',
         href: '/admin/merchant-kyc',
         roles: ['admin', 'super_admin'],
+        hidden: true, // Phase 3: merchant role retired from platform direction; route kept for re-enable
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -333,6 +336,7 @@ const navGroups: NavGroup[] = [
         label: 'CTM Merchants',
         href: '/admin/ctm/merchants',
         roles: ['admin', 'super_admin'],
+        hidden: true, // Phase 3: merchant role retired from platform direction; route kept for re-enable
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -530,7 +534,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const visibleGroups = navGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => item.roles.includes(user.role as AdminRole)),
+      items: group.items.filter((item) => !item.hidden && item.roles.includes(user.role as AdminRole)),
     }))
     .filter((group) => group.items.length > 0)
 
