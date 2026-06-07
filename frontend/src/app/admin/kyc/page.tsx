@@ -1,5 +1,6 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
+import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDate, fmtDateTime } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
@@ -177,7 +178,9 @@ export default function KycQueuePage() {
                 {submissions.map((sub) => (
                   <tr key={sub.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{sub.user?.username || 'Unknown'}</p>
+                      <Link href={`/admin/users/${sub.userId}`} className="font-medium text-primary hover:underline">
+                        {sub.user?.username || 'Unknown'}
+                      </Link>
                       <p className="text-text-muted text-xs">{sub.user?.email}</p>
                     </td>
                     <td className="px-4 py-3">

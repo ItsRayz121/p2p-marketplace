@@ -1,5 +1,7 @@
 ﻿'use client'
 import { useState, useCallback } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { adminApi } from '@/lib/api'
 import { fmtDate, fmtDateTime } from '@/lib/fmt'
 import type { AuthUser } from '@/store/auth.store'
@@ -55,6 +57,7 @@ type UserTab = 'profile' | 'trades' | 'kyc'
 
 export default function UsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
+  const router = useRouter()
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -229,7 +232,7 @@ export default function UsersPage() {
       <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-3">
         <div className="flex-1 min-w-48">
           <Input
-            placeholder="Search email or username..."
+            placeholder="Search username, name, email, user ID, referral code, IP..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
@@ -278,9 +281,19 @@ export default function UsersPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {users.map((u) => (
-                  <tr key={u.id} className="hover:bg-surface/50 transition-colors">
+                  <tr
+                    key={u.id}
+                    onClick={() => router.push(`/admin/users/${u.id}`)}
+                    className="hover:bg-surface/50 transition-colors cursor-pointer"
+                  >
                     <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{u.username || '—'}</p>
+                      <Link
+                        href={`/admin/users/${u.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {u.username || '—'}
+                      </Link>
                       <p className="text-xs text-text-muted">{u.email}</p>
                     </td>
                     <td className="px-4 py-3">
@@ -311,7 +324,7 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-text-secondary">{u.tradeCount ?? 0}</td>
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(u.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => openUserModal(u)}>View</Button>
+                      <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); openUserModal(u) }}>Quick view</Button>
                     </td>
                   </tr>
                 ))}

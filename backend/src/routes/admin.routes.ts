@@ -257,10 +257,14 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const where: Record<string, unknown> = {}
     if (query.search) {
+      const s = query.search.trim()
       where.OR = [
-        { email: { contains: query.search, mode: 'insensitive' } },
-        { username: { contains: query.search, mode: 'insensitive' } },
-        { fullName: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: s, mode: 'insensitive' } },
+        { username: { contains: s, mode: 'insensitive' } },
+        { fullName: { contains: s, mode: 'insensitive' } },
+        { referralCode: { contains: s, mode: 'insensitive' } },
+        { id: s },               // exact user ID
+        { registrationIp: s },   // exact IP (fraud investigation)
       ]
     }
     if (query.role) where.role = query.role
