@@ -165,25 +165,26 @@ export default async function HomePage() {
                 Peer-to-peer trading with dispute protection. Pay with JazzCash, Easypaisa, or bank transfer.
                 Your funds, your control.
               </p>
-              <div className="flex flex-wrap gap-3 mt-8">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-6">
                 <Link
                   href="/marketplace"
-                  className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30 text-sm"
                 >
                   <ArrowLeftRight size={16} aria-hidden />
                   USDT Marketplace
                 </Link>
                 <Link
                   href="/ctm"
-                  className="flex items-center gap-2 px-6 py-3 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm text-sm"
                 >
                   <Coins size={16} aria-hidden />
                   Community Tokens
                 </Link>
                 <Link
                   href="/gas"
-                  className="px-6 py-3 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm text-sm"
                 >
+                  <Fuel size={16} aria-hidden />
                   Crypto Gas Fees
                 </Link>
               </div>
