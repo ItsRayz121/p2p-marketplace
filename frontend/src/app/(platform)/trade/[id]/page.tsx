@@ -569,7 +569,7 @@ export default function TradePage() {
             <BadgeChip badge={counterpartyBadge} />
           </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
-            <p className="text-xs text-text-muted font-mono">{trade.id}</p>
+            <p className="text-xs text-text-muted font-mono">Trade #{trade.orderRef || trade.id.slice(-6).toUpperCase()}</p>
             {counterpartyStats && (
               <span className="text-xs text-text-muted">
                 {counterpartyStats.completedTrades} trades ·{' '}

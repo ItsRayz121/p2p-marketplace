@@ -26,6 +26,8 @@ interface MarketStats {
 interface TopAds {
   buys: MarketplaceAd[]
   sells: MarketplaceAd[]
+  usdt?: MarketplaceAd[]
+  mode?: 'top' | 'latest' | 'pinned'
 }
 
 interface FaqItem {

@@ -1,12 +1,8 @@
-import type { Metadata } from 'next'
-import { buildMeta } from '@/lib/metadata'
+import { redirect } from 'next/navigation'
 
-export const metadata: Metadata = buildMeta(
-  'Instant Buy Crypto — Get USDT Instantly in Pakistan',
-  'Buy USDT instantly without finding a seller. Pay with JazzCash, Easypaisa, or bank transfer. Fast, safe, and simple.',
-  '/instant-buy',
-)
-
-export default function InstantBuyLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+// Instant Buy has been removed from the product. Any visit to /instant-buy or
+// its sub-routes (payment, status, crypto-deposit) is redirected to the
+// Crypto Gas Fees experience that replaced it.
+export default function InstantBuyLayout() {
+  redirect('/gas')
 }

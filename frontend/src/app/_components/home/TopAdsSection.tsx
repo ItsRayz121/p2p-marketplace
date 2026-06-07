@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { BadgeChip } from '@/components/ui/TraderLevelCard'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { traderDisplayName } from '@/lib/traderName'
 import { PK_MOBILE_METHODS, isOpaqueId } from '@/lib/pkPaymentMethods'
 import type { MarketplaceAd } from '@/lib/api'
@@ -20,61 +22,70 @@ function shortLabel(value: string): string {
   return `${value.slice(0, 4)}…${value.slice(-6)}`
 }
 
-function AdCard({ ad, side }: { ad: MarketplaceAd; side: 'buy' | 'sell' }) {
+function AdCard({ ad }: { ad: MarketplaceAd }) {
   const seller = ad.seller
   const stats = seller?.tradeStats
   const completionPct = stats?.completionRate ? parseFloat(stats.completionRate) * 100 : null
   const completedTrades = stats?.completedTrades ?? 0
   const rating = stats?.avgRating ? parseFloat(stats.avgRating) : 0
   const sellerName = traderDisplayName({ fullName: seller?.fullName, merchantName: seller?.merchantName, username: seller?.username })
+  // The ad's side is the trader's side. A trader "selling" USDT means the
+  // visitor would buy from them, so the marketplace link mirrors that.
+  const isTraderSelling = ad.side === 'sell'
+  const ctaLabel = isTraderSelling ? 'Buy USDT' : 'Sell USDT'
+  const marketSide = isTraderSelling ? 'buy' : 'sell'
 
   return (
-    <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <UserAvatar name={sellerName} avatarUrl={seller?.avatarUrl} size="sm" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-text-primary truncate">{sellerName}</p>
-              <div className="flex items-center gap-2 text-xs mt-0.5">
-                {completionPct !== null && (
-                  <span className={`font-bold ${completionColor(completionPct)}`}>{completionPct.toFixed(0)}%</span>
-                )}
-                {rating > 0 && (
-                  <span className="text-text-muted flex items-center gap-0.5">
-                    <span className="text-gold">★</span>{rating.toFixed(1)}
-                  </span>
-                )}
-                <span className="text-text-muted">{completedTrades} done</span>
-              </div>
-            </div>
+    <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow flex flex-col">
+      <div className="flex items-center gap-2 mb-3">
+        <UserAvatar name={sellerName} avatarUrl={seller?.avatarUrl} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold text-text-primary truncate">{sellerName}</p>
+            {seller?.badge && <BadgeChip badge={seller.badge as TraderBadge} />}
           </div>
-          <p className="text-2xl font-bold text-text-primary">
-            PKR {Number(ad.price).toLocaleString()}
-            <span className="text-sm font-normal text-text-muted ml-1">/ {ad.coin}</span>
-          </p>
-          <p className="text-xs text-text-muted mt-1">
-            Limit: PKR {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()}
-          </p>
-          <div className="flex flex-wrap gap-1 mt-2">
-            {(ad.paymentMethods ?? []).filter((pm) => pm && !isOpaqueId(pm)).map((pm) => (
-              <Badge key={pm} variant="default" size="sm">
-                <EntityLogo
-                  type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
-                  slug={pm} size="xs" className="flex-shrink-0 mr-1"
-                />
-                {pm}
-              </Badge>
-            ))}
+          <div className="flex items-center gap-2 text-xs mt-0.5">
+            {completionPct !== null && (
+              <span className={`font-bold ${completionColor(completionPct)}`}>{completionPct.toFixed(0)}%</span>
+            )}
+            {rating > 0 && (
+              <span className="text-text-muted flex items-center gap-0.5">
+                <span className="text-gold">★</span>{rating.toFixed(1)}
+              </span>
+            )}
+            <span className="text-text-muted">{completedTrades} done</span>
           </div>
         </div>
-        <Link
-          href={`/marketplace?side=${side}`}
-          className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
-        >
-          View Market
-        </Link>
+        <Badge variant={isTraderSelling ? 'success' : 'warning'} size="sm">
+          {isTraderSelling ? 'Selling' : 'Buying'}
+        </Badge>
       </div>
+
+      <p className="text-2xl font-bold text-text-primary">
+        PKR {Number(ad.price).toLocaleString()}
+        <span className="text-sm font-normal text-text-muted ml-1">/ {ad.coin}</span>
+      </p>
+      <p className="text-xs text-text-muted mt-1">
+        Limit: PKR {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()}
+      </p>
+      <div className="flex flex-wrap gap-1 mt-2 min-h-[1.5rem]">
+        {(ad.paymentMethods ?? []).filter((pm) => pm && !isOpaqueId(pm)).slice(0, 3).map((pm) => (
+          <Badge key={pm} variant="default" size="sm">
+            <EntityLogo
+              type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
+              slug={pm} size="xs" className="flex-shrink-0 mr-1"
+            />
+            {pm}
+          </Badge>
+        ))}
+      </div>
+
+      <Link
+        href={`/marketplace?side=${marketSide}`}
+        className="mt-3 w-full text-center px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
+      >
+        {ctaLabel}
+      </Link>
     </div>
   )
 }
@@ -82,6 +93,8 @@ function AdCard({ ad, side }: { ad: MarketplaceAd; side: 'buy' | 'sell' }) {
 interface TopAds {
   buys: MarketplaceAd[]
   sells: MarketplaceAd[]
+  usdt?: MarketplaceAd[]
+  mode?: 'top' | 'latest' | 'pinned'
 }
 
 interface CtmTopListing {
@@ -102,7 +115,7 @@ function CtmListingCard({ listing }: { listing: CtmTopListing }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <UserAvatar name={listing.merchantProfile.user.username} size="sm" />
+            <UserAvatar name={listing.merchantProfile.user.username} avatarUrl={listing.merchantProfile.user.avatarUrl ?? null} size="sm" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-text-primary truncate">{listing.merchantProfile.user.username}</p>
               <p className="text-xs text-text-muted">{listing.side === 'sell' ? 'Selling' : 'Buying'} {listing.token.symbol}</p>
@@ -171,18 +184,23 @@ function GasChainCard({ chain }: { chain: GasChainSummary }) {
   )
 }
 
-type MainTab = 'buy' | 'sell' | 'ctm' | 'gas'
+type MainTab = 'usdt' | 'ctm' | 'gas'
 
 export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | null; topCtm?: CtmTopListing[] | null; topGas?: GasChainSummary[] | null }) {
-  const [activeTab, setActiveTab] = useState<MainTab>('buy')
+  const [activeTab, setActiveTab] = useState<MainTab>('usdt')
 
-  const p2pAds = topAds ? (activeTab === 'buy' ? (topAds.buys ?? []) : (topAds.sells ?? [])) : []
+  // Unified USDT list (admin-ranked server-side). Fall back to merging
+  // buys/sells for older API responses that don't include `usdt`.
+  const usdtAds = topAds
+    ? (topAds.usdt && topAds.usdt.length > 0
+        ? topAds.usdt
+        : [...(topAds.sells ?? []), ...(topAds.buys ?? [])])
+    : []
   const ctmListings = topCtm ?? []
   const gasChains = topGas ?? []
 
   const tabs: { key: MainTab; label: string }[] = [
-    { key: 'buy',  label: 'Buy USDT' },
-    { key: 'sell', label: 'Sell USDT' },
+    { key: 'usdt', label: 'USDT Marketplace' },
     ...(ctmListings.length > 0 ? [{ key: 'ctm' as const, label: 'Community Tokens' }] : []),
     ...(gasChains.length > 0 ? [{ key: 'gas' as const, label: 'Crypto Gas Fees' }] : []),
   ]
@@ -236,9 +254,9 @@ export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | nul
             )}
           </div>
         ) : topAds ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
-            {p2pAds.slice(0, 3).map((ad) => <AdCard key={ad.id} ad={ad} side={activeTab === 'sell' ? 'sell' : 'buy'} />)}
-            {p2pAds.length === 0 && (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+            {usdtAds.slice(0, 4).map((ad) => <AdCard key={ad.id} ad={ad} />)}
+            {usdtAds.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-12 text-center gap-4">
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                   <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">

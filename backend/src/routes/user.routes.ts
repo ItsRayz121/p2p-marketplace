@@ -105,6 +105,18 @@ export async function userRoutes(app: FastifyInstance) {
       reviewerAvatarUrl: reviewerMap[r.ratedByUserId]?.avatarUrl ?? null,
     }))
 
+    // Resolve payment method IDs (stored as record cuids on the ad) to their
+    // human method type so the public profile never leaks internal IDs.
+    const allPmIds = [...new Set(user.ads.flatMap((ad) => ad.paymentMethods))]
+    const pmTypeMap = new Map<string, string>()
+    if (allPmIds.length > 0) {
+      const pms = await db.paymentMethod.findMany({
+        where: { id: { in: allPmIds } },
+        select: { id: true, type: true },
+      })
+      for (const pm of pms) pmTypeMap.set(pm.id, pm.type)
+    }
+
     // Hide social links if user has opted out
     const profile = {
       ...user,
@@ -118,6 +130,12 @@ export async function userRoutes(app: FastifyInstance) {
         minOrder: ad.minOrder.toString(),
         maxOrder: ad.maxOrder.toString(),
         availableAmount: ad.availableAmount.toString(),
+        // Resolve to method type; drop any unresolved cuids rather than show them.
+        paymentMethods: [...new Set(
+          ad.paymentMethods
+            .map((id) => pmTypeMap.get(id))
+            .filter((v): v is string => Boolean(v)),
+        )],
       })),
     }
 

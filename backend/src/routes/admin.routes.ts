@@ -2677,10 +2677,34 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.get('/admin/analytics', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
-    const period = (query.period as '7d' | '30d' | '90d') ?? '7d'
-    const daysMap = { '7d': 7, '30d': 30, '90d': 90 }
-    const days = daysMap[period]
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    // Supported periods: today, 7d, 30d, 12m. (90d kept for backward compat.)
+    const rawPeriod = (query.period as string) ?? '30d'
+    const period = (['today', '7d', '30d', '90d', '12m'].includes(rawPeriod) ? rawPeriod : '30d') as
+      'today' | '7d' | '30d' | '90d' | '12m'
+    const granularity: 'day' | 'month' = period === '12m' ? 'month' : 'day'
+
+    // Build the dense bucket list (every day/month in the window) up front so the
+    // chart always renders a full axis and 12m groups by month instead of 365 days.
+    const buckets: string[] = []
+    let since: Date
+    if (period === '12m') {
+      const now = new Date()
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        buckets.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+      }
+      since = new Date(`${buckets[0]}-01T00:00:00.000Z`)
+    } else if (period === 'today') {
+      since = new Date(); since.setHours(0, 0, 0, 0)
+      buckets.push(since.toISOString().slice(0, 10))
+    } else {
+      const daysMap: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 }
+      const days = daysMap[period] ?? 30
+      since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      for (let i = days - 1; i >= 0; i--) {
+        buckets.push(new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+      }
+    }
 
     const [badgeRows, topTraderRows, recentUsers, recentTrades, recentCtmTrades, p2pTotal, ctmTotal, gasTotal, p2pPeriod, ctmPeriod, gasPeriod] = await Promise.all([
       db.tradeStats.groupBy({ by: ['badge'], _count: { badge: true } }),
@@ -2716,40 +2740,37 @@ export async function adminRoutes(app: FastifyInstance) {
       db.gasFeeOrder.count({ where: { status: 'delivered', updatedAt: { gte: since } } }),
     ])
 
-    // Build day-keyed maps for time series
-    function dayKey(d: Date) {
-      return d.toISOString().slice(0, 10)
+    // Bucket key respects the chosen granularity (YYYY-MM-DD for days, YYYY-MM for months).
+    function bucketKey(d: Date) {
+      const iso = d.toISOString()
+      return granularity === 'month' ? iso.slice(0, 7) : iso.slice(0, 10)
     }
 
+    // Dense series: seed every bucket with 0 so the chart always renders a full axis.
     const userGrowthMap: Record<string, number> = {}
+    for (const k of buckets) userGrowthMap[k] = 0
     for (const u of recentUsers) {
-      const k = dayKey(u.createdAt)
-      userGrowthMap[k] = (userGrowthMap[k] ?? 0) + 1
-    }
-    // Dense series: include every day in the window (0 for no-signup days) so the
-    // chart always renders a full axis instead of looking empty/broken.
-    for (let i = 0; i < days; i++) {
-      const k = dayKey(new Date(Date.now() - i * 24 * 60 * 60 * 1000))
-      if (!(k in userGrowthMap)) userGrowthMap[k] = 0
+      const k = bucketKey(u.createdAt)
+      if (k in userGrowthMap) userGrowthMap[k] = (userGrowthMap[k] ?? 0) + 1
     }
 
     const tradeVolumeMap: Record<string, { count: number; volume: number }> = {}
     for (const t of [...recentTrades, ...recentCtmTrades]) {
-      const k = dayKey(t.updatedAt)
+      const k = bucketKey(t.updatedAt)
       if (!tradeVolumeMap[k]) tradeVolumeMap[k] = { count: 0, volume: 0 }
       tradeVolumeMap[k].count += 1
       tradeVolumeMap[k].volume += t.fiatAmount ? parseFloat(t.fiatAmount.toString()) : 0
     }
 
-    const userGrowth = Object.entries(userGrowthMap)
-      .map(([date, newUsers]) => ({ date, newUsers }))
+    const userGrowth = buckets.map((date) => ({ date, newUsers: userGrowthMap[date] ?? 0 }))
+    const tradeVolume = Object.entries(tradeVolumeMap)
+      .map(([date, { count, volume }]) => ({
+        date,
+        count,
+        // Convert PKR volume to approximate USD (rough 1 USD ≈ 280 PKR)
+        volume: (volume / 280).toFixed(2),
+      }))
       .sort((a, b) => a.date.localeCompare(b.date))
-    const tradeVolume = Object.entries(tradeVolumeMap).map(([date, { count, volume }]) => ({
-      date,
-      count,
-      // Convert PKR volume to approximate USD (rough 1 USD ≈ 280 PKR)
-      volume: (volume / 280).toFixed(2),
-    }))
 
     // Badge distribution: always include every tier (0 default) and fold users
     // who have no TradeStats row yet into the entry tier ('new'/Bronze) so the
@@ -2790,6 +2811,7 @@ export async function adminRoutes(app: FastifyInstance) {
       success: true,
       data: {
         period,
+        granularity,
         since,
         userGrowth,
         tradeVolume,

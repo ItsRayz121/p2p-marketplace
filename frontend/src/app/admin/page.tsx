@@ -7,7 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { cn } from '@/lib/utils'
 import {
-  ShieldCheck, AlertTriangle, Wallet, Zap, Fuel, FileText,
+  ShieldCheck, AlertTriangle, Wallet, Fuel, FileText,
   TrendingUp, BarChart2, Users, PackageCheck, DollarSign, ArrowDownToLine,
 } from 'lucide-react'
 
@@ -61,7 +61,6 @@ export default function AdminDashboardPage() {
     { label: 'Pending KYC',        value: stats?.pendingKyc ?? 0,          href: '/admin/kyc',        urgent: (stats?.pendingKyc ?? 0) > 0,          icon: <ShieldCheck className="w-4 h-4" /> },
     { label: 'Open Disputes',      value: stats?.openDisputes ?? 0,        href: '/admin/disputes',   urgent: (stats?.openDisputes ?? 0) > 0,        icon: <AlertTriangle className="w-4 h-4" /> },
     { label: 'Pending Withdrawals',value: stats?.pendingWithdrawals ?? 0,  href: '/admin/withdrawals',urgent: (stats?.pendingWithdrawals ?? 0) > 0,  icon: <Wallet className="w-4 h-4" /> },
-    { label: 'Instant Buy Review', value: stats?.pendingInstantBuy ?? 0,   href: '/admin/instant-buy',urgent: (stats?.pendingInstantBuy ?? 0) > 0,   icon: <Zap className="w-4 h-4" /> },
     { label: 'Gas Orders Active',  value: stats?.pendingGasOrders ?? 0,    href: '/admin/gas',        urgent: (stats?.pendingGasOrders ?? 0) > 0,    icon: <Fuel className="w-4 h-4" /> },
     { label: 'PKR Proofs Pending', value: stats?.pkrGasProofsPending ?? 0, href: '/admin/gas',        urgent: (stats?.pkrGasProofsPending ?? 0) > 0, icon: <FileText className="w-4 h-4" /> },
   ]
@@ -94,7 +93,6 @@ export default function AdminDashboardPage() {
     { label: 'Merchant KYC',  href: '/admin/merchant-kyc' },
     { label: 'Withdrawals',   href: '/admin/withdrawals' },
     { label: 'Ratings',      href: '/admin/ratings' },
-    { label: 'Instant Buy',   href: '/admin/instant-buy' },
     { label: 'Wallet',        href: '/admin/wallet' },
     { label: 'Gas Fee',       href: '/admin/gas' },
     { label: 'CTM',           href: '/admin/ctm' },

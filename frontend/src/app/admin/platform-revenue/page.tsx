@@ -129,19 +129,69 @@ function StatCard({ label, primary, sub, badge }: {
   )
 }
 
-function DailyChart({ data }: { data: Array<{ date: string; tokenAmount: number; count: number }> }) {
-  if (data.length === 0) return <p className="text-sm text-text-muted py-4">No data yet.</p>
-  const max = Math.max(...data.map(d => d.tokenAmount), 0.000001)
+function DailyChart({ data }: { data: Array<{ date: string; tokenAmount: number; usdAmount?: number; count: number }> }) {
+  // Build a continuous 30-day window ending today so a single day with fees no
+  // longer renders as one full-width green block. Days with no fees show as an
+  // empty slot, giving an honest bar chart.
+  const byDate = new Map(data.map(d => [d.date, d]))
+  const days: Array<{ date: string; tokenAmount: number; usdAmount: number; count: number }> = []
+  const today = new Date()
+  for (let i = 29; i >= 0; i--) {
+    const dt = new Date(today)
+    dt.setDate(today.getDate() - i)
+    const key = dt.toISOString().slice(0, 10)
+    const hit = byDate.get(key)
+    days.push({
+      date: key,
+      tokenAmount: hit?.tokenAmount ?? 0,
+      usdAmount: hit?.usdAmount ?? 0,
+      count: hit?.count ?? 0,
+    })
+  }
+
+  const total = days.reduce((sum, d) => sum + d.tokenAmount, 0)
+  if (total <= 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-40 text-center">
+        <p className="text-sm font-medium text-text-secondary">No fees collected in the last 30 days</p>
+        <p className="text-xs text-text-muted mt-1">Daily fee bars will appear here once withdrawals start generating fees.</p>
+      </div>
+    )
+  }
+
+  const max = Math.max(...days.map(d => d.tokenAmount), 0.000001)
+  const fmtLabel = (iso: string) => {
+    const [, m, d] = iso.split('-')
+    return `${Number(m)}/${Number(d)}`
+  }
+
   return (
-    <div className="flex items-end gap-0.5 h-20 w-full">
-      {data.map(d => (
-        <div
-          key={d.date}
-          className="flex-1 bg-emerald-600 rounded-sm opacity-80 hover:opacity-100 transition-opacity cursor-default"
-          style={{ height: `${Math.max((d.tokenAmount / max) * 100, 2)}%` }}
-          title={`${d.date}\n${fmtAmount(d.tokenAmount)} USDT (${d.count} fee${d.count !== 1 ? 's' : ''})`}
-        />
-      ))}
+    <div>
+      <div className="flex items-end gap-1 h-40 w-full">
+        {days.map(d => {
+          const hasData = d.tokenAmount > 0
+          return (
+            <div key={d.date} className="group relative flex-1 h-full flex items-end">
+              <div
+                className={`w-full rounded-t-sm transition-colors ${hasData ? 'bg-emerald-500 group-hover:bg-emerald-600' : 'bg-border/60'}`}
+                style={{ height: hasData ? `${Math.max((d.tokenAmount / max) * 100, 4)}%` : '3px' }}
+              />
+              {/* Tooltip */}
+              <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-10 whitespace-nowrap bg-text-primary text-white text-[11px] rounded-md px-2 py-1 shadow-lg">
+                <p className="font-semibold">{fmtLabel(d.date)}</p>
+                <p>{fmtAmount(d.tokenAmount)} USDT</p>
+                <p className="opacity-80">{fmtUsd(d.usdAmount)} · {d.count} fee{d.count !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {/* Axis labels — first, middle, last */}
+      <div className="flex justify-between mt-2 text-[10px] text-text-muted">
+        <span>{fmtLabel(days[0]!.date)}</span>
+        <span>{fmtLabel(days[Math.floor(days.length / 2)]!.date)}</span>
+        <span>{fmtLabel(days[days.length - 1]!.date)} (today)</span>
+      </div>
     </div>
   )
 }

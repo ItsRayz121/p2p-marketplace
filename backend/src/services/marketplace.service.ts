@@ -266,16 +266,45 @@ export async function getRecentTrades(): Promise<RecentTrade[]> {
   return result
 }
 
-export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWithSeller[] }> {
-  const cacheKey = 'top-ads'
+type OffersMode = 'top' | 'latest' | 'pinned'
+
+/** Trust-based score used to rank "top recommended" offers. */
+function offerScore(ad: AdWithSeller): number {
+  const s = ad.seller.tradeStats
+  if (!s) return 0
+  const completion = parseFloat(s.completionRate) || 0
+  const rating = parseFloat(s.avgRating) || 0
+  return (s.completedTrades * 2) + (completion * 100) + (rating * 10)
+}
+
+export async function getTopAds(): Promise<{
+  buys: AdWithSeller[]
+  sells: AdWithSeller[]
+  usdt: AdWithSeller[]
+  mode: OffersMode
+}> {
+  const cacheKey = 'top-ads:v2'
   const cached = await redis.get(cacheKey)
   if (cached) {
     try {
-      return JSON.parse(cached) as { buys: AdWithSeller[]; sells: AdWithSeller[] }
+      return JSON.parse(cached) as { buys: AdWithSeller[]; sells: AdWithSeller[]; usdt: AdWithSeller[]; mode: OffersMode }
     } catch {
       // fall through
     }
   }
+
+  // Admin-controlled ranking for the homepage "USDT Marketplace" section.
+  const cfgRows = await db.platformConfig.findMany({
+    where: { key: { in: ['home_offers_mode', 'home_pinned_ad_ids'] } },
+    select: { key: true, value: true },
+  })
+  const cfg = Object.fromEntries(cfgRows.map((r) => [r.key, r.value]))
+  const rawMode = (cfg['home_offers_mode'] ?? 'top').trim().toLowerCase()
+  const mode: OffersMode = (['top', 'latest', 'pinned'].includes(rawMode) ? rawMode : 'top') as OffersMode
+  const pinnedIds = (cfg['home_pinned_ad_ids'] ?? '')
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
 
   const sellerInclude = {
     select: {
@@ -309,7 +338,7 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
     },
   }
 
-  const [buyAds, sellAds] = await Promise.all([
+  const [buyAds, sellAds, poolAds] = await Promise.all([
     db.ad.findMany({
       where: { status: 'active', side: 'buy', coin: 'USDT' },
       orderBy: { price: 'desc' },
@@ -320,6 +349,14 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
       where: { status: 'active', side: 'sell', coin: 'USDT' },
       orderBy: { price: 'asc' },
       take: 6,
+      include: { user: sellerInclude },
+    }),
+    // Pool of recent active USDT offers (both sides) used to build the unified
+    // "USDT Marketplace" section per the admin-selected ranking mode.
+    db.ad.findMany({
+      where: { status: 'active', coin: 'USDT' },
+      orderBy: { createdAt: 'desc' },
+      take: 40,
       include: { user: sellerInclude },
     }),
   ])
@@ -371,9 +408,29 @@ export async function getTopAds(): Promise<{ buys: AdWithSeller[]; sells: AdWith
     }
   }
 
+  // Build the unified USDT list per the admin-selected ranking mode.
+  const pool = poolAds.map(mapAd) // already newest-first from the query
+  const HOME_LIMIT = 4
+  let usdt: AdWithSeller[]
+  if (mode === 'latest') {
+    usdt = pool.slice(0, HOME_LIMIT)
+  } else if (mode === 'pinned' && pinnedIds.length > 0) {
+    const byId = new Map(pool.map((a) => [a.id, a]))
+    const pinned = pinnedIds.map((id) => byId.get(id)).filter((a): a is AdWithSeller => Boolean(a))
+    // Fill remaining slots with top-ranked offers not already pinned.
+    const pinnedSet = new Set(pinned.map((a) => a.id))
+    const filler = [...pool].filter((a) => !pinnedSet.has(a.id)).sort((a, b) => offerScore(b) - offerScore(a))
+    usdt = [...pinned, ...filler].slice(0, HOME_LIMIT)
+  } else {
+    // 'top' (default): rank by trust score.
+    usdt = [...pool].sort((a, b) => offerScore(b) - offerScore(a)).slice(0, HOME_LIMIT)
+  }
+
   const result = {
     buys: buyAds.map(mapAd),
     sells: sellAds.map(mapAd),
+    usdt,
+    mode,
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 120)

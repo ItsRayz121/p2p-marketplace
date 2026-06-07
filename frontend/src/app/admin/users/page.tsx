@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { adminApi } from '@/lib/api'
@@ -50,7 +50,8 @@ interface AdminUser extends Omit<AuthUser, 'tradeStats'> {
 
 interface UsersResponse {
   users: AdminUser[]
-  total: number
+  total?: number
+  pagination?: { page: number; limit: number; total: number; pages: number }
 }
 
 type UserTab = 'profile' | 'trades' | 'kyc'
@@ -62,9 +63,11 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [kycFilter, setKycFilter] = useState('')
+  const [searching, setSearching] = useState(false)
 
   const [selected, setSelected] = useState<AdminUser | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -90,16 +93,42 @@ export default function UsersPage() {
       if (kycFilter) params.kycStatus = kycFilter
       const data = await adminApi.getUsers(params) as UsersResponse
       setUsers(data.users ?? [])
-      setTotal(data.total ?? 0)
+      setTotal(data.pagination?.total ?? data.total ?? 0)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load users')
     } finally {
       setLoading(false)
+      setSearching(false)
     }
   }, [page, search, roleFilter, kycFilter])
 
   usePolling(fetchUsers, 60_000)
+
+  // Debounced live search: re-fetch shortly after the admin stops typing or
+  // changes a filter. usePolling alone only refreshes on mount + every 60s, so
+  // without this the search box appeared to do nothing.
+  const firstRun = useRef(true)
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return }
+    setSearching(true)
+    const t = setTimeout(() => {
+      setSearch(searchInput.trim())
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  // Fetch whenever the committed query / filters / page change.
+  useEffect(() => {
+    fetchUsers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, roleFilter, kycFilter, page])
+
+  function runSearchNow() {
+    setSearch(searchInput.trim())
+    setPage(1)
+  }
 
   async function openUserModal(u: AdminUser) {
     // Show modal immediately with list data so it feels snappy
@@ -233,10 +262,12 @@ export default function UsersPage() {
         <div className="flex-1 min-w-48">
           <Input
             placeholder="Search username, name, email, user ID, referral code, IP..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') runSearchNow() }}
           />
         </div>
+        <Button onClick={runSearchNow} loading={searching}>Search</Button>
         <select
           value={roleFilter}
           onChange={(e) => { setRoleFilter(e.target.value); setPage(1) }}
@@ -262,7 +293,11 @@ export default function UsersPage() {
       </div>
 
       {users.length === 0 ? (
-        <EmptyState icon={Users} title="No users found" description="Try adjusting your filters." />
+        <EmptyState
+          icon={Users}
+          title={search ? `No user found for “${search}”` : 'No users found'}
+          description={search ? 'Check the spelling or try a different username, email, or ID.' : 'Try adjusting your filters.'}
+        />
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">

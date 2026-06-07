@@ -42,6 +42,7 @@ const STRUCTURED_KEYS = new Set([
   'gas_pkr_bank_account_number', 'gas_pkr_bank_logo',
   'gas_usdt_bep20_address', 'gas_usdt_aptos_address',
   'gas_bep20_logo_url', 'gas_aptos_logo_url',
+  'home_offers_mode', 'home_pinned_ad_ids',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -201,7 +202,13 @@ export default function ConfigPage() {
   const [emiOpen, setEmiOpen] = useState(false)
   const [bankOpen, setBankOpen] = useState(false)
   const [cryptoOpen, setCryptoOpen] = useState(false)
+  const [offersOpen, setOffersOpen] = useState(false)
   const [advOpen, setAdvOpen] = useState(false)
+
+  // ── Homepage Top Offers ─────────────────────────────────────────────────────
+  const [offersMode, setOffersMode] = useState<'top' | 'latest' | 'pinned'>('top')
+  const [pinnedAdIds, setPinnedAdIds] = useState('')
+  const [offersSaving, setOffersSaving] = useState(false)
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   function showToast(msg: string, ok = true) { setToast({ msg, ok }); setTimeout(() => setToast(null), 4000) }
@@ -284,6 +291,11 @@ export default function ConfigPage() {
       setAptosAddr(m['gas_usdt_aptos_address']     ?? '')
       setBep20Logo(m['gas_bep20_logo_url']         ?? '')
       setAptosLogo(m['gas_aptos_logo_url']         ?? '')
+      {
+        const mode = (m['home_offers_mode'] ?? 'top').trim().toLowerCase()
+        setOffersMode((['top', 'latest', 'pinned'].includes(mode) ? mode : 'top') as 'top' | 'latest' | 'pinned')
+      }
+      setPinnedAdIds(m['home_pinned_ad_ids'] ?? '')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -389,6 +401,18 @@ export default function ConfigPage() {
       showToast('Crypto deposit addresses saved.')
     } catch { showToast('Failed to save crypto addresses.', false) }
     finally { setCryptoSaving(false) }
+  }
+
+  async function saveOffers() {
+    setOffersSaving(true)
+    try {
+      await saveKeys([
+        { key: 'home_offers_mode', value: offersMode },
+        { key: 'home_pinned_ad_ids', value: pinnedAdIds.trim() },
+      ])
+      showToast('Homepage Top Offers settings saved. Changes appear within ~2 minutes.')
+    } catch { showToast('Failed to save Top Offers settings.', false) }
+    finally { setOffersSaving(false) }
   }
 
   async function saveEdit(key: string) {
@@ -624,6 +648,54 @@ export default function ConfigPage() {
           <p className="text-xs text-text-muted px-1">
             Other deposit addresses (TRC20, ERC20) are managed in the <strong>Wallet</strong> section of the admin panel.
           </p>
+        </div>
+      </Accordion>
+
+      {/* ══ Homepage Top Offers ═══════════════════════════════════════════════ */}
+      <Accordion
+        title="Homepage Top Offers"
+        subtitle="Control which USDT offers are featured in the homepage Top Offers section"
+        open={offersOpen}
+        onToggle={() => setOffersOpen((v) => !v)}
+        badge={<Badge variant="success" size="sm">{offersMode === 'top' ? 'Top recommended' : offersMode === 'latest' ? 'Latest' : 'Manually pinned'}</Badge>}
+      >
+        <div className="p-5 space-y-4">
+          <div className="space-y-2">
+            {([
+              { value: 'top' as const, label: 'Show top recommended offers', hint: 'Ranked by trust score, completion rate, rating and trade volume.' },
+              { value: 'latest' as const, label: 'Show latest offers', hint: 'Newest active offers first — gives more traders exposure.' },
+              { value: 'pinned' as const, label: 'Manually pin offers', hint: 'Feature specific offers by their Ad IDs (top offers fill remaining slots).' },
+            ]).map((opt) => (
+              <label key={opt.value} className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${offersMode === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-surface/40'}`}>
+                <input
+                  type="radio"
+                  name="home_offers_mode"
+                  checked={offersMode === opt.value}
+                  onChange={() => setOffersMode(opt.value)}
+                  className="mt-0.5 accent-primary"
+                />
+                <div>
+                  <p className="text-sm font-medium text-text-primary">{opt.label}</p>
+                  <p className="text-xs text-text-muted mt-0.5">{opt.hint}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {offersMode === 'pinned' && (
+            <Field label="Pinned Ad IDs" hint="Comma-separated Ad IDs, shown in order. Find IDs in the Trades/Ads admin views.">
+              <input
+                className={inputCls + ' font-mono text-xs'}
+                placeholder="adId1, adId2, adId3, adId4"
+                value={pinnedAdIds}
+                onChange={(e) => setPinnedAdIds(e.target.value)}
+              />
+            </Field>
+          )}
+
+          <div className="flex justify-end">
+            <Button size="sm" loading={offersSaving} onClick={saveOffers}>Save Top Offers</Button>
+          </div>
         </div>
       </Accordion>
 

@@ -11,6 +11,7 @@ import { RefreshCw } from 'lucide-react'
 interface TradeSummary { allTime: number; period: number }
 
 interface AnalyticsData {
+  granularity?: 'day' | 'month'
   userGrowth?: Array<{ date: string; newUsers: number }>
   tradeVolume?: Array<{ date: string; volume: string; count: number }>
   badgeDistribution?: Record<string, number>
@@ -30,40 +31,56 @@ interface AnalyticsData {
   }
 }
 
-type Period = '7d' | '30d' | '90d'
+type Period = 'today' | '7d' | '30d' | '12m'
 type ChartTab = 'growth' | 'badges'
 
-/** Compact vertical bar chart. Bars scroll horizontally when there are many. */
+const PERIOD_LABELS: Record<Period, string> = {
+  today: 'Today',
+  '7d': '7 Days',
+  '30d': '30 Days',
+  '12m': '12 Months',
+}
+
+/**
+ * Vertical bar chart. Value labels above every non-zero bar are always visible
+ * (numbers + optional sub-label/percent) so the chart never reads as "empty".
+ * Bars scroll horizontally only when there are many (e.g. 30 daily points).
+ */
 function VerticalBarChart({
   bars,
   valueSuffix = '',
 }: {
-  bars: Array<{ label: string; value: number; color: string }>
+  bars: Array<{ label: string; value: number; color: string; subLabel?: string }>
   valueSuffix?: string
 }) {
   const max = Math.max(...bars.map((b) => b.value), 1)
   return (
     <div className="overflow-x-auto pb-1">
-      <div className="flex items-end gap-2 h-44 min-w-full pt-6">
+      <div className="flex items-end gap-2 h-52 min-w-full pt-8">
         {bars.map((b, i) => {
-          const pct = Math.round((b.value / max) * 100)
+          const pct = (b.value / max) * 100
+          const hasValue = b.value > 0
           return (
             <div
               key={`${b.label}-${i}`}
               className="group flex flex-1 min-w-[2.25rem] flex-col items-center gap-2"
             >
               <div className="relative flex w-full flex-1 items-end justify-center">
-                <span className="absolute -top-5 text-[11px] font-semibold text-text-secondary opacity-0 transition-opacity group-hover:opacity-100">
-                  {b.value.toLocaleString()}
-                  {valueSuffix}
-                </span>
+                {hasValue && (
+                  <span className="absolute -top-6 flex flex-col items-center text-center leading-tight">
+                    <span className="text-[11px] font-semibold text-text-secondary">
+                      {b.value.toLocaleString()}{valueSuffix}
+                    </span>
+                    {b.subLabel && <span className="text-[9px] text-text-muted">{b.subLabel}</span>}
+                  </span>
+                )}
                 <div
-                  className={`w-full max-w-[2.25rem] rounded-t-md transition-all duration-500 ${b.color}`}
-                  style={{ height: `${Math.max(pct, 2)}%` }}
+                  className={`w-full max-w-[2.5rem] rounded-t-md transition-all duration-500 ${hasValue ? b.color : 'bg-border/50'}`}
+                  style={{ height: hasValue ? `${Math.max(pct, 8)}%` : '3px' }}
                   title={`${b.label}: ${b.value.toLocaleString()}${valueSuffix}`}
                 />
               </div>
-              <span className="max-w-[3.5rem] truncate text-center text-[10px] leading-tight text-text-muted">
+              <span className="max-w-[4rem] truncate text-center text-[10px] leading-tight text-text-muted">
                 {b.label}
               </span>
             </div>
@@ -78,7 +95,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [period, setPeriod] = useState<Period>('30d')
+  const [period, setPeriod] = useState<Period>('7d')
   const [chartTab, setChartTab] = useState<ChartTab>('growth')
   const [recalculating, setRecalculating] = useState(false)
   const [recalcMsg, setRecalcMsg] = useState<string | null>(null)
@@ -137,9 +154,13 @@ export default function AnalyticsPage() {
   }
 
   function fmtDay(date: string) {
-    return date
-      ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : '—'
+    if (!date) return '—'
+    // Month bucket "YYYY-MM" (12-month view) vs day bucket "YYYY-MM-DD".
+    if (/^\d{4}-\d{2}$/.test(date)) {
+      const [y, m] = date.split('-')
+      return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    }
+    return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
   const growthBars = (data?.userGrowth ?? []).map((d) => ({
@@ -159,6 +180,7 @@ export default function AnalyticsPage() {
           label: badgeLabels[badge] ?? (badge.charAt(0).toUpperCase() + badge.slice(1)),
           value: count || 0,
           color: badgeColors[badge] || 'bg-primary',
+          subLabel: badgeTotals > 0 ? `${Math.round(((count || 0) / badgeTotals) * 100)}%` : '0%',
         }))
     : []
 
@@ -170,7 +192,7 @@ export default function AnalyticsPage() {
           <p className="text-text-muted text-sm mt-0.5">Platform performance metrics</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {(['7d', '30d', '90d'] as Period[]).map((p) => (
+          {(['today', '7d', '30d', '12m'] as Period[]).map((p) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
@@ -180,7 +202,7 @@ export default function AnalyticsPage() {
                   : 'bg-surface text-text-secondary border-border hover:bg-surface-alt'
               }`}
             >
-              {p}
+              {PERIOD_LABELS[p]}
             </button>
           ))}
           <Button
@@ -250,13 +272,13 @@ export default function AnalyticsPage() {
             {chartTab === 'growth' ? (
               <div className="p-5">
                 <p className="mb-4 text-xs text-text-muted">
-                  Number of new users who registered each day over the selected range ({period}).
+                  New users who registered {period === '12m' ? 'each month' : 'each day'} over the selected range ({PERIOD_LABELS[period]}).
                 </p>
-                {growthBars.length > 0 ? (
-                  <VerticalBarChart bars={growthBars} valueSuffix=" new" />
+                {growthBars.some((b) => b.value > 0) ? (
+                  <VerticalBarChart bars={growthBars} valueSuffix="" />
                 ) : (
                   <div className="py-10 text-center text-sm text-text-muted">
-                    No new users registered in the last {period}.
+                    No new users registered in this period.
                   </div>
                 )}
               </div>
@@ -264,7 +286,7 @@ export default function AnalyticsPage() {
               <div className="p-5">
                 <p className="mb-4 text-xs text-text-muted">
                   How all {badgeTotals.toLocaleString()} users are distributed across trust badge tiers.
-                  This reflects all users and is not affected by the {period} range.
+                  This reflects all users and is not affected by the selected time range.
                 </p>
                 {badgeBars.length > 0 ? (
                   <>
