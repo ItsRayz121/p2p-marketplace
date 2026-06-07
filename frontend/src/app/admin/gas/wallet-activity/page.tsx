@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { chainDisplayName } from '@/lib/chainDisplayName'
+import { GasSectionTabs } from '@/components/admin/GasSectionTabs'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -499,6 +500,7 @@ export default function GasWalletActivityPage() {
 
   return (
     <div className="space-y-5">
+      <GasSectionTabs active="activity" />
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>

@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { adminApi } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { GasSectionTabs } from '@/components/admin/GasSectionTabs'
 
 type BurnRate = {
   chain: string
@@ -168,6 +169,7 @@ export default function GasAnalyticsPage() {
 
   return (
     <div className="space-y-8">
+      <GasSectionTabs active="analytics" />
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Gas Analytics</h1>
         <p className="text-text-muted text-sm mt-0.5">Burn rates, runway estimates, and profitability by chain.</p>
