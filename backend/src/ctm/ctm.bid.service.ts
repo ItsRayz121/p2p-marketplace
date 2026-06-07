@@ -2,6 +2,7 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { notify } from '../lib/notify'
+import { generateCtmDisplayRef } from './ctm.ref'
 
 type Tx = Prisma.TransactionClient
 
@@ -206,6 +207,7 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
 
     const trade = await tx.ctmTrade.create({
       data: {
+        displayRef: await generateCtmDisplayRef(tx),
         listingBidId: bid.id,
         listingId: listing.id,
         buyerId: actualBuyerId,
@@ -389,6 +391,7 @@ export async function confirmBidDetails(
   return db.$transaction(async (tx: Tx) => {
     const trade = await tx.ctmTrade.create({
       data: {
+        displayRef: await generateCtmDisplayRef(tx),
         listingBidId: bid.id,
         listingId: listing.id,
         buyerId: actualBuyerId,

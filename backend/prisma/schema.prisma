@@ -1822,6 +1822,7 @@ model CtmBid {
 model CtmTrade {
   id                String            @id @default(cuid())
   tradeRef          String            @unique @default(cuid())
+  displayRef        String?           @unique
   listingId         String?
   listing           CtmListing?       @relation(fields: [listingId], references: [id], onDelete: Restrict)
   requestId         String?           @unique

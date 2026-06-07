@@ -5,6 +5,7 @@ import { decrementLockedAmount } from './ctm.listing.service'
 import { queues } from '../queues/definitions'
 import { verifyTradeTx, HARD_REJECT_STATUSES, ADMIN_REVIEW_STATUSES, RELEASE_ALLOWED_STATUSES } from '../services/blockchainVerification.service'
 import { logger } from '../lib/logger'
+import { generateCtmDisplayRef } from './ctm.ref'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -15,6 +16,11 @@ function notify(userId: string, type: string, title: string, body: string, metad
   db.notification
     .create({ data: { userId, type, title, body, metadata: metadata as JsonValue } })
     .catch(() => {})
+}
+
+/** Human-readable trade label for user-facing text — never exposes the raw cuid. */
+function refLabel(displayRef: string | null | undefined): string {
+  return displayRef ?? 'your CTM trade'
 }
 
 function isParticipant(trade: { buyerId: string; sellerId: string }, userId: string, role: string) {
@@ -316,8 +322,8 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   queues.badgeRecalculate.add('recalc', { userId: buyerId }).catch(() => {})
   queues.badgeRecalculate.add('recalc', { userId: trade.sellerId }).catch(() => {})
 
-  notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${tradeRef} is complete.`, { tradeRef })
-  notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${tradeRef} is complete.`, { tradeRef })
+  notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
+  notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
 }
 
 export async function openDispute(tradeRef: string, userId: string, reason: string, description: string) {
@@ -342,7 +348,7 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
   ])
 
   const otherId = trade.buyerId === userId ? trade.sellerId : trade.buyerId
-  notify(otherId, 'CTM_DISPUTE_OPENED', 'Dispute opened on trade', `A dispute has been opened on trade ${tradeRef}. An admin will review.`, { tradeRef })
+  notify(otherId, 'CTM_DISPUTE_OPENED', 'Dispute opened on trade', `A dispute has been opened on trade ${refLabel(trade.displayRef)}. An admin will review.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
 }
 
 export async function cancelTrade(tradeRef: string, userId: string, reason: string) {
@@ -363,7 +369,7 @@ export async function cancelTrade(tradeRef: string, userId: string, reason: stri
   })
 
   const otherId = trade.buyerId === userId ? trade.sellerId : trade.buyerId
-  notify(otherId, 'CTM_TRADE_CANCELLED', 'Trade cancelled', `Trade ${tradeRef} has been cancelled.`, { tradeRef, reason })
+  notify(otherId, 'CTM_TRADE_CANCELLED', 'Trade cancelled', `Trade ${refLabel(trade.displayRef)} has been cancelled.`, { tradeRef, displayRef: trade.displayRef, reason })
 }
 
 export async function adminResolveDispute(adminId: string, tradeRef: string, data: {
@@ -397,8 +403,8 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
     },
   }).catch(() => {})
 
-  notify(trade.buyerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${tradeRef} has been resolved. Winner: ${data.winner}.`, { tradeRef })
-  notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${tradeRef} has been resolved. Winner: ${data.winner}.`, { tradeRef })
+  notify(trade.buyerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
+  notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
 }
 
 /**
@@ -419,9 +425,11 @@ export async function adminAddDisputeMessage(adminId: string, tradeRef: string, 
     data: { actorId: adminId, action: 'CTM_DISPUTE_MESSAGE', targetType: 'CtmTrade', targetId: trade.id, metadata: { tradeRef, message } as JsonValue },
   }).catch(() => {})
 
-  const body = `An admin requested more information on disputed trade ${tradeRef}: ${message}`
-  notify(trade.buyerId, 'CTM_DISPUTE_MESSAGE', 'Admin requested evidence', body, { tradeRef })
-  notify(trade.sellerId, 'CTM_DISPUTE_MESSAGE', 'Admin requested evidence', body, { tradeRef })
+  const label = trade.displayRef ?? 'your CTM trade'
+  const body = `Trade ${label} — an admin asked for more information: ${message}. Tap to respond.`
+  const meta = { tradeRef, displayRef: trade.displayRef, dispute: true }
+  notify(trade.buyerId, 'CTM_DISPUTE_MESSAGE', 'Admin requested additional evidence', body, meta)
+  notify(trade.sellerId, 'CTM_DISPUTE_MESSAGE', 'Admin requested additional evidence', body, meta)
 
   return msg
 }
@@ -592,6 +600,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
 
     const trade = await tx.ctmTrade.create({
       data: {
+        displayRef: await generateCtmDisplayRef(tx),
         listingId: listing.id,
         buyerId: actualBuyerId,
         sellerId: actualSellerId,

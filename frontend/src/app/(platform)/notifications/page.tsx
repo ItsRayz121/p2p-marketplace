@@ -72,12 +72,18 @@ function getNavTarget(notif: Notification): string | null {
   // P2P trade & dispute
   if ((t === 'trade' || t === 'dispute') && meta?.tradeId) return `/trade/${meta.tradeId}`
 
-  // CTM trade room (all CTM_ types that carry a tradeRef)
+  // CTM dispute-related types deep-link into the trade room and auto-open the
+  // dispute panel + evidence/response area.
+  const ctmDisputeTypes = new Set([
+    'CTM_DISPUTE_OPENED', 'CTM_DISPUTE_RESOLVED', 'CTM_AUTO_DISPUTE', 'CTM_DISPUTE_MESSAGE',
+  ])
+  if (ctmDisputeTypes.has(t) && meta?.tradeRef) return `/ctm/trade/${meta.tradeRef}?focus=dispute`
+
+  // CTM trade room (all other CTM_ types that carry a tradeRef)
   const ctmTradeTypes = new Set([
     'ctm_trade_created',
     'CTM_PAYMENT_UPLOADED', 'CTM_PAYMENT_CONFIRMED', 'CTM_SELLER_TRANSFERRING',
     'CTM_TOKEN_PROOF_SUBMITTED', 'CTM_TRADE_COMPLETED', 'CTM_TRADE_CANCELLED',
-    'CTM_DISPUTE_OPENED', 'CTM_DISPUTE_RESOLVED', 'CTM_AUTO_DISPUTE',
     'CTM_AUTO_COMPLETED', 'CTM_ESCROW_CONFIRMED', 'CTM_TRADE_EXPIRED',
   ])
   if (ctmTradeTypes.has(t) && meta?.tradeRef) return `/ctm/trade/${meta.tradeRef}`

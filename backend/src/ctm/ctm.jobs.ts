@@ -3,13 +3,16 @@ import { logger } from '../lib/logger'
 import https from 'node:https'
 import { notify } from '../lib/notify'
 
+/** Human-readable trade label for user-facing notifications — never exposes the raw cuid. */
+const lbl = (t: { displayRef?: string | null }): string => t.displayRef ?? 'your CTM trade'
+
 export async function runCtmTradeExpiry() {
   const now = new Date()
 
   // Expire trades stuck in awaiting_payment past expiresAt
   const expired = await db.ctmTrade.findMany({
     where: { status: 'awaiting_payment', expiresAt: { lte: now } },
-    select: { id: true, tradeRef: true, listingId: true, tokenAmount: true, buyerId: true, sellerId: true },
+    select: { id: true, tradeRef: true, displayRef: true, listingId: true, tokenAmount: true, buyerId: true, sellerId: true },
   })
 
   for (const trade of expired) {
@@ -27,8 +30,8 @@ export async function runCtmTradeExpiry() {
       }
     })
 
-    notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${trade.tradeRef} expired — payment was not uploaded in time.`, { tradeRef: trade.tradeRef })
-    notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${trade.tradeRef} expired — buyer did not upload payment proof in time.`, { tradeRef: trade.tradeRef })
+    notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — payment was not uploaded in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+    notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — buyer did not upload payment proof in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
 
     logger.info({ tradeRef: trade.tradeRef }, 'CTM trade expired')
   }
@@ -44,7 +47,7 @@ export async function runCtmProofDeadline() {
   // Escalate trades where seller missed proofDeadlineAt (payment_uploaded: seller must confirm)
   const sellerMissedConfirm = await db.ctmTrade.findMany({
     where: { status: 'payment_uploaded', proofDeadlineAt: { lte: now } },
-    select: { id: true, tradeRef: true, buyerId: true, sellerId: true },
+    select: { id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true },
   })
 
   for (const trade of sellerMissedConfirm) {
@@ -60,8 +63,8 @@ export async function runCtmProofDeadline() {
       }),
     ])
 
-    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: seller missed the confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef })
-    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: you missed the payment confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef })
+    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: seller missed the confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
+    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: you missed the payment confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
 
     logger.warn({ tradeRef: trade.tradeRef }, 'CTM auto-dispute: seller missed payment confirmation deadline')
   }
@@ -69,7 +72,7 @@ export async function runCtmProofDeadline() {
   // Escalate trades where seller missed proofDeadlineAt (seller_transferring: must submit token proof)
   const sellerMissedTokenProof = await db.ctmTrade.findMany({
     where: { status: 'seller_transferring', proofDeadlineAt: { lte: now } },
-    select: { id: true, tradeRef: true, buyerId: true, sellerId: true },
+    select: { id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true },
   })
 
   for (const trade of sellerMissedTokenProof) {
@@ -85,8 +88,8 @@ export async function runCtmProofDeadline() {
       }),
     ])
 
-    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: seller missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef })
-    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${trade.tradeRef}: you missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef })
+    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: seller missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
+    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: you missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
 
     logger.warn({ tradeRef: trade.tradeRef }, 'CTM auto-dispute: seller missed token proof deadline')
   }
@@ -119,8 +122,8 @@ export async function runCtmProofDeadline() {
         })
       })
 
-      notify(trade.buyerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${trade.tradeRef} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef })
-      notify(trade.sellerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${trade.tradeRef} was auto-completed after buyer's confirmation deadline passed.`, { tradeRef: trade.tradeRef })
+      notify(trade.buyerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+      notify(trade.sellerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed after buyer's confirmation deadline passed.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
 
       logger.info({ tradeRef: trade.tradeRef, sellerTier }, 'CTM auto-completed: buyer missed confirmation deadline')
     } else {
@@ -136,7 +139,7 @@ export async function runCtmDisputeEscalation() {
 
   const staleDisputes = await db.ctmDispute.findMany({
     where: { status: 'open', createdAt: { lte: escalateAfter }, escalatedAt: null },
-    select: { id: true, tradeId: true, trade: { select: { tradeRef: true, buyerId: true, sellerId: true } } },
+    select: { id: true, tradeId: true, trade: { select: { tradeRef: true, displayRef: true, buyerId: true, sellerId: true } } },
   })
 
   for (const dispute of staleDisputes) {
@@ -202,7 +205,7 @@ export async function runCtmEscrowMonitor() {
       escrowConfirmedAt: null,
       settlementType: 'ON_CHAIN',
     },
-    select: { id: true, tradeRef: true, escrowAddress: true, escrowAmount: true, buyerId: true, sellerId: true },
+    select: { id: true, tradeRef: true, displayRef: true, escrowAddress: true, escrowAmount: true, buyerId: true, sellerId: true },
   })
 
   if (pendingEscrow.length === 0) return
@@ -242,8 +245,8 @@ export async function runCtmEscrowMonitor() {
             },
           }),
         ])
-        notify(trade.buyerId, 'CTM_ESCROW_CONFIRMED', 'USDT deposit confirmed', `Your USDT deposit for trade ${trade.tradeRef} has been confirmed.`, { tradeRef: trade.tradeRef })
-        notify(trade.sellerId, 'CTM_ESCROW_CONFIRMED', 'USDT escrow received', `Buyer deposited USDT for trade ${trade.tradeRef}. Please confirm the PKR payment or send tokens.`, { tradeRef: trade.tradeRef })
+        notify(trade.buyerId, 'CTM_ESCROW_CONFIRMED', 'USDT deposit confirmed', `Your USDT deposit for trade ${lbl(trade)} has been confirmed.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+        notify(trade.sellerId, 'CTM_ESCROW_CONFIRMED', 'USDT escrow received', `Buyer deposited USDT for trade ${lbl(trade)}. Please confirm the PKR payment or send tokens.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
         logger.info({ tradeRef: trade.tradeRef, txId: matchingTx.transaction_id }, 'CTM escrow deposit auto-confirmed')
       }
     } catch (err) {

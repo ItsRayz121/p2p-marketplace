@@ -1,6 +1,7 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
+import { generateCtmDisplayRef } from './ctm.ref'
 
 type JsonValue = Prisma.InputJsonValue
 
@@ -200,6 +201,7 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
 
     const trade = await tx.ctmTrade.create({
       data: {
+        displayRef: await generateCtmDisplayRef(tx),
         requestId,
         buyerId,
         sellerId,

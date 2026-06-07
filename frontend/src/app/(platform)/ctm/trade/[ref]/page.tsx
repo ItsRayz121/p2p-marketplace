@@ -1,5 +1,6 @@
 'use client'
-import React, { useState, use, useRef, useEffect, useCallback } from 'react'
+import React, { useState, use, useRef, useEffect, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
@@ -80,7 +81,7 @@ interface SellerPaymentSnapshot extends SellerPaymentAccount {
 type BuyerPaymentSnapshot = SellerPaymentAccount
 
 interface Trade {
-  id: string; tradeRef: string; status: string
+  id: string; tradeRef: string; displayRef?: string | null; status: string
   tokenAmount: string; fiatAmount: string; pricePerUnit: string; paymentMethod: string
   settlementMethod: string; settlementNote: string; buyerSettlementId?: string
   sellerPaymentSnapshot?: SellerPaymentSnapshot
@@ -94,7 +95,7 @@ interface Trade {
   seller: { id: string; username: string; fullName: string | null }
   listing?: { side: string }
   proofs: Array<{ id: string; proofType: string; fileUrl?: string; txHash?: string; uploadedBy: string; description?: string; createdAt: string }>
-  dispute?: { id: string; reason: string; description: string; status: string; resolution?: string; winner?: string }
+  dispute?: { id: string; reason: string; description: string; status: string; resolution?: string; winner?: string; messages?: Array<{ id: string; senderId: string; message: string; createdAt: string }> }
   ratings: Array<{ ratedByUserId: string; ratedUserId: string; rating: number; comment?: string | null }>
   ratedByMe?: boolean
 }
@@ -182,9 +183,13 @@ function StepCard({
   )
 }
 
-export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: string }> }) {
+function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> }) {
   const { ref } = use(params)
+  const searchParams = useSearchParams()
+  const focusDispute = searchParams.get('focus') === 'dispute'
   const { user } = useAuth()
+  const disputeSectionRef = useRef<HTMLDivElement>(null)
+  const [highlightDispute, setHighlightDispute] = useState(false)
   const [trade, setTrade] = useState<Trade | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
@@ -245,6 +250,18 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
       }
     }
   })
+
+  // Deep-link from an "evidence requested" / dispute notification: scroll to and
+  // briefly highlight the dispute panel + response area once the trade has loaded.
+  useEffect(() => {
+    if (!focusDispute || !trade) return
+    const timer = setTimeout(() => {
+      disputeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightDispute(true)
+    }, 250)
+    const clear = setTimeout(() => setHighlightDispute(false), 3500)
+    return () => { clearTimeout(timer); clearTimeout(clear) }
+  }, [focusDispute, trade])
 
   if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-96 border border-border" /></div>
   if (!trade) return <div className="max-w-5xl mx-auto px-4 py-12 text-center text-text-muted">Trade not found.</div>
@@ -540,7 +557,7 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
                 <h1 className="font-bold text-text-primary text-lg">{trade.tokenAmount} {trade.token.symbol}</h1>
-                <p className="text-text-muted text-sm">PKR {Number(trade.fiatAmount).toLocaleString()} · #{trade.tradeRef.slice(-8)}</p>
+                <p className="text-text-muted text-sm">PKR {Number(trade.fiatAmount).toLocaleString()} · Trade #{trade.displayRef ?? trade.tradeRef.slice(-8)}</p>
               </div>
               <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${trade.status === 'completed' ? 'bg-green-100 text-green-700' : trade.status === 'disputed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-800'}`}>
                 {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
@@ -585,9 +602,25 @@ export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: st
           {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
 
           {trade.dispute && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm">
+            <div
+              ref={disputeSectionRef}
+              className={`bg-red-50 border rounded-xl p-4 text-sm transition-shadow ${highlightDispute ? 'border-red-400 ring-2 ring-red-400 shadow-lg' : 'border-red-200'}`}
+            >
               <p className="font-semibold text-red-800 mb-1">Dispute Open: {trade.dispute.reason.replace(/_/g, ' ')}</p>
               <p className="text-red-700">{trade.dispute.description}</p>
+              {/* Admin evidence requests / dispute thread */}
+              {trade.dispute.messages && trade.dispute.messages.length > 0 && (
+                <div className="mt-3 space-y-2 border-t border-red-200 pt-3">
+                  <p className="text-xs font-semibold text-red-800 uppercase tracking-wide">Admin requests</p>
+                  {trade.dispute.messages.map((m) => (
+                    <div key={m.id} className="bg-white/70 border border-red-200 rounded-lg px-3 py-2">
+                      <p className="text-red-900">{m.message}</p>
+                      <p className="text-[11px] text-red-500 mt-0.5">{new Date(m.createdAt).toLocaleString()}</p>
+                    </div>
+                  ))}
+                  <p className="text-xs text-red-700">Respond using the chat on the right, or upload evidence below.</p>
+                </div>
+              )}
               {trade.dispute.resolution && <p className="mt-2 text-green-700 font-medium">Resolution: {trade.dispute.resolution}</p>}
             </div>
           )}
@@ -1111,5 +1144,14 @@ function Row({ label, value, mono, breakAll, copyable }: { label: string; value:
         )}
       </div>
     </div>
+  )
+}
+
+// useSearchParams requires a Suspense boundary in the Next.js App Router.
+export default function CtmTradeRoomPage({ params }: { params: Promise<{ ref: string }> }) {
+  return (
+    <Suspense fallback={<div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-96 border border-border" /></div>}>
+      <CtmTradeRoomPageInner params={params} />
+    </Suspense>
   )
 }
