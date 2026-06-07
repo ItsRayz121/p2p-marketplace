@@ -15,12 +15,15 @@ export function notify(
   metadata: Record<string, unknown>,
   /** If provided, the push notification deep-links to /trade/<id> */
   tradeId?: string,
+  /** Explicit push deep-link URL — overrides the tradeId-based default (e.g. CTM rooms). */
+  pushUrl?: string,
 ) {
   db.notification
     .create({ data: { userId, type, title, body, metadata: metadata as Prisma.InputJsonValue } })
     .then((notif) => {
       sseEmit(userId, { type: 'notification', payload: notif })
-      sendPushToUser(userId, { title, body, url: tradeId ? `/trade/${tradeId}` : '/notifications' }).catch(() => {})
+      const url = pushUrl ?? (tradeId ? `/trade/${tradeId}` : '/notifications')
+      sendPushToUser(userId, { title, body, url }).catch(() => {})
     })
     .catch(() => {})
 }

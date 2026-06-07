@@ -5842,6 +5842,54 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: result })
   })
 
+  // GET /admin/deposit-chains/rpc-health?family=SOL|TON|SUI|TRON|APT|EVM
+  // Suggests recommended public RPC endpoints for a chain family and reports the
+  // live health (reachable + latency) of the currently-configured endpoint, so
+  // admins adding non-EVM chains aren't left guessing what to put in *_RPC_URL.
+  app.get('/admin/deposit-chains/rpc-health', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const family = String((req.query as { family?: string }).family ?? '').toUpperCase()
+
+    const RECOMMENDED: Record<string, Array<{ url: string; label: string }>> = {
+      SOL:  [{ url: 'https://api.mainnet-beta.solana.com', label: 'Solana Foundation (public, rate-limited)' }],
+      TON:  [{ url: 'https://toncenter.com/api/v2/jsonRPC', label: 'TON Center (public — API key raises limits)' }],
+      SUI:  [{ url: 'https://fullnode.mainnet.sui.io', label: 'Mysten Labs (public)' }],
+      TRON: [{ url: 'https://api.trongrid.io', label: 'TronGrid (public — API key raises limits)' }],
+      APT:  [{ url: 'https://fullnode.mainnet.aptoslabs.com/v1', label: 'Aptos Labs (public)' }],
+    }
+
+    const ENV_VAR: Record<string, string> = {
+      SOL: 'SOL_RPC_URL', TON: 'TON_ENDPOINT_URL', SUI: 'SUI_RPC_URL',
+      TRON: 'TRON_FULLNODE_URL', APT: 'APT_RPC_URL',
+    }
+
+    // Live health of the configured endpoint (non-EVM families have helpers).
+    let health: { reachable: boolean; latencyMs: number; error?: string | undefined } | null = null
+    try {
+      if (family === 'SOL') {
+        const { checkSolanaRpc } = await import('../lib/gas/solanaWalletService')
+        const r = await checkSolanaRpc(); health = { reachable: r.reachable, latencyMs: r.latencyMs, error: r.error }
+      } else if (family === 'TON') {
+        const { checkTonRpc } = await import('../lib/gas/tonWalletService')
+        const r = await checkTonRpc(); health = { reachable: r.reachable, latencyMs: r.latencyMs, error: r.error }
+      } else if (family === 'SUI') {
+        const { checkSuiRpc } = await import('../lib/gas/suiWalletService')
+        const r = await checkSuiRpc(); health = { reachable: r.reachable, latencyMs: r.latencyMs, error: r.error }
+      }
+    } catch (err) {
+      health = { reachable: false, latencyMs: 0, error: err instanceof Error ? err.message : 'health check failed' }
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        family,
+        envVar: ENV_VAR[family] ?? null,
+        recommended: RECOMMENDED[family] ?? [],
+        configuredHealth: health, // null for EVM/unknown families
+      },
+    })
+  })
+
   // ── Admin: Trade Ratings ────────────────────────────────────────────────────
 
   app.get('/admin/ratings', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {

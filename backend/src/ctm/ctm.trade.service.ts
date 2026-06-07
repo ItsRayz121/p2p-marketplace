@@ -6,16 +6,18 @@ import { queues } from '../queues/definitions'
 import { verifyTradeTx, HARD_REJECT_STATUSES, ADMIN_REVIEW_STATUSES, RELEASE_ALLOWED_STATUSES } from '../services/blockchainVerification.service'
 import { logger } from '../lib/logger'
 import { generateCtmDisplayRef } from './ctm.ref'
+import { notify as centralNotify } from '../lib/notify'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
 
 const ACTIVE_STATUSES = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'] as const
 
+// Delegate to the central notifier so CTM events fire SSE + web-push (not just a
+// DB row). The push deep-links into the CTM trade room via metadata.tradeRef.
 function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
-  db.notification
-    .create({ data: { userId, type, title, body, metadata: metadata as JsonValue } })
-    .catch(() => {})
+  const tradeRef = typeof metadata.tradeRef === 'string' ? metadata.tradeRef : undefined
+  centralNotify(userId, type, title, body, metadata, undefined, tradeRef ? `/ctm/trade/${tradeRef}` : undefined)
 }
 
 /** Human-readable trade label for user-facing text — never exposes the raw cuid. */

@@ -2,13 +2,12 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { generateCtmDisplayRef } from './ctm.ref'
+import { notify as centralNotify } from '../lib/notify'
 
-type JsonValue = Prisma.InputJsonValue
-
+// Delegate to the central notifier so CTM request events fire SSE + web-push.
 function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
-  db.notification
-    .create({ data: { userId, type, title, body, metadata: metadata as JsonValue } })
-    .catch(() => {})
+  const tradeRef = typeof metadata.tradeRef === 'string' ? metadata.tradeRef : undefined
+  centralNotify(userId, type, title, body, metadata, undefined, tradeRef ? `/ctm/trade/${tradeRef}` : undefined)
 }
 
 export interface CreateRequestInput {

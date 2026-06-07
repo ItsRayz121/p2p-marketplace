@@ -1,8 +1,15 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
-import { notify } from '../lib/notify'
+import { notify as centralNotify } from '../lib/notify'
 import { generateCtmDisplayRef } from './ctm.ref'
+
+// CTM bid notifications deep-link the web-push into the CTM trade room when a
+// trade ref is present (falls back to the notifications list otherwise).
+function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
+  const tradeRef = typeof metadata.tradeRef === 'string' ? metadata.tradeRef : undefined
+  centralNotify(userId, type, title, body, metadata, undefined, tradeRef ? `/ctm/trade/${tradeRef}` : undefined)
+}
 
 type Tx = Prisma.TransactionClient
 

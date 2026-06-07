@@ -1,10 +1,16 @@
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import https from 'node:https'
-import { notify } from '../lib/notify'
+import { notify as centralNotify } from '../lib/notify'
 
 /** Human-readable trade label for user-facing notifications — never exposes the raw cuid. */
 const lbl = (t: { displayRef?: string | null }): string => t.displayRef ?? 'your CTM trade'
+
+// CTM job notifications deep-link the web-push into the CTM trade room.
+function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
+  const tradeRef = typeof metadata.tradeRef === 'string' ? metadata.tradeRef : undefined
+  centralNotify(userId, type, title, body, metadata, undefined, tradeRef ? `/ctm/trade/${tradeRef}` : undefined)
+}
 
 export async function runCtmTradeExpiry() {
   const now = new Date()

@@ -1364,6 +1364,13 @@ export interface ChainSearchResult {
   publicRpc: string | null
 }
 
+export interface RpcHealthSuggestion {
+  family: string
+  envVar: string | null
+  recommended: Array<{ url: string; label: string }>
+  configuredHealth: { reachable: boolean; latencyMs: number; error?: string } | null
+}
+
 export interface TokenLookupResult {
   symbol: string
   chainSlug: string
@@ -1860,6 +1867,8 @@ export const adminApi = {
     apiRequest<TokenLookupResult>(`/admin/deposit-chains/lookup?symbol=${encodeURIComponent(symbol)}&chainSlug=${encodeURIComponent(chainSlug)}`),
   searchChains: (query: string) =>
     apiRequest<{ chains: ChainSearchResult[] }>(`/admin/deposit-chains/chain-search?query=${encodeURIComponent(query)}`),
+  getRpcHealth: (family: string) =>
+    apiRequest<RpcHealthSuggestion>(`/admin/deposit-chains/rpc-health?family=${encodeURIComponent(family)}`),
 
   // Gas Chain Config CRUD
   lookupGasChain: (q: string) =>

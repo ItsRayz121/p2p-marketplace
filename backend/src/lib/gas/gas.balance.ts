@@ -198,7 +198,9 @@ class TronRateLimitedError extends Error {
   constructor() { super('TRON provider temporarily rate limited. Retrying automatically.') }
 }
 
-const TRON_BALANCE_CACHE_TTL = 45 // seconds — balances are polled ~every 60s
+// Must exceed the ~60s balance poll interval, otherwise every poll misses the
+// cache and still hits TronGrid. 90s lets every other poll serve from cache.
+const TRON_BALANCE_CACHE_TTL = 90
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Primary: TronGrid full node. */

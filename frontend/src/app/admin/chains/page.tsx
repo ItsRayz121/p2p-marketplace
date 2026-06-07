@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { adminApi, type AdminDepositChain, type ChainSearchResult } from '@/lib/api'
+import { adminApi, type AdminDepositChain, type ChainSearchResult, type RpcHealthSuggestion } from '@/lib/api'
 import { CHAIN_META } from '@/lib/chainTokenStandards'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -59,6 +59,22 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
   const [explorerBase,  setExplorerBase]  = useState('')
   const [rpcEnvVar,     setRpcEnvVar]     = useState('')
   const [addToGas,      setAddToGas]      = useState(true)
+  const [rpcSuggestion, setRpcSuggestion] = useState<RpcHealthSuggestion | null>(null)
+  const [rpcChecking,   setRpcChecking]   = useState(false)
+
+  // Non-EVM chains can't be auto-discovered via chainid.network, so suggest a
+  // recommended public RPC and probe the configured endpoint's live health.
+  useEffect(() => {
+    if (family === 'EVM' || family === 'BTC') { setRpcSuggestion(null); return }
+    let cancelled = false
+    setRpcChecking(true)
+    setRpcSuggestion(null)
+    adminApi.getRpcHealth(family)
+      .then((d) => { if (!cancelled) setRpcSuggestion(d) })
+      .catch(() => { if (!cancelled) setRpcSuggestion(null) })
+      .finally(() => { if (!cancelled) setRpcChecking(false) })
+    return () => { cancelled = true }
+  }, [family])
 
   const [submitting,    setSubmitting]    = useState(false)
   const [error,         setError]         = useState<string | null>(null)
@@ -261,6 +277,37 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
           <label className="block text-sm font-medium text-slate-700 mb-1">RPC Env Var <span className="text-slate-400 font-normal">(optional — e.g. ZETA_RPC_URL)</span></label>
           <input value={rpcEnvVar} onChange={e => setRpcEnvVar(e.target.value)} placeholder="ZETA_RPC_URL"
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+          {/* Recommended public RPC for non-EVM families + live health of the configured endpoint */}
+          {(rpcChecking || rpcSuggestion) && (
+            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs space-y-2">
+              {rpcChecking ? (
+                <p className="text-blue-700">Checking recommended RPC + configured endpoint health…</p>
+              ) : rpcSuggestion && (
+                <>
+                  {rpcSuggestion.recommended.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="font-semibold text-blue-900">Recommended public RPC{rpcSuggestion.envVar ? ` — set ${rpcSuggestion.envVar} on the server` : ''}:</p>
+                      {rpcSuggestion.recommended.map((r) => (
+                        <div key={r.url} className="flex items-center gap-2">
+                          <code className="font-mono text-[11px] text-blue-800 break-all">{r.url}</code>
+                          <button type="button" onClick={() => navigator.clipboard.writeText(r.url)} className="text-blue-600 hover:underline whitespace-nowrap">Copy</button>
+                          <span className="text-blue-500">— {r.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {rpcSuggestion.configuredHealth && (
+                    <p className={rpcSuggestion.configuredHealth.reachable ? 'text-emerald-700' : 'text-red-600'}>
+                      Configured endpoint: {rpcSuggestion.configuredHealth.reachable
+                        ? `✓ reachable (${rpcSuggestion.configuredHealth.latencyMs}ms)`
+                        : `✗ unreachable${rpcSuggestion.configuredHealth.error ? ` — ${rpcSuggestion.configuredHealth.error}` : ''}`}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <label className="flex items-center gap-3 cursor-pointer select-none">
