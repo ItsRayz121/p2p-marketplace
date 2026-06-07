@@ -63,7 +63,16 @@ function generateDomainCandidates(input: string): string[] {
 function buildCandidates(input: string): LogoCandidate[] {
   const domains = generateDomainCandidates(input)
   const out: LogoCandidate[] = []
+  // Multi-source fallback: each candidate self-validates (faded card if the image
+  // fails to load), so we offer several providers per domain and only the ones
+  // that actually return an image stay visible.
   for (const domain of domains) {
+    out.push({
+      id:     `clearbit-${domain}`,
+      domain,
+      source: 'Clearbit',
+      url:    `https://logo.clearbit.com/${domain}`,
+    })
     out.push({
       id:     `horse-${domain}`,
       domain,
@@ -75,6 +84,22 @@ function buildCandidates(input: string): LogoCandidate[] {
       domain,
       source: 'Google favicon',
       url:    `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://${domain}&size=128`,
+    })
+    out.push({
+      id:     `ddg-${domain}`,
+      domain,
+      source: 'DuckDuckGo',
+      url:    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+    })
+  }
+  // SimpleIcons (brand SVGs) — keyed by the normalized brand slug, not a domain.
+  const brandSlug = input.trim().toLowerCase().replace(/\.[a-z.]+$/, '').replace(/[^a-z0-9]/g, '')
+  if (brandSlug) {
+    out.push({
+      id:     `simpleicons-${brandSlug}`,
+      domain: brandSlug,
+      source: 'SimpleIcons',
+      url:    `https://cdn.simpleicons.org/${brandSlug}`,
     })
   }
   return out
@@ -209,6 +234,18 @@ export default function AdminLogosPage() {
     setSaveMsg(null)
   }
 
+  // Validate that a URL actually resolves to a loadable, non-empty image before
+  // we let it into the registry — no broken logos should ever be saved.
+  function imageLoads(url: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const img = new window.Image()
+      const timer = setTimeout(() => resolve(false), 8000)
+      img.onload = () => { clearTimeout(timer); resolve(img.naturalWidth > 0 && img.naturalHeight > 0) }
+      img.onerror = () => { clearTimeout(timer); resolve(false) }
+      img.src = url
+    })
+  }
+
   async function handleSave() {
     if (!formSlug.trim() || !formUrl.trim()) {
       setSaveMsg('Slug and Logo URL are required.')
@@ -217,6 +254,12 @@ export default function AdminLogosPage() {
     setSaving(true)
     setSaveMsg(null)
     try {
+      const ok = await imageLoads(formUrl.trim())
+      if (!ok) {
+        setSaveMsg('That logo URL did not load as a valid image. Pick another source or upload a file.')
+        setSaving(false)
+        return
+      }
       await logoApi.adminUpsert({ type: formType, slug: formSlug.trim(), logoUrl: formUrl.trim() })
       invalidateLogoCache()
       setSaveMsg('Saved successfully.')
