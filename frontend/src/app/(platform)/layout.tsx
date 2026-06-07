@@ -7,6 +7,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { marketplaceApi } from '@/lib/api'
 import { Web3Provider } from '@/lib/web3/Web3Provider'
 import { useAuthStore } from '@/store/auth.store'
+import { PushOptInBanner } from '@/components/ui/PushOptInBanner'
 
 interface SiteConfig {
   site_notice?: string
@@ -28,7 +29,7 @@ const noticeColors: Record<string, string> = {
 }
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
-  const { isLoading: authLoading } = useAuthStore()
+  const { isLoading: authLoading, user } = useAuthStore()
   const [config, setConfig] = useState<SiteConfig>({})
   const [dismissed, setDismissed] = useState(false)
 
@@ -120,6 +121,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
         <Footer />
         <BottomNav />
+        {user && <PushOptInBanner />}
       </div>
     </Web3Provider>
   )
