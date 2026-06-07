@@ -5539,7 +5539,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const { slug } = req.params as { slug: string }
     const schema = z.object({
       symbol:              z.string().min(1).max(20),
-      address:             z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM contract address (0x + 40 hex)').nullable().optional(),
+      // Address format is validated per chain family below (EVM vs non-EVM).
+      address:             z.string().min(1).max(100).nullable().optional(),
       decimals:            z.number().int().min(0).max(36),
       coingeckoId:         z.string().optional(),
       onChainVerified:     z.boolean().optional(),
@@ -5550,6 +5551,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const chain = await db.depositChain.findUnique({ where: { slug } })
     if (!chain) throw new AppError('NOT_FOUND', `Chain ${slug} not found`, 404)
     const d = parsed.data
+    // EVM chains must use a 0x+40hex contract address; non-EVM chains (Solana/TON/SUI)
+    // use their own address formats, validated only for sane length/charset above.
+    if (d.address && chain.family === 'EVM' && !/^0x[0-9a-fA-F]{40}$/.test(d.address)) {
+      throw new AppError('VALIDATION_ERROR', 'Must be a valid EVM contract address (0x + 40 hex)', 400)
+    }
     const token = await db.depositToken.create({
       data: {
         chainId:             chain.id,
@@ -5664,21 +5670,27 @@ export async function adminRoutes(app: FastifyInstance) {
     const result: {
       symbol: string; chainSlug: string; chainName: string
       address: string | null; decimals: number | null
+      name: string | null; logoUrl: string | null; checkedAt: string
       coingeckoVerified: boolean; coingeckoError: string | null
+      onChainSupported: boolean
       onChainVerified: boolean; onChainSymbol: string | null; onChainDecimals: number | null; onChainError: string | null
       trustWalletVerified: boolean; trustWalletError: string | null
     } = {
       symbol: symbol.toUpperCase(), chainSlug, chainName: chain.name,
       address: null, decimals: null,
+      name: null, logoUrl: null, checkedAt: new Date().toISOString(),
       coingeckoVerified: false, coingeckoError: null,
+      onChainSupported: chain.family === 'EVM',
       onChainVerified: false, onChainSymbol: null, onChainDecimals: null, onChainError: null,
       trustWalletVerified: false, trustWalletError: null,
     }
 
-    // Layer 1: CoinGecko
+    // Layer 1: CoinGecko — supports EVM and non-EVM platforms (Solana/TON/SUI/Aptos/Tron).
     const COINGECKO_PLATFORM: Record<string, string> = {
       ethereum: 'ethereum', bsc: 'binance-smart-chain', polygon: 'polygon-pos',
       arbitrum: 'arbitrum-one', optimism: 'optimistic-ethereum', base: 'base', avalanche: 'avalanche',
+      tron: 'tron', solana: 'solana', ton: 'the-open-network', 'the-open-network': 'the-open-network',
+      sui: 'sui', aptos: 'aptos',
     }
     const cgPlatform = COINGECKO_PLATFORM[chainSlug.toLowerCase()]
     if (cgPlatform) {
@@ -5710,7 +5722,14 @@ export async function adminRoutes(app: FastifyInstance) {
         } else {
           const res = await fetch(`${cgBase}/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`, { headers })
           if (res.ok) {
-            const data = await res.json() as { detail_platforms?: Record<string, { contract_address: string; decimal_place: number } | null> }
+            const data = await res.json() as {
+              name?: string
+              image?: { large?: string; small?: string; thumb?: string }
+              detail_platforms?: Record<string, { contract_address: string; decimal_place: number } | null>
+            }
+            // Autofill name + logo regardless of platform match
+            result.name = data.name ?? null
+            result.logoUrl = data.image?.large ?? data.image?.small ?? data.image?.thumb ?? null
             const platformData = data.detail_platforms?.[cgPlatform]
             if (platformData?.contract_address) {
               result.address = platformData.contract_address
@@ -5771,12 +5790,15 @@ export async function adminRoutes(app: FastifyInstance) {
       } else {
         result.onChainError = `No RPC URL configured for chain ${chain.id}`
       }
+    } else if (address && chain.family !== 'EVM') {
+      result.onChainError = 'On-chain verification not available for non-EVM chains; using CoinGecko + TrustWallet instead'
     }
 
     // Layer 3: TrustWallet assets
     const TW_CHAIN: Record<string, string> = {
       ethereum: 'ethereum', bsc: 'smartchain', polygon: 'polygon',
       arbitrum: 'arbitrum', optimism: 'optimism', base: 'base',
+      tron: 'tron', solana: 'solana', ton: 'ton', sui: 'sui', aptos: 'aptos',
     }
     const twChain = TW_CHAIN[chainSlug.toLowerCase()]
     if (twChain && address) {

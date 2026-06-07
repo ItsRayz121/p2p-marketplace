@@ -26,12 +26,32 @@ function VerBadge({ ok, label, error }: { ok: boolean; label: string; error?: st
 // ── Lookup result display ─────────────────────────────────────────────────────
 
 function LookupDisplay({ result }: { result: TokenLookupResult }) {
+  const verifiedSource = result.coingeckoVerified ? 'CoinGecko'
+    : result.trustWalletVerified ? 'TrustWallet'
+    : result.onChainVerified ? 'On-chain' : null
   return (
     <div className="border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50">
+      {/* Token identity preview (name + logo) */}
+      {(result.name || result.logoUrl) && (
+        <div className="flex items-center gap-2">
+          {result.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={result.logoUrl} alt={result.name ?? result.symbol} className="w-8 h-8 rounded-full border border-slate-200 bg-white" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800 truncate">{result.name ?? result.symbol}</p>
+            <p className="text-xs text-slate-500">{result.symbol} · {result.chainName}</p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2 flex-wrap">
         <VerBadge ok={result.coingeckoVerified} label="CoinGecko" error={result.coingeckoError} />
-        <VerBadge ok={result.onChainVerified} label="On-chain" error={result.onChainError} />
+        {result.onChainSupported && <VerBadge ok={result.onChainVerified} label="On-chain" error={result.onChainError} />}
         <VerBadge ok={result.trustWalletVerified} label="TrustWallet" error={result.trustWalletError} />
+      </div>
+      <div className="flex items-center gap-3 text-xs text-slate-500">
+        {verifiedSource && <span className="text-emerald-700 font-medium">✓ Verified via {verifiedSource}</span>}
+        <span>Last checked: {new Date(result.checkedAt).toLocaleString()}</span>
       </div>
       {result.address && (
         <div className="text-xs font-mono text-slate-600 break-all">
@@ -90,11 +110,22 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
     }
   }
 
+  // For EVM chains we require on-chain verification of the contract; for non-EVM
+  // chains (Solana/TON/SUI) on-chain verification isn't available, so a CoinGecko
+  // or TrustWallet match is sufficient.
+  const addressVerified = !address
+    ? true
+    : lookup?.onChainSupported
+      ? !!lookup?.onChainVerified
+      : !!(lookup?.coingeckoVerified || lookup?.trustWalletVerified)
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!symbol || !decimals) return
-    if (!lookup?.onChainVerified && address) {
-      setSaveErr('On-chain verification must pass before adding a token with a contract address.')
+    if (!addressVerified) {
+      setSaveErr(lookup?.onChainSupported
+        ? 'On-chain verification must pass before adding a token with a contract address.'
+        : 'CoinGecko or TrustWallet must verify this token before adding it.')
       return
     }
     setSaving(true)
@@ -182,15 +213,17 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
 
       {saveErr && <p className="text-xs text-red-600">{saveErr}</p>}
 
-      {address && !lookup?.onChainVerified && (
+      {address && !addressVerified && (
         <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-          ⚠ On-chain verification has not passed. Use the Lookup button to verify the contract before saving.
+          ⚠ {lookup?.onChainSupported === false
+            ? 'Not yet verified. Use Lookup so CoinGecko or TrustWallet can confirm this token before saving.'
+            : 'On-chain verification has not passed. Use the Lookup button to verify the contract before saving.'}
         </p>
       )}
 
       <Button
         type="submit"
-        disabled={saving || !symbol || !decimals || (!!address && !lookup?.onChainVerified)}
+        disabled={saving || !symbol || !decimals || !addressVerified}
         className="w-full"
       >
         {saving ? 'Adding…' : 'Add Token'}

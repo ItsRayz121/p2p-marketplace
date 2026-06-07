@@ -1370,8 +1370,12 @@ export interface TokenLookupResult {
   chainName: string
   address: string | null
   decimals: number | null
+  name: string | null
+  logoUrl: string | null
+  checkedAt: string
   coingeckoVerified: boolean
   coingeckoError: string | null
+  onChainSupported: boolean
   onChainVerified: boolean
   onChainSymbol: string | null
   onChainDecimals: number | null
