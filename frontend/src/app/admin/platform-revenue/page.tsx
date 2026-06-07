@@ -423,7 +423,7 @@ export default function PlatformRevenuePage() {
           label="Available to Sweep"
           primary={`${fmtAmount(s.allTime.available)} USDT`}
           sub={`${fmtAmount(s.allTime.totalSwept)} already swept`}
-          badge={s.allTime.available > 0 ? { text: 'Ready', color: 'bg-emerald-100 text-emerald-700' } : { text: 'None', color: 'bg-gray-100 text-gray-500' }}
+          badge={s.allTime.available > 0 ? { text: 'Ready', color: 'bg-emerald-100 text-emerald-700' } : { text: 'None', color: 'bg-surface-alt text-text-muted' }}
         />
         <StatCard label="Today" primary={`${fmtAmount(s.today.totalTokenFees)} USDT`} sub={`${fmtUsd(s.today.totalUsdFees)} · ${s.today.count} fee${s.today.count !== 1 ? 's' : ''}`} />
         <StatCard label="This Month" primary={`${fmtAmount(s.thisMonth.totalTokenFees)} USDT`} sub={fmtUsd(s.thisMonth.totalUsdFees)} />

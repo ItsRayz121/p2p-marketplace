@@ -15,7 +15,7 @@ function VerBadge({ ok, label, error }: { ok: boolean; label: string; error?: st
     <span
       title={error ?? undefined}
       className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium cursor-default ${
-        ok ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+        ok ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'
       }`}
     >
       {ok ? '✓' : '–'} {label}
@@ -30,17 +30,17 @@ function LookupDisplay({ result }: { result: TokenLookupResult }) {
     : result.trustWalletVerified ? 'TrustWallet'
     : result.onChainVerified ? 'On-chain' : null
   return (
-    <div className="border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50">
+    <div className="border border-border-subtle rounded-lg p-4 space-y-3 bg-surface-alt">
       {/* Token identity preview (name + logo) */}
       {(result.name || result.logoUrl) && (
         <div className="flex items-center gap-2">
           {result.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={result.logoUrl} alt={result.name ?? result.symbol} className="w-8 h-8 rounded-full border border-slate-200 bg-white" />
+            <img src={result.logoUrl} alt={result.name ?? result.symbol} className="w-8 h-8 rounded-full border border-border-subtle bg-white" />
           )}
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-800 truncate">{result.name ?? result.symbol}</p>
-            <p className="text-xs text-slate-500">{result.symbol} · {result.chainName}</p>
+            <p className="text-sm font-semibold text-text-primary truncate">{result.name ?? result.symbol}</p>
+            <p className="text-xs text-text-muted">{result.symbol} · {result.chainName}</p>
           </div>
         </div>
       )}
@@ -49,17 +49,17 @@ function LookupDisplay({ result }: { result: TokenLookupResult }) {
         {result.onChainSupported && <VerBadge ok={result.onChainVerified} label="On-chain" error={result.onChainError} />}
         <VerBadge ok={result.trustWalletVerified} label="TrustWallet" error={result.trustWalletError} />
       </div>
-      <div className="flex items-center gap-3 text-xs text-slate-500">
+      <div className="flex items-center gap-3 text-xs text-text-muted">
         {verifiedSource && <span className="text-emerald-700 font-medium">✓ Verified via {verifiedSource}</span>}
         <span>Last checked: {new Date(result.checkedAt).toLocaleString()}</span>
       </div>
       {result.address && (
-        <div className="text-xs font-mono text-slate-600 break-all">
+        <div className="text-xs font-mono text-text-secondary break-all">
           <span className="font-semibold">Address:</span> {result.address}
         </div>
       )}
       {result.decimals != null && (
-        <div className="text-xs text-slate-600">
+        <div className="text-xs text-text-secondary">
           <span className="font-semibold">Decimals:</span> {result.decimals}
         </div>
       )}
@@ -70,7 +70,7 @@ function LookupDisplay({ result }: { result: TokenLookupResult }) {
         <div className="text-xs text-amber-600">⚠ CoinGecko: {result.coingeckoError}</div>
       )}
       {result.trustWalletError && (
-        <div className="text-xs text-slate-400">ℹ TrustWallet: {result.trustWalletError}</div>
+        <div className="text-xs text-text-muted">ℹ TrustWallet: {result.trustWalletError}</div>
       )}
     </div>
   )
@@ -153,11 +153,11 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-surface shadow-card border border-border rounded-xl p-6 space-y-4">
-      <h3 className="font-semibold text-slate-800">Add Token</h3>
+      <h3 className="font-semibold text-text-primary">Add Token</h3>
 
       <div className="flex gap-2">
         <div className="flex-1">
-          <label className="block text-xs font-medium text-slate-600 mb-1">Symbol *</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1">Symbol *</label>
           <Input
             value={symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
@@ -183,9 +183,9 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
+          <label className="block text-xs font-medium text-text-secondary mb-1">
             Contract Address
-            <span className="text-slate-400 font-normal ml-1">(auto-filled by lookup)</span>
+            <span className="text-text-muted font-normal ml-1">(auto-filled by lookup)</span>
           </label>
           <Input
             value={address}
@@ -195,9 +195,9 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
+          <label className="block text-xs font-medium text-text-secondary mb-1">
             Decimals *
-            <span className="text-slate-400 font-normal ml-1">(auto-filled by lookup)</span>
+            <span className="text-text-muted font-normal ml-1">(auto-filled by lookup)</span>
           </label>
           <Input
             type="number"
@@ -277,39 +277,39 @@ export default function ChainTokensPage() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => router.push('/admin/chains')}
-          className="text-slate-400 hover:text-slate-600 transition-colors"
+          className="text-text-muted hover:text-text-secondary transition-colors"
         >
           ← Deposit Chains
         </button>
-        <h1 className="text-2xl font-bold text-slate-900">
-          Tokens — <span className="font-mono text-slate-600">{slug}</span>
+        <h1 className="text-2xl font-bold text-text-primary">
+          Tokens — <span className="font-mono text-text-secondary">{slug}</span>
         </h1>
       </div>
 
       {/* Token table */}
       <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-surface-alt border-b border-border-subtle">
             <tr>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Symbol</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Contract Address</th>
-              <th className="px-4 py-3 text-center font-medium text-slate-600">Decimals</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Verification</th>
-              <th className="px-4 py-3 text-center font-medium text-slate-600">Status</th>
-              <th className="px-4 py-3 text-center font-medium text-slate-600">Actions</th>
+              <th className="px-4 py-3 text-left font-medium text-text-secondary">Symbol</th>
+              <th className="px-4 py-3 text-left font-medium text-text-secondary">Contract Address</th>
+              <th className="px-4 py-3 text-center font-medium text-text-secondary">Decimals</th>
+              <th className="px-4 py-3 text-left font-medium text-text-secondary">Verification</th>
+              <th className="px-4 py-3 text-center font-medium text-text-secondary">Status</th>
+              <th className="px-4 py-3 text-center font-medium text-text-secondary">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border-subtle">
             {tokens.map((token) => (
-              <tr key={token.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 font-semibold text-slate-900">{token.symbol}</td>
-                <td className="px-4 py-3 font-mono text-xs text-slate-500">
+              <tr key={token.id} className="hover:bg-surface-alt transition-colors">
+                <td className="px-4 py-3 font-semibold text-text-primary">{token.symbol}</td>
+                <td className="px-4 py-3 font-mono text-xs text-text-muted">
                   {token.address
                     ? <span title={token.address}>{token.address.slice(0, 10)}…{token.address.slice(-6)}</span>
-                    : <span className="text-slate-300">native</span>
+                    : <span className="text-text-muted">native</span>
                   }
                 </td>
-                <td className="px-4 py-3 text-center text-slate-600">{token.decimals}</td>
+                <td className="px-4 py-3 text-center text-text-secondary">{token.decimals}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1 flex-wrap">
                     <VerBadge ok={token.onChainVerified} label="On-chain" />
@@ -336,7 +336,7 @@ export default function ChainTokensPage() {
           </tbody>
         </table>
         {tokens.length === 0 && (
-          <div className="px-4 py-12 text-center text-slate-400">
+          <div className="px-4 py-12 text-center text-text-muted">
             No tokens on this chain yet.
           </div>
         )}

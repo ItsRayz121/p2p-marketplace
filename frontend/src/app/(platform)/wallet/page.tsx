@@ -1449,7 +1449,7 @@ export default function WalletPage() {
                 const coinColor: Record<string, { bg: string; text: string }> = {
                   USDT: { bg: 'bg-emerald-500/10', text: 'text-emerald-600' },
                   BNB:  { bg: 'bg-yellow-500/10',  text: 'text-yellow-600'  },
-                  ETH:  { bg: 'bg-slate-500/10',   text: 'text-slate-600'   },
+                  ETH:  { bg: 'bg-slate-500/10',   text: 'text-slate-600 dark:text-slate-300' },
                   BTC:  { bg: 'bg-orange-500/10',  text: 'text-orange-600'  },
                   SOL:  { bg: 'bg-violet-500/10',  text: 'text-violet-600'  },
                   APT:  { bg: 'bg-cyan-500/10',    text: 'text-cyan-600'    },

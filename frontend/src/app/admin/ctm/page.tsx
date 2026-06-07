@@ -14,7 +14,7 @@ interface CtmStats {
 }
 
 const TIER_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-700',
+  new: 'bg-surface-alt text-text-secondary',
   basic: 'bg-blue-100 text-blue-700',
   verified: 'bg-green-100 text-green-700',
   elite: 'bg-purple-100 text-purple-700',
@@ -101,7 +101,7 @@ export default function AdminCtmDashboardPage() {
             <div key={tier} className="bg-surface shadow-card border border-border rounded-xl p-4">
               <p className="text-xs text-text-muted mb-1">Tier</p>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[tier] ?? 'bg-gray-100 text-gray-700'}`}>{tier}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[tier] ?? 'bg-surface-alt text-text-secondary'}`}>{tier}</span>
                 <span className="text-xl font-bold text-text-primary">{count}</span>
               </div>
             </div>

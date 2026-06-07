@@ -19,7 +19,7 @@ const CATEGORY_COLORS: Record<AdminNotifCategory, string> = {
   GAS:     'bg-orange-100 text-orange-700',
   DISPUTE: 'bg-red-100 text-red-700',
   CTM:     'bg-teal-100 text-teal-700',
-  SYSTEM:  'bg-gray-100 text-gray-600',
+  SYSTEM:  'bg-surface-alt text-text-secondary',
 }
 
 function greeting() {
@@ -222,7 +222,7 @@ export default function AdminDashboardPage() {
                     )}
                   >
                     {!n.isRead && <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
-                    {n.isRead  && <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-gray-200 flex-shrink-0" />}
+                    {n.isRead  && <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-surface-alt flex-shrink-0" />}
                     <span className={cn('mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide', CATEGORY_COLORS[n.category])}>
                       {n.category}
                     </span>

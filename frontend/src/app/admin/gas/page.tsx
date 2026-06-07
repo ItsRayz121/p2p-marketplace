@@ -152,7 +152,7 @@ function walletHealthDot(s: string): string {
   if (s === 'low') return 'bg-yellow-400'
   if (s === 'price_unavailable') return 'bg-orange-400'
   if (s === 'paused' || s === 'rpc_error') return 'bg-red-500'
-  return 'bg-gray-400'
+  return 'bg-border-strong'
 }
 
 function estimatedDeliveries(wallet: GasWallet): number | null {

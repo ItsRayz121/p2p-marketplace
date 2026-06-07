@@ -5,7 +5,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { Modal } from '@/components/ui/Modal'
 
 const TIER_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-600',
+  new: 'bg-surface-alt text-text-secondary',
   basic: 'bg-blue-100 text-blue-700',
   verified: 'bg-green-100 text-green-700',
   elite: 'bg-purple-100 text-purple-700',
@@ -142,7 +142,7 @@ export default function AdminCtmMerchantsPage() {
                     <p className="text-xs text-text-muted">{m.user.email}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[m.tier] ?? 'bg-gray-100 text-gray-600'}`}>{m.tier}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[m.tier] ?? 'bg-surface-alt text-text-secondary'}`}>{m.tier}</span>
                   </td>
                   <td className="px-4 py-3 text-text-muted">{m.completedCtmTrades}/{m.totalCtmTrades}</td>
                   <td className="px-4 py-3">

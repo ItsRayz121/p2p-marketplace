@@ -486,7 +486,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     GAS:     'bg-orange-100 text-orange-700',
     DISPUTE: 'bg-red-100 text-red-700',
     CTM:     'bg-teal-100 text-teal-700',
-    SYSTEM:  'bg-gray-100 text-gray-600',
+    SYSTEM:  'bg-surface-alt text-text-secondary',
   }
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {

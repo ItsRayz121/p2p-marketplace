@@ -758,29 +758,29 @@ function TokenModal({
               )}
               {addrLookup && !addrLooking && (
                 <div className="mt-2 flex gap-2 flex-wrap">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
                     {addrLookup.onChainVerified ? '✓' : '–'} On-chain
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
                     {addrLookup.coingeckoVerified ? '✓' : '–'} CoinGecko
                   </span>
-                  {addrLookup.symbol && <span className="text-xs text-slate-500">symbol: {addrLookup.symbol}</span>}
-                  {addrLookup.decimals != null && <span className="text-xs text-slate-500">decimals: {addrLookup.decimals}</span>}
+                  {addrLookup.symbol && <span className="text-xs text-text-muted">symbol: {addrLookup.symbol}</span>}
+                  {addrLookup.decimals != null && <span className="text-xs text-text-muted">decimals: {addrLookup.decimals}</span>}
                 </div>
               )}
               {lookupResult && (
                 <div className="mt-2 flex gap-2 flex-wrap">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
                     {lookupResult.coingeckoVerified ? '✓' : '–'} CoinGecko
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
                     {lookupResult.onChainVerified ? '✓' : '–'} On-chain
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.trustWalletVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.trustWalletVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
                     {lookupResult.trustWalletVerified ? '✓' : '–'} TrustWallet
                   </span>
                   {lookupResult.decimals != null && (
-                    <span className="text-xs text-slate-500">decimals: {lookupResult.decimals}</span>
+                    <span className="text-xs text-text-muted">decimals: {lookupResult.decimals}</span>
                   )}
                 </div>
               )}

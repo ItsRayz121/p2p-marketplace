@@ -235,7 +235,7 @@ function LiveBalancesPanel() {
                     <span className={cn(
                       'w-1.5 h-1.5 rounded-full shrink-0',
                       w.error        ? 'bg-danger'
-                      : w.balance === null ? 'bg-gray-300'
+                      : w.balance === null ? 'bg-border-strong'
                       : w.balance === 0    ? 'bg-warning'
                       : 'bg-success',
                     )} />

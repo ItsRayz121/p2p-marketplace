@@ -71,7 +71,7 @@ function ConfirmWithdrawalContent() {
   const color = {
     loading: '',
     confirmed: 'text-emerald-600',
-    cancelled: 'text-slate-500',
+    cancelled: 'text-text-muted',
     error: 'text-red-600',
   }[stage]
 

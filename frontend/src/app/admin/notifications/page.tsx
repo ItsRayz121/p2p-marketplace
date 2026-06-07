@@ -5,13 +5,13 @@ import { adminApi, type AdminNotif, type AdminNotifCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const CATEGORIES: { id: AdminNotifCategory | 'ALL'; label: string; color: string }[] = [
-  { id: 'ALL',     label: 'All',      color: 'bg-gray-100 text-gray-700' },
+  { id: 'ALL',     label: 'All',      color: 'bg-surface-alt text-text-secondary' },
   { id: 'KYC',     label: 'KYC',      color: 'bg-blue-100 text-blue-700' },
   { id: 'TRADE',   label: 'Trade',    color: 'bg-purple-100 text-purple-700' },
   { id: 'DISPUTE', label: 'Dispute',  color: 'bg-red-100 text-red-700' },
   { id: 'GAS',     label: 'Gas',      color: 'bg-orange-100 text-orange-700' },
   { id: 'CTM',     label: 'CTM',      color: 'bg-teal-100 text-teal-700' },
-  { id: 'SYSTEM',  label: 'System',   color: 'bg-gray-100 text-gray-600' },
+  { id: 'SYSTEM',  label: 'System',   color: 'bg-surface-alt text-text-secondary' },
 ]
 
 const CATEGORY_COLOR: Record<AdminNotifCategory, string> = {
@@ -20,7 +20,7 @@ const CATEGORY_COLOR: Record<AdminNotifCategory, string> = {
   GAS:     'bg-orange-100 text-orange-700',
   DISPUTE: 'bg-red-100 text-red-700',
   CTM:     'bg-teal-100 text-teal-700',
-  SYSTEM:  'bg-gray-100 text-gray-600',
+  SYSTEM:  'bg-surface-alt text-text-secondary',
 }
 
 export default function AdminNotificationsPage() {
@@ -186,7 +186,7 @@ export default function AdminNotificationsPage() {
                   {!n.isRead ? (
                     <div className="w-2 h-2 rounded-full bg-primary" />
                   ) : (
-                    <div className="w-2 h-2 rounded-full bg-gray-200" />
+                    <div className="w-2 h-2 rounded-full bg-surface-alt" />
                   )}
                 </div>
 

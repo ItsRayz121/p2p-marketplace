@@ -117,6 +117,25 @@
   input, select, textarea {
     font-size: 16px;
   }
+
+  /* Form controls default to themed surface + text so typed text and
+     placeholders stay readable in BOTH light and dark mode even when a
+     page renders a raw input, textarea or select without explicit color
+     classes. Any explicit background or text utility on the element wins
+     (utility classes have higher specificity than this element rule, and
+     the :where() wrapper keeps the selector at zero specificity).
+     Checkbox, radio, range and color are excluded so their accent
+     rendering is untouched. */
+  input:where(:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color'])),
+  textarea,
+  select {
+    @apply bg-surface text-text-primary;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-text-muted;
+  }
 }
 
 /* ─── Dark mode overrides ─────────────────────────────────────────────────── */
@@ -154,12 +173,6 @@
 }
 .dark ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--color-border-strong));
-}
-
-/* Placeholder text in dark mode */
-.dark input::placeholder,
-.dark textarea::placeholder {
-  color: rgb(var(--color-text-disabled));
 }
 
 /* Selection highlight in dark mode */

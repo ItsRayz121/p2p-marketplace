@@ -483,7 +483,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                       <div className="text-right flex-shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           t.status === 'crypto_released' ? 'bg-green-100 text-green-700' :
-                          t.status === 'cancelled'       ? 'bg-gray-100 text-gray-600'  :
+                          t.status === 'cancelled'       ? 'bg-surface-alt text-text-secondary' :
                           t.status === 'disputed'        ? 'bg-red-100 text-red-700'    :
                           'bg-blue-100 text-blue-700'
                         }`}>{t.status.replace(/_/g, ' ')}</span>

@@ -32,7 +32,7 @@ interface Profile {
 }
 
 const TIER_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-700',
+  new: 'bg-surface-alt text-text-secondary',
   basic: 'bg-blue-100 text-blue-700',
   verified: 'bg-green-100 text-green-700',
   elite: 'bg-purple-100 text-purple-700',
@@ -111,7 +111,7 @@ export function MerchantProfileModal({ userId, onClose }: { userId: string; onCl
                       merchantName: profile.user.merchant?.status === 'approved' ? profile.user.merchant.businessName : null,
                       username: profile.user.username,
                     })}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[profile.tier] ?? 'bg-gray-100 text-gray-700'}`}>{profile.tier}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TIER_COLORS[profile.tier] ?? 'bg-surface-alt text-text-secondary'}`}>{profile.tier}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <StarRow rating={avgRating} />

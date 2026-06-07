@@ -171,18 +171,18 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
 
   return (
     <div className="bg-surface shadow-card rounded-xl border border-border p-6 space-y-5">
-      <h2 className="text-lg font-semibold text-slate-900">Add New Blockchain</h2>
+      <h2 className="text-lg font-semibold text-text-primary">Add New Blockchain</h2>
 
       {/* Non-EVM quick templates */}
       <div>
-        <p className="text-sm font-medium text-slate-700 mb-2">Quick templates <span className="text-slate-400 font-normal">(click to pre-fill for non-EVM chains)</span></p>
+        <p className="text-sm font-medium text-text-secondary mb-2">Quick templates <span className="text-text-muted font-normal">(click to pre-fill for non-EVM chains)</span></p>
         <div className="flex flex-wrap gap-2">
           {NON_EVM_TEMPLATES.map((t) => (
             <button
               key={t.slug}
               type="button"
               onClick={() => applyTemplate(t)}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 hover:bg-blue-50 hover:border-blue-400 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-blue-50 hover:border-blue-400 transition-colors"
             >
               {t.label}
             </button>
@@ -192,8 +192,8 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
 
       {/* Chain search */}
       <div className="relative">
-        <label className="block text-sm font-medium text-slate-700 mb-1">
-          Search chain <span className="font-normal text-slate-400">(EVM auto-lookup — or use a quick template above / fill manually)</span>
+        <label className="block text-sm font-medium text-text-secondary mb-1">
+          Search chain <span className="font-normal text-text-muted">(EVM auto-lookup — or use a quick template above / fill manually)</span>
         </label>
         <input
           type="text"
@@ -201,10 +201,10 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
           onChange={e => handleQueryChange(e.target.value)}
           onFocus={() => results.length > 0 && setShowDropdown(true)}
           placeholder="e.g. ZetaChain, Linea — or type manually for SOL/TON/SUI"
-          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         {searching && (
-          <span className="absolute right-3 top-9 text-xs text-slate-400">Searching…</span>
+          <span className="absolute right-3 top-9 text-xs text-text-muted">Searching…</span>
         )}
         {showDropdown && (
           <ul className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-lg shadow-lg max-h-56 overflow-auto text-sm">
@@ -215,7 +215,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
                 className="px-3 py-2 cursor-pointer hover:bg-blue-50 flex items-center justify-between"
               >
                 <span className="font-medium">{r.name}</span>
-                <span className="text-xs text-slate-400">chainId {r.chainId} · {r.nativeSymbol}</span>
+                <span className="text-xs text-text-muted">chainId {r.chainId} · {r.nativeSymbol}</span>
               </li>
             ))}
           </ul>
@@ -228,19 +228,19 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Name *</label>
             <input value={name} onChange={e => setName(e.target.value)} placeholder="ZetaChain" required
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Slug * <span className="text-slate-400 font-normal">(lowercase, no spaces)</span></label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Slug * <span className="text-text-muted font-normal">(lowercase, no spaces)</span></label>
             <input value={slug} onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))} placeholder="zeta" required
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Family *</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Family *</label>
             <select value={family} onChange={e => setFamily(e.target.value as Family)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               {FAMILIES.map(f => <option key={f}>{f}</option>)}
             </select>
             {family !== 'EVM' && (
@@ -251,32 +251,32 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Native Symbol *</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Native Symbol *</label>
             <input value={nativeSymbol} onChange={e => setNativeSymbol(e.target.value.toUpperCase())} placeholder="ZETA" required
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Network Label * <span className="text-slate-400 font-normal">(shown in UI)</span></label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Network Label * <span className="text-text-muted font-normal">(shown in UI)</span></label>
             <input value={networkLabel} onChange={e => setNetworkLabel(e.target.value.toUpperCase())} placeholder="ZETA" required
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Min Confirmations *</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Min Confirmations *</label>
             <input type="number" min={1} value={minConf} onChange={e => setMinConf(e.target.value)} required
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Explorer Base URL * <span className="text-slate-400 font-normal">(no trailing slash — system appends /tx/hash)</span></label>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Explorer Base URL * <span className="text-text-muted font-normal">(no trailing slash — system appends /tx/hash)</span></label>
           <input value={explorerBase} onChange={e => setExplorerBase(e.target.value)} placeholder="https://explorer.zetachain.com" required
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">RPC Env Var <span className="text-slate-400 font-normal">(optional — e.g. ZETA_RPC_URL)</span></label>
+          <label className="block text-sm font-medium text-text-secondary mb-1">RPC Env Var <span className="text-text-muted font-normal">(optional — e.g. ZETA_RPC_URL)</span></label>
           <input value={rpcEnvVar} onChange={e => setRpcEnvVar(e.target.value)} placeholder="ZETA_RPC_URL"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
 
           {/* Recommended public RPC for non-EVM families + live health of the configured endpoint */}
           {(rpcChecking || rpcSuggestion) && (
@@ -312,10 +312,10 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
 
         <label className="flex items-center gap-3 cursor-pointer select-none">
           <input type="checkbox" checked={addToGas} onChange={e => setAddToGas(e.target.checked)}
-            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+            className="w-4 h-4 rounded border-border text-blue-600 focus:ring-blue-500" />
           <div>
-            <span className="text-sm font-medium text-slate-800">Also add to Gas section</span>
-            <p className="text-xs text-slate-500">Creates an inactive Gas chain entry so you can configure it under Gas → Chains later.</p>
+            <span className="text-sm font-medium text-text-primary">Also add to Gas section</span>
+            <p className="text-xs text-text-muted">Creates an inactive Gas chain entry so you can configure it under Gas → Chains later.</p>
           </div>
         </label>
 
@@ -374,8 +374,8 @@ export default function DepositChainsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Deposit Chain Registry</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-bold text-text-primary">Deposit Chain Registry</h1>
+          <p className="text-sm text-text-muted mt-1">
             DB-backed deposit chain and token configuration. Changes take effect immediately via Redis cache invalidation.
           </p>
         </div>
@@ -393,26 +393,26 @@ export default function DepositChainsPage() {
 
       <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-surface-alt border-b border-border-subtle">
             <tr>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Chain</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Family</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Network Label</th>
-              <th className="px-4 py-3 text-center font-medium text-slate-600">Tokens</th>
-              <th className="px-4 py-3 text-center font-medium text-slate-600">Min Conf.</th>
-              <th className="px-4 py-3 text-center font-medium text-slate-600">Status</th>
-              <th className="px-4 py-3 text-center font-medium text-slate-600">Actions</th>
+              <th className="px-4 py-3 text-left font-medium text-text-secondary">Chain</th>
+              <th className="px-4 py-3 text-left font-medium text-text-secondary">Family</th>
+              <th className="px-4 py-3 text-left font-medium text-text-secondary">Network Label</th>
+              <th className="px-4 py-3 text-center font-medium text-text-secondary">Tokens</th>
+              <th className="px-4 py-3 text-center font-medium text-text-secondary">Min Conf.</th>
+              <th className="px-4 py-3 text-center font-medium text-text-secondary">Status</th>
+              <th className="px-4 py-3 text-center font-medium text-text-secondary">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border-subtle">
             {chains.map((chain) => (
-              <tr key={chain.slug} className="hover:bg-slate-50 transition-colors">
+              <tr key={chain.slug} className="hover:bg-surface-alt transition-colors">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-slate-900">{chain.name}</div>
-                  <div className="text-xs text-slate-400">{chain.slug}</div>
+                  <div className="font-medium text-text-primary">{chain.name}</div>
+                  <div className="text-xs text-text-muted">{chain.slug}</div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded">{chain.family}</span>
+                  <span className="text-xs font-mono bg-surface-alt px-2 py-0.5 rounded">{chain.family}</span>
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-xs font-mono">{chain.networkLabel}</span>
@@ -425,7 +425,7 @@ export default function DepositChainsPage() {
                     {chain.activeTokens} tokens
                   </button>
                 </td>
-                <td className="px-4 py-3 text-center text-slate-600">{chain.minConfirmations}</td>
+                <td className="px-4 py-3 text-center text-text-secondary">{chain.minConfirmations}</td>
                 <td className="px-4 py-3 text-center">
                   <Badge variant={chain.isActive ? 'success' : 'default'}>
                     {chain.isActive ? 'Active' : 'Inactive'}
@@ -455,7 +455,7 @@ export default function DepositChainsPage() {
           </tbody>
         </table>
         {chains.length === 0 && (
-          <div className="px-4 py-12 text-center text-slate-400">
+          <div className="px-4 py-12 text-center text-text-muted">
             No deposit chains configured. Run the seed script to populate from the static config.
           </div>
         )}

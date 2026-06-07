@@ -16,10 +16,10 @@ const STATUS_COLORS: Record<string, string> = {
   seller_transferring: 'bg-indigo-100 text-indigo-700',
   proof_submitted:     'bg-purple-100 text-purple-700',
   completed:           'bg-green-100 text-green-700',
-  cancelled:           'bg-gray-100 text-gray-600',
+  cancelled:           'bg-surface-alt text-text-secondary',
   disputed:            'bg-red-100 text-red-700',
   dispute_resolved:    'bg-green-100 text-green-700',
-  expired:             'bg-gray-100 text-gray-600',
+  expired:             'bg-surface-alt text-text-secondary',
 }
 
 const STATUS_BADGE: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {

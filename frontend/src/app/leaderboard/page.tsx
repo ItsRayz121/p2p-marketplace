@@ -63,9 +63,9 @@ function RankDisplay({ rank }: { rank: number }) {
 
 function rankRowCls(rank: number, isMe: boolean): string {
   if (isMe) return 'bg-primary/5'
-  if (rank === 1) return 'bg-yellow-50'
-  if (rank === 2) return 'bg-slate-50'
-  if (rank === 3) return 'bg-amber-50/60'
+  if (rank === 1) return 'bg-yellow-50 dark:bg-yellow-500/10'
+  if (rank === 2) return 'bg-slate-50 dark:bg-slate-500/10'
+  if (rank === 3) return 'bg-amber-50/60 dark:bg-amber-500/10'
   return ''
 }
 
@@ -247,7 +247,7 @@ export default function LeaderboardPage() {
               <div className="md:hidden space-y-2">
                 {entries.map((entry) => {
                   const isMe = entry.userId === user?.id
-                  const rowBg = isMe ? 'border-primary/30 bg-primary/5' : entry.rank === 1 ? 'border-yellow-200 bg-yellow-50' : entry.rank === 2 ? 'border-slate-200 bg-slate-50' : entry.rank === 3 ? 'border-amber-200 bg-amber-50/60' : 'border-border bg-surface'
+                  const rowBg = isMe ? 'border-primary/30 bg-primary/5' : entry.rank === 1 ? 'border-yellow-200 bg-yellow-50 dark:border-yellow-500/30 dark:bg-yellow-500/10' : entry.rank === 2 ? 'border-slate-200 bg-slate-50 dark:border-slate-500/30 dark:bg-slate-500/10' : entry.rank === 3 ? 'border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10' : 'border-border bg-surface'
                   return (
                     <div
                       key={entry.userId}
