@@ -38,6 +38,7 @@ type RoleFilter = typeof ROLE_OPTIONS[number]
 interface Trade {
   id: string
   tradeRef: string
+  displayRef?: string | null
   status: string
   tokenAmount: string
   fiatAmount: string
@@ -157,7 +158,10 @@ export default function MyCtmTradesPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <EntityLogo type="token" slug={t.token.symbol} size="sm" logoUrl={t.token.logoUrl} />
-                        <span className="text-sm font-semibold text-text-primary">{t.token.symbol}</span>
+                        <div className="min-w-0">
+                          <span className="block text-sm font-semibold text-text-primary">{t.token.symbol}</span>
+                          {t.displayRef && <span className="block text-[11px] text-text-muted">#{t.displayRef}</span>}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-text-primary font-mono hidden sm:table-cell">

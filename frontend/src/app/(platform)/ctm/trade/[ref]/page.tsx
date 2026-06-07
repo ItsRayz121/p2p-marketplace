@@ -7,6 +7,13 @@ import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
 import { isTrustedImageUrl } from '@/lib/utils'
+import { isOpaqueId } from '@/lib/pkPaymentMethods'
+
+/** Never surface an opaque payment-method ID to users — fall back to a label. */
+function prettyMethod(value?: string | null): string {
+  if (!value || isOpaqueId(value)) return 'Selected payment method'
+  return value
+}
 import NextImage from 'next/image'
 
 const STATUS_STEPS = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'completed']
@@ -372,7 +379,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const paymentMethodLabel = snap?.accounts
     ? (snap.selectedIdx !== undefined ? (snap.accounts[snap.selectedIdx]?.label ?? snap.accounts.map(a => a.label).join(' / ')) : snap.accounts.map(a => a.label).join(' / '))
-    : (snap?.label ?? trade.paymentMethod)
+    : (snap?.label ?? prettyMethod(trade.paymentMethod))
 
   const renderSingleAccount = (acc: SellerPaymentAccount) => (
     <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
@@ -430,7 +437,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     }
     return (
       <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
-        Payment via: <span className="font-medium text-text-primary">{trade.paymentMethod}</span>
+        Payment via: <span className="font-medium text-text-primary">{prettyMethod(trade.paymentMethod)}</span>
       </div>
     )
   }
@@ -451,7 +458,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     }
     return (
       <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
-        Method: <span className="font-medium text-text-primary">{trade.paymentMethod}</span>
+        Method: <span className="font-medium text-text-primary">{prettyMethod(trade.paymentMethod)}</span>
         <span className="ml-1">(account details not provided)</span>
       </div>
     )
