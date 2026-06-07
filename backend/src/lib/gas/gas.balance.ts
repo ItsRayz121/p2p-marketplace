@@ -193,17 +193,67 @@ export async function getNativeUsdPrice(chain: GasChainId): Promise<number> {
 
 // ── TRON balance ──────────────────────────────────────────────────────────────
 
-async function getTronBalanceTRX(address: string): Promise<number> {
+// Friendly error surfaced to the admin UI instead of a raw "HTTP 429".
+class TronRateLimitedError extends Error {
+  constructor() { super('TRON provider temporarily rate limited. Retrying automatically.') }
+}
+
+const TRON_BALANCE_CACHE_TTL = 45 // seconds — balances are polled ~every 60s
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Primary: TronGrid full node. */
+async function fetchTronGridBalance(address: string): Promise<number> {
   const url = `${env.TRON_FULLNODE_URL}/v1/accounts/${encodeURIComponent(address)}`
   const headers: Record<string, string> = {}
   if (env.TRONGRID_API_KEY) headers['TRONGRID-API-Key'] = env.TRONGRID_API_KEY
 
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
-  if (!res.ok) throw new Error(`TronGrid accounts API error: HTTP ${res.status}`)
+  // Up to 3 attempts with exponential backoff on 429 / 5xx.
+  let lastStatus = 0
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
+    if (res.ok) {
+      const data = (await res.json()) as { data?: Array<{ balance?: number }> }
+      return (data.data?.[0]?.balance ?? 0) / 1_000_000 // SUN → TRX
+    }
+    lastStatus = res.status
+    if (res.status !== 429 && res.status < 500) break // non-retryable
+    await sleep(300 * Math.pow(2, attempt)) // 300ms, 600ms, 1200ms
+  }
+  if (lastStatus === 429) throw new TronRateLimitedError()
+  throw new Error(`TronGrid accounts API error: HTTP ${lastStatus}`)
+}
 
-  const data = (await res.json()) as { data?: Array<{ balance?: number }> }
-  const balanceSun = data.data?.[0]?.balance ?? 0
-  return balanceSun / 1_000_000  // SUN → TRX
+/** Secondary fallback: Tronscan public account API (no key required). */
+async function fetchTronscanBalance(address: string): Promise<number> {
+  const url = `https://apilist.tronscanapi.com/api/account?address=${encodeURIComponent(address)}`
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) throw new Error(`Tronscan account API error: HTTP ${res.status}`)
+  const data = (await res.json()) as { balance?: number }
+  return (data.balance ?? 0) / 1_000_000 // SUN → TRX
+}
+
+async function getTronBalanceTRX(address: string): Promise<number> {
+  const cacheKey = `gasbal:tron:${address}`
+  try {
+    const cached = await redis.get(cacheKey)
+    if (cached !== null) return parseFloat(cached)
+  } catch { /* redis miss is non-fatal */ }
+
+  let balance: number
+  try {
+    balance = await fetchTronGridBalance(address)
+  } catch (primaryErr) {
+    // On rate-limit / failure, try the secondary provider before giving up.
+    try {
+      balance = await fetchTronscanBalance(address)
+      logger.warn({ address }, '[gas-balance] TronGrid failed; served TRON balance from Tronscan fallback')
+    } catch {
+      throw primaryErr // surface the (friendly) primary error
+    }
+  }
+
+  try { await redis.set(cacheKey, String(balance), 'EX', TRON_BALANCE_CACHE_TTL) } catch { /* non-fatal */ }
+  return balance
 }
 
 // ── EVM native balance via viem ───────────────────────────────────────────────
