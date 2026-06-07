@@ -146,15 +146,23 @@ async function upsertTradeStats(
 // ─── Service Functions ────────────────────────────────────────────────────────
 
 export async function createTrade(buyerId: string, adId: string, data: CreateTradeInput) {
-  // Idempotency check
+  // Idempotency: claim the key with SET NX BEFORE the transaction so two
+  // concurrent submissions (double-click / retry) can't both create a trade.
   const idempKey = `idempotency:trade:${buyerId}:${adId}:${data.amount}:${data.paymentMethod}`
   const existing = await redis.get(idempKey)
-  if (existing) {
-    const trade = await db.trade.findUnique({ where: { id: existing } })
-    if (trade) return trade
+  if (existing && existing !== 'pending') {
+    const prior = await db.trade.findUnique({ where: { id: existing } })
+    if (prior) return prior
+  }
+  const claimed = await redis.set(idempKey, 'pending', 'EX', 300, 'NX')
+  if (claimed !== 'OK') {
+    // Another request is creating this exact trade right now (or just did).
+    throw new AppError('DUPLICATE_REQUEST', 'A matching trade is already being created. Please wait a moment.', 409)
   }
 
-  const trade = await db.$transaction(async (tx: Tx) => {
+  let trade: Awaited<ReturnType<typeof db.trade.create>>
+  try {
+    trade = await db.$transaction(async (tx: Tx) => {
     // SELECT FOR UPDATE on buyer user
     const [buyerRows] = await tx.$queryRaw<Array<{
       id: string; dailyBuyUsed: Prisma.Decimal; dailyBuyLimit: Prisma.Decimal;
@@ -271,10 +279,16 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       },
     })
 
-    return newTrade
-  })
+      return newTrade
+    })
+  } catch (err) {
+    // Release the claim so a legitimate retry isn't blocked for 5 minutes.
+    await redis.del(idempKey).catch(() => {})
+    throw err
+  }
 
-  // Store idempotency key (5 min TTL)
+  // Replace the 'pending' marker with the real trade id (5 min TTL) so a
+  // sequential retry returns the same trade instead of creating a new one.
   await redis.set(idempKey, trade.id, 'EX', 300)
 
   return trade

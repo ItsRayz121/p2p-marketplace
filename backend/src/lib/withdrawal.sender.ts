@@ -21,7 +21,8 @@ import {
 import { getChainByNetworkLabel } from '../services/chainRegistry.service'
 import { logger as log } from './logger'
 import { createAdminNotif } from '../services/adminNotification.service'
-import { getEvmGasPrice } from './evmRpc'
+import { getEvmGasPrice, getTransactionCount } from './evmRpc'
+import { withHotWalletLock } from './hotWalletLock'
 import { getHotWalletBalance } from './gas/gas.balance'
 import type { GasChainId } from './gas/gas.chains'
 import { appendLedgerEntry } from './gas/gas.ledger'
@@ -198,11 +199,18 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     const account = privateKeyToAccount(privateKey)
     const client = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
 
-    txHash = await client.writeContract({
-      address: tokenCfg.address as `0x${string}`,
-      abi: ERC20_TRANSFER_ABI,
-      functionName: 'transfer',
-      args: [wd.toAddress as `0x${string}`, parseUnits(String(wd.amount), tokenCfg.decimals)],
+    // Serialize sends from the shared hot wallet per-chain and pin an explicit
+    // pending nonce so a concurrent withdrawal/gas-delivery can't collide on the
+    // same nonce and silently drop one tx (see hotWalletLock.ts).
+    txHash = await withHotWalletLock(chainCfg.id, async () => {
+      const nonce = await getTransactionCount(rpcUrl, chainCfg.id, account.address, 'pending')
+      return client.writeContract({
+        address: tokenCfg.address as `0x${string}`,
+        abi: ERC20_TRANSFER_ABI,
+        functionName: 'transfer',
+        args: [wd.toAddress as `0x${string}`, parseUnits(String(wd.amount), tokenCfg.decimals)],
+        nonce,
+      })
     })
   } catch (err) {
     seed?.fill(0)

@@ -13,6 +13,8 @@ import {
   HOT_WALLET_INDEX,
 } from './gasWalletService'
 import { getHotWalletBalance } from './gas.balance'
+import { getTransactionCount } from '../evmRpc'
+import { withHotWalletLock } from '../hotWalletLock'
 import type { GasChainId } from './gas.chains'
 import {
   getSolanaHotWalletAddress,
@@ -108,31 +110,42 @@ async function deliverEvm(
   viemChain: Chain,
   rpcUrl: string,
   privateKey: string,
+  chainKey: string,
 ): Promise<string> {
   const account = privateKeyToAccount(privateKey as `0x${string}`)
   const client = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
 
-  const MAX_ATTEMPTS = 3
-  let lastErr: unknown
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      // On retries bump maxFeePerGas by 20% per attempt to escape a stuck mempool slot.
-      const gasBump = attempt > 1 ? { maxFeePerGas: parseGwei(String(10 * 1.2 ** (attempt - 1))) } : {}
-      const hash = await client.sendTransaction({
-        account,
-        to: order.toAddress as `0x${string}`,
-        value: parseEther(order.gasAmountNative.toString()),
-        ...gasBump,
-      })
-      return hash
-    } catch (err) {
-      lastErr = err
-      if (attempt < MAX_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, 2000 * attempt))
+  // Serialize per-chain against the withdrawal sender and other deliveries so
+  // concurrent broadcasts from the shared hot wallet can't collide on a nonce
+  // (see lib/hotWalletLock.ts). The nonce is fetched once inside the lock and
+  // REUSED across retries, so a gas-bumped retry replaces the stuck tx rather
+  // than queueing a second, higher-nonce send.
+  return withHotWalletLock(chainKey, async () => {
+    const nonce = await getTransactionCount(rpcUrl, chainKey, account.address, 'pending')
+
+    const MAX_ATTEMPTS = 3
+    let lastErr: unknown
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        // On retries bump maxFeePerGas by 20% per attempt to escape a stuck mempool slot.
+        const gasBump = attempt > 1 ? { maxFeePerGas: parseGwei(String(10 * 1.2 ** (attempt - 1))) } : {}
+        const hash = await client.sendTransaction({
+          account,
+          to: order.toAddress as `0x${string}`,
+          value: parseEther(order.gasAmountNative.toString()),
+          nonce,
+          ...gasBump,
+        })
+        return hash
+      } catch (err) {
+        lastErr = err
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, 2000 * attempt))
+        }
       }
     }
-  }
-  throw lastErr
+    throw lastErr
+  })
 }
 
 // ── L2 + alt-EVM delivery ─────────────────────────────────────────────────────
@@ -141,7 +154,7 @@ async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: 
   const seed = decryptGasSeed()
   try {
     const privateKey = deriveEvmPrivateKeyHex(seed, hdIndex)
-    return await deliverEvm(order, viemChain, rpcUrl, privateKey)
+    return await deliverEvm(order, viemChain, rpcUrl, privateKey, order.chain)
   } finally {
     seed.fill(0)
   }

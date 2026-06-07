@@ -87,6 +87,21 @@ export async function getEvmGasPrice(rpcUrl: string, chain: string): Promise<big
   return BigInt(hex)
 }
 
+/**
+ * Fetch the transaction count (nonce) for an address. Use block='pending' to
+ * include txs already in the mempool — essential for serialized sends from the
+ * shared hot wallet so each broadcast gets a distinct, non-colliding nonce.
+ */
+export async function getTransactionCount(
+  rpcUrl: string,
+  chain: string,
+  address: string,
+  block: 'pending' | 'latest' = 'pending',
+): Promise<number> {
+  const hex = await rpcCall<string>(rpcUrl, chain, 'eth_getTransactionCount', [address, block])
+  return Number(BigInt(hex))
+}
+
 export async function getTransactionReceipt(
   rpcUrl: string,
   chain: string,

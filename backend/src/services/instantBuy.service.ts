@@ -18,16 +18,49 @@ export async function createOrder(
     idempotencyKey?: string
   },
 ) {
-  // Check idempotency
-  if (data.idempotencyKey) {
-    const idemKey = `idem:instantbuy:${data.idempotencyKey}`
+  const idemKey = data.idempotencyKey ? `idem:instantbuy:${data.idempotencyKey}` : null
+  const resolveDepositAddress = async () => {
+    const depKey = `deposit_address_${data.coin.toLowerCase()}_${data.network.toLowerCase()}`
+    const cfg = await db.platformConfig.findUnique({ where: { key: depKey } })
+    return cfg?.value ?? null
+  }
+
+  // Idempotency: claim the key with SET NX BEFORE any writes so two concurrent
+  // submissions (double-click / retry) can't both create an order and double-charge
+  // the daily buy limit.
+  if (idemKey) {
     const existing = await redis.get(idemKey)
-    if (existing) {
+    if (existing && existing !== 'pending') {
       const order = await db.instantBuyOrder.findUnique({ where: { id: existing } })
-      if (order) return order
+      if (order) return { order, depositAddress: await resolveDepositAddress() }
+    }
+    const claimed = await redis.set(idemKey, 'pending', 'EX', 86400, 'NX')
+    if (claimed !== 'OK') {
+      throw new AppError('DUPLICATE_REQUEST', 'This order is already being created. Please wait a moment.', 409)
     }
   }
 
+  try {
+    return await createOrderInner(userId, data, idemKey)
+  } catch (err) {
+    // Release the claim so a legitimate retry isn't blocked for 24h.
+    if (idemKey) await redis.del(idemKey).catch(() => {})
+    throw err
+  }
+}
+
+async function createOrderInner(
+  userId: string,
+  data: {
+    coin: string
+    network: string
+    paymentMode: 'pkr' | 'crypto'
+    amount: number
+    destinationAddress: string
+    idempotencyKey?: string
+  },
+  idemKey: string | null,
+) {
   // Fetch rate, fee config, and deposit address outside the transaction (read-only, non-critical timing)
   const rateStr = await redis.get(`rate:${data.coin}`)
   if (!rateStr) {
@@ -103,9 +136,10 @@ export async function createOrder(
     })
   })
 
-  // Store idempotency key
-  if (data.idempotencyKey) {
-    await redis.setex(`idem:instantbuy:${data.idempotencyKey}`, 86400, order.id)
+  // Replace the 'pending' marker with the real order id so a sequential retry
+  // returns the same order instead of creating a new one.
+  if (idemKey) {
+    await redis.setex(idemKey, 86400, order.id)
   }
 
   return { order, depositAddress: depositConfig?.value ?? null }

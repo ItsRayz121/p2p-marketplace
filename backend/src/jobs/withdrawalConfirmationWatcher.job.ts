@@ -17,12 +17,24 @@ import { getChainByNetworkLabel, getRpcUrl } from '../services/chainRegistry.ser
 import { createAdminNotif } from '../services/adminNotification.service'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { recordAuditLog } from '../lib/audit'
+import { sendWithdrawalOnChain } from '../lib/withdrawal.sender'
 
 // Alert if a sent withdrawal has no receipt after this many hours
 const MAX_PENDING_HOURS = 2
 
+// Re-drive auto-send for auto_approved withdrawals stuck this long. The initial
+// send is fire-and-forget from requestWithdrawal; a process crash/redeploy mid-send
+// (or a transient gas/RPC skip) can leave the row auto_approved forever with the
+// balance already debited. This age gate avoids racing the original in-flight send.
+const AUTO_SEND_RECOVERY_MIN_AGE_MS = 3 * 60 * 1000
+
 export async function runWithdrawalConfirmationWatcher(): Promise<void> {
   const cutoff = new Date(Date.now() - MAX_PENDING_HOURS * 3_600_000)
+
+  // Recovery pass first — re-attempt any auto-send that never completed.
+  await recoverOrphanedAutoSends().catch((err) =>
+    logger.error({ err }, 'withdrawalConfirmationWatcher: auto-send recovery failed'),
+  )
 
   // Find withdrawals that have been broadcast but not yet confirmed as complete
   const pending = await db.withdrawal.findMany({
@@ -137,6 +149,55 @@ async function checkWithdrawal(
       return
     }
     throw err
+  }
+}
+
+/**
+ * Re-drive auto-send for withdrawals stuck in 'auto_approved'. sendWithdrawalOnChain
+ * is idempotent: it claims the row with updateMany({status:'auto_approved'}) before
+ * marking it 'sent', so this can never double-broadcast a withdrawal that already
+ * went out. Per-chain hot-wallet locking (hotWalletLock.ts) prevents nonce clashes
+ * with concurrent sends.
+ */
+async function recoverOrphanedAutoSends(): Promise<void> {
+  const ageCutoff = new Date(Date.now() - AUTO_SEND_RECOVERY_MIN_AGE_MS)
+  const orphans = await db.withdrawal.findMany({
+    where: {
+      status: 'auto_approved',
+      txHash: null,
+      createdAt: { lt: ageCutoff },
+    },
+    select: {
+      id: true,
+      userId: true,
+      coin: true,
+      network: true,
+      amount: true,
+      fee: true,
+      toAddress: true,
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 20,
+  })
+
+  if (orphans.length === 0) return
+
+  logger.warn({ count: orphans.length }, 'withdrawalConfirmationWatcher: recovering orphaned auto_approved withdrawals')
+
+  for (const wd of orphans) {
+    try {
+      await sendWithdrawalOnChain({
+        id: wd.id,
+        userId: wd.userId,
+        coin: wd.coin,
+        network: wd.network,
+        amount: wd.amount.toString(),
+        fee: wd.fee.toString(),
+        toAddress: wd.toAddress,
+      })
+    } catch (err) {
+      logger.error({ err, withdrawalId: wd.id }, 'withdrawalConfirmationWatcher: recovery send threw')
+    }
   }
 }
 
