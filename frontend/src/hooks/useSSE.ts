@@ -28,32 +28,51 @@ export function useSSE(onEvent: SseHandler) {
     if (typeof EventSource === 'undefined') return
 
     const base = resolveApiBase()
-    // SECURITY NOTE: EventSource cannot send Authorization headers, so we pass
-    // the JWT via querystring. This leaks the token into proxy/CDN/server logs.
-    // The proper fix is a backend handshake endpoint that mints a short-lived
-    // (e.g. 60s) one-time SSE token, which we pass here instead. Tracked but
-    // not yet implemented server-side — coordinate before changing this line.
-    const url = `${base}/api/v1/sse?token=${encodeURIComponent(accessToken)}`
 
-    const es = new EventSource(url, { withCredentials: true })
-    esRef.current = es
-
-    es.onmessage = (e) => {
-      retryRef.current = 1000
-      try {
-        const data = JSON.parse(e.data as string) as { type: string; payload?: unknown }
-        if (data.type !== 'ping') onEventRef.current(data)
-      } catch { /* ignore malformed */ }
-    }
-
-    es.onerror = () => {
-      es.close()
-      esRef.current = null
-      // Back-off: 1 s → 2 s → 4 s → ... capped at 30 s
+    const scheduleReconnect = () => {
       const delay = Math.min(retryRef.current, 30_000)
       retryRef.current = Math.min(delay * 2, 30_000)
       retryTimerRef.current = setTimeout(connect, delay)
     }
+
+    // Mint a single-use ticket (authenticated via the Authorization header) and
+    // connect with ?ticket=, so the long-lived JWT never appears in the SSE URL
+    // (proxy/CDN/server logs, history, Referer).
+    void (async () => {
+      let ticket: string
+      try {
+        const res = await fetch(`${base}/api/v1/sse/ticket`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          credentials: 'include',
+        })
+        if (!res.ok) { scheduleReconnect(); return }
+        const raw = await res.json() as { data?: { ticket?: string }; ticket?: string }
+        ticket = raw.data?.ticket ?? raw.ticket ?? ''
+        if (!ticket) { scheduleReconnect(); return }
+      } catch {
+        scheduleReconnect()
+        return
+      }
+
+      const url = `${base}/api/v1/sse?ticket=${encodeURIComponent(ticket)}`
+      const es = new EventSource(url, { withCredentials: true })
+      esRef.current = es
+
+      es.onmessage = (e) => {
+        retryRef.current = 1000
+        try {
+          const data = JSON.parse(e.data as string) as { type: string; payload?: unknown }
+          if (data.type !== 'ping') onEventRef.current(data)
+        } catch { /* ignore malformed */ }
+      }
+
+      es.onerror = () => {
+        es.close()
+        esRef.current = null
+        scheduleReconnect()
+      }
+    })()
   }, [accessToken])
 
   useEffect(() => {

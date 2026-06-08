@@ -8,7 +8,8 @@
  *   - Every delivery, refund, refill, and drain must produce a ledger entry.
  */
 
-import type { GasChain, GasLedgerEntryType, Prisma } from '@prisma/client'
+import type { GasChain, GasLedgerEntryType } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { db } from '../prisma'
 import { logger } from '../logger'
 import type { GasChainId } from './gas.chains'
@@ -143,41 +144,56 @@ export interface ChainLedgerSummary {
 }
 
 export async function getLedgerSummary(chain?: GasChainId): Promise<ChainLedgerSummary[]> {
-  const where: Prisma.GasLedgerEntryWhereInput = {}
-  if (chain) where.chain = toDbChain(chain)
+  // Aggregate in SQL (GROUP BY) instead of loading every ledger row into memory.
+  // The old approach was an unbounded findMany + JS reduce — fine at thousands of
+  // rows, a memory/latency hazard at millions.
+  const whereSql = chain
+    ? Prisma.sql`WHERE "chain" = ${toDbChain(chain)}::"GasChain"`
+    : Prisma.empty
 
-  const entries = await db.gasLedgerEntry.findMany({
-    where,
-    select: { chain: true, entryType: true, nativeAmount: true, usdAmount: true },
-  })
+  const rows = await db.$queryRaw<Array<{
+    chain: GasChain
+    inflow_native: number | null
+    outflow_native: number | null
+    inflow_usd: number | null
+    outflow_usd: number | null
+    order_payments_usd: number | null
+    deliveries_native: number | null
+    refunds_usd: number | null
+    refills_native: number | null
+  }>>(Prisma.sql`
+    SELECT
+      "chain",
+      SUM(CASE WHEN "nativeAmount" >= 0 THEN "nativeAmount" ELSE 0 END)::float8                       AS inflow_native,
+      SUM(CASE WHEN "nativeAmount" <  0 THEN ABS("nativeAmount") ELSE 0 END)::float8                  AS outflow_native,
+      SUM(CASE WHEN "nativeAmount" >= 0 THEN "usdAmount" ELSE 0 END)::float8                          AS inflow_usd,
+      SUM(CASE WHEN "nativeAmount" <  0 THEN "usdAmount" ELSE 0 END)::float8                          AS outflow_usd,
+      SUM(CASE WHEN "entryType" = 'order_payment' THEN "usdAmount" ELSE 0 END)::float8                AS order_payments_usd,
+      SUM(CASE WHEN "entryType" = 'gas_delivery' THEN ABS("nativeAmount") ELSE 0 END)::float8         AS deliveries_native,
+      SUM(CASE WHEN "entryType" = 'delivery_refund' THEN "usdAmount" ELSE 0 END)::float8              AS refunds_usd,
+      SUM(CASE WHEN "entryType" = 'refill_hot_from_treasury' THEN "nativeAmount" ELSE 0 END)::float8  AS refills_native
+    FROM "GasLedgerEntry"
+    ${whereSql}
+    GROUP BY "chain"
+  `)
 
-  const byChain: Record<string, ChainLedgerSummary> = {}
-
-  for (const e of entries) {
-    if (!byChain[e.chain]) {
-      byChain[e.chain] = {
-        chain: e.chain,
-        totalInflowNative: 0, totalOutflowNative: 0, netNative: 0,
-        totalInflowUsd: 0,    totalOutflowUsd: 0,    netUsd: 0,
-        orderPaymentsUsd: 0,  deliveriesNative: 0,
-        refundsUsd: 0,        refillsNative: 0,
-      }
+  return rows.map((r) => {
+    const inflowNative = r.inflow_native ?? 0
+    const outflowNative = r.outflow_native ?? 0
+    const inflowUsd = r.inflow_usd ?? 0
+    const outflowUsd = r.outflow_usd ?? 0
+    return {
+      chain: r.chain,
+      totalInflowNative: inflowNative,
+      totalOutflowNative: outflowNative,
+      netNative: inflowNative - outflowNative,
+      totalInflowUsd: inflowUsd,
+      totalOutflowUsd: outflowUsd,
+      netUsd: inflowUsd - outflowUsd,
+      orderPaymentsUsd: r.order_payments_usd ?? 0,
+      deliveriesNative: r.deliveries_native ?? 0,
+      refundsUsd: r.refunds_usd ?? 0,
+      refillsNative: r.refills_native ?? 0,
     }
-    const s   = byChain[e.chain]!
-    const nat = Number(e.nativeAmount)
-    const usd = Number(e.usdAmount)
-
-    if (nat >= 0) { s.totalInflowNative  += nat; s.totalInflowUsd  += usd }
-    else          { s.totalOutflowNative += Math.abs(nat); s.totalOutflowUsd += usd }
-
-    s.netNative = s.totalInflowNative  - s.totalOutflowNative
-    s.netUsd    = s.totalInflowUsd     - s.totalOutflowUsd
-
-    if (e.entryType === 'order_payment')          s.orderPaymentsUsd  += usd
-    if (e.entryType === 'gas_delivery')           s.deliveriesNative  += Math.abs(nat)
-    if (e.entryType === 'delivery_refund')        s.refundsUsd        += usd
-    if (e.entryType === 'refill_hot_from_treasury') s.refillsNative   += nat
-  }
-
-  return Object.values(byChain)
+  })
 }
