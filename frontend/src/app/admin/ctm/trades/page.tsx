@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
@@ -303,15 +303,23 @@ export default function AdminCtmTradesPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  const [token, setToken] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
+  const [searching, setSearching] = useState(false)
   const [page, setPage] = useState(1)
   const [viewRef, setViewRef] = useState<string | null>(null)
 
-  const fetchTrades = async () => {
+  const fetchTrades = useCallback(async () => {
     try {
       const params: Record<string, string | number> = { page, limit: 20 }
       if (statusFilter) params.status = statusFilter
-      if (search) params.ref = search
+      if (search) params.search = search
+      if (token) params.token = token
+      if (minAmount) params.minAmount = minAmount
+      if (maxAmount) params.maxAmount = maxAmount
       const res = await ctmApi.adminGetTrades(params)
       const data = res as { trades: CtmAdminTrade[]; total: number }
       setTrades(data.trades ?? [])
@@ -320,10 +328,25 @@ export default function AdminCtmTradesPage() {
       // ignore
     } finally {
       setLoading(false)
+      setSearching(false)
     }
-  }
+  }, [page, statusFilter, search, token, minAmount, maxAmount])
 
   usePolling(fetchTrades, 30000)
+
+  // Debounced live search
+  const firstRun = useRef(true)
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return }
+    setSearching(true)
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  // Refetch when committed filters / page change
+  useEffect(() => { fetchTrades() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search, statusFilter, token, minAmount, maxAmount, page])
+
+  function runSearchNow() { setSearch(searchInput.trim()); setPage(1) }
 
   const timeLeftLabel = (expiresAt: string) => {
     const ms = new Date(expiresAt).getTime() - Date.now()
@@ -334,20 +357,43 @@ export default function AdminCtmTradesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <h1 className="text-2xl font-bold text-text-primary">CTM Trades ({total})</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <input
             type="text"
-            placeholder="Search ref…"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary w-36 focus:outline-none"
+            placeholder="Ref, token, buyer/seller username or email…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') runSearchNow() }}
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary flex-1 min-w-56 focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <Button size="sm" onClick={runSearchNow} loading={searching}>Search</Button>
+          <input
+            type="text"
+            placeholder="Token symbol"
+            value={token}
+            onChange={(e) => { setToken(e.target.value); setPage(1) }}
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary w-32 focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <input
+            type="number"
+            placeholder="Min PKR"
+            value={minAmount}
+            onChange={(e) => { setMinAmount(e.target.value); setPage(1) }}
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary w-28 focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <input
+            type="number"
+            placeholder="Max PKR"
+            value={maxAmount}
+            onChange={(e) => { setMaxAmount(e.target.value); setPage(1) }}
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary w-28 focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none"
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">All statuses</option>
             <option value="awaiting_payment">Awaiting Payment</option>
@@ -360,6 +406,9 @@ export default function AdminCtmTradesPage() {
             <option value="cancelled">Cancelled</option>
             <option value="expired">Expired</option>
           </select>
+          {(search || token || minAmount || maxAmount || statusFilter) && (
+            <Button size="sm" variant="ghost" onClick={() => { setSearchInput(''); setSearch(''); setToken(''); setMinAmount(''); setMaxAmount(''); setStatusFilter(''); setPage(1) }}>Clear</Button>
+          )}
         </div>
       </div>
 

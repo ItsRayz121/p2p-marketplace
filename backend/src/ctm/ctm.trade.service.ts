@@ -73,7 +73,18 @@ export async function getTradeByRef(tradeRef: string, userId: string, role: stri
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (!isParticipant(trade, userId, role)) throw new AppError('FORBIDDEN', 'Access denied', 403)
   const ratedByMeRecord = await db.ctmTradeRating.findFirst({ where: { tradeId: trade.id, ratedByUserId: userId } })
-  return { ...trade, ratedByMe: !!ratedByMeRecord }
+
+  // Admins also get the trade's audit trail (CTM audit logs key on tradeRef in metadata).
+  let auditLogs: Array<{ id: string; action: string; actorId: string; createdAt: Date }> = []
+  if (role === 'admin' || role === 'super_admin') {
+    auditLogs = await db.auditLog.findMany({
+      where: { action: { startsWith: 'CTM_' }, metadata: { path: ['tradeRef'], equals: tradeRef } },
+      orderBy: { createdAt: 'desc' }, take: 50,
+      select: { id: true, action: true, actorId: true, createdAt: true },
+    }).catch(() => [])
+  }
+
+  return { ...trade, ratedByMe: !!ratedByMeRecord, auditLogs }
 }
 
 export async function uploadPaymentProof(tradeRef: string, buyerId: string, fileUrl: string, fileHash: string) {
@@ -450,11 +461,36 @@ export async function adminConfirmPayment(adminId: string, tradeRef: string) {
   notify(trade.sellerId, 'CTM_PAYMENT_CONFIRMED', 'Payment confirmed by admin', 'An admin has confirmed the buyer payment. Please send the tokens.', { tradeRef })
 }
 
-export async function getAllTradesAdmin(filters: { status?: string; page?: number; limit?: number } = {}) {
-  const { status, page = 1, limit = 20 } = filters
+export async function getAllTradesAdmin(filters: { status?: string; search?: string; token?: string; minAmount?: number; maxAmount?: number; page?: number; limit?: number } = {}) {
+  const { status, search, token, minAmount, maxAmount, page = 1, limit = 20 } = filters
   const skip = (page - 1) * limit
   const where: Record<string, unknown> = {}
   if (status) where.status = status
+
+  const and: Record<string, unknown>[] = []
+  if (search) {
+    const s = search.trim()
+    // Resolve users matching the term so ref OR username search both work.
+    const users = await db.user.findMany({
+      where: { OR: [{ username: { contains: s, mode: 'insensitive' } }, { email: { contains: s, mode: 'insensitive' } }] },
+      select: { id: true }, take: 100,
+    })
+    const userIds = users.map((u) => u.id)
+    and.push({
+      OR: [
+        { tradeRef: { contains: s, mode: 'insensitive' } },
+        { displayRef: { contains: s, mode: 'insensitive' } },
+        { token: { symbol: { contains: s, mode: 'insensitive' } } },
+        { token: { name: { contains: s, mode: 'insensitive' } } },
+        { buyerId: { in: userIds } },
+        { sellerId: { in: userIds } },
+      ],
+    })
+  }
+  if (token) and.push({ token: { OR: [{ symbol: { contains: token, mode: 'insensitive' } }, { id: token }] } })
+  if (minAmount != null && !Number.isNaN(minAmount)) and.push({ fiatAmount: { gte: minAmount } })
+  if (maxAmount != null && !Number.isNaN(maxAmount)) and.push({ fiatAmount: { lte: maxAmount } })
+  if (and.length) where.AND = and
 
   const [trades, total] = await Promise.all([
     db.ctmTrade.findMany({

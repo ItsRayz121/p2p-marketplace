@@ -94,8 +94,14 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
   // GET /ctm/trades/admin/all — admin view all trades
   app.get('/ctm/trades/admin/all', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
     const q = req.query as Record<string, string>
+    // `search` is the unified term; `ref` kept for backward compatibility.
+    const searchTerm = q.search ?? q.ref
     const result = await getAllTradesAdmin({
       ...(q.status ? { status: q.status } : {}),
+      ...(searchTerm ? { search: searchTerm } : {}),
+      ...(q.token ? { token: q.token } : {}),
+      ...(q.minAmount ? { minAmount: parseFloat(q.minAmount) } : {}),
+      ...(q.maxAmount ? { maxAmount: parseFloat(q.maxAmount) } : {}),
       page: q.page ? parseInt(q.page, 10) : 1,
       limit: q.limit ? parseInt(q.limit, 10) : 20,
     })

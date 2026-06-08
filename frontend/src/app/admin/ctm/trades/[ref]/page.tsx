@@ -201,6 +201,21 @@ export default function AdminCtmTradeDetailPage() {
           )}
         </div>
       )}
+
+      {/* Audit log (admin) */}
+      {Array.isArray(trade.auditLogs) && trade.auditLogs.length > 0 && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-sm font-medium text-text-primary mb-2">Audit Log ({trade.auditLogs.length})</p>
+          <ul className="divide-y divide-border">
+            {trade.auditLogs.map((a: any) => (
+              <li key={a.id} className="py-2 flex items-center justify-between gap-2 text-xs">
+                <span className="font-mono text-text-secondary">{a.action.replace(/_/g, ' ')}</span>
+                <span className="text-text-muted">{a.actorId?.slice(0, 8)}… · {fmtDt(a.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
