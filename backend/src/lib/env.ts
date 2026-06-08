@@ -77,6 +77,11 @@ const envSchema = z.object({
   TON_API_KEY: z.string().optional(),
   // SUI: SUI Mainnet JSON-RPC node (mysten, Shinami, QuickNode, etc.)
   SUI_RPC_URL: z.string().url().default('https://fullnode.mainnet.sui.io'),
+  // Aptos Indexer GraphQL endpoint — used by the gas payment poller to detect
+  // incoming USDT (fungible-asset) deposits to the Aptos gas wallet.
+  APTOS_INDEXER_URL: z.string().url().default('https://api.mainnet.aptoslabs.com/v1/graphql'),
+  // Optional Aptos Labs API key (Bearer) for higher indexer rate limits.
+  APTOS_API_KEY: z.string().optional(),
   // Reconciler tuning. The reconciler scans detected deposits older than
   // `DEPOSIT_RECONCILE_MIN_AGE_SECONDS` every `DEPOSIT_RECONCILE_INTERVAL_SECONDS`.
   DEPOSIT_RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),

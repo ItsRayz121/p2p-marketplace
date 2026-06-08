@@ -25,6 +25,7 @@ import { createAdminNotif } from '../services/adminNotification.service'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 import { fromDbChain } from '../lib/gas/gas.chains'
 import type { GasChainId } from '../lib/gas/gas.chains'
+import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
 const TRANSFER_EVENT = parseAbiItem(
@@ -42,6 +43,12 @@ const USDT_TRC20_DECIMALS = 6
 const TRON_CONFIRMED_DEPTH = 19
 // On a cold start (no cursor) scan this far back so on-time payments aren't missed.
 const TRON_COLD_START_LOOKBACK_MS = 30 * 60 * 1000
+
+// Native USDT on Aptos (Tether) — fungible-asset metadata address, 6 decimals.
+// Overridable via PlatformConfig key 'gas_usdt_aptos_asset' (e.g. testnet/alt asset).
+const USDT_APTOS_ASSET_DEFAULT = '0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b'
+const USDT_APTOS_DECIMALS = 6
+const APTOS_COLD_START_LOOKBACK_MS = 30 * 60 * 1000
 
 interface NetworkConfig {
   paymentNetwork: string
@@ -512,6 +519,135 @@ async function scanTron(): Promise<void> {
   await writePollerHeartbeat('TRC20', transfers.length)
 }
 
+// ── Aptos scanner (Indexer GraphQL) ─────────────────────────────────────────────
+// Moralis can't see Aptos either, so this is the primary detection path for USDT
+// paid on Aptos (the APTOS payment network). Queries the Aptos Indexer for
+// incoming fungible-asset deposits of USDT to the Aptos gas wallet.
+interface AptosFaActivity {
+  transaction_version?: number | string
+  event_index?: number | string
+  amount?: string
+  asset_type?: string
+  owner_address?: string
+  type?: string
+  transaction_timestamp?: string
+}
+
+async function scanAptos(): Promise<void> {
+  const indexerUrl = env.APTOS_INDEXER_URL
+  if (!indexerUrl) return
+
+  const depositAddress = await resolveDepositAddress('gas_usdt_aptos_address', getAptosHotWalletAddress() ?? undefined)
+  if (!depositAddress) return
+
+  const assetCfg = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_aptos_asset' } })
+  const assetType = assetCfg?.value || USDT_APTOS_ASSET_DEFAULT
+
+  const graceCutoff = new Date(Date.now() - GRACE_WINDOW_MS)
+  const actionable = await db.gasFeeOrder.count({
+    where: {
+      paymentNetwork: 'APTOS',
+      status: { in: ['payment_pending', 'payment_uploaded', 'expired'] },
+      expiresAt: { gte: graceCutoff },
+    },
+  })
+  if (actionable === 0) { await writePollerHeartbeat('APTOS', 0); return }
+
+  const cursorKey = 'gas_poller_last_ts:APTOS'
+  const storedTs = await redis.get(cursorKey)
+  const minTs = storedTs ?? new Date(Date.now() - APTOS_COLD_START_LOOKBACK_MS).toISOString()
+
+  const query = `
+    query GasAptosDeposits($owner: String!, $asset: String!, $minTs: timestamp!) {
+      fungible_asset_activities(
+        where: {
+          owner_address: { _eq: $owner },
+          asset_type: { _eq: $asset },
+          is_transaction_success: { _eq: true },
+          type: { _ilike: "%Deposit%" },
+          transaction_timestamp: { _gt: $minTs }
+        },
+        order_by: { transaction_timestamp: asc },
+        limit: 50
+      ) {
+        transaction_version
+        event_index
+        amount
+        asset_type
+        owner_address
+        type
+        transaction_timestamp
+      }
+    }`
+
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (env.APTOS_API_KEY) headers['authorization'] = `Bearer ${env.APTOS_API_KEY}`
+
+  let activities: AptosFaActivity[]
+  try {
+    const res = await fetch(indexerUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, variables: { owner: depositAddress, asset: assetType, minTs } }),
+      signal: AbortSignal.timeout(12_000),
+    })
+    if (!res.ok) {
+      logger.warn({ status: res.status, network: 'APTOS' }, 'gasPaymentPoller: Aptos indexer request failed — will retry next tick')
+      return
+    }
+    const json = (await res.json()) as { data?: { fungible_asset_activities?: AptosFaActivity[] }; errors?: unknown }
+    if (json.errors) {
+      logger.warn({ errors: json.errors, network: 'APTOS' }, 'gasPaymentPoller: Aptos indexer returned GraphQL errors')
+      return
+    }
+    activities = json.data?.fungible_asset_activities ?? []
+  } catch (err) {
+    logger.warn({ err, network: 'APTOS' }, 'gasPaymentPoller: Aptos indexer fetch errored — will retry next tick')
+    return
+  }
+
+  if (activities.length === 0) { await writePollerHeartbeat('APTOS', 0); return }
+
+  logger.info({ network: 'APTOS', count: activities.length }, 'gasPaymentPoller: found Aptos USDT deposits')
+
+  let maxTsStr = minTs
+  let maxTsMs = Date.parse(minTs)
+  for (const a of activities) {
+    const ts = a.transaction_timestamp
+    // Aptos indexer timestamps are UTC; append Z when absent for correct parsing.
+    const tsMs = ts ? Date.parse(ts.endsWith('Z') ? ts : `${ts}Z`) : NaN
+    if (Number.isFinite(tsMs) && tsMs > maxTsMs) { maxTsMs = tsMs; maxTsStr = ts! }
+
+    const version = a.transaction_version != null ? String(a.transaction_version) : null
+    if (!version) continue
+    const eventIdx = a.event_index != null ? String(a.event_index) : '0'
+    const txHash = `aptos:${version}:${eventIdx}`
+
+    const raw = a.amount
+    if (!raw) continue
+    let incoming: number
+    try {
+      incoming = Number(BigInt(raw)) / Math.pow(10, USDT_APTOS_DECIMALS)
+    } catch {
+      continue
+    }
+    if (!(incoming > 0)) continue
+
+    await matchAndDeliver({
+      paymentNetwork: 'APTOS',
+      txHash,
+      incoming,
+      confirmations: 1, // is_transaction_success already filtered; Aptos finalizes on commit
+      depositAddress,
+      graceCutoff,
+      getBlockTimestampMs: async () => (Number.isFinite(tsMs) ? tsMs : null),
+    })
+  }
+
+  await redis.set(cursorKey, maxTsStr)
+  await writePollerHeartbeat('APTOS', activities.length)
+}
+
 export async function runGasPaymentPoller(): Promise<void> {
   for (const cfg of NETWORK_CONFIGS) {
     try {
@@ -525,5 +661,11 @@ export async function runGasPaymentPoller(): Promise<void> {
     await scanTron()
   } catch (err) {
     logger.error({ err, network: 'TRC20' }, 'gasPaymentPoller: scanTron threw unexpectedly')
+  }
+
+  try {
+    await scanAptos()
+  } catch (err) {
+    logger.error({ err, network: 'APTOS' }, 'gasPaymentPoller: scanAptos threw unexpectedly')
   }
 }

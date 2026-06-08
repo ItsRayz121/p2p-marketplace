@@ -3123,7 +3123,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // ticks ~every 60s). APTOS has no automatic detection and is reported as such.
   app.get('/admin/gas/poller-health', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const HEALTHY_WINDOW_MS = 5 * 60 * 1000 // 5 min — generous vs the ~60s tick
-    const POLLED_NETWORKS = ['TRC20', 'BEP20', 'ERC20']
+    const POLLED_NETWORKS = ['TRC20', 'BEP20', 'ERC20', 'APTOS']
     const now = Date.now()
 
     const networks = await Promise.all(
@@ -3146,16 +3146,6 @@ export async function adminRoutes(app: FastifyInstance) {
         }
       }),
     )
-
-    // APTOS is a valid gas payment network but has no automatic detection path yet.
-    networks.push({
-      network: 'APTOS',
-      polled: false,
-      lastTickAt: null,
-      ageSeconds: null,
-      lastFound: null,
-      healthy: false,
-    })
 
     return reply.send({ success: true, data: { networks, healthyWindowSeconds: HEALTHY_WINDOW_MS / 1000 } })
   })
