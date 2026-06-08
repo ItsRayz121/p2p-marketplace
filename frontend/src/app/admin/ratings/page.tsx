@@ -1,5 +1,6 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
@@ -7,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { Star } from 'lucide-react'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
@@ -20,10 +22,12 @@ interface RatingRecord {
   tags: string[]
   hidden: boolean
   createdAt: string
-  trade?: { orderRef: string }
+  trade?: { id: string; orderRef: string }
   reviewer?: { username: string; email: string } | null
   reviewedUser?: { username: string; email: string } | null
 }
+
+type StatusFilter = '' | 'visible' | 'hidden'
 
 interface RatingsResponse {
   ratings: RatingRecord[]
@@ -50,11 +54,19 @@ export default function AdminRatingsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('')
+  const [searching, setSearching] = useState(false)
+
   const limit = 50
 
   const fetchRatings = useCallback(async () => {
     try {
-      const data = await adminApi.getAdminRatings({ page, limit }) as RatingsResponse
+      const params: Record<string, string | number> = { page, limit }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
+      const data = await adminApi.getAdminRatings(params) as RatingsResponse
       setRatings(data.ratings ?? [])
       setTotal(data.pagination?.total ?? 0)
       setError(null)
@@ -62,10 +74,29 @@ export default function AdminRatingsPage() {
       setError(err instanceof Error ? err.message : 'Failed to load ratings')
     } finally {
       setLoading(false)
+      setSearching(false)
     }
-  }, [page])
+  }, [page, search, statusFilter])
 
   usePolling(fetchRatings, 60_000)
+
+  const firstRun = useRef(true)
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return }
+    setSearching(true)
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  useEffect(() => {
+    fetchRatings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, page])
+
+  function runSearchNow() {
+    setSearch(searchInput.trim())
+    setPage(1)
+  }
 
   function promptToggle(id: string, hidden: boolean) {
     setSelectedId(id)
@@ -99,11 +130,35 @@ export default function AdminRatingsPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Trade Ratings</h1>
-        <p className="text-text-muted text-sm mt-0.5">{total} ratings total</p>
+        <p className="text-text-muted text-sm mt-0.5">{total} ratings{search || statusFilter ? ' (filtered)' : ' total'}</p>
+      </div>
+
+      {/* Search & filters */}
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-3 items-center">
+        <div className="flex-1 min-w-48">
+          <Input
+            placeholder="Search by trade ref, reviewer/reviewed username or email..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') runSearchNow() }}
+          />
+        </div>
+        <Button onClick={runSearchNow} loading={searching}>Search</Button>
+        <div className="flex flex-wrap gap-1.5">
+          {([['', 'All'], ['visible', 'Visible'], ['hidden', 'Hidden']] as Array<[StatusFilter, string]>).map(([key, label]) => (
+            <button
+              key={key || 'all'}
+              onClick={() => { setStatusFilter(key); setPage(1) }}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${statusFilter === key ? 'border-primary bg-primary/10 text-primary' : 'border-border text-text-secondary hover:bg-surface-alt'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {ratings.length === 0 ? (
-        <EmptyState icon={Star} title="No ratings yet" description="Ratings will appear here after trades are completed and reviewed." />
+        <EmptyState icon={Star} title={search || statusFilter ? 'No matching ratings' : 'No ratings yet'} description={search || statusFilter ? 'Try a different search term or filter.' : 'Ratings will appear here after trades are completed and reviewed.'} />
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
@@ -123,8 +178,10 @@ export default function AdminRatingsPage() {
               <tbody className="divide-y divide-border">
                 {ratings.map((r) => (
                   <tr key={r.id} className={`hover:bg-surface/50 transition-colors ${r.hidden ? 'opacity-50' : ''}`}>
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">
-                      #{r.trade?.orderRef?.slice(0, 8) ?? r.tradeId.slice(0, 8)}
+                    <td className="px-4 py-3">
+                      <Link href={`/admin/trades/${r.trade?.id ?? r.tradeId}`} className="font-mono text-xs text-primary hover:underline">
+                        #{r.trade?.orderRef?.slice(0, 12) ?? r.tradeId.slice(0, 8)}
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-text-primary">{r.reviewer?.username ?? r.ratedByUserId.slice(0, 8)}</p>

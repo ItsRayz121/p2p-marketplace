@@ -1383,7 +1383,16 @@ export async function adminRoutes(app: FastifyInstance) {
       },
     })
     if (!trade) throw Errors.NOT_FOUND('Trade')
-    return reply.send({ success: true, data: trade })
+
+    // Admin audit trail for this trade (by id or order ref) — powers the
+    // investigation timeline + audit log sections.
+    const auditLogs = await db.auditLog.findMany({
+      where: { targetType: { in: ['Trade', 'trade'] }, OR: [{ targetId: id }, { targetId: trade.orderRef }] },
+      orderBy: { createdAt: 'desc' }, take: 100,
+      select: { id: true, action: true, actorId: true, ipAddress: true, metadata: true, createdAt: true },
+    })
+
+    return reply.send({ success: true, data: { ...trade, auditLogs } })
   })
 
   app.post('/admin/trades/:id/confirm-payment', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
@@ -6208,16 +6217,37 @@ export async function adminRoutes(app: FastifyInstance) {
     const limit = Math.min(50, parseInt(query.limit ?? '50'))
     const skip = (page - 1) * limit
 
+    const where: Prisma.TradeRatingWhereInput = {}
+    if (query.status === 'visible') where.hidden = false
+    else if (query.status === 'hidden') where.hidden = true
+
+    const search = query.search?.trim()
+    if (search) {
+      // Resolve users matching the term so we can match reviewer/reviewed.
+      const matchingUsers = await db.user.findMany({
+        where: { OR: [{ username: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }] },
+        select: { id: true }, take: 200,
+      })
+      const userIds = matchingUsers.map((u) => u.id)
+      where.OR = [
+        { trade: { orderRef: { contains: search, mode: 'insensitive' } } },
+        { tradeId: search },
+        { ratedByUserId: { in: userIds } },
+        { ratedUserId: { in: userIds } },
+      ]
+    }
+
     const [ratings, total] = await Promise.all([
       db.tradeRating.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          trade: { select: { orderRef: true } },
+          trade: { select: { id: true, orderRef: true } },
         },
       }),
-      db.tradeRating.count(),
+      db.tradeRating.count({ where }),
     ])
 
     // Resolve reviewer and reviewed user names

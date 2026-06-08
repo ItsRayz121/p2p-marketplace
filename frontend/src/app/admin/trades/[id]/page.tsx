@@ -134,7 +134,7 @@ export default function TradeDetailPage() {
           </dl>
           {buyer?.id && (
             <div className="mt-3">
-              <Link href={`/admin/users?id=${buyer.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+              <Link href={`/admin/users/${buyer.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
                 View User Profile <ExternalLink size={11} />
               </Link>
             </div>
@@ -148,13 +148,40 @@ export default function TradeDetailPage() {
           </dl>
           {seller?.id && (
             <div className="mt-3">
-              <Link href={`/admin/users?id=${seller.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+              <Link href={`/admin/users/${seller.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
                 View User Profile <ExternalLink size={11} />
               </Link>
             </div>
           )}
         </Section>
       </div>
+
+      {/* Timeline */}
+      {(() => {
+        const events = [
+          { label: 'Trade created', time: trade.createdAt },
+          { label: 'Payment proof uploaded', time: trade.paymentUploadedAt },
+          { label: 'Payment confirmed', time: trade.paymentConfirmedAt },
+          trade.dispute ? { label: 'Dispute opened', time: trade.dispute.createdAt } : null,
+          trade.cancelledAt ? { label: `Cancelled${trade.cancelledBy ? ` by ${trade.cancelledBy}` : ''}`, time: trade.cancelledAt } : null,
+          ['crypto_released', 'released', 'completed'].includes(trade.status) ? { label: 'Completed', time: trade.updatedAt } : null,
+          trade.expiresAt && ['expired'].includes(trade.status) ? { label: 'Expired', time: trade.expiresAt } : null,
+        ].filter((e): e is { label: string; time: string } => !!e && !!e.time)
+          .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+        return (
+          <Section title="Timeline">
+            <ol className="relative border-l border-border ml-2 space-y-4">
+              {events.map((e, i) => (
+                <li key={i} className="ml-4">
+                  <span className="absolute -left-[5px] mt-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
+                  <p className="text-sm text-text-primary">{e.label}</p>
+                  <p className="text-xs text-text-muted">{fmtDateTime(e.time)}</p>
+                </li>
+              ))}
+            </ol>
+          </Section>
+        )
+      })()}
 
       {/* Payment proof */}
       {trade.paymentProofUrl && (
@@ -253,6 +280,22 @@ export default function TradeDetailPage() {
           {trade.cancelledAt && <Row label="Cancelled At" value={fmtDateTime(trade.cancelledAt)} />}
         </Section>
       )}
+
+      {/* Audit logs */}
+      <Section title={`Audit Logs${trade.auditLogs?.length ? ` (${trade.auditLogs.length})` : ''}`}>
+        {trade.auditLogs?.length ? (
+          <ul className="divide-y divide-border -my-2">
+            {trade.auditLogs.map((a: { id: string; action: string; actorId: string; ipAddress?: string; createdAt: string }) => (
+              <li key={a.id} className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="font-mono text-xs text-text-secondary">{a.action}</span>
+                <span className="text-xs text-text-muted">{a.actorId?.slice(0, 8)}… · {a.ipAddress ?? 'no IP'} · {fmtDateTime(a.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-text-muted">No admin actions recorded for this trade.</p>
+        )}
+      </Section>
 
       {/* Actions */}
       <div className="flex gap-3">
