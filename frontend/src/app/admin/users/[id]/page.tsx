@@ -12,13 +12,17 @@ import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import {
   ArrowLeft, Shield, Star, TrendingUp, Users, AlertTriangle, Wallet,
   Scale, ClipboardList, CreditCard, Gavel, Bell, MessageSquareWarning,
+  Sparkles, Mail, KeyRound,
 } from 'lucide-react'
 import { ModerationPanel, type ModerationStatus } from '@/components/admin/ModerationPanel'
 import { AppealCard } from '@/components/admin/AppealCard'
+import { Button } from '@/components/ui/Button'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-type Tab = 'overview' | 'trades' | 'wallet' | 'disputes' | 'referrals' | 'payment' | 'audit' | 'moderation' | 'appeals' | 'notifications' | 'fraud'
+type Tab = 'intelligence' | 'overview' | 'trades' | 'wallet' | 'disputes' | 'referrals' | 'payment' | 'audit' | 'moderation' | 'appeals' | 'notifications' | 'fraud'
 
 function statusTone(status: string): string {
   const s = status.toLowerCase()
@@ -76,22 +80,58 @@ export default function AdminUserProfilePage() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>('intelligence')
 
-  const fetchProfile = useCallback(async () => {
-    setLoading(true)
+  // Badge override + collateral (migrated from the old users-table modal)
+  const [badgeValue, setBadgeValue] = useState<TraderBadge>('new')
+  const [badgeReason, setBadgeReason] = useState('')
+  const [badgeBusy, setBadgeBusy] = useState(false)
+  const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [confirmSeize, setConfirmSeize] = useState(false)
+
+  const fetchProfile = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const res = await adminApi.getUserProfile(id)
       setData(res)
+      if (res?.profile?.badge) setBadgeValue(res.profile.badge as TraderBadge)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load user profile')
+      if (!silent) setError(err instanceof Error ? err.message : 'Failed to load user profile')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [id])
 
+  const refresh = useCallback(() => fetchProfile(true), [fetchProfile])
+
   useEffect(() => { if (id) fetchProfile() }, [id, fetchProfile])
+
+  async function handleBadgeOverride(clear = false) {
+    setBadgeBusy(true); setActionMsg(null)
+    try {
+      await adminApi.overrideBadge(id, clear ? { badge: badgeValue, clearOverride: true } : { badge: badgeValue, ...(badgeReason ? { reason: badgeReason } : {}) })
+      setActionMsg({ type: 'ok', text: clear ? 'Badge override cleared — auto-recalculation resumed.' : `Badge set to "${badgeValue}".` })
+      setBadgeReason('')
+      refresh()
+    } catch (err) {
+      setActionMsg({ type: 'err', text: err instanceof Error ? err.message : 'Failed to update badge' })
+    } finally {
+      setBadgeBusy(false)
+    }
+  }
+
+  async function handleSeize() {
+    setActionMsg(null)
+    try {
+      await adminApi.seizeCollateral(id)
+      setConfirmSeize(false)
+      setActionMsg({ type: 'ok', text: 'Collateral seized.' })
+      refresh()
+    } catch (err) {
+      setActionMsg({ type: 'err', text: err instanceof Error ? err.message : 'Failed to seize collateral' })
+    }
+  }
 
   if (loading) return <LoadingState message="Loading user profile..." />
   if (error || !data) return <ErrorState title={error ?? 'User not found'} onRetry={fetchProfile} />
@@ -99,6 +139,7 @@ export default function AdminUserProfilePage() {
   const p = data.profile
   const pendingAppeals = (data.appeals ?? []).filter((a: any) => a.status === 'pending' || a.status === 'more_info_requested').length
   const tabs: Array<{ key: Tab; label: string; icon: any; badge?: number }> = [
+    { key: 'intelligence', label: 'Intelligence', icon: Sparkles },
     { key: 'overview', label: 'Overview', icon: Shield },
     { key: 'moderation', label: 'Moderation', icon: Gavel },
     { key: 'appeals', label: 'Appeals', icon: MessageSquareWarning, badge: pendingAppeals },
@@ -186,6 +227,101 @@ export default function AdminUserProfilePage() {
           </button>
         ))}
       </div>
+
+      {actionMsg && (
+        <div className={`px-3 py-2 rounded-lg text-sm border ${actionMsg.type === 'ok' ? 'bg-success/10 border-success/20 text-success' : 'bg-danger/10 border-danger/20 text-danger'}`}>{actionMsg.text}</div>
+      )}
+
+      {/* ── Intelligence (the new Quick View) ── */}
+      {tab === 'intelligence' && (() => {
+        const sumCount = (rows?: Array<{ _count: { status: number } }>) => (rows ?? []).reduce((a, r) => a + (r._count?.status ?? 0), 0)
+        const p2pTotal = sumCount(data.summary?.p2pStatus)
+        const ctmTotal = sumCount(data.summary?.ctmBuyStatus) + sumCount(data.summary?.ctmSellStatus)
+        const gasTotal = sumCount(data.summary?.gasStatus)
+        const kycVariant = (s: string) => s === 'approved' ? 'success' : s === 'rejected' ? 'danger' : s === 'pending' ? 'warning' : 'default'
+        return (
+          <div className="grid lg:grid-cols-2 gap-4">
+            {/* Identity & verification */}
+            <Section title="Identity & Verification">
+              <div className="p-5 grid grid-cols-2 gap-y-4 gap-x-3 text-sm">
+                <div><p className="text-text-muted text-xs">Full name</p><p className="text-text-primary">{p.fullName || '—'}</p></div>
+                <div><p className="text-text-muted text-xs">Role</p><Badge variant="default" size="sm">{p.role}</Badge></div>
+                <div>
+                  <p className="text-text-muted text-xs flex items-center gap-1"><Mail size={11} /> Email verified</p>
+                  <Badge variant={p.isEmailVerified ? 'success' : 'warning'} size="sm">{p.isEmailVerified ? 'Yes' : 'No'}</Badge>
+                </div>
+                <div>
+                  <p className="text-text-muted text-xs flex items-center gap-1"><KeyRound size={11} /> 2FA</p>
+                  <Badge variant={p.twoFaEnabled ? 'success' : 'default'} size="sm">{p.twoFaEnabled ? 'Enabled' : 'Disabled'}</Badge>
+                </div>
+                <div><p className="text-text-muted text-xs">KYC</p><Badge variant={kycVariant(p.kycStatus) as any} size="sm">{p.kycStatus} ({p.kycLevel})</Badge></div>
+                <div><p className="text-text-muted text-xs">Account status</p>
+                  {(p.moderationStatus === 'permanently_banned' || p.moderationStatus === 'temporarily_banned') ? <Badge variant="danger" size="sm">{p.moderationStatus === 'temporarily_banned' ? 'Temp Banned' : 'Banned'}</Badge>
+                    : p.moderationStatus === 'suspended' ? <Badge variant="warning" size="sm">Suspended</Badge>
+                    : p.moderationStatus === 'under_review' ? <Badge variant="default" size="sm">Under Review</Badge>
+                    : <Badge variant="success" size="sm">Active</Badge>}
+                </div>
+                <div><p className="text-text-muted text-xs">Joined</p><p className="text-text-secondary">{fmtDateTime(p.createdAt)}</p></div>
+                <div><p className="text-text-muted text-xs">Reg IP</p><p className="font-mono text-text-secondary text-xs">{p.registrationIp ?? 'Not captured'}</p></div>
+              </div>
+            </Section>
+
+            {/* Trust & activity snapshot */}
+            <Section title="Trust & Activity">
+              <div className="p-5 space-y-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {p.badge && <BadgeChip badge={p.badge} badgeLabel={p.badgeLabel} />}
+                  {p.badgeOverride && <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full font-medium">Override active</span>}
+                  <span className="text-sm text-text-muted">Trust: <strong className="text-text-primary">{p.trustScore ?? '—'}/100</strong></span>
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-lg bg-surface-alt p-3"><p className="text-lg font-bold text-text-primary">{p2pTotal}</p><p className="text-xs text-text-muted">P2P trades</p></div>
+                  <div className="rounded-lg bg-surface-alt p-3"><p className="text-lg font-bold text-text-primary">{ctmTotal}</p><p className="text-xs text-text-muted">CTM trades</p></div>
+                  <div className="rounded-lg bg-surface-alt p-3"><p className="text-lg font-bold text-text-primary">{gasTotal}</p><p className="text-xs text-text-muted">Gas orders</p></div>
+                </div>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <span className="text-text-muted">Completion: <strong className="text-text-primary">{p.completionRate != null ? `${Math.round(p.completionRate * 100)}%` : '—'}</strong></span>
+                  <span className="text-text-muted">Avg rating: <strong className="text-text-primary">{p.avgRating ?? '—'}</strong> ({p.ratingCount})</span>
+                  <span className="text-text-muted">Referrals: <strong className="text-text-primary">{data.summary.referralCount}</strong></span>
+                  <span className="text-text-muted">Fraud flags: <strong className={data.fraudFlags?.length ? 'text-danger' : 'text-text-primary'}>{data.fraudFlags?.length ?? 0}</strong></span>
+                </div>
+              </div>
+            </Section>
+
+            {/* KYC submissions */}
+            <Section title="KYC Submissions" count={data.kycSubmissions?.length}>
+              {data.kycSubmissions?.length ? (
+                <ul className="divide-y divide-border">
+                  {data.kycSubmissions.map((k: any) => (
+                    <li key={k.id} className="px-5 py-3 text-sm flex items-center justify-between">
+                      <div>
+                        <p className="text-text-primary capitalize">{k.tier} tier</p>
+                        <p className="text-xs text-text-muted">{fmtDate(k.createdAt)}{k.reviewedAt ? ` · reviewed ${fmtDate(k.reviewedAt)}` : ''}</p>
+                      </div>
+                      <Badge variant={kycVariant(k.status) as any} size="sm">{k.status}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              ) : <Empty msg="No KYC submissions." />}
+            </Section>
+
+            {/* Wallet balances */}
+            <Section title="Wallet Balances" count={data.wallets?.length}>
+              {data.wallets?.length ? (
+                <ul className="divide-y divide-border">
+                  {data.wallets.filter((w: any) => Number(w.balance) > 0 || Number(w.lockedBalance) > 0).map((w: any, i: number) => (
+                    <li key={i} className="px-5 py-3 text-sm flex items-center justify-between">
+                      <span className="text-text-secondary">{w.coin} <span className="text-text-muted text-xs">({w.network})</span></span>
+                      <span className="text-text-primary font-medium">{fmtNumber(w.balance)}{Number(w.lockedBalance) > 0 ? <span className="text-text-muted text-xs ml-1">+{fmtNumber(w.lockedBalance)} locked</span> : null}</span>
+                    </li>
+                  ))}
+                  {data.wallets.every((w: any) => Number(w.balance) === 0 && Number(w.lockedBalance) === 0) && <Empty msg="All balances are zero." />}
+                </ul>
+              ) : <Empty msg="No wallets." />}
+            </Section>
+          </div>
+        )
+      })()}
 
       {/* ── Overview ── */}
       {tab === 'overview' && (
@@ -511,7 +647,7 @@ export default function AdminUserProfilePage() {
                   banType: p.banType,
                   moderationReason: p.moderationReason ?? p.suspendReason,
                 }}
-                onChange={fetchProfile}
+                onChange={refresh}
               />
             </div>
           </Section>
@@ -531,6 +667,39 @@ export default function AdminUserProfilePage() {
               </ul>
             ) : <Empty msg="No moderation actions on record." />}
           </Section>
+
+          {/* Badge override (migrated from the old quick-view modal) */}
+          <Section title="Trader Badge Override">
+            <div className="p-5 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {p.badge && <BadgeChip badge={p.badge} badgeLabel={p.badgeLabel} />}
+                {p.badgeOverride && <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full font-medium">Override active — auto-recalc paused</span>}
+                <span className="text-sm text-text-muted">Trust score: <strong className="text-text-primary">{p.trustScore ?? '—'}/100</strong></span>
+              </div>
+              <div className="flex flex-wrap gap-2 items-end">
+                <div>
+                  <p className="text-xs text-text-muted mb-1">Override badge</p>
+                  <select value={badgeValue} onChange={(e) => setBadgeValue(e.target.value as TraderBadge)} className="px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary">
+                    {(['new', 'active', 'trusted', 'top', 'elite'] as TraderBadge[]).map((b) => <option key={b} value={b}>{b.charAt(0).toUpperCase() + b.slice(1)}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1 min-w-32">
+                  <p className="text-xs text-text-muted mb-1">Reason (optional)</p>
+                  <input type="text" placeholder="e.g. manual review" value={badgeReason} onChange={(e) => setBadgeReason(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <Button size="sm" loading={badgeBusy} onClick={() => handleBadgeOverride(false)}>Set Badge</Button>
+                {p.badgeOverride && <Button size="sm" variant="ghost" loading={badgeBusy} onClick={() => handleBadgeOverride(true)}>Clear Override</Button>}
+              </div>
+            </div>
+          </Section>
+
+          {/* Collateral enforcement */}
+          <Section title="Collateral">
+            <div className="p-5">
+              <p className="text-xs text-text-muted mb-2">Seizing collateral clears the user’s locked balance and cannot be undone.</p>
+              <Button variant="danger" size="sm" onClick={() => setConfirmSeize(true)}>Seize Collateral</Button>
+            </div>
+          </Section>
         </div>
       )}
 
@@ -541,7 +710,7 @@ export default function AdminUserProfilePage() {
             <div className="p-4 space-y-3">
               {data.appeals?.length ? (
                 data.appeals.map((a: any) => (
-                  <AppealCard key={a.id} appeal={a} showUser={false} onChange={fetchProfile} />
+                  <AppealCard key={a.id} appeal={a} showUser={false} onChange={refresh} />
                 ))
               ) : <Empty msg="This user has not submitted any appeals." />}
             </div>
@@ -590,6 +759,16 @@ export default function AdminUserProfilePage() {
           ) : <Empty msg="No notifications sent to this user yet." />}
         </Section>
       )}
+
+      <ConfirmModal
+        isOpen={confirmSeize}
+        onClose={() => setConfirmSeize(false)}
+        onConfirm={handleSeize}
+        title="Seize Collateral"
+        description={`Seize all collateral from ${p.email}? This clears their locked balance and cannot be undone.`}
+        confirmLabel="Seize Collateral"
+        confirmVariant="danger"
+      />
     </div>
   )
 }
