@@ -2,9 +2,44 @@ import { Prisma } from '@prisma/client'
 import { formatUnits } from 'viem'
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
-import { getAllChains } from './chainRegistry.service'
+import { getAllChains, getRpcUrl } from './chainRegistry.service'
 import type { ChainConfig } from '../lib/chains'
 import { findUserByDepositAddress } from './depositAddress.service'
+import { getBlockNumber, getTransactionReceipt } from '../lib/evmRpc'
+
+/**
+ * Verify a deposit's real confirmation count on-chain (EVM only). Moralis Streams
+ * carry no confirmation count — we treat confirmed:true as "fully confirmed", which
+ * is only safe if the stream's depth in the dashboard is >= chain.minConfirmations.
+ * This RPC check makes the credit decision independent of that config.
+ *
+ * Returns:
+ *   - { status: 'ok', confirmations } when the receipt is readable (0 if not mined)
+ *   - { status: 'reverted' } when the tx reverted on-chain
+ *   - { status: 'unavailable' } on RPC error / no URL → caller falls back to webhook trust
+ */
+async function verifyEvmDepositOnChain(
+  chainSlug: string,
+  txHash: string,
+): Promise<{ status: 'ok'; confirmations: number } | { status: 'reverted' } | { status: 'unavailable' }> {
+  const rpcUrl = getRpcUrl(chainSlug)
+  if (!rpcUrl) return { status: 'unavailable' }
+  try {
+    const [currentBlock, receipt] = await Promise.all([
+      getBlockNumber(rpcUrl, chainSlug),
+      getTransactionReceipt(rpcUrl, chainSlug, txHash),
+    ])
+    // Receipt missing = not yet mined (or dropped) → 0 confirmations, NOT a fallback.
+    if (!receipt) return { status: 'ok', confirmations: 0 }
+    if (receipt.status === '0x0') return { status: 'reverted' }
+    const conf = currentBlock >= receipt.blockNumber
+      ? Number(currentBlock - receipt.blockNumber + 1n)
+      : 0
+    return { status: 'ok', confirmations: conf }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
 
 /**
  * Normalized deposit event consumed by `processDepositEvent`. The webhook
@@ -176,12 +211,38 @@ export async function processDepositEvent(event: NormalizedDepositEvent): Promis
         },
       })
 
-  if (effectiveConfirmations < chain.minConfirmations) {
+  // ── On-chain confirmation gate (A7) ─────────────────────────────────────────
+  // Don't trust a webhook's confirmed:true alone — RPC-verify the real depth so a
+  // misconfigured Moralis stream depth can't credit a deposit before it's final
+  // (which a reorg could then orphan). Falls back to the webhook count only if RPC
+  // is genuinely unavailable, preserving availability.
+  let confirmationsForDecision = effectiveConfirmations
+  if (chain.family === 'EVM') {
+    const v = await verifyEvmDepositOnChain(chain.id, event.txHash)
+    if (v.status === 'reverted') {
+      await db.deposit
+        .updateMany({ where: { id: deposit.id, status: 'detected' }, data: { status: 'rejected', rejectionReason: 'tx_reverted_on_chain' } })
+        .catch(() => {})
+      logger.warn({ depositId: deposit.id, txHash: event.txHash, chain: chain.id }, 'Deposit rejected — tx reverted on-chain (webhook RPC gate)')
+      return { status: 'rejected', depositId: deposit.id, reason: 'tx_reverted_on_chain' }
+    }
+    if (v.status === 'ok') {
+      confirmationsForDecision = v.confirmations
+      // Persist the real count so the reconciler doesn't inherit an inflated value.
+      if (deposit.confirmations !== v.confirmations) {
+        await db.deposit.update({ where: { id: deposit.id }, data: { confirmations: v.confirmations } }).catch(() => {})
+      }
+    } else {
+      logger.warn({ depositId: deposit.id, txHash: event.txHash, chain: chain.id }, 'Deposit RPC verification unavailable — falling back to webhook confirmation')
+    }
+  }
+
+  if (confirmationsForDecision < chain.minConfirmations) {
     return {
       status: 'pending',
       depositId: deposit.id,
       required: chain.minConfirmations,
-      confirmations: effectiveConfirmations,
+      confirmations: confirmationsForDecision,
     }
   }
 

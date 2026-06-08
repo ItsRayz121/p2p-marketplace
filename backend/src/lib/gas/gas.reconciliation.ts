@@ -9,14 +9,62 @@
  */
 
 import type { GasChain } from '@prisma/client'
+import { parseEther } from 'viem'
 import { db } from '../prisma'
 import { logger } from '../logger'
 import { sendAdminAlertEmail } from '../../services/email.service'
 import { checkTxConfirmed } from './gas.confirmation'
 import type { GasChainId } from './gas.chains'
 import { fromDbChain } from './gas.chains'
+import { getTransactionByHash } from '../evmRpc'
+import { getRpcUrl } from '../../services/chainRegistry.service'
 
 const STUCK_SENDING_MIN = 30 // minutes before a `sending` order is flagged
+
+// Delivery-chain (GasChain enum) → chain slug accepted by getRpcUrl. Only EVM
+// chains we hold an RPC URL for support on-chain amount/payment verification.
+const GAS_CHAIN_TO_SLUG: Partial<Record<GasChain, string>> = {
+  ETH: 'ethereum', BSC: 'bsc', MATIC: 'polygon', ARB: 'arbitrum', OP: 'optimism', BASE: 'base',
+}
+
+// Payment-network label → chain slug for verifying the inbound payment tx exists.
+const PAYMENT_NETWORK_TO_SLUG: Record<string, string> = {
+  BEP20: 'bsc', ERC20: 'ethereum',
+}
+
+/**
+ * A9: compare the on-chain delivered native value to the order's gasAmountNative
+ * (EVM only). Catches ledger drift where we recorded a delivery but sent the
+ * wrong amount. 1% tolerance absorbs gas-rounding. Best-effort: RPC errors skip.
+ */
+async function checkDeliveryAmount(
+  order: { id: string; orderRef: string; deliveryTxHash: string | null; gasAmountNative: unknown },
+  dbChain: GasChain,
+  discrepancies: Array<{ orderId?: string; type: string; description: string }>,
+): Promise<void> {
+  if (!order.deliveryTxHash) return
+  const slug = GAS_CHAIN_TO_SLUG[dbChain]
+  if (!slug) return
+  const rpcUrl = getRpcUrl(slug)
+  if (!rpcUrl) return
+  try {
+    const tx = await getTransactionByHash(rpcUrl, slug, order.deliveryTxHash)
+    if (!tx) return // existence handled by the confirmation check
+    const expectedWei = parseEther(String(order.gasAmountNative))
+    const actualWei = tx.value
+    const diff = actualWei > expectedWei ? actualWei - expectedWei : expectedWei - actualWei
+    const tolerance = expectedWei / 100n // 1%
+    if (diff > tolerance) {
+      discrepancies.push({
+        orderId: order.id,
+        type: 'amount_mismatch',
+        description: `Order ${order.orderRef} delivered ${actualWei} wei on-chain but expected ~${expectedWei} wei (gasAmountNative=${String(order.gasAmountNative)})`,
+      })
+    }
+  } catch {
+    // RPC error — skip silently; confirmation check covers missing/unconfirmed txs.
+  }
+}
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 
@@ -45,6 +93,10 @@ export async function runReconciliation(chain?: GasChain) {
     // Detect stuck `sending` orders (cross-chain)
     const stuckResult = await detectStuckSending(chain)
     discrepancies.push(...stuckResult)
+
+    // A9: detect payments recorded in DB that aren't actually on-chain (EVM payment networks)
+    const paymentResult = await detectPaymentNotOnChain()
+    discrepancies.push(...paymentResult)
 
     // Write discrepancy rows
     if (discrepancies.length > 0) {
@@ -122,18 +174,22 @@ async function reconcileChain(chainId: GasChainId, dbChain: GasChain) {
 
   for (const order of orders) {
     try {
-      // Skip if already confirmed and has a tx hash
-      if (order.deliveryConfirmed && order.deliveryTxHash) {
-        ordersChecked++
-        continue
-      }
-
       if (!order.deliveryTxHash) {
         discrepancies.push({
           orderId: order.id,
           type: 'delivery_tx_not_found',
           description: `Order ${order.orderRef} is 'delivered' but has no deliveryTxHash`,
         })
+        ordersChecked++
+        continue
+      }
+
+      // A9: verify the on-chain delivered amount matches gasAmountNative (EVM).
+      // Runs for confirmed and unconfirmed orders alike — drift can exist on both.
+      await checkDeliveryAmount(order, dbChain, discrepancies)
+
+      // Skip the confirmation RPC for orders already marked confirmed.
+      if (order.deliveryConfirmed) {
         ordersChecked++
         continue
       }
@@ -185,6 +241,46 @@ async function detectStuckSending(chain?: GasChain) {
     type: 'stuck_sending',
     description: `Order ${o.orderRef} (${o.chain}) has been in 'sending' state since ${o.updatedAt.toISOString()}`,
   }))
+}
+
+// ── Detect payments recorded in DB but missing on-chain (A9) ──────────────────
+// Orders we advanced past payment_pending must have a real inbound payment tx.
+// Verifies the payment tx exists on its payment network (EVM only — BEP20/ERC20).
+async function detectPaymentNotOnChain() {
+  const discrepancies: Array<{ orderId?: string; type: string; description: string }> = []
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+
+  const orders = await db.gasFeeOrder.findMany({
+    where: {
+      status: { in: ['payment_detected', 'sending', 'delivered'] },
+      paymentTxHash: { not: null },
+      paymentNetwork: { in: Object.keys(PAYMENT_NETWORK_TO_SLUG) },
+      createdAt: { gte: since },
+    },
+    select: { id: true, orderRef: true, paymentTxHash: true, paymentNetwork: true },
+    take: 500,
+  })
+
+  for (const order of orders) {
+    const slug = order.paymentNetwork ? PAYMENT_NETWORK_TO_SLUG[order.paymentNetwork] : undefined
+    if (!slug || !order.paymentTxHash) continue
+    const rpcUrl = getRpcUrl(slug)
+    if (!rpcUrl) continue
+    try {
+      const tx = await getTransactionByHash(rpcUrl, slug, order.paymentTxHash)
+      if (!tx) {
+        discrepancies.push({
+          orderId: order.id,
+          type: 'payment_not_on_chain',
+          description: `Order ${order.orderRef} has paymentTxHash ${order.paymentTxHash} on ${order.paymentNetwork} but the tx was not found on-chain`,
+        })
+      }
+    } catch {
+      // RPC error — skip; a transient failure shouldn't raise a false discrepancy.
+    }
+  }
+
+  return discrepancies
 }
 
 // ── Admin helpers ─────────────────────────────────────────────────────────────

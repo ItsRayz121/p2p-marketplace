@@ -408,7 +408,10 @@ export async function webhookRoutes(app: FastifyInstance) {
           const lo = (incomingAmount * 0.99).toFixed(8)
           const hi = (incomingAmount * 1.01).toFixed(8)
 
-          const instantOrder = await db.instantBuyOrder.findFirst({
+          // Fetch up to TWO candidates so we can detect amount ambiguity. On a
+          // shared deposit address, matching by amount alone can hit the wrong
+          // user's order when two have the same amount — never auto-credit then.
+          const candidates = await db.instantBuyOrder.findMany({
             where: {
               status: 'payment_pending',
               coin,
@@ -418,9 +421,20 @@ export async function webhookRoutes(app: FastifyInstance) {
               incomingTxHash: null,
             },
             orderBy: { createdAt: 'asc' },
+            take: 2,
           })
 
-          if (instantOrder) {
+          if (candidates.length > 1) {
+            logger.warn(
+              { txHash, amount: incomingAmount, coin, network: payload.network, candidateCount: candidates.length },
+              'InstantBuy payment matches multiple pending orders — flagging for manual review, NOT auto-crediting',
+            )
+            sendAdminAlertEmail(
+              'Ambiguous InstantBuy Payment — manual review',
+              `A ${coin} payment (${incomingAmount}) on ${payload.network} matched ${candidates.length} pending orders by amount.\n\nTX: ${txHash}\n\nAuto-credit was skipped to avoid crediting the wrong user. Attribute manually at /admin/instant-buy.`,
+            ).catch(() => {})
+          } else if (candidates.length === 1) {
+            const instantOrder = candidates[0]!
             // Optimistic lock: only claim if still payment_pending with no txHash
             const claimed = await db.instantBuyOrder.updateMany({
               where: { id: instantOrder.id, status: 'payment_pending', incomingTxHash: null },
@@ -465,7 +479,8 @@ export async function webhookRoutes(app: FastifyInstance) {
         const hi = (incoming * 1.01).toFixed(4)
 
         // Match by paymentNetwork (not chain) so TRC20/BEP20/ERC20 can pay for any delivery chain.
-        const gasOrder = await db.gasFeeOrder.findFirst({
+        // Fetch up to TWO so we can detect amount ambiguity on the shared deposit address.
+        const gasCandidates = await db.gasFeeOrder.findMany({
           where: {
             status: 'payment_pending',
             paymentNetwork: matchedDeposit.network,
@@ -473,7 +488,34 @@ export async function webhookRoutes(app: FastifyInstance) {
             expiresAt: { gt: new Date() },
           },
           orderBy: { createdAt: 'asc' }, // oldest matching order first (spec §6)
+          take: 2,
         })
+
+        if (gasCandidates.length > 1) {
+          // Two live orders share this amount — auto-attributing to the oldest could
+          // credit the wrong user. Park it as unattributed for manual review.
+          const member = JSON.stringify({
+            txHash,
+            amount: (payload as { amount?: string }).amount,
+            network: matchedDeposit.network,
+            toAddress,
+            paymentNote: 'ambiguous_multiple_matches',
+            detectedAt: new Date().toISOString(),
+          })
+          await redis.zadd('gas_unattributed', Date.now(), member)
+          await redis.zremrangebyrank('gas_unattributed', 0, -101)
+          logger.warn(
+            { txHash, amount: incoming, network: matchedDeposit.network, candidateCount: gasCandidates.length },
+            'Gas payment matches multiple pending orders — flagged unattributed, NOT auto-crediting',
+          )
+          sendAdminAlertEmail(
+            'Ambiguous Gas Fee Payment — manual review',
+            `A USDT payment (${incoming}) on ${matchedDeposit.network} matched ${gasCandidates.length} pending gas orders by amount.\n\nTX: ${txHash}\n\nAuto-credit was skipped to avoid crediting the wrong user. Attribute manually at /admin/gas.`,
+          ).catch(() => {})
+          return reply.send({ success: true })
+        }
+
+        const gasOrder = gasCandidates[0] ?? null
 
         if (gasOrder) {
           // Atomic claim: updateMany with status guard prevents two concurrent
