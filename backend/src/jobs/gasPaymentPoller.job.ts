@@ -1,11 +1,17 @@
-// Fallback EVM payment poller — defence-in-depth against missed Moralis webhooks.
-// Runs every 30 s. Scans recent blocks on each configured EVM payment network for
-// USDT Transfer events to the gas deposit address, then applies the same matching
-// logic as webhook.routes.ts. Also catches payments that arrived before a gas
-// order expired but were never attributed (e.g. Moralis fired late or not at all).
+// Fallback payment poller — defence-in-depth and PRIMARY detection for TRON.
 //
-// Status written on match: payment_verified (awaiting admin "Release Gas" action).
-// Delivery is NOT queued automatically — admin must click Release Gas.
+// Runs ~every 60 s. Scans each configured payment network for incoming USDT to the
+// gas deposit address, then applies the same matching logic as webhook.routes.ts.
+//
+//   - EVM (BEP20/ERC20): scans recent blocks via RPC getLogs for Transfer events.
+//   - TRON  (TRC20):     queries TronGrid for confirmed TRC20 transfers. Moralis
+//                        does NOT support TRON, so the webhook never fires for it —
+//                        this poller is the ONLY automatic detection path for TRC20.
+//
+// On a confirmed, unambiguous match the order is moved to `payment_detected` and gas
+// delivery is queued automatically (same path the EVM webhook uses). Ambiguous
+// amount matches (>1 candidate order) are parked as unattributed for manual review
+// so auto-delivery never credits the wrong user.
 
 import { createPublicClient, http, parseAbiItem } from 'viem'
 import { bsc, mainnet } from 'viem/chains'
@@ -13,6 +19,7 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
+import { queues } from '../queues/definitions'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
@@ -25,8 +32,16 @@ const TRANSFER_EVENT = parseAbiItem(
 )
 
 // Grace window: attribute payments to orders that expired at most this many ms ago.
-// Covers the case where Moralis fires after the order expiry job has already run.
+// Covers the case where the webhook fired after the order expiry job already ran.
 const GRACE_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+
+// USDT TRC20 contract on TRON mainnet, 6 decimals.
+const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+const USDT_TRC20_DECIMALS = 6
+// only_confirmed=true returns solidified txs; nominal depth used only for display.
+const TRON_CONFIRMED_DEPTH = 19
+// On a cold start (no cursor) scan this far back so on-time payments aren't missed.
+const TRON_COLD_START_LOOKBACK_MS = 30 * 60 * 1000
 
 interface NetworkConfig {
   paymentNetwork: string
@@ -40,7 +55,7 @@ interface NetworkConfig {
   // BSC  ~3 s/block → 100 blocks ≈ 5 min
   // ETH ~12 s/block →  30 blocks ≈ 6 min
   scanBlocks: number
-  // Minimum block confirmations required before marking payment_verified.
+  // Minimum block confirmations required before treating the payment as final.
   minConfirmations: number
 }
 
@@ -70,14 +85,219 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
 ]
 
 // Resolve deposit address: DB override takes precedence over env var.
-async function resolveDepositAddress(cfg: NetworkConfig): Promise<string | null> {
-  const dbOverride = await db.platformConfig.findUnique({ where: { key: cfg.depositAddressDbKey } })
+async function resolveDepositAddress(dbKey: string, envValue: string | undefined): Promise<string | null> {
+  const dbOverride = await db.platformConfig.findUnique({ where: { key: dbKey } })
   if (dbOverride?.value) return dbOverride.value
-  return cfg.depositAddressEnvFn() ?? null
+  return envValue ?? null
 }
 
+// ── Shared matching + auto-delivery ─────────────────────────────────────────────
+// Applies the same 3-pass attribution used by the webhook, then queues delivery.
+// `getBlockTimestampMs` is chain-specific (EVM fetches the block; TRON already
+// knows it) and only consulted for the recently-expired grace check.
+async function matchAndDeliver(p: {
+  paymentNetwork: string
+  txHash: string
+  incoming: number
+  confirmations: number
+  senderAddress?: string
+  depositAddress: string
+  graceCutoff: Date
+  getBlockTimestampMs: () => Promise<number | null>
+}): Promise<void> {
+  const { paymentNetwork, txHash, incoming, confirmations, senderAddress, depositAddress, graceCutoff } = p
+
+  // Duplicate guard: skip if already attributed to an order past the verification
+  // stage. We must NOT skip payment_uploaded orders whose paymentTxHash was set by
+  // the user submitting proof — those are exactly what Pass 1 handles.
+  const alreadyUsed = await db.gasFeeOrder.findFirst({
+    where: { paymentTxHash: txHash, status: { notIn: ['payment_uploaded'] } },
+  })
+  if (alreadyUsed) return
+
+  const lo = (incoming * 0.99).toFixed(4)
+  const hi = (incoming * 1.01).toFixed(4)
+
+  // ── Pass 1: payment_uploaded order where the user submitted this exact tx hash ──
+  // Strongest signal — user explicitly provided the hash; skip amount tolerance.
+  const txHashUploadedOrder = await db.gasFeeOrder.findFirst({
+    where: { status: 'payment_uploaded', paymentNetwork, paymentTxHash: txHash },
+  })
+  if (txHashUploadedOrder) {
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id: txHashUploadedOrder.id, status: 'payment_uploaded' },
+      data: {
+        status: 'payment_detected',
+        paymentVerifiedAt: new Date(),
+        verifiedAmount: incoming,
+        verifiedAsset: 'USDT',
+        verifiedConfirmations: confirmations,
+      },
+    })
+    if (claimed.count > 0) {
+      await onPaymentDetected(txHashUploadedOrder.id, txHashUploadedOrder.orderRef, txHashUploadedOrder.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
+    }
+    return
+  }
+
+  // ── Pass 2: amount-based match (payment_pending / payment_uploaded with no hash) ──
+  // Ambiguity guard: if more than one live order matches this amount, auto-attributing
+  // (and now auto-delivering) could credit the wrong user — park it for manual review.
+  const candidates = await db.gasFeeOrder.findMany({
+    where: {
+      status: { in: ['payment_pending', 'payment_uploaded'] },
+      paymentNetwork,
+      paymentAmount: { gte: lo, lte: hi },
+      paymentTxHash: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 2,
+  })
+
+  if (candidates.length > 1) {
+    await parkUnattributed(txHash, incoming, paymentNetwork, depositAddress, 'ambiguous_multiple_matches')
+    logger.warn({ txHash, incoming, paymentNetwork, candidateCount: candidates.length }, 'gasPaymentPoller: ambiguous amount match — parked, NOT auto-delivering')
+    sendAdminAlertEmail(
+      'Ambiguous Gas Fee Payment — manual review',
+      `A USDT payment (${incoming}) on ${paymentNetwork} matched ${candidates.length} pending gas orders by amount.\n\nTX: ${txHash}\n\nAuto-delivery was skipped to avoid crediting the wrong user. Attribute manually at /admin/gas.`,
+    ).catch(() => {})
+    return
+  }
+
+  const activeOrder = candidates[0]
+  if (activeOrder) {
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id: activeOrder.id, status: { in: ['payment_pending', 'payment_uploaded'] }, paymentTxHash: null },
+      data: {
+        status: 'payment_detected',
+        paymentTxHash: txHash,
+        paymentVerifiedAt: new Date(),
+        verifiedAmount: incoming,
+        verifiedAsset: 'USDT',
+        verifiedConfirmations: confirmations,
+      },
+    })
+    if (claimed.count > 0) {
+      await onPaymentDetected(activeOrder.id, activeOrder.orderRef, activeOrder.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
+    }
+    return
+  }
+
+  // ── Pass 3: grace match — recently-expired order where payment arrived on time ──
+  const expiredOrder = await db.gasFeeOrder.findFirst({
+    where: {
+      status: 'expired',
+      paymentNetwork,
+      paymentAmount: { gte: lo, lte: hi },
+      expiresAt: { gte: graceCutoff },
+      paymentTxHash: null,
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  if (expiredOrder) {
+    const blockTimestampMs = await p.getBlockTimestampMs()
+    const paidBeforeExpiry =
+      blockTimestampMs === null || blockTimestampMs < expiredOrder.expiresAt.getTime()
+
+    if (paidBeforeExpiry) {
+      const claimed = await db.gasFeeOrder.updateMany({
+        where: { id: expiredOrder.id, status: 'expired', paymentTxHash: null },
+        data: {
+          status: 'payment_detected',
+          paymentTxHash: txHash,
+          paymentVerifiedAt: new Date(),
+          verifiedAmount: incoming,
+          verifiedAsset: 'USDT',
+          verifiedConfirmations: confirmations,
+        },
+      })
+      if (claimed.count > 0) {
+        await onPaymentDetected(expiredOrder.id, expiredOrder.orderRef, expiredOrder.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
+        sendAdminAlertEmail(
+          `Gas Order Resurrected — Late Payment Detection`,
+          `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but the webhook never fired. The poller detected, attributed, and queued delivery automatically.`,
+        ).catch(() => {})
+      }
+      return
+    }
+  }
+
+  // ── No match — record as unattributed for admin review ────────────────────────
+  await parkUnattributed(txHash, incoming, paymentNetwork, depositAddress, 'poller_no_match')
+  logger.warn({ txHash, incoming, paymentNetwork }, 'gasPaymentPoller: unattributed transfer — no matching order')
+  void createAdminNotif({
+    category: 'GAS',
+    title: `Unattributed Deposit — ${incoming.toFixed(2)} USDT (${paymentNetwork})`,
+    body: `Received ${incoming.toFixed(4)} USDT but no matching order found. Needs manual attribution. Tx: ${txHash.slice(0, 12)}…`,
+    href: '/admin/gas/flagged',
+    metadata: { txHash, amount: incoming.toFixed(4), network: paymentNetwork },
+  })
+}
+
+async function parkUnattributed(txHash: string, incoming: number, paymentNetwork: string, depositAddress: string, paymentNote: string): Promise<void> {
+  const member = JSON.stringify({
+    txHash,
+    amount: incoming.toFixed(4),
+    network: paymentNetwork,
+    toAddress: depositAddress,
+    paymentNote,
+    detectedAt: new Date().toISOString(),
+  })
+  await redis.zadd('gas_unattributed', Date.now(), member)
+  await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
+}
+
+// Queue automatic delivery (same path as the webhook), then record ledger + notif.
+async function onPaymentDetected(
+  orderId: string,
+  orderRef: string,
+  orderChain: string,
+  txHash: string,
+  incoming: number,
+  confirmations: number,
+  paymentNetwork: string,
+  senderAddress: string | undefined,
+): Promise<void> {
+  // Queue delivery FIRST and await it — this is the money path, not fire-and-forget.
+  // The worker claims payment_detected → sending via CAS, so a duplicate enqueue is safe.
+  try {
+    await queues.gasFee.add('deliver', { orderId }, { priority: 1 })
+  } catch (err) {
+    logger.error({ err, orderId }, 'gasPaymentPoller: failed to queue delivery — will retry next tick (order stays payment_detected)')
+  }
+
+  try {
+    appendLedgerEntry({
+      entryType:      'order_payment',
+      chain:          fromDbChain(orderChain) as GasChainId,
+      nativeAmount:   0,          // USDT is a token — no native moved
+      usdAmount:      incoming,   // USDT ≈ USD 1:1
+      tokenSymbol:    'USDT',
+      tokenAmount:    incoming,
+      txHash,
+      ...(senderAddress !== undefined ? { fromAddress: senderAddress } : {}),
+      relatedOrderId: orderId,
+    }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write order_payment ledger entry'))
+
+    void createAdminNotif({
+      category: 'GAS',
+      title: `Payment Detected — ${incoming.toFixed(2)} USDT (${paymentNetwork})`,
+      body: `Order ${orderRef} payment confirmed on-chain (${confirmations} conf). Delivery queued automatically. Tx: ${txHash.slice(0, 12)}…`,
+      href: `/admin/gas/orders/${orderRef}`,
+      metadata: { txHash, amount: incoming.toFixed(4), network: paymentNetwork, orderId, confirmations },
+    })
+
+    logger.info({ txHash, orderId, network: paymentNetwork, incoming, confirmations }, 'gasPaymentPoller: payment detected — delivery queued')
+  } catch (err) {
+    logger.warn({ err, orderId, txHash }, 'gasPaymentPoller: onPaymentDetected post-processing failed')
+  }
+}
+
+// ── EVM scanner (getLogs) ───────────────────────────────────────────────────────
 async function scanNetwork(cfg: NetworkConfig): Promise<void> {
-  const depositAddress = await resolveDepositAddress(cfg)
+  const depositAddress = await resolveDepositAddress(cfg.depositAddressDbKey, cfg.depositAddressEnvFn())
   if (!depositAddress) return  // network not configured
 
   // Skip if no actionable orders (payment_pending, payment_uploaded, or recently-expired).
@@ -108,8 +328,7 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   // Nothing new since last run.
   if (fromBlock > currentBlock) return
 
-  // Cap range to scanBlocks to avoid oversized getLogs calls on first run or after
-  // a long gap. getLogs range limits vary per provider; 500 blocks is very safe.
+  // Cap range to avoid oversized getLogs calls on first run or after a long gap.
   const maxRange = BigInt(Math.max(cfg.scanBlocks, 500))
   const effectiveFrom = fromBlock < currentBlock - maxRange
     ? currentBlock - maxRange
@@ -146,199 +365,139 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     const rawValue = log.args.value
     if (rawValue === undefined || rawValue === null) continue
 
-    // Confirmation check — only verify payments with enough block depth.
+    // Confirmation check — only act on payments with enough block depth.
     const confirmations = log.blockNumber != null
       ? Number(currentBlock) - Number(log.blockNumber)
       : 0
     if (confirmations < cfg.minConfirmations) continue
 
-    // Convert raw token units to USDT decimal amount.
     const incoming = Number(rawValue) / Math.pow(10, cfg.usdtDecimals)
     if (!(incoming > 0)) continue
 
-    // Duplicate guard: skip if already attributed to a gas order that is past the
-    // verification stage. We must NOT skip payment_uploaded orders whose paymentTxHash
-    // was set by the user submitting proof — those are exactly what Pass 1 handles.
-    const alreadyUsed = await db.gasFeeOrder.findFirst({
-      where: {
-        paymentTxHash: txHash,
-        status: { notIn: ['payment_uploaded'] },
-      },
-    })
-    if (alreadyUsed) continue
-
     const senderAddress = log.args.from ?? undefined
 
-    const lo = (incoming * 0.99).toFixed(4)
-    const hi = (incoming * 1.01).toFixed(4)
-
-    // ── Pass 1: payment_uploaded orders where user submitted this exact tx hash ─
-    // Strongest signal — user explicitly provided the hash; skip amount tolerance.
-    const txHashUploadedOrder = await db.gasFeeOrder.findFirst({
-      where: {
-        status:         'payment_uploaded',
-        paymentNetwork: cfg.paymentNetwork,
-        paymentTxHash:  txHash,
-      },
-    })
-
-    if (txHashUploadedOrder) {
-      const claimed = await db.gasFeeOrder.updateMany({
-        where: { id: txHashUploadedOrder.id, status: 'payment_uploaded' },
-        data: {
-          status:               'payment_verified',
-          paymentVerifiedAt:    new Date(),
-          verifiedAmount:       incoming,
-          verifiedAsset:        'USDT',
-          verifiedConfirmations: confirmations,
-        },
-      })
-      if (claimed.count > 0) {
-        void recordVerifiedPayment(txHashUploadedOrder.id, txHashUploadedOrder.orderRef, txHashUploadedOrder.chain, txHash, incoming, confirmations, cfg, senderAddress)
-      }
-      continue
-    }
-
-    // ── Pass 2: amount-based match — payment_pending OR payment_uploaded (no hash yet) ──
-    const activeOrder = await db.gasFeeOrder.findFirst({
-      where: {
-        status:         { in: ['payment_pending', 'payment_uploaded'] },
-        paymentNetwork: cfg.paymentNetwork,
-        paymentAmount:  { gte: lo, lte: hi },
-        paymentTxHash:  null,
-        expiresAt:      { gt: new Date() },
-      },
-      orderBy: { createdAt: 'asc' },
-    })
-
-    if (activeOrder) {
-      const claimed = await db.gasFeeOrder.updateMany({
-        where: { id: activeOrder.id, status: { in: ['payment_pending', 'payment_uploaded'] }, paymentTxHash: null },
-        data: {
-          status:               'payment_verified',
-          paymentTxHash:        txHash,
-          paymentVerifiedAt:    new Date(),
-          verifiedAmount:       incoming,
-          verifiedAsset:        'USDT',
-          verifiedConfirmations: confirmations,
-        },
-      })
-      if (claimed.count > 0) {
-        void recordVerifiedPayment(activeOrder.id, activeOrder.orderRef, activeOrder.chain, txHash, incoming, confirmations, cfg, senderAddress)
-      }
-      continue
-    }
-
-    // ── Pass 3: grace match — recently-expired orders where payment arrived on time ──
-    const expiredOrder = await db.gasFeeOrder.findFirst({
-      where: {
-        status:         'expired',
-        paymentNetwork: cfg.paymentNetwork,
-        paymentAmount:  { gte: lo, lte: hi },
-        expiresAt:      { gte: graceCutoff },
-        paymentTxHash:  null,
-      },
-      orderBy: { createdAt: 'asc' },
-    })
-
-    if (expiredOrder) {
-      // Fetch block to check on-chain timestamp vs order expiry.
-      let blockTimestampMs: number | null = null
-      try {
-        if (log.blockNumber != null) {
-          const block = await client.getBlock({ blockNumber: log.blockNumber })
-          blockTimestampMs = Number(block.timestamp) * 1000
-        }
-      } catch (err) {
-        logger.warn({ err, txHash }, 'gasPaymentPoller: could not fetch block timestamp for grace check')
-      }
-
-      const paidBeforeExpiry =
-        blockTimestampMs === null ||
-        blockTimestampMs < expiredOrder.expiresAt.getTime()
-
-      if (paidBeforeExpiry) {
-        const claimed = await db.gasFeeOrder.updateMany({
-          where: { id: expiredOrder.id, status: 'expired', paymentTxHash: null },
-          data: {
-            status:               'payment_verified',
-            paymentTxHash:        txHash,
-            paymentVerifiedAt:    new Date(),
-            verifiedAmount:       incoming,
-            verifiedAsset:        'USDT',
-            verifiedConfirmations: confirmations,
-          },
-        })
-        if (claimed.count > 0) {
-          void recordVerifiedPayment(expiredOrder.id, expiredOrder.orderRef, expiredOrder.chain, txHash, incoming, confirmations, cfg, senderAddress)
-          sendAdminAlertEmail(
-            `Gas Order Resurrected — Late Payment Detection`,
-            `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${cfg.paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but Moralis never fired. The poller detected and attributed it. Admin must release gas manually.`,
-          ).catch(() => {})
-        }
-        continue
-      }
-    }
-
-    // ── No match — record as unattributed for admin review ──────────────────────
-    const member = JSON.stringify({
+    await matchAndDeliver({
+      paymentNetwork: cfg.paymentNetwork,
       txHash,
-      amount: incoming.toFixed(4),
-      network: cfg.paymentNetwork,
-      toAddress: depositAddress,
-      paymentNote: 'poller_no_match',
-      detectedAt: new Date().toISOString(),
-    })
-    await redis.zadd('gas_unattributed', Date.now(), member)
-    await redis.zremrangebyrank('gas_unattributed', 0, -101)
-    logger.warn({ txHash, incoming, network: cfg.paymentNetwork }, 'gasPaymentPoller: unattributed transfer — no matching order')
-    void createAdminNotif({
-      category: 'GAS',
-      title: `Unattributed Deposit — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
-      body: `Received ${incoming.toFixed(4)} USDT but no matching order found. Needs manual attribution. Tx: ${txHash.slice(0, 12)}…`,
-      href: '/admin/gas/flagged',
-      metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork },
+      incoming,
+      confirmations,
+      ...(senderAddress !== undefined ? { senderAddress } : {}),
+      depositAddress,
+      graceCutoff,
+      getBlockTimestampMs: async () => {
+        if (log.blockNumber == null) return null
+        try {
+          const block = await client.getBlock({ blockNumber: log.blockNumber })
+          return Number(block.timestamp) * 1000
+        } catch (err) {
+          logger.warn({ err, txHash }, 'gasPaymentPoller: could not fetch block timestamp for grace check')
+          return null
+        }
+      },
     })
   }
 }
 
-// Shared post-match logic: write ledger entry + admin notification.
-// Runs fire-and-forget (void) so errors never block the poller loop.
-async function recordVerifiedPayment(
-  orderId: string,
-  orderRef: string,
-  orderChain: string,
-  txHash: string,
-  incoming: number,
-  confirmations: number,
-  cfg: NetworkConfig,
-  senderAddress: string | undefined,
-): Promise<void> {
+// ── TRON scanner (TronGrid) ─────────────────────────────────────────────────────
+// Moralis can't see TRON, so this is the primary detection path for TRC20 payments.
+interface TronTrc20Tx {
+  transaction_id?: string
+  block_timestamp?: number
+  from?: string
+  to?: string
+  value?: string
+  type?: string
+  token_info?: { address?: string; decimals?: number; symbol?: string }
+}
+
+async function scanTron(): Promise<void> {
+  const base = env.TRON_FULLNODE_URL
+  if (!base) return // TRON not configured
+
+  const depositAddress = await resolveDepositAddress('gas_usdt_trc20_address', env.GAS_FEE_DEPOSIT_ADDRESS_TRC20)
+  if (!depositAddress) return
+
+  const graceCutoff = new Date(Date.now() - GRACE_WINDOW_MS)
+  const actionable = await db.gasFeeOrder.count({
+    where: {
+      paymentNetwork: 'TRC20',
+      status: { in: ['payment_pending', 'payment_uploaded', 'expired'] },
+      expiresAt: { gte: graceCutoff },
+    },
+  })
+  if (actionable === 0) return
+
+  const cursorKey = `gas_poller_last_ts:TRC20`
+  const storedTs = await redis.get(cursorKey)
+  const minTimestamp = storedTs ? Number(storedTs) : Date.now() - TRON_COLD_START_LOOKBACK_MS
+
+  const url = new URL(`${base.replace(/\/$/, '')}/v1/accounts/${depositAddress}/transactions/trc20`)
+  url.searchParams.set('only_to', 'true')
+  url.searchParams.set('only_confirmed', 'true')
+  url.searchParams.set('contract_address', USDT_TRC20_CONTRACT)
+  url.searchParams.set('limit', '50')
+  url.searchParams.set('order_by', 'block_timestamp,asc')
+  url.searchParams.set('min_timestamp', String(minTimestamp))
+
+  const headers: Record<string, string> = {}
+  // Header name matches the rest of the codebase's TronGrid calls.
+  if (env.TRONGRID_API_KEY) headers['TRONGRID-API-Key'] = env.TRONGRID_API_KEY
+
+  let transfers: TronTrc20Tx[]
   try {
-    appendLedgerEntry({
-      entryType:      'order_payment',
-      chain:          fromDbChain(orderChain) as GasChainId,
-      nativeAmount:   0,          // USDT is ERC20 — no native token moved
-      usdAmount:      incoming,   // USDT ≈ USD 1:1
-      tokenSymbol:    'USDT',
-      tokenAmount:    incoming,
-      txHash,
-      ...(senderAddress !== undefined ? { fromAddress: senderAddress } : {}),
-      relatedOrderId: orderId,
-    }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write order_payment ledger entry'))
-
-    void createAdminNotif({
-      category: 'GAS',
-      title: `Payment Verified — ${incoming.toFixed(2)} USDT (${cfg.paymentNetwork})`,
-      body: `Order ${orderRef} payment verified on-chain (${confirmations} confirmations). Ready to release gas. Tx: ${txHash.slice(0, 12)}…`,
-      href: `/admin/gas/orders/${orderRef}`,
-      metadata: { txHash, amount: incoming.toFixed(4), network: cfg.paymentNetwork, orderId, confirmations },
-    })
-
-    logger.info({ txHash, orderId, network: cfg.paymentNetwork, incoming, confirmations }, 'gasPaymentPoller: payment verified — awaiting admin release')
+    const res = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) {
+      logger.warn({ status: res.status, network: 'TRC20' }, 'gasPaymentPoller: TronGrid request failed — will retry next tick')
+      return // don't advance cursor
+    }
+    const json = (await res.json()) as { data?: TronTrc20Tx[]; success?: boolean }
+    transfers = json.data ?? []
   } catch (err) {
-    logger.warn({ err, orderId, txHash }, 'gasPaymentPoller: recordVerifiedPayment failed')
+    logger.warn({ err, network: 'TRC20' }, 'gasPaymentPoller: TronGrid fetch errored — will retry next tick')
+    return // don't advance cursor
   }
+
+  if (transfers.length === 0) return
+
+  logger.info({ network: 'TRC20', count: transfers.length }, 'gasPaymentPoller: found TRC20 transfers')
+
+  let maxTs = minTimestamp
+  for (const t of transfers) {
+    const ts = Number(t.block_timestamp ?? 0)
+    if (ts > maxTs) maxTs = ts
+
+    const txHash = t.transaction_id
+    if (!txHash) continue
+    if (t.type && t.type !== 'Transfer') continue
+    // Defensive: ensure it's the USDT contract (only_to + contract_address already filter).
+    if (t.token_info?.address && t.token_info.address !== USDT_TRC20_CONTRACT) continue
+
+    const decimals = t.token_info?.decimals ?? USDT_TRC20_DECIMALS
+    const raw = t.value
+    if (!raw) continue
+    let incoming: number
+    try {
+      incoming = Number(BigInt(raw)) / Math.pow(10, decimals)
+    } catch {
+      continue
+    }
+    if (!(incoming > 0)) continue
+
+    await matchAndDeliver({
+      paymentNetwork: 'TRC20',
+      txHash,
+      incoming,
+      confirmations: TRON_CONFIRMED_DEPTH,
+      ...(t.from ? { senderAddress: t.from } : {}),
+      depositAddress,
+      graceCutoff,
+      getBlockTimestampMs: async () => (ts > 0 ? ts : null),
+    })
+  }
+
+  // Advance cursor. Using the max timestamp seen (inclusive on next run) is safe —
+  // the duplicate guard in matchAndDeliver dedupes any boundary tx re-seen.
+  await redis.set(cursorKey, String(maxTs))
 }
 
 export async function runGasPaymentPoller(): Promise<void> {
@@ -348,5 +507,11 @@ export async function runGasPaymentPoller(): Promise<void> {
     } catch (err) {
       logger.error({ err, network: cfg.paymentNetwork }, 'gasPaymentPoller: scanNetwork threw unexpectedly')
     }
+  }
+
+  try {
+    await scanTron()
+  } catch (err) {
+    logger.error({ err, network: 'TRC20' }, 'gasPaymentPoller: scanTron threw unexpectedly')
   }
 }
