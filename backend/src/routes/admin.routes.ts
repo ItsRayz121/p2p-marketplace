@@ -3072,6 +3072,28 @@ export async function adminRoutes(app: FastifyInstance) {
       }),
     )
 
+    // ── Engagement + conversion metrics (Phase 8) ──
+    const nowMs = Date.now()
+    const [dau, wau, mau, kycApproved, totalTradesAll, totalCtmAll] = await Promise.all([
+      db.user.count({ where: { lastSeenAt: { gte: new Date(nowMs - 24 * 60 * 60 * 1000) } } }),
+      db.user.count({ where: { lastSeenAt: { gte: new Date(nowMs - 7 * 24 * 60 * 60 * 1000) } } }),
+      db.user.count({ where: { lastSeenAt: { gte: new Date(nowMs - 30 * 24 * 60 * 60 * 1000) } } }),
+      db.user.count({ where: { kycStatus: 'approved' } }),
+      db.trade.count(),
+      db.ctmTrade.count(),
+    ])
+    const completedAll = p2pTotal + ctmTotal
+    const attemptedAll = totalTradesAll + totalCtmAll
+    const engagement = { dau, wau, mau, stickiness: mau > 0 ? Math.round((dau / mau) * 100) : 0 }
+    const conversion = {
+      kycApproved,
+      totalUsers: totalUserCount,
+      kycApprovedPct: totalUserCount > 0 ? Math.round((kycApproved / totalUserCount) * 1000) / 10 : 0,
+      completedTrades: completedAll,
+      attemptedTrades: attemptedAll,
+      tradeCompletionPct: attemptedAll > 0 ? Math.round((completedAll / attemptedAll) * 1000) / 10 : 0,
+    }
+
     return reply.send({
       success: true,
       data: {
@@ -3081,6 +3103,8 @@ export async function adminRoutes(app: FastifyInstance) {
         userGrowth,
         tradeVolume,
         badgeDistribution,
+        engagement,
+        conversion,
         topTraders: topTradersWithLive.filter((t) => t.tradeCount > 0 || parseFloat(t.volume) > 0).sort((a, b) => b.tradeCount - a.tradeCount),
         summary: {
           p2p:  { allTime: p2pTotal,  period: p2pPeriod },

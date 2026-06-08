@@ -29,6 +29,15 @@ interface AnalyticsData {
     gas: TradeSummary
     total: TradeSummary
   }
+  engagement?: { dau: number; wau: number; mau: number; stickiness: number }
+  conversion?: {
+    kycApproved: number
+    totalUsers: number
+    kycApprovedPct: number
+    completedTrades: number
+    attemptedTrades: number
+    tradeCompletionPct: number
+  }
 }
 
 type Period = 'today' | '7d' | '30d' | '12m'
@@ -56,7 +65,9 @@ function VerticalBarChart({
   const max = Math.max(...bars.map((b) => b.value), 1)
   return (
     <div className="overflow-x-auto pb-1">
-      <div className="flex items-end gap-2 h-52 min-w-full pt-8">
+      {/* items-stretch so each column fills h-52 — otherwise the inner flex-1 bar
+          wrapper collapses and percentage heights resolve to ~0 (empty chart). */}
+      <div className="flex items-stretch gap-2 h-52 min-w-full pt-8">
         {bars.map((b, i) => {
           const pct = (b.value / max) * 100
           const hasValue = b.value > 0
@@ -239,6 +250,50 @@ export default function AnalyticsPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Engagement + conversion metrics (Phase 8) */}
+      {(data?.engagement || data?.conversion) && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {data?.engagement && (
+            <>
+              <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+                <p className="text-xs text-text-muted">DAU</p>
+                <p className="text-2xl font-bold mt-1 text-primary">{data.engagement.dau.toLocaleString()}</p>
+                <p className="text-xs text-text-muted mt-0.5">active last 24h</p>
+              </div>
+              <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+                <p className="text-xs text-text-muted">WAU</p>
+                <p className="text-2xl font-bold mt-1 text-primary">{data.engagement.wau.toLocaleString()}</p>
+                <p className="text-xs text-text-muted mt-0.5">active last 7d</p>
+              </div>
+              <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+                <p className="text-xs text-text-muted">MAU</p>
+                <p className="text-2xl font-bold mt-1 text-primary">{data.engagement.mau.toLocaleString()}</p>
+                <p className="text-xs text-text-muted mt-0.5">{data.engagement.stickiness}% stickiness</p>
+              </div>
+            </>
+          )}
+          {data?.conversion && (
+            <>
+              <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+                <p className="text-xs text-text-muted">KYC Conversion</p>
+                <p className="text-2xl font-bold mt-1 text-success">{data.conversion.kycApprovedPct}%</p>
+                <p className="text-xs text-text-muted mt-0.5">{data.conversion.kycApproved}/{data.conversion.totalUsers} approved</p>
+              </div>
+              <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+                <p className="text-xs text-text-muted">Trade Completion</p>
+                <p className="text-2xl font-bold mt-1 text-success">{data.conversion.tradeCompletionPct}%</p>
+                <p className="text-xs text-text-muted mt-0.5">{data.conversion.completedTrades}/{data.conversion.attemptedTrades} trades</p>
+              </div>
+              <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+                <p className="text-xs text-text-muted">Total Users</p>
+                <p className="text-2xl font-bold mt-1 text-text-primary">{data.conversion.totalUsers.toLocaleString()}</p>
+                <p className="text-xs text-text-muted mt-0.5">registered</p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
