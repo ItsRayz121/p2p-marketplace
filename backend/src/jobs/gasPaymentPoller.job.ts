@@ -36,6 +36,11 @@ const TRANSFER_EVENT = parseAbiItem(
 // Covers the case where the webhook fired after the order expiry job already ran.
 const GRACE_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
 
+// Orders carry a UNIQUE paymentAmount (assigned on a 0.001 grid). An incoming
+// payment within this epsilon of an order's amount is an exact, unambiguous match.
+// Must be < half the 0.001 grid step so adjacent unique amounts never overlap.
+const EXACT_MATCH_EPSILON = 0.0004
+
 // USDT TRC20 contract on TRON mainnet, 6 decimals.
 const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 const USDT_TRC20_DECIMALS = 6
@@ -157,7 +162,49 @@ async function matchAndDeliver(p: {
     return
   }
 
-  // ── Pass 2: amount-based match (payment_pending / payment_uploaded with no hash) ──
+  // ── Pass A: exact unique-amount match ─────────────────────────────────────────
+  // Orders carry a unique paymentAmount, so an exact (±epsilon) match attributes
+  // to exactly one order even when many users requested the same gas size.
+  const exLo = (incoming - EXACT_MATCH_EPSILON).toFixed(4)
+  const exHi = (incoming + EXACT_MATCH_EPSILON).toFixed(4)
+  const exactCandidates = await db.gasFeeOrder.findMany({
+    where: {
+      status: { in: ['payment_pending', 'payment_uploaded'] },
+      paymentNetwork,
+      paymentAmount: { gte: exLo, lte: exHi },
+      paymentTxHash: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 2,
+  })
+  if (exactCandidates.length === 1) {
+    const ord = exactCandidates[0]!
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id: ord.id, status: { in: ['payment_pending', 'payment_uploaded'] }, paymentTxHash: null },
+      data: {
+        status: 'payment_detected',
+        paymentTxHash: txHash,
+        paymentVerifiedAt: new Date(),
+        verifiedAmount: incoming,
+        verifiedAsset: 'USDT',
+        verifiedConfirmations: confirmations,
+      },
+    })
+    if (claimed.count > 0) {
+      await onPaymentDetected(ord.id, ord.orderRef, ord.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
+    }
+    return
+  }
+  if (exactCandidates.length > 1) {
+    // Two live orders share an exact amount (unique-assignment race) — never guess.
+    await parkUnattributed(txHash, incoming, paymentNetwork, depositAddress, 'ambiguous_exact_collision')
+    logger.warn({ txHash, incoming, paymentNetwork }, 'gasPaymentPoller: exact amount matched multiple orders — parked')
+    return
+  }
+
+  // ── Pass 2: tolerant amount-based match (payment_pending / payment_uploaded with no hash) ──
+  // Fallback for slight under/overpayment where no exact match exists.
   // Ambiguity guard: if more than one live order matches this amount, auto-attributing
   // (and now auto-delivering) could credit the wrong user — park it for manual review.
   const candidates = await db.gasFeeOrder.findMany({

@@ -1029,6 +1029,31 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
   // ── POST /gas-fee/orders/crypto — create USDT order with BEP20 or Aptos ────
 
+  // Assign a UNIQUE payment amount so two concurrent orders never share one.
+  // This lets the matchers attribute a payment to exactly one order even when
+  // many users request the same gas size. The amount is snapped to a 0.001 grid
+  // (rounded up so we never undercharge) and bumped by 0.001 until it doesn't
+  // collide with any live order on the same payment network. Surcharge is 0 in
+  // the common no-collision case and at most a fraction of a cent otherwise.
+  const UNIQUE_AMOUNT_STEP = 0.001
+  async function assignUniqueGasPaymentAmount(paymentNetwork: string, base: number): Promise<number> {
+    const ceil3 = (n: number) => Math.ceil(n * 1000) / 1000
+    const live = await db.gasFeeOrder.findMany({
+      where: {
+        paymentNetwork,
+        status: { in: ['payment_pending', 'payment_uploaded'] },
+        expiresAt: { gt: new Date() },
+      },
+      select: { paymentAmount: true },
+    })
+    const used = new Set(live.map((o) => (Math.round(Number(o.paymentAmount) * 1000) / 1000).toFixed(3)))
+    let candidate = ceil3(base)
+    for (let k = 0; k < 500 && used.has(candidate.toFixed(3)); k++) {
+      candidate = Math.round((candidate + UNIQUE_AMOUNT_STEP) * 1000) / 1000
+    }
+    return candidate
+  }
+
   const createCryptoOrderSchema = z.object({
     tokenConfigId:   z.string().min(1),
     amount:          z.number().positive(),
@@ -1090,7 +1115,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const gasAmountUSD    = amount * nativeUsdRate
     const platformFeeUsdt = resolvedCrypto.platformFeeUsdt
     if (gasAmountUSD > resolvedCrypto.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolvedCrypto.maxUsdValue} USD. Reduce the amount.`, 400)
-    const paymentAmount = gasAmountUSD + platformFeeUsdt
+    // Unique amount → unambiguous payment attribution (no same-amount collisions).
+    const paymentAmount = await assignUniqueGasPaymentAmount(paymentNetwork, gasAmountUSD + platformFeeUsdt)
 
     // IP rate limit
     const clientIp  = req.ip ?? 'unknown'

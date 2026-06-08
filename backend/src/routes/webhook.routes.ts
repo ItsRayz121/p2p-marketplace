@@ -475,21 +475,40 @@ export async function webhookRoutes(app: FastifyInstance) {
           return reply.send({ success: true })
         }
 
+        // Orders carry a UNIQUE paymentAmount, so try an exact (±epsilon) match
+        // first — it attributes to exactly one order even when many share a base
+        // gas size. Fall back to a tolerant ±1% match only for under/overpayment.
+        const EXACT_EPSILON = 0.0004
+        const exLo = (incoming - EXACT_EPSILON).toFixed(4)
+        const exHi = (incoming + EXACT_EPSILON).toFixed(4)
+        const exactGas = await db.gasFeeOrder.findMany({
+          where: {
+            status: 'payment_pending',
+            paymentNetwork: matchedDeposit.network,
+            paymentAmount: { gte: exLo, lte: exHi },
+            expiresAt: { gt: new Date() },
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 2,
+        })
+
         const lo = (incoming * 0.99).toFixed(4)
         const hi = (incoming * 1.01).toFixed(4)
 
         // Match by paymentNetwork (not chain) so TRC20/BEP20/ERC20 can pay for any delivery chain.
         // Fetch up to TWO so we can detect amount ambiguity on the shared deposit address.
-        const gasCandidates = await db.gasFeeOrder.findMany({
-          where: {
-            status: 'payment_pending',
-            paymentNetwork: matchedDeposit.network,
-            paymentAmount: { gte: lo, lte: hi },
-            expiresAt: { gt: new Date() },
-          },
-          orderBy: { createdAt: 'asc' }, // oldest matching order first (spec §6)
-          take: 2,
-        })
+        const gasCandidates = exactGas.length > 0
+          ? exactGas
+          : await db.gasFeeOrder.findMany({
+              where: {
+                status: 'payment_pending',
+                paymentNetwork: matchedDeposit.network,
+                paymentAmount: { gte: lo, lte: hi },
+                expiresAt: { gt: new Date() },
+              },
+              orderBy: { createdAt: 'asc' }, // oldest matching order first (spec §6)
+              take: 2,
+            })
 
         if (gasCandidates.length > 1) {
           // Two live orders share this amount — auto-attributing to the oldest could
