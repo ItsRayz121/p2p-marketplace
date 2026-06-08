@@ -1791,6 +1791,22 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  getTreasuryOverview: () =>
+    apiRequest<{
+      usdPkrRate: number
+      platformControlledUsd: number
+      categories: {
+        hot: { usd: number; nativeUsd: number; usdtUsd: number }
+        treasury: { usd: number }
+        escrow: { usdt: number }
+        custody: { usdt: number }
+        revenue: { usd: number }
+      }
+      perChain: Array<{ chain: string; symbol: string; hotNative: number; treasuryNative: number; usd: number }>
+      perToken: Array<{ symbol: string; amount: number; usd: number }>
+      wallets: Array<{ chain: string; symbol: string; hotNative: number; hotUsd: number; treasuryNative: number; treasuryUsd: number; usdtUsd: number; error: string | null }>
+      fetchedAt: string
+    }>('/admin/treasury/overview'),
   verifyWalletActivity: (id: string) =>
     apiRequest<{
       status: string

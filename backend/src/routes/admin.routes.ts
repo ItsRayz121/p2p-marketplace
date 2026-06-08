@@ -3650,6 +3650,95 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { balances, fetchedAt: new Date().toISOString() } })
   })
 
+  // GET /admin/treasury/overview — aggregated platform treasury snapshot.
+  // Real balances only (no placeholders): live hot + treasury native balances
+  // per chain, hot-wallet USDT, plus DB-derived escrow (locked collateral),
+  // user custody, and lifetime platform revenue. USDT is treated 1:1 with USD.
+  app.get('/admin/treasury/overview', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { getHotWalletBalance, getNativeUsdPrice } = await import('../lib/gas/gas.balance')
+    const { fromDbChain } = await import('../lib/gas/gas.chains')
+    const { getTreasuryAddress } = await import('../lib/gas/gas.treasury')
+
+    const usdtRaw = await redis.get('rate:USDT').catch(() => null)
+    const usdPkr = usdtRaw ? (() => { try { return (JSON.parse(usdtRaw) as { rate?: number }).rate ?? 278.5 } catch { return 278.5 } })() : 278.5
+
+    const activeWallets = await db.gasHotWallet.findMany({ where: { isActive: true }, select: { chain: true, address: true }, orderBy: { chain: 'asc' } })
+
+    const settled = await Promise.allSettled(
+      activeWallets.map(async (w) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chainId = fromDbChain(w.chain) as any
+        const treasuryAddr = getTreasuryAddress(chainId)
+        const [hotNative, price, tokens, treasuryNative] = await Promise.all([
+          getHotWalletBalance(chainId, w.address).catch(() => 0),
+          getNativeUsdPrice(chainId).catch(() => 0),
+          getWalletTokenBalances(w.chain as string, w.address).catch(() => [] as Array<{ symbol: string; balanceFormatted: number }>),
+          treasuryAddr ? getHotWalletBalance(chainId, treasuryAddr).catch(() => 0) : Promise.resolve(0),
+        ])
+        const usdtToken = (tokens ?? []).filter((t) => /usdt/i.test(t.symbol)).reduce((a, t) => a + (t.balanceFormatted || 0), 0)
+        return {
+          chain: w.chain as string,
+          symbol: nativeSymbol(chainId as string),
+          hotNative, hotUsd: hotNative * price,
+          treasuryNative, treasuryUsd: treasuryNative * price,
+          usdtUsd: usdtToken,
+          error: null as string | null,
+        }
+      }),
+    )
+    const wallets = settled.map((r, i) => r.status === 'fulfilled' ? r.value : {
+      chain: activeWallets[i]!.chain as string, symbol: activeWallets[i]!.chain as string,
+      hotNative: 0, hotUsd: 0, treasuryNative: 0, treasuryUsd: 0, usdtUsd: 0,
+      error: r.reason instanceof Error ? r.reason.message : 'Failed to fetch',
+    })
+
+    const [lockedAgg, custodyAgg, revenueAgg] = await Promise.all([
+      db.wallet.aggregate({ _sum: { lockedBalance: true } }),
+      db.wallet.aggregate({ _sum: { balance: true } }),
+      db.gasLedgerEntry.aggregate({ _sum: { usdAmount: true }, where: { entryType: { in: ['platform_fee', 'platform_fee_sweep'] } } }),
+    ])
+    const escrowUsdt = Number(lockedAgg._sum.lockedBalance ?? 0)
+    const custodyUsdt = Number(custodyAgg._sum.balance ?? 0)
+    const platformRevenueUsd = Number(revenueAgg._sum.usdAmount ?? 0)
+
+    const hotNativeUsd = wallets.reduce((a, w) => a + w.hotUsd, 0)
+    const hotUsdtUsd = wallets.reduce((a, w) => a + w.usdtUsd, 0)
+    const treasuryUsd = wallets.reduce((a, w) => a + w.treasuryUsd, 0)
+    const hotTotalUsd = hotNativeUsd + hotUsdtUsd
+    const platformControlledUsd = hotTotalUsd + treasuryUsd
+
+    const perChain = wallets
+      .map((w) => ({ chain: w.chain, symbol: w.symbol, hotNative: w.hotNative, treasuryNative: w.treasuryNative, usd: w.hotUsd + w.treasuryUsd + w.usdtUsd }))
+      .sort((a, b) => b.usd - a.usd)
+
+    const tokenMap: Record<string, { symbol: string; amount: number; usd: number }> = {}
+    for (const w of wallets) {
+      const k = w.symbol
+      tokenMap[k] = tokenMap[k] ?? { symbol: k, amount: 0, usd: 0 }
+      tokenMap[k].amount += w.hotNative + w.treasuryNative
+      tokenMap[k].usd += w.hotUsd + w.treasuryUsd
+    }
+    if (hotUsdtUsd > 0) tokenMap.USDT = { symbol: 'USDT', amount: hotUsdtUsd, usd: hotUsdtUsd }
+    const perToken = Object.values(tokenMap).filter((t) => t.usd > 0 || t.amount > 0).sort((a, b) => b.usd - a.usd)
+
+    return reply.send({
+      success: true,
+      data: {
+        usdPkrRate: usdPkr,
+        platformControlledUsd,
+        categories: {
+          hot: { usd: hotTotalUsd, nativeUsd: hotNativeUsd, usdtUsd: hotUsdtUsd },
+          treasury: { usd: treasuryUsd },
+          escrow: { usdt: escrowUsdt },
+          custody: { usdt: custodyUsdt },
+          revenue: { usd: platformRevenueUsd },
+        },
+        perChain, perToken, wallets,
+        fetchedAt: new Date().toISOString(),
+      },
+    })
+  })
+
   // POST /admin/gas/wallet-activity/manual — super_admin creates a manual ledger entry for a missed deposit
   app.post('/admin/gas/wallet-activity/manual', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
     const body = req.body as {

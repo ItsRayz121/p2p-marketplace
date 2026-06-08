@@ -47,6 +47,123 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+type TreasuryData = Awaited<ReturnType<typeof adminApi.getTreasuryOverview>>
+
+function money(n: number) {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Aggregated treasury snapshot (Phase 6). Real balances only — live hot +
+// treasury per chain, escrow (locked collateral), user custody, revenue.
+function TreasuryOverview() {
+  const [t, setT] = useState<TreasuryData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setT(await adminApi.getTreasuryOverview()); setErr(null) }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Failed to load treasury overview') }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  if (loading && !t) {
+    return <div className="rounded-xl border border-border bg-surface p-5 text-sm text-text-muted animate-pulse">Loading treasury overview… (live on-chain balances)</div>
+  }
+  if (err && !t) {
+    return <div className="rounded-xl border border-border bg-surface p-5 flex items-center justify-between text-sm"><span className="text-danger">{err}</span><Button size="sm" variant="secondary" onClick={load}>Retry</Button></div>
+  }
+  if (!t) return null
+
+  const pkr = (usd: number) => money(usd * t.usdPkrRate)
+  const maxChainUsd = Math.max(1, ...t.perChain.map((c) => c.usd))
+  const maxTokenUsd = Math.max(1, ...t.perToken.map((c) => c.usd))
+
+  const cards: Array<{ label: string; usd: number; sub?: string; tone: string }> = [
+    { label: 'Hot Wallets', usd: t.categories.hot.usd, sub: `native $${money(t.categories.hot.nativeUsd)} · USDT $${money(t.categories.hot.usdtUsd)}`, tone: 'text-orange-600' },
+    { label: 'Treasury', usd: t.categories.treasury.usd, sub: 'reserve (native)', tone: 'text-success' },
+    { label: 'Escrow (locked)', usd: t.categories.escrow.usdt, sub: 'user collateral in trades', tone: 'text-blue-600' },
+    { label: 'User Custody', usd: t.categories.custody.usdt, sub: 'USDT user balances', tone: 'text-text-secondary' },
+    { label: 'Platform Revenue', usd: t.categories.revenue.usd, sub: 'fees collected (lifetime)', tone: 'text-purple-600' },
+  ]
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-5 space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">Treasury Overview</h2>
+          <p className="text-xs text-text-muted">Live on-chain balances · USDT valued 1:1 · rate ${t.usdPkrRate.toFixed(2)}/USD</p>
+        </div>
+        <Button size="sm" variant="secondary" onClick={load} loading={loading}>Refresh</Button>
+      </div>
+
+      {/* Total platform-controlled assets */}
+      <div className="rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 p-4">
+        <p className="text-xs text-text-muted">Platform-controlled assets (hot + treasury)</p>
+        <p className="text-3xl font-bold text-text-primary mt-1">${money(t.platformControlledUsd)}</p>
+        <p className="text-sm text-text-muted">PKR {pkr(t.platformControlledUsd)}</p>
+      </div>
+
+      {/* Category cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {cards.map((c) => (
+          <div key={c.label} className="rounded-lg border border-border p-3">
+            <p className="text-xs text-text-muted">{c.label}</p>
+            <p className={`text-lg font-bold ${c.tone}`}>${money(c.usd)}</p>
+            <p className="text-[10px] text-text-muted">PKR {pkr(c.usd)}</p>
+            {c.sub && <p className="text-[10px] text-text-muted mt-0.5">{c.sub}</p>}
+          </div>
+        ))}
+      </div>
+
+      {/* Distribution: per-chain + per-token */}
+      <div className="grid md:grid-cols-2 gap-5">
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary mb-2">By chain (hot + treasury)</h3>
+          {t.perChain.length === 0 ? <p className="text-xs text-text-muted">No active chains.</p> : (
+            <div className="space-y-2">
+              {t.perChain.map((c) => (
+                <div key={c.chain}>
+                  <div className="flex justify-between text-xs mb-0.5">
+                    <span className="text-text-secondary">{c.chain} <span className="text-text-muted">({(c.hotNative + c.treasuryNative).toFixed(4)} {c.symbol})</span></span>
+                    <span className="text-text-primary font-medium">${money(c.usd)}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-surface-alt overflow-hidden">
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.max(2, (c.usd / maxChainUsd) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary mb-2">By token</h3>
+          {t.perToken.length === 0 ? <p className="text-xs text-text-muted">No holdings.</p> : (
+            <div className="space-y-2">
+              {t.perToken.map((c) => (
+                <div key={c.symbol}>
+                  <div className="flex justify-between text-xs mb-0.5">
+                    <span className="text-text-secondary">{c.symbol} <span className="text-text-muted">({c.amount.toFixed(4)})</span></span>
+                    <span className="text-text-primary font-medium">${money(c.usd)}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-surface-alt overflow-hidden">
+                    <div className="h-full bg-success rounded-full" style={{ width: `${Math.max(2, (c.usd / maxTokenUsd) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {t.wallets.some((w) => w.error) && (
+        <p className="text-[11px] text-warning">Some chains could not be reached for live balances — totals may be understated.</p>
+      )}
+    </div>
+  )
+}
+
 export default function WalletPage() {
   const [data, setData] = useState<WalletStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -105,6 +222,9 @@ export default function WalletPage() {
         </div>
         <Button variant="secondary" size="sm" onClick={fetchData}>Refresh</Button>
       </div>
+
+      {/* Treasury Overview (Phase 6) */}
+      <TreasuryOverview />
 
       {/* Mnemonic System Status */}
       {mnemonicConfigured ? (
