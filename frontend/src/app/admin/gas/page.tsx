@@ -1,7 +1,7 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { adminApi, type GasFinancialKpi } from '@/lib/api'
+import { adminApi, apiRequest, type GasFinancialKpi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -545,6 +545,67 @@ function GasPaymentConfirmModal({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+interface PollerHealthNetwork {
+  network: string
+  polled: boolean
+  lastTickAt: string | null
+  ageSeconds: number | null
+  lastFound: number | null
+  healthy: boolean
+}
+
+// At-a-glance liveness of each gas payment poller (see GET /admin/gas/poller-health).
+function PollerHealthCard() {
+  const [data, setData] = useState<PollerHealthNetwork[] | null>(null)
+  const [err, setErr] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const res = await apiRequest<{ networks: PollerHealthNetwork[] }>('/admin/gas/poller-health')
+      setData(res.networks)
+      setErr(false)
+    } catch {
+      setErr(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [load])
+
+  if (err && !data) return null // stay quiet on transient errors
+
+  return (
+    <div className="border border-border rounded-xl p-4 bg-surface">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-text-primary">Payment Detection Health</h2>
+        <span className="text-xs text-text-muted">auto-refreshes every 60s</span>
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {(data ?? []).map((n) => (
+          <div key={n.network} className="flex items-center gap-2">
+            <Badge variant={!n.polled ? 'warning' : n.healthy ? 'success' : 'danger'}>{n.network}</Badge>
+            <span className="text-xs text-text-muted">
+              {!n.polled
+                ? 'no auto-detection'
+                : n.lastTickAt
+                  ? `scanned ${fmtRelativeTime(n.lastTickAt)}`
+                  : 'no scan yet'}
+            </span>
+          </div>
+        ))}
+      </div>
+      {(data ?? []).some((n) => !n.polled) && (
+        <p className="text-xs text-text-muted mt-3">
+          APTOS gas payments have no automatic detection yet — verify and release those manually.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function GasAdminPage() {
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin = user?.role === 'super_admin'
@@ -850,6 +911,9 @@ export default function GasAdminPage() {
           </Link>
         </div>
       </div>
+
+      {/* ── Payment Detection Health ─────────────────────────────────────────── */}
+      <PollerHealthCard />
 
       {/* ── Alerts ───────────────────────────────────────────────────────────── */}
       {actionSuccess && (

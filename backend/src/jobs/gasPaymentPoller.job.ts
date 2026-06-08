@@ -84,6 +84,16 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
   },
 ]
 
+// Heartbeat: record that this network was scanned, so admins can see at a glance
+// whether each poller is alive. Read by GET /admin/gas/poller-health.
+async function writePollerHeartbeat(network: string, found: number): Promise<void> {
+  try {
+    await redis.set(`gas_poller_health:${network}`, JSON.stringify({ at: Date.now(), found }))
+  } catch {
+    /* best-effort — a heartbeat write failure must never break the poller */
+  }
+}
+
 // Resolve deposit address: DB override takes precedence over env var.
 async function resolveDepositAddress(dbKey: string, envValue: string | undefined): Promise<string | null> {
   const dbOverride = await db.platformConfig.findUnique({ where: { key: dbKey } })
@@ -309,7 +319,7 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
       expiresAt: { gte: graceCutoff },
     },
   })
-  if (activeOrExpired === 0) return
+  if (activeOrExpired === 0) { await writePollerHeartbeat(cfg.paymentNetwork, 0); return }
 
   const client = createPublicClient({
     chain: cfg.viemChain,
@@ -326,7 +336,7 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     : currentBlock - BigInt(cfg.scanBlocks)
 
   // Nothing new since last run.
-  if (fromBlock > currentBlock) return
+  if (fromBlock > currentBlock) { await writePollerHeartbeat(cfg.paymentNetwork, 0); return }
 
   // Cap range to avoid oversized getLogs calls on first run or after a long gap.
   const maxRange = BigInt(Math.max(cfg.scanBlocks, 500))
@@ -350,6 +360,7 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
 
   // Advance cursor even when logs is empty so we don't re-scan old blocks.
   await redis.set(redisKey, currentBlock.toString())
+  await writePollerHeartbeat(cfg.paymentNetwork, logs.length)
 
   if (logs.length === 0) return
 
@@ -425,7 +436,7 @@ async function scanTron(): Promise<void> {
       expiresAt: { gte: graceCutoff },
     },
   })
-  if (actionable === 0) return
+  if (actionable === 0) { await writePollerHeartbeat('TRC20', 0); return }
 
   const cursorKey = `gas_poller_last_ts:TRC20`
   const storedTs = await redis.get(cursorKey)
@@ -457,7 +468,7 @@ async function scanTron(): Promise<void> {
     return // don't advance cursor
   }
 
-  if (transfers.length === 0) return
+  if (transfers.length === 0) { await writePollerHeartbeat('TRC20', 0); return }
 
   logger.info({ network: 'TRC20', count: transfers.length }, 'gasPaymentPoller: found TRC20 transfers')
 
@@ -498,6 +509,7 @@ async function scanTron(): Promise<void> {
   // Advance cursor. Using the max timestamp seen (inclusive on next run) is safe —
   // the duplicate guard in matchAndDeliver dedupes any boundary tx re-seen.
   await redis.set(cursorKey, String(maxTs))
+  await writePollerHeartbeat('TRC20', transfers.length)
 }
 
 export async function runGasPaymentPoller(): Promise<void> {

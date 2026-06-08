@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { cloudinary, CLOUDINARY_FOLDERS } from '../lib/cloudinary'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { env } from '../lib/env'
 import { AppError, Errors } from '../lib/errors'
 import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
@@ -3116,6 +3117,48 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // ── Gas Fee Admin ──────────────────────────────────────────────────────────
+
+  // GET /admin/gas/poller-health — at-a-glance liveness of each payment poller.
+  // A network is "healthy" if it was scanned within HEALTHY_WINDOW (the poller
+  // ticks ~every 60s). APTOS has no automatic detection and is reported as such.
+  app.get('/admin/gas/poller-health', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const HEALTHY_WINDOW_MS = 5 * 60 * 1000 // 5 min — generous vs the ~60s tick
+    const POLLED_NETWORKS = ['TRC20', 'BEP20', 'ERC20']
+    const now = Date.now()
+
+    const networks = await Promise.all(
+      POLLED_NETWORKS.map(async (network) => {
+        const raw = await redis.get(`gas_poller_health:${network}`).catch(() => null)
+        if (!raw) {
+          return { network, polled: true, lastTickAt: null, ageSeconds: null, lastFound: null, healthy: false }
+        }
+        let parsed: { at?: number; found?: number } = {}
+        try { parsed = JSON.parse(raw) } catch { /* ignore */ }
+        const at = typeof parsed.at === 'number' ? parsed.at : null
+        const ageSeconds = at ? Math.round((now - at) / 1000) : null
+        return {
+          network,
+          polled: true,
+          lastTickAt: at ? new Date(at).toISOString() : null,
+          ageSeconds,
+          lastFound: parsed.found ?? null,
+          healthy: at !== null && now - at < HEALTHY_WINDOW_MS,
+        }
+      }),
+    )
+
+    // APTOS is a valid gas payment network but has no automatic detection path yet.
+    networks.push({
+      network: 'APTOS',
+      polled: false,
+      lastTickAt: null,
+      ageSeconds: null,
+      lastFound: null,
+      healthy: false,
+    })
+
+    return reply.send({ success: true, data: { networks, healthyWindowSeconds: HEALTHY_WINDOW_MS / 1000 } })
+  })
 
   app.get('/admin/gas/orders', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
