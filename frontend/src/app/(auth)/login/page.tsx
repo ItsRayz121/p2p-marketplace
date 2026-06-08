@@ -27,7 +27,17 @@ function LoginInner() {
   const setAccessToken = useAuthStore((s) => s.setAccessToken)
   const setUser = useAuthStore((s) => s.setUser)
   const [showPassword, setShowPassword] = useState(false)
-  const googleError = searchParams.get('googleError')
+  // Google sign-in can surface errors two ways: a pre-formatted `googleError`
+  // (from our /auth/google/success page) or a raw `error` code (from the backend
+  // OAuth callback redirect). Map both to a friendly message.
+  const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
+    google_failed: 'Google sign-in failed. Please try again.',
+    google_cancelled: 'Google sign-in was cancelled.',
+    account_suspended: 'Your account is restricted. Please use email sign-in to appeal.',
+    google_not_configured: 'Google sign-in is temporarily unavailable. Please use email and password.',
+  }
+  const rawError = searchParams.get('error')
+  const googleError = searchParams.get('googleError') ?? (rawError ? (GOOGLE_ERROR_MESSAGES[rawError] ?? 'Google sign-in failed. Please try again.') : null)
   const [serverError, setServerError] = useState<string | null>(googleError)
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const [savedCredentials, setSavedCredentials] = useState<FormValues | null>(null)

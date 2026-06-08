@@ -496,7 +496,8 @@ export async function authRoutes(app: FastifyInstance) {
   // Step 1: redirect user to Google consent screen
   app.get('/google', async (_req, reply) => {
     if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CALLBACK_URL) {
-      return reply.status(503).send({ success: false, error: 'GOOGLE_NOT_CONFIGURED', message: 'Google login is not configured' })
+      // Redirect to a friendly login error instead of dead-ending on raw JSON.
+      return reply.redirect(`${env.FRONTEND_URL}/login?error=google_not_configured`)
     }
     const params = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
