@@ -66,10 +66,22 @@ async function createOrderInner(
   if (!rateStr) {
     throw new AppError('RATE_UNAVAILABLE', `Rate for ${data.coin}/PKR is not available`, 503)
   }
-  const rateParsed = JSON.parse(rateStr) as { rate?: number }
+  const rateParsed = JSON.parse(rateStr) as { rate?: number; updatedAt?: number | string }
   const rate = rateParsed.rate
   if (!rate || rate <= 0) {
     throw new AppError('RATE_UNAVAILABLE', `Rate for ${data.coin}/PKR is not available`, 503)
+  }
+  // Staleness gate: the rate key has a 1h TTL, but if rateUpdater stalls we must
+  // not quote an hour-old crypto price. Reject anything older than MAX_RATE_AGE.
+  const MAX_RATE_AGE_MS = 20 * 60 * 1000
+  const updatedAtMs =
+    typeof rateParsed.updatedAt === 'number'
+      ? rateParsed.updatedAt
+      : rateParsed.updatedAt
+        ? Date.parse(rateParsed.updatedAt)
+        : NaN
+  if (Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs > MAX_RATE_AGE_MS) {
+    throw new AppError('RATE_STALE', `Rate for ${data.coin}/PKR is stale — please retry shortly`, 503)
   }
 
   const feeConfig = await db.platformConfig.findUnique({ where: { key: 'instant_buy_fee_pct' } })
@@ -212,6 +224,14 @@ export async function uploadPaymentProof(orderId: string, userId: string, proofU
 // ─── confirmCryptoDeposit ─────────────────────────────────────────────────────
 
 export async function confirmCryptoDeposit(orderId: string, userId: string, txHash: string) {
+  const normalizedHash = txHash.trim()
+  // Basic shape guard — accept EVM (0x + 64 hex) or other-chain hashes (>= 16 chars),
+  // reject empty/garbage so we never record a meaningless "proof".
+  const isEvmHash = /^0x[0-9a-fA-F]{64}$/.test(normalizedHash)
+  if (!isEvmHash && normalizedHash.length < 16) {
+    throw new AppError('INVALID_TX_HASH', 'A valid transaction hash is required', 400)
+  }
+
   const order = await db.instantBuyOrder.findUnique({ where: { id: orderId } })
   if (!order) throw Errors.NOT_FOUND('Order')
   if (order.userId !== userId) throw Errors.FORBIDDEN()
@@ -221,12 +241,29 @@ export async function confirmCryptoDeposit(orderId: string, userId: string, txHa
     throw new AppError('INVALID_STATUS', `Cannot confirm deposit for order in status ${order.status}`, 400)
   }
 
-  const updated = await db.instantBuyOrder.update({
-    where: { id: orderId },
-    data: {
-      incomingTxHash: txHash,
-    },
-  })
+  // Don't overwrite a hash already recorded (e.g. set authoritatively by the webhook).
+  if (order.incomingTxHash && order.incomingTxHash !== normalizedHash) {
+    throw new AppError('TX_HASH_ALREADY_SET', 'A transaction hash is already recorded for this order', 409)
+  }
 
-  return updated
+  // Reject a hash already claimed by a different order (replay / copy-paste).
+  const duplicate = await db.instantBuyOrder.findFirst({
+    where: { incomingTxHash: normalizedHash, id: { not: orderId } },
+    select: { id: true },
+  })
+  if (duplicate) {
+    throw new AppError('TX_HASH_IN_USE', 'This transaction hash is already associated with another order', 409)
+  }
+
+  // Status-guarded claim so a concurrent webhook can't be clobbered.
+  const claimed = await db.instantBuyOrder.updateMany({
+    where: { id: orderId, userId, incomingTxHash: null },
+    data: { incomingTxHash: normalizedHash },
+  })
+  if (claimed.count === 0) {
+    // Either it was just set concurrently or the same hash is already there — return current state.
+    return db.instantBuyOrder.findUniqueOrThrow({ where: { id: orderId } })
+  }
+
+  return db.instantBuyOrder.findUniqueOrThrow({ where: { id: orderId } })
 }

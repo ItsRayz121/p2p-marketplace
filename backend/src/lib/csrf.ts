@@ -64,7 +64,10 @@ export function validateCsrfToken(token: string, userId?: string): boolean {
 
 export async function csrfHook(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!UNSAFE_METHODS.has(req.method)) return
-  if (CSRF_EXEMPT.has(req.url)) return
+  // Match on the pathname only — req.url includes the querystring, so a request
+  // like `/api/v1/auth/login?x=1` would otherwise miss the exempt set.
+  const pathname = req.url.split('?')[0] ?? req.url
+  if (CSRF_EXEMPT.has(pathname)) return
 
   const token = req.headers['x-csrf-token']
   // req.user is populated by authenticate preHandler on protected routes;

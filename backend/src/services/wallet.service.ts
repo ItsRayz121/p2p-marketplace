@@ -1,4 +1,5 @@
 import { db } from '../lib/prisma'
+import { Prisma } from '@prisma/client'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { generateOrderRef } from '../lib/hash'
@@ -191,8 +192,9 @@ export async function requestWithdrawal(
       const w = wallets[0]
       if (!w) throw new AppError('NOT_FOUND', 'Wallet not found', 404)
 
-      const available = parseFloat(w.balance) - parseFloat(w.lockedBalance)
-      if (available < totalDeduct) {
+      // Compare in Decimal space — never coerce money to IEEE-754 float.
+      const available = new Prisma.Decimal(w.balance).sub(w.lockedBalance)
+      if (available.lt(totalDeduct)) {
         throw new AppError('INSUFFICIENT_BALANCE', 'Insufficient balance', 400)
       }
 
@@ -785,8 +787,8 @@ export async function lockCollateral(userId: string, data: { coin: string; amoun
     const w = wallets[0]
     if (!w) throw new AppError('NOT_FOUND', 'Wallet not found', 404)
 
-    const available = parseFloat(w.balance) - parseFloat(w.lockedBalance)
-    if (available < data.amount) {
+    const available = new Prisma.Decimal(w.balance).sub(w.lockedBalance)
+    if (available.lt(data.amount)) {
       throw new AppError('INSUFFICIENT_BALANCE', 'Insufficient balance for collateral', 400)
     }
 

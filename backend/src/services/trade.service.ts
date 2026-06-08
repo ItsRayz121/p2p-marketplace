@@ -492,8 +492,17 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
 
   // ── Verification gate ─────────────────────────────────────────────────────────
   // txVerificationStatus = null means a legacy trade created before the
-  // verification system was deployed — allow it through for backward compat.
+  // verification system was deployed — allow it through for backward compat,
+  // BUT only if a real on-chain seller tx hash exists. A null status with no
+  // sellerTxHash is an inconsistent state that must never release funds.
   const vs = tradeDetails.txVerificationStatus
+  if ((vs === null || vs === undefined) && !tradeDetails.sellerTxHash) {
+    throw new AppError(
+      'TX_NOT_VERIFIED',
+      'Cannot release — this trade has no verified transaction on record. Please contact support.',
+      400,
+    )
+  }
   if (vs !== null && vs !== undefined && !RELEASE_ALLOWED_STATUSES.includes(vs as never)) {
     const isAdminReview = ADMIN_REVIEW_STATUSES.includes(vs as never)
     throw new AppError(
@@ -790,13 +799,15 @@ export async function rateTrade(
     },
   })
 
-  // Update ratee's avgRating in TradeStats
-  const allRatings = await db.tradeRating.findMany({
+  // Update ratee's avgRating in TradeStats — aggregate in the DB rather than
+  // pulling every rating row into memory (unbounded as a user accrues reviews).
+  const agg = await db.tradeRating.aggregate({
     where: { ratedUserId: rateeId },
-    select: { rating: true },
+    _avg: { rating: true },
+    _count: { _all: true },
   })
-  const totalRatings = allRatings.length
-  const avgRating = allRatings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
+  const totalRatings = agg._count._all
+  const avgRating = agg._avg.rating ?? 0
 
   await db.tradeStats.upsert({
     where: { userId: rateeId },
