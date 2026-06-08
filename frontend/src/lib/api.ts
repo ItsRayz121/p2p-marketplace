@@ -590,7 +590,12 @@ export const authApi = {
   resendOtp: (email: string, type: 'verify' | 'reset' = 'verify') =>
     apiRequest<{ sent: boolean }>('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email, type }) }),
   login: (data: { email: string; password: string; rememberMe?: boolean }) =>
-    apiRequest<{ accessToken?: string; preAuthToken?: string; user?: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<{
+      accessToken?: string
+      preAuthToken?: string
+      user?: AuthUser
+      restricted?: { status: 'banned' | 'suspended'; reason: string | null; until: string | null; appealToken: string }
+    }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   refresh: () =>
     apiRequest<{ accessToken: string }>('/auth/refresh', { method: 'POST' }),
   logout: () =>
@@ -1520,16 +1525,41 @@ export const adminApi = {
     apiRequest<any>(`/admin/users/${id}/profile`),
   updateUser: (id: string, data: Partial<AuthUser>) =>
     apiRequest<AuthUser>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  banUser: (id: string, data: { reason: string }) =>
+  banUser: (id: string, data: { reason: string; type?: 'permanent' | 'temporary'; until?: string; durationLabel?: string }) =>
     apiRequest<void>(`/admin/users/${id}/ban`, { method: 'POST', body: JSON.stringify(data) }),
-  unbanUser: (id: string) =>
-    apiRequest<void>(`/admin/users/${id}/unban`, { method: 'POST' }),
-  suspendUser: (id: string, data: { reason: string }) =>
+  unbanUser: (id: string, data?: { reason?: string }) =>
+    apiRequest<void>(`/admin/users/${id}/unban`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  suspendUser: (id: string, data: { reason: string; until?: string; durationLabel?: string }) =>
     apiRequest<void>(`/admin/users/${id}/suspend`, { method: 'POST', body: JSON.stringify(data) }),
+  unsuspendUser: (id: string, data?: { reason?: string }) =>
+    apiRequest<void>(`/admin/users/${id}/unsuspend`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  restoreAccess: (id: string, data?: { reason?: string }) =>
+    apiRequest<void>(`/admin/users/${id}/restore-access`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  setUserReview: (id: string, data: { active: boolean; reason: string }) =>
+    apiRequest<void>(`/admin/users/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
+  resetTrustScore: (id: string, data: { reason: string }) =>
+    apiRequest<void>(`/admin/users/${id}/reset-trust`, { method: 'POST', body: JSON.stringify(data) }),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getUserModeration: (id: string) =>
+    apiRequest<any>(`/admin/users/${id}/moderation`),
   seizeCollateral: (id: string) =>
     apiRequest<void>(`/admin/users/${id}/seize-collateral`, { method: 'POST' }),
   overrideBadge: (id: string, data: { badge: string; badgeLabel?: string; reason?: string; clearOverride?: boolean }) =>
     apiRequest<void>(`/admin/users/${id}/badge`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Appeals (admin)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getAppeals: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<any>('/admin/appeals' + buildQs(params)),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getAppeal: (id: string) =>
+    apiRequest<any>(`/admin/appeals/${id}`),
+  approveAppeal: (id: string, data?: { note?: string }) =>
+    apiRequest<void>(`/admin/appeals/${id}/approve`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  rejectAppeal: (id: string, data: { note: string }) =>
+    apiRequest<void>(`/admin/appeals/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+  requestAppealInfo: (id: string, data: { note: string }) =>
+    apiRequest<void>(`/admin/appeals/${id}/request-info`, { method: 'POST', body: JSON.stringify(data) }),
 
   // KYC
   getKycQueue: (params?: Record<string, string | number | undefined>) =>
@@ -2132,6 +2162,61 @@ export const logoApi = {
   /** Admin: delete a logo registry entry */
   adminDelete: (id: string) =>
     apiRequest<void>(`/admin/logos/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Appeals (user-facing, appeal-token authenticated) ─────────────────────────
+// Banned/suspended users have no session — they hold a short-lived appeal token
+// (from the restricted login response). These calls authenticate with it directly.
+
+export interface AppealMe {
+  status: 'active' | 'suspended' | 'temporarily_banned' | 'permanently_banned' | 'under_review'
+  reason: string | null
+  until: string | null
+  canAppeal: boolean
+  appeals: Array<{
+    id: string
+    status: 'pending' | 'approved' | 'rejected' | 'more_info_requested'
+    subjectStatus: string
+    explanation: string
+    evidenceUrls: string[]
+    decisionNote: string | null
+    reviewedAt: string | null
+    createdAt: string
+  }>
+}
+
+async function appealRequest<T>(path: string, token: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method ?? 'GET').toUpperCase()
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+    Authorization: 'Bearer ' + token,
+  }
+  if (options?.body !== undefined && options.body !== null && !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
+  }
+  if (UNSAFE_METHODS.has(method)) {
+    const csrf = await fetchCsrfToken()
+    if (csrf) headers['X-CSRF-Token'] = csrf
+  }
+  const res = await fetch(`${API_BASE}/api/v1${path}`, { ...options, method, headers, credentials: 'include' })
+  const raw = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new ApiError(
+      (raw as { error?: string }).error ?? 'UNKNOWN_ERROR',
+      (raw as { message?: string }).message ?? 'An error occurred',
+      res.status,
+      (raw as { requestId?: string }).requestId,
+    )
+  }
+  return unwrapEnvelope<T>(raw)
+}
+
+export const appealApi = {
+  me: (token: string) => appealRequest<AppealMe>('/appeals/me', token),
+  submit: (token: string, data: { explanation: string; evidenceUrls?: string[] }) =>
+    appealRequest<{ id: string; status: string; createdAt: string }>('/appeals', token, { method: 'POST', body: JSON.stringify(data) }),
+  presignEvidence: (token: string, mimeType: string) =>
+    appealRequest<{ url: string; fields: Record<string, string>; publicUrl: string }>('/appeals/evidence/presign', token, { method: 'POST', body: JSON.stringify({ mimeType }) }),
 }
 
 // ─── Health Check ─────────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@ export const QUEUE_NAMES = {
   GAS_PAYMENT_POLLER:               'gas-payment-poller',
   GAS_HOT_WALLET_DEPOSIT_POLL:      'gas-hot-wallet-deposit-poll',
   WITHDRAWAL_CONFIRMATION_WATCHER:  'withdrawal-confirmation-watcher',
+  MODERATION_EXPIRY:                'moderation-expiry',
 } as const
 
 export const queues = {
@@ -116,5 +117,9 @@ export const queues = {
   withdrawalConfirmationWatcher: new Queue(QUEUE_NAMES.WITHDRAWAL_CONFIRMATION_WATCHER, {
     connection,
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
+  }),
+  moderationExpiry: new Queue(QUEUE_NAMES.MODERATION_EXPIRY, {
+    connection,
+    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
 }

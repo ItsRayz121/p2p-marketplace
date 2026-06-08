@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { verify as otpVerify } from 'otplib'
-import { verifyAccessToken } from '../lib/jwt'
+import { verifyAccessToken, verifyAppealToken } from '../lib/jwt'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
@@ -39,6 +39,30 @@ export async function authenticate(req: FastifyRequest, _reply: FastifyReply): P
       db.user.update({ where: { id: user.id }, data: { lastSeenAt: new Date() } }).catch(() => {})
     }
   }).catch(() => {})
+}
+
+// Accepts EITHER a normal access token OR an appeal-scoped token. Used only by
+// the appeal routes so a banned/suspended user (who cannot get a full session)
+// can still submit and view their own appeal. Does NOT block banned users.
+export async function authenticateAppeal(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    throw new AppError('UNAUTHORIZED', 'Authentication required', 401)
+  }
+  const token = authHeader.slice(7)
+  const appeal = verifyAppealToken(token)
+  if (appeal) {
+    const user = await db.user.findUnique({ where: { id: appeal.userId }, select: { id: true, email: true, role: true } })
+    if (!user) throw new AppError('UNAUTHORIZED', 'User not found', 401)
+    req.user = { id: user.id, email: user.email, role: user.role }
+    return
+  }
+  // Fall back to a normal access token (e.g. an under-review user who can log in).
+  const payload = verifyAccessToken(token)
+  if (!payload) throw new AppError('UNAUTHORIZED', 'Invalid or expired token', 401)
+  const user = await db.user.findUnique({ where: { id: payload.userId }, select: { id: true, email: true, role: true } })
+  if (!user) throw new AppError('UNAUTHORIZED', 'User not found', 401)
+  req.user = { id: user.id, email: user.email, role: user.role }
 }
 
 export function requireRole(...roles: string[]) {

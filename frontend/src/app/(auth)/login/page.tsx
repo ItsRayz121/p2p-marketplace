@@ -47,6 +47,13 @@ function LoginInner() {
     try {
       const res = await authApi.login({ email: values.email, password: values.password, rememberMe: values.rememberMe ?? true })
 
+      // Banned / suspended → restricted appeal flow (no session issued).
+      if (res.restricted) {
+        sessionStorage.setItem('appealToken', res.restricted.appealToken)
+        router.push(`/account/restricted?status=${res.restricted.status}`)
+        return
+      }
+
       if (res.preAuthToken) {
         sessionStorage.setItem('preAuthToken', res.preAuthToken)
         router.push('/2fa')

@@ -17,6 +17,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Input } from '@/components/ui/Input'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
+import { ModerationPanel, type ModerationStatus } from '@/components/admin/ModerationPanel'
 
 interface AdminTradeStats {
   badge: TraderBadge
@@ -31,6 +32,13 @@ interface AdminTradeStats {
 interface AdminUser extends Omit<AuthUser, 'tradeStats'> {
   isBanned?: boolean
   isSuspended?: boolean
+  bannedUntil?: string | null
+  suspendedUntil?: string | null
+  banType?: string | null
+  underReview?: boolean
+  moderationReason?: string | null
+  moderationStatus?: ModerationStatus
+  hasPendingAppeal?: boolean
   tradeCount?: number
   liveTradeCount?: number
   ctmBuyCount?: number
@@ -73,9 +81,6 @@ export default function UsersPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<UserTab>('profile')
-  const [actionReason, setActionReason] = useState('')
-  const [confirmBan, setConfirmBan] = useState(false)
-  const [confirmSuspend, setConfirmSuspend] = useState(false)
   const [confirmSeize, setConfirmSeize] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
@@ -134,7 +139,6 @@ export default function UsersPage() {
     // Show modal immediately with list data so it feels snappy
     setSelected(u)
     setActiveTab('profile')
-    setActionReason('')
     setActionError(null)
     setActionSuccess(null)
     setBadgeOverrideValue((u.tradeStats?.badge ?? 'new') as TraderBadge)
@@ -153,30 +157,14 @@ export default function UsersPage() {
     }
   }
 
-  async function handleBan() {
+  // Re-fetch the selected user's full detail (after a moderation action).
+  async function refreshSelected() {
     if (!selected) return
-    setActionError(null)
+    fetchUsers()
     try {
-      await adminApi.banUser(selected.id, { reason: actionReason })
-      setConfirmBan(false)
-      setActionSuccess('User has been banned.')
-      fetchUsers()
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to ban user')
-    }
-  }
-
-  async function handleSuspend() {
-    if (!selected) return
-    setActionError(null)
-    try {
-      await adminApi.suspendUser(selected.id, { reason: actionReason })
-      setConfirmSuspend(false)
-      setActionSuccess('User has been suspended.')
-      fetchUsers()
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to suspend user')
-    }
+      const full = await adminApi.getUser(selected.id) as AdminUser
+      setSelected((prev) => prev?.id === selected.id ? { ...prev, ...full } : prev)
+    } catch { /* non-fatal */ }
   }
 
   async function handleSeize() {
@@ -338,13 +326,18 @@ export default function UsersPage() {
                       <Badge variant={kycVariant(u.kycStatus)} size="sm">{kycStatusLabel(u.kycStatus)}</Badge>
                     </td>
                     <td className="px-4 py-3">
-                      {u.isBanned ? (
-                        <Badge variant="danger" size="sm">Banned</Badge>
-                      ) : u.isSuspended ? (
-                        <Badge variant="warning" size="sm">Suspended</Badge>
-                      ) : (
-                        <Badge variant="success" size="sm">Active</Badge>
-                      )}
+                      <div className="flex flex-col items-start gap-1">
+                        {u.moderationStatus === 'permanently_banned' || u.moderationStatus === 'temporarily_banned' ? (
+                          <Badge variant="danger" size="sm">{u.moderationStatus === 'temporarily_banned' ? 'Temp Banned' : 'Banned'}</Badge>
+                        ) : u.moderationStatus === 'suspended' ? (
+                          <Badge variant="warning" size="sm">Suspended</Badge>
+                        ) : u.moderationStatus === 'under_review' ? (
+                          <Badge variant="default" size="sm">Under Review</Badge>
+                        ) : (
+                          <Badge variant="success" size="sm">Active</Badge>
+                        )}
+                        {u.hasPendingAppeal && <Badge variant="info" size="sm">Appeal</Badge>}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {u.tradeStats ? (
@@ -466,10 +459,12 @@ export default function UsersPage() {
                   )}
                   <div>
                     <p className="text-text-muted">Account Status</p>
-                    {selected.isBanned ? (
-                      <Badge variant="danger">Banned — {selected.banReason}</Badge>
-                    ) : selected.isSuspended ? (
-                      <Badge variant="warning">Suspended — {selected.suspendReason}</Badge>
+                    {(selected.moderationStatus === 'permanently_banned' || selected.moderationStatus === 'temporarily_banned') ? (
+                      <Badge variant="danger">{selected.moderationStatus === 'temporarily_banned' ? 'Temporarily Banned' : 'Banned'}{selected.moderationReason ? ` — ${selected.moderationReason}` : ''}</Badge>
+                    ) : selected.moderationStatus === 'suspended' ? (
+                      <Badge variant="warning">Suspended{selected.moderationReason ? ` — ${selected.moderationReason}` : ''}</Badge>
+                    ) : selected.moderationStatus === 'under_review' ? (
+                      <Badge variant="default">Under Review</Badge>
                     ) : (
                       <Badge variant="success">Active</Badge>
                     )}
@@ -530,18 +525,6 @@ export default function UsersPage() {
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div>
-                  <p className="text-sm font-medium text-text-primary mb-2">Action Reason</p>
-                  <textarea
-                    value={actionReason}
-                    onChange={(e) => setActionReason(e.target.value)}
-                    rows={2}
-                    placeholder="Required for ban/suspend actions..."
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                  />
-                </div>
-
                 {actionError && (
                   <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">{actionError}</div>
                 )}
@@ -549,35 +532,29 @@ export default function UsersPage() {
                   <div className="px-3 py-2 bg-success/10 border border-success/20 rounded-lg text-success text-sm">{actionSuccess}</div>
                 )}
 
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    disabled={!actionReason.trim() || !!selected.isBanned}
-                    onClick={() => setConfirmBan(true)}
-                  >
-                    {selected.isBanned ? 'Already Banned' : 'Ban User'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={!actionReason.trim() || !!selected.isSuspended}
-                    onClick={() => setConfirmSuspend(true)}
-                  >
-                    {selected.isSuspended ? 'Already Suspended' : 'Suspend User'}
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => setConfirmSeize(true)}
-                  >
-                    Seize Collateral
-                  </Button>
+                {/* Moderation */}
+                <div>
+                  <p className="text-sm font-semibold text-text-primary mb-2">Moderation</p>
+                  <ModerationPanel
+                    userId={selected.id}
+                    state={{
+                      status: selected.moderationStatus ?? (selected.isBanned ? 'permanently_banned' : selected.isSuspended ? 'suspended' : 'active'),
+                      isBanned: selected.isBanned,
+                      isSuspended: selected.isSuspended,
+                      bannedUntil: selected.bannedUntil ?? null,
+                      suspendedUntil: selected.suspendedUntil ?? null,
+                      underReview: selected.underReview,
+                      banType: selected.banType ?? null,
+                      moderationReason: selected.moderationReason ?? selected.suspendReason ?? null,
+                    }}
+                    onChange={refreshSelected}
+                  />
                 </div>
 
-                {selected.isBanned && (
-                  <p className="text-sm text-text-muted">To unban, use the platform config or contact a super admin.</p>
-                )}
+                <div className="pt-1 border-t border-border">
+                  <p className="text-xs text-text-muted mb-2">Collateral enforcement is irreversible.</p>
+                  <Button variant="danger" size="sm" onClick={() => setConfirmSeize(true)}>Seize Collateral</Button>
+                </div>
               </div>
             )}
 
@@ -683,24 +660,6 @@ export default function UsersPage() {
         )}
       </Modal>
 
-      <ConfirmModal
-        isOpen={confirmBan}
-        onClose={() => setConfirmBan(false)}
-        onConfirm={handleBan}
-        title="Ban User"
-        description={`Permanently ban ${selected?.email}? They will lose access to the platform.`}
-        confirmLabel="Ban User"
-        confirmVariant="danger"
-      />
-      <ConfirmModal
-        isOpen={confirmSuspend}
-        onClose={() => setConfirmSuspend(false)}
-        onConfirm={handleSuspend}
-        title="Suspend User"
-        description={`Suspend ${selected?.email}? Their account will be temporarily restricted.`}
-        confirmLabel="Suspend"
-        confirmVariant="danger"
-      />
       <ConfirmModal
         isOpen={confirmSeize}
         onClose={() => setConfirmSeize(false)}

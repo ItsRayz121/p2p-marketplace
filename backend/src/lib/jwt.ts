@@ -20,6 +20,16 @@ interface PreAuthTokenPayload {
   exp: number
 }
 
+// Narrowly-scoped token issued to banned/suspended users so they can submit an
+// appeal WITHOUT a full session. Only the appeal routes accept it.
+interface AppealTokenPayload {
+  userId: string
+  email: string
+  type: 'appeal'
+  iat: number
+  exp: number
+}
+
 function base64UrlEncode(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
@@ -84,5 +94,18 @@ export function verifyAccessToken(token: string): AccessTokenPayload | null {
 export function verifyPreAuthToken(token: string): PreAuthTokenPayload | null {
   const payload = verifyJwt<PreAuthTokenPayload>(token, env.JWT_REFRESH_SECRET)
   if (!payload || payload.type !== 'pre_auth') return null
+  return payload
+}
+
+export function signAppealToken(
+  payload: Omit<AppealTokenPayload, 'type' | 'iat' | 'exp'>,
+): string {
+  // 2h window — long enough to write an appeal and upload evidence.
+  return signJwt({ ...payload, type: 'appeal' }, env.JWT_REFRESH_SECRET, 2 * 60 * 60)
+}
+
+export function verifyAppealToken(token: string): AppealTokenPayload | null {
+  const payload = verifyJwt<AppealTokenPayload>(token, env.JWT_REFRESH_SECRET)
+  if (!payload || payload.type !== 'appeal') return null
   return payload
 }

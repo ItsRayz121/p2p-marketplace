@@ -23,6 +23,7 @@ export const CLOUDINARY_FOLDERS = {
   CTM_TOKEN_LOGO: 'rupchain/ctm/token-logos',
   GAS_LOGO: 'rupchain/gas/logos',
   AVATAR: 'rupchain/avatars',
+  APPEAL_EVIDENCE: 'rupchain/appeals/evidence',
 } as const
 
 // Max file sizes in bytes

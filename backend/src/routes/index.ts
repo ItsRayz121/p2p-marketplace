@@ -33,6 +33,7 @@ import { sseRoutes } from './sse.routes'
 import { adminNotificationRoutes } from './adminNotification.routes'
 import { logosRoutes } from './logos.routes'
 import { supportRoutes } from './support.routes'
+import { appealRoutes } from './appeal.routes'
 
 export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes)
@@ -69,4 +70,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(adminNotificationRoutes, { prefix: '/api/v1' })
   await app.register(logosRoutes, { prefix: '/api/v1' })
   await app.register(supportRoutes, { prefix: '/api/v1' })
+  await app.register(appealRoutes, { prefix: '/api/v1' })
 }

@@ -22,6 +22,7 @@ import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtm
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
+import { runModerationExpiry } from '../jobs/moderationExpiry.job'
 import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +71,11 @@ export function startWorkers() {
       logger.error({ err }, 'Failed to schedule trade-escalation repeatable job'),
     )
 
+  // Moderation expiry sweep — auto-lift elapsed suspensions / temp bans (every 60s)
+  queues.moderationExpiry
+    .add('moderation-expiry-sweep', {}, { repeat: { every: 60_000 }, jobId: 'moderation-expiry-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule moderation-expiry repeatable job'))
+
   // Active workers
   createWorker(QUEUE_NAMES.RATE_UPDATER, async () => {
     await updateRates()
@@ -78,6 +84,10 @@ export function startWorkers() {
   createWorker(QUEUE_NAMES.TRADE_ESCALATION, async () => {
     await runTradeEscalation()
   })
+
+  createWorker(QUEUE_NAMES.MODERATION_EXPIRY, async () => {
+    await runModerationExpiry()
+  }, { max: 1, duration: 60_000 })
 
   createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {
     await recalculateUserBadge(job.data.userId as string)

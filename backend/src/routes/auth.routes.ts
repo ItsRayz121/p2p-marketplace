@@ -147,6 +147,7 @@ export async function authRoutes(app: FastifyInstance) {
           accessToken: result.accessToken,
           preAuthToken: result.preAuthToken,
           user: result.user,
+          restricted: result.restricted,
         },
       })
     },
@@ -547,7 +548,7 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.redirect(`${frontendUrl}/login?error=google_failed`)
       }
 
-      const { accessToken, refreshToken } = await loginOrRegisterWithGoogle(
+      const result = await loginOrRegisterWithGoogle(
         googleUser.id,
         googleUser.email,
         googleUser.name ?? (googleUser.email.split('@')[0] ?? 'user'),
@@ -555,8 +556,13 @@ export async function authRoutes(app: FastifyInstance) {
         req.ip,
       )
 
-      reply.setCookie('refresh_token', refreshToken, COOKIE_OPTIONS)
-      return reply.redirect(`${frontendUrl}/auth/google/success?token=${encodeURIComponent(accessToken)}`)
+      // Banned / suspended Google users → restricted appeal flow.
+      if (result.restricted) {
+        return reply.redirect(`${frontendUrl}/account/restricted?token=${encodeURIComponent(result.restricted.appealToken)}&status=${result.restricted.status}`)
+      }
+
+      if (result.refreshToken) reply.setCookie('refresh_token', result.refreshToken, COOKIE_OPTIONS)
+      return reply.redirect(`${frontendUrl}/auth/google/success?token=${encodeURIComponent(result.accessToken ?? '')}`)
     } catch (err) {
       logger.error({ err }, 'Google OAuth callback error')
       const msg = err instanceof Error && err.message.includes('suspended') ? 'account_suspended' : 'google_failed'

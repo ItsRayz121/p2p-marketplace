@@ -175,6 +175,13 @@ enum FraudFlagStatus {
   reviewed
 }
 
+enum AppealStatus {
+  pending
+  approved
+  rejected
+  more_info_requested
+}
+
 enum TraderBadge {
   new
   active
@@ -386,6 +393,15 @@ model User {
   isBanned               Boolean @default(false)
   suspendReason          String?
 
+  // ── Moderation framework (Admin Audit Phase 1) ──
+  // isBanned/isSuspended remain the authoritative enforcement flags (read by
+  // auth middleware + login). The fields below add duration + classification.
+  suspendedUntil         DateTime?          // when a suspension auto-lifts (null = until manually lifted)
+  bannedUntil            DateTime?          // when a TEMPORARY ban auto-lifts (null + isBanned = permanent)
+  banType                String?            // "temporary" | "permanent" (set when isBanned)
+  underReview            Boolean  @default(false)  // flagged for review; informational, does not block access
+  moderationReason       String?  @db.VarChar(1000) // current active reason (ban or suspend)
+
   dailyBuyUsed           Decimal @default(0) @db.Decimal(14, 2)
   dailyBuyReset          DateTime?
   monthlyBuyUsed         Decimal @default(0) @db.Decimal(14, 2)
@@ -430,6 +446,10 @@ model User {
   fraudFlags             FraudFlag[]
   rateAlerts             RateAlert[]
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
+  moderationActions      ModerationAction[]  @relation("ModerationActionTarget")
+  moderatorActions       ModerationAction[]  @relation("ModerationActionModerator")
+  appeals                Appeal[]            @relation("AppealUser")
+  appealsReviewed        Appeal[]            @relation("AppealReviewer")
   auditLogs              AuditLog[]
   gasFeeOrders           GasFeeOrder[]
   merchantApiKeys        MerchantApiKey[]
@@ -1087,6 +1107,47 @@ model AdminNote {
   createdAt      DateTime @default(now())
 
   @@index([targetUserId])
+}
+
+// Immutable record of every moderation action taken against a user.
+// One row per action (suspend, ban, unban, restore, reset-trust, review toggle).
+model ModerationAction {
+  id             String   @id @default(cuid())
+  targetUserId   String
+  targetUser     User     @relation("ModerationActionTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  moderatorId    String?  // null = system action (e.g. automatic expiry)
+  moderator      User?    @relation("ModerationActionModerator", fields: [moderatorId], references: [id], onDelete: SetNull)
+  action         String   // suspend | ban_temporary | ban_permanent | unsuspend | unban | restore_access | reset_trust | start_review | end_review | auto_unsuspend | auto_unban
+  reason         String   @db.VarChar(1000)
+  previousStatus String   // computed moderation status before the action
+  newStatus      String   // computed moderation status after the action
+  durationLabel  String?  // human label e.g. "7 Days" / "Permanent" / "Custom"
+  expiresAt      DateTime? // when the applied restriction auto-lifts (null = permanent / N/A)
+  createdAt      DateTime @default(now())
+
+  @@index([targetUserId, createdAt])
+  @@index([moderatorId])
+  @@index([action])
+}
+
+// User-submitted appeal against a ban or suspension.
+model Appeal {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation("AppealUser", fields: [userId], references: [id], onDelete: Cascade)
+  status        AppealStatus @default(pending)
+  subjectStatus String       // moderation status being appealed (suspended / temporarily_banned / permanently_banned)
+  explanation   String       @db.VarChar(2000)
+  evidenceUrls  String[]     @default([])
+  reviewedById  String?
+  reviewedBy    User?        @relation("AppealReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt    DateTime?
+  decisionNote  String?      @db.VarChar(1000)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
 }
 
 model FraudFlag {

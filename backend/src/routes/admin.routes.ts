@@ -113,6 +113,7 @@ async function createAuditLog(
 }
 
 import { notify } from '../lib/notify'
+import { computeModerationStatus, recordModerationAction, notifyModeration, moderationStatusLabel } from '../lib/moderation'
 
 // ─── Route Export ─────────────────────────────────────────────────────────────
 
@@ -284,6 +285,11 @@ export async function adminRoutes(app: FastifyInstance) {
           kycLevel: true,
           isBanned: true,
           isSuspended: true,
+          bannedUntil: true,
+          suspendedUntil: true,
+          banType: true,
+          underReview: true,
+          moderationReason: true,
           createdAt: true,
           tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true, totalVolumePKR: true, badge: true, badgeLabel: true, trustScore: true, badgeOverride: true } },
           _count: {
@@ -292,6 +298,7 @@ export async function adminRoutes(app: FastifyInstance) {
               sellTrades: true,
               ctmBuyTrades: true,
               ctmSellTrades: true,
+              appeals: { where: { status: { in: ['pending', 'more_info_requested'] } } },
             },
           },
         },
@@ -302,10 +309,12 @@ export async function adminRoutes(app: FastifyInstance) {
       db.user.count({ where }),
     ])
 
-    // Enrich with accurate live trade count (buy + sell, P2P + CTM)
+    // Enrich with accurate live trade count (buy + sell, P2P + CTM) + moderation status.
     const enrichedUsers = users.map((u) => ({
       ...u,
       tradeCount: (u._count.trades ?? 0) + (u._count.sellTrades ?? 0) + (u._count.ctmBuyTrades ?? 0) + (u._count.ctmSellTrades ?? 0),
+      moderationStatus: computeModerationStatus(u),
+      hasPendingAppeal: (u._count.appeals ?? 0) > 0,
     }))
 
     return reply.send({
@@ -364,6 +373,7 @@ export async function adminRoutes(app: FastifyInstance) {
       success: true,
       data: {
         ...user,
+        moderationStatus: computeModerationStatus(user),
         liveTradeCount,
         ctmBuyCount,
         ctmSellCount,
@@ -405,6 +415,7 @@ export async function adminRoutes(app: FastifyInstance) {
       ratingsReceived, ctmRatingsReceived, ratingAgg, ctmRatingAgg,
       referrals, referralCount,
       auditByUser, auditTargetingUser,
+      moderationActions, appeals, recentNotifications,
     ] = await Promise.all([
       db.trade.findMany({
         where: { OR: [{ buyerId: id }, { sellerId: id }] },
@@ -461,6 +472,18 @@ export async function adminRoutes(app: FastifyInstance) {
       db.user.count({ where: { referredById: id } }),
       db.auditLog.findMany({ where: { actorId: id }, orderBy: { createdAt: 'desc' }, take: 25, select: { id: true, action: true, targetType: true, targetId: true, ipAddress: true, createdAt: true } }),
       db.auditLog.findMany({ where: { targetType: { in: ['User', 'user'] }, targetId: id }, orderBy: { createdAt: 'desc' }, take: 25, select: { id: true, action: true, actorId: true, ipAddress: true, createdAt: true } }),
+      db.moderationAction.findMany({
+        where: { targetUserId: id }, orderBy: { createdAt: 'desc' }, take: 50,
+        select: { id: true, action: true, reason: true, previousStatus: true, newStatus: true, durationLabel: true, expiresAt: true, createdAt: true, moderator: { select: { id: true, username: true } } },
+      }),
+      db.appeal.findMany({
+        where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 25,
+        select: { id: true, status: true, subjectStatus: true, explanation: true, evidenceUrls: true, decisionNote: true, reviewedAt: true, createdAt: true, reviewedBy: { select: { id: true, username: true } } },
+      }),
+      db.notification.findMany({
+        where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 25,
+        select: { id: true, type: true, title: true, body: true, isRead: true, createdAt: true },
+      }),
     ])
 
     // Blend ratings from both marketplaces into one average
@@ -492,6 +515,12 @@ export async function adminRoutes(app: FastifyInstance) {
           isBanned: user.isBanned,
           isSuspended: user.isSuspended,
           suspendReason: user.suspendReason,
+          moderationReason: user.moderationReason,
+          moderationStatus: computeModerationStatus(user),
+          bannedUntil: user.bannedUntil,
+          suspendedUntil: user.suspendedUntil,
+          banType: user.banType,
+          underReview: user.underReview,
           referralCode: user.referralCode,
           isMerchant: !!user.merchant,
           merchantName: user.merchant?.businessName ?? null,
@@ -521,43 +550,262 @@ export async function adminRoutes(app: FastifyInstance) {
         auditTargetingUser,
         adminNotes: user.adminNotes,
         fraudFlags: user.fraudFlags,
+        moderationActions,
+        appeals,
+        notifications: recentNotifications,
       },
     })
   })
 
+  // Loads the moderation flags needed to compute a user's current status.
+  const MODERATION_SELECT = { id: true, email: true, isBanned: true, isSuspended: true, bannedUntil: true, suspendedUntil: true, underReview: true } as const
+
+  // ── Ban (permanent or temporary) ──
   app.post('/admin/users/:id/ban', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const bodySchema = z.object({ reason: z.string().min(1).max(500) })
+    const bodySchema = z.object({
+      reason: z.string().min(1).max(1000),
+      type: z.enum(['permanent', 'temporary']).default('permanent'),
+      until: z.string().datetime().optional(),
+      durationLabel: z.string().max(40).optional(),
+    }).refine((d) => d.type === 'permanent' || !!d.until, { message: 'A temporary ban requires an end date', path: ['until'] })
+      .refine((d) => !d.until || new Date(d.until).getTime() > Date.now(), { message: 'End date must be in the future', path: ['until'] })
     const parsed = bodySchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { reason, type, until, durationLabel } = parsed.data
 
-    const user = await db.user.findUnique({ where: { id }, select: { email: true } })
+    const user = await db.user.findUnique({ where: { id }, select: MODERATION_SELECT })
     if (!user) throw Errors.NOT_FOUND('User')
+    const prevStatus = computeModerationStatus(user)
+    const bannedUntil = type === 'temporary' && until ? new Date(until) : null
 
-    await db.user.update({ where: { id }, data: { isBanned: true, suspendReason: parsed.data.reason } })
-    await createAuditLog(req.user!.id, 'USER_BANNED', 'User', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
-
+    await db.user.update({
+      where: { id },
+      data: {
+        isBanned: true, banType: type, bannedUntil,
+        isSuspended: false, suspendedUntil: null,
+        moderationReason: reason, suspendReason: reason,
+      },
+    })
+    const newStatus = bannedUntil ? 'temporarily_banned' : 'permanently_banned'
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: bannedUntil ? 'ban_temporary' : 'ban_permanent', reason, previousStatus: prevStatus, newStatus, durationLabel: durationLabel ?? (bannedUntil ? 'Custom' : 'Permanent'), expiresAt: bannedUntil })
+    await createAuditLog(req.user!.id, 'USER_BANNED', 'User', id, { reason, type, until: until ?? null }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(id, type === 'temporary' ? 'Account temporarily banned' : 'Account banned',
+      type === 'temporary' && bannedUntil
+        ? `Your account has been banned until ${bannedUntil.toUTCString()}. Reason: ${reason}`
+        : `Your account has been permanently banned. Reason: ${reason}`,
+      { action: 'ban', reason, until: until ?? null })
     return reply.send({ success: true })
   })
 
+  // ── Unban (clears ban only; an active suspension is preserved) ──
   app.post('/admin/users/:id/unban', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const user = await db.user.findUnique({ where: { id }, select: { email: true } })
+    const bodySchema = z.object({ reason: z.string().max(1000).optional() })
+    const reason = bodySchema.safeParse(req.body).success ? (req.body as { reason?: string }).reason ?? 'Ban lifted by admin' : 'Ban lifted by admin'
+    const user = await db.user.findUnique({ where: { id }, select: MODERATION_SELECT })
     if (!user) throw Errors.NOT_FOUND('User')
-    await db.user.update({ where: { id }, data: { isBanned: false, isSuspended: false, suspendReason: null } })
-    await createAuditLog(req.user!.id, 'USER_UNBANNED', 'User', id, {}, clientIp(req), req.headers['user-agent'] as string | undefined)
+    if (!user.isBanned) throw new AppError('NOT_BANNED', 'User is not banned', 400)
+    const prevStatus = computeModerationStatus(user)
+    await db.user.update({ where: { id }, data: { isBanned: false, banType: null, bannedUntil: null, ...(user.isSuspended ? {} : { moderationReason: null, suspendReason: null }) } })
+    const after = { ...user, isBanned: false, bannedUntil: null }
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: 'unban', reason, previousStatus: prevStatus, newStatus: computeModerationStatus(after) })
+    await createAuditLog(req.user!.id, 'USER_UNBANNED', 'User', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(id, 'Account ban lifted', 'Your account ban has been lifted. You can now sign in again.', { action: 'unban' })
     return reply.send({ success: true })
   })
 
+  // ── Suspend (with optional auto-lift date) ──
   app.post('/admin/users/:id/suspend', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const bodySchema = z.object({ reason: z.string().min(1).max(500), until: z.string().datetime().optional() })
+    const bodySchema = z.object({
+      reason: z.string().min(1).max(1000),
+      until: z.string().datetime().optional(),
+      durationLabel: z.string().max(40).optional(),
+    }).refine((d) => !d.until || new Date(d.until).getTime() > Date.now(), { message: 'End date must be in the future', path: ['until'] })
     const parsed = bodySchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { reason, until, durationLabel } = parsed.data
 
-    await db.user.update({ where: { id }, data: { isSuspended: true, suspendReason: parsed.data.reason } })
-    await createAuditLog(req.user!.id, 'USER_SUSPENDED', 'User', id, { reason: parsed.data.reason, until: parsed.data.until }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    const user = await db.user.findUnique({ where: { id }, select: MODERATION_SELECT })
+    if (!user) throw Errors.NOT_FOUND('User')
+    if (user.isBanned) throw new AppError('USER_BANNED', 'User is banned — lift the ban before suspending', 400)
+    const prevStatus = computeModerationStatus(user)
+    const suspendedUntil = until ? new Date(until) : null
+    await db.user.update({ where: { id }, data: { isSuspended: true, suspendedUntil, moderationReason: reason, suspendReason: reason } })
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: 'suspend', reason, previousStatus: prevStatus, newStatus: 'suspended', durationLabel: durationLabel ?? (suspendedUntil ? 'Custom' : 'Indefinite'), expiresAt: suspendedUntil })
+    await createAuditLog(req.user!.id, 'USER_SUSPENDED', 'User', id, { reason, until: until ?? null }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(id, 'Account suspended',
+      suspendedUntil
+        ? `Your account has been suspended until ${suspendedUntil.toUTCString()}. Reason: ${reason}`
+        : `Your account has been suspended. Reason: ${reason}`,
+      { action: 'suspend', reason, until: until ?? null })
+    return reply.send({ success: true })
+  })
 
+  // ── Unsuspend (clears suspension only) ──
+  app.post('/admin/users/:id/unsuspend', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const reason = (req.body as { reason?: string } | undefined)?.reason ?? 'Suspension lifted by admin'
+    const user = await db.user.findUnique({ where: { id }, select: MODERATION_SELECT })
+    if (!user) throw Errors.NOT_FOUND('User')
+    if (!user.isSuspended) throw new AppError('NOT_SUSPENDED', 'User is not suspended', 400)
+    const prevStatus = computeModerationStatus(user)
+    await db.user.update({ where: { id }, data: { isSuspended: false, suspendedUntil: null, ...(user.isBanned ? {} : { moderationReason: null, suspendReason: null }) } })
+    const after = { ...user, isSuspended: false, suspendedUntil: null }
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: 'unsuspend', reason, previousStatus: prevStatus, newStatus: computeModerationStatus(after) })
+    await createAuditLog(req.user!.id, 'USER_UNSUSPENDED', 'User', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(id, 'Suspension lifted', 'Your account suspension has been lifted. Full access restored.', { action: 'unsuspend' })
+    return reply.send({ success: true })
+  })
+
+  // ── Restore access (clears ALL restrictions + review flag) ──
+  app.post('/admin/users/:id/restore-access', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const reason = (req.body as { reason?: string } | undefined)?.reason ?? 'Access restored by admin'
+    const user = await db.user.findUnique({ where: { id }, select: MODERATION_SELECT })
+    if (!user) throw Errors.NOT_FOUND('User')
+    const prevStatus = computeModerationStatus(user)
+    if (prevStatus === 'active') throw new AppError('ALREADY_ACTIVE', 'User already has full access', 400)
+    await db.user.update({ where: { id }, data: { isBanned: false, isSuspended: false, bannedUntil: null, suspendedUntil: null, banType: null, underReview: false, moderationReason: null, suspendReason: null } })
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: 'restore_access', reason, previousStatus: prevStatus, newStatus: 'active' })
+    await createAuditLog(req.user!.id, 'USER_ACCESS_RESTORED', 'User', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(id, 'Access restored', 'All restrictions on your account have been lifted. Welcome back.', { action: 'restore_access' })
+    return reply.send({ success: true })
+  })
+
+  // ── Toggle "Under Review" (informational; does not block access) ──
+  app.post('/admin/users/:id/review', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ active: z.boolean(), reason: z.string().min(1).max(1000) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { active, reason } = parsed.data
+    const user = await db.user.findUnique({ where: { id }, select: MODERATION_SELECT })
+    if (!user) throw Errors.NOT_FOUND('User')
+    const prevStatus = computeModerationStatus(user)
+    await db.user.update({ where: { id }, data: { underReview: active } })
+    const newStatus = computeModerationStatus({ ...user, underReview: active })
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: active ? 'start_review' : 'end_review', reason, previousStatus: prevStatus, newStatus })
+    await createAuditLog(req.user!.id, active ? 'USER_REVIEW_STARTED' : 'USER_REVIEW_ENDED', 'User', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true })
+  })
+
+  // ── Reset trust score (clears manual override + forces a fresh recalculation) ──
+  app.post('/admin/users/:id/reset-trust', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ reason: z.string().min(1).max(1000) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const user = await db.user.findUnique({ where: { id }, select: { id: true, tradeStats: { select: { id: true } } } })
+    if (!user) throw Errors.NOT_FOUND('User')
+    if (user.tradeStats) {
+      await db.tradeStats.update({ where: { userId: id }, data: { badgeOverride: false } })
+    }
+    await queues.badgeRecalculate.add('recalc', { userId: id }).catch(() => {})
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: 'reset_trust', reason: parsed.data.reason, previousStatus: 'active', newStatus: 'active' })
+    await createAuditLog(req.user!.id, 'USER_TRUST_RESET', 'User', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true })
+  })
+
+  // ── Moderation history (action log + current status) ──
+  app.get('/admin/users/:id/moderation', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const [user, actions] = await Promise.all([
+      db.user.findUnique({ where: { id }, select: { ...MODERATION_SELECT, banType: true, moderationReason: true } }),
+      db.moderationAction.findMany({ where: { targetUserId: id }, orderBy: { createdAt: 'desc' }, take: 100, select: { id: true, action: true, reason: true, previousStatus: true, newStatus: true, durationLabel: true, expiresAt: true, createdAt: true, moderator: { select: { id: true, username: true } } } }),
+    ])
+    if (!user) throw Errors.NOT_FOUND('User')
+    return reply.send({ success: true, data: { status: computeModerationStatus(user), statusLabel: moderationStatusLabel(computeModerationStatus(user)), banType: user.banType, bannedUntil: user.bannedUntil, suspendedUntil: user.suspendedUntil, underReview: user.underReview, moderationReason: user.moderationReason, actions } })
+  })
+
+  // ── Appeals (admin review) ──────────────────────────────────────────────
+  app.get('/admin/appeals', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string>
+    const { page, limit, skip } = paginationParams(query)
+    const where: Record<string, unknown> = {}
+    if (query.status && ['pending', 'approved', 'rejected', 'more_info_requested'].includes(query.status)) where.status = query.status
+    if (query.search) {
+      const s = query.search.trim()
+      where.user = { OR: [{ email: { contains: s, mode: 'insensitive' } }, { username: { contains: s, mode: 'insensitive' } }] }
+    }
+    const [appeals, total, pendingCount] = await Promise.all([
+      db.appeal.findMany({
+        where, orderBy: { createdAt: 'desc' }, skip, take: limit,
+        select: {
+          id: true, status: true, subjectStatus: true, explanation: true, evidenceUrls: true,
+          decisionNote: true, reviewedAt: true, createdAt: true, updatedAt: true,
+          user: { select: { id: true, username: true, email: true, isBanned: true, isSuspended: true, bannedUntil: true, underReview: true } },
+          reviewedBy: { select: { id: true, username: true } },
+        },
+      }),
+      db.appeal.count({ where }),
+      db.appeal.count({ where: { status: { in: ['pending', 'more_info_requested'] } } }),
+    ])
+    const enriched = appeals.map((a) => ({ ...a, user: { ...a.user, moderationStatus: computeModerationStatus(a.user) } }))
+    return reply.send({ success: true, data: { appeals: enriched, pendingCount, pagination: { page, limit, total, pages: Math.ceil(total / limit) } } })
+  })
+
+  app.get('/admin/appeals/:id', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const appeal = await db.appeal.findUnique({
+      where: { id },
+      select: {
+        id: true, status: true, subjectStatus: true, explanation: true, evidenceUrls: true,
+        decisionNote: true, reviewedAt: true, createdAt: true, updatedAt: true,
+        user: { select: { id: true, username: true, email: true, isBanned: true, isSuspended: true, bannedUntil: true, suspendedUntil: true, banType: true, underReview: true, moderationReason: true } },
+        reviewedBy: { select: { id: true, username: true } },
+      },
+    })
+    if (!appeal) throw Errors.NOT_FOUND('Appeal')
+    return reply.send({ success: true, data: { ...appeal, user: { ...appeal.user, moderationStatus: computeModerationStatus(appeal.user) } } })
+  })
+
+  // Approve: marks the appeal approved AND restores the user's access.
+  app.post('/admin/appeals/:id/approve', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const note = (req.body as { note?: string } | undefined)?.note?.slice(0, 1000) ?? null
+    const appeal = await db.appeal.findUnique({ where: { id }, select: { id: true, status: true, userId: true } })
+    if (!appeal) throw Errors.NOT_FOUND('Appeal')
+    if (appeal.status !== 'pending' && appeal.status !== 'more_info_requested') throw new AppError('ALREADY_DECIDED', 'This appeal has already been decided', 400)
+    const user = await db.user.findUnique({ where: { id: appeal.userId }, select: MODERATION_SELECT })
+    if (!user) throw Errors.NOT_FOUND('User')
+    const prevStatus = computeModerationStatus(user)
+    await db.$transaction([
+      db.appeal.update({ where: { id }, data: { status: 'approved', reviewedById: req.user!.id, reviewedAt: new Date(), decisionNote: note } }),
+      db.user.update({ where: { id: appeal.userId }, data: { isBanned: false, isSuspended: false, bannedUntil: null, suspendedUntil: null, banType: null, underReview: false, moderationReason: null, suspendReason: null } }),
+    ])
+    await recordModerationAction({ targetUserId: appeal.userId, moderatorId: req.user!.id, action: 'restore_access', reason: `Appeal approved${note ? `: ${note}` : ''}`, previousStatus: prevStatus, newStatus: 'active' })
+    await createAuditLog(req.user!.id, 'APPEAL_APPROVED', 'Appeal', id, { userId: appeal.userId, note }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(appeal.userId, 'Appeal approved', 'Your appeal was approved and your account access has been restored.', { action: 'appeal_approved', appealId: id })
+    return reply.send({ success: true })
+  })
+
+  app.post('/admin/appeals/:id/reject', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ note: z.string().min(1).max(1000) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'A decision note is required when rejecting an appeal', 400)
+    const appeal = await db.appeal.findUnique({ where: { id }, select: { id: true, status: true, userId: true } })
+    if (!appeal) throw Errors.NOT_FOUND('Appeal')
+    if (appeal.status !== 'pending' && appeal.status !== 'more_info_requested') throw new AppError('ALREADY_DECIDED', 'This appeal has already been decided', 400)
+    await db.appeal.update({ where: { id }, data: { status: 'rejected', reviewedById: req.user!.id, reviewedAt: new Date(), decisionNote: parsed.data.note } })
+    await createAuditLog(req.user!.id, 'APPEAL_REJECTED', 'Appeal', id, { userId: appeal.userId, note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(appeal.userId, 'Appeal rejected', `Your appeal was reviewed and rejected. ${parsed.data.note}`, { action: 'appeal_rejected', appealId: id })
+    return reply.send({ success: true })
+  })
+
+  app.post('/admin/appeals/:id/request-info', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ note: z.string().min(1).max(1000) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'A note describing the information needed is required', 400)
+    const appeal = await db.appeal.findUnique({ where: { id }, select: { id: true, status: true, userId: true } })
+    if (!appeal) throw Errors.NOT_FOUND('Appeal')
+    if (appeal.status === 'approved' || appeal.status === 'rejected') throw new AppError('ALREADY_DECIDED', 'This appeal has already been decided', 400)
+    await db.appeal.update({ where: { id }, data: { status: 'more_info_requested', reviewedById: req.user!.id, reviewedAt: new Date(), decisionNote: parsed.data.note } })
+    await createAuditLog(req.user!.id, 'APPEAL_INFO_REQUESTED', 'Appeal', id, { userId: appeal.userId, note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notifyModeration(appeal.userId, 'More information needed', `We need more information about your appeal: ${parsed.data.note}`, { action: 'appeal_info_requested', appealId: id })
     return reply.send({ success: true })
   })
 

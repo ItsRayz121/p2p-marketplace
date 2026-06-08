@@ -11,12 +11,14 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import {
   ArrowLeft, Shield, Star, TrendingUp, Users, AlertTriangle, Wallet,
-  Scale, ClipboardList, CreditCard,
+  Scale, ClipboardList, CreditCard, Gavel, Bell, MessageSquareWarning,
 } from 'lucide-react'
+import { ModerationPanel, type ModerationStatus } from '@/components/admin/ModerationPanel'
+import { AppealCard } from '@/components/admin/AppealCard'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-type Tab = 'overview' | 'trades' | 'wallet' | 'disputes' | 'referrals' | 'payment' | 'audit'
+type Tab = 'overview' | 'trades' | 'wallet' | 'disputes' | 'referrals' | 'payment' | 'audit' | 'moderation' | 'appeals' | 'notifications' | 'fraud'
 
 function statusTone(status: string): string {
   const s = status.toLowerCase()
@@ -95,13 +97,18 @@ export default function AdminUserProfilePage() {
   if (error || !data) return <ErrorState title={error ?? 'User not found'} onRetry={fetchProfile} />
 
   const p = data.profile
-  const tabs: Array<{ key: Tab; label: string; icon: any }> = [
+  const pendingAppeals = (data.appeals ?? []).filter((a: any) => a.status === 'pending' || a.status === 'more_info_requested').length
+  const tabs: Array<{ key: Tab; label: string; icon: any; badge?: number }> = [
     { key: 'overview', label: 'Overview', icon: Shield },
+    { key: 'moderation', label: 'Moderation', icon: Gavel },
+    { key: 'appeals', label: 'Appeals', icon: MessageSquareWarning, badge: pendingAppeals },
     { key: 'trades', label: 'Trades', icon: TrendingUp },
     { key: 'wallet', label: 'Wallet', icon: Wallet },
     { key: 'disputes', label: 'Disputes & Ratings', icon: Scale },
     { key: 'referrals', label: 'Referrals', icon: Users },
     { key: 'payment', label: 'Payment & Addresses', icon: CreditCard },
+    { key: 'fraud', label: 'Fraud History', icon: AlertTriangle, badge: data.fraudFlags?.length ?? 0 },
+    { key: 'notifications', label: 'Notifications', icon: Bell },
     { key: 'audit', label: 'Audit', icon: ClipboardList },
   ]
 
@@ -133,8 +140,9 @@ export default function AdminUserProfilePage() {
               {p.isMerchant && <Badge variant="info" size="sm">Merchant{p.merchantName ? `: ${p.merchantName}` : ''}</Badge>}
               {p.isCtmMerchant && <Badge variant="info" size="sm">CTM Merchant</Badge>}
               {p.badge && <BadgeChip badge={p.badge} badgeLabel={p.badgeLabel} />}
-              {p.isBanned && <Badge variant="danger" size="sm">Banned</Badge>}
-              {p.isSuspended && <Badge variant="danger" size="sm">Suspended</Badge>}
+              {(p.moderationStatus === 'permanently_banned' || p.moderationStatus === 'temporarily_banned') && <Badge variant="danger" size="sm">{p.moderationStatus === 'temporarily_banned' ? 'Temp Banned' : 'Banned'}</Badge>}
+              {p.moderationStatus === 'suspended' && <Badge variant="warning" size="sm">Suspended</Badge>}
+              {p.moderationStatus === 'under_review' && <Badge variant="default" size="sm">Under Review</Badge>}
             </div>
           </div>
           <div className="text-right text-xs text-text-muted space-y-0.5">
@@ -149,8 +157,8 @@ export default function AdminUserProfilePage() {
           </div>
         )}
         <p className="mt-3 text-xs text-text-muted">
-          This is a read-only intelligence view. Use the{' '}
-          <Link href="/admin/users" className="text-primary hover:underline">Users</Link> page for admin actions (ban / suspend / badge).
+          Full trader intelligence. Use the{' '}
+          <button onClick={() => setTab('moderation')} className="text-primary hover:underline">Moderation</button> tab to ban, suspend, or restore access.
         </p>
       </div>
 
@@ -174,6 +182,7 @@ export default function AdminUserProfilePage() {
             }`}
           >
             <t.icon size={14} /> {t.label}
+            {t.badge ? <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold">{t.badge}</span> : null}
           </button>
         ))}
       </div>
@@ -483,6 +492,103 @@ export default function AdminUserProfilePage() {
             ) : <Empty msg="No audit actions recorded for this user (only admins generate audit entries)." />}
           </Section>
         </div>
+      )}
+
+      {/* ── Moderation ── */}
+      {tab === 'moderation' && (
+        <div className="space-y-4">
+          <Section title="Enforcement">
+            <div className="p-5">
+              <ModerationPanel
+                userId={id}
+                state={{
+                  status: (p.moderationStatus ?? 'active') as ModerationStatus,
+                  isBanned: p.isBanned,
+                  isSuspended: p.isSuspended,
+                  bannedUntil: p.bannedUntil,
+                  suspendedUntil: p.suspendedUntil,
+                  underReview: p.underReview,
+                  banType: p.banType,
+                  moderationReason: p.moderationReason ?? p.suspendReason,
+                }}
+                onChange={fetchProfile}
+              />
+            </div>
+          </Section>
+          <Section title="Moderation History" count={data.moderationActions?.length}>
+            {data.moderationActions?.length ? (
+              <ul className="divide-y divide-border">
+                {data.moderationActions.map((m: any) => (
+                  <li key={m.id} className="px-5 py-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-text-primary">{m.action.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-text-muted">{m.moderator?.username ?? 'system'} · {fmtDateTime(m.createdAt)}</span>
+                    </div>
+                    <p className="text-text-secondary text-xs mt-0.5">{m.previousStatus.replace(/_/g, ' ')} → {m.newStatus.replace(/_/g, ' ')}{m.durationLabel ? ` · ${m.durationLabel}` : ''}{m.expiresAt ? ` · until ${fmtDateTime(m.expiresAt)}` : ''}</p>
+                    {m.reason && <p className="text-text-muted text-xs mt-0.5">{m.reason}</p>}
+                  </li>
+                ))}
+              </ul>
+            ) : <Empty msg="No moderation actions on record." />}
+          </Section>
+        </div>
+      )}
+
+      {/* ── Appeals ── */}
+      {tab === 'appeals' && (
+        <div className="space-y-4">
+          <Section title="Appeals" count={data.appeals?.length}>
+            <div className="p-4 space-y-3">
+              {data.appeals?.length ? (
+                data.appeals.map((a: any) => (
+                  <AppealCard key={a.id} appeal={a} showUser={false} onChange={fetchProfile} />
+                ))
+              ) : <Empty msg="This user has not submitted any appeals." />}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* ── Fraud History ── */}
+      {tab === 'fraud' && (
+        <Section title="Fraud Flags" count={data.fraudFlags?.length}>
+          {data.fraudFlags?.length ? (
+            <ul className="divide-y divide-border">
+              {data.fraudFlags.map((f: any) => (
+                <li key={f.id} className="px-5 py-3 text-sm flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-text-secondary">{f.reason ?? f.type ?? 'Flag'}</p>
+                    {f.actionTaken && <p className="text-xs text-text-muted">Action: {f.actionTaken}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {f.severity && <Badge variant={f.severity === 'high' ? 'danger' : f.severity === 'medium' ? 'warning' : 'default'} size="sm">{f.severity}</Badge>}
+                    <Badge variant={statusTone(f.status ?? '') as any} size="sm">{f.status}</Badge>
+                    <span className="text-xs text-text-muted">{fmtDate(f.createdAt)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : <Empty msg="No fraud flags. Flags appear here when risk checks trip." />}
+        </Section>
+      )}
+
+      {/* ── Notifications ── */}
+      {tab === 'notifications' && (
+        <Section title="Recent Notifications" count={data.notifications?.length}>
+          {data.notifications?.length ? (
+            <ul className="divide-y divide-border">
+              {data.notifications.map((n: any) => (
+                <li key={n.id} className="px-5 py-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-text-primary">{n.title}</span>
+                    <span className="text-xs text-text-muted">{n.isRead ? 'Read' : 'Unread'} · {fmtDateTime(n.createdAt)}</span>
+                  </div>
+                  <p className="text-text-secondary text-xs mt-0.5">{n.body}</p>
+                </li>
+              ))}
+            </ul>
+          ) : <Empty msg="No notifications sent to this user yet." />}
+        </Section>
       )}
     </div>
   )

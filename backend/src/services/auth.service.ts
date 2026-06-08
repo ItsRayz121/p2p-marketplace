@@ -29,7 +29,7 @@ import {
   hashToken,
   generateReferralCode,
 } from '../lib/hash'
-import { signAccessToken, signPreAuthToken, verifyPreAuthToken } from '../lib/jwt'
+import { signAccessToken, signPreAuthToken, verifyPreAuthToken, signAppealToken } from '../lib/jwt'
 import { sendOtpEmail } from './email.service'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
@@ -58,6 +58,14 @@ export interface LoginResult {
   preAuthToken?: string
   requiresTwoFa: boolean
   user?: SafeUser
+  // Set when the account is banned/suspended. The appeal token lets the user
+  // submit an appeal without a full session.
+  restricted?: {
+    status: 'banned' | 'suspended'
+    reason: string | null
+    until: string | null
+    appealToken: string
+  }
 }
 
 export interface SafeUser {
@@ -292,6 +300,9 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       isEmailVerified: true,
       isBanned: true,
       isSuspended: true,
+      bannedUntil: true,
+      suspendedUntil: true,
+      moderationReason: true,
       twoFaEnabled: true,
       twoFaSecret: true,
     },
@@ -304,9 +315,19 @@ export async function login(input: LoginInput): Promise<LoginResult> {
 
   if (!user.isEmailVerified)
     throw new AppError('EMAIL_NOT_VERIFIED', 'Please verify your email before logging in', 403)
-  if (user.isBanned) throw new AppError('ACCOUNT_BANNED', 'Your account has been banned', 403)
-  if (user.isSuspended)
-    throw new AppError('ACCOUNT_SUSPENDED', 'Your account has been suspended', 403)
+  // Banned / suspended users do NOT get a full session. Instead we return a
+  // restricted payload with a scoped appeal token so they can appeal.
+  if (user.isBanned || user.isSuspended) {
+    return {
+      requiresTwoFa: false,
+      restricted: {
+        status: user.isBanned ? 'banned' : 'suspended',
+        reason: user.moderationReason ?? null,
+        until: (user.isBanned ? user.bannedUntil : user.suspendedUntil)?.toISOString() ?? null,
+        appealToken: signAppealToken({ userId: user.id, email: user.email }),
+      },
+    }
+  }
 
   // 2FA flow — issue pre-auth token, do NOT issue full session yet
   if (user.twoFaEnabled) {
@@ -609,7 +630,7 @@ export async function loginOrRegisterWithGoogle(
   fullName: string,
   userAgent?: string,
   ip?: string,
-): Promise<{ accessToken: string; refreshToken: string; user: SafeUser }> {
+): Promise<LoginResult> {
   // Find by googleId first, fall back to email (links existing account)
   let user = await db.user.findFirst({
     where: { OR: [{ googleId }, { email }] },
@@ -647,11 +668,20 @@ export async function loginOrRegisterWithGoogle(
   }
 
   if (user.isSuspended || user.isBanned) {
-    throw new AppError('ACCOUNT_SUSPENDED', 'Your account has been suspended', 403)
+    const mod = await db.user.findUnique({ where: { id: user.id }, select: { bannedUntil: true, suspendedUntil: true, moderationReason: true } })
+    return {
+      requiresTwoFa: false,
+      restricted: {
+        status: user.isBanned ? 'banned' : 'suspended',
+        reason: mod?.moderationReason ?? null,
+        until: (user.isBanned ? mod?.bannedUntil : mod?.suspendedUntil)?.toISOString() ?? null,
+        appealToken: signAppealToken({ userId: user.id, email: user.email }),
+      },
+    }
   }
 
   const { accessToken, refreshToken } = await createSession(user.id, user.email, user.role, userAgent, ip)
-  return { accessToken, refreshToken, user: toSafeUser(user) }
+  return { requiresTwoFa: false, accessToken, refreshToken, user: toSafeUser(user) }
 }
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
