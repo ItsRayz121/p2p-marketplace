@@ -1,6 +1,13 @@
 import { CreditCard, Coins, ShieldCheck, BadgeDollarSign, TrendingUp, Fuel, CheckCircle } from 'lucide-react'
 import { supportMailto } from '@/lib/contact'
 import { StaticPageNav } from '@/components/ui/StaticPageNav'
+import { buildMeta } from '@/lib/metadata'
+
+export const metadata = buildMeta(
+  'About RupChain — Pakistan’s P2P Crypto Marketplace',
+  'RupChain is Pakistan’s peer-to-peer crypto marketplace: escrow-protected USDT trades, local payments (JazzCash, Easypaisa, bank), community tokens, and a multi-chain gas station.',
+  '/about',
+)
 
 const FEATURES = [
   { Icon: ShieldCheck,     title: 'Trade Protection',      desc: 'All trades are monitored by RupChain. Crypto is only released after the seller confirms payment receipt.' },

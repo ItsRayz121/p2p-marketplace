@@ -1,4 +1,11 @@
 ﻿import { StaticPageNav } from '@/components/ui/StaticPageNav'
+import { buildMeta } from '@/lib/metadata'
+
+export const metadata = buildMeta(
+  'Privacy Policy — RupChain',
+  'How RupChain collects, uses, and protects your data — KYC, payments, and account information on Pakistan’s P2P crypto marketplace.',
+  '/privacy',
+)
 
 export default function PrivacyPage() {
   const lastUpdated = '1 January 2025'

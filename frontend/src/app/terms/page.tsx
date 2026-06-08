@@ -1,4 +1,11 @@
 ﻿import { StaticPageNav } from '@/components/ui/StaticPageNav'
+import { buildMeta } from '@/lib/metadata'
+
+export const metadata = buildMeta(
+  'Terms of Service — RupChain',
+  'The terms governing your use of RupChain — Pakistan’s peer-to-peer crypto marketplace, escrow, withdrawals, and gas station.',
+  '/terms',
+)
 
 export default function TermsPage() {
   const lastUpdated = '1 January 2025'

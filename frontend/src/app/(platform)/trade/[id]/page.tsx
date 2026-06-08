@@ -936,7 +936,11 @@ export default function TradePage() {
                   {isAdminReview && (
                     <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 space-y-1">
                       <p className="font-semibold">⏳ Pending admin verification</p>
-                      <p className="text-xs">The transaction hash could not be verified automatically (chain not supported or RPC unavailable). An admin must review and approve it before you can release.</p>
+                      {trade.network === 'Aptos' ? (
+                        <p className="text-xs">Aptos transactions are verified manually by our team (automatic on-chain checks aren’t available for this network yet). This is normal — an admin will review the transaction shortly, after which you can release. You can always confirm the transfer yourself on an Aptos explorer in the meantime.</p>
+                      ) : (
+                        <p className="text-xs">The transaction hash could not be verified automatically (chain not supported or RPC unavailable). An admin must review and approve it before you can release.</p>
+                      )}
                     </div>
                   )}
                   {isPending && (
