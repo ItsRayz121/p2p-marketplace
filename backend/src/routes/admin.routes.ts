@@ -3386,27 +3386,49 @@ export async function adminRoutes(app: FastifyInstance) {
   // A network is "healthy" if it was scanned within HEALTHY_WINDOW (the poller
   // ticks ~every 60s). APTOS has no automatic detection and is reported as such.
   app.get('/admin/gas/poller-health', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
-    const HEALTHY_WINDOW_MS = 5 * 60 * 1000 // 5 min — generous vs the ~60s tick
+    const HEALTHY_WINDOW_MS = 5 * 60 * 1000   // green:  scanned successfully within 5 min
+    const DELAYED_WINDOW_MS = 30 * 60 * 1000  // yellow: last success within 30 min (else red)
     const POLLED_NETWORKS = ['TRC20', 'BEP20', 'ERC20', 'APTOS']
     const now = Date.now()
+    const iso = (t?: number | null) => (typeof t === 'number' ? new Date(t).toISOString() : null)
 
     const networks = await Promise.all(
       POLLED_NETWORKS.map(async (network) => {
         const raw = await redis.get(`gas_poller_health:${network}`).catch(() => null)
-        if (!raw) {
-          return { network, polled: true, lastTickAt: null, ageSeconds: null, lastFound: null, healthy: false }
-        }
-        let parsed: { at?: number; found?: number } = {}
-        try { parsed = JSON.parse(raw) } catch { /* ignore */ }
-        const at = typeof parsed.at === 'number' ? parsed.at : null
-        const ageSeconds = at ? Math.round((now - at) / 1000) : null
+        let p: Record<string, unknown> = {}
+        if (raw) { try { p = JSON.parse(raw) as Record<string, unknown> } catch { /* ignore */ } }
+
+        const lastTickAt = (p.lastTickAt ?? p.at) as number | undefined
+        const lastSuccessAt = p.lastSuccessAt as number | undefined
+        const lastErrorAt = p.lastErrorAt as number | undefined
+        const configured = p.configured !== false
+        const sinceSuccess = lastSuccessAt ? now - lastSuccessAt : Infinity
+
+        // Health: red if never succeeded / misconfigured / stale >30m; yellow if
+        // a recent success but the latest tick errored, or success is 5–30m old;
+        // green if a successful scan within the last 5 min.
+        let status: 'green' | 'yellow' | 'red'
+        if (!configured) status = 'red'
+        else if (sinceSuccess < HEALTHY_WINDOW_MS) status = p.ok === false ? 'yellow' : 'green'
+        else if (sinceSuccess < DELAYED_WINDOW_MS) status = 'yellow'
+        else status = 'red'
+
         return {
           network,
-          polled: true,
-          lastTickAt: at ? new Date(at).toISOString() : null,
-          ageSeconds,
-          lastFound: parsed.found ?? null,
-          healthy: at !== null && now - at < HEALTHY_WINDOW_MS,
+          configured,
+          status,
+          ok: p.ok ?? null,
+          lastTickAt: iso(lastTickAt),
+          lastSuccessAt: iso(lastSuccessAt),
+          lastErrorAt: iso(lastErrorAt),
+          lastError: (p.lastError as string | null) ?? null,
+          lastFound: (p.found as number | undefined) ?? null,
+          currentBlock: (p.currentBlock as number | undefined) ?? null,
+          syncedBlock: (p.syncedBlock as number | undefined) ?? null,
+          ageSeconds: lastTickAt ? Math.round((now - lastTickAt) / 1000) : null,
+          successAgeSeconds: lastSuccessAt ? Math.round((now - lastSuccessAt) / 1000) : null,
+          // legacy field kept for any older client
+          healthy: status === 'green',
         }
       }),
     )

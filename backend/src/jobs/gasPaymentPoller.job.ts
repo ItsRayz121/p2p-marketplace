@@ -26,6 +26,7 @@ import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 import { fromDbChain } from '../lib/gas/gas.chains'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
+import { getEvmHotWalletAddress } from '../lib/gas/gasWalletService'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
 const TRANSFER_EVENT = parseAbiItem(
@@ -96,11 +97,43 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
   },
 ]
 
-// Heartbeat: record that this network was scanned, so admins can see at a glance
-// whether each poller is alive. Read by GET /admin/gas/poller-health.
-async function writePollerHeartbeat(network: string, found: number): Promise<void> {
+// Heartbeat: record each poller tick so admins can see liveness + health at a
+// glance. Read by GET /admin/gas/poller-health. The record accumulates so a
+// failing tick still preserves the last successful scan time and block.
+//   { lastTickAt, lastSuccessAt, lastErrorAt, lastError, ok, found,
+//     currentBlock, syncedBlock, configured }
+interface HeartbeatResult {
+  ok: boolean
+  found?: number
+  error?: string
+  currentBlock?: number | bigint
+  syncedBlock?: number | bigint
+  configured?: boolean
+}
+
+async function writePollerHeartbeat(network: string, result: HeartbeatResult | number): Promise<void> {
+  // Back-compat: a bare number means "successful tick, N found".
+  const r: HeartbeatResult = typeof result === 'number' ? { ok: true, found: result } : result
+  const key = `gas_poller_health:${network}`
+  const now = Date.now()
   try {
-    await redis.set(`gas_poller_health:${network}`, JSON.stringify({ at: Date.now(), found }))
+    let prev: Record<string, unknown> = {}
+    const raw = await redis.get(key)
+    if (raw) { try { prev = JSON.parse(raw) as Record<string, unknown> } catch { /* ignore */ } }
+    const next: Record<string, unknown> = {
+      ...prev,
+      // legacy `at` kept so older readers don't break
+      at: now,
+      lastTickAt: now,
+      ok: r.ok,
+      configured: r.configured ?? true,
+    }
+    if (r.found != null) next.found = r.found
+    if (r.currentBlock != null) next.currentBlock = Number(r.currentBlock)
+    if (r.syncedBlock != null) next.syncedBlock = Number(r.syncedBlock)
+    if (r.ok) { next.lastSuccessAt = now; next.lastError = null }
+    else { next.lastErrorAt = now; next.lastError = (r.error ?? 'unknown error').slice(0, 300) }
+    await redis.set(key, JSON.stringify(next))
   } catch {
     /* best-effort — a heartbeat write failure must never break the poller */
   }
@@ -361,10 +394,40 @@ async function onPaymentDetected(
 
 // ── EVM scanner (getLogs) ───────────────────────────────────────────────────────
 async function scanNetwork(cfg: NetworkConfig): Promise<void> {
-  const depositAddress = await resolveDepositAddress(cfg.depositAddressDbKey, cfg.depositAddressEnvFn())
-  if (!depositAddress) return  // network not configured
+  // Resolve the deposit address the SAME way order creation does:
+  //   env override → platformConfig override → HD-mnemonic EVM hot wallet.
+  // Previously this only checked env/DB, so a mnemonic-only deployment resolved
+  // null and the poller silently returned — leaving BEP20/ERC20 unscanned and
+  // showing "no scan yet" in the admin health card.
+  const depositAddress =
+    (await resolveDepositAddress(cfg.depositAddressDbKey, cfg.depositAddressEnvFn()))
+    ?? getEvmHotWalletAddress()
+  if (!depositAddress) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, configured: false, error: 'No deposit address configured (env, platformConfig, or mnemonic)' })
+    return
+  }
 
-  // Skip if no actionable orders (payment_pending, payment_uploaded, or recently-expired).
+  // Determine block range: last-checked block → current block.
+  const redisKey = `gas_poller_last_block:${cfg.paymentNetwork}`
+  let client
+  let currentBlock: bigint
+  try {
+    client = createPublicClient({
+      chain: cfg.viemChain,
+      transport: http(cfg.rpcUrl(), { timeout: 10_000 }),
+    })
+    currentBlock = await client.getBlockNumber()
+  } catch (err) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `RPC unreachable: ${(err as Error)?.message ?? 'getBlockNumber failed'}` })
+    return
+  }
+
+  const storedBlockRaw = await redis.get(redisKey)
+  const syncedBlock = storedBlockRaw ? BigInt(storedBlockRaw) : null
+
+  // Skip the (expensive) getLogs when there are no actionable orders, but still
+  // record a healthy heartbeat with the current/synced block so admins can see
+  // the poller is alive and how far it has synced.
   const graceCutoff = new Date(Date.now() - GRACE_WINDOW_MS)
   const activeOrExpired = await db.gasFeeOrder.count({
     where: {
@@ -373,24 +436,18 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
       expiresAt: { gte: graceCutoff },
     },
   })
-  if (activeOrExpired === 0) { await writePollerHeartbeat(cfg.paymentNetwork, 0); return }
+  if (activeOrExpired === 0) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0, currentBlock, syncedBlock: syncedBlock ?? currentBlock })
+    return
+  }
 
-  const client = createPublicClient({
-    chain: cfg.viemChain,
-    transport: http(cfg.rpcUrl(), { timeout: 10_000 }),
-  })
-
-  // Determine block range: last-checked block → current block.
-  const redisKey = `gas_poller_last_block:${cfg.paymentNetwork}`
-  const currentBlock = await client.getBlockNumber()
-
-  const storedBlock = await redis.get(redisKey)
-  const fromBlock = storedBlock
-    ? BigInt(storedBlock) + 1n
-    : currentBlock - BigInt(cfg.scanBlocks)
+  const fromBlock = syncedBlock != null ? syncedBlock + 1n : currentBlock - BigInt(cfg.scanBlocks)
 
   // Nothing new since last run.
-  if (fromBlock > currentBlock) { await writePollerHeartbeat(cfg.paymentNetwork, 0); return }
+  if (fromBlock > currentBlock) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0, currentBlock, syncedBlock: syncedBlock ?? currentBlock })
+    return
+  }
 
   // Cap range to avoid oversized getLogs calls on first run or after a long gap.
   const maxRange = BigInt(Math.max(cfg.scanBlocks, 500))
@@ -409,12 +466,13 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     })
   } catch (err) {
     logger.warn({ err, network: cfg.paymentNetwork, effectiveFrom: effectiveFrom.toString(), currentBlock: currentBlock.toString() }, 'gasPaymentPoller: getLogs failed — will retry next tick')
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `getLogs failed: ${(err as Error)?.message ?? 'unknown'}`, currentBlock, ...(syncedBlock != null ? { syncedBlock } : {}) })
     return  // don't advance the cursor so we retry same range
   }
 
   // Advance cursor even when logs is empty so we don't re-scan old blocks.
   await redis.set(redisKey, currentBlock.toString())
-  await writePollerHeartbeat(cfg.paymentNetwork, logs.length)
+  await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: logs.length, currentBlock, syncedBlock: currentBlock })
 
   if (logs.length === 0) return
 
@@ -477,10 +535,10 @@ interface TronTrc20Tx {
 
 async function scanTron(): Promise<void> {
   const base = env.TRON_FULLNODE_URL
-  if (!base) return // TRON not configured
+  if (!base) { await writePollerHeartbeat('TRC20', { ok: false, configured: false, error: 'TRON_FULLNODE_URL not set' }); return }
 
   const depositAddress = await resolveDepositAddress('gas_usdt_trc20_address', env.GAS_FEE_DEPOSIT_ADDRESS_TRC20)
-  if (!depositAddress) return
+  if (!depositAddress) { await writePollerHeartbeat('TRC20', { ok: false, configured: false, error: 'TRC20 deposit address not configured' }); return }
 
   const graceCutoff = new Date(Date.now() - GRACE_WINDOW_MS)
   const actionable = await db.gasFeeOrder.count({
@@ -513,12 +571,14 @@ async function scanTron(): Promise<void> {
     const res = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(10_000) })
     if (!res.ok) {
       logger.warn({ status: res.status, network: 'TRC20' }, 'gasPaymentPoller: TronGrid request failed — will retry next tick')
+      await writePollerHeartbeat('TRC20', { ok: false, error: `TronGrid HTTP ${res.status}` })
       return // don't advance cursor
     }
     const json = (await res.json()) as { data?: TronTrc20Tx[]; success?: boolean }
     transfers = json.data ?? []
   } catch (err) {
     logger.warn({ err, network: 'TRC20' }, 'gasPaymentPoller: TronGrid fetch errored — will retry next tick')
+    await writePollerHeartbeat('TRC20', { ok: false, error: `TronGrid fetch error: ${(err as Error)?.message ?? 'unknown'}` })
     return // don't advance cursor
   }
 
@@ -582,10 +642,10 @@ interface AptosFaActivity {
 
 async function scanAptos(): Promise<void> {
   const indexerUrl = env.APTOS_INDEXER_URL
-  if (!indexerUrl) return
+  if (!indexerUrl) { await writePollerHeartbeat('APTOS', { ok: false, configured: false, error: 'Aptos indexer URL not set' }); return }
 
   const depositAddress = await resolveDepositAddress('gas_usdt_aptos_address', getAptosHotWalletAddress() ?? undefined)
-  if (!depositAddress) return
+  if (!depositAddress) { await writePollerHeartbeat('APTOS', { ok: false, configured: false, error: 'Aptos deposit address not configured' }); return }
 
   const assetCfg = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_aptos_asset' } })
   const assetType = assetCfg?.value || USDT_APTOS_ASSET_DEFAULT
@@ -640,16 +700,19 @@ async function scanAptos(): Promise<void> {
     })
     if (!res.ok) {
       logger.warn({ status: res.status, network: 'APTOS' }, 'gasPaymentPoller: Aptos indexer request failed — will retry next tick')
+      await writePollerHeartbeat('APTOS', { ok: false, error: `Aptos indexer HTTP ${res.status}` })
       return
     }
     const json = (await res.json()) as { data?: { fungible_asset_activities?: AptosFaActivity[] }; errors?: unknown }
     if (json.errors) {
       logger.warn({ errors: json.errors, network: 'APTOS' }, 'gasPaymentPoller: Aptos indexer returned GraphQL errors')
+      await writePollerHeartbeat('APTOS', { ok: false, error: 'Aptos indexer GraphQL errors' })
       return
     }
     activities = json.data?.fungible_asset_activities ?? []
   } catch (err) {
     logger.warn({ err, network: 'APTOS' }, 'gasPaymentPoller: Aptos indexer fetch errored — will retry next tick')
+    await writePollerHeartbeat('APTOS', { ok: false, error: `Aptos indexer fetch error: ${(err as Error)?.message ?? 'unknown'}` })
     return
   }
 

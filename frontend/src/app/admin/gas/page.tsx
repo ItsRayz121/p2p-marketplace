@@ -547,14 +547,33 @@ function GasPaymentConfirmModal({
 
 interface PollerHealthNetwork {
   network: string
-  polled: boolean
+  configured: boolean
+  status: 'green' | 'yellow' | 'red'
+  ok: boolean | null
   lastTickAt: string | null
-  ageSeconds: number | null
+  lastSuccessAt: string | null
+  lastErrorAt: string | null
+  lastError: string | null
   lastFound: number | null
+  currentBlock: number | null
+  syncedBlock: number | null
+  ageSeconds: number | null
+  successAgeSeconds: number | null
   healthy: boolean
 }
 
-// At-a-glance liveness of each gas payment poller (see GET /admin/gas/poller-health).
+const STATUS_DOT: Record<PollerHealthNetwork['status'], string> = {
+  green: 'bg-success',
+  yellow: 'bg-warning',
+  red: 'bg-danger',
+}
+const STATUS_LABEL: Record<PollerHealthNetwork['status'], string> = {
+  green: 'Healthy',
+  yellow: 'Delayed',
+  red: 'Offline',
+}
+
+// At-a-glance health of each gas payment poller (see GET /admin/gas/poller-health).
 function PollerHealthCard() {
   const [data, setData] = useState<PollerHealthNetwork[] | null>(null)
   const [err, setErr] = useState(false)
@@ -581,27 +600,41 @@ function PollerHealthCard() {
     <div className="border border-border rounded-xl p-4 bg-surface">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-text-primary">Payment Detection Health</h2>
-        <span className="text-xs text-text-muted">auto-refreshes every 60s</span>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:flex items-center gap-2 text-[11px] text-text-muted">
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-success" /> Healthy</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning" /> Delayed</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-danger" /> Offline</span>
+          </span>
+          <span className="text-xs text-text-muted">auto-refreshes every 60s</span>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-x-5 gap-y-2">
-        {(data ?? []).map((n) => (
-          <div key={n.network} className="flex items-center gap-2">
-            <Badge variant={!n.polled ? 'warning' : n.healthy ? 'success' : 'danger'}>{n.network}</Badge>
-            <span className="text-xs text-text-muted">
-              {!n.polled
-                ? 'no auto-detection'
-                : n.lastTickAt
-                  ? `scanned ${fmtRelativeTime(n.lastTickAt)}`
-                  : 'no scan yet'}
-            </span>
-          </div>
-        ))}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {(data ?? []).map((n) => {
+          const lag = n.currentBlock != null && n.syncedBlock != null ? n.currentBlock - n.syncedBlock : null
+          return (
+            <div key={n.network} className="rounded-lg border border-border p-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm text-text-primary">{n.network}</span>
+                <span className="inline-flex items-center gap-1.5 text-xs">
+                  <span className={`w-2 h-2 rounded-full ${STATUS_DOT[n.status]}`} />
+                  <span className="text-text-secondary">{!n.configured ? 'Not configured' : STATUS_LABEL[n.status]}</span>
+                </span>
+              </div>
+              <div className="text-[11px] text-text-muted space-y-0.5">
+                <p>Last scan: {n.lastTickAt ? fmtRelativeTime(n.lastTickAt) : 'never'}</p>
+                <p>Last success: {n.lastSuccessAt ? fmtRelativeTime(n.lastSuccessAt) : 'never'}{typeof n.lastFound === 'number' ? ` · ${n.lastFound} found` : ''}</p>
+                {n.currentBlock != null && (
+                  <p>Block: {n.syncedBlock?.toLocaleString() ?? '—'} / {n.currentBlock.toLocaleString()}{lag != null && lag > 0 ? ` (−${lag.toLocaleString()})` : ''}</p>
+                )}
+                {n.lastError && (
+                  <p className="text-danger truncate" title={n.lastError}>⚠ {n.lastError}</p>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
-      {(data ?? []).some((n) => !n.polled) && (
-        <p className="text-xs text-text-muted mt-3">
-          APTOS gas payments have no automatic detection yet — verify and release those manually.
-        </p>
-      )}
     </div>
   )
 }
