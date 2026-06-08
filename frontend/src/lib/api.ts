@@ -1791,6 +1791,17 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  verifyWalletActivity: (id: string) =>
+    apiRequest<{
+      status: string
+      verified: boolean | null
+      message: string
+      entryId: string
+      chain: string
+      txHash: string | null
+      onChain?: { from: string | null; to: string | null; nativeValue: number; blockNumber: number | null; explorerUrl: string | null }
+      expected?: { to: string | null; nativeAmount: number; tokenAmount?: number | null; tokenSymbol?: string }
+    }>(`/admin/gas/wallet-activity/${id}/verify`),
 
   // Gas Orders
   getGasOrders: (params?: Record<string, string | number | undefined>) =>

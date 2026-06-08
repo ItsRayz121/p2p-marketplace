@@ -68,6 +68,44 @@ const ENTRY_TYPE_COLORS: Record<string, string> = {
 
 const ENTRY_TYPES = Object.keys(ENTRY_TYPE_LABELS)
 
+// High-level source/origin of funds for each ledger entry type — answers
+// "where did this movement come from?" at a glance (forensic view).
+const ORIGIN_LABELS: Record<string, string> = {
+  order_payment:               'User deposit',
+  gas_delivery:                'Platform payout',
+  delivery_refund:             'Platform payout',
+  refill_hot_from_treasury:    'Internal transfer',
+  drain_hot_to_treasury:       'Internal transfer',
+  platform_fee:                'Fee collection',
+  platform_fee_sweep:          'Internal transfer',
+  external_hot_wallet_deposit: 'External on-chain',
+}
+
+const VERIFY_TONE: Record<string, string> = {
+  verified:          'text-success bg-success/10',
+  token_confirmed:   'text-success bg-success/10',
+  mismatch_amount:   'text-danger bg-danger/10',
+  mismatch_receiver: 'text-danger bg-danger/10',
+  not_found:         'text-danger bg-danger/10',
+  unsupported_chain: 'text-text-muted bg-surface',
+  no_tx_hash:        'text-text-muted bg-surface',
+  rpc_unavailable:   'text-warning bg-warning/10',
+  rpc_error:         'text-warning bg-warning/10',
+  error:             'text-warning bg-warning/10',
+}
+const VERIFY_LABEL: Record<string, string> = {
+  verified:          'Verified',
+  token_confirmed:   'On-chain',
+  mismatch_amount:   'Amount mismatch',
+  mismatch_receiver: 'Receiver mismatch',
+  not_found:         'Not on-chain',
+  unsupported_chain: 'Manual check',
+  no_tx_hash:        'Internal',
+  rpc_unavailable:   'RPC missing',
+  rpc_error:         'RPC error',
+  error:             'Error',
+}
+
 // Hook: fetch active gas chains from DB so dropdowns include SOL/TON/SUI automatically
 function useGasChainIds() {
   const [chainIds, setChainIds] = useState<string[]>([])
@@ -465,6 +503,18 @@ export default function GasWalletActivityPage() {
   const [from, setFrom]         = useState('')
   const [to, setTo]             = useState('')
 
+  // Forensic on-chain verification results, keyed by ledger entry id.
+  const [verify, setVerify] = useState<Record<string, { loading?: boolean; status?: string; verified?: boolean | null; message?: string }>>({})
+  const verifyEntry = useCallback(async (id: string) => {
+    setVerify((v) => ({ ...v, [id]: { loading: true } }))
+    try {
+      const res = await adminApi.verifyWalletActivity(id)
+      setVerify((v) => ({ ...v, [id]: { status: res.status, verified: res.verified, message: res.message } }))
+    } catch (e) {
+      setVerify((v) => ({ ...v, [id]: { status: 'error', verified: false, message: e instanceof Error ? e.message : 'Verification failed' } }))
+    }
+  }, [])
+
   const LIMIT = 25
 
   const fetchActivity = useCallback(async (p = 1) => {
@@ -597,6 +647,7 @@ export default function GasWalletActivityPage() {
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Tx Hash</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">From / To</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Order</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Verification</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Time</th>
                 </tr>
               </thead>
@@ -619,6 +670,9 @@ export default function GasWalletActivityPage() {
                         )}>
                           {ENTRY_TYPE_LABELS[entry.entryType] ?? entry.entryType}
                         </span>
+                        <p className="text-[10px] text-text-muted mt-0.5">
+                          {ORIGIN_LABELS[entry.entryType] ?? '—'} · {entry.txHash ? 'on-chain' : 'internal'}
+                        </p>
                       </td>
 
                       <td className="px-4 py-3">
@@ -700,6 +754,27 @@ export default function GasWalletActivityPage() {
                         ) : (
                           <span className="text-text-muted text-xs">—</span>
                         )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const v = verify[entry.id]
+                          if (!entry.txHash) return <span className="text-[10px] text-text-muted">Internal ledger</span>
+                          if (v?.loading) return <span className="text-[11px] text-text-muted">Checking…</span>
+                          if (v?.status) {
+                            return (
+                              <span
+                                className={cn('inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide cursor-help', VERIFY_TONE[v.status] ?? 'text-text-muted bg-surface')}
+                                title={v.message}
+                              >
+                                {VERIFY_LABEL[v.status] ?? v.status}
+                              </span>
+                            )
+                          }
+                          return (
+                            <Button size="sm" variant="ghost" onClick={() => verifyEntry(entry.id)}>Verify on-chain</Button>
+                          )
+                        })()}
                       </td>
 
                       <td className="px-4 py-3 text-xs text-text-muted whitespace-nowrap">

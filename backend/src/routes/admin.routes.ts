@@ -3520,6 +3520,86 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /admin/gas/wallet-activity/:id/verify — forensic on-chain verification of a
+  // single ledger entry. Confirms the recorded txHash actually exists on-chain and
+  // that the native receiver + amount match what the ledger claims. Answers
+  // questions like "is this +6 BNB hot-wallet deposit a real transaction?".
+  app.get('/admin/gas/wallet-activity/:id/verify', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const entry = await db.gasLedgerEntry.findUnique({
+      where: { id },
+      select: { id: true, chain: true, entryType: true, txHash: true, fromAddress: true, toAddress: true, nativeAmount: true, nativeSymbol: true, tokenSymbol: true, tokenAmount: true },
+    })
+    if (!entry) throw Errors.NOT_FOUND('Ledger entry')
+
+    const { fromDbChain, GAS_CHAINS } = await import('../lib/gas/gas.chains')
+    const EVM_CHAINS = ['BSC', 'ETHEREUM', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX']
+
+    const respond = (status: string, verified: boolean | null, message: string, extra: Record<string, unknown> = {}) =>
+      reply.send({ success: true, data: { status, verified, message, entryId: entry.id, chain: entry.chain, txHash: entry.txHash, ...extra } })
+
+    if (!entry.txHash) {
+      return respond('no_tx_hash', null, 'This is an internal ledger entry with no on-chain transaction to verify.')
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let chainId: any
+    try { chainId = fromDbChain(entry.chain as string) } catch { chainId = null }
+    if (!chainId || !EVM_CHAINS.includes(chainId)) {
+      return respond('unsupported_chain', null, `Automated verification isn't available for ${entry.chain} yet — verify this transaction on the block explorer.`)
+    }
+
+    const cfg = GAS_CHAINS[chainId as keyof typeof GAS_CHAINS]
+    const rpcUrl = cfg?.getRpcUrl?.()
+    if (!rpcUrl) {
+      return respond('rpc_unavailable', null, `No RPC endpoint is configured for ${entry.chain}; cannot verify automatically.`)
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let tx: any
+    try {
+      tx = await getTransactionByHash(rpcUrl, chainId, entry.txHash)
+    } catch (err) {
+      return respond('rpc_error', null, `RPC error while fetching the transaction: ${(err as Error)?.message ?? 'unknown'}`)
+    }
+    if (!tx) {
+      return respond('not_found', false, '⚠ Transaction not found on-chain. This may be an internal adjustment, an import artifact, or a wrong/old hash — investigate.')
+    }
+
+    const onChain = {
+      from: tx.from ?? null,
+      to: (tx.to as string | null) ?? null,
+      nativeValue: Number(tx.value) / 1e18,
+      blockNumber: tx.blockNumber != null ? Number(tx.blockNumber) : null,
+      explorerUrl: cfg.explorerBase ? `${cfg.explorerBase.replace(/\/$/, '')}/tx/${entry.txHash}` : null,
+    }
+    const expectedTo = (entry.toAddress ?? '').toLowerCase()
+    const receiverMatch = !expectedTo || (onChain.to ?? '').toLowerCase() === expectedTo
+
+    // Token transfers (e.g. USDT order payments) carry native value 0; the amount
+    // lives in an ERC20 log, not the tx value — so only verify existence + receiver.
+    if (entry.tokenSymbol) {
+      return respond(receiverMatch ? 'token_confirmed' : 'mismatch_receiver', receiverMatch,
+        receiverMatch
+          ? `On-chain transaction confirmed (block ${onChain.blockNumber}). This is a ${entry.tokenSymbol} token transfer — confirm the token amount on the explorer.`
+          : `Receiver mismatch: on-chain recipient is ${onChain.to}, ledger expected ${entry.toAddress}.`,
+        { onChain, expected: { to: entry.toAddress, nativeAmount: Number(entry.nativeAmount), tokenAmount: entry.tokenAmount != null ? Number(entry.tokenAmount) : null, tokenSymbol: entry.tokenSymbol } })
+    }
+
+    const expectedAmount = Math.abs(Number(entry.nativeAmount))
+    const tolerance = Math.max(1e-9, expectedAmount * 0.001)
+    const amountMatch = Math.abs(onChain.nativeValue - expectedAmount) <= tolerance
+
+    let status: string
+    let message: string
+    if (!receiverMatch) { status = 'mismatch_receiver'; message = `Receiver mismatch: on-chain recipient is ${onChain.to}, ledger expected ${entry.toAddress}.` }
+    else if (!amountMatch) { status = 'mismatch_amount'; message = `Amount mismatch: on-chain ${onChain.nativeValue} ${entry.nativeSymbol}, ledger recorded ${expectedAmount} ${entry.nativeSymbol}.` }
+    else { status = 'verified'; message = `✓ Verified: ${onChain.nativeValue} ${entry.nativeSymbol} to ${onChain.to} confirmed on-chain at block ${onChain.blockNumber}.` }
+
+    return respond(status, status === 'verified', message,
+      { onChain, expected: { to: entry.toAddress, nativeAmount: expectedAmount } })
+  })
+
   // GET /admin/gas/hot-wallet-balances — live on-chain balance for every active hot wallet
   app.get('/admin/gas/hot-wallet-balances', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { getHotWalletBalance, getNativeUsdPrice } = await import('../lib/gas/gas.balance')
