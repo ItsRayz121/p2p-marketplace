@@ -3507,6 +3507,16 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const where: Record<string, unknown> = {}
     if (query.status) where.status = query.status
+    // Strict PKR vs crypto separation. PKR orders carry paymentCoin='PKR';
+    // crypto orders carry 'USDT' (or any non-PKR coin). Lets the dashboard link
+    // straight to "PKR proof review" or "crypto" without mixing payment types.
+    if (query.paymentType === 'PKR' || query.paymentCoin === 'PKR') {
+      where.paymentCoin = 'PKR'
+    } else if (query.paymentType === 'CRYPTO') {
+      where.paymentCoin = { not: 'PKR' }
+    } else if (query.paymentCoin) {
+      where.paymentCoin = query.paymentCoin
+    }
 
     const [orders, total] = await Promise.all([
       db.gasFeeOrder.findMany({

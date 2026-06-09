@@ -713,6 +713,9 @@ export default function GasAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('all')
+  // Strict PKR vs crypto separation — crypto payments must never appear in the
+  // PKR proof-review flow and vice-versa.
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'PKR' | 'CRYPTO'>('all')
 
   // Analytics state
   const [analytics, setAnalytics] = useState<GasAnalytics | null>(null)
@@ -767,6 +770,7 @@ export default function GasAdminPage() {
     try {
       const params: Record<string, string | number> = { page, limit }
       if (statusFilter !== 'all') params.status = statusFilter
+      if (paymentTypeFilter !== 'all') params.paymentType = paymentTypeFilter
       const data = await adminApi.getGasOrders(params) as unknown as GasOrdersResponse
       setOrders(data.orders ?? [])
       setTotal(data.pagination?.total ?? 0)
@@ -776,7 +780,7 @@ export default function GasAdminPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, statusFilter])
+  }, [page, statusFilter, paymentTypeFilter])
 
   const fetchGlobalPause = useCallback(async () => {
     try {
@@ -1135,11 +1139,13 @@ export default function GasAdminPage() {
       )}
 
       {/* ── PKR Proof Review Alert ───────────────────────────────────────────── */}
-      {orders.some(o => o.status === 'payment_uploaded') && statusFilter === 'all' && (
+      {/* PKR-only: crypto payments auto-verify on-chain and must never enter the
+          manual proof-review flow. */}
+      {orders.some(o => o.status === 'payment_uploaded' && o.paymentCoin === 'PKR') && statusFilter === 'all' && (
         <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
           <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span><strong>PKR payments pending review.</strong> Orders with &ldquo;Proof Submitted&rdquo; status need approval before gas is released.</span>
-          <button onClick={() => setStatusFilter('payment_uploaded')} className="ml-auto text-xs font-bold border border-amber-400 rounded-lg px-2.5 py-1 hover:bg-amber-100">
+          <button onClick={() => { setStatusFilter('payment_uploaded'); setPaymentTypeFilter('PKR'); setPage(1) }} className="ml-auto text-xs font-bold border border-amber-400 rounded-lg px-2.5 py-1 hover:bg-amber-100">
             View All →
           </button>
         </div>
@@ -1215,20 +1221,43 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Status Filters ───────────────────────────────────────────────────── */}
-      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-2">
-        {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
-          <button
-            key={s}
-            onClick={() => { setStatusFilter(s); setPage(1) }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-              statusFilter === s
-                ? 'bg-primary text-white border-primary'
-                : 'bg-surface text-text-secondary border-border hover:bg-surface'
-            }`}
-          >
-            {s === 'all' ? 'All' : (STATUS_LABELS[s] ?? s)}
-          </button>
-        ))}
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border space-y-3">
+        {/* Payment type — keeps PKR (manual proof) and crypto (auto-verified) flows separate */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-text-muted mr-1">Payment type:</span>
+          {([
+            { v: 'all',    label: 'All' },
+            { v: 'PKR',    label: 'PKR (manual review)' },
+            { v: 'CRYPTO', label: 'Crypto (auto-verify)' },
+          ] as const).map((pt) => (
+            <button
+              key={pt.v}
+              onClick={() => { setPaymentTypeFilter(pt.v); setPage(1) }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                paymentTypeFilter === pt.v
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-surface text-text-secondary border-border hover:bg-surface'
+              }`}
+            >
+              {pt.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded'].map((s) => (
+            <button
+              key={s}
+              onClick={() => { setStatusFilter(s); setPage(1) }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                statusFilter === s
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-surface text-text-secondary border-border hover:bg-surface'
+              }`}
+            >
+              {s === 'all' ? 'All' : (STATUS_LABELS[s] ?? s)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Orders Table ─────────────────────────────────────────────────────── */}
