@@ -1813,6 +1813,47 @@ export const adminApi = {
       summary: { green: number; yellow: number; red: number }
       fetchedAt: string
     }>('/admin/gas/chain-health'),
+  getPollerHealth: () =>
+    apiRequest<{
+      networks: Array<{
+        network: string
+        configured: boolean
+        status: 'green' | 'yellow' | 'red'
+        ok: boolean | null
+        lastTickAt: string | null
+        lastSuccessAt: string | null
+        lastErrorAt: string | null
+        lastError: string | null
+        lastFound: number | null
+        currentBlock: number | null
+        syncedBlock: number | null
+        ageSeconds: number | null
+        successAgeSeconds: number | null
+        healthy: boolean
+      }>
+      healthyWindowSeconds: number
+    }>('/admin/gas/poller-health'),
+  getSystemHealth: () =>
+    apiRequest<{
+      generatedAt: string
+      overallHealthy: boolean
+      criticalIssues: string[]
+      redis: { ok: boolean; error: string | null }
+      mnemonic: { configured: boolean; addresses: Record<string, string> | null }
+      globallyPaused: boolean
+      walletHealth: Array<{
+        chain: string
+        nativeSymbol: string
+        balance: number | null
+        balanceUsd: number | null
+        isPaused: boolean
+        status: 'healthy' | 'low' | 'paused' | 'unavailable'
+        lastRefreshedAt: string | null
+      }>
+      staleRates: string[]
+      queueHealth: Array<{ name: string; waiting: number; active: number; failed: number }>
+      deliveryHealth: Record<string, { pending: number; failed24h: number }>
+    }>('/admin/gas/system-health'),
   verifyWalletActivity: (id: string) =>
     apiRequest<{
       status: string

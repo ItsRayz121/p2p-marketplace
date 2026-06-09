@@ -1,7 +1,17 @@
 # Phase 9 — Admin Navigation Architecture Audit (Recommendations)
 
-> **Status: PROPOSAL — awaiting approval. No navigation has been restructured.**
-> Per the Phase 9 brief, this document only recommends. Nothing ships until you approve a target structure.
+> **Status: SUPERSEDED — implemented and since evolved.** The approved Phase 9
+> restructure shipped (Treasury & Finance section, Trust & Safety queue grouping).
+> Follow-up nav work then landed on top of it:
+> - **Trading + CTM merged** into one "Trading & Markets" section (the orphan
+>   single-item Trading group and the standalone CTM group are gone).
+> - **Live queue badges** on the sidebar (KYC / appeals / disputes / CTM disputes /
+>   withdrawals / gas requests) via `GET /admin/nav-counts`.
+> - **⌘K command palette** for fast navigation + user search.
+> - **System Health** ops page added under the System group.
+>
+> The structures described below are the original audit and no longer match the
+> live nav exactly — kept for historical context.
 
 ## 1. Current structure
 
