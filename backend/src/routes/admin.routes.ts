@@ -3935,7 +3935,10 @@ export async function adminRoutes(app: FastifyInstance) {
       include: { user: { select: { username: true, email: true } } },
     })
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
-    return reply.send({ success: true, data: order })
+    // Full payment-attribution + delivery audit trail (Redis-backed journal).
+    const { getGasAudit } = await import('../lib/gas/gas.matching')
+    const audit = await getGasAudit(order.id)
+    return reply.send({ success: true, data: { ...order, audit } })
   })
 
   // ── Financial aggregation helper ─────────────────────────────────────────────

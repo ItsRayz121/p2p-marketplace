@@ -17,6 +17,8 @@ import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 import { fromDbChain, toDbChain, GAS_CHAINS } from '../lib/gas/gas.chains'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { getHotWalletBalance } from '../lib/gas/gas.balance'
+import { matchAndDeliverGasPayment } from '../lib/gas/gas.matching'
+import type { NormalizedDepositEvent } from '../services/depositWatcher.service'
 
 // Map from the EVM numeric chainId (decoded from Moralis payload.chainId hex)
 // to the GasChainId used internally.  All EVM chains share the same hot-wallet
@@ -44,6 +46,72 @@ function resolveTokenDecimals(symbol: string, provided: number | undefined, chai
   if (provided != null && Number.isFinite(provided)) return provided
   if (/usdt|usdc|busd|dai/i.test(symbol)) return chain === 'BSC' ? 18 : 6
   return 18
+}
+
+// USDT contracts by gas payment network — used to recognise a gas payment in a
+// Moralis ERC20 event without trusting the (sometimes blank) tokenSymbol field.
+const USDT_CONTRACT_BY_NETWORK: Record<string, string> = {
+  BEP20: '0x55d398326f99059fF775485246999027B3197955', // 18 decimals on BSC
+  ERC20: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // 6 decimals on ETH
+}
+
+/**
+ * Attempt to attribute a Moralis ERC20 transfer to a gas-fee order and auto-release.
+ * Returns true if the transfer was a USDT payment to a gas deposit address (whether
+ * or not it matched an order) — the caller then skips the external-deposit fallback
+ * so the same payment is never double-recorded.
+ *
+ * This is the webhook's auto-release path. Previously the Moralis branch returned
+ * before any gas-order matching ran, so EVM crypto orders never auto-released via
+ * webhook — only the (chunk-limited) RPC poller could credit them.
+ */
+async function tryMatchGasPaymentFromWebhook(event: NormalizedDepositEvent): Promise<boolean> {
+  if (event.asset === 'native') return false
+
+  const gasChain = EVM_CHAIN_ID_TO_GAS_CHAIN[event.chainId]
+  if (gasChain !== 'BSC' && gasChain !== 'ETHEREUM') return false
+  const paymentNetwork = gasChain === 'BSC' ? 'BEP20' : 'ERC20'
+
+  // Must be USDT — match by known contract first, symbol as a fallback.
+  const expectedUsdt = USDT_CONTRACT_BY_NETWORK[paymentNetwork]
+  const isUsdt =
+    (expectedUsdt && event.asset.toLowerCase() === expectedUsdt.toLowerCase()) ||
+    /usdt/i.test(event.symbol)
+  if (!isUsdt) return false
+
+  // toAddress must be the configured gas deposit address for this network.
+  const depositInfo = paymentNetwork === 'BEP20'
+    ? getEffectiveDepositAddress('BSC', env.GAS_FEE_DEPOSIT_ADDRESS_BEP20)
+    : getEffectiveDepositAddress('ETHEREUM', env.GAS_FEE_DEPOSIT_ADDRESS_ERC20)
+  const depositAddress = depositInfo.address
+  if (!depositAddress || event.toAddress.toLowerCase() !== depositAddress.toLowerCase()) return false
+
+  const decimals = resolveTokenDecimals(event.symbol, event.decimals, gasChain)
+  let incoming: number
+  try {
+    const { formatUnits } = await import('viem')
+    incoming = parseFloat(formatUnits(BigInt(event.amount), decimals))
+  } catch {
+    incoming = parseFloat(event.amount)
+  }
+  if (!(incoming > 0)) return false
+
+  const GRACE_MS = 15 * 60 * 1000
+  await matchAndDeliverGasPayment({
+    source: 'webhook',
+    paymentNetwork,
+    txHash: event.txHash,
+    incoming,
+    confirmations: event.confirmations,
+    ...(event.fromAddress ? { senderAddress: event.fromAddress } : {}),
+    depositAddress,
+    graceCutoff: new Date(Date.now() - GRACE_MS),
+    // Webhook fired ⇒ payment is recent; no block-timestamp lookup needed for grace.
+    getBlockTimestampMs: async () => null,
+  })
+  // Whether matched or parked, this WAS a gas payment to the deposit address —
+  // suppress the external-deposit fallback to avoid a duplicate ledger row.
+  return true
 }
 
 /**
@@ -295,6 +363,14 @@ export async function webhookRoutes(app: FastifyInstance) {
         try {
           const r = await processDepositEvent(event)
           results.push({ txHash: event.txHash, asset: event.asset, result: r })
+
+          // ── Gas-fee auto-release ──────────────────────────────────────────────
+          // If this is a USDT transfer to a gas deposit address, attribute it to a
+          // pending gas order and queue delivery. Runs BEFORE the external-deposit
+          // fallback so a matched payment is recorded as order_payment, not as a
+          // duplicate hot-wallet deposit.
+          const gasMatched = await tryMatchGasPaymentFromWebhook(event)
+          if (gasMatched) continue
 
           // If this event was ignored AND the destination is a hot wallet address,
           // it is a direct top-up (e.g. admin sends native tokens to fund the wallet).

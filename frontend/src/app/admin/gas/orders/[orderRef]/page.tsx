@@ -43,6 +43,25 @@ interface GasOrderDetail {
   refundedAt: string | null
   createdAt: string
   user: { username: string; email: string } | null
+  audit?: GasAuditEvent[]
+}
+
+interface GasAuditEvent {
+  ts: string
+  source: string
+  event: string
+  paymentNetwork?: string
+  txHash?: string
+  detectedAmount?: number
+  detectedAsset?: string
+  fromAddress?: string
+  toAddress?: string
+  expectedAmount?: number
+  expectedChain?: string
+  matchPass?: string
+  confirmations?: number
+  reason?: string
+  detail?: string
 }
 
 // ─── Chain metadata ───────────────────────────────────────────────────────────
@@ -537,6 +556,39 @@ export default function GasOrderDetailPage() {
           <InfoRow label="Delivered">{fmtDateTime(order.deliveredAt)}</InfoRow>
           <InfoRow label="Refunded">{fmtDateTime(order.refundedAt)}</InfoRow>
         </div>
+
+        {order.audit && order.audit.length > 0 && (
+          <>
+            <SectionHeading>Payment &amp; Delivery Audit</SectionHeading>
+            <div className="space-y-2">
+              {order.audit.map((a, i) => {
+                const tone =
+                  /matched|delivered|delivery_queued/.test(a.event) ? 'border-success/30 bg-success/5'
+                  : /failed|parked|unattributed|rejected/.test(a.event) ? 'border-danger/30 bg-danger/5'
+                  : 'border-border bg-surface'
+                return (
+                  <div key={i} className={`rounded-lg border p-2.5 text-xs ${tone}`}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-bold uppercase tracking-wide">{a.event.replace(/_/g, ' ')}</span>
+                      <span className="text-text-muted">{a.source} · {fmtDateTime(a.ts)}</span>
+                    </div>
+                    <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-text-secondary">
+                      {a.matchPass        && <span>pass: <b>{a.matchPass}</b></span>}
+                      {a.paymentNetwork   && <span>network: {a.paymentNetwork}</span>}
+                      {a.detectedAmount != null && <span>detected: {a.detectedAmount} {a.detectedAsset ?? ''}</span>}
+                      {a.expectedAmount != null && <span>expected: {a.expectedAmount}</span>}
+                      {a.confirmations != null   && <span>confirmations: {a.confirmations}</span>}
+                      {a.expectedChain    && <span>chain: {a.expectedChain}</span>}
+                    </div>
+                    {a.txHash && <p className="mt-1 font-mono text-[10px] text-text-muted truncate" title={a.txHash}>tx {a.txHash}</p>}
+                    {a.reason && <p className="mt-0.5 text-danger">reason: {a.reason}</p>}
+                    {a.detail && <p className="mt-0.5 text-text-muted">{a.detail}</p>}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Confirm modals */}

@@ -10,6 +10,7 @@ import type { GasChainId } from '../lib/gas/gas.chains'
 import { fromDbChain } from '../lib/gas/gas.chains'
 import { selectHotWallet } from '../lib/gas/gasWalletService'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { recordGasAudit } from '../lib/gas/gas.matching'
 
 export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   const { orderId } = job.data
@@ -86,6 +87,10 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     )
 
     logger.info({ orderId, deliveryTxHash, chain: order.chain }, 'Gas fee delivered successfully')
+    await recordGasAudit({ orderId, ...(order.paymentTxHash ? { txHash: order.paymentTxHash } : {}) }, {
+      source: 'worker', event: 'delivered', txHash: deliveryTxHash, expectedChain: order.chain,
+      detail: `Gas released: ${Number(order.gasAmountNative)} ${order.chain} → ${order.toAddress}`,
+    })
     await notifyMerchantWebhook(orderId, 'delivered')
     // Gas orders count toward user trade stats — trigger unified badge recalculate
     if (order.userId) {
@@ -105,6 +110,10 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     const errCode = (err as { code?: string }).code
 
     logger.error({ orderId, attempt: attemptNumber, err: errMsg, chain: order.chain }, 'Gas fee delivery failed')
+    await recordGasAudit({ orderId, ...(order.paymentTxHash ? { txHash: order.paymentTxHash } : {}) }, {
+      source: 'worker', event: 'delivery_failed', expectedChain: order.chain,
+      reason: errCode ?? 'delivery_error', detail: `attempt ${attemptNumber}/${maxAttempts}: ${errMsg}`,
+    })
 
     // Insufficient hot wallet balance — don't burn retries on a tx that can't succeed.
     // Reset to payment_detected, alert admin, and let the refill job replenish the wallet

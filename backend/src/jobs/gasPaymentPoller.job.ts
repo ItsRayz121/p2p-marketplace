@@ -19,14 +19,9 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
-import { queues } from '../queues/definitions'
-import { sendAdminAlertEmail } from '../services/email.service'
-import { createAdminNotif } from '../services/adminNotification.service'
-import { appendLedgerEntry } from '../lib/gas/gas.ledger'
-import { fromDbChain } from '../lib/gas/gas.chains'
-import type { GasChainId } from '../lib/gas/gas.chains'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { getEvmHotWalletAddress } from '../lib/gas/gasWalletService'
+import { matchAndDeliverGasPayment } from '../lib/gas/gas.matching'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
 const TRANSFER_EVENT = parseAbiItem(
@@ -36,11 +31,6 @@ const TRANSFER_EVENT = parseAbiItem(
 // Grace window: attribute payments to orders that expired at most this many ms ago.
 // Covers the case where the webhook fired after the order expiry job already ran.
 const GRACE_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
-
-// Orders carry a UNIQUE paymentAmount (assigned on a 0.001 grid). An incoming
-// payment within this epsilon of an order's amount is an exact, unambiguous match.
-// Must be < half the 0.001 grid step so adjacent unique amounts never overlap.
-const EXACT_MATCH_EPSILON = 0.0004
 
 // USDT TRC20 contract on TRON mainnet, 6 decimals.
 const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
@@ -144,252 +134,6 @@ async function resolveDepositAddress(dbKey: string, envValue: string | undefined
   const dbOverride = await db.platformConfig.findUnique({ where: { key: dbKey } })
   if (dbOverride?.value) return dbOverride.value
   return envValue ?? null
-}
-
-// ── Shared matching + auto-delivery ─────────────────────────────────────────────
-// Applies the same 3-pass attribution used by the webhook, then queues delivery.
-// `getBlockTimestampMs` is chain-specific (EVM fetches the block; TRON already
-// knows it) and only consulted for the recently-expired grace check.
-async function matchAndDeliver(p: {
-  paymentNetwork: string
-  txHash: string
-  incoming: number
-  confirmations: number
-  senderAddress?: string
-  depositAddress: string
-  graceCutoff: Date
-  getBlockTimestampMs: () => Promise<number | null>
-}): Promise<void> {
-  const { paymentNetwork, txHash, incoming, confirmations, senderAddress, depositAddress, graceCutoff } = p
-
-  // Duplicate guard: skip if already attributed to an order past the verification
-  // stage. We must NOT skip payment_uploaded orders whose paymentTxHash was set by
-  // the user submitting proof — those are exactly what Pass 1 handles.
-  const alreadyUsed = await db.gasFeeOrder.findFirst({
-    where: { paymentTxHash: txHash, status: { notIn: ['payment_uploaded'] } },
-  })
-  if (alreadyUsed) return
-
-  const lo = (incoming * 0.99).toFixed(4)
-  const hi = (incoming * 1.01).toFixed(4)
-
-  // ── Pass 1: payment_uploaded order where the user submitted this exact tx hash ──
-  // Strongest signal — user explicitly provided the hash; skip amount tolerance.
-  const txHashUploadedOrder = await db.gasFeeOrder.findFirst({
-    where: { status: 'payment_uploaded', paymentNetwork, paymentTxHash: txHash },
-  })
-  if (txHashUploadedOrder) {
-    const claimed = await db.gasFeeOrder.updateMany({
-      where: { id: txHashUploadedOrder.id, status: 'payment_uploaded' },
-      data: {
-        status: 'payment_detected',
-        paymentVerifiedAt: new Date(),
-        verifiedAmount: incoming,
-        verifiedAsset: 'USDT',
-        verifiedConfirmations: confirmations,
-      },
-    })
-    if (claimed.count > 0) {
-      await onPaymentDetected(txHashUploadedOrder.id, txHashUploadedOrder.orderRef, txHashUploadedOrder.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
-    }
-    return
-  }
-
-  // ── Pass A: exact unique-amount match ─────────────────────────────────────────
-  // Orders carry a unique paymentAmount, so an exact (±epsilon) match attributes
-  // to exactly one order even when many users requested the same gas size.
-  const exLo = (incoming - EXACT_MATCH_EPSILON).toFixed(4)
-  const exHi = (incoming + EXACT_MATCH_EPSILON).toFixed(4)
-  const exactCandidates = await db.gasFeeOrder.findMany({
-    where: {
-      status: { in: ['payment_pending', 'payment_uploaded'] },
-      paymentNetwork,
-      paymentAmount: { gte: exLo, lte: exHi },
-      paymentTxHash: null,
-      expiresAt: { gt: new Date() },
-    },
-    orderBy: { createdAt: 'asc' },
-    take: 2,
-  })
-  if (exactCandidates.length === 1) {
-    const ord = exactCandidates[0]!
-    const claimed = await db.gasFeeOrder.updateMany({
-      where: { id: ord.id, status: { in: ['payment_pending', 'payment_uploaded'] }, paymentTxHash: null },
-      data: {
-        status: 'payment_detected',
-        paymentTxHash: txHash,
-        paymentVerifiedAt: new Date(),
-        verifiedAmount: incoming,
-        verifiedAsset: 'USDT',
-        verifiedConfirmations: confirmations,
-      },
-    })
-    if (claimed.count > 0) {
-      await onPaymentDetected(ord.id, ord.orderRef, ord.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
-    }
-    return
-  }
-  if (exactCandidates.length > 1) {
-    // Two live orders share an exact amount (unique-assignment race) — never guess.
-    await parkUnattributed(txHash, incoming, paymentNetwork, depositAddress, 'ambiguous_exact_collision')
-    logger.warn({ txHash, incoming, paymentNetwork }, 'gasPaymentPoller: exact amount matched multiple orders — parked')
-    return
-  }
-
-  // ── Pass 2: tolerant amount-based match (payment_pending / payment_uploaded with no hash) ──
-  // Fallback for slight under/overpayment where no exact match exists.
-  // Ambiguity guard: if more than one live order matches this amount, auto-attributing
-  // (and now auto-delivering) could credit the wrong user — park it for manual review.
-  const candidates = await db.gasFeeOrder.findMany({
-    where: {
-      status: { in: ['payment_pending', 'payment_uploaded'] },
-      paymentNetwork,
-      paymentAmount: { gte: lo, lte: hi },
-      paymentTxHash: null,
-      expiresAt: { gt: new Date() },
-    },
-    orderBy: { createdAt: 'asc' },
-    take: 2,
-  })
-
-  if (candidates.length > 1) {
-    await parkUnattributed(txHash, incoming, paymentNetwork, depositAddress, 'ambiguous_multiple_matches')
-    logger.warn({ txHash, incoming, paymentNetwork, candidateCount: candidates.length }, 'gasPaymentPoller: ambiguous amount match — parked, NOT auto-delivering')
-    sendAdminAlertEmail(
-      'Ambiguous Gas Fee Payment — manual review',
-      `A USDT payment (${incoming}) on ${paymentNetwork} matched ${candidates.length} pending gas orders by amount.\n\nTX: ${txHash}\n\nAuto-delivery was skipped to avoid crediting the wrong user. Attribute manually at /admin/gas.`,
-    ).catch(() => {})
-    return
-  }
-
-  const activeOrder = candidates[0]
-  if (activeOrder) {
-    const claimed = await db.gasFeeOrder.updateMany({
-      where: { id: activeOrder.id, status: { in: ['payment_pending', 'payment_uploaded'] }, paymentTxHash: null },
-      data: {
-        status: 'payment_detected',
-        paymentTxHash: txHash,
-        paymentVerifiedAt: new Date(),
-        verifiedAmount: incoming,
-        verifiedAsset: 'USDT',
-        verifiedConfirmations: confirmations,
-      },
-    })
-    if (claimed.count > 0) {
-      await onPaymentDetected(activeOrder.id, activeOrder.orderRef, activeOrder.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
-    }
-    return
-  }
-
-  // ── Pass 3: grace match — recently-expired order where payment arrived on time ──
-  const expiredOrder = await db.gasFeeOrder.findFirst({
-    where: {
-      status: 'expired',
-      paymentNetwork,
-      paymentAmount: { gte: lo, lte: hi },
-      expiresAt: { gte: graceCutoff },
-      paymentTxHash: null,
-    },
-    orderBy: { createdAt: 'asc' },
-  })
-
-  if (expiredOrder) {
-    const blockTimestampMs = await p.getBlockTimestampMs()
-    const paidBeforeExpiry =
-      blockTimestampMs === null || blockTimestampMs < expiredOrder.expiresAt.getTime()
-
-    if (paidBeforeExpiry) {
-      const claimed = await db.gasFeeOrder.updateMany({
-        where: { id: expiredOrder.id, status: 'expired', paymentTxHash: null },
-        data: {
-          status: 'payment_detected',
-          paymentTxHash: txHash,
-          paymentVerifiedAt: new Date(),
-          verifiedAmount: incoming,
-          verifiedAsset: 'USDT',
-          verifiedConfirmations: confirmations,
-        },
-      })
-      if (claimed.count > 0) {
-        await onPaymentDetected(expiredOrder.id, expiredOrder.orderRef, expiredOrder.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress)
-        sendAdminAlertEmail(
-          `Gas Order Resurrected — Late Payment Detection`,
-          `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but the webhook never fired. The poller detected, attributed, and queued delivery automatically.`,
-        ).catch(() => {})
-      }
-      return
-    }
-  }
-
-  // ── No match — record as unattributed for admin review ────────────────────────
-  await parkUnattributed(txHash, incoming, paymentNetwork, depositAddress, 'poller_no_match')
-  logger.warn({ txHash, incoming, paymentNetwork }, 'gasPaymentPoller: unattributed transfer — no matching order')
-  void createAdminNotif({
-    category: 'GAS',
-    title: `Unattributed Deposit — ${incoming.toFixed(2)} USDT (${paymentNetwork})`,
-    body: `Received ${incoming.toFixed(4)} USDT but no matching order found. Needs manual attribution. Tx: ${txHash.slice(0, 12)}…`,
-    href: '/admin/gas/flagged',
-    metadata: { txHash, amount: incoming.toFixed(4), network: paymentNetwork },
-  })
-}
-
-async function parkUnattributed(txHash: string, incoming: number, paymentNetwork: string, depositAddress: string, paymentNote: string): Promise<void> {
-  const member = JSON.stringify({
-    txHash,
-    amount: incoming.toFixed(4),
-    network: paymentNetwork,
-    toAddress: depositAddress,
-    paymentNote,
-    detectedAt: new Date().toISOString(),
-  })
-  await redis.zadd('gas_unattributed', Date.now(), member)
-  await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
-}
-
-// Queue automatic delivery (same path as the webhook), then record ledger + notif.
-async function onPaymentDetected(
-  orderId: string,
-  orderRef: string,
-  orderChain: string,
-  txHash: string,
-  incoming: number,
-  confirmations: number,
-  paymentNetwork: string,
-  senderAddress: string | undefined,
-): Promise<void> {
-  // Queue delivery FIRST and await it — this is the money path, not fire-and-forget.
-  // The worker claims payment_detected → sending via CAS, so a duplicate enqueue is safe.
-  try {
-    await queues.gasFee.add('deliver', { orderId }, { priority: 1 })
-  } catch (err) {
-    logger.error({ err, orderId }, 'gasPaymentPoller: failed to queue delivery — will retry next tick (order stays payment_detected)')
-  }
-
-  try {
-    appendLedgerEntry({
-      entryType:      'order_payment',
-      chain:          fromDbChain(orderChain) as GasChainId,
-      nativeAmount:   0,          // USDT is a token — no native moved
-      usdAmount:      incoming,   // USDT ≈ USD 1:1
-      tokenSymbol:    'USDT',
-      tokenAmount:    incoming,
-      txHash,
-      ...(senderAddress !== undefined ? { fromAddress: senderAddress } : {}),
-      relatedOrderId: orderId,
-    }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write order_payment ledger entry'))
-
-    void createAdminNotif({
-      category: 'GAS',
-      title: `Payment Detected — ${incoming.toFixed(2)} USDT (${paymentNetwork})`,
-      body: `Order ${orderRef} payment confirmed on-chain (${confirmations} conf). Delivery queued automatically. Tx: ${txHash.slice(0, 12)}…`,
-      href: `/admin/gas/orders/${orderRef}`,
-      metadata: { txHash, amount: incoming.toFixed(4), network: paymentNetwork, orderId, confirmations },
-    })
-
-    logger.info({ txHash, orderId, network: paymentNetwork, incoming, confirmations }, 'gasPaymentPoller: payment detected — delivery queued')
-  } catch (err) {
-    logger.warn({ err, orderId, txHash }, 'gasPaymentPoller: onPaymentDetected post-processing failed')
-  }
 }
 
 // ── EVM scanner (getLogs) ───────────────────────────────────────────────────────
@@ -499,7 +243,8 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
 
     const senderAddress = log.args.from ?? undefined
 
-    await matchAndDeliver({
+    await matchAndDeliverGasPayment({
+      source: 'poller',
       paymentNetwork: cfg.paymentNetwork,
       txHash,
       incoming,
@@ -608,7 +353,8 @@ async function scanTron(): Promise<void> {
     }
     if (!(incoming > 0)) continue
 
-    await matchAndDeliver({
+    await matchAndDeliverGasPayment({
+      source: 'poller',
       paymentNetwork: 'TRC20',
       txHash,
       incoming,
@@ -743,7 +489,8 @@ async function scanAptos(): Promise<void> {
     }
     if (!(incoming > 0)) continue
 
-    await matchAndDeliver({
+    await matchAndDeliverGasPayment({
+      source: 'poller',
       paymentNetwork: 'APTOS',
       txHash,
       incoming,
