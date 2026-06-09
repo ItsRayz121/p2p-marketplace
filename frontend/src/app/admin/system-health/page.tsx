@@ -51,6 +51,85 @@ function Tile({ label, ok, detail }: { label: string; ok: boolean | null; detail
 const ago = (s: number | null) =>
   s === null ? '—' : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`
 
+// One job-queue row with an expandable failed-job drill-down + retry/clear.
+type QueueHealthRow = SystemHealth['queueHealth'][number]
+function QueueRow({ q, onChanged }: { q: QueueHealthRow; onChanged: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState<'retry' | 'clean' | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const hasFailures = q.failed > 0
+
+  async function retry() {
+    setBusy('retry'); setMsg(null)
+    try {
+      const r = await adminApi.retryQueueFailed(q.name)
+      setMsg(`Re-enqueued ${r.retried}/${r.total} failed job(s).`)
+      onChanged()
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Retry failed') }
+    finally { setBusy(null) }
+  }
+  async function clean() {
+    setBusy('clean'); setMsg(null)
+    try {
+      const r = await adminApi.cleanQueueFailed(q.name)
+      setMsg(`Cleared ${r.removed} failed job(s).`)
+      onChanged()
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Clear failed') }
+    finally { setBusy(null) }
+  }
+
+  return (
+    <div className={cn('rounded-lg border', hasFailures ? 'border-red-200 bg-red-50/40' : 'border-border bg-surface-alt')}>
+      <div className="flex items-center gap-3 px-3 py-2">
+        <button
+          onClick={() => hasFailures && setOpen((o) => !o)}
+          className={cn('text-left flex-1 min-w-0', hasFailures && 'cursor-pointer')}
+          title={hasFailures ? 'Click to view failed-job errors' : undefined}
+        >
+          <span className="text-xs font-semibold text-text-primary">{q.name}</span>
+          {q.lastError && !open && (
+            <p className="text-[10px] text-red-500 truncate" title={q.lastError}>{q.lastError}</p>
+          )}
+        </button>
+        <div className="flex items-center gap-3 text-[11px] shrink-0">
+          <span className="text-text-muted" title="Queued, waiting for a worker">w <b className="text-text-secondary">{q.waiting < 0 ? '—' : q.waiting}</b></span>
+          <span className="text-text-muted" title="Running now">a <b className="text-text-secondary">{q.active < 0 ? '—' : q.active}</b></span>
+          <span className={cn(hasFailures ? 'text-red-500' : 'text-text-muted')} title="Failed after all retries">
+            f <b>{q.failed < 0 ? '—' : q.failed}</b>
+          </span>
+          {hasFailures && (
+            <div className="flex items-center gap-1">
+              <button onClick={retry} disabled={busy !== null}
+                className="px-2 py-0.5 rounded border border-amber-400 text-amber-700 text-[10px] font-bold hover:bg-amber-100 disabled:opacity-50">
+                {busy === 'retry' ? '…' : 'Retry'}
+              </button>
+              <button onClick={clean} disabled={busy !== null}
+                className="px-2 py-0.5 rounded border border-border text-text-muted text-[10px] font-bold hover:bg-surface disabled:opacity-50">
+                {busy === 'clean' ? '…' : 'Clear'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      {msg && <p className="px-3 pb-1.5 text-[10px] text-text-secondary">{msg}</p>}
+      {open && q.failedJobs.length > 0 && (
+        <div className="border-t border-red-200 divide-y divide-red-100">
+          {q.failedJobs.map((j) => (
+            <div key={j.id} className="px-3 py-1.5">
+              <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">
+                <span className="font-mono">#{j.id} · {j.name} · {j.attemptsMade} attempt(s)</span>
+                <span>{j.failedAt ? fmtDate(j.failedAt) : '—'}</span>
+              </div>
+              <p className="text-[10px] text-red-600 font-mono break-words">{j.failedReason}</p>
+            </div>
+          ))}
+          <p className="px-3 py-1 text-[9px] text-text-muted">Showing latest {q.failedJobs.length} of {q.failed}.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ───────────────────────────────────────────────────────────────────
 export default function SystemHealthPage() {
   const [poller, setPoller] = useState<PollerNet[] | null>(null)
@@ -263,29 +342,21 @@ export default function SystemHealthPage() {
       {/* Job queues */}
       {sys && sys.queueHealth.length > 0 && (
         <Card title="Job Queues (BullMQ)">
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-text-muted text-left">
-                  <th className="font-medium px-1 py-1.5">Queue</th>
-                  <th className="font-medium px-1 py-1.5 text-right">Waiting</th>
-                  <th className="font-medium px-1 py-1.5 text-right">Active</th>
-                  <th className="font-medium px-1 py-1.5 text-right">Failed</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {sys.queueHealth.map((q) => (
-                  <tr key={q.name}>
-                    <td className="px-1 py-1.5 text-text-primary font-medium">{q.name}</td>
-                    <td className="px-1 py-1.5 text-right text-text-secondary">{q.waiting < 0 ? '—' : q.waiting}</td>
-                    <td className="px-1 py-1.5 text-right text-text-secondary">{q.active < 0 ? '—' : q.active}</td>
-                    <td className={cn('px-1 py-1.5 text-right font-medium', q.failed > 0 ? 'text-red-500' : 'text-text-secondary')}>
-                      {q.failed < 0 ? '—' : q.failed}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 mb-3 text-[11px] text-text-muted">
+            <span title="Jobs queued and waiting for a free worker to pick them up.">
+              <b className="text-text-secondary">Waiting</b> — queued, not started
+            </span>
+            <span title="Jobs currently being processed by a worker right now.">
+              <b className="text-text-secondary">Active</b> — running now
+            </span>
+            <span title="Jobs that exhausted all retry attempts and threw an error. Expand a row to see the error; use Retry to re-run them.">
+              <b className="text-red-500">Failed</b> — errored after all retries
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {sys.queueHealth.map((q) => (
+              <QueueRow key={q.name} q={q} onChanged={() => void fetchAll()} />
+            ))}
           </div>
         </Card>
       )}

@@ -5334,7 +5334,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const staleRates = rateChecks.filter((r) => !r.hasRate).map((r) => r.symbol)
 
     // ── 8. BullMQ queue health ────────────────────────────────────────────────
-    let queueHealth: Array<{ name: string; waiting: number; active: number; failed: number }> = []
+    // Includes a small sample of recent failed jobs (id, reason, attempts, when)
+    // so admins can see WHY a queue is red instead of just a count. Retry / clear
+    // actions live at POST /admin/gas/queues/:name/{retry-failed,clean-failed}.
+    interface FailedJobInfo { id: string; name: string; failedReason: string; attemptsMade: number; failedAt: string | null }
+    let queueHealth: Array<{ name: string; waiting: number; active: number; failed: number; lastError: string | null; lastFailedAt: string | null; failedJobs: FailedJobInfo[] }> = []
     try {
       const { queues } = await import('../queues/definitions')
       const queueEntries = Object.entries(queues)
@@ -5345,7 +5349,23 @@ export async function adminRoutes(app: FastifyInstance) {
             q.getActiveCount().catch(() => -1),
             q.getFailedCount().catch(() => -1),
           ])
-          return { name, waiting, active, failed }
+          let failedJobs: FailedJobInfo[] = []
+          if (failed > 0) {
+            const jobs = await q.getFailed(0, 4).catch(() => [])
+            failedJobs = jobs.map((j) => ({
+              id: String(j.id ?? ''),
+              name: j.name,
+              failedReason: (j.failedReason ?? 'unknown error').slice(0, 300),
+              attemptsMade: j.attemptsMade,
+              failedAt: j.finishedOn ? new Date(j.finishedOn).toISOString() : null,
+            }))
+          }
+          return {
+            name, waiting, active, failed,
+            lastError: failedJobs[0]?.failedReason ?? null,
+            lastFailedAt: failedJobs[0]?.failedAt ?? null,
+            failedJobs,
+          }
         })
       )
     } catch {
@@ -5474,6 +5494,53 @@ export async function adminRoutes(app: FastifyInstance) {
         unsupportedFeatures: UNSUPPORTED_FEATURES,
       },
     })
+  })
+
+  // ── GET /admin/gas/queues/:name/failed — list failed jobs for one queue ───────
+  app.get('/admin/gas/queues/:name/failed', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { name } = req.params as { name: string }
+    const { queues } = await import('../queues/definitions')
+    const q = (queues as Record<string, import('bullmq').Queue>)[name]
+    if (!q) throw Errors.NOT_FOUND('Queue')
+    const jobs = await q.getFailed(0, 49).catch(() => [])
+    return reply.send({
+      success: true,
+      data: jobs.map((j) => ({
+        id: String(j.id ?? ''),
+        name: j.name,
+        failedReason: (j.failedReason ?? 'unknown error').slice(0, 1000),
+        attemptsMade: j.attemptsMade,
+        failedAt: j.finishedOn ? new Date(j.finishedOn).toISOString() : null,
+        data: j.data,
+      })),
+    })
+  })
+
+  // ── POST /admin/gas/queues/:name/retry-failed — re-enqueue failed jobs ─────────
+  app.post('/admin/gas/queues/:name/retry-failed', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { name } = req.params as { name: string }
+    const { queues } = await import('../queues/definitions')
+    const q = (queues as Record<string, import('bullmq').Queue>)[name]
+    if (!q) throw Errors.NOT_FOUND('Queue')
+    const jobs = await q.getFailed(0, 199).catch(() => [])
+    let retried = 0
+    for (const j of jobs) {
+      try { await j.retry(); retried++ } catch { /* job may have moved; skip */ }
+    }
+    void createAuditLog(req.user!.id, 'QUEUE_RETRY_FAILED', 'Queue', name, { retried, total: jobs.length })
+    return reply.send({ success: true, data: { retried, total: jobs.length } })
+  })
+
+  // ── POST /admin/gas/queues/:name/clean-failed — clear resolved failed jobs ─────
+  app.post('/admin/gas/queues/:name/clean-failed', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { name } = req.params as { name: string }
+    const { queues } = await import('../queues/definitions')
+    const q = (queues as Record<string, import('bullmq').Queue>)[name]
+    if (!q) throw Errors.NOT_FOUND('Queue')
+    // clean(grace=0, limit, 'failed') removes failed jobs; obliterate is too broad.
+    const removed = await q.clean(0, 1000, 'failed').catch(() => [] as string[])
+    void createAuditLog(req.user!.id, 'QUEUE_CLEAN_FAILED', 'Queue', name, { removed: removed.length })
+    return reply.send({ success: true, data: { removed: removed.length } })
   })
 
   // ── POST /admin/gas/chains/:chain/dry-run — pre-flight delivery check ─────────

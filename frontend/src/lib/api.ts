@@ -1851,9 +1851,20 @@ export const adminApi = {
         lastRefreshedAt: string | null
       }>
       staleRates: string[]
-      queueHealth: Array<{ name: string; waiting: number; active: number; failed: number }>
+      queueHealth: Array<{
+        name: string; waiting: number; active: number; failed: number
+        lastError: string | null
+        lastFailedAt: string | null
+        failedJobs: Array<{ id: string; name: string; failedReason: string; attemptsMade: number; failedAt: string | null }>
+      }>
       deliveryHealth: Record<string, { pending: number; failed24h: number }>
     }>('/admin/gas/system-health'),
+  getQueueFailed: (name: string) =>
+    apiRequest<Array<{ id: string; name: string; failedReason: string; attemptsMade: number; failedAt: string | null; data: unknown }>>(`/admin/gas/queues/${name}/failed`),
+  retryQueueFailed: (name: string) =>
+    apiRequest<{ retried: number; total: number }>(`/admin/gas/queues/${name}/retry-failed`, { method: 'POST' }),
+  cleanQueueFailed: (name: string) =>
+    apiRequest<{ removed: number }>(`/admin/gas/queues/${name}/clean-failed`, { method: 'POST' }),
   verifyWalletActivity: (id: string) =>
     apiRequest<{
       status: string
