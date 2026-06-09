@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
+import { EntityLogo } from '@/components/ui/EntityLogo'
+import { TokenChainLogo } from '@/components/ui/TokenChainLogo'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -468,7 +470,14 @@ export default function GasOrderDetailPage() {
 
         <SectionHeading>Payment</SectionHeading>
         <div>
-          <InfoRow label="Method">{order.paymentCoin ?? 'USDT'}</InfoRow>
+          <InfoRow label="Method">
+            <span className="inline-flex items-center gap-2">
+              {order.paymentCoin && order.paymentCoin !== 'PKR'
+                ? <TokenChainLogo tokenSymbol={order.paymentCoin} chain={order.paymentNetwork === 'TRC20' ? 'TRON' : order.chain} size="sm" />
+                : <EntityLogo type="payment_method" slug={order.pkrPaymentMethod ?? 'PKR'} size="sm" />}
+              <span>{order.paymentCoin ?? 'USDT'}{order.paymentNetwork && order.paymentCoin !== 'PKR' ? ` · ${order.paymentNetwork}` : ''}</span>
+            </span>
+          </InfoRow>
           <InfoRow label="Amount">{parseFloat(order.paymentAmount).toFixed(2)} {order.paymentCoin ?? 'USDT'}</InfoRow>
           {order.paymentCoin === 'PKR' && (
             <>

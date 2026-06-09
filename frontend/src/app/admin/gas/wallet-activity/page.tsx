@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { TokenChainLogo } from '@/components/ui/TokenChainLogo'
 import { chainDisplayName } from '@/lib/chainDisplayName'
 import { GasSectionTabs } from '@/components/admin/GasSectionTabs'
 
@@ -676,9 +677,12 @@ export default function GasWalletActivityPage() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <EntityLogo type="chain" slug={entry.chain} size="xs" />
-                          <Badge variant="default" size="sm">{chainDisplayName(entry.chain)}</Badge>
+                        <div className="flex items-center gap-2.5">
+                          <TokenChainLogo tokenSymbol={hasToken ? entry.tokenSymbol : null} chain={entry.chain} size="sm" />
+                          <div className="flex flex-col gap-0.5">
+                            {hasToken && <span className="text-xs font-semibold text-text-primary leading-none">{entry.tokenSymbol}</span>}
+                            <Badge variant="default" size="sm">{chainDisplayName(entry.chain)}</Badge>
+                          </div>
                         </div>
                       </td>
 

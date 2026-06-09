@@ -14,6 +14,8 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
 import { useAuthStore } from '@/store/auth.store'
 import { chainDisplayName } from '@/lib/chainDisplayName'
+import { EntityLogo } from '@/components/ui/EntityLogo'
+import { TokenChainLogo } from '@/components/ui/TokenChainLogo'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1291,6 +1293,7 @@ export default function GasAdminPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
+                        <EntityLogo type="chain" slug={o.chain} size="xs" />
                         <Badge variant="outline" size="sm">{o.chain}</Badge>
                         {o.tier && <Badge variant="default" size="sm">{o.tier}</Badge>}
                       </div>
