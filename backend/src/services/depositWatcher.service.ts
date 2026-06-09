@@ -57,6 +57,8 @@ export interface NormalizedDepositEvent {
   symbol: string
   /** Raw on-chain amount as a decimal string already scaled to token units. */
   amount: string
+  /** Token decimals when provided by the source (Moralis erc20Transfers). Undefined for native. */
+  decimals?: number
   confirmations: number
 }
 
@@ -434,6 +436,13 @@ export async function normalizeMoralisEvent(
   if (Array.isArray(p.erc20Transfers)) {
     for (const t of p.erc20Transfers) {
       if (!t?.transactionHash || !t?.to || !t?.contract) continue
+      // Moralis emits token decimals as `tokenDecimals` (Streams) — capture it so
+      // downstream code never has to guess and never applies native 18-dec scaling
+      // to a 6-dec token. Falls back to undefined when absent.
+      const rawDecimals = t.tokenDecimals ?? t.tokenDecimal ?? t.decimals
+      const decimals = rawDecimals != null && Number.isFinite(Number(rawDecimals))
+        ? Number(rawDecimals)
+        : undefined
       out.push({
         chainId,
         txHash: String(t.transactionHash),
@@ -442,6 +451,7 @@ export async function normalizeMoralisEvent(
         asset: String(t.contract),
         symbol: String(t.tokenSymbol ?? ''),
         amount: String(t.value ?? '0'),
+        ...(decimals !== undefined ? { decimals } : {}),
         confirmations,
       })
     }

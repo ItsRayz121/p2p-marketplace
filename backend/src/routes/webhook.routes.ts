@@ -31,6 +31,21 @@ const EVM_CHAIN_ID_TO_GAS_CHAIN: Record<number, GasChainId> = {
   43114: 'AVAX',
 }
 
+// Stablecoins that track USD ≈ 1:1 — used to price token deposits without a feed.
+const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'FDUSD'])
+function isStablecoin(symbol: string): boolean {
+  return STABLECOINS.has(symbol.toUpperCase())
+}
+
+// Resolve token decimals for a hot-wallet deposit. Prefer the count the source
+// (Moralis) gave us; otherwise fall back to known stablecoin conventions:
+// Binance-Peg USDT on BSC uses 18 decimals, USDT elsewhere uses 6. Default 18.
+function resolveTokenDecimals(symbol: string, provided: number | undefined, chain: GasChainId): number {
+  if (provided != null && Number.isFinite(provided)) return provided
+  if (/usdt|usdc|busd|dai/i.test(symbol)) return chain === 'BSC' ? 18 : 6
+  return 18
+}
+
 /**
  * Compute a candidate Moralis Streams signature.
  *
@@ -313,52 +328,88 @@ export async function webhookRoutes(app: FastifyInstance) {
             if (hw) {
               const hwChainId = fromDbChain(hw.chain) as GasChainId
               const sym = GAS_CHAINS[hwChainId]?.nativeSymbol ?? hw.chain
+              const isToken = event.asset !== 'native'
+              const { formatUnits } = await import('viem')
 
-              // Convert raw wei amount to native units (all EVM native tokens use 18 decimals)
-              let nativeAmount: number
-              try {
-                const { formatUnits } = await import('viem')
-                nativeAmount = parseFloat(formatUnits(BigInt(event.amount), 18))
-              } catch {
-                nativeAmount = parseFloat(event.amount)
-              }
+              if (isToken) {
+                // ── ERC20/BEP20 TOKEN deposit (e.g. USDT) ─────────────────────
+                // NEVER apply native 18-dec scaling or the native symbol here —
+                // that mislabels USDT as BNB/ETH (root cause of the "+0.16 BNB"
+                // bug). Use the token's real decimals (from Moralis, or a USDT
+                // fallback) and record it as a token entry with token-priced USD.
+                const decimals = resolveTokenDecimals(event.symbol, event.decimals, hwChainId)
+                let tokenAmount: number
+                try {
+                  tokenAmount = parseFloat(formatUnits(BigInt(event.amount), decimals))
+                } catch {
+                  tokenAmount = parseFloat(event.amount)
+                }
+                if (tokenAmount > 0) {
+                  const tokenSym = (event.symbol || 'TOKEN').toUpperCase()
+                  // USD value: stablecoins ≈ $1; other tokens unknown → 0 (priced manually).
+                  const usdAmount = isStablecoin(tokenSym) ? tokenAmount : 0
+                  // sourceKey includes the contract so a tx moving both native + token
+                  // produces two distinct, non-colliding entries.
+                  const sourceKey = `MORALIS:${hw.chain}:${event.txHash}:${event.toAddress.toLowerCase()}:${event.asset.toLowerCase()}`
 
-              if (nativeAmount > 0) {
-                // Idempotency key: chain + txHash + toAddress.  The same tx on the
-                // same chain can only produce one ledger entry.
-                const sourceKey = `MORALIS:${hw.chain}:${event.txHash}:${event.toAddress.toLowerCase()}`
+                  logger.info(
+                    { source: 'MORALIS_WEBHOOK', chain: hw.chain, txHash: event.txHash, address: event.toAddress, tokenSymbol: tokenSym, tokenAmount, decimals, sourceKey },
+                    'External hot-wallet TOKEN deposit detected via Moralis webhook',
+                  )
 
-                logger.info(
-                  {
-                    source:    'MORALIS_WEBHOOK',
-                    chain:     hw.chain,
-                    txHash:    event.txHash,
-                    address:   event.toAddress,
-                    symbol:    sym,
-                    amount:    nativeAmount,
+                  appendLedgerEntry({
+                    entryType:   'external_hot_wallet_deposit',
+                    chain:       hwChainId,
+                    nativeAmount: 0,           // a token transfer moves no native gas
+                    tokenSymbol:  tokenSym,
+                    tokenAmount,
+                    usdAmount,
+                    txHash:      event.txHash,
                     sourceKey,
-                  },
-                  'External hot-wallet deposit detected via Moralis webhook',
-                )
+                    ...(event.fromAddress ? { fromAddress: event.fromAddress } : {}),
+                    toAddress:   event.toAddress,
+                    notes:       `source:MORALIS_WEBHOOK chain:${hw.chain} token:${tokenSym} contract:${event.asset}`,
+                  }).catch((e) => logger.warn({ err: e, txHash: event.txHash }, 'Failed to write external_hot_wallet_deposit (token) ledger entry'))
+                  // No native balance changed → no poller baseline refresh needed.
+                }
+              } else {
+                // ── NATIVE deposit (BNB/ETH/etc. directly to hot wallet) ──────
+                let nativeAmount: number
+                try {
+                  nativeAmount = parseFloat(formatUnits(BigInt(event.amount), 18))
+                } catch {
+                  nativeAmount = parseFloat(event.amount)
+                }
 
-                appendLedgerEntry({
-                  entryType:   'external_hot_wallet_deposit',
-                  chain:       hwChainId,
-                  nativeAmount,
-                  txHash:      event.txHash,
-                  sourceKey,
-                  ...(event.fromAddress ? { fromAddress: event.fromAddress } : {}),
-                  toAddress:   event.toAddress,
-                  notes:       `source:MORALIS_WEBHOOK chain:${hw.chain} symbol:${sym}`,
-                }).catch((e) => logger.warn({ err: e, txHash: event.txHash }, 'Failed to write external_hot_wallet_deposit ledger entry'))
+                if (nativeAmount > 0) {
+                  // Idempotency key: chain + txHash + toAddress.  The same tx on the
+                  // same chain can only produce one ledger entry.
+                  const sourceKey = `MORALIS:${hw.chain}:${event.txHash}:${event.toAddress.toLowerCase()}`
 
-                // Refresh the balance-diff poller's Redis baseline so the next
-                // 2-minute tick sees diff=0 and doesn't create a duplicate entry.
-                // Key format matches gasHotWalletDepositPoller: chain:address:symbol
-                const pollerKey = `gas_hw_poll_balance:${hw.chain}:${hw.address.toLowerCase()}:${sym}`
-                getHotWalletBalance(hwChainId, hw.address)
-                  .then((bal) => redis.set(pollerKey, String(bal), 'EX', 3600))
-                  .catch(() => {}) // best-effort; poller self-corrects next tick
+                  logger.info(
+                    { source: 'MORALIS_WEBHOOK', chain: hw.chain, txHash: event.txHash, address: event.toAddress, symbol: sym, amount: nativeAmount, sourceKey },
+                    'External hot-wallet deposit detected via Moralis webhook',
+                  )
+
+                  appendLedgerEntry({
+                    entryType:   'external_hot_wallet_deposit',
+                    chain:       hwChainId,
+                    nativeAmount,
+                    txHash:      event.txHash,
+                    sourceKey,
+                    ...(event.fromAddress ? { fromAddress: event.fromAddress } : {}),
+                    toAddress:   event.toAddress,
+                    notes:       `source:MORALIS_WEBHOOK chain:${hw.chain} symbol:${sym}`,
+                  }).catch((e) => logger.warn({ err: e, txHash: event.txHash }, 'Failed to write external_hot_wallet_deposit ledger entry'))
+
+                  // Refresh the balance-diff poller's Redis baseline so the next
+                  // 2-minute tick sees diff=0 and doesn't create a duplicate entry.
+                  // Key format matches gasHotWalletDepositPoller: chain:address:symbol
+                  const pollerKey = `gas_hw_poll_balance:${hw.chain}:${hw.address.toLowerCase()}:${sym}`
+                  getHotWalletBalance(hwChainId, hw.address)
+                    .then((bal) => redis.set(pollerKey, String(bal), 'EX', 3600))
+                    .catch(() => {}) // best-effort; poller self-corrects next tick
+                }
               }
             }
           }
