@@ -220,17 +220,29 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     return
   }
 
-  const fromBlock = syncedBlock != null ? syncedBlock + 1n : currentBlock - BigInt(cfg.scanBlocks)
+  // Only scan up to a "safe tip" that is already minConfirmations deep. Scanning
+  // (and advancing the cursor) all the way to the chain head would skip a payment
+  // sitting in the last few blocks (confirmations < threshold) AND move the cursor
+  // past it, so it would never be re-scanned once confirmed. Capping the ceiling
+  // here guarantees every block we attribute is already final and the cursor never
+  // jumps a not-yet-confirmed payment.
+  const safeToBlock = currentBlock - BigInt(cfg.minConfirmations)
+  if (safeToBlock <= 0n) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0, currentBlock, syncedBlock: syncedBlock ?? 0n })
+    return
+  }
 
-  // Nothing new since last run.
-  if (fromBlock > currentBlock) {
-    await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0, currentBlock, syncedBlock: syncedBlock ?? currentBlock })
+  const fromBlock = syncedBlock != null ? syncedBlock + 1n : safeToBlock - BigInt(cfg.scanBlocks)
+
+  // Nothing new (confirmed) since last run.
+  if (fromBlock > safeToBlock) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0, currentBlock, syncedBlock: syncedBlock ?? safeToBlock })
     return
   }
 
   // Cap the total window so a long downtime doesn't try to replay the whole chain.
   const maxRange = BigInt(Math.max(cfg.scanBlocks, 500))
-  let effectiveFrom = fromBlock < currentBlock - maxRange ? currentBlock - maxRange : fromBlock
+  const effectiveFrom = fromBlock < safeToBlock - maxRange ? safeToBlock - maxRange : fromBlock
 
   // getLogs over a small window, trying each RPC URL in turn. Public BSC nodes
   // reject wide ranges, so we NEVER request more than MAX_LOG_SCAN_BLOCKS at once
@@ -266,8 +278,8 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
 
   let totalFound = 0
   let chunkStart = effectiveFrom
-  while (chunkStart <= currentBlock) {
-    const chunkEnd = chunkStart + CHUNK - 1n > currentBlock ? currentBlock : chunkStart + CHUNK - 1n
+  while (chunkStart <= safeToBlock) {
+    const chunkEnd = chunkStart + CHUNK - 1n > safeToBlock ? safeToBlock : chunkStart + CHUNK - 1n
     let logs: Awaited<ReturnType<typeof getLogsWithFallback>>
     try {
       logs = await getLogsWithFallback(chunkStart, chunkEnd)
@@ -318,10 +330,10 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     chunkStart = chunkEnd + 1n
   }
 
-  await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: totalFound, currentBlock, syncedBlock: currentBlock })
+  await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: totalFound, currentBlock, syncedBlock: safeToBlock })
 
   if (totalFound > 0) {
-    logger.info({ network: cfg.paymentNetwork, count: totalFound, from: effectiveFrom.toString(), to: currentBlock.toString(), rpc: rpcUrls[activeUrlIdx] }, 'gasPaymentPoller: found Transfer events')
+    logger.info({ network: cfg.paymentNetwork, count: totalFound, from: effectiveFrom.toString(), to: safeToBlock.toString(), rpc: rpcUrls[activeUrlIdx] }, 'gasPaymentPoller: found Transfer events')
   }
 }
 
