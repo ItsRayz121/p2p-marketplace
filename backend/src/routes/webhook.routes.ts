@@ -96,6 +96,18 @@ async function tryMatchGasPaymentFromWebhook(event: NormalizedDepositEvent): Pro
   }
   if (!(incoming > 0)) return false
 
+  // Confirmation gate — CRITICAL. Moralis fires the stream twice per tx:
+  //   confirmed:false → normalizeMoralisEvent stamps confirmations=0
+  //   confirmed:true  → stamps confirmations=chain.minConfirmations (>=1)
+  // We must NOT match/release gas on the unconfirmed sighting (a reorg could
+  // orphan it). It IS a gas payment to our deposit address, so return true to
+  // suppress the external-deposit fallback, but defer attribution to the
+  // confirmed event (or the RPC poller, which has its own confirmation gate).
+  if (event.confirmations < 1) {
+    logger.info({ txHash: event.txHash, paymentNetwork }, 'Webhook: USDT gas payment seen unconfirmed — deferring release until confirmed')
+    return true
+  }
+
   const GRACE_MS = 15 * 60 * 1000
   await matchAndDeliverGasPayment({
     source: 'webhook',
