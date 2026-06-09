@@ -1,6 +1,6 @@
 import type { Job } from 'bullmq'
 import { db } from '../lib/prisma'
-import { deliverGas } from '../lib/gas/gas.delivery'
+import { deliverGas, describeDeliveryError } from '../lib/gas/gas.delivery'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import { queues } from '../queues/definitions'
@@ -106,13 +106,17 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
   } catch (err) {
     const attemptNumber = job.attemptsMade + 1
     const maxAttempts = job.opts.attempts ?? 3
-    const errMsg = err instanceof Error ? err.message : String(err)
+    const rawErrMsg = err instanceof Error ? err.message : String(err)
     const errCode = (err as { code?: string }).code
+    // Normalize the raw provider/RPC error (e.g. "Request failed with status code
+    // 500") into an actionable reason + recommended action for the admin.
+    const normalized = describeDeliveryError(order.chain, err)
+    const errMsg = normalized.message
 
-    logger.error({ orderId, attempt: attemptNumber, err: errMsg, chain: order.chain }, 'Gas fee delivery failed')
+    logger.error({ orderId, attempt: attemptNumber, code: normalized.code, err: rawErrMsg, chain: order.chain }, 'Gas fee delivery failed')
     await recordGasAudit({ orderId, ...(order.paymentTxHash ? { txHash: order.paymentTxHash } : {}) }, {
       source: 'worker', event: 'delivery_failed', expectedChain: order.chain,
-      reason: errCode ?? 'delivery_error', detail: `attempt ${attemptNumber}/${maxAttempts}: ${errMsg}`,
+      reason: normalized.code, detail: `attempt ${attemptNumber}/${maxAttempts}: ${normalized.reason}. Action: ${normalized.action}. (raw: ${rawErrMsg.slice(0, 200)})`,
     })
 
     // Insufficient hot wallet balance — don't burn retries on a tx that can't succeed.
