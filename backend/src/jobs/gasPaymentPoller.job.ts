@@ -49,7 +49,10 @@ const APTOS_COLD_START_LOOKBACK_MS = 30 * 60 * 1000
 interface NetworkConfig {
   paymentNetwork: string
   viemChain: typeof bsc | typeof mainnet
-  rpcUrl: () => string
+  // Ordered list of RPC URLs to try (primary first). getLogs/getBlockNumber
+  // fall through to the next on failure so one rate-limited node can't stall
+  // detection. The first that allows the small getLogs range wins.
+  rpcUrls: () => string[]
   usdtContract: `0x${string}`
   usdtDecimals: number
   depositAddressDbKey: string
@@ -62,11 +65,25 @@ interface NetworkConfig {
   minConfirmations: number
 }
 
+// Dedup + drop falsy. Keeps the operator's configured order.
+function uniqUrls(...urls: Array<string | undefined>): string[] {
+  return [...new Set(urls.filter((u): u is string => !!u))]
+}
+
 const NETWORK_CONFIGS: NetworkConfig[] = [
   {
     paymentNetwork:      'BEP20',
     viemChain:           bsc,
-    rpcUrl:              () => env.BSC_RPC_URL,
+    // bsc-dataseed.binance.org rejects getLogs ranges ("Request exceeds defined
+    // limit"). Prefer operator-configured endpoints, then publicnode (allows
+    // getLogs), and keep BSC_RPC_URL last as a getBlockNumber fallback.
+    rpcUrls:             () => uniqUrls(
+      env.BSC_RPC_URL_PRIMARY,
+      env.BSC_RPC_URL_FALLBACK,
+      'https://bsc-rpc.publicnode.com',
+      'https://bsc-dataseed1.ninicoin.io',
+      env.BSC_RPC_URL,
+    ),
     usdtContract:        '0x55d398326f99059fF775485246999027B3197955',
     usdtDecimals:        18,  // Binance-Peg USDT on BSC uses 18 decimals
     depositAddressDbKey: 'gas_usdt_bep20_address',
@@ -77,7 +94,11 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
   {
     paymentNetwork:      'ERC20',
     viemChain:           mainnet,
-    rpcUrl:              () => env.ETHEREUM_RPC_URL,
+    rpcUrls:             () => uniqUrls(
+      env.ETHEREUM_RPC_URL,
+      'https://ethereum-rpc.publicnode.com',
+      'https://rpc.ankr.com/eth',
+    ),
     usdtContract:        '0xdAC17F958D2ee523a2206206994597C13D831ec7',
     usdtDecimals:        6,
     depositAddressDbKey: 'gas_usdt_erc20_address',
@@ -153,16 +174,30 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
 
   // Determine block range: last-checked block → current block.
   const redisKey = `gas_poller_last_block:${cfg.paymentNetwork}`
-  let client
-  let currentBlock: bigint
-  try {
-    client = createPublicClient({
-      chain: cfg.viemChain,
-      transport: http(cfg.rpcUrl(), { timeout: 10_000 }),
-    })
-    currentBlock = await client.getBlockNumber()
-  } catch (err) {
-    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `RPC unreachable: ${(err as Error)?.message ?? 'getBlockNumber failed'}` })
+  const rpcUrls = cfg.rpcUrls()
+  if (rpcUrls.length === 0) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, configured: false, error: 'No RPC URL configured' })
+    return
+  }
+
+  // Build a client over the first RPC URL that answers getBlockNumber. Returns
+  // the client + which URL it used so getLogs can start there and fall through.
+  let client: ReturnType<typeof createPublicClient> | undefined
+  let activeUrlIdx = 0
+  let currentBlock: bigint | undefined
+  for (let i = 0; i < rpcUrls.length; i++) {
+    try {
+      const c = createPublicClient({ chain: cfg.viemChain, transport: http(rpcUrls[i], { timeout: 10_000 }) })
+      currentBlock = await c.getBlockNumber()
+      client = c
+      activeUrlIdx = i
+      break
+    } catch {
+      /* try next URL */
+    }
+  }
+  if (!client || currentBlock === undefined) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `All ${rpcUrls.length} RPC endpoint(s) unreachable (getBlockNumber failed)` })
     return
   }
 
@@ -193,76 +228,100 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     return
   }
 
-  // Cap range to avoid oversized getLogs calls on first run or after a long gap.
+  // Cap the total window so a long downtime doesn't try to replay the whole chain.
   const maxRange = BigInt(Math.max(cfg.scanBlocks, 500))
-  const effectiveFrom = fromBlock < currentBlock - maxRange
-    ? currentBlock - maxRange
-    : fromBlock
+  let effectiveFrom = fromBlock < currentBlock - maxRange ? currentBlock - maxRange : fromBlock
 
-  let logs
-  try {
-    logs = await client.getLogs({
-      address: cfg.usdtContract,
-      event:   TRANSFER_EVENT,
-      args:    { to: depositAddress as `0x${string}` },
-      fromBlock: effectiveFrom,
-      toBlock:   currentBlock,
-    })
-  } catch (err) {
-    logger.warn({ err, network: cfg.paymentNetwork, effectiveFrom: effectiveFrom.toString(), currentBlock: currentBlock.toString() }, 'gasPaymentPoller: getLogs failed — will retry next tick')
-    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `getLogs failed: ${(err as Error)?.message ?? 'unknown'}`, currentBlock, ...(syncedBlock != null ? { syncedBlock } : {}) })
-    return  // don't advance the cursor so we retry same range
+  // getLogs over a small window, trying each RPC URL in turn. Public BSC nodes
+  // reject wide ranges, so we NEVER request more than MAX_LOG_SCAN_BLOCKS at once
+  // and page through the window in chunks, advancing the cursor per chunk so a
+  // mid-scan failure preserves progress (no re-scan from scratch next tick).
+  const CHUNK = BigInt(Math.max(1, env.MAX_LOG_SCAN_BLOCKS))
+
+  async function getLogsWithFallback(from: bigint, to: bigint) {
+    let lastErr: unknown
+    for (let i = activeUrlIdx; i < rpcUrls.length + activeUrlIdx; i++) {
+      const idx = i % rpcUrls.length
+      try {
+        const c = idx === activeUrlIdx
+          ? client!
+          : createPublicClient({ chain: cfg.viemChain, transport: http(rpcUrls[idx], { timeout: 10_000 }) })
+        const result = await c.getLogs({
+          address: cfg.usdtContract,
+          event:   TRANSFER_EVENT,
+          args:    { to: depositAddress as `0x${string}` },
+          fromBlock: from,
+          toBlock:   to,
+        })
+        // Promote a working fallback so subsequent chunks start there.
+        if (idx !== activeUrlIdx) { activeUrlIdx = idx; client = c }
+        return result
+      } catch (err) {
+        lastErr = err
+        logger.warn({ network: cfg.paymentNetwork, rpc: rpcUrls[idx], from: from.toString(), to: to.toString(), err: (err as Error)?.message }, 'gasPaymentPoller: getLogs failed on RPC — trying next')
+      }
+    }
+    throw lastErr ?? new Error('getLogs failed on all RPC endpoints')
   }
 
-  // Advance cursor even when logs is empty so we don't re-scan old blocks.
-  await redis.set(redisKey, currentBlock.toString())
-  await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: logs.length, currentBlock, syncedBlock: currentBlock })
+  let totalFound = 0
+  let chunkStart = effectiveFrom
+  while (chunkStart <= currentBlock) {
+    const chunkEnd = chunkStart + CHUNK - 1n > currentBlock ? currentBlock : chunkStart + CHUNK - 1n
+    let logs: Awaited<ReturnType<typeof getLogsWithFallback>>
+    try {
+      logs = await getLogsWithFallback(chunkStart, chunkEnd)
+    } catch (err) {
+      // All RPCs failed for this chunk — record a readable error and STOP without
+      // advancing past the failed chunk so the next tick resumes from here.
+      logger.warn({ err, network: cfg.paymentNetwork, chunkStart: chunkStart.toString(), chunkEnd: chunkEnd.toString() }, 'gasPaymentPoller: getLogs failed on all RPCs for chunk — will retry next tick')
+      await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `getLogs failed (range ${chunkStart}-${chunkEnd}): ${(err as Error)?.message ?? 'all RPC endpoints rejected the range'}`, currentBlock, syncedBlock: chunkStart > effectiveFrom ? chunkStart - 1n : (syncedBlock ?? effectiveFrom) })
+      return
+    }
 
-  if (logs.length === 0) return
+    totalFound += logs.length
+    for (const log of logs) {
+      const txHash = log.transactionHash
+      if (!txHash) continue
+      const rawValue = log.args.value
+      if (rawValue === undefined || rawValue === null) continue
+      const confirmations = log.blockNumber != null ? Number(currentBlock) - Number(log.blockNumber) : 0
+      if (confirmations < cfg.minConfirmations) continue
+      const incoming = Number(rawValue) / Math.pow(10, cfg.usdtDecimals)
+      if (!(incoming > 0)) continue
+      const senderAddress = log.args.from ?? undefined
+      const logBlockNumber = log.blockNumber
+      await matchAndDeliverGasPayment({
+        source: 'poller',
+        paymentNetwork: cfg.paymentNetwork,
+        txHash,
+        incoming,
+        confirmations,
+        ...(senderAddress !== undefined ? { senderAddress } : {}),
+        depositAddress,
+        graceCutoff,
+        getBlockTimestampMs: async () => {
+          if (logBlockNumber == null) return null
+          try {
+            const block = await client!.getBlock({ blockNumber: logBlockNumber })
+            return Number(block.timestamp) * 1000
+          } catch (err) {
+            logger.warn({ err, txHash }, 'gasPaymentPoller: could not fetch block timestamp for grace check')
+            return null
+          }
+        },
+      })
+    }
 
-  logger.info(
-    { network: cfg.paymentNetwork, count: logs.length, from: effectiveFrom.toString(), to: currentBlock.toString() },
-    'gasPaymentPoller: found Transfer events',
-  )
+    // Advance the durable cursor per successful chunk.
+    await redis.set(redisKey, chunkEnd.toString())
+    chunkStart = chunkEnd + 1n
+  }
 
-  for (const log of logs) {
-    const txHash = log.transactionHash
-    if (!txHash) continue
+  await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: totalFound, currentBlock, syncedBlock: currentBlock })
 
-    const rawValue = log.args.value
-    if (rawValue === undefined || rawValue === null) continue
-
-    // Confirmation check — only act on payments with enough block depth.
-    const confirmations = log.blockNumber != null
-      ? Number(currentBlock) - Number(log.blockNumber)
-      : 0
-    if (confirmations < cfg.minConfirmations) continue
-
-    const incoming = Number(rawValue) / Math.pow(10, cfg.usdtDecimals)
-    if (!(incoming > 0)) continue
-
-    const senderAddress = log.args.from ?? undefined
-
-    await matchAndDeliverGasPayment({
-      source: 'poller',
-      paymentNetwork: cfg.paymentNetwork,
-      txHash,
-      incoming,
-      confirmations,
-      ...(senderAddress !== undefined ? { senderAddress } : {}),
-      depositAddress,
-      graceCutoff,
-      getBlockTimestampMs: async () => {
-        if (log.blockNumber == null) return null
-        try {
-          const block = await client.getBlock({ blockNumber: log.blockNumber })
-          return Number(block.timestamp) * 1000
-        } catch (err) {
-          logger.warn({ err, txHash }, 'gasPaymentPoller: could not fetch block timestamp for grace check')
-          return null
-        }
-      },
-    })
+  if (totalFound > 0) {
+    logger.info({ network: cfg.paymentNetwork, count: totalFound, from: effectiveFrom.toString(), to: currentBlock.toString(), rpc: rpcUrls[activeUrlIdx] }, 'gasPaymentPoller: found Transfer events')
   }
 }
 

@@ -240,9 +240,10 @@ export function startWorkers() {
     .catch((err) => logger.error({ err }, 'Failed to schedule CTM bid expiry job'))
 
   // Gas payment poller — fallback RPC-based detection when Moralis misses a webhook.
-  // Runs every 30 s, skips quickly when no pending orders exist.
+  // Cadence is operator-tunable via POLLER_INTERVAL_SECONDS (default 60s); it
+  // skips quickly when no pending orders exist.
   queues.gasPaymentPoller
-    .add('poll', {}, { repeat: { every: 30_000 }, jobId: 'gas-payment-poller-repeatable' })
+    .add('poll', {}, { repeat: { every: env.POLLER_INTERVAL_SECONDS * 1000 }, jobId: 'gas-payment-poller-repeatable' })
     .catch((err) => logger.error({ err }, 'Failed to schedule gas payment poller'))
 
   createWorker(QUEUE_NAMES.GAS_PAYMENT_POLLER, async () => { await runGasPaymentPoller() }, { max: 1, duration: 60_000 })

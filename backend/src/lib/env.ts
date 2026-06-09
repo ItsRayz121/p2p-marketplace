@@ -67,6 +67,18 @@ const envSchema = z.object({
   // for production use.
   ETHEREUM_RPC_URL: z.string().url().default('https://eth.llamarpc.com'),
   BSC_RPC_URL: z.string().url().default('https://bsc-dataseed.binance.org'),
+  // Optional dedicated BSC endpoints for the gas payment poller's getLogs scan.
+  // BSC public RPCs (bsc-dataseed.binance.org) reject wide block ranges with
+  // "Request exceeds defined limit" — point these at a provider that allows
+  // getLogs over a small range (any reasonable node does at ≤50 blocks).
+  BSC_RPC_URL_PRIMARY: z.string().url().optional(),
+  BSC_RPC_URL_FALLBACK: z.string().url().optional(),
+  // Max blocks per getLogs request. Kept small so public RPCs never reject the
+  // range; the poller pages through larger gaps in chunks of this size.
+  MAX_LOG_SCAN_BLOCKS: z.coerce.number().int().positive().max(2000).default(50),
+  // Gas payment poller interval (seconds) — surfaced in admin; the cron registers
+  // the job, this documents the cadence for health displays.
+  POLLER_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
   POLYGON_RPC_URL: z.string().url().default('https://polygon-bor-rpc.publicnode.com'),
   ARBITRUM_RPC_URL: z.string().url().default('https://arb1.arbitrum.io/rpc'),
   OPTIMISM_RPC_URL: z.string().url().default('https://mainnet.optimism.io'),
