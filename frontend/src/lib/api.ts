@@ -2026,6 +2026,15 @@ export const adminApi = {
     }>('/admin/notifications' + buildQs(params as Record<string, string | number | undefined>)),
   getAdminUnreadCount: (category?: string) =>
     apiRequest<{ count: number }>('/admin/notifications/unread-count' + (category ? `?category=${category}` : '')),
+  getAdminNavCounts: () =>
+    apiRequest<{
+      kyc: number
+      appeals: number
+      disputes: number
+      ctmDisputes: number
+      withdrawals: number
+      gasRequests: number
+    }>('/admin/nav-counts'),
   markAdminNotifRead: (id: string) =>
     apiRequest<void>(`/admin/notifications/${id}/read`, { method: 'PATCH' }),
   markAllAdminNotifsRead: (category?: string) =>

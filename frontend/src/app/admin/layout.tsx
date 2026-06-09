@@ -5,8 +5,12 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
 import { authApi, adminApi, type AdminNotif, type AdminNotifCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import CommandPalette, { type PaletteCommand } from './CommandPalette'
 
 type AdminRole = 'admin' | 'super_admin' | 'kyc_reviewer'
+
+type NavCountKey = 'kyc' | 'appeals' | 'disputes' | 'ctmDisputes' | 'withdrawals' | 'gasRequests'
+type NavCounts = Record<NavCountKey, number>
 
 interface NavItem {
   label: string
@@ -15,6 +19,8 @@ interface NavItem {
   icon: React.ReactNode
   /** Hidden from the sidebar but route + code kept intact (re-enable by removing). */
   hidden?: boolean
+  /** Key into the live nav-counts payload — renders a pending-count badge. */
+  badgeKey?: NavCountKey
 }
 
 interface NavGroup {
@@ -112,6 +118,7 @@ const navGroups: NavGroup[] = [
         label: 'KYC Queue',
         href: '/admin/kyc',
         roles: ['admin', 'super_admin', 'kyc_reviewer'],
+        badgeKey: 'kyc',
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2" />
@@ -154,6 +161,7 @@ const navGroups: NavGroup[] = [
         label: 'Appeals',
         href: '/admin/appeals',
         roles: ['admin', 'super_admin'],
+        badgeKey: 'appeals',
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
@@ -164,6 +172,7 @@ const navGroups: NavGroup[] = [
         label: 'Disputes',
         href: '/admin/disputes',
         roles: ['admin', 'super_admin'],
+        badgeKey: 'disputes',
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -174,6 +183,7 @@ const navGroups: NavGroup[] = [
         label: 'CTM Disputes',
         href: '/admin/ctm/disputes',
         roles: ['admin', 'super_admin'],
+        badgeKey: 'ctmDisputes',
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -204,7 +214,7 @@ const navGroups: NavGroup[] = [
   },
   {
     id: 'trading',
-    label: 'Trading',
+    label: 'Trading & Markets',
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
@@ -218,6 +228,47 @@ const navGroups: NavGroup[] = [
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+        ),
+      },
+      {
+        label: 'CTM Tokens',
+        href: '/admin/ctm/tokens',
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+      },
+      {
+        label: 'CTM Queue',
+        href: '/admin/ctm/tokens/queue',
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
+        ),
+      },
+      {
+        label: 'CTM Merchants',
+        href: '/admin/ctm/merchants',
+        roles: ['admin', 'super_admin'],
+        hidden: true, // Phase 3: merchant role retired from platform direction; route kept for re-enable
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+          </svg>
+        ),
+      },
+      {
+        label: 'CTM Trades',
+        href: '/admin/ctm/trades',
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
           </svg>
         ),
       },
@@ -266,6 +317,7 @@ const navGroups: NavGroup[] = [
         label: 'Withdrawals',
         href: '/admin/withdrawals',
         roles: ['admin', 'super_admin'],
+        badgeKey: 'withdrawals',
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -328,6 +380,7 @@ const navGroups: NavGroup[] = [
         label: 'Custom Requests',
         href: '/admin/gas/requests',
         roles: ['admin', 'super_admin'],
+        badgeKey: 'gasRequests',
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
@@ -344,61 +397,6 @@ const navGroups: NavGroup[] = [
           </svg>
         ),
       },
-    ],
-  },
-  {
-    id: 'ctm',
-    label: 'CTM',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    items: [
-      {
-        label: 'CTM Tokens',
-        href: '/admin/ctm/tokens',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'CTM Queue',
-        href: '/admin/ctm/tokens/queue',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-          </svg>
-        ),
-      },
-      {
-        label: 'CTM Merchants',
-        href: '/admin/ctm/merchants',
-        roles: ['admin', 'super_admin'],
-        hidden: true, // Phase 3: merchant role retired from platform direction; route kept for re-enable
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'CTM Trades',
-        href: '/admin/ctm/trades',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-          </svg>
-        ),
-      },
-      // CTM Proofs queue hidden from sidebar — proofs are now reviewed inline
-      // within CTM trade details and the user profile history. Route kept at
-      // /admin/ctm/proofs for any deep links / existing logic.
     ],
   },
   {
@@ -452,6 +450,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { user, isLoading } = useAuthStore()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // Global ⌘K / Ctrl+K to open the command palette.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // ── Admin notification bell ────────────────────────────────────────────────
   const [unreadCount, setUnreadCount]   = useState(0)
@@ -467,6 +478,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     } catch { /* ignore — non-critical */ }
   }, [])
 
+  // ── Sidebar queue badges (live pending counts) ─────────────────────────────
+  const [navCounts, setNavCounts] = useState<NavCounts | null>(null)
+
+  const fetchNavCounts = useCallback(async () => {
+    try {
+      setNavCounts(await adminApi.getAdminNavCounts())
+    } catch { /* ignore — non-critical */ }
+  }, [])
+
   const fetchBellNotifs = useCallback(async () => {
     setBellLoading(true)
     try {
@@ -478,12 +498,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }, [])
 
-  // Poll unread count every 30 s
+  // Poll unread count + queue badge counts every 30 s
   useEffect(() => {
     void fetchUnreadCount()
-    const id = setInterval(() => { void fetchUnreadCount() }, 30_000)
+    void fetchNavCounts()
+    const id = setInterval(() => {
+      void fetchUnreadCount()
+      void fetchNavCounts()
+    }, 30_000)
     return () => clearInterval(id)
-  }, [fetchUnreadCount])
+  }, [fetchUnreadCount, fetchNavCounts])
 
   // Open bell dropdown
   const handleBellClick = () => {
@@ -563,6 +587,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const allVisibleItems = visibleGroups.flatMap((g) => g.items)
 
+  const paletteCommands: PaletteCommand[] = visibleGroups.flatMap((g) =>
+    g.items.map((it) => ({
+      id: it.href,
+      label: it.label,
+      group: g.label,
+      href: it.href,
+      icon: it.icon,
+    })),
+  )
+
   // H-10: per-route role guard — block direct URL navigation to pages the
   // user's role doesn't permit.
   const allNavItems = navGroups.flatMap((g) => g.items)
@@ -632,7 +666,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {visibleGroups.map((group) => (
+        {visibleGroups.map((group) => {
+          const groupOpen = isGroupOpen(group.id, group.items)
+          const groupBadge = group.items.reduce(
+            (sum, it) => sum + (it.badgeKey ? (navCounts?.[it.badgeKey] ?? 0) : 0),
+            0,
+          )
+          return (
           <div key={group.id}>
             <button
               onClick={() => toggleGroup(group.id)}
@@ -640,10 +680,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             >
               <span className="text-gray-500 flex-shrink-0">{group.icon}</span>
               <span className="flex-1 text-left">{group.label}</span>
+              {!groupOpen && groupBadge > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+                  {groupBadge > 99 ? '99+' : groupBadge}
+                </span>
+              )}
               <svg
                 className={cn(
                   'w-3 h-3 flex-shrink-0 transition-transform duration-200',
-                  isGroupOpen(group.id, group.items) ? 'rotate-180' : '',
+                  groupOpen ? 'rotate-180' : '',
                 )}
                 fill="none"
                 stroke="currentColor"
@@ -656,32 +701,47 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div
               className={cn(
                 'grid transition-all duration-200 ease-in-out',
-                isGroupOpen(group.id, group.items) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+                groupOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
               )}
             >
               <div className="overflow-hidden">
                 <div className="mt-0.5 pb-1 space-y-0.5 pl-1.5">
-                  {group.items.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileOpen(false)}
-                      className={cn(
-                        'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                        isActive(item.href)
-                          ? 'bg-primary text-white'
-                          : 'text-gray-300 hover:bg-gray-800 hover:text-white',
-                      )}
-                    >
-                      {item.icon}
-                      {item.label}
-                    </Link>
-                  ))}
+                  {group.items.map((item) => {
+                    const badge = item.badgeKey ? navCounts?.[item.badgeKey] ?? 0 : 0
+                    const active = isActive(item.href)
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                          active
+                            ? 'bg-primary text-white'
+                            : 'text-gray-300 hover:bg-gray-800 hover:text-white',
+                        )}
+                      >
+                        {item.icon}
+                        <span className="flex-1">{item.label}</span>
+                        {badge > 0 && (
+                          <span
+                            className={cn(
+                              'min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-bold leading-none',
+                              active ? 'bg-white/25 text-white' : 'bg-red-500 text-white',
+                            )}
+                          >
+                            {badge > 99 ? '99+' : badge}
+                          </span>
+                        )}
+                      </Link>
+                    )
+                  })}
                 </div>
               </div>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="px-3 py-4 border-t border-gray-700">
@@ -708,6 +768,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="flex h-screen bg-surface overflow-hidden">
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={paletteCommands} />
+
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 flex-col bg-gray-900 flex-shrink-0">
         {Sidebar}
@@ -736,6 +798,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </svg>
           </button>
           <span className="text-text-primary font-semibold text-base flex-1">Admin Panel</span>
+
+          {/* Command palette trigger */}
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:text-text-secondary hover:bg-surface-alt transition-colors"
+            aria-label="Open command palette"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span className="hidden md:block text-xs">Search…</span>
+            <kbd className="hidden md:block text-[10px] border border-border rounded px-1 py-0.5 leading-none">⌘K</kbd>
+          </button>
+
           <span className="hidden sm:block text-text-muted text-sm">{user?.username || user?.email}</span>
 
           {/* Notification bell */}

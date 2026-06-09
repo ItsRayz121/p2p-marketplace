@@ -75,6 +75,14 @@ export default function UsersPage() {
     }
   }, [page, search, roleFilter, kycFilter])
 
+  // Seed the search box from a ?search= deep link (e.g. from the ⌘K palette).
+  // Read from window.location to avoid the useSearchParams Suspense requirement.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('search')
+    if (q) { setSearchInput(q); setSearch(q) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   usePolling(fetchUsers, 60_000)
 
   // Debounced live search: re-fetch shortly after the admin stops typing.

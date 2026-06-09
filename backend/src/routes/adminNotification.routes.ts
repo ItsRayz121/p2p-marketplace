@@ -52,6 +52,27 @@ export async function adminNotificationRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { count } })
   })
 
+  // GET /admin/nav-counts — live pending counts for sidebar queue badges.
+  // kyc_reviewer is allowed so the KYC Queue badge shows for that role too.
+  app.get(
+    '/admin/nav-counts',
+    { preHandler: [authenticate, requireRole('admin', 'super_admin', 'kyc_reviewer')] },
+    async (_req, reply) => {
+      const [kyc, appeals, disputes, ctmDisputes, withdrawals, gasRequests] = await Promise.all([
+        db.kycSubmission.count({ where: { status: 'pending' } }),
+        db.appeal.count({ where: { status: { in: ['pending', 'more_info_requested'] } } }),
+        db.dispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
+        db.ctmDispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
+        db.withdrawal.count({ where: { status: { in: ['pending', 'first_approved'] } } }),
+        db.gasCustomRequest.count({ where: { status: 'pending' } }),
+      ])
+      return reply.send({
+        success: true,
+        data: { kyc, appeals, disputes, ctmDisputes, withdrawals, gasRequests },
+      })
+    },
+  )
+
   // PATCH /admin/notifications/:id/read
   app.patch('/admin/notifications/:id/read', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
