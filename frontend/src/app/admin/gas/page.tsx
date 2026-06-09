@@ -639,6 +639,65 @@ function PollerHealthCard() {
   )
 }
 
+interface ChainHealth {
+  chain: string; name: string; nativeSymbol: string; networkLabel: string
+  status: 'green' | 'yellow' | 'red'; reachable: boolean; blockNumber: number | null
+  latencyMs: number; isStale: boolean; error: string | null; deliveryImplemented: boolean
+}
+
+// Live RPC health for every supported gas chain (see GET /admin/gas/chain-health).
+function ChainHealthCard() {
+  const [data, setData] = useState<{ chains: ChainHealth[]; summary: { green: number; yellow: number; red: number } } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { const res = await adminApi.getChainHealth(); setData({ chains: res.chains, summary: res.summary }); setErr(false) }
+    catch { setErr(true) }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load(); const id = setInterval(load, 120_000); return () => clearInterval(id) }, [load])
+
+  if (err && !data) return null
+
+  return (
+    <div className="border border-border rounded-xl p-4 bg-surface">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h2 className="text-sm font-semibold text-text-primary">Chain RPC Health</h2>
+        <div className="flex items-center gap-3">
+          {data && (
+            <span className="text-[11px] text-text-muted flex items-center gap-2">
+              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-success" /> {data.summary.green}</span>
+              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning" /> {data.summary.yellow}</span>
+              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-danger" /> {data.summary.red}</span>
+            </span>
+          )}
+          <Button size="sm" variant="ghost" onClick={load} loading={loading}>Refresh</Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        {(data?.chains ?? []).map((c) => (
+          <div key={c.chain} className="rounded-lg border border-border p-2.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-sm font-medium text-text-primary">{c.name}</span>
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.status === 'green' ? 'bg-success' : c.status === 'yellow' ? 'bg-warning' : 'bg-danger'}`} title={c.status} />
+            </div>
+            <div className="text-[10px] text-text-muted mt-0.5 space-y-0.5">
+              <p>{c.networkLabel} · {c.nativeSymbol}</p>
+              {c.reachable ? (
+                <p>block {c.blockNumber?.toLocaleString() ?? '—'} · {c.latencyMs}ms{c.isStale ? ' · stale' : ''}</p>
+              ) : (
+                <p className="text-danger truncate" title={c.error ?? undefined}>unreachable{c.error ? `: ${c.error}` : ''}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function GasAdminPage() {
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin = user?.role === 'super_admin'
@@ -947,6 +1006,9 @@ export default function GasAdminPage() {
 
       {/* ── Payment Detection Health ─────────────────────────────────────────── */}
       <PollerHealthCard />
+
+      {/* ── Chain RPC Health (all supported chains) ──────────────────────────── */}
+      <ChainHealthCard />
 
       {/* ── Alerts ───────────────────────────────────────────────────────────── */}
       {actionSuccess && (

@@ -26,6 +26,11 @@ const envSchema = z.object({
     { message: 'FRONTEND_URL must use HTTPS in production' },
   ),
 
+  // Optional cookie domain so the refresh-token cookie can be first-party across
+  // subdomains (e.g. ".rupchain.com" → shared by rupchain.com + api.rupchain.com).
+  // Leave unset to keep host-only cookies (current behaviour).
+  COOKIE_DOMAIN: z.string().optional(),
+
   // Cloudinary (file storage — KYC docs, payment proof screenshots)
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),

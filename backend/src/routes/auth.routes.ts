@@ -233,6 +233,7 @@ export async function authRoutes(app: FastifyInstance) {
       path: '/',
       sameSite: COOKIE_OPTIONS.sameSite,
       secure: COOKIE_OPTIONS.secure,
+      ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
     })
     return reply.send({ success: true, data: { message: 'Logged out successfully.' } })
   })

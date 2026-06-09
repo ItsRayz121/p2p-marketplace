@@ -106,6 +106,10 @@ const COOKIE_OPTIONS = {
   secure: env.NODE_ENV === 'production',
   path: '/',
   maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+  // When COOKIE_DOMAIN is set (e.g. ".rupchain.com"), the refresh cookie becomes
+  // first-party across subdomains — avoids third-party-cookie blocking between a
+  // Vercel frontend and a Railway backend on the same parent domain.
+  ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

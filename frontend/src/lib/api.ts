@@ -1807,6 +1807,12 @@ export const adminApi = {
       wallets: Array<{ chain: string; symbol: string; hotNative: number; hotUsd: number; treasuryNative: number; treasuryUsd: number; usdtUsd: number; error: string | null }>
       fetchedAt: string
     }>('/admin/treasury/overview'),
+  getChainHealth: () =>
+    apiRequest<{
+      chains: Array<{ chain: string; name: string; nativeSymbol: string; networkLabel: string; status: 'green' | 'yellow' | 'red'; reachable: boolean; blockNumber: number | null; latencyMs: number; isStale: boolean; error: string | null; deliveryImplemented: boolean }>
+      summary: { green: number; yellow: number; red: number }
+      fetchedAt: string
+    }>('/admin/gas/chain-health'),
   verifyWalletActivity: (id: string) =>
     apiRequest<{
       status: string

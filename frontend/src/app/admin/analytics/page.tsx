@@ -345,7 +345,34 @@ export default function AnalyticsPage() {
                 </p>
                 {badgeBars.length > 0 ? (
                   <>
-                    <VerticalBarChart bars={badgeBars} />
+                    <div className="grid md:grid-cols-2 gap-6 items-center">
+                      <VerticalBarChart bars={badgeBars} />
+                      {/* Pie: distribution share by tier (conic-gradient, no chart lib) */}
+                      {(() => {
+                        const BADGE_HEX: Record<string, string> = { Bronze: '#b45309', Silver: '#9ca3af', Gold: '#eab308', Diamond: '#38bdf8', Elite: '#a855f7' }
+                        const segs = badgeBars.filter((b) => b.value > 0)
+                        if (!segs.length || badgeTotals === 0) return null
+                        let acc = 0
+                        const stops = segs.map((b) => {
+                          const start = acc; acc += (b.value / badgeTotals) * 100
+                          return `${BADGE_HEX[b.label] ?? '#3b82f6'} ${start}% ${acc}%`
+                        }).join(', ')
+                        return (
+                          <div className="flex items-center justify-center gap-5">
+                            <div className="w-32 h-32 rounded-full shrink-0 shadow-inner" style={{ background: `conic-gradient(${stops})` }} />
+                            <div className="space-y-1.5">
+                              {segs.map((b) => (
+                                <div key={b.label} className="flex items-center gap-2 text-xs">
+                                  <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: BADGE_HEX[b.label] ?? '#3b82f6' }} />
+                                  <span className="text-text-secondary w-16">{b.label}</span>
+                                  <span className="text-text-muted">{b.value.toLocaleString()} · {Math.round((b.value / badgeTotals) * 100)}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
                     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                       {badgeBars.map((b) => (
                         <div

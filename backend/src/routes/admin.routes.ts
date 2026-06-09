@@ -3460,6 +3460,47 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { networks, healthyWindowSeconds: HEALTHY_WINDOW_MS / 1000 } })
   })
 
+  // GET /admin/gas/chain-health — live RPC health for EVERY supported gas chain
+  // (Ethereum, BNB, Base, Polygon, Arbitrum, Optimism, Avalanche, Tron, Solana,
+  // TON, Sui). green = reachable & fresh, yellow = reachable but stale node,
+  // red = unreachable. Complements poller-health (which is payment-detection).
+  app.get('/admin/gas/chain-health', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { GAS_CHAINS } = await import('../lib/gas/gas.chains')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ids = Object.keys(GAS_CHAINS) as any[]
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        const cfg = GAS_CHAINS[id as keyof typeof GAS_CHAINS]
+        const health = await testRpcHealth(id)
+        const status: 'green' | 'yellow' | 'red' = !health.reachable ? 'red' : health.isStale ? 'yellow' : 'green'
+        return {
+          chain: id as string,
+          name: cfg.name,
+          nativeSymbol: cfg.nativeSymbol,
+          networkLabel: cfg.networkLabel,
+          status,
+          reachable: health.reachable,
+          blockNumber: health.blockNumber ?? null,
+          latencyMs: health.latencyMs,
+          isStale: !!health.isStale,
+          error: health.error ?? null,
+          deliveryImplemented: cfg.deliveryImplemented,
+        }
+      }),
+    )
+    const chains = results.map((r, i) => r.status === 'fulfilled' ? r.value : {
+      chain: ids[i] as string, name: ids[i] as string, nativeSymbol: '', networkLabel: '',
+      status: 'red' as const, reachable: false, blockNumber: null, latencyMs: 0, isStale: false,
+      error: r.reason instanceof Error ? r.reason.message : 'health check failed', deliveryImplemented: false,
+    })
+    const summary = {
+      green: chains.filter((c) => c.status === 'green').length,
+      yellow: chains.filter((c) => c.status === 'yellow').length,
+      red: chains.filter((c) => c.status === 'red').length,
+    }
+    return reply.send({ success: true, data: { chains, summary, fetchedAt: new Date().toISOString() } })
+  })
+
   app.get('/admin/gas/orders', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
@@ -3600,14 +3641,53 @@ export async function adminRoutes(app: FastifyInstance) {
     const expectedTo = (entry.toAddress ?? '').toLowerCase()
     const receiverMatch = !expectedTo || (onChain.to ?? '').toLowerCase() === expectedTo
 
-    // Token transfers (e.g. USDT order payments) carry native value 0; the amount
-    // lives in an ERC20 log, not the tx value — so only verify existence + receiver.
+    // Token transfers (e.g. USDT order payments) carry native value 0 — the amount
+    // lives in an ERC20 Transfer log. For chains where we know the USDT contract we
+    // parse the receipt logs and verify the exact token amount + receiver.
     if (entry.tokenSymbol) {
+      const USDT_CONTRACTS: Record<string, { addr: string; decimals: number }> = {
+        BSC:      { addr: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
+        ETHEREUM: { addr: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+      }
+      const usdtCfg = /usdt/i.test(entry.tokenSymbol) ? USDT_CONTRACTS[chainId] : undefined
+      const expectedTokenAmt = entry.tokenAmount != null ? Math.abs(Number(entry.tokenAmount)) : null
+
+      if (usdtCfg) {
+        const { getTransactionReceiptWithLogs, parseErc20Transfers } = await import('../lib/evmRpc')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let receipt: any
+        try {
+          receipt = await getTransactionReceiptWithLogs(rpcUrl, chainId, entry.txHash)
+        } catch (err) {
+          return respond('rpc_error', null, `RPC error while fetching the receipt: ${(err as Error)?.message ?? 'unknown'}`)
+        }
+        if (!receipt) return respond('not_found', false, '⚠ Transaction receipt not found on-chain — investigate.')
+        if (receipt.status === '0x0') return respond('reverted', false, '⚠ On-chain transaction reverted (status 0) — no tokens moved.')
+
+        const transfers = parseErc20Transfers(receipt.logs, usdtCfg.addr)
+        const tol = expectedTokenAmt != null ? Math.max(1e-6, expectedTokenAmt * 0.001) : 0
+        const toMatches = transfers.filter((t) => !expectedTo || t.to.toLowerCase() === expectedTo)
+        const exact = toMatches.find((t) => expectedTokenAmt == null || Math.abs(Number(t.value) / 10 ** usdtCfg.decimals - expectedTokenAmt) <= tol)
+        const tokenOnChain = { to: exact?.to ?? toMatches[0]?.to ?? null, amount: exact ? Number(exact.value) / 10 ** usdtCfg.decimals : (toMatches[0] ? Number(toMatches[0].value) / 10 ** usdtCfg.decimals : null), blockNumber: receipt.blockNumber != null ? Number(receipt.blockNumber) : null, explorerUrl: onChain.explorerUrl }
+
+        if (exact) {
+          return respond('verified', true, `✓ Verified: ${tokenOnChain.amount} ${entry.tokenSymbol} to ${exact.to} confirmed on-chain at block ${tokenOnChain.blockNumber}.`,
+            { onChain: tokenOnChain, expected: { to: entry.toAddress, tokenAmount: expectedTokenAmt, tokenSymbol: entry.tokenSymbol } })
+        }
+        if (toMatches.length > 0) {
+          return respond('mismatch_amount', false, `Amount mismatch: on-chain ${tokenOnChain.amount} ${entry.tokenSymbol} to the wallet, ledger recorded ${expectedTokenAmt} ${entry.tokenSymbol}.`,
+            { onChain: tokenOnChain, expected: { to: entry.toAddress, tokenAmount: expectedTokenAmt, tokenSymbol: entry.tokenSymbol } })
+        }
+        return respond('mismatch_receiver', false, `No ${entry.tokenSymbol} transfer to ${entry.toAddress} found in this transaction.`,
+          { onChain: tokenOnChain, expected: { to: entry.toAddress, tokenAmount: expectedTokenAmt, tokenSymbol: entry.tokenSymbol } })
+      }
+
+      // Unknown token contract for this chain — fall back to existence + receiver.
       return respond(receiverMatch ? 'token_confirmed' : 'mismatch_receiver', receiverMatch,
         receiverMatch
-          ? `On-chain transaction confirmed (block ${onChain.blockNumber}). This is a ${entry.tokenSymbol} token transfer — confirm the token amount on the explorer.`
+          ? `On-chain transaction confirmed (block ${onChain.blockNumber}). ${entry.tokenSymbol} token-amount verification isn't automated for ${entry.chain} — confirm on the explorer.`
           : `Receiver mismatch: on-chain recipient is ${onChain.to}, ledger expected ${entry.toAddress}.`,
-        { onChain, expected: { to: entry.toAddress, nativeAmount: Number(entry.nativeAmount), tokenAmount: entry.tokenAmount != null ? Number(entry.tokenAmount) : null, tokenSymbol: entry.tokenSymbol } })
+        { onChain, expected: { to: entry.toAddress, nativeAmount: Number(entry.nativeAmount), tokenAmount: expectedTokenAmt, tokenSymbol: entry.tokenSymbol } })
     }
 
     const expectedAmount = Math.abs(Number(entry.nativeAmount))
