@@ -37,13 +37,23 @@ export async function runTradeEscalation(): Promise<void> {
             cancelledAt: now,
           },
         })
-        await tx.user.update({
-          where: { id: trade.buyerId },
-          data: { dailyBuyUsed: { decrement: Number(trade.fiatAmount ?? 0) } },
-        })
+        // Clamped at 0 — the buyer's daily window may have reset since this
+        // trade incremented the counter.
+        await tx.$executeRaw`
+          UPDATE "User"
+          SET "dailyBuyUsed" = GREATEST("dailyBuyUsed" - ${trade.fiatAmount ?? 0}, 0)
+          WHERE id = ${trade.buyerId}
+        `
+        // Restore inventory AND reactivate the ad if this trade had consumed
+        // the last of it (status flipped to 'completed' at creation time) —
+        // mirrors the manual cancelTrade path.
+        const ad = await tx.ad.findUnique({ where: { id: trade.adId }, select: { status: true } })
         await tx.ad.update({
           where: { id: trade.adId },
-          data: { availableAmount: { increment: trade.amount } },
+          data: {
+            availableAmount: { increment: trade.amount },
+            ...(ad?.status === 'completed' ? { status: 'active' } : {}),
+          },
         })
       })
       logger.info({ tradeId: trade.id }, 'Auto-cancelled stale trade')

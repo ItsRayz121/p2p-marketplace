@@ -604,6 +604,17 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
       throw new AppError('INVALID_STATUS', `Cannot cancel trade in status: ${trade.status}`, 400)
     }
 
+    // Once the buyer has uploaded payment proof they may have already sent fiat.
+    // A seller cancelling here could keep the buyer's money — only the buyer
+    // (who knows whether they actually paid) or an admin may cancel now.
+    if (trade.status === 'payment_uploaded' && role !== 'admin' && trade.buyerId !== actorId) {
+      throw new AppError(
+        'FORBIDDEN',
+        'Payment proof has been uploaded — only the buyer or an admin can cancel this trade. If the payment is invalid, open a dispute instead.',
+        403,
+      )
+    }
+
     buyerId = trade.buyerId
     sellerId = trade.sellerId
 
@@ -628,11 +639,13 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
       })
     }
 
-    // Restore buyer dailyBuyUsed
-    await tx.user.update({
-      where: { id: trade.buyerId },
-      data: { dailyBuyUsed: { decrement: trade.fiatAmount } },
-    })
+    // Restore buyer dailyBuyUsed — clamped at 0 because the daily window may
+    // have rolled over (and been reset) since this trade incremented it.
+    await tx.$executeRaw`
+      UPDATE "User"
+      SET "dailyBuyUsed" = GREATEST("dailyBuyUsed" - ${trade.fiatAmount}, 0)
+      WHERE id = ${trade.buyerId}
+    `
   })
 
   const otherPartyId = actorId === buyerId! ? sellerId! : buyerId!
@@ -654,7 +667,10 @@ export async function openDispute(
     throw new AppError('FORBIDDEN', 'Only buyer or seller can open a dispute', 403)
   }
 
-  const disputeStatuses = ['payment_uploaded', 'payment_confirmed']
+  // crypto_sent is disputable: the seller's tx may be pending admin review
+  // (non-EVM chains / RPC outage) or the buyer may claim non-receipt — without
+  // this the buyer would be stuck unable to release, cancel, OR dispute.
+  const disputeStatuses = ['payment_uploaded', 'payment_confirmed', 'crypto_sent']
   if (!disputeStatuses.includes(trade.status)) {
     throw new AppError('INVALID_STATUS', `Cannot open dispute for trade in status: ${trade.status}`, 400)
   }

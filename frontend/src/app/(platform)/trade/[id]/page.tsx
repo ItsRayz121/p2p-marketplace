@@ -548,7 +548,9 @@ export default function TradePage() {
 
   const currentStep = stepIndex(trade.status)
   const canCancel = isUserBuyer && trade.status === 'payment_pending'
-  const canDispute = ['payment_uploaded', 'payment_confirmed'].includes(trade.status)
+  // crypto_sent included: buyer may need to dispute non-receipt or a tx stuck
+  // in admin verification (matches backend disputeStatuses in trade.service.ts)
+  const canDispute = ['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(trade.status)
   const counterpartyUser = isUserBuyer ? trade.seller : trade.buyer
   const counterparty = counterpartyUser?.fullName || counterpartyUser?.username || (isUserBuyer ? 'Seller' : 'Buyer')
   const counterpartyBadge = (counterpartyUser?.tradeStats?.badge ?? 'new') as TraderBadge
