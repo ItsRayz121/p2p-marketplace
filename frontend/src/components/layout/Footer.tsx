@@ -18,7 +18,7 @@ export default function Footer() {
               Pakistan&apos;s trusted P2P crypto marketplace. Buy and sell USDT safely with escrow protection.
             </p>
             <p className="text-xs text-text-muted mt-3">
-              Registered in Pakistan · {SUPPORT_EMAIL}
+              Proudly built in Pakistan · {SUPPORT_EMAIL}
             </p>
           </div>
 

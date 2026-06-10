@@ -6,11 +6,13 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowLeftRight, Fuel, FileText, Coins, ShieldCheck, Users, Lock, Headphones } from 'lucide-react'
+import { ArrowLeftRight, Fuel, FileText, Coins, ShieldCheck, Users, Lock, Headphones, UserPlus, BadgeCheck, Handshake } from 'lucide-react'
 import { RateCalculator } from './_components/home/RateCalculator'
 import { AnimatedStatsBar } from './_components/home/AnimatedStatsBar'
 import { TopAdsSection } from './_components/home/TopAdsSection'
 import { FaqAccordion } from './_components/home/FaqAccordion'
+import { MarketingHeader } from '@/components/layout/MarketingHeader'
+import Footer from '@/components/layout/Footer'
 import type { MarketplaceAd } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -145,6 +147,7 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-screen bg-surface">
+      <MarketingHeader />
 
       {/* ── 1. HERO ── */}
       <section className="relative bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 border-b border-slate-800 overflow-hidden">
@@ -167,26 +170,35 @@ export default async function HomePage() {
                 Peer-to-peer trading with dispute protection. Pay with JazzCash, Easypaisa, or bank transfer.
                 Your funds, your control.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-6">
+              <div className="flex flex-col sm:flex-row gap-3 mt-6">
                 <Link
-                  href="/marketplace"
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30 text-sm"
+                  href="/register"
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/30"
                 >
-                  <ArrowLeftRight size={16} aria-hidden />
-                  USDT Marketplace
+                  <UserPlus size={18} aria-hidden />
+                  Create Free Account
                 </Link>
                 <Link
-                  href="/ctm"
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm text-sm"
+                  href="/marketplace"
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm"
                 >
-                  <Coins size={16} aria-hidden />
+                  <ArrowLeftRight size={18} aria-hidden />
+                  Browse Marketplace
+                </Link>
+              </div>
+              <div className="flex flex-wrap gap-2.5 mt-4">
+                <Link
+                  href="/ctm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  <Coins size={13} aria-hidden />
                   Community Tokens
                 </Link>
                 <Link
                   href="/gas"
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 text-white font-semibold rounded-lg border border-white/20 hover:bg-white/20 transition-colors backdrop-blur-sm text-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 rounded-full hover:bg-white/10 hover:text-white transition-colors"
                 >
-                  <Fuel size={16} aria-hidden />
+                  <Fuel size={13} aria-hidden />
                   Crypto Gas Fees
                 </Link>
               </div>
@@ -241,35 +253,55 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── 6. TESTIMONIALS ── */}
+      {/* ── 6. HOW IT WORKS ── */}
       <section className="py-12 border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-bold text-text-primary mb-2">Trusted by Pakistani traders</h2>
-          <p className="text-sm text-text-muted mb-8">Real reviews from our community</p>
+          <h2 className="text-2xl font-bold text-text-primary mb-2">How RupChain works</h2>
+          <p className="text-sm text-text-muted mb-8">From signup to your first trade in three steps</p>
           <div className="grid sm:grid-cols-3 gap-5">
             {[
-              { name: 'Ahmed K.',  location: 'Karachi',   trades: '47 trades',  rating: 5, text: 'Much safer than finding traders on Facebook groups. Escrow protection gives me full confidence. Already done 47 trades without a single issue.' },
-              { name: 'Fatima R.', location: 'Lahore',    trades: '23 trades',  rating: 5, text: 'The gas fee service saved me hours. I needed TRON for a transfer and got it in minutes by paying through JazzCash. No crypto needed to get started.' },
-              { name: 'Usman T.',  location: 'Islamabad', trades: '112 trades', rating: 5, text: 'Best P2P platform in Pakistan. JazzCash and Easypaisa support, fast traders, and disputes are resolved fairly. I recommend it to everyone.' },
-            ].map((t) => (
-              <div key={t.name} className="bg-surface rounded-xl border border-border shadow-card p-5 space-y-3">
-                <div className="flex items-center gap-1" aria-label={`${t.rating} out of 5 stars`}>
-                  {Array.from({ length: t.rating }).map((_, i) => (
-                    <span key={i} className="text-gold text-base" aria-hidden>★</span>
-                  ))}
-                </div>
-                <p className="text-sm text-text-secondary leading-relaxed">&ldquo;{t.text}&rdquo;</p>
-                <div className="flex items-center gap-2 pt-1">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
-                    {t.name[0]}
+              {
+                Icon: UserPlus,
+                step: '1',
+                title: 'Create your account',
+                text: 'Sign up free with email, Google, or Telegram. No deposit required — your crypto stays in your own wallet.',
+                color: 'text-primary', bg: 'bg-primary/10',
+              },
+              {
+                Icon: BadgeCheck,
+                step: '2',
+                title: 'Verify your identity',
+                text: 'Complete a quick CNIC-based KYC. Every trader on RupChain is identity-verified, so you always know who you are dealing with.',
+                color: 'text-success', bg: 'bg-success/10',
+              },
+              {
+                Icon: Handshake,
+                step: '3',
+                title: 'Trade with confidence',
+                text: 'Pay with JazzCash, Easypaisa, or bank transfer. Every crypto transfer is verified on the blockchain, and our dispute team has your back.',
+                color: 'text-warning', bg: 'bg-warning/10',
+              },
+            ].map(({ Icon, step, title, text, color, bg }) => (
+              <div key={step} className="bg-surface rounded-xl border border-border shadow-card p-5 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
+                    <Icon className={`w-5 h-5 ${color}`} aria-hidden />
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-text-primary">{t.name}</p>
-                    <p className="text-xs text-text-muted">{t.location} · {t.trades}</p>
-                  </div>
+                  <span className="text-xs font-bold text-text-muted uppercase tracking-wide">Step {step}</span>
                 </div>
+                <p className="text-base font-semibold text-text-primary">{title}</p>
+                <p className="text-sm text-text-secondary leading-relaxed">{text}</p>
               </div>
             ))}
+          </div>
+          <div className="mt-8 text-center">
+            <Link
+              href="/register"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-lg hover:bg-primary-hover transition-colors shadow-lg shadow-primary/20"
+            >
+              <UserPlus size={18} aria-hidden />
+              Start Trading Today
+            </Link>
           </div>
         </div>
       </section>
@@ -277,6 +309,7 @@ export default async function HomePage() {
       {/* ── 7. FAQ — client island (accordion state) ── */}
       <FaqAccordion items={faqs} />
 
+      <Footer />
     </div>
   )
 }

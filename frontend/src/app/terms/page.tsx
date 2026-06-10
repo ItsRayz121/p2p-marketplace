@@ -8,7 +8,7 @@ export const metadata = buildMeta(
 )
 
 export default function TermsPage() {
-  const lastUpdated = '1 January 2025'
+  const lastUpdated = '10 June 2026'
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10 pb-16">
@@ -50,9 +50,9 @@ export default function TermsPage() {
           {
             title: '3. Trade Execution',
             content: [
-              'When a trade is initiated, the seller must hold sufficient balance in their RupChain account to fulfil the order.',
-              'Cryptocurrency is only released after the buyer confirms payment and the seller verifies receipt.',
-              'Trades must be completed within the agreed trade window (15 minutes to 2 hours).',
+              'When a trade is initiated, the seller must have sufficient cryptocurrency available to fulfil the order.',
+              'A trade completes only after the seller confirms receipt of payment, sends the cryptocurrency with an on-chain transaction reference, and the buyer confirms receipt.',
+              'Trades must be completed within the trade window shown on the order (up to 4 hours).',
               'Incomplete trades will be automatically cancelled.',
               'RupChain is not responsible for errors in payment details provided by users.',
             ],
