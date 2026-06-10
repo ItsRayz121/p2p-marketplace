@@ -17,7 +17,7 @@ import { queues } from '../../queues/definitions'
 import { sendAdminAlertEmail } from '../../services/email.service'
 import { createAdminNotif } from '../../services/adminNotification.service'
 import { appendLedgerEntry } from './gas.ledger'
-import { fromDbChain } from './gas.chains'
+import { fromDbChain, paymentNetworkSettlementChain } from './gas.chains'
 import type { GasChainId } from './gas.chains'
 
 // Orders carry a UNIQUE paymentAmount (assigned on a 0.001 grid). An incoming
@@ -344,9 +344,14 @@ async function onPaymentDetected(
   }
 
   try {
+    // Record the payment on the chain it actually settled on (BNB/TRON/Ethereum/
+    // Aptos), derived from paymentNetwork — NOT the gas-delivery chain (orderChain).
+    // The delivery chain is kept only as the required `chain` fallback.
+    const settle = paymentNetworkSettlementChain(paymentNetwork)
     appendLedgerEntry({
       entryType:      'order_payment',
       chain:          fromDbChain(orderChain) as GasChainId,
+      ...(settle ? { chainOverride: settle } : {}),
       nativeAmount:   0,          // USDT is a token — no native moved
       usdAmount:      incoming,   // USDT ≈ USD 1:1
       tokenSymbol:    'USDT',

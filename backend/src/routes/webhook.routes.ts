@@ -14,7 +14,7 @@ import {
 import { sendAdminAlertEmail } from '../services/email.service'
 import { getEffectiveDepositAddress } from '../lib/gas/gasWalletService'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
-import { fromDbChain, toDbChain, GAS_CHAINS } from '../lib/gas/gas.chains'
+import { fromDbChain, toDbChain, GAS_CHAINS, paymentNetworkSettlementChain } from '../lib/gas/gas.chains'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { getHotWalletBalance } from '../lib/gas/gas.balance'
 import { matchAndDeliverGasPayment } from '../lib/gas/gas.matching'
@@ -688,11 +688,17 @@ export async function webhookRoutes(app: FastifyInstance) {
             return reply.send({ success: true })
           }
           await queues.gasFee.add('deliver', { orderId: gasOrder.id }, { priority: 1 })
+          // Record on the chain the USDT actually settled on (from paymentNetwork),
+          // as a USDT token movement — NOT the gas-delivery chain with a native amount.
+          const settle = paymentNetworkSettlementChain(matchedDeposit.network)
           appendLedgerEntry({
             entryType:      'order_payment',
             chain:          fromDbChain(gasOrder.chain) as GasChainId,
-            nativeAmount:   incoming,
+            ...(settle ? { chainOverride: settle } : {}),
+            nativeAmount:   0,
             usdAmount:      incoming,
+            tokenSymbol:    'USDT',
+            tokenAmount:    incoming,
             txHash,
             relatedOrderId: gasOrder.id,
           }).catch((e) => logger.warn({ err: e, orderId: gasOrder.id }, 'Failed to write order_payment ledger entry'))
@@ -721,11 +727,15 @@ export async function webhookRoutes(app: FastifyInstance) {
             })
             if (claimed.count > 0) {
               await queues.gasFee.add('deliver', { orderId: expiredOrder.id }, { priority: 1 })
+              const settle = paymentNetworkSettlementChain(matchedDeposit.network)
               appendLedgerEntry({
                 entryType:      'order_payment',
                 chain:          fromDbChain(expiredOrder.chain) as GasChainId,
-                nativeAmount:   incoming,
+                ...(settle ? { chainOverride: settle } : {}),
+                nativeAmount:   0,
                 usdAmount:      incoming,
+                tokenSymbol:    'USDT',
+                tokenAmount:    incoming,
                 txHash,
                 relatedOrderId: expiredOrder.id,
               }).catch((e) => logger.warn({ err: e, orderId: expiredOrder.id }, 'Failed to write order_payment ledger entry'))

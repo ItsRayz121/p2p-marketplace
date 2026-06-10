@@ -12,7 +12,7 @@ import type { GasChain, GasLedgerEntryType } from '@prisma/client'
 import { Prisma } from '@prisma/client'
 import { db } from '../prisma'
 import { logger } from '../logger'
-import type { GasChainId } from './gas.chains'
+import type { GasChainId, DbGasChain } from './gas.chains'
 import { toDbChain } from './gas.chains'
 import { getNativeUsdPrice } from './gas.balance'
 
@@ -21,7 +21,7 @@ import { getNativeUsdPrice } from './gas.balance'
 const NATIVE_SYMBOL: Record<string, string> = {
   TRON: 'TRX', BSC: 'BNB', ETH: 'ETH', ETHEREUM: 'ETH',
   BASE: 'ETH', ARB: 'ETH', OP: 'ETH', MATIC: 'POL',
-  AVAX: 'AVAX', SOL: 'SOL', TON: 'TON', SUI: 'SUI',
+  AVAX: 'AVAX', SOL: 'SOL', TON: 'TON', SUI: 'SUI', APT: 'APT',
 }
 
 export function nativeSymbol(chain: GasChainId | string): string {
@@ -33,6 +33,12 @@ export function nativeSymbol(chain: GasChainId | string): string {
 export interface LedgerEntryInput {
   entryType: GasLedgerEntryType
   chain: GasChainId
+  /** Override the stored DB chain + native symbol. Use for inbound USDT payments
+   *  that settle on a chain outside the delivery set (e.g. Aptos), where the
+   *  ledger `chain` must reflect where the payment actually arrived — not the
+   *  gas-delivery chain. When set, `chain` is ignored for the stored chain value
+   *  (it is still used only for live USD price lookup when usdAmount is omitted). */
+  chainOverride?: { dbChain: DbGasChain; nativeSymbol: string }
   /** Positive = into hot wallet; negative = out of hot wallet */
   nativeAmount: number
   usdAmount?: number           // if omitted, derived from live price
@@ -52,8 +58,8 @@ export interface LedgerEntryInput {
 }
 
 export async function appendLedgerEntry(input: LedgerEntryInput) {
-  const dbChain = toDbChain(input.chain)
-  const symbol  = nativeSymbol(input.chain)
+  const dbChain = input.chainOverride ? input.chainOverride.dbChain   : toDbChain(input.chain)
+  const symbol  = input.chainOverride ? input.chainOverride.nativeSymbol : nativeSymbol(input.chain)
 
   let usdAmount = input.usdAmount
   if (usdAmount === undefined) {

@@ -205,7 +205,7 @@ export const NON_EVM_GAS_CHAINS: GasChainId[] = ['SOL', 'TON', 'SUI']
 // GasChain enum: TRON | BSC | ETH | SOL | MATIC | ARB | BASE | OP | AVAX | TON | SUI
 // GasChainId:    same but 'ETHEREUM' instead of 'ETH'
 
-export type DbGasChain = 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
+export type DbGasChain = 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI' | 'APT'
 
 export function toDbChain(chain: GasChainId): DbGasChain {
   if (chain === 'ETHEREUM') return 'ETH'
@@ -215,4 +215,26 @@ export function toDbChain(chain: GasChainId): DbGasChain {
 export function fromDbChain(chain: string): GasChainId {
   if (chain === 'ETH') return 'ETHEREUM'
   return chain as GasChainId
+}
+
+// ── Inbound payment-network → settlement chain ─────────────────────────────────
+// A USER PAYMENT (USDT order_payment) settles on the chain matching its payment
+// network label — NOT the gas-delivery chain. TRC20/BEP20/ERC20 map to chains in
+// the GasChainId set; APTOS settles on Aptos, which is an inbound-only rail (it is
+// in the GasChain DB enum but not a delivery chain, so it has no GAS_CHAINS config).
+export interface PaymentSettlementChain {
+  /** DB enum value to store on the ledger entry's `chain` field. */
+  dbChain: DbGasChain
+  /** Native symbol of the settlement chain (cosmetic on USDT token rows). */
+  nativeSymbol: string
+}
+
+export function paymentNetworkSettlementChain(network: string): PaymentSettlementChain | null {
+  switch (network.toUpperCase()) {
+    case 'TRC20': return { dbChain: 'TRON', nativeSymbol: 'TRX' }
+    case 'BEP20': return { dbChain: 'BSC',  nativeSymbol: 'BNB' }
+    case 'ERC20': return { dbChain: 'ETH',  nativeSymbol: 'ETH' }
+    case 'APTOS': return { dbChain: 'APT',  nativeSymbol: 'APT' }
+    default:      return null
+  }
 }
