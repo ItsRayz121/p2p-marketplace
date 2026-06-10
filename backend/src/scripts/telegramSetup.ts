@@ -54,9 +54,12 @@ async function main(): Promise<void> {
 
   // 2. Commands
   await call('setMyCommands', {
-    commands: [{ command: 'start', description: 'Open RupChain & sign in' }],
+    commands: [
+      { command: 'start', description: 'Open RupChain & sign in' },
+      { command: 'help', description: 'How the bot works' },
+    ],
   })
-  console.log('✓ Commands set (/start)')
+  console.log('✓ Commands set (/start, /help)')
 
   // 3. Descriptions
   await call('setMyDescription', {

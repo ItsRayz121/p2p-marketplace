@@ -55,6 +55,10 @@ function miniAppUrl(): string {
   return env.TELEGRAM_MINI_APP_URL ?? `${env.FRONTEND_URL}/mini-app`
 }
 
+function openAppKeyboard() {
+  return { inline_keyboard: [[{ text: '🚀 Open RupChain', web_app: { url: miniAppUrl() } }]] }
+}
+
 async function sendWelcome(chatId: number, firstName?: string): Promise<void> {
   const name = firstName?.trim() || 'there'
   await callTelegram('sendMessage', {
@@ -63,10 +67,29 @@ async function sendWelcome(chatId: number, firstName?: string): Promise<void> {
       `👋 Welcome to RupChain, ${name}!\n\n` +
       `Pakistan's trusted P2P crypto marketplace — buy & sell USDT with JazzCash, ` +
       `Easypaisa & bank transfer, escrow-protected.\n\n` +
-      `Tap below to open the app — you'll be signed in automatically.`,
-    reply_markup: {
-      inline_keyboard: [[{ text: '🚀 Open RupChain', web_app: { url: miniAppUrl() } }]],
-    },
+      `Inside the app you can:\n` +
+      `• 💱 Buy & sell USDT at the best PKR rates\n` +
+      `• 🛡️ Trade safely with escrow + dispute protection\n` +
+      `• ⚡ Instant-buy and the P2P marketplace\n` +
+      `• 🎁 Invite friends and earn referral rewards\n\n` +
+      `Tap below to open the app — you'll be signed in automatically. ` +
+      `Send /help any time.`,
+    reply_markup: openAppKeyboard(),
+  })
+}
+
+async function sendHelp(chatId: number): Promise<void> {
+  await callTelegram('sendMessage', {
+    chat_id: chatId,
+    text:
+      `ℹ️ *RupChain help*\n\n` +
+      `*/start* — open the app (auto sign-in)\n` +
+      `*/help* — show this message\n\n` +
+      `Everything happens inside the Mini App: trading, wallet, KYC, referrals and ` +
+      `support. Tap the button below or the *Menu* button to open it.\n\n` +
+      `Need a human? Use in-app *Support* once you're signed in.`,
+    parse_mode: 'Markdown',
+    reply_markup: openAppKeyboard(),
   })
 }
 
@@ -99,6 +122,11 @@ export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
       }
     }
     await sendWelcome(chatId, msg.from.first_name)
+    return
+  }
+
+  if (text.startsWith('/help')) {
+    await sendHelp(chatId)
     return
   }
 

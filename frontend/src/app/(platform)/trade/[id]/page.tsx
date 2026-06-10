@@ -5,6 +5,7 @@ import NextImage from 'next/image'
 import { tradesApi } from '@/lib/api'
 import type { Trade } from '@/lib/api'
 import { analytics } from '@/lib/analytics'
+import { hapticNotify } from '@/lib/telegram'
 import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
@@ -346,7 +347,9 @@ export default function TradePage() {
       await tradesApi.uploadPaymentProof(id, url)
       analytics.paymentProofUploaded({ tradeId: id })
       await fetchTrade()
+      hapticNotify('success')
     } catch (err) {
+      hapticNotify('error')
       setActionError(err instanceof Error ? err.message : 'Upload failed')
     }
   }
@@ -359,7 +362,9 @@ export default function TradePage() {
       await tradesApi.confirmPayment(id)
       analytics.paymentConfirmed({ tradeId: id })
       await fetchTrade()
+      hapticNotify('success')
     } catch (err) {
+      hapticNotify('error')
       setActionError(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(false)
@@ -376,7 +381,9 @@ export default function TradePage() {
       await fetchTrade()
       setShowCryptoSentForm(false)
       setTxHash('')
+      hapticNotify('success')
     } catch (err) {
+      hapticNotify('error')
       setActionError(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(false)
@@ -394,7 +401,9 @@ export default function TradePage() {
       }
       await fetchTrade()
       setShowReleaseModal(false)
+      hapticNotify('success')
     } catch (err) {
+      hapticNotify('error')
       setActionError(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(false)
