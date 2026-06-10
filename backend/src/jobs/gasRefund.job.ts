@@ -1,6 +1,7 @@
 import type { Job } from 'bullmq'
 import { db } from '../lib/prisma'
 import { sendUsdtRefund, getSenderAddressFromTx } from '../lib/gas/gas.refund'
+import { sendAptosUsdtRefund, getAptosSenderFromTx } from '../lib/gas/aptosRefund'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
@@ -8,17 +9,20 @@ import type { GasChainId } from '../lib/gas/gas.chains'
 import { fromDbChain, paymentNetworkSettlementChain } from '../lib/gas/gas.chains'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 
-// USDT was received on the PAYMENT network (e.g. BEP20), which can differ from
-// the gas-DELIVERY chain (e.g. TON). The refund must go back on the chain the
+// USDT was received on the PAYMENT network (e.g. BEP20 / Aptos), which can differ
+// from the gas-DELIVERY chain (e.g. TON). The refund must go back on the chain the
 // money actually arrived on — using order.chain would try to refund USDT on a
 // chain that never received it (and throw 'unsupported chain' for TON/SOL/SUI).
-function resolveRefundChain(order: { chain: string; paymentNetwork: string }): GasChainId | null {
+type RefundPlan =
+  | { kind: 'evm_tron'; chain: GasChainId } // EVM/Tron USDT via gas.refund
+  | { kind: 'aptos' }                        // Aptos fungible-asset USDT via aptosRefund
+  | null
+
+function planRefund(order: { paymentNetwork: string }): RefundPlan {
+  if (order.paymentNetwork.toUpperCase() === 'APTOS') return { kind: 'aptos' }
   const settle = paymentNetworkSettlementChain(order.paymentNetwork)
-  if (settle) return fromDbChain(settle.dbChain)
-  // No network → settlement mapping (e.g. an Aptos payment, which has no on-chain
-  // USDT refund support yet). Fall back to the delivery chain so EVM-delivery
-  // orders still behave as before; non-refundable chains surface a clear error.
-  return null
+  if (settle) return { kind: 'evm_tron', chain: fromDbChain(settle.dbChain) }
+  return null // no automated refund path for this payment network
 }
 
 export async function processGasRefund(job: Job<{ orderId: string }>) {
@@ -50,9 +54,10 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
   }
 
   // Resolve the chain the USDT actually arrived on (payment network), NOT the
-  // gas-delivery chain. For a TON gas order paid via BEP20, this is BSC.
-  const refundChain = resolveRefundChain(order)
-  if (!refundChain) {
+  // gas-delivery chain. For a TON gas order paid via BEP20, this is BSC; for an
+  // Aptos-paid order it's the Aptos fungible-asset rail.
+  const plan = planRefund(order)
+  if (!plan) {
     logger.warn({ orderId, paymentNetwork: order.paymentNetwork }, 'processGasRefund: no auto-refund support for payment network — manual refund required')
     await db.gasFeeOrder.update({
       where: { id: orderId },
@@ -65,10 +70,14 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
     return
   }
 
-  // Lazy-load sender address from the payment tx if not already stored
+  // Lazy-load sender address from the payment tx if not already stored. Aptos
+  // payments never carry a sender (poller stores a synthetic hash), so always
+  // resolve via the indexer for those.
   let senderAddress = order.paymentSenderAddress
   if (!senderAddress) {
-    senderAddress = await getSenderAddressFromTx(refundChain, order.paymentTxHash)
+    senderAddress = plan.kind === 'aptos'
+      ? await getAptosSenderFromTx(order.paymentTxHash)
+      : await getSenderAddressFromTx(plan.chain, order.paymentTxHash)
     if (senderAddress) {
       await db.gasFeeOrder.update({
         where: { id: orderId },
@@ -95,11 +104,9 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
   }
 
   try {
-    const refundTxHash = await sendUsdtRefund(
-      refundChain,
-      senderAddress,
-      order.paymentAmount,
-    )
+    const refundTxHash = plan.kind === 'aptos'
+      ? await sendAptosUsdtRefund(senderAddress, order.paymentAmount)
+      : await sendUsdtRefund(plan.chain, senderAddress, order.paymentAmount)
 
     await db.gasFeeOrder.update({
       where: { id: orderId },
@@ -113,8 +120,20 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
 
     appendLedgerEntry({
       entryType:      'delivery_refund',
-      chain:          refundChain,
-      nativeAmount:   -Number(order.paymentAmount),
+      // Record the refund on the chain it actually left from. Aptos USDT is a
+      // fungible-asset token outflow (no native APT moved) recorded via override.
+      ...(plan.kind === 'aptos'
+        ? {
+            chain:        fromDbChain(order.chain),
+            chainOverride: { dbChain: 'APT' as const, nativeSymbol: 'APT' },
+            nativeAmount: 0,
+            tokenSymbol:  'USDT',
+            tokenAmount:  Number(order.paymentAmount),
+          }
+        : {
+            chain:        plan.chain,
+            nativeAmount: -Number(order.paymentAmount),
+          }),
       usdAmount:      Number(order.paymentAmount),
       txHash:         refundTxHash,
       toAddress:      senderAddress,

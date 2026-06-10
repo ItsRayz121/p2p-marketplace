@@ -47,6 +47,18 @@ function deriveAptosAddress(seed: Buffer): string {
   }
 }
 
+// ── Delivery / refund key helper ───────────────────────────────────────────────
+
+/**
+ * Derive the Aptos Ed25519 private key seed (32 bytes) for signing outgoing
+ * transfers (USDT refunds). The returned Buffer is the raw private key — the
+ * caller MUST zero it immediately after use (in a finally block).
+ */
+export function deriveAptosPrivateKeyForDelivery(seed: Buffer): Buffer {
+  const { privateKey } = deriveSlip10Ed25519(seed, APTOS_SLIP10_PATH)
+  return privateKey // caller responsibility to zero
+}
+
 // ── Address cache ─────────────────────────────────────────────────────────────
 
 let _aptosAddressCache: string | null = null

@@ -97,6 +97,8 @@ const envSchema = z.object({
   // Aptos Indexer GraphQL endpoint — used by the gas payment poller to detect
   // incoming USDT (fungible-asset) deposits to the Aptos gas wallet.
   APTOS_INDEXER_URL: z.string().url().default('https://api.mainnet.aptoslabs.com/v1/graphql'),
+  // Aptos fullnode REST endpoint — used to submit outgoing USDT refund transfers.
+  APTOS_FULLNODE_URL: z.string().url().default('https://api.mainnet.aptoslabs.com/v1'),
   // Optional Aptos Labs API key (Bearer) for higher indexer rate limits.
   APTOS_API_KEY: z.string().optional(),
   // Reconciler tuning. The reconciler scans detected deposits older than
