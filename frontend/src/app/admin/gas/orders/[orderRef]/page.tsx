@@ -39,6 +39,8 @@ interface GasOrderDetail {
   deliveryTxHash: string | null
   deliveryConfirmed: boolean
   deliveredAt: string | null
+  refundTxHash: string | null
+  refundAmount: string | null
   failureReason: string | null
   status: string
   expiresAt: string | null
@@ -92,8 +94,23 @@ function chainMeta(chain: string): ChainMeta {
 function explorerTxUrl(chain: string, hash: string): string {
   const meta = chainMeta(chain)
   if (meta.explorerTx === '#') return '#'
+  // Aptos payment tx hashes are synthetic (aptos:{version}:{idx}); link by version.
+  const aptosVer = /^aptos:(\d+):/.exec(hash)
+  if (aptosVer) return `${meta.explorerTx}/${aptosVer[1]}`
   // TRON uses /#/transaction/ path, all others use /tx/
   return `${meta.explorerTx}/${hash}`
+}
+
+// USDT payment + refund settle on the payment network's chain (BEP20→BSC, etc.),
+// NOT the gas-delivery chain — so their explorer links must use that chain.
+function paymentNetworkChain(network: string | null, fallback: string): string {
+  switch ((network || '').toUpperCase()) {
+    case 'TRC20': return 'TRON'
+    case 'BEP20': return 'BSC'
+    case 'ERC20': return 'ETH'
+    case 'APTOS': return 'APT'
+    default:      return fallback
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -491,9 +508,17 @@ export default function GasOrderDetailPage() {
           <InfoRow label="Network">{order.paymentNetwork ?? '—'}</InfoRow>
           <InfoRow label="Payment Tx">
             {order.paymentTxHash
-              ? <TxLink chain={order.paymentNetwork === 'TRC20' ? 'TRON' : order.chain} hash={order.paymentTxHash} />
+              ? <TxLink chain={paymentNetworkChain(order.paymentNetwork, order.chain)} hash={order.paymentTxHash} />
               : '—'}
           </InfoRow>
+          {order.refundTxHash && (
+            <InfoRow label="Refund Tx">
+              <TxLink chain={paymentNetworkChain(order.paymentNetwork, order.chain)} hash={order.refundTxHash} />
+            </InfoRow>
+          )}
+          {order.refundAmount && (
+            <InfoRow label="Refund Amount">{parseFloat(order.refundAmount).toFixed(2)} USDT</InfoRow>
+          )}
           {order.paymentProofUrl && (
             <InfoRow label="Payment Proof">
               <a href={order.paymentProofUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs">

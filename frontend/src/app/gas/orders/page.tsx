@@ -93,9 +93,24 @@ const EXPLORER_TX: Record<string, string> = {
   APT:   'https://explorer.aptoslabs.com/txn',
 }
 
+// USDT payment + refund settle on the payment network's chain (BEP20→BSC, etc.),
+// NOT the gas-delivery chain — so their explorer links must use that chain.
+function paymentNetworkChain(network: string): string {
+  switch ((network || '').toUpperCase()) {
+    case 'TRC20': return 'TRON'
+    case 'BEP20': return 'BSC'
+    case 'ERC20': return 'ETH'
+    case 'APTOS': return 'APT'
+    default:      return network
+  }
+}
+
 function explorerTxUrl(chain: string, txHash: string): string {
   const base = EXPLORER_TX[chain.toUpperCase()]
   if (!base) return '#'
+  // Aptos payment tx hashes are synthetic (aptos:{version}:{idx}); link by version.
+  const aptosVer = /^aptos:(\d+):/.exec(txHash)
+  if (aptosVer) return `${base}/${aptosVer[1]}`
   return `${base}/${txHash}`
 }
 
@@ -176,7 +191,7 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
         )}
         {order.refundTxHash && (
           <span
-            onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(explorerTxUrl(order.chain, order.refundTxHash!), '_blank') }}
+            onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(explorerTxUrl(paymentNetworkChain(order.paymentNetwork), order.refundTxHash!), '_blank') }}
             className="text-xs text-success hover:underline flex items-center gap-1 cursor-pointer"
           >
             Refund TX

@@ -65,6 +65,9 @@ const TIMELINE_STEPS = [
 function explorerUrl(network: string, hash: string): string {
   const base = EXPLORER_TX[network?.toUpperCase()]
   if (!base) return '#'
+  // Aptos payment tx hashes are synthetic (aptos:{version}:{idx}); link by version.
+  const aptosVer = /^aptos:(\d+):/.exec(hash)
+  if (aptosVer) return `${base}/${aptosVer[1]}`
   return `${base}/${hash}`
 }
 
@@ -365,7 +368,7 @@ function GasOrderTrackingPageInner() {
               <TxRow label="Delivery Tx" hash={order.deliveryTxHash} network={order.chain} />
             )}
             {order.refundTxHash && (
-              <TxRow label="Refund Tx" hash={order.refundTxHash} network={order.chain} />
+              <TxRow label="Refund Tx" hash={order.refundTxHash} network={order.paymentNetwork ?? order.chain} />
             )}
           </div>
         )}
