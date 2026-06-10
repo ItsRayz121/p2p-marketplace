@@ -1009,7 +1009,13 @@ interface HotWalletRow {
   id: string
   chain: string
   address: string
+  friendlyAddress?: string | null
   isActive: boolean
+}
+
+/** Display form of a hot wallet address — user-friendly UQ… for TON, raw otherwise. */
+function displayWalletAddress(w: HotWalletRow): string {
+  return w.chain === 'TON' && w.friendlyAddress ? w.friendlyAddress : w.address
 }
 
 function NonEvmSetupPanel({
@@ -1054,13 +1060,14 @@ function NonEvmSetupPanel({
     setMsgs((m) => ({ ...m, [backendChainId]: { text: '', ok: true } }))
     try {
       const result = await adminApi.addHotWallet(backendChainId)
+      const seededRow: HotWalletRow = { id: result.id, chain: backendChainId, address: result.address, friendlyAddress: result.friendlyAddress, isActive: false }
       setWallets((w) => ({
         ...w,
-        [backendChainId]: { id: result.id, chain: backendChainId, address: result.address, isActive: false },
+        [backendChainId]: seededRow,
       }))
       setMsgs((m) => ({
         ...m,
-        [backendChainId]: { text: `Wallet seeded: ${result.address} — fund it, then click Activate.`, ok: true },
+        [backendChainId]: { text: `Wallet seeded: ${displayWalletAddress(seededRow)} — fund it, then click Activate.`, ok: true },
       }))
       onFlash(`${backendChainId} hot wallet created. Fund the address then activate it.`)
     } catch (e) {
@@ -1132,7 +1139,7 @@ function NonEvmSetupPanel({
                 </div>
 
                 {wallet?.address && (
-                  <p className="text-xs font-mono text-text-muted break-all mt-0.5">{wallet.address}</p>
+                  <p className="text-xs font-mono text-text-muted break-all mt-0.5">{displayWalletAddress(wallet)}</p>
                 )}
                 {!wallet && !loading && (
                   <p className="text-xs text-text-muted mt-0.5">

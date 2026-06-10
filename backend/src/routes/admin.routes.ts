@@ -3718,12 +3718,16 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/gas/hot-wallet-balances', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { getHotWalletBalance, getNativeUsdPrice } = await import('../lib/gas/gas.balance')
     const { fromDbChain } = await import('../lib/gas/gas.chains')
+    const { tonRawToFriendly } = await import('../lib/gas/tonWalletService')
 
     const wallets = await db.gasHotWallet.findMany({
       where: { isActive: true },
       select: { chain: true, address: true },
       orderBy: { chain: 'asc' },
     })
+
+    // TON addresses are stored raw (0:hex64); expose the user-friendly UQ… form for display.
+    const friendlyOf = (chain: string, addr: string) => (chain === 'TON' ? tonRawToFriendly(addr) : null)
 
     const results = await Promise.allSettled(
       wallets.map(async (w) => {
@@ -3737,6 +3741,7 @@ export async function adminRoutes(app: FastifyInstance) {
         return {
           chain: w.chain as string,
           address: w.address,
+          friendlyAddress: friendlyOf(w.chain as string, w.address),
           balance,
           balanceUsd: balance * usdPrice,
           nativeSymbol: nativeSymbol(chainId as string),
@@ -3752,6 +3757,7 @@ export async function adminRoutes(app: FastifyInstance) {
       return {
         chain: wallets[i]!.chain as string,
         address: wallets[i]!.address,
+        friendlyAddress: friendlyOf(wallets[i]!.chain as string, wallets[i]!.address),
         balance: null as number | null,
         balanceUsd: null as number | null,
         nativeSymbol: wallets[i]!.chain as string,
@@ -4008,6 +4014,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/gas/stats', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { redis: redisClient } = await import('../lib/redis')
     const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
+    const { tonRawToFriendly } = await import('../lib/gas/tonWalletService')
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -4084,6 +4091,8 @@ export async function adminRoutes(app: FastifyInstance) {
         return {
           chain:                w.chain,
           address:              w.address,
+          // TON addresses are stored raw (0:hex64); expose the user-friendly UQ… form for display.
+          friendlyAddress:      w.chain === 'TON' ? tonRawToFriendly(w.address) : null,
           isActive:             w.isActive,
           balance,
           balanceUsd,
@@ -6061,12 +6070,15 @@ export async function adminRoutes(app: FastifyInstance) {
       orderBy: { hdIndex: 'asc' },
     })
     const { redis: redisClient } = await import('../lib/redis')
+    const { tonRawToFriendly } = await import('../lib/gas/tonWalletService')
     const withBalances = await Promise.all(
       wallets.map(async (w) => {
         const balStr    = await redisClient.get(`gas_wallet_balance:${chain}`)
         const balUsdStr = await redisClient.get(`gas_wallet_balance_usd:${chain}`)
         return {
           ...w,
+          // TON addresses are stored raw (0:hex64); expose the user-friendly UQ… form for display.
+          friendlyAddress: w.chain === 'TON' ? tonRawToFriendly(w.address) : null,
           cachedBalanceNative: balStr    ? parseFloat(balStr)    : null,
           cachedBalanceUsd:    balUsdStr ? parseFloat(balUsdStr) : null,
         }
@@ -6096,7 +6108,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
 
       const { getSolanaHotWalletAddress } = await import('../lib/gas/solanaWalletService')
-      const { getTonHotWalletAddress }    = await import('../lib/gas/tonWalletService')
+      const { getTonHotWalletAddress, tonRawToFriendly } = await import('../lib/gas/tonWalletService')
       const { getSuiHotWalletAddress }    = await import('../lib/gas/suiWalletService')
 
       let address: string | null = null
@@ -6109,7 +6121,9 @@ export async function adminRoutes(app: FastifyInstance) {
         data: { chain: dbChain, address, hdIndex: 0, weight: 0, isActive: false },
       })
       await createAuditLog(req.user!.id, 'GAS_HOT_WALLET_ADDED', 'GasHotWallet', wallet.id, { chain: dbChain, hdIndex: 0, address }, clientIp(req), req.headers['user-agent'] as string | undefined)
-      return reply.code(201).send({ success: true, data: wallet })
+      // TON addresses are stored raw (0:hex64); expose the user-friendly UQ… form for display.
+      const friendlyAddress = dbChain === 'TON' ? tonRawToFriendly(wallet.address) : null
+      return reply.code(201).send({ success: true, data: { ...wallet, friendlyAddress } })
     }
 
     // TRON and EVM chains: find next available hdIndex for multi-wallet load balancing

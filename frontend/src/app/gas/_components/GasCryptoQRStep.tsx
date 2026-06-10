@@ -1,10 +1,15 @@
 'use client'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { CountdownTimer } from '@/components/ui/CountdownTimer'
 import { Badge } from '@/components/ui/Badge'
 import { useGasCtx, PHASE } from './GasContext'
 import { ProcessingTimeline, STATUS_LABELS, statusVariant } from './GasPrimitives'
+
+// How long we show the "detecting your payment" window before offering manual
+// tx-hash entry. On-chain deposits are usually detected by the poller within ~1 min.
+const DETECT_WINDOW_MS = 60_000
 
 export function GasCryptoQRStep() {
   const {
@@ -17,6 +22,22 @@ export function GasCryptoQRStep() {
     handleVerifyPayment,
     pollErrCount, setPollErrCount, pollOrder,
   } = useGasCtx()
+
+  // 60s auto-detection window after the user reports they've paid. While it runs
+  // the order keeps polling; if it auto-completes the whole block re-renders away.
+  // Once the window elapses we fall back to manual tx-hash entry.
+  const [detectDeadline, setDetectDeadline] = useState<string | null>(null)
+  const [detectElapsed, setDetectElapsed] = useState(false)
+
+  useEffect(() => {
+    if (paymentSent && !detectDeadline) {
+      setDetectDeadline(new Date(Date.now() + DETECT_WINDOW_MS).toISOString())
+      setDetectElapsed(false)
+    } else if (!paymentSent) {
+      setDetectDeadline(null)
+      setDetectElapsed(false)
+    }
+  }, [paymentSent, detectDeadline])
 
   if (!order) return null
 
@@ -118,17 +139,39 @@ export function GasCryptoQRStep() {
             <button onClick={() => setPaymentSent(true)} className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors shadow-card">
               I&apos;ve Sent the Payment
             </button>
-          ) : !verifyOpen ? (
-            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                <p className="text-sm font-semibold text-primary">Payment Sent</p>
+          ) : !detectElapsed && !verifyOpen ? (
+            /* 60s auto-detection window */
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3 text-center">
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-4 h-4 text-primary shrink-0 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                <p className="text-sm font-semibold text-primary">Detecting your on-chain payment…</p>
               </div>
-              <p className="text-xs text-primary">We&apos;ll detect your payment automatically. If it doesn&apos;t confirm in a minute, paste your transaction hash to speed it up.</p>
+              <p className="text-xs text-primary/80">
+                We&apos;re scanning the blockchain for your USDT transfer. This usually completes within a minute — please keep this page open.
+              </p>
+              {detectDeadline && (
+                <div className="text-2xl font-mono font-bold text-primary">
+                  <CountdownTimer expiresAt={detectDeadline} showLabel={false} onExpire={() => setDetectElapsed(true)} />
+                </div>
+              )}
+              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-primary/50 hover:text-primary text-center">
+                I haven&apos;t sent yet — go back
+              </button>
+            </div>
+          ) : !verifyOpen ? (
+            /* Detection window elapsed — offer manual tx-hash verification */
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p className="text-sm font-semibold text-amber-800">Still detecting your payment</p>
+              </div>
+              <p className="text-xs text-amber-700">
+                We haven&apos;t confirmed your payment automatically yet. If you&apos;ve already sent it, paste your transaction hash below and our team will verify it manually and release your gas.
+              </p>
               <button onClick={() => setVerifyOpen(true)} className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors">
                 Enter Transaction Hash
               </button>
-              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-primary/50 hover:text-primary text-center">
+              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-amber-600/70 hover:text-amber-700 text-center">
                 I haven&apos;t sent yet — go back
               </button>
             </div>
@@ -222,7 +265,7 @@ function VerifyHashForm({
   verifyError, verifying, handleVerifyPayment,
   onClose,
   label = 'Enter Transaction Hash',
-  hint = "Paste your transaction hash from your wallet or blockchain explorer. We'll verify and release your gas.",
+  hint = "Paste your transaction hash from your wallet or blockchain explorer. We'll verify it (manually if needed) and release your gas shortly.",
   buttonLabel = 'Confirm Payment',
 }: {
   verifyTxHash: string

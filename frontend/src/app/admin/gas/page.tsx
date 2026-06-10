@@ -43,6 +43,7 @@ interface GasOrdersResponse {
 interface GasWallet {
   chain: string
   address: string
+  friendlyAddress?: string | null
   isActive: boolean
   balance: number | null
   balanceUsd: number | null
@@ -236,8 +237,8 @@ function WalletCard({
             </Badge>
           </div>
 
-          {/* Address */}
-          <p className="text-xs font-mono text-text-muted truncate mb-3">{wallet.address}</p>
+          {/* Address — TON shows user-friendly UQ… form */}
+          <p className="text-xs font-mono text-text-muted truncate mb-3">{wallet.chain === 'TON' && wallet.friendlyAddress ? wallet.friendlyAddress : wallet.address}</p>
 
           {/* Metrics */}
           <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm">

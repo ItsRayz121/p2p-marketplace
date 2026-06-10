@@ -1769,6 +1769,7 @@ export const adminApi = {
       balances: Array<{
         chain: string
         address: string
+        friendlyAddress: string | null
         balance: number | null
         balanceUsd: number | null
         nativeSymbol: string
@@ -1911,14 +1912,14 @@ export const adminApi = {
       refundPendingCount: number
       pendingCustomRequests: number
       wallet: {
-        chain: string; address: string; isActive: boolean; balance: number | null
+        chain: string; address: string; friendlyAddress: string | null; isActive: boolean; balance: number | null
         balanceUsd: number | null; nativeSymbol: string
         status: 'healthy' | 'low' | 'paused' | 'unavailable' | 'rpc_error' | 'price_unavailable'
         pauseReason: 'manual' | 'low_balance' | null
         alertThresholdUsd: number | null; pauseThresholdUsd: number | null; lastBalanceRefreshAt: string | null
       } | null
       wallets: Array<{
-        chain: string; address: string; isActive: boolean; balance: number | null
+        chain: string; address: string; friendlyAddress: string | null; isActive: boolean; balance: number | null
         balanceUsd: number | null; nativeSymbol: string
         status: 'healthy' | 'low' | 'paused' | 'unavailable' | 'rpc_error' | 'price_unavailable'
         pauseReason: 'manual' | 'low_balance' | null
@@ -2055,9 +2056,9 @@ export const adminApi = {
 
   // Phase 8 — Hot Wallet Management
   listHotWallets: (chain: string) =>
-    apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; hdIndex: number; weight: number; isActive: boolean; cachedBalanceNative: number | null; cachedBalanceUsd: number | null; createdAt: string }> }>(`/admin/gas/hot-wallets/${chain}`),
+    apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; friendlyAddress: string | null; hdIndex: number; weight: number; isActive: boolean; cachedBalanceNative: number | null; cachedBalanceUsd: number | null; createdAt: string }> }>(`/admin/gas/hot-wallets/${chain}`),
   addHotWallet: (chain: string) =>
-    apiRequest<{ id: string; address: string; hdIndex: number }>(`/admin/gas/hot-wallets/${chain}/add`, { method: 'POST' }),
+    apiRequest<{ id: string; address: string; friendlyAddress: string | null; hdIndex: number }>(`/admin/gas/hot-wallets/${chain}/add`, { method: 'POST' }),
   toggleHotWallet: (id: string) =>
     apiRequest<{ id: string; isActive: boolean }>(`/admin/gas/hot-wallets/${id}/toggle`, { method: 'PATCH' }),
 

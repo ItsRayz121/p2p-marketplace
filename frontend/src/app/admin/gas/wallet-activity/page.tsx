@@ -37,6 +37,7 @@ type LedgerEntry = {
 type LiveBalance = {
   chain: string
   address: string
+  friendlyAddress: string | null
   balance: number | null
   balanceUsd: number | null
   nativeSymbol: string
@@ -254,14 +255,16 @@ function LiveBalancesPanel() {
       {!loading && balances.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 divide-x divide-y divide-border">
           {balances.map((w) => {
-            const explorerLink = explorerAddressUrl(w.chain, w.address)
+            // TON addresses are stored raw (0:hex64); show the user-friendly UQ… form.
+            const displayAddr = w.chain === 'TON' && w.friendlyAddress ? w.friendlyAddress : w.address
+            const explorerLink = explorerAddressUrl(w.chain, displayAddr)
             const visibleTokens = (w.tokens ?? [])
               .filter((t) => t.balanceFormatted > 0)
               .sort((a, b) => b.balanceFormatted - a.balanceFormatted)
               .slice(0, 6)
-            const shortAddr = w.address.length > 14
-              ? `${w.address.slice(0, 6)}…${w.address.slice(-4)}`
-              : w.address
+            const shortAddr = displayAddr.length > 14
+              ? `${displayAddr.slice(0, 6)}…${displayAddr.slice(-4)}`
+              : displayAddr
 
             return (
               <div key={w.chain} className="p-3 flex flex-col gap-1.5 min-w-0">
@@ -306,10 +309,10 @@ function LiveBalancesPanel() {
 
                 {/* Address + copy */}
                 <div className="flex items-center min-w-0">
-                  <span className="font-mono text-[9px] text-text-muted truncate" title={w.address}>
+                  <span className="font-mono text-[9px] text-text-muted truncate" title={displayAddr}>
                     {shortAddr}
                   </span>
-                  <CopyButton text={w.address} />
+                  <CopyButton text={displayAddr} />
                 </div>
 
                 {/* Token chip summary — single line, no rows */}
