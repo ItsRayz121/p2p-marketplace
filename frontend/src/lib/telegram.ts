@@ -35,16 +35,34 @@ export interface TelegramWebApp {
   setBackgroundColor?: (color: string) => void
 }
 
+// Key under which the launch-hash initData is mirrored into sessionStorage.
+// Shared by the detect script and the TS helpers below — keep them in sync.
+const TG_INIT_DATA_STORAGE_KEY = 'tg_init_data'
+
 // Synchronous inline script — injected as the first <body> child in layout.tsx
 // (same pattern as THEME_SCRIPT) so it runs before React hydration and before
-// telegram-web-app.js. Captures the launch-hash signals into window globals.
+// telegram-web-app.js. Captures the launch-hash signals into window globals AND
+// mirrors initData into sessionStorage.
+//
+// Why sessionStorage: Telegram only appends "#tgWebAppData=..." on the FIRST
+// open. Our own client-side redirect ("/" → "/mini-app") drops the hash, and a
+// hard reload (the error screen's "Try again" calls location.reload()) lands on
+// a hash-less URL — so without a durable copy the launch data is lost and auth
+// fails for the rest of the session. sessionStorage is per-tab and cleared when
+// the WebView closes, so a stale launch can't outlive the Telegram session.
 export const TELEGRAM_DETECT_SCRIPT = `(function(){
   try {
     var h = location.hash || '';
-    window.__IS_TELEGRAM__ = h.indexOf('tgWebAppData') !== -1;
     var raw = h.charAt(0) === '#' ? h.slice(1) : h;
     var p = new URLSearchParams(raw);
-    window.__TG_INIT_DATA__ = p.get('tgWebAppData') || '';
+    var initData = p.get('tgWebAppData') || '';
+    if (initData) {
+      try { sessionStorage.setItem('${TG_INIT_DATA_STORAGE_KEY}', initData); } catch (e) {}
+    } else {
+      try { initData = sessionStorage.getItem('${TG_INIT_DATA_STORAGE_KEY}') || ''; } catch (e) {}
+    }
+    window.__TG_INIT_DATA__ = initData;
+    window.__IS_TELEGRAM__ = !!initData;
   } catch (e) {}
 })();`
 
@@ -77,6 +95,11 @@ export function getInitData(): string {
     const fromHash = new URLSearchParams(raw).get('tgWebAppData')
     if (fromHash) return fromHash
   } catch { /* ignore */ }
+  // Durable mirror — survives the hash-dropping redirect and hard reloads.
+  try {
+    const stored = sessionStorage.getItem(TG_INIT_DATA_STORAGE_KEY)
+    if (stored) return stored
+  } catch { /* ignore */ }
   // SDK is the LAST resort, never the gate.
   return window.Telegram?.WebApp?.initData ?? ''
 }
@@ -91,6 +114,9 @@ export function isTelegramMiniApp(): boolean {
   if (window.__IS_TELEGRAM__) return true
   try {
     if (window.location.hash.includes('tgWebAppData')) return true
+  } catch { /* ignore */ }
+  try {
+    if (sessionStorage.getItem(TG_INIT_DATA_STORAGE_KEY)) return true
   } catch { /* ignore */ }
   return !!window.Telegram?.WebApp?.initData
 }

@@ -107,15 +107,36 @@ async function doRefresh(): Promise<string> {
 export async function miniAppAuthenticate(): Promise<{ accessToken: string; user: AuthUser; isNew: boolean }> {
   const initData = getInitData()
   if (!initData) throw new Error('No Telegram init data available')
-  const res = await fetch(`${API_BASE}/api/v1/miniapp/auth`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ initData }),
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error('Mini App authentication failed')
-  const raw = await res.json()
-  return unwrapEnvelope<{ accessToken: string; user: AuthUser; isNew: boolean }>(raw)
+
+  // Many users open the Mini App over a VPN / carrier-grade-NAT mobile
+  // connection where a single request can transiently fail or hit a 5xx. The
+  // initData is HMAC-validated server-side, so retrying is safe — re-issue a few
+  // times with linear backoff before surfacing the "couldn't sign you in" error.
+  // A 4xx (bad/stale initData, banned account) is a definitive answer: don't retry.
+  const maxAttempts = 3
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(`${API_BASE}/api/v1/miniapp/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData }),
+        credentials: 'include',
+      })
+    } catch (networkErr) {
+      if (attempt === maxAttempts) throw networkErr
+      await new Promise((r) => setTimeout(r, 700 * attempt))
+      continue
+    }
+    if (res.status >= 500 && attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, 700 * attempt))
+      continue
+    }
+    if (!res.ok) throw new Error('Mini App authentication failed')
+    const raw = await res.json()
+    return unwrapEnvelope<{ accessToken: string; user: AuthUser; isNew: boolean }>(raw)
+  }
+  throw new Error('Mini App authentication failed')
 }
 
 // Choose the right re-auth strategy: launch-hash initData inside Telegram,

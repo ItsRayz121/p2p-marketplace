@@ -27,9 +27,12 @@ export default function MiniAppBridge() {
     if (user) router.replace('/dashboard')
   }, [user, router])
 
-  // Safety net: if bootstrap is still pending after ~10s, surface the error UI.
+  // Safety net: if bootstrap is still pending after ~20s, surface the error UI.
+  // Kept generous on purpose — auth retries with backoff over a slow VPN / mobile
+  // connection can legitimately run several seconds before succeeding, and we'd
+  // rather keep showing the spinner than flash "couldn't sign you in" mid-request.
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), 10_000)
+    const t = setTimeout(() => setTimedOut(true), 20_000)
     return () => clearTimeout(t)
   }, [])
 
