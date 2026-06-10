@@ -125,6 +125,21 @@ export async function getWorkingRpcUrl(chain: GasChainId, primaryUrl: string): P
   )
 }
 
+/**
+ * Returns the ordered, de-duplicated list of RPC URLs to try for a chain:
+ * the operator-configured primary first (when set), then the hardcoded free
+ * public fallbacks. Unlike `getWorkingRpcUrl`, this does NOT probe — callers
+ * that need to retry an actual RPC method (e.g. eth_getTransactionByHash)
+ * across endpoints can iterate this list and stop at the first success.
+ */
+export function getRpcUrlsInOrder(chain: GasChainId, primaryUrl?: string): string[] {
+  const fallbacks = FALLBACK_RPCS[chain] ?? []
+  const ordered = [primaryUrl, ...fallbacks].filter(
+    (u): u is string => typeof u === 'string' && u.length > 0,
+  )
+  return [...new Set(ordered)]
+}
+
 // ── Full fallback status (for system-health) ──────────────────────────────────
 
 export interface RpcEndpointStatus {

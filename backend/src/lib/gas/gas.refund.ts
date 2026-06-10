@@ -11,7 +11,7 @@ import {
   deriveEvmPrivateKeyHex,
   HOT_WALLET_INDEX,
 } from './gasWalletService'
-import { getWorkingRpcUrl } from './rpcFallback'
+import { getWorkingRpcUrl, getRpcUrlsInOrder } from './rpcFallback'
 
 // ERC20/BEP20 minimal ABI — only the transfer function we need
 const ERC20_TRANSFER_ABI = [
@@ -162,10 +162,23 @@ async function evmSenderFromTx(
   primaryRpcUrl: string,
   txHash: string,
 ): Promise<string | null> {
-  const rpcUrl = await getWorkingRpcUrl(chain, primaryRpcUrl).catch(() => primaryRpcUrl)
-  const client = createPublicClient({ chain: viemChain, transport: http(rpcUrl) })
-  const tx = await client.getTransaction({ hash: txHash as `0x${string}` })
-  return tx?.from ?? null
+  // Try the actual tx lookup across every endpoint (primary + free public
+  // fallbacks), not just the first node that answers an eth_blockNumber probe.
+  // A node can pass the cheap probe yet rate-limit or lag on the tx itself —
+  // giving up after one URL was the cause of spurious SENDER_ADDRESS_UNRESOLVABLE.
+  const urls = getRpcUrlsInOrder(chain, primaryRpcUrl)
+  let lastErr: unknown
+  for (const rpcUrl of urls) {
+    try {
+      const client = createPublicClient({ chain: viemChain, transport: http(rpcUrl) })
+      const tx = await client.getTransaction({ hash: txHash as `0x${string}` })
+      if (tx?.from) return tx.from
+    } catch (err) {
+      lastErr = err // tx not found on this node (or it errored) — try the next
+    }
+  }
+  if (lastErr) throw lastErr // surfaced to getSenderAddressFromTx's catch → null
+  return null
 }
 
 export async function getSenderAddressFromTx(
