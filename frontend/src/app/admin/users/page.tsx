@@ -10,7 +10,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
-import { Users, ChevronRight } from 'lucide-react'
+import { Users, ChevronRight, Send } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
@@ -134,7 +134,7 @@ export default function UsersPage() {
       <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-3">
         <div className="flex-1 min-w-48">
           <Input
-            placeholder="Search username, name, email, user ID, referral code, IP..."
+            placeholder="Search username, name, email, Telegram @handle, user ID, referral code, IP..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') runSearchNow() }}
@@ -195,14 +195,30 @@ export default function UsersPage() {
                     className="hover:bg-surface/50 transition-colors cursor-pointer"
                   >
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/users/${u.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {u.username || '—'}
-                      </Link>
-                      <p className="text-xs text-text-muted">{u.email}</p>
+                      <div className="flex items-center gap-1.5">
+                        <Link
+                          href={`/admin/users/${u.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {u.username || '—'}
+                        </Link>
+                        {u.telegramLinked && (
+                          <span
+                            title={u.telegramUsername ? `Telegram: @${u.telegramUsername}` : 'Joined via Telegram'}
+                            className="inline-flex items-center gap-0.5 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-500"
+                          >
+                            <Send size={10} /> Telegram
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-text-muted">
+                        {u.hasRealEmail
+                          ? u.email
+                          : u.telegramUsername
+                            ? `@${u.telegramUsername}`
+                            : 'Telegram — no email yet'}
+                      </p>
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant="outline" size="sm">{u.role}</Badge>

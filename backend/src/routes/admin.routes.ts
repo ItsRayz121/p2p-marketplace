@@ -12,6 +12,7 @@ import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
+import { isSyntheticEmail } from '../services/auth.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
 import { processDepositEvent, creditDetectedDeposit } from '../services/depositWatcher.service'
 import { refreshDepositFromRpc } from '../services/depositReconcile.service'
@@ -265,6 +266,7 @@ export async function adminRoutes(app: FastifyInstance) {
         { username: { contains: s, mode: 'insensitive' } },
         { fullName: { contains: s, mode: 'insensitive' } },
         { referralCode: { contains: s, mode: 'insensitive' } },
+        { telegramUsername: { contains: s.replace(/^@/, ''), mode: 'insensitive' } }, // @handle (with or without @)
         { id: s },               // exact user ID
         { registrationIp: s },   // exact IP (fraud investigation)
       ]
@@ -291,6 +293,8 @@ export async function adminRoutes(app: FastifyInstance) {
           underReview: true,
           moderationReason: true,
           createdAt: true,
+          telegramId: true,
+          telegramUsername: true,
           tradeStats: { select: { totalTrades: true, completedTrades: true, completionRate: true, totalVolumePKR: true, badge: true, badgeLabel: true, trustScore: true, badgeOverride: true } },
           _count: {
             select: {
@@ -310,8 +314,13 @@ export async function adminRoutes(app: FastifyInstance) {
     ])
 
     // Enrich with accurate live trade count (buy + sell, P2P + CTM) + moderation status.
-    const enrichedUsers = users.map((u) => ({
+    // Strip the raw BigInt telegramId (not JSON-serializable) and surface clean
+    // flags: telegramLinked = signed up / linked via Telegram; hasRealEmail =
+    // false when the email is the synthetic telegram_*@*.invalid placeholder.
+    const enrichedUsers = users.map(({ telegramId, ...u }) => ({
       ...u,
+      telegramLinked: telegramId != null,
+      hasRealEmail: !isSyntheticEmail(u.email),
       tradeCount: (u._count.trades ?? 0) + (u._count.sellTrades ?? 0) + (u._count.ctmBuyTrades ?? 0) + (u._count.ctmSellTrades ?? 0),
       moderationStatus: computeModerationStatus(u),
       hasPendingAppeal: (u._count.appeals ?? 0) > 0,
