@@ -688,6 +688,127 @@ export async function loginOrRegisterWithGoogle(
   return { requiresTwoFa: false, accessToken, refreshToken, user: toSafeUser(user) }
 }
 
+// ─── Telegram Mini App ────────────────────────────────────────────────────────
+
+export interface TelegramAuthInput {
+  telegramId: number
+  firstName: string
+  username?: string
+  photoUrl?: string
+  // Referral code forwarded from the deep link (initData.start_param). When the
+  // user is NEW and this is absent, the service falls back to any pending stash
+  // recorded by the bot's /start handler (keyed by telegramId).
+  referralCode?: string
+  userAgent?: string
+  ip?: string
+}
+
+// Get-or-create an account keyed by Telegram id, then issue a full session.
+// Analogous to loginOrRegisterWithGoogle, but identity is proven by the
+// caller's HMAC validation of initData (the route validates BEFORE calling
+// this), so new accounts are created email-verified and skip the email gate.
+export async function loginOrRegisterWithTelegram(
+  input: TelegramAuthInput,
+): Promise<LoginResult & { isNew: boolean }> {
+  const { telegramId, firstName, username, photoUrl, userAgent, ip } = input
+  const tgId = BigInt(telegramId)
+
+  const existing = await db.user.findUnique({ where: { telegramId: tgId }, select: USER_SELECT })
+
+  if (existing) {
+    // Banned / suspended Telegram users get the restricted appeal payload, same
+    // as every other login path.
+    if (existing.isSuspended || existing.isBanned) {
+      const mod = await db.user.findUnique({
+        where: { id: existing.id },
+        select: { bannedUntil: true, suspendedUntil: true, moderationReason: true },
+      })
+      return {
+        isNew: false,
+        requiresTwoFa: false,
+        restricted: {
+          status: existing.isBanned ? 'banned' : 'suspended',
+          reason: mod?.moderationReason ?? null,
+          until: (existing.isBanned ? mod?.bannedUntil : mod?.suspendedUntil)?.toISOString() ?? null,
+          appealToken: signAppealToken({ userId: existing.id, email: existing.email }),
+        },
+      }
+    }
+    // Refresh the cached Telegram profile fields (username/photo can change).
+    await db.user.update({
+      where: { id: existing.id },
+      data: {
+        telegramAuthAt: new Date(),
+        ...(username !== undefined ? { telegramUsername: username } : {}),
+        ...(photoUrl !== undefined ? { telegramPhotoUrl: photoUrl } : {}),
+      },
+    })
+    const { accessToken, refreshToken } = await createSession(existing.id, existing.email, existing.role, userAgent, ip)
+    return { isNew: false, requiresTwoFa: false, accessToken, refreshToken, user: toSafeUser(existing) }
+  }
+
+  // ── New account ──
+  // Resolve the referral code: explicit (deep-link start_param) first, then the
+  // bot's pending stash. The HMAC already proved identity, so attribution is
+  // applied immediately at creation (no email-verify wait) — matching the spec.
+  let referralCode = input.referralCode
+  if (!referralCode) {
+    const pending = await db.telegramPendingReferral.findUnique({ where: { telegramId: tgId } })
+    referralCode = pending?.referralCode
+  }
+  let referredById: string | undefined
+  if (referralCode) {
+    const referrer = await db.user.findUnique({ where: { referralCode }, select: { id: true } })
+    if (referrer) referredById = referrer.id // silently ignore an unknown code rather than blocking signup
+  }
+
+  // Telegram accounts have no email — synthesize a unique, clearly-non-deliverable
+  // address on the reserved .invalid TLD. isEmailVerified=true because Telegram's
+  // HMAC is the identity proof; these users are exempt from the email gate.
+  const syntheticEmail = `telegram_${telegramId}@users.rupchain.invalid`
+  const base = (username ?? firstName).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15) || 'tg'
+  let desiredUsername = `${base}${Math.floor(1000 + Math.random() * 9000)}`
+  if (await db.user.findUnique({ where: { username: desiredUsername }, select: { id: true } })) {
+    desiredUsername = `${base}${Math.floor(100000 + Math.random() * 900000)}`
+  }
+  const userReferralCode = generateReferralCode()
+
+  const created = await db.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        email: syntheticEmail,
+        passwordHash: randomBytes(32).toString('hex'), // unusable password — Telegram-only login
+        fullName: firstName?.trim() || 'Telegram User',
+        username: desiredUsername,
+        referralCode: userReferralCode,
+        telegramId: tgId,
+        ...(username ? { telegramUsername: username } : {}),
+        ...(photoUrl ? { telegramPhotoUrl: photoUrl } : {}),
+        telegramAuthAt: new Date(),
+        isEmailVerified: true,
+        ...(referredById ? { referredById } : {}),
+        ...(ip ? { registrationIp: ip } : {}),
+        termsAcceptedAt: new Date(),
+        termsVersion: 'v1.0',
+      },
+      select: USER_SELECT,
+    })
+
+    await tx.tradeStats.create({ data: { userId: user.id } })
+    await tx.wallet.create({
+      data: { userId: user.id, coin: 'USDT', network: 'TRC20', balance: 0, lockedBalance: 0 },
+    })
+
+    // Consume the pending referral stash so it cannot be replayed.
+    await tx.telegramPendingReferral.deleteMany({ where: { telegramId: tgId } })
+
+    return user
+  })
+
+  const { accessToken, refreshToken } = await createSession(created.id, created.email, created.role, userAgent, ip)
+  return { isNew: true, requiresTwoFa: false, accessToken, refreshToken, user: toSafeUser(created) }
+}
+
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
 async function createSession(
