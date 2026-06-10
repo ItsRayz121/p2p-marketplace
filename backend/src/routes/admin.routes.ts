@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { cloudinary, CLOUDINARY_FOLDERS } from '../lib/cloudinary'
+import { cloudinary, CLOUDINARY_FOLDERS, signCloudinaryDeliveryUrl } from '../lib/cloudinary'
 import { authenticate, requireRole, requireTotpIfEnabled } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
@@ -389,6 +389,14 @@ export async function adminRoutes(app: FastifyInstance) {
       success: true,
       data: {
         ...user,
+        // KYC documents are authenticated Cloudinary assets — sign for display
+        kycSubmissions: (u.kycSubmissions ?? []).map((s: { frontUrl: string; backUrl: string; selfieUrl: string; videoUrl: string | null }) => ({
+          ...s,
+          frontUrl: signCloudinaryDeliveryUrl(s.frontUrl),
+          backUrl: signCloudinaryDeliveryUrl(s.backUrl),
+          selfieUrl: signCloudinaryDeliveryUrl(s.selfieUrl),
+          videoUrl: signCloudinaryDeliveryUrl(s.videoUrl),
+        })),
         moderationStatus: computeModerationStatus(user),
         liveTradeCount,
         ctmBuyCount,
@@ -1167,9 +1175,19 @@ export async function adminRoutes(app: FastifyInstance) {
       db.kycSubmission.count({ where: { status: 'pending' } }),
     ])
 
+    // KYC documents are stored as authenticated Cloudinary assets — sign the
+    // delivery URLs so the reviewer's browser can actually load them.
+    const signed = submissions.map((s) => ({
+      ...s,
+      frontUrl: signCloudinaryDeliveryUrl(s.frontUrl),
+      backUrl: signCloudinaryDeliveryUrl(s.backUrl),
+      selfieUrl: signCloudinaryDeliveryUrl(s.selfieUrl),
+      videoUrl: signCloudinaryDeliveryUrl(s.videoUrl),
+    }))
+
     return reply.send({
       success: true,
-      data: { submissions, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      data: { submissions: signed, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
   })
 
@@ -1180,7 +1198,16 @@ export async function adminRoutes(app: FastifyInstance) {
       include: { user: { select: { id: true, email: true, username: true, fullName: true, kycStatus: true, kycLevel: true } } },
     })
     if (!submission) throw Errors.NOT_FOUND('KYC submission')
-    return reply.send({ success: true, data: submission })
+    return reply.send({
+      success: true,
+      data: {
+        ...submission,
+        frontUrl: signCloudinaryDeliveryUrl(submission.frontUrl),
+        backUrl: signCloudinaryDeliveryUrl(submission.backUrl),
+        selfieUrl: signCloudinaryDeliveryUrl(submission.selfieUrl),
+        videoUrl: signCloudinaryDeliveryUrl(submission.videoUrl),
+      },
+    })
   })
 
   app.post('/admin/kyc/:id/approve', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {

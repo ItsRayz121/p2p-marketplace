@@ -24,6 +24,9 @@ interface PresignResponse {
     public_id: string
     folder: string
     signature: string
+    // Present for KYC documents — uploads them as `authenticated` assets so
+    // the bare URL is not publicly viewable (server signs delivery URLs).
+    type?: string
   }
 }
 
@@ -67,6 +70,7 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
       form.append('public_id', String(fields.public_id))
       form.append('folder', String(fields.folder))
       form.append('signature', String(fields.signature))
+      if (fields.type) form.append('type', String(fields.type))
       form.append('file', file)
 
       const cloudRes = await fetch(url, { method: 'POST', body: form })

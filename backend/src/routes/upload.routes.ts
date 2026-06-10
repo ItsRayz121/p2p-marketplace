@@ -54,7 +54,15 @@ export async function uploadRoutes(app: FastifyInstance) {
     const publicId = randomUUID()
     const timestamp = Math.round(Date.now() / 1000)
 
-    const paramsToSign = { timestamp, public_id: publicId, folder }
+    // KYC documents (CNIC, selfie, video) are uploaded as `authenticated`
+    // assets: the bare delivery URL 404s without a server-generated signature
+    // (see signCloudinaryDeliveryUrl). Everything else stays public `upload`.
+    const isKycDoc = type.startsWith('kyc-')
+    const deliveryType = isKycDoc ? 'authenticated' : 'upload'
+
+    const paramsToSign = isKycDoc
+      ? { timestamp, public_id: publicId, folder, type: deliveryType }
+      : { timestamp, public_id: publicId, folder }
     const signature = cloudinary.utils.api_sign_request(paramsToSign, env.CLOUDINARY_API_SECRET)
 
     return reply.send({
@@ -67,8 +75,9 @@ export async function uploadRoutes(app: FastifyInstance) {
           public_id: publicId,
           folder,
           signature,
+          ...(isKycDoc ? { type: deliveryType } : {}),
         },
-        publicUrl: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/${folder}/${publicId}`,
+        publicUrl: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/${deliveryType}/${folder}/${publicId}`,
       },
     })
   })
