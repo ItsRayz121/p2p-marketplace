@@ -367,6 +367,16 @@ model User {
   passwordHash  String
   googleId      String?   @unique
 
+  // ── Telegram Mini App identity ──
+  // telegramId is the numeric Telegram user id (stored as BigInt — ids exceed
+  // 2^31). Present only for accounts created/linked via the Mini App. Telegram's
+  // HMAC-validated initData proves this identity, so these accounts skip the
+  // email-verification gate.
+  telegramId        BigInt?   @unique
+  telegramUsername  String?
+  telegramPhotoUrl  String?
+  telegramAuthAt    DateTime?
+
   role          UserRole  @default(user)
   intendedRole  String    @default("user")
 
@@ -940,6 +950,16 @@ model ReferralReward {
   createdAt    DateTime             @default(now())
 
   @@index([referrerId, status])
+}
+
+// Pending referral attribution captured at bot `/start ref_<code>` time, BEFORE
+// any account exists. Keyed by the Telegram user id. /api/v1/miniapp/auth reads
+// (and clears) this when auto-creating a new user, so a Telegram deep-link signup
+// credits the referrer even though no account row existed at /start.
+model TelegramPendingReferral {
+  telegramId   BigInt   @id
+  referralCode String
+  createdAt    DateTime @default(now())
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

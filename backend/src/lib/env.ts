@@ -202,6 +202,29 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_CALLBACK_URL: z.string().url().optional(),
 
+  // ── Telegram Mini App + Bot ──
+  // TELEGRAM_BOT_TOKEN: the BotFather token. Used both as the HMAC key when
+  // validating Mini App initData and to drive the bot (webhook + /start).
+  // When unset, all Telegram features no-op gracefully (miniapp auth returns
+  // 503, the bot is not started) — the rest of the app is unaffected.
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  // TELEGRAM_BOT_USERNAME: the bot's @handle WITHOUT the leading "@"
+  // (e.g. "RupChainBot"). Used to build t.me deep links for referrals.
+  TELEGRAM_BOT_USERNAME: z.string().optional(),
+  // TELEGRAM_WEBHOOK_SECRET: random secret echoed by Telegram in the
+  // X-Telegram-Bot-Api-Secret-Token header on every webhook call. The webhook
+  // route rejects any request whose header does not match. Generate 32+ hex.
+  TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
+  // TELEGRAM_WEBHOOK_URL: public HTTPS base that receives bot updates
+  // (e.g. https://api.rupchain.com). The full webhook path is
+  // `${TELEGRAM_WEBHOOK_URL}/api/v1/telegram/webhook`. When set, the backend
+  // registers the webhook with Telegram on boot. Leave unset to skip.
+  TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
+  // TELEGRAM_MINI_APP_URL: the exact Mini App bridge URL configured in
+  // BotFather (e.g. https://rupchain.pk/mini-app). Used in the /start reply's
+  // web_app button. Falls back to `${FRONTEND_URL}/mini-app` when unset.
+  TELEGRAM_MINI_APP_URL: z.string().url().optional(),
+
   // Cloudflare Turnstile
   TURNSTILE_SECRET_KEY: z.string().optional(),
 
