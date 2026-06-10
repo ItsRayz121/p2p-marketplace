@@ -43,6 +43,22 @@ describe('validateInitData', () => {
     expect(result!.startParam).toBe('ref_ABC123')
   })
 
+  it('accepts a payload carrying a signature field (Bot API 7.10+ clients)', () => {
+    // Modern Telegram clients attach `signature`, which Telegram INCLUDES when
+    // computing `hash`. buildInitData signs over every field, so a valid hash
+    // here only verifies if validateInitData also keeps `signature` in its
+    // data-check-string. This guards the regression that 401'd every login.
+    const initData = buildInitData({
+      auth_date: String(now()),
+      user,
+      query_id: 'q1',
+      signature: 'abc_def-123XYZ',
+    })
+    const result = validateInitData(initData)
+    expect(result).not.toBeNull()
+    expect(result!.user.id).toBe(777000)
+  })
+
   it('rejects a tampered payload (user id changed after signing)', () => {
     const initData = buildInitData({ auth_date: String(now()), user })
     const tampered = initData.replace('777000', '888000')

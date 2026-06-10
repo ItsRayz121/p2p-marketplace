@@ -59,12 +59,19 @@ export function validateInitData(initData: string): ValidatedInitData | null {
   const hash = params.get('hash')
   if (!hash) return null
 
-  // Build the data-check-string: every field EXCEPT `hash` (and `signature`,
-  // used by the separate Ed25519 third-party flow), each "key=value" with the
-  // DECODED value (URLSearchParams decodes for us), sorted by key, joined by \n.
+  // Build the data-check-string: EVERY received field except `hash` itself,
+  // each "key=value" with the DECODED value (URLSearchParams decodes for us),
+  // sorted by key, joined by \n.
+  //
+  // IMPORTANT: `signature` MUST be included here. Modern Telegram clients
+  // (Bot API 7.10+) attach a `signature` field to every initData, and the
+  // `hash` is computed by Telegram over all fields except `hash` — INCLUDING
+  // `signature`. (`signature` is only excluded in the *separate* Ed25519
+  // third-party validation flow, which we don't use.) Excluding it here makes
+  // the HMAC never match on current clients → every Mini App login 401s.
   const pairs: string[] = []
   for (const [key, value] of params.entries()) {
-    if (key === 'hash' || key === 'signature') continue
+    if (key === 'hash') continue
     pairs.push(`${key}=${value}`)
   }
   pairs.sort()
@@ -79,6 +86,13 @@ export function validateInitData(initData: string): ValidatedInitData | null {
   const expectedBuf = Buffer.from(expected, 'hex')
   const actualBuf = Buffer.from(hash, 'hex')
   if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
+    // Diagnostic (no secrets): field keys + whether a signature was present, so
+    // a recurring HMAC mismatch is debuggable from the logs. The bot token and
+    // field VALUES are never logged.
+    logger.warn(
+      { fields: pairs.map((p) => p.split('=')[0]), hasSignature: params.has('signature') },
+      'initData HMAC mismatch — rejecting launch data',
+    )
     return null
   }
 
