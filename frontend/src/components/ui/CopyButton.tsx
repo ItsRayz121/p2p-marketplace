@@ -1,6 +1,7 @@
 'use client'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
+import { hapticSelection } from '@/lib/telegram'
 
 interface CopyButtonProps {
   text: string
@@ -17,7 +18,7 @@ export function CopyButton({ text, size = 'md', className }: CopyButtonProps) {
   return (
     <button
       type="button"
-      onClick={() => copy(text)}
+      onClick={() => { hapticSelection(); copy(text) }}
       className={cn(
         'inline-flex items-center justify-center rounded-md transition-colors',
         'text-text-muted hover:text-text-primary hover:bg-surface',

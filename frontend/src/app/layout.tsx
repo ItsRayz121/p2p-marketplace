@@ -3,6 +3,7 @@ import './globals.css'
 import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
 import SupportChatWidget from '@/components/support/SupportChatWidget'
+import TelegramPolish from '@/components/providers/TelegramPolish'
 import { THEME_SCRIPT } from '@/lib/theme'
 import { TELEGRAM_DETECT_SCRIPT } from '@/lib/telegram'
 
@@ -67,6 +68,9 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   minimumScale: 1,
+  // viewport-fit=cover lets content extend under the notch/home indicator so
+  // safe-area-inset-* env() values are non-zero in the Telegram WebView.
+  viewportFit: 'cover',
   themeColor: '#0D1B2A',
 }
 
@@ -90,6 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
           <Toaster />
           <SupportChatWidget />
+          <TelegramPolish />
         </Providers>
       </body>
     </html>

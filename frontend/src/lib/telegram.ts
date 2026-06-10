@@ -101,6 +101,43 @@ export function getWebApp(): TelegramWebApp | undefined {
   return window.Telegram?.WebApp
 }
 
+// ── Optional polish helpers — every one is a no-op when not in Telegram / no
+// SDK. Never call these in a way that gates core functionality. ──
+
+/** Light haptic tick for selection-style actions (copy, toggle). Safe everywhere. */
+export function hapticSelection(): void {
+  try { getWebApp()?.HapticFeedback?.selectionChanged() } catch { /* noop */ }
+}
+
+/** Haptic impact for confirmations / primary actions. */
+export function hapticImpact(style: 'light' | 'medium' | 'heavy' = 'medium'): void {
+  try { getWebApp()?.HapticFeedback?.impactOccurred(style) } catch { /* noop */ }
+}
+
+/** Haptic for success/error/warning outcomes. */
+export function hapticNotify(type: 'success' | 'error' | 'warning'): void {
+  try { getWebApp()?.HapticFeedback?.notificationOccurred(type) } catch { /* noop */ }
+}
+
+/**
+ * Follow Telegram's color scheme and chrome colors for a native feel. Only
+ * applies dark/light from Telegram when the user hasn't explicitly chosen a
+ * theme in-app (rupchain-theme), so an explicit preference always wins.
+ */
+export function applyTelegramChrome(wa: TelegramWebApp | undefined): void {
+  if (!wa || typeof document === 'undefined') return
+  try {
+    const stored = localStorage.getItem('rupchain-theme')
+    if (!stored && wa.colorScheme) {
+      document.documentElement.classList.toggle('dark', wa.colorScheme === 'dark')
+    }
+    // Match Telegram's header/background to the app surface so there's no seam.
+    const isDark = document.documentElement.classList.contains('dark')
+    wa.setHeaderColor?.(isDark ? '#0D1B2A' : '#FFFFFF')
+    wa.setBackgroundColor?.(isDark ? '#0D1B2A' : '#FFFFFF')
+  } catch { /* noop */ }
+}
+
 // Lazily inject telegram-web-app.js for optional polish (theme/BackButton/
 // haptics). Resolves with the SDK object if it loads within `timeoutMs`, else
 // undefined — callers MUST tolerate undefined. Never used to gate auth.
