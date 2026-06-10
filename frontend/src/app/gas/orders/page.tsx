@@ -256,9 +256,14 @@ export default function GasOrdersPage() {
               <p className="text-sm text-text-muted mt-0.5">All your past gas fee orders</p>
             </div>
           </div>
-          <Link href="/gas">
-            <Button variant="secondary" size="sm">New Order</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/dashboard">
+              <Button variant="secondary" size="sm">Dashboard</Button>
+            </Link>
+            <Link href="/gas">
+              <Button size="sm">Crypto Gas Fee</Button>
+            </Link>
+          </div>
         </div>
 
         {/* Table */}

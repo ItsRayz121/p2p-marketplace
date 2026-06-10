@@ -97,46 +97,47 @@ export function normalizeBank(slug: string): string {
 }
 
 // ── Static CDN fallbacks ───────────────────────────────────────────────────────
-// TrustWallet CDN for chains/tokens. PK payment methods and banks use
+// TrustWallet assets via the raw.githubusercontent.com mirror — the legacy
+// assets.trustwallet.com CDN now 404s on every path. PK payment methods and banks use
 // icon.horse / Google gstatic / worldvectorlogo — all verified working.
 // EntityLogo catches 404s and falls back to initials in all cases.
 
 export const CHAIN_LOGO_STATIC: Record<string, string> = {
-  BSC:    'https://assets.trustwallet.com/blockchains/binance/info/logo.png',
-  TRON:   'https://assets.trustwallet.com/blockchains/tron/info/logo.png',
-  ETH:    'https://assets.trustwallet.com/blockchains/ethereum/info/logo.png',
-  MATIC:  'https://assets.trustwallet.com/blockchains/polygon/info/logo.png',
-  ARB:    'https://assets.trustwallet.com/blockchains/arbitrum/info/logo.png',
-  OP:     'https://assets.trustwallet.com/blockchains/optimism/info/logo.png',
-  BASE:   'https://assets.trustwallet.com/blockchains/base/info/logo.png',
-  AVAX:   'https://assets.trustwallet.com/blockchains/avalanchec/info/logo.png',
-  SOL:    'https://assets.trustwallet.com/blockchains/solana/info/logo.png',
-  TON:    'https://assets.trustwallet.com/blockchains/ton/info/logo.png',
-  SUI:    'https://assets.trustwallet.com/blockchains/sui/info/logo.png',
-  BTC:    'https://assets.trustwallet.com/blockchains/bitcoin/info/logo.png',
-  XRP:    'https://assets.trustwallet.com/blockchains/ripple/info/logo.png',
-  COSMOS: 'https://assets.trustwallet.com/blockchains/cosmos/info/logo.png',
-  APTOS:  'https://assets.trustwallet.com/blockchains/aptos/info/logo.png',
-  APT:    'https://assets.trustwallet.com/blockchains/aptos/info/logo.png',
+  BSC:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png',
+  TRON:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/tron/info/logo.png',
+  ETH:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
+  MATIC:  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png',
+  ARB:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png',
+  OP:     'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png',
+  BASE:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png',
+  AVAX:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png',
+  SOL:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png',
+  TON:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ton/info/logo.png',
+  SUI:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/sui/info/logo.png',
+  BTC:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png',
+  XRP:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ripple/info/logo.png',
+  COSMOS: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/cosmos/info/logo.png',
+  APTOS:  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/aptos/info/logo.png',
+  APT:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/aptos/info/logo.png',
 }
 
 export const TOKEN_LOGO_STATIC: Record<string, string> = {
-  USDT:  'https://assets.trustwallet.com/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
-  USDC:  'https://assets.trustwallet.com/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
-  ETH:   'https://assets.trustwallet.com/blockchains/ethereum/info/logo.png',
-  BNB:   'https://assets.trustwallet.com/blockchains/binance/info/logo.png',
-  TRX:   'https://assets.trustwallet.com/blockchains/tron/info/logo.png',
-  SOL:   'https://assets.trustwallet.com/blockchains/solana/info/logo.png',
-  TON:   'https://assets.trustwallet.com/blockchains/ton/info/logo.png',
-  SUI:   'https://assets.trustwallet.com/blockchains/sui/info/logo.png',
-  AVAX:  'https://assets.trustwallet.com/blockchains/avalanchec/info/logo.png',
-  POL:   'https://assets.trustwallet.com/blockchains/polygon/info/logo.png',
-  MATIC: 'https://assets.trustwallet.com/blockchains/polygon/info/logo.png',
-  BTC:   'https://assets.trustwallet.com/blockchains/bitcoin/info/logo.png',
-  XRP:   'https://assets.trustwallet.com/blockchains/ripple/info/logo.png',
-  DAI:   'https://assets.trustwallet.com/blockchains/ethereum/assets/0x6B175474E89094C44Da98b954EedeAC495271d0F/logo.png',
-  WBTC:  'https://assets.trustwallet.com/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png',
-  APT:   'https://assets.trustwallet.com/blockchains/aptos/info/logo.png',
+  USDT:  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
+  USDC:  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
+  ETH:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
+  BNB:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png',
+  TRX:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/tron/info/logo.png',
+  SOL:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png',
+  TON:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ton/info/logo.png',
+  SUI:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/sui/info/logo.png',
+  AVAX:  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png',
+  POL:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png',
+  MATIC: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png',
+  BTC:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png',
+  XRP:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ripple/info/logo.png',
+  DAI:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x6B175474E89094C44Da98b954EedeAC495271d0F/logo.png',
+  WBTC:  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png',
+  APT:   'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/aptos/info/logo.png',
 }
 
 // icon.horse — high-quality icon CDN by domain

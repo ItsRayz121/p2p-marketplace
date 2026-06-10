@@ -150,6 +150,40 @@ export function ProcessingTimeline({ status, isPkr }: { status: string; isPkr: b
   )
 }
 
+// ─── Refund steps ─────────────────────────────────────────────────────────────
+// Shown when a delivery failed/expired AFTER payment was received, so the user
+// sees their USDT is on its way back rather than a frozen "Payment Received".
+
+const STEPS_REFUND = ['Payment Received', 'Refund Processing', 'USDT Refunded']
+
+export function RefundTimeline({ status }: { status: string }) {
+  // refund_pending → step 1 active (refunding); refunded → all complete.
+  const active = status === 'refunded' ? 3 : 1
+  return (
+    <div className="space-y-3">
+      {STEPS_REFUND.map((label, i) => {
+        const done = i < active, cur = i === active
+        return (
+          <div key={label} className="flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+              done ? 'bg-green-500 text-white' : cur ? 'bg-amber-500 text-white ring-4 ring-amber-500/20' : 'bg-surface-alt text-text-disabled'
+            }`}>
+              {done
+                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                : cur
+                ? <div className="w-3 h-3 rounded-full bg-surface animate-pulse" />
+                : <div className="w-2 h-2 rounded-full bg-text-disabled" />
+              }
+            </div>
+            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600' : cur ? 'text-amber-600' : 'text-text-muted'}`}>{label}</p>
+            {cur && status !== 'refunded' && <Spinner size="sm" />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Chain logo ───────────────────────────────────────────────────────────────
 
 export function ChainLogo({ chain, sizeCls = 'w-11 h-11' }: { chain: GasChain; sizeCls?: string }) {

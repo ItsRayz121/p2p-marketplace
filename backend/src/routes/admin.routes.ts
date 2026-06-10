@@ -3923,24 +3923,43 @@ export async function adminRoutes(app: FastifyInstance) {
     const order = await db.gasFeeOrder.findUnique({ where: { id } })
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
 
-    if (order.status !== 'failed') {
+    // A refund only makes sense for orders that took a payment but never delivered.
+    if (!['failed', 'refund_pending', 'expired'].includes(order.status)) {
       throw new AppError(
         'INVALID_STATUS',
-        `Cannot refund an order with status '${order.status}'. Only failed orders can be refunded.`,
+        `Cannot refund an order with status '${order.status}'. Only failed / refund_pending / expired orders can be refunded.`,
+        400,
+      )
+    }
+    if (!order.paymentTxHash) {
+      throw new AppError(
+        'NO_PAYMENT',
+        `Order '${order.orderRef}' has no recorded payment tx — there is nothing to refund automatically. Resolve manually.`,
         400,
       )
     }
 
+    // Move to refund_pending and enqueue the SAME automated refund job the system
+    // uses on delivery failure — it resolves the sender from the payment tx and
+    // sends the USDT back on the payment network (e.g. BEP20). jobId dedup makes
+    // repeated clicks idempotent; processGasRefund's CAS guards double-sends.
     await db.gasFeeOrder.update({
       where: { id },
-      data: { status: 'refunded', refundedAt: new Date() },
+      data: { status: 'refund_pending', failureReason: null },
     })
-    await createAuditLog(req.user!.id, 'GAS_ORDER_REFUNDED', 'GasFeeOrder', id, {
+    await queues.gasFee.add(
+      'process-refund',
+      { orderId: id },
+      { jobId: `gas-refund-${id}`, attempts: 5, backoff: { type: 'exponential', delay: 30_000 } },
+    )
+    await createAuditLog(req.user!.id, 'GAS_ORDER_REFUND_TRIGGERED', 'GasFeeOrder', id, {
       previousStatus: order.status,
       orderRef: order.orderRef,
+      paymentNetwork: order.paymentNetwork,
+      amount: order.paymentAmount.toString(),
     }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
-    return reply.send({ success: true })
+    return reply.send({ success: true, message: 'Refund queued — USDT will be sent back to the payer automatically.' })
   })
 
   // GET /admin/gas/orders/:ref — order detail

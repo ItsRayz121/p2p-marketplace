@@ -21,6 +21,37 @@ import type { RpcHealthResult } from './gas.balance'
 
 const TON_SLIP10_PATH = "m/44'/607'/0'/0'"
 
+// Free public TON HTTP API v2 endpoint(s) used as fallbacks when the operator's
+// primary endpoint returns a transient 5xx / network error. toncenter.com is the
+// canonical public gateway. Operators should still set a keyed primary via
+// TON_ENDPOINT_URL for rate limits; these only catch primary outages.
+const TON_PUBLIC_FALLBACKS = ['https://toncenter.com']
+
+export interface TonEndpoint {
+  /** Base URL with no trailing slash, e.g. https://toncenter.com */
+  baseUrl: string
+  /** Whether this is the operator-configured primary (gets the API key). */
+  isPrimary: boolean
+}
+
+/**
+ * Ordered, de-duplicated list of TON endpoints to try: operator primary first,
+ * then free public fallbacks. Only the primary carries the API key (a toncenter
+ * key is not valid on a different provider).
+ */
+export function getTonEndpointsInOrder(): TonEndpoint[] {
+  const primary = env.TON_ENDPOINT_URL.replace(/\/$/, '')
+  const seen = new Set<string>()
+  const out: TonEndpoint[] = []
+  for (const [i, base] of [primary, ...TON_PUBLIC_FALLBACKS].entries()) {
+    const url = base.replace(/\/$/, '')
+    if (seen.has(url)) continue
+    seen.add(url)
+    out.push({ baseUrl: url, isPrimary: i === 0 })
+  }
+  return out
+}
+
 // TON raw address regex: workchain_id:64hex_chars
 // (this is the format we generate — not the user-friendly bounceable/non-bounceable form)
 const TON_RAW_ADDR_RE = /^0:[0-9a-f]{64}$/i
@@ -146,41 +177,51 @@ export function validateTonAtStartup(): {
  * Returns balance in TON (not nanotons).
  */
 export async function getTonBalance(address: string): Promise<number> {
-  const baseUrl = env.TON_ENDPOINT_URL.replace(/\/$/, '')
-  const url = `${baseUrl}/api/v2/getAddressBalance?address=${encodeURIComponent(address)}`
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  if (env.TON_API_KEY) headers['X-API-Key'] = env.TON_API_KEY
+  let lastErr: unknown
+  for (const ep of getTonEndpointsInOrder()) {
+    try {
+      const url = `${ep.baseUrl}/api/v2/getAddressBalance?address=${encodeURIComponent(address)}`
+      const headers: Record<string, string> = { Accept: 'application/json' }
+      if (ep.isPrimary && env.TON_API_KEY) headers['X-API-Key'] = env.TON_API_KEY
 
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
-  if (!res.ok) throw new Error(`TON API getAddressBalance HTTP ${res.status}`)
-  const data = await res.json() as { ok: boolean; result?: string; error?: string }
-  if (!data.ok) throw new Error(`TON API error: ${data.error}`)
-  const nanotons = parseInt(data.result ?? '0', 10)
-  return nanotons / 1e9  // nanotons → TON
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
+      if (!res.ok) throw new Error(`TON API getAddressBalance HTTP ${res.status}`)
+      const data = await res.json() as { ok: boolean; result?: string; error?: string }
+      if (!data.ok) throw new Error(`TON API error: ${data.error}`)
+      const nanotons = parseInt(data.result ?? '0', 10)
+      return nanotons / 1e9  // nanotons → TON
+    } catch (err) {
+      lastErr = err // try the next endpoint
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('TON API getAddressBalance failed on all endpoints')
 }
 
 // ── RPC health check ──────────────────────────────────────────────────────────
 
 export async function checkTonRpc(): Promise<RpcHealthResult> {
-  const baseUrl = env.TON_ENDPOINT_URL.replace(/\/$/, '')
-  const start = Date.now()
-  try {
-    const headers: Record<string, string> = { Accept: 'application/json' }
-    if (env.TON_API_KEY) headers['X-API-Key'] = env.TON_API_KEY
+  let lastResult: RpcHealthResult = { reachable: false, latencyMs: 0, error: 'no TON endpoint configured' }
+  for (const ep of getTonEndpointsInOrder()) {
+    const start = Date.now()
+    try {
+      const headers: Record<string, string> = { Accept: 'application/json' }
+      if (ep.isPrimary && env.TON_API_KEY) headers['X-API-Key'] = env.TON_API_KEY
 
-    const res = await fetch(`${baseUrl}/api/v2/getMasterchainInfo`, {
-      headers,
-      signal: AbortSignal.timeout(8_000),
-    })
-    const latencyMs = Date.now() - start
-    if (!res.ok) return { reachable: false, latencyMs, error: `HTTP ${res.status}` }
-    const data = await res.json() as { ok: boolean; result?: { last?: { seqno?: number } }; error?: string }
-    if (!data.ok) return { reachable: false, latencyMs, error: data.error ?? 'API returned ok:false' }
-    const blockNumber = data.result?.last?.seqno
-    return { reachable: true, latencyMs, ...(blockNumber !== undefined ? { blockNumber } : {}) }
-  } catch (err) {
-    return { reachable: false, latencyMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) }
+      const res = await fetch(`${ep.baseUrl}/api/v2/getMasterchainInfo`, {
+        headers,
+        signal: AbortSignal.timeout(8_000),
+      })
+      const latencyMs = Date.now() - start
+      if (!res.ok) { lastResult = { reachable: false, latencyMs, error: `HTTP ${res.status}` }; continue }
+      const data = await res.json() as { ok: boolean; result?: { last?: { seqno?: number } }; error?: string }
+      if (!data.ok) { lastResult = { reachable: false, latencyMs, error: data.error ?? 'API returned ok:false' }; continue }
+      const blockNumber = data.result?.last?.seqno
+      return { reachable: true, latencyMs, ...(blockNumber !== undefined ? { blockNumber } : {}) }
+    } catch (err) {
+      lastResult = { reachable: false, latencyMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) }
+    }
   }
+  return lastResult
 }
 
 // ── Dry-run delivery check ────────────────────────────────────────────────────

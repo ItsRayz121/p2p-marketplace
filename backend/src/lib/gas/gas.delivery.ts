@@ -23,6 +23,7 @@ import {
 import {
   getTonHotWalletAddress,
   deriveTonKeypairForDelivery,
+  getTonEndpointsInOrder,
 } from './tonWalletService'
 import {
   getSuiHotWalletAddress,
@@ -243,32 +244,38 @@ async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
     const secretKey = Buffer.concat([privateKey, Buffer.from(publicKey)])
 
     const wallet = WalletContractV4.create({ workchain: 0, publicKey: Buffer.from(publicKey) })
-    const endpoint = `${env.TON_ENDPOINT_URL.replace(/\/$/, '')}/api/v2/jsonRPC`
-    const client = new TonClient({
-      endpoint,
-      ...(env.TON_API_KEY ? { apiKey: env.TON_API_KEY } : {}),
-    })
-    const contract = client.open(wallet)
-
-    const seqno = await contract.getSeqno()
     const value = toNano(Number(order.gasAmountNative).toFixed(9))
 
-    const transfer = contract.createTransfer({
-      seqno,
-      secretKey,
-      messages: [
-        internal({
-          to: order.toAddress,
-          value,
-          bounce: false,
-        }),
-      ],
-    })
+    // Try each endpoint (operator primary → public fallbacks). A transient 5xx /
+    // network outage on one provider falls through to the next instead of failing
+    // the whole delivery. getSeqno + send happen on the SAME client per attempt so
+    // the seqno stays consistent; this mirrors the existing job-level retry risk.
+    const endpoints = getTonEndpointsInOrder()
+    let lastErr: unknown
+    for (const ep of endpoints) {
+      try {
+        const client = new TonClient({
+          endpoint: `${ep.baseUrl}/api/v2/jsonRPC`,
+          ...(ep.isPrimary && env.TON_API_KEY ? { apiKey: env.TON_API_KEY } : {}),
+        })
+        const contract = client.open(wallet)
+        const seqno = await contract.getSeqno()
 
-    // External message cell hash — unique identifier usable on Tonscan
-    const txHash = transfer.hash().toString('hex')
-    await client.sendFile(transfer.toBoc())
-    return txHash
+        const transfer = contract.createTransfer({
+          seqno,
+          secretKey,
+          messages: [internal({ to: order.toAddress, value, bounce: false })],
+        })
+
+        // External message cell hash — unique identifier usable on Tonscan
+        const txHash = transfer.hash().toString('hex')
+        await client.sendFile(transfer.toBoc())
+        return txHash
+      } catch (err) {
+        lastErr = err // provider failed — try the next endpoint
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('TON delivery failed on all endpoints')
   } finally {
     seed.fill(0)
     if (privateKey) privateKey.fill(0)

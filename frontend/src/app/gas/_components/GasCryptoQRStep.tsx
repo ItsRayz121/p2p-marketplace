@@ -5,7 +5,7 @@ import { CopyButton } from '@/components/ui/CopyButton'
 import { CountdownTimer } from '@/components/ui/CountdownTimer'
 import { Badge } from '@/components/ui/Badge'
 import { useGasCtx, PHASE } from './GasContext'
-import { ProcessingTimeline, STATUS_LABELS, statusVariant } from './GasPrimitives'
+import { ProcessingTimeline, RefundTimeline, STATUS_LABELS, statusVariant } from './GasPrimitives'
 
 // How long we show the "detecting your payment" window before offering manual
 // tx-hash entry. On-chain deposits are usually detected by the poller within ~1 min.
@@ -282,9 +282,16 @@ export function GasCryptoQRStep() {
       )}
 
       {(order.status === 'refund_pending' || order.status === 'refunded') && (
-        <div className="text-center py-4">
-          <p className="text-base font-bold text-amber-600 mb-1">{order.status === 'refund_pending' ? 'Refund Processing' : 'Refunded'}</p>
-          <p className="text-sm text-text-muted">{order.status === 'refund_pending' ? 'Your USDT refund is being processed.' : 'Your USDT has been refunded.'}</p>
+        <div className="space-y-4">
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+            <p className="text-sm font-bold text-amber-700 mb-0.5">{order.status === 'refund_pending' ? 'Refunding Your Payment' : 'USDT Refunded'}</p>
+            <p className="text-xs text-amber-600">
+              {order.status === 'refund_pending'
+                ? "We couldn't deliver your gas, so your USDT is being sent back to the wallet you paid from. No action needed."
+                : 'Your USDT has been sent back to the wallet you paid from.'}
+            </p>
+          </div>
+          <RefundTimeline status={order.status} />
         </div>
       )}
 
