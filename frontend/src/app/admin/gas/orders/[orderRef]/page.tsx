@@ -288,6 +288,7 @@ export default function GasOrderDetailPage() {
   const chainName = meta.name
 
   const isFailed = order.status === 'failed'
+  const isRefundPending = order.status === 'refund_pending'
   const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
   const isPaymentVerified = order.status === 'payment_verified'
   // USDT payment_uploaded = user submitted tx hash but deposit address wasn't configured for auto-verify
@@ -438,14 +439,16 @@ export default function GasOrderDetailPage() {
         </div>
       )}
 
-      {/* Actions — failed order */}
-      {isFailed && (
+      {/* Actions — failed or stuck-refund order */}
+      {(isFailed || isRefundPending) && (
         <div className="flex gap-3 mb-6">
-          <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>
-            Retry Delivery
-          </Button>
+          {isFailed && (
+            <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>
+              Retry Delivery
+            </Button>
+          )}
           <Button variant="danger" size="sm" onClick={() => setRefundOpen(true)}>
-            Refund
+            {isRefundPending ? 'Send Refund Now' : 'Refund'}
           </Button>
         </div>
       )}
@@ -632,9 +635,9 @@ export default function GasOrderDetailPage() {
         isOpen={refundOpen}
         onClose={() => setRefundOpen(false)}
         onConfirm={handleRefund}
-        title="Refund Order"
-        description={`Mark order ${order.orderRef} as refunded. This will not automatically return USDT — record the manual refund separately.`}
-        confirmLabel="Mark Refunded"
+        title="Send USDT Refund"
+        description={`Send ${order.paymentAmount} USDT back to the payer for order ${order.orderRef} on the payment network (${order.paymentNetwork}). The system resolves the sender from the payment tx and transfers automatically from the hot wallet.`}
+        confirmLabel="Send Refund"
         confirmVariant="danger"
       />
 
