@@ -1,11 +1,62 @@
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
+import { env } from '../lib/env'
 import { getHotWalletBalance, getNativeUsdPrice } from '../lib/gas/gas.balance'
 import { fromDbChain } from '../lib/gas/gas.chains'
+import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
+import { getAptosNativeBalance } from '../lib/gas/aptosRefund'
 import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { createAdminNotif } from '../services/adminNotification.service'
+
+// Aptos is an inbound-only USDT rail (no GasHotWallet row), but its hot wallet
+// still needs native APT to pay gas for outgoing USDT refunds. Monitor it
+// separately so admins are warned before refunds start failing.
+const APT_LOW_ALERT_KEY = 'gas_aptos_apt_low_alerted'
+const APT_LOW_ALERT_TTL_S = 6 * 3600 // re-alert at most every 6h
+
+async function monitorAptosGasBalance(): Promise<void> {
+  const address = getAptosHotWalletAddress()
+  if (!address) return // Aptos wallet not configured — nothing to watch
+
+  let apt: number
+  try {
+    apt = await getAptosNativeBalance(address)
+  } catch (err) {
+    logger.warn({ err: extractErrorMessage(err) }, '[gas-monitor] Aptos APT balance fetch failed — will retry next run')
+    return
+  }
+
+  await redis.set('gas_aptos_apt_balance', String(apt), 'EX', 1800)
+  const minApt = env.GAS_APTOS_MIN_APT
+
+  if (apt < minApt) {
+    logger.warn({ apt, minApt, address }, '[gas-monitor] Aptos hot wallet LOW on APT gas — USDT refunds may fail')
+    // Dedupe email + notif so we don't spam every 5-minute run.
+    const already = await redis.get(APT_LOW_ALERT_KEY)
+    if (!already) {
+      await redis.set(APT_LOW_ALERT_KEY, '1', 'EX', APT_LOW_ALERT_TTL_S)
+      void createAdminNotif({
+        category: 'GAS',
+        title:    `WARNING: Aptos Hot Wallet Low on APT Gas`,
+        body:     `APT balance ${apt.toFixed(4)} is below ${minApt} APT. Aptos USDT refunds need APT for gas — top up to avoid failures.`,
+        href:     '/admin/gas',
+        metadata: { apt, minApt, address },
+      })
+      await sendAdminAlertEmail(
+        'WARNING: Aptos Gas Hot Wallet Low on APT',
+        `The Aptos hot wallet is low on native APT (used to pay gas for USDT refunds).\n\n` +
+        `  APT balance:  ${apt.toFixed(6)} APT\n` +
+        `  Alert floor:  ${minApt} APT\n\n` +
+        `Aptos USDT refunds will fail once APT runs out. Top up APT to:\n${address}`,
+      )
+    }
+  } else {
+    // Recovered — clear the dedupe flag so a future dip alerts again.
+    await redis.del(APT_LOW_ALERT_KEY)
+  }
+}
 
 // TTL for the auto-pause flag: next monitor run (5 min) will re-evaluate and
 // either extend or clear it — 6 min gives a comfortable margin.
@@ -201,12 +252,14 @@ export async function runGasMonitorBalances(): Promise<void> {
   ) as Record<string, ChainThresholds>
 
   // Monitor all active chains in parallel; individual failures don't abort others
-  await Promise.allSettled(
-    wallets.map((w) => {
+  await Promise.allSettled([
+    ...wallets.map((w) => {
       const chain = fromDbChain(w.chain)
       const dbChain = w.chain as string
       const thresholds: ChainThresholds = thresholdMap[dbChain] ?? { alertThresholdUsd: null, pauseThresholdUsd: null }
       return monitorChain(chain, w.id, w.address, thresholds)
     }),
-  )
+    // Aptos APT gas (separate inbound-only rail, no GasHotWallet row)
+    monitorAptosGasBalance(),
+  ])
 }

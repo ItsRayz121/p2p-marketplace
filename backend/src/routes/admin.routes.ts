@@ -4128,6 +4128,22 @@ export async function adminRoutes(app: FastifyInstance) {
     // Backward-compat: surface TRON wallet as primary `wallet` field
     const tronWallet = wallets.find((w) => w.chain === 'TRON') ?? null
 
+    // Aptos APT gas health — inbound-only rail with no GasHotWallet row, but its
+    // wallet needs native APT to pay gas for USDT refunds. Surface a low warning.
+    const { getAptosHotWalletAddress } = await import('../lib/gas/aptosWalletService')
+    const aptosAddress = getAptosHotWalletAddress()
+    let aptosGas: { address: string; balance: number | null; minApt: number; lowApt: boolean } | null = null
+    if (aptosAddress) {
+      const aptCached = await redisClient.get('gas_aptos_apt_balance')
+      const apt = aptCached !== null ? parseFloat(aptCached) : null
+      aptosGas = {
+        address: aptosAddress,
+        balance: apt,
+        minApt:  env.GAS_APTOS_MIN_APT,
+        lowApt:  apt !== null && apt < env.GAS_APTOS_MIN_APT,
+      }
+    }
+
     return reply.send({
       success: true,
       data: {
@@ -4139,6 +4155,7 @@ export async function adminRoutes(app: FastifyInstance) {
         pendingCustomRequests,
         wallet: tronWallet,
         wallets,
+        aptosGas,
         today:   todayFinancials,
         allTime: allTimeFinancials,
       },

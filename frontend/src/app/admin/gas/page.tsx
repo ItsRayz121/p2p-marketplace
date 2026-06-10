@@ -64,6 +64,7 @@ interface GasStats {
   pendingCustomRequests: number
   wallet: GasWallet | null
   wallets: GasWallet[]
+  aptosGas?: { address: string; balance: number | null; minApt: number; lowApt: boolean } | null
   today:   GasFinancialKpi
   allTime: GasFinancialKpi
 }
@@ -1200,6 +1201,17 @@ export default function GasAdminPage() {
             <strong>RPC error:</strong>{' '}
             {stats.wallets.filter(w => w.status === 'rpc_error').map(w => w.chain).join(', ')}.
             {' '}Balance fetch failed — use &ldquo;Test RPC&rdquo; to diagnose.
+          </span>
+        </div>
+      )}
+
+      {stats?.aptosGas?.lowApt && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span>
+            <strong>Aptos low on APT gas:</strong>{' '}
+            {stats.aptosGas.balance !== null ? `${stats.aptosGas.balance.toFixed(4)} APT` : 'unknown'} (floor {stats.aptosGas.minApt} APT).
+            {' '}USDT refunds on Aptos pay gas in APT — top up the Aptos hot wallet to avoid refund failures.
           </span>
         </div>
       )}

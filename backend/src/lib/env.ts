@@ -101,6 +101,9 @@ const envSchema = z.object({
   APTOS_FULLNODE_URL: z.string().url().default('https://api.mainnet.aptoslabs.com/v1'),
   // Optional Aptos Labs API key (Bearer) for higher indexer rate limits.
   APTOS_API_KEY: z.string().optional(),
+  // Low-balance alert floor for the Aptos hot wallet's native APT (gas for USDT
+  // refunds). Below this, the balance monitor emails/notifies the admin.
+  GAS_APTOS_MIN_APT: z.coerce.number().positive().default(0.05),
   // Reconciler tuning. The reconciler scans detected deposits older than
   // `DEPOSIT_RECONCILE_MIN_AGE_SECONDS` every `DEPOSIT_RECONCILE_INTERVAL_SECONDS`.
   DEPOSIT_RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),

@@ -35,6 +35,27 @@ export async function getAptosUsdtAsset(): Promise<string> {
   return cfg?.value || USDT_APTOS_ASSET_DEFAULT
 }
 
+/**
+ * Fetch the Aptos hot wallet's native APT balance (in APT, not octas). Aptos
+ * charges tx gas in APT, so this must stay funded or USDT refunds will fail.
+ * Returns 0 for an unfunded/non-existent account.
+ */
+export async function getAptosNativeBalance(address: string): Promise<number> {
+  const { Aptos, AptosConfig } = await import('@aptos-labs/ts-sdk')
+  const config = new AptosConfig({
+    fullnode: env.APTOS_FULLNODE_URL,
+    indexer: env.APTOS_INDEXER_URL,
+    ...(env.APTOS_API_KEY ? { clientConfig: { API_KEY: env.APTOS_API_KEY } } : {}),
+  })
+  const aptos = new Aptos(config)
+  try {
+    const octas = await aptos.getAccountAPTAmount({ accountAddress: address })
+    return Number(octas) / 1e8 // octas → APT
+  } catch {
+    return 0 // account never funded → no APT
+  }
+}
+
 /** Extract the Aptos transaction_version from a synthetic `aptos:{ver}:{idx}` hash. */
 function parseAptosVersion(txHash: string): string | null {
   const m = /^aptos:(\d+):/.exec(txHash)
