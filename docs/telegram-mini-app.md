@@ -68,14 +68,15 @@ auth never waits for the SDK to load.
 ## 3. BotFather setup (the silent killer)
 
 The Mini App URL / Menu Button URL in BotFather **must point at the EXACT domain
-that actually receives your deploys** (e.g. `https://rupchain.pk/mini-app`). If it
+that actually receives your deploys** (this deployment: `https://rupchain.com/mini-app`,
+backend `https://api.rupchain.com`). If it
 points at a dead/typo domain, none of the code fixes ever load.
 
 1. **@BotFather → /newbot** (or use an existing bot). Copy the token →
    `TELEGRAM_BOT_TOKEN` (Railway) + `TELEGRAM_BOT_USERNAME` /
    `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` = the bot's @handle (no `@`).
 2. **/setdomain** → set the bot's domain to your frontend domain (e.g.
-   `rupchain.pk`). Required for `web_app` buttons to open.
+   `rupchain.com`). Required for `web_app` buttons to open.
 3. **/newapp** (or **Bot Settings → Configure Mini App**) → set the Web App URL
    to `https://<frontend>/mini-app`.
 4. **Menu Button** → **Bot Settings → Menu Button → Configure menu button** →
