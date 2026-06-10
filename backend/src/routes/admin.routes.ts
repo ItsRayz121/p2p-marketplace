@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { cloudinary, CLOUDINARY_FOLDERS } from '../lib/cloudinary'
-import { authenticate, requireRole } from '../middleware/auth.middleware'
+import { authenticate, requireRole, requireTotpIfEnabled } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
@@ -47,6 +47,13 @@ const WITHDRAWAL_NETWORK_TO_GAS_CHAIN: Partial<Record<string, GasChainId>> = {
 const adminOrSuper = requireRole('admin', 'super_admin')
 const adminOrSuperOrKyc = requireRole('admin', 'super_admin', 'kyc_reviewer')
 const superAdminOnly = requireRole('super_admin')
+
+// Step-up auth for destructive admin actions (ban, money movement, config).
+// No-op for admins without 2FA enabled; admins WITH 2FA must supply a fresh
+// X-TOTP-Code header (the frontend api client prompts and retries on
+// TOTP_REQUIRED). Strongly recommended: enable 2FA on all admin accounts.
+const adminStepUp = [authenticate, adminOrSuper, requireTotpIfEnabled]
+const superStepUp = [authenticate, superAdminOnly, requireTotpIfEnabled]
 
 // Rejects known non-direct-image URLs (Google Drive share links etc.)
 function validateLogoUrl(url: string): boolean {
@@ -577,7 +584,7 @@ export async function adminRoutes(app: FastifyInstance) {
   const MODERATION_SELECT = { id: true, email: true, isBanned: true, isSuspended: true, bannedUntil: true, suspendedUntil: true, underReview: true } as const
 
   // ── Ban (permanent or temporary) ──
-  app.post('/admin/users/:id/ban', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post('/admin/users/:id/ban', { preHandler: adminStepUp, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({
       reason: z.string().min(1).max(1000),
@@ -632,7 +639,7 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // ── Suspend (with optional auto-lift date) ──
-  app.post('/admin/users/:id/suspend', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post('/admin/users/:id/suspend', { preHandler: adminStepUp, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({
       reason: z.string().min(1).max(1000),
@@ -825,7 +832,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
-  app.post('/admin/users/:id/seize-collateral', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/users/:id/seize-collateral', { preHandler: adminStepUp }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500) })
     const parsed = bodySchema.safeParse(req.body)
@@ -2430,7 +2437,7 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // Tier-aware approve: tier 1/2 → single approval; tier 3/4 → dual approval.
-  app.post('/admin/withdrawals/:id/approve', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/withdrawals/:id/approve', { preHandler: adminStepUp }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const adminId = req.user!.id
 
@@ -2486,7 +2493,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, message: 'Withdrawal fully approved and ready to send.' })
   })
 
-  app.post('/admin/withdrawals/:id/reject', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/withdrawals/:id/reject', { preHandler: adminStepUp }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500) })
     const parsed = bodySchema.safeParse(req.body)
@@ -2623,7 +2630,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // Admin risk override: acknowledge risk flags and reduce effective tier.
   // Useful when a first-withdrawal by a known/trusted user is safe to approve faster.
-  app.post('/admin/withdrawals/:id/risk-override', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/withdrawals/:id/risk-override', { preHandler: adminStepUp }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({
       note: z.string().min(1).max(500),
@@ -2658,7 +2665,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // POST /admin/withdrawals/:id/mark-sent — operator calls this after manually
   // broadcasting the on-chain payout. Accepts both 'approved' and 'auto_approved'.
-  app.post('/admin/withdrawals/:id/mark-sent', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/withdrawals/:id/mark-sent', { preHandler: adminStepUp }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const schema = z.object({
       txHash: z.string().min(1).max(200),
@@ -2816,7 +2823,7 @@ export async function adminRoutes(app: FastifyInstance) {
   // on-chain transaction never actually happened (e.g. fake txHash entered during
   // testing, or a failed broadcast). Restores amount + fee to the user's wallet
   // and marks the withdrawal as rejected so it is no longer treated as finalised.
-  app.post('/admin/withdrawals/:id/refund', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  app.post('/admin/withdrawals/:id/refund', { preHandler: adminStepUp }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const bodySchema = z.object({ reason: z.string().min(1).max(500) })
     const parsed = bodySchema.safeParse(req.body)
@@ -2932,7 +2939,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: config })
   })
 
-  app.patch('/admin/config', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+  app.patch('/admin/config', { preHandler: superStepUp }, async (req, reply) => {
     const bodySchema = z.object({ key: z.string().min(1), value: z.string() })
     const parsed = bodySchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)

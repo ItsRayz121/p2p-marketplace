@@ -74,10 +74,10 @@ export async function csrfHook(req: FastifyRequest, reply: FastifyReply): Promis
   if (CSRF_EXEMPT.has(pathname)) return
 
   const token = req.headers['x-csrf-token']
-  // req.user is populated by authenticate preHandler on protected routes;
-  // on public (non-exempt) routes it will be undefined → guest validation.
-  const userId = req.user?.id
-  if (typeof token !== 'string' || !validateCsrfToken(token, userId)) {
+  // This hook runs at onRequest, BEFORE the authenticate preHandler — req.user
+  // is always undefined here, so validation is always guest-scoped. Tokens are
+  // therefore issued unbound (see GET /auth/csrf).
+  if (typeof token !== 'string' || !validateCsrfToken(token)) {
     return reply.status(403).send({
       success: false,
       error: 'INVALID_CSRF_TOKEN',

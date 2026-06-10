@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { v2 as cloudinary } from 'cloudinary'
 import { authenticate } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
+import { assertCloudinaryUrl } from '../lib/upload'
 import { env } from '../lib/env'
 import { CLOUDINARY_FOLDERS } from '../lib/cloudinary'
 import { db } from '../lib/prisma'
@@ -76,6 +77,9 @@ export async function uploadRoutes(app: FastifyInstance) {
   const avatarSchema = z.object({ avatarUrl: z.string().url().max(500) })
   app.patch('/upload/avatar', { preHandler: [authenticate] }, async (req, reply) => {
     const { avatarUrl } = avatarSchema.parse(req.body)
+    // Only our own Cloudinary uploads — same rule as payment proofs. Prevents
+    // storing arbitrary third-party image URLs (tracking pixels, phishing).
+    assertCloudinaryUrl(avatarUrl, 'avatarUrl')
     await db.user.update({ where: { id: req.user!.id }, data: { avatarUrl } })
     const user = await getMe(req.user!.id)
     return reply.send({ success: true, data: user })

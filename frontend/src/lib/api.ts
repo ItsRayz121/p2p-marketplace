@@ -328,6 +328,33 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       )
     }
 
+    // TOTP step-up — the backend demands a 2FA code for this action. Prompt
+    // for the code and retry once with it attached. Flows with their own
+    // inline TOTP field (wallet withdraw / trusted address) pre-send the
+    // header, so this prompt only fires for flows without one (admin actions).
+    if (res.status === 403 && (data as { error?: string }).error === 'TOTP_REQUIRED' && typeof window !== 'undefined') {
+      const code = window.prompt('This action requires your 2FA code.\nEnter the 6-digit code from your authenticator app:')
+      if (code && /^\d{6}$/.test(code.trim())) {
+        headers['X-TOTP-Code'] = code.trim()
+        const retryController = new AbortController()
+        const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
+        try {
+          const retryRes = await fetch(url, { ...options, method, headers, credentials: 'include', signal: retryController.signal })
+          const retryData = await retryRes.json()
+          if (!retryRes.ok) {
+            throw new ApiError(
+              (retryData as { error?: string }).error ?? 'UNKNOWN_ERROR',
+              (retryData as { message?: string }).message ?? 'An error occurred',
+              retryRes.status,
+            )
+          }
+          return unwrapEnvelope<T>(retryData)
+        } finally {
+          clearTimeout(retryTimeout)
+        }
+      }
+    }
+
     // Stale CSRF token — refresh and retry the original request once
     if (res.status === 403 && (data as { error?: string }).error === 'INVALID_CSRF_TOKEN') {
       invalidateCsrfToken()

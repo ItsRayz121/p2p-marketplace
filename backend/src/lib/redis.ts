@@ -22,7 +22,11 @@ export const rateLimitRedis = new IORedis(env.REDIS_URL, {
   lazyConnect: true,
 })
 
-rateLimitRedis.on('error', (err) => logger.error({ err }, 'Rate-limit Redis error'))
+// skipOnError in app.ts means rate limiting silently turns OFF while this
+// connection is down — log loudly so ops knows the API is running unprotected.
+rateLimitRedis.on('error', (err) =>
+  logger.error({ err }, 'Rate-limit Redis error — rate limiting is FAILING OPEN while Redis is unavailable'),
+)
 
 export async function connectRedis(): Promise<void> {
   if (redis.status === 'ready' || redis.status === 'connect' || redis.status === 'connecting') return
