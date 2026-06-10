@@ -20,7 +20,12 @@ export async function telegramRoutes(app: FastifyInstance) {
   // the httpOnly refresh cookie best-effort (works when the API shares the site).
   app.post(
     '/miniapp/auth',
-    { config: { rateLimit: { max: 30, timeWindow: '15 minutes' } } },
+    // Generous limit on purpose: initData is HMAC-validated, so brute-force is
+    // pointless (forged data just 401s). Pakistani mobile carriers use
+    // carrier-grade NAT — many Telegram users share one IP, and every app
+    // open/reload re-auths here — so a tight per-IP cap would 429 legitimate
+    // logins. Keyed by IP like all routes.
+    { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
     async (req, reply) => {
       if (!env.TELEGRAM_BOT_TOKEN) {
         throw new AppError('SERVICE_UNAVAILABLE', 'Telegram Mini App is not configured', 503)

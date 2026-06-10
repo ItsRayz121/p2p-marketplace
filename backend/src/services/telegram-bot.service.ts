@@ -79,16 +79,17 @@ async function sendWelcome(chatId: number, firstName?: string): Promise<void> {
 }
 
 async function sendHelp(chatId: number): Promise<void> {
+  // Plain text on purpose — no parse_mode. Telegram rejects messages with
+  // unbalanced Markdown special chars, which would silently drop the reply.
   await callTelegram('sendMessage', {
     chat_id: chatId,
     text:
-      `ℹ️ *RupChain help*\n\n` +
-      `*/start* — open the app (auto sign-in)\n` +
-      `*/help* — show this message\n\n` +
+      `ℹ️ RupChain help\n\n` +
+      `/start — open the app (auto sign-in)\n` +
+      `/help — show this message\n\n` +
       `Everything happens inside the Mini App: trading, wallet, KYC, referrals and ` +
-      `support. Tap the button below or the *Menu* button to open it.\n\n` +
-      `Need a human? Use in-app *Support* once you're signed in.`,
-    parse_mode: 'Markdown',
+      `support. Tap the button below or the Menu button to open it.\n\n` +
+      `Need a human? Use in-app Support once you're signed in.`,
     reply_markup: openAppKeyboard(),
   })
 }
