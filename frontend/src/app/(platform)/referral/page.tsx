@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
+import { ReferralLinks } from '@/components/referral/ReferralLinks'
 import { Users, TrendingUp, Clock } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -96,11 +97,9 @@ export default function ReferralPage() {
         <p className="text-sm font-medium opacity-80 mb-1">Your Referral Code</p>
         <div className="flex items-center gap-3">
           <span className="text-3xl font-black tracking-widest">{stats.referralCode}</span>
-          <CopyButton text={stats.referralCode} />
+          <CopyButton text={stats.referralCode} className="text-white/80 hover:text-white hover:bg-white/10" />
         </div>
-        <p className="text-xs opacity-70 mt-2 break-all">{shareUrl}</p>
         <div className="flex gap-2 mt-4">
-          <CopyButton text={shareUrl} />
           <a
             href={`https://wa.me/?text=${whatsappMessage}`}
             target="_blank"
@@ -113,6 +112,12 @@ export default function ReferralPage() {
             Share via WhatsApp
           </a>
         </div>
+      </div>
+
+      {/* Dual share links — Telegram (primary) + Website (fallback) */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold text-text-primary">Share your link</h2>
+        <ReferralLinks code={stats.referralCode} />
       </div>
 
       {/* Stats */}

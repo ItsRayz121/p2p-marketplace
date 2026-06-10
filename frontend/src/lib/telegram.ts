@@ -48,6 +48,26 @@ export const TELEGRAM_DETECT_SCRIPT = `(function(){
   } catch (e) {}
 })();`
 
+/**
+ * Build the two canonical referral links for a code. The Telegram deep link is
+ * primary (one-tap auto-auth for the largest audience); the web link is the
+ * fallback for non-Telegram / social sharing. Both carry the SAME code.
+ *   • Telegram: https://t.me/<bot>?start=ref_<code>
+ *   • Web:      <origin>/r/<code>
+ * The Telegram link is null when NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is unset.
+ */
+export function buildReferralLinks(code: string): { telegram: string | null; web: string } {
+  const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.replace(/^@/, '')
+  const origin =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk')
+  return {
+    telegram: bot ? `https://t.me/${bot}?start=ref_${code}` : null,
+    web: `${origin}/r/${code}`,
+  }
+}
+
 /** The raw initData string captured from the launch hash (with a live-hash fallback). */
 export function getInitData(): string {
   if (typeof window === 'undefined') return ''
