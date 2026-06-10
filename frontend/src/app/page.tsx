@@ -145,8 +145,42 @@ function QuickActionCard({
 export default async function HomePage() {
   const { stats, topAds, topCtm, topGas, faqs } = await getHomeData()
 
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
+  const jsonLd: object[] = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'RupChain',
+      url: baseUrl,
+      logo: `${baseUrl}/apple-touch-icon.png`,
+      description:
+        "Pakistan's P2P crypto marketplace — buy and sell USDT with JazzCash, Easypaisa, and bank transfer.",
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: 'RupChain',
+      url: baseUrl,
+    },
+    ...(faqs.length > 0
+      ? [{
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: faqs.map((f) => ({
+            '@type': 'Question',
+            name: f.question,
+            acceptedAnswer: { '@type': 'Answer', text: f.answer },
+          })),
+        }]
+      : []),
+  ]
+
   return (
     <div className="min-h-screen bg-surface">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <MarketingHeader />
 
       {/* ── 1. HERO ── */}

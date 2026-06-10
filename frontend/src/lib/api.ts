@@ -666,13 +666,13 @@ export interface TrustedAddress {
 // ─── API Modules ─────────────────────────────────────────────────────────────
 
 export const authApi = {
-  register: (data: { email: string; fullName: string; password: string; referralCode?: string; intendedRole?: 'user' | 'merchant' }) =>
+  register: (data: { email: string; fullName: string; password: string; referralCode?: string; intendedRole?: 'user' | 'merchant'; turnstileToken?: string }) =>
     apiRequest<{ userId: string; email: string }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   verifyEmail: (data: { email: string; code: string }) =>
     apiRequest<{ message: string; accessToken: string; user: AuthUser }>('/auth/verify-email', { method: 'POST', body: JSON.stringify(data) }),
   resendOtp: (email: string, type: 'verify' | 'reset' = 'verify') =>
     apiRequest<{ sent: boolean }>('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email, type }) }),
-  login: (data: { email: string; password: string; rememberMe?: boolean }) =>
+  login: (data: { email: string; password: string; rememberMe?: boolean; turnstileToken?: string }) =>
     apiRequest<{
       accessToken?: string
       preAuthToken?: string

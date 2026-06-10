@@ -10,6 +10,7 @@ import { authApi, ApiError } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { TurnstileWidget, TURNSTILE_ENABLED } from '@/components/ui/TurnstileWidget'
 
 const schema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -43,6 +44,7 @@ function LoginInner() {
   const [savedCredentials, setSavedCredentials] = useState<FormValues | null>(null)
   const [alreadyVerified, setAlreadyVerified] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
 
   const {
     register,
@@ -55,7 +57,12 @@ function LoginInner() {
     setUnverifiedEmail(null)
     setAlreadyVerified(false)
     try {
-      const res = await authApi.login({ email: values.email, password: values.password, rememberMe: values.rememberMe ?? true })
+      const res = await authApi.login({
+        email: values.email,
+        password: values.password,
+        rememberMe: values.rememberMe ?? true,
+        ...(turnstileToken ? { turnstileToken } : {}),
+      })
 
       // Banned / suspended → restricted appeal flow (no session issued).
       if (res.restricted) {
@@ -255,7 +262,9 @@ function LoginInner() {
           </div>
         )}
 
-        <Button type="submit" fullWidth size="lg" loading={isSubmitting}>
+        <TurnstileWidget onToken={setTurnstileToken} />
+
+        <Button type="submit" fullWidth size="lg" loading={isSubmitting} disabled={TURNSTILE_ENABLED && !turnstileToken}>
           Sign in
         </Button>
       </form>

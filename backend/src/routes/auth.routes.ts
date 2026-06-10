@@ -26,6 +26,7 @@ import {
 } from '../services/auth.service'
 import { env } from '../lib/env'
 import { logger } from '../lib/logger'
+import { assertTurnstileValid } from '../lib/turnstile'
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
 
@@ -38,11 +39,14 @@ const registerSchema = z.object({
   fullName: z.string().min(2, 'Full name too short').max(100, 'Full name too long'),
   referralCode: z.string().optional(),
   intendedRole: z.enum(['user', 'merchant']).optional(),
+  // Cloudflare Turnstile token — required only when TURNSTILE_SECRET_KEY is set
+  turnstileToken: z.string().optional(),
 })
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  turnstileToken: z.string().optional(),
 })
 
 const verifyEmailSchema = z.object({
@@ -100,7 +104,8 @@ export async function authRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const body = registerSchema.parse(req.body)
-      const { referralCode, intendedRole, ...coreFields } = body
+      await assertTurnstileValid(body.turnstileToken, req.ip)
+      const { referralCode, intendedRole, turnstileToken: _t, ...coreFields } = body
       const result = await register({
         ...coreFields,
         ...(referralCode ? { referralCode } : {}),
@@ -121,9 +126,11 @@ export async function authRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const body = loginSchema.parse(req.body)
+      await assertTurnstileValid(body.turnstileToken, req.ip)
+      const { turnstileToken: _t, ...credentials } = body
       const ua = req.headers['user-agent']
       const result = await login({
-        ...body,
+        ...credentials,
         ...(ua ? { userAgent: ua } : {}),
         ip: req.ip,
       })

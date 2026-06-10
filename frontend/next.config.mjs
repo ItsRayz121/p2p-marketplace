@@ -50,6 +50,29 @@ const nextConfig = {
 
   // Security headers
   async headers() {
+    // Deliberately permissive where third parties are involved (wallet libs,
+    // PostHog, Telegram, token-logo CDNs) — tighten directives one at a time
+    // after launch with monitoring. Still blocks the big wins: foreign
+    // <script src>, <object>, base hijacking, and plugin content.
+    const csp = [
+      "default-src 'self'",
+      // 'unsafe-inline': Next.js inline runtime + theme/telegram boot scripts + JSON-LD.
+      // 'unsafe-eval': required by some WalletConnect/wagmi builds.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://telegram.org https://*.telegram.org https://us-assets.i.posthog.com",
+      "style-src 'self' 'unsafe-inline'",
+      // Token/chain logos come from many CDNs (see images.remotePatterns) — allow https broadly for img only.
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      // Backend API (Railway), PostHog, WalletConnect relays (wss), RPC endpoints.
+      "connect-src 'self' https: wss:",
+      "media-src 'self' blob: https://res.cloudinary.com",
+      "worker-src 'self' blob:",
+      "frame-src https://challenges.cloudflare.com https://verify.walletconnect.com https://verify.walletconnect.org",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ')
+
     return [
       {
         source: '/(.*)',
@@ -57,6 +80,10 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Content-Security-Policy', value: csp },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          // camera/microphone: self — KYC selfie + video capture use getUserMedia
+          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(), payment=()' },
         ],
       },
     ]

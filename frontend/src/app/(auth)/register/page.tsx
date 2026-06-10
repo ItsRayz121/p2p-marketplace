@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { authApi, ApiError } from '@/lib/api'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { TurnstileWidget, TURNSTILE_ENABLED } from '@/components/ui/TurnstileWidget'
 import { analytics } from '@/lib/analytics'
 
 const schema = z
@@ -32,6 +33,7 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [conflictEmail, setConflictEmail] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState('')
 
   const {
     register,
@@ -56,6 +58,7 @@ export default function RegisterPage() {
         fullName: values.fullName,
         password: values.password,
         referralCode: values.referralCode || undefined,
+        ...(turnstileToken ? { turnstileToken } : {}),
       })
       analytics.userRegistered()
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}`)
@@ -233,7 +236,9 @@ export default function RegisterPage() {
           </div>
         )}
 
-        <Button type="submit" fullWidth size="lg" loading={isSubmitting}>
+        <TurnstileWidget onToken={setTurnstileToken} />
+
+        <Button type="submit" fullWidth size="lg" loading={isSubmitting} disabled={TURNSTILE_ENABLED && !turnstileToken}>
           Create Account
         </Button>
       </form>
