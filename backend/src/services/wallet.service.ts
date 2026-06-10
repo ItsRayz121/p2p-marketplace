@@ -345,8 +345,9 @@ export async function requestWithdrawal(
     const w = wallets[0]
     if (!w) throw new AppError('NOT_FOUND', 'Wallet not found', 404)
 
-    const available = parseFloat(w.balance) - parseFloat(w.lockedBalance)
-    if (available < totalDeduct) {
+    // Compare in Decimal space — never coerce money to IEEE-754 float.
+    const available = new Prisma.Decimal(w.balance).sub(w.lockedBalance)
+    if (available.lt(totalDeduct)) {
       throw new AppError('INSUFFICIENT_BALANCE', 'Insufficient balance', 400)
     }
 
@@ -475,8 +476,9 @@ export async function confirmWithdrawal(
     const w = wallets[0]
     if (!w) throw new AppError('NOT_FOUND', 'Wallet not found', 404)
 
-    const available = parseFloat(w.balance) - parseFloat(w.lockedBalance)
-    if (available < totalDeduct) {
+    // Compare in Decimal space — never coerce money to IEEE-754 float.
+    const available = new Prisma.Decimal(w.balance).sub(w.lockedBalance)
+    if (available.lt(totalDeduct)) {
       throw new AppError('INSUFFICIENT_BALANCE', 'Insufficient balance', 400)
     }
 

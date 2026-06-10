@@ -19,6 +19,7 @@ const authenticator = {
 }
 import qrcode from 'qrcode'
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import {
   hashPassword,
@@ -249,6 +250,53 @@ const USER_SELECT = {
   },
 } as const
 
+// ─── Brute-force guards (Redis, per-account) ─────────────────────────────────
+// IP rate limits exist at the route level, but a distributed attacker rotates
+// IPs — these counters key on the ACCOUNT instead. All windows are 15 minutes.
+
+const LOCKOUT_WINDOW_SECS = 15 * 60
+
+async function bumpFailCounter(key: string): Promise<number> {
+  const count = await redis.incr(key)
+  if (count === 1) await redis.expire(key, LOCKOUT_WINDOW_SECS)
+  return count
+}
+
+// Login: 10 wrong passwords per email per window. Counted for unknown emails
+// too so the lockout response cannot be used for account enumeration.
+async function assertLoginNotLocked(email: string): Promise<void> {
+  const raw = await redis.get(`login:fail:${email.toLowerCase()}`)
+  if (raw && parseInt(raw, 10) >= 10) {
+    throw new AppError(
+      'TOO_MANY_ATTEMPTS',
+      'Too many failed login attempts. Please wait 15 minutes or reset your password.',
+      429,
+    )
+  }
+}
+
+async function recordLoginFailure(email: string): Promise<void> {
+  await bumpFailCounter(`login:fail:${email.toLowerCase()}`).catch(() => 0)
+}
+
+// Email OTPs (verify / password reset): 5 wrong codes per user per window.
+// A 6-digit code with unlimited tries is brute-forceable; with 5 tries the
+// success probability per window is 0.0005%.
+async function assertOtpAttemptAllowed(userId: string, type: string): Promise<void> {
+  const count = await bumpFailCounter(`otp:attempts:${type}:${userId}`)
+  if (count > 5) {
+    throw new AppError(
+      'TOO_MANY_ATTEMPTS',
+      'Too many incorrect codes. Please wait 15 minutes or request a new code.',
+      429,
+    )
+  }
+}
+
+async function clearOtpAttempts(userId: string, type: string): Promise<void> {
+  await redis.del(`otp:attempts:${type}:${userId}`).catch(() => 0)
+}
+
 // ─── Service Methods ──────────────────────────────────────────────────────────
 
 export async function register(input: RegisterInput): Promise<{ message: string }> {
@@ -324,6 +372,8 @@ export async function register(input: RegisterInput): Promise<{ message: string 
 export async function login(input: LoginInput): Promise<LoginResult> {
   const { email, password, userAgent, ip } = input
 
+  await assertLoginNotLocked(email)
+
   const user = await db.user.findUnique({
     where: { email },
     select: {
@@ -342,10 +392,19 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     },
   })
 
-  if (!user) throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401)
+  if (!user) {
+    await recordLoginFailure(email)
+    throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401)
+  }
 
   const passwordValid = await verifyPassword(password, user.passwordHash)
-  if (!passwordValid) throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401)
+  if (!passwordValid) {
+    await recordLoginFailure(email)
+    throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401)
+  }
+
+  // Successful password check clears the failure counter
+  void redis.del(`login:fail:${email.toLowerCase()}`).catch(() => 0)
 
   if (!user.isEmailVerified)
     throw new AppError('EMAIL_NOT_VERIFIED', 'Please verify your email before logging in', 403)
@@ -384,6 +443,8 @@ export async function login(input: LoginInput): Promise<LoginResult> {
 }
 
 export async function verifyEmail(userId: string, code: string): Promise<void> {
+  await assertOtpAttemptAllowed(userId, 'email_verify')
+
   const otp = await db.otpCode.findFirst({
     where: {
       userId,
@@ -398,6 +459,8 @@ export async function verifyEmail(userId: string, code: string): Promise<void> {
 
   const valid = await verifyOtp(code, otp.codeHash)
   if (!valid) throw new AppError('INVALID_OTP', 'Invalid or expired verification code', 400)
+
+  await clearOtpAttempts(userId, 'email_verify')
 
   await db.$transaction([
     db.otpCode.update({ where: { id: otp.id }, data: { usedAt: new Date() } }),
@@ -477,6 +540,8 @@ export async function resetPassword(email: string, code: string, newPassword: st
   const user = await db.user.findUnique({ where: { email }, select: { id: true } })
   if (!user) throw new AppError('INVALID_OTP', 'Invalid or expired reset code', 400)
 
+  await assertOtpAttemptAllowed(user.id, 'password_reset')
+
   const otp = await db.otpCode.findFirst({
     where: {
       userId: user.id,
@@ -491,6 +556,8 @@ export async function resetPassword(email: string, code: string, newPassword: st
 
   const valid = await verifyOtp(code, otp.codeHash)
   if (!valid) throw new AppError('INVALID_OTP', 'Invalid or expired reset code', 400)
+
+  await clearOtpAttempts(user.id, 'password_reset')
 
   const passwordHash = await hashPassword(newPassword)
 
@@ -641,8 +708,14 @@ export async function verify2Fa(
   if (!user.twoFaEnabled || !user.twoFaSecret)
     throw new AppError('VALIDATION_ERROR', '2FA is not enabled', 400)
 
+  // A pre-auth token is valid for 10 minutes — without a counter that is
+  // enough runway to brute-force a 6-digit TOTP from many IPs.
+  await assertOtpAttemptAllowed(user.id, '2fa_login')
+
   const valid = await authenticator.verify({ token: code, secret: user.twoFaSecret })
   if (!valid) throw new AppError('INVALID_OTP', 'Invalid 2FA code', 400)
+
+  await clearOtpAttempts(user.id, '2fa_login')
 
   const { accessToken, refreshToken } = await createSession(user.id, user.email, user.role, userAgent, ip)
   const fullUser = await db.user.findUnique({ where: { id: user.id }, select: USER_SELECT })
