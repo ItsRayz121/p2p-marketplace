@@ -4,6 +4,7 @@ import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
 import SupportChatWidget from '@/components/support/SupportChatWidget'
 import { THEME_SCRIPT } from '@/lib/theme'
+import { TELEGRAM_DETECT_SCRIPT } from '@/lib/telegram'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
 
@@ -80,6 +81,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Not wrapped in <head> because Next.js App Router owns <head>
             via the metadata export; using a manual <head> causes a build error. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* Telegram detection — must run synchronously BEFORE any other script
+            so window.__IS_TELEGRAM__ / __TG_INIT_DATA__ are set from the launch
+            hash before React hydrates or any guard runs. Auth never depends on
+            the async telegram-web-app.js SDK loading. */}
+        <script dangerouslySetInnerHTML={{ __html: TELEGRAM_DETECT_SCRIPT }} />
         <Providers>
           {children}
           <Toaster />

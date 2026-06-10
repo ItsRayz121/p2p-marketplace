@@ -18,6 +18,7 @@ const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
 import type { AuthUser } from '../store/auth.store'
+import { isTelegramMiniApp, getInitData } from './telegram'
 
 export class ApiError extends Error {
   constructor(
@@ -99,6 +100,35 @@ async function doRefresh(): Promise<string> {
   return data.accessToken
 }
 
+// Re-authenticate from the Telegram launch hash. Telegram's WebView blocks the
+// cross-site refresh cookie, so /auth/refresh can't work there — instead we
+// re-validate the (always-present) initData. This both bootstraps the very
+// first session and silently re-issues an expired access token.
+export async function miniAppAuthenticate(): Promise<{ accessToken: string; user: AuthUser; isNew: boolean }> {
+  const initData = getInitData()
+  if (!initData) throw new Error('No Telegram init data available')
+  const res = await fetch(`${API_BASE}/api/v1/miniapp/auth`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initData }),
+    credentials: 'include',
+  })
+  if (!res.ok) throw new Error('Mini App authentication failed')
+  const raw = await res.json()
+  return unwrapEnvelope<{ accessToken: string; user: AuthUser; isNew: boolean }>(raw)
+}
+
+// Choose the right re-auth strategy: launch-hash initData inside Telegram,
+// refresh cookie on the web. Used by the 401 retry path.
+async function reauth(): Promise<string> {
+  if (isTelegramMiniApp()) {
+    const data = await miniAppAuthenticate()
+    useAuthStore.getState().setUser(data.user)
+    return data.accessToken
+  }
+  return doRefresh()
+}
+
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method ?? 'GET').toUpperCase()
   const url = `${API_BASE}/api/v1${path}`
@@ -160,7 +190,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     if (!isRefreshing) {
       isRefreshing = true
       try {
-        const newToken = await doRefresh()
+        const newToken = await reauth()
         useAuthStore.getState().setAccessToken(newToken)
         refreshQueue.forEach((cb) => cb(newToken))
         refreshQueue = []
