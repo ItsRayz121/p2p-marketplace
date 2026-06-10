@@ -106,7 +106,10 @@ async function doRefresh(): Promise<string> {
 // first session and silently re-issues an expired access token.
 export async function miniAppAuthenticate(): Promise<{ accessToken: string; user: AuthUser; isNew: boolean }> {
   const initData = getInitData()
-  if (!initData) throw new Error('No Telegram init data available')
+  // Error messages are intentionally specific (status / no-initData / network)
+  // so the Mini App bridge can surface the real reason for debugging instead of
+  // a single opaque "couldn't sign you in".
+  if (!initData) throw new Error('NO_INITDATA: launch data not found on this device')
 
   // Many users open the Mini App over a VPN / carrier-grade-NAT mobile
   // connection where a single request can transiently fail or hit a 5xx. The
@@ -124,7 +127,9 @@ export async function miniAppAuthenticate(): Promise<{ accessToken: string; user
         credentials: 'include',
       })
     } catch (networkErr) {
-      if (attempt === maxAttempts) throw networkErr
+      if (attempt === maxAttempts) {
+        throw new Error(`NETWORK: ${networkErr instanceof Error ? networkErr.message : 'request failed'}`)
+      }
       await new Promise((r) => setTimeout(r, 700 * attempt))
       continue
     }
@@ -132,7 +137,7 @@ export async function miniAppAuthenticate(): Promise<{ accessToken: string; user
       await new Promise((r) => setTimeout(r, 700 * attempt))
       continue
     }
-    if (!res.ok) throw new Error('Mini App authentication failed')
+    if (!res.ok) throw new Error(`HTTP_${res.status}: server rejected launch data`)
     const raw = await res.json()
     return unwrapEnvelope<{ accessToken: string; user: AuthUser; isNew: boolean }>(raw)
   }

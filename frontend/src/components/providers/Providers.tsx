@@ -62,6 +62,7 @@ export default function Providers({ children }: ProvidersProps) {
           // Inside Telegram the cross-site refresh cookie is blocked — bootstrap
           // (and silently re-issue) the session from the launch-hash initData.
           // This covers reloads on deep routes, not just the bridge.
+          try { sessionStorage.removeItem('tg_auth_error') } catch { /* ignore */ }
           const data = await miniAppAuthenticate()
           setAccessToken(data.accessToken)
           setUser(data.user)
@@ -73,7 +74,13 @@ export default function Providers({ children }: ProvidersProps) {
           setUser(user)
           identifyUser(user.id, { email: user.email, role: user.role, kycLevel: user.kycLevel })
         }
-      } catch {
+      } catch (err) {
+        // Stash the real failure reason so the Mini App bridge can show it
+        // (e.g. NO_INITDATA vs HTTP_401 vs NETWORK) — invaluable for diagnosing
+        // sign-in problems we can't reproduce off-device.
+        if (isTelegramMiniApp()) {
+          try { sessionStorage.setItem('tg_auth_error', err instanceof Error ? err.message : 'unknown') } catch { /* ignore */ }
+        }
         // Not logged in — drop any stale hint cookie so the middleware
         // doesn't keep us on /dashboard with an expired backend session.
         clearAuth()

@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
-import { loadTelegramSdk } from '@/lib/telegram'
+import { loadTelegramSdk, getInitData } from '@/lib/telegram'
 
 export default function MiniAppBridge() {
   const router = useRouter()
@@ -40,6 +40,18 @@ export default function MiniAppBridge() {
   // after the safety timeout.
   const failed = (!isLoading && !user) || (timedOut && !user)
 
+  // Diagnostics shown on the failure screen so a user can tell us WHY sign-in
+  // failed on their device (we can't reproduce it off-device). Computed only
+  // when failed so it reads the final state.
+  const diag = failed && typeof window !== 'undefined'
+    ? (() => {
+        let reason = ''
+        try { reason = sessionStorage.getItem('tg_auth_error') || '' } catch { /* ignore */ }
+        const len = getInitData().length
+        return `launch data: ${len > 0 ? `present (${len})` : 'MISSING'}${reason ? ` · ${reason}` : ''}`
+      })()
+    : ''
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-6 bg-canvas px-6 text-center">
       <div className="w-16 h-16 rounded-2xl bg-primary text-white font-black text-2xl flex items-center justify-center">
@@ -63,6 +75,11 @@ export default function MiniAppBridge() {
           >
             Try again
           </button>
+          {diag && (
+            <p className="mt-3 break-all font-mono text-[11px] leading-relaxed text-text-muted/70">
+              {diag}
+            </p>
+          )}
         </div>
       )}
     </div>
