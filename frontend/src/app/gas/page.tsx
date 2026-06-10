@@ -29,6 +29,10 @@ import { GasCryptoQRStep }       from './_components/GasCryptoQRStep'
 import { GasProcessingView }     from './_components/GasProcessingView'
 import { GasCompleteView }       from './_components/GasCompleteView'
 
+// localStorage pointer to the in-progress crypto order so a page refresh
+// restores the payment screen instead of dumping the user back to step 1.
+const ACTIVE_ORDER_KEY = 'gas_active_crypto_order'
+
 export default function GasPage() {
   const { user }  = useAuth()
   const router    = useRouter()
@@ -214,10 +218,45 @@ export default function GasPage() {
         toAddress: address, paymentNetwork: selectedCryptoNetwork,
         idempotencyKey: `${idempKeyRef.current}_crypto`,
       })
-      setOrder(o); setPollErrCount(0); setQrFailed(false); setPhase(PHASE.CRYPTO_QR)
+      setOrder(o); setPollErrCount(0); setQrFailed(false); setPaymentSent(false); setPhase(PHASE.CRYPTO_QR)
+      try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* storage unavailable */ }
     } catch (e: unknown) { setCryptoError(e instanceof Error ? e.message : 'Failed to create order') }
     finally { setCreatingCrypto(false) }
   }
+
+  // Restore an in-progress crypto order after a refresh so the user keeps their
+  // payment screen and detection timer (the timer itself is persisted per-order).
+  useEffect(() => {
+    let cancelled = false
+    let raw: string | null = null
+    try { raw = localStorage.getItem(ACTIVE_ORDER_KEY) } catch { /* storage unavailable */ }
+    if (!raw) return
+    let saved: { orderRef?: string; trackingToken?: string | null }
+    try { saved = JSON.parse(raw) } catch { try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ } return }
+    if (!saved.orderRef) return
+    ;(async () => {
+      try {
+        const o = await gasApi.getOrder(saved.orderRef!, saved.trackingToken ?? undefined)
+        if (cancelled) return
+        if (o.status === 'payment_pending') {
+          setOrder(o); setPhase(PHASE.CRYPTO_QR)
+        } else if (['payment_detected', 'sending', 'payment_verified'].includes(o.status)) {
+          setOrder(o); setPhase(PHASE.PROCESSING)
+        } else {
+          // Terminal, or proof already submitted → tracking page owns it from here.
+          try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
+          if (o.status === 'payment_uploaded') {
+            const t = o.trackingToken ? `?token=${encodeURIComponent(o.trackingToken)}` : ''
+            router.replace(`/gas/orders/${o.orderRef}${t}`)
+          }
+        }
+      } catch {
+        try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
+      }
+    })()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleVerifyPayment() {
     if (!order?.orderRef || !verifyTxHash.trim()) return
@@ -227,6 +266,7 @@ export default function GasPage() {
       setVerifySuccess(res.message ?? 'Payment verified!')
       setOrder(prev => prev ? { ...prev, status: res.status as GasOrder['status'] } : prev)
       setVerifyOpen(false); setVerifyTxHash('')
+      try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
       const token = order.trackingToken ? `?token=${encodeURIComponent(order.trackingToken)}` : ''
       router.push(`/gas/orders/${order.orderRef}${token}`)
     } catch (e: unknown) {
@@ -240,6 +280,10 @@ export default function GasPage() {
       const o = await gasApi.getOrder(order.orderRef, order.trackingToken ?? undefined)
       setOrder(prev => ({ ...o, paymentAddress: o.paymentAddress || prev?.paymentAddress || '' }))
       setPollErrCount(0)
+      // Once the order leaves the payment screen, drop the refresh-restore pointer.
+      if (['delivered', 'failed', 'expired', 'refunded', 'payment_uploaded'].includes(o.status)) {
+        try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
+      }
       if (o.status === 'delivered') setPhase(PHASE.COMPLETE)
       else if (['payment_detected', 'sending', 'payment_verified'].includes(o.status)) setPhase(PHASE.PROCESSING)
       else if (o.status === 'payment_uploaded') {
@@ -262,7 +306,9 @@ export default function GasPage() {
     setAmount(''); setAmountError(''); setAddress(''); setAddressError('')
     setSelectedPkrMethod(null); setSelectedCryptoNetwork(null)
     setOrder(null); setPollErrCount(0)
+    setPaymentSent(false)
     setPkrError(''); setCryptoError(''); setProofUrl(''); setProofError('')
+    try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
     idempKeyRef.current = `gas_${Date.now()}_${Math.random().toString(36).slice(2)}`
   }
 

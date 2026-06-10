@@ -26,18 +26,53 @@ export function GasCryptoQRStep() {
   // 60s auto-detection window after the user reports they've paid. While it runs
   // the order keeps polling; if it auto-completes the whole block re-renders away.
   // Once the window elapses we fall back to manual tx-hash entry.
+  //
+  // The deadline is persisted in localStorage keyed by orderRef so a page refresh
+  // resumes the same real-time countdown (no restart from 60) rather than losing it.
+  const orderRef = order?.orderRef ?? null
+  const detectKey = orderRef ? `gas_detect_${orderRef}` : null
+
   const [detectDeadline, setDetectDeadline] = useState<string | null>(null)
   const [detectElapsed, setDetectElapsed] = useState(false)
 
+  // Restore a persisted deadline after refresh.
   useEffect(() => {
+    if (!detectKey) return
+    let stored: string | null = null
+    try { stored = localStorage.getItem(detectKey) } catch { /* storage unavailable */ }
+    if (stored) {
+      setDetectDeadline(stored)
+      setDetectElapsed(new Date(stored).getTime() <= Date.now())
+      if (!paymentSent) setPaymentSent(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectKey])
+
+  // Start (and persist) the window on first "I've sent"; clear it on go-back.
+  // Reuse any already-stored deadline so a refresh mid-window never restarts the
+  // countdown — the timer reflects real elapsed wall-clock time.
+  useEffect(() => {
+    if (!detectKey) return
     if (paymentSent && !detectDeadline) {
-      setDetectDeadline(new Date(Date.now() + DETECT_WINDOW_MS).toISOString())
-      setDetectElapsed(false)
-    } else if (!paymentSent) {
+      let existing: string | null = null
+      try { existing = localStorage.getItem(detectKey) } catch { /* storage unavailable */ }
+      const dl = existing ?? new Date(Date.now() + DETECT_WINDOW_MS).toISOString()
+      setDetectDeadline(dl)
+      setDetectElapsed(new Date(dl).getTime() <= Date.now())
+      try { localStorage.setItem(detectKey, dl) } catch { /* storage unavailable */ }
+    } else if (!paymentSent && detectDeadline) {
       setDetectDeadline(null)
       setDetectElapsed(false)
+      try { localStorage.removeItem(detectKey) } catch { /* storage unavailable */ }
     }
-  }, [paymentSent, detectDeadline])
+  }, [paymentSent, detectDeadline, detectKey])
+
+  // Once the order advances past payment_pending, the persisted deadline is moot.
+  useEffect(() => {
+    if (detectKey && order?.status && order.status !== 'payment_pending') {
+      try { localStorage.removeItem(detectKey) } catch { /* storage unavailable */ }
+    }
+  }, [order?.status, detectKey])
 
   if (!order) return null
 
