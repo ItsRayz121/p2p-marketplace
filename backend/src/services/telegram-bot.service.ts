@@ -13,6 +13,7 @@ import { env } from '../lib/env'
 import { logger } from '../lib/logger'
 import { db } from '../lib/prisma'
 import { parseReferralStartParam } from '../lib/telegram'
+import { linkTelegramViaToken } from './accountLink.service'
 
 const API_BASE = 'https://api.telegram.org'
 
@@ -94,6 +95,52 @@ async function sendHelp(chatId: number): Promise<void> {
   })
 }
 
+// Resolve a `/start link_<token>` deep link: attach this Telegram account to
+// the website account that minted the token, then report the outcome in chat.
+async function handleAccountLink(
+  chatId: number,
+  token: string,
+  telegramId: number,
+  username?: string,
+): Promise<void> {
+  let outcome: Awaited<ReturnType<typeof linkTelegramViaToken>>
+  try {
+    outcome = await linkTelegramViaToken({
+      token,
+      telegramId,
+      ...(username ? { username } : {}),
+    })
+  } catch (err) {
+    logger.warn({ err, telegramId }, 'Account-link via token threw')
+    await callTelegram('sendMessage', {
+      chat_id: chatId,
+      text: '⚠️ Something went wrong linking your account. Please try again from the website Settings.',
+    })
+    return
+  }
+
+  if (outcome.ok) {
+    await callTelegram('sendMessage', {
+      chat_id: chatId,
+      text:
+        `✅ Done! This Telegram account is now linked to your RupChain account.\n\n` +
+        `You can open the app right here and you'll be signed into the same account.`,
+      reply_markup: openAppKeyboard(),
+    })
+    return
+  }
+
+  const messages: Record<typeof outcome.reason, string> = {
+    expired: '⌛ This link has expired. Please generate a new one from the website Settings and try again.',
+    already_linked_self: 'ℹ️ Your RupChain account is already linked to a Telegram account.',
+    telegram_in_use:
+      '🚫 This Telegram account already has trade history on RupChain, so it can’t be bound to another account. ' +
+      'For your security the two can’t be merged — please continue using them separately, or contact support.',
+    restricted: '🚫 This account is currently restricted and can’t be linked.',
+  }
+  await callTelegram('sendMessage', { chat_id: chatId, text: messages[outcome.reason] })
+}
+
 // Process a single webhook update. Only /start is meaningful today; other
 // messages get a gentle nudge to open the Mini App.
 export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
@@ -107,6 +154,16 @@ export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
   if (text.startsWith('/start')) {
     // "/start ref_ABC123" → payload after the first space
     const payload = text.split(/\s+/)[1]
+
+    // "/start link_<token>" — a website user attaching this Telegram account.
+    // Handled here (NOT in the Mini App auth path) so it never interferes with
+    // auto sign-in. We reply with the outcome and stop.
+    const linkMatch = /^link_([A-Za-z0-9_-]{16,64})$/.exec(payload ?? '')
+    if (linkMatch) {
+      await handleAccountLink(chatId, linkMatch[1]!, fromId, msg.from.username)
+      return
+    }
+
     const code = parseReferralStartParam(payload)
     if (code) {
       // Stash the referral keyed by Telegram id. Upsert so a fresh /start

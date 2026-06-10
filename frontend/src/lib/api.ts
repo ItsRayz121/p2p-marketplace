@@ -688,6 +688,25 @@ export const authApi = {
     apiRequest<void>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) }),
 }
 
+// Account linking — connect a real email and/or a Telegram identity to the
+// signed-in account (Settings → Connections).
+export const accountApi = {
+  startEmailLink: (email: string) =>
+    apiRequest<{ message: string }>('/account/email/start', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  verifyEmailLink: (data: { email: string; code: string; password?: string }) =>
+    apiRequest<AuthUser>('/account/email/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  createTelegramLinkToken: () =>
+    apiRequest<{ deepLink: string | null; expiresAt: string }>('/account/telegram/link-token', {
+      method: 'POST',
+    }),
+}
+
 export const marketplaceApi = {
   getRate: (coin: string) =>
     apiRequest<{ rate: number; updatedAt: string; source: string }>(`/marketplace/rate/${coin}`),

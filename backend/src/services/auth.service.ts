@@ -79,6 +79,12 @@ export interface SafeUser {
   isEmailVerified: boolean
   twoFaEnabled: boolean
   referralCode: string
+  // Account-linking state surfaced to Settings. `telegramLinked` = a Telegram
+  // identity is attached; `hasRealEmail` = the email is a real inbox (not the
+  // synthetic Telegram address), i.e. website email/password login is usable.
+  telegramLinked: boolean
+  telegramUsername: string | null
+  hasRealEmail: boolean
   dailyBuyUsed: number
   dailyBuyLimit: number
   createdAt: Date
@@ -123,6 +129,23 @@ function dec(val: { toNumber: () => number } | number | null | undefined, fallba
   return val.toNumber()
 }
 
+// ─── Telegram synthetic-email identity ──────────────────────────────────────
+// Telegram-only accounts have no real inbox, so signup synthesises a unique,
+// clearly-non-deliverable address on the reserved .invalid TLD. The exact
+// suffix is the source of truth for "this user has not set a real email yet"
+// (drives the Settings "Add Email" prompt) and for detecting empty Telegram
+// stub accounts during account-linking — so it MUST stay a single shared
+// constant. Changing it would silently break stub detection and linking.
+export const SYNTHETIC_EMAIL_DOMAIN = 'users.rupchain.invalid'
+
+export function buildSyntheticEmail(telegramId: number | bigint): string {
+  return `telegram_${telegramId}@${SYNTHETIC_EMAIL_DOMAIN}`
+}
+
+export function isSyntheticEmail(email: string): boolean {
+  return email.toLowerCase().endsWith(`@${SYNTHETIC_EMAIL_DOMAIN}`)
+}
+
 function toSafeUser(
   user: {
     id: string
@@ -135,6 +158,8 @@ function toSafeUser(
     isEmailVerified: boolean
     twoFaEnabled: boolean
     referralCode: string
+    telegramId?: bigint | null
+    telegramUsername?: string | null
     dailyBuyUsed: { toNumber: () => number } | number | null
     dailyBuyLimit: { toNumber: () => number } | number | null
     createdAt: Date
@@ -164,6 +189,9 @@ function toSafeUser(
     isEmailVerified: user.isEmailVerified,
     twoFaEnabled: user.twoFaEnabled,
     referralCode: user.referralCode,
+    telegramLinked: user.telegramId != null,
+    telegramUsername: user.telegramUsername ?? null,
+    hasRealEmail: !isSyntheticEmail(user.email),
     dailyBuyUsed: dec(user.dailyBuyUsed),
     dailyBuyLimit: dec(user.dailyBuyLimit, 50000),
     createdAt: user.createdAt,
@@ -198,6 +226,8 @@ const USER_SELECT = {
   isBanned: true,
   twoFaEnabled: true,
   referralCode: true,
+  telegramId: true,
+  telegramUsername: true,
   googleId: true,
   dailyBuyUsed: true,
   dailyBuyLimit: true,
@@ -765,7 +795,7 @@ export async function loginOrRegisterWithTelegram(
   // Telegram accounts have no email — synthesize a unique, clearly-non-deliverable
   // address on the reserved .invalid TLD. isEmailVerified=true because Telegram's
   // HMAC is the identity proof; these users are exempt from the email gate.
-  const syntheticEmail = `telegram_${telegramId}@users.rupchain.invalid`
+  const syntheticEmail = buildSyntheticEmail(telegramId)
   const base = (username ?? firstName).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15) || 'tg'
   let desiredUsername = `${base}${Math.floor(1000 + Math.random() * 9000)}`
   if (await db.user.findUnique({ where: { username: desiredUsername }, select: { id: true } })) {

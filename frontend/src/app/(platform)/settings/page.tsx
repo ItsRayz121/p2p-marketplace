@@ -1,6 +1,6 @@
 ﻿'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { authApi } from '@/lib/api'
+import { authApi, accountApi } from '@/lib/api'
 import type { Session } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/auth.store'
@@ -11,12 +11,12 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
 import { useFileUpload } from '@/hooks/useFileUpload'
-import { Lock, Camera } from 'lucide-react'
+import { Lock, Camera, Mail, Send, Check } from 'lucide-react'
 import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
-type Tab = 'profile' | 'security' | 'sessions' | 'danger'
+type Tab = 'profile' | 'security' | 'connections' | 'sessions' | 'danger'
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -436,6 +436,239 @@ function SessionsTab() {
   )
 }
 
+// ─── Connections Tab (link email + Telegram) ───────────────────────────────────
+
+function ConnectionsTab() {
+  const { user } = useAuth()
+  const { setUser } = useAuthStore()
+
+  // Email linking state
+  const [email, setEmail] = useState('')
+  const [emailStep, setEmailStep] = useState<'idle' | 'code'>('idle')
+  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [emailBusy, setEmailBusy] = useState(false)
+  const [emailErr, setEmailErr] = useState('')
+  const [emailDone, setEmailDone] = useState(false)
+
+  // Telegram linking state
+  const [tgBusy, setTgBusy] = useState(false)
+  const [tgErr, setTgErr] = useState('')
+  const [tgLink, setTgLink] = useState<string | null>(null)
+  const [tgWaiting, setTgWaiting] = useState(false)
+
+  const hasRealEmail = user?.hasRealEmail ?? true
+  const telegramLinked = user?.telegramLinked ?? false
+
+  // While waiting for the user to complete linking inside Telegram, poll /auth/me
+  // so the UI flips to "connected" automatically once the bot attaches the id.
+  useEffect(() => {
+    if (!tgWaiting || telegramLinked) return
+    const timer = setInterval(async () => {
+      try {
+        const fresh = await authApi.me()
+        setUser(fresh)
+        if (fresh.telegramLinked) setTgWaiting(false)
+      } catch { /* keep polling */ }
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [tgWaiting, telegramLinked, setUser])
+
+  const sendCode = async () => {
+    setEmailBusy(true); setEmailErr('')
+    try {
+      await accountApi.startEmailLink(email.trim())
+      setEmailStep('code')
+    } catch (e) {
+      setEmailErr(e instanceof Error ? e.message : 'Failed to send code')
+    } finally { setEmailBusy(false) }
+  }
+
+  const verifyCode = async () => {
+    if (!hasRealEmail && password.length < 8) {
+      setEmailErr('Set a password of at least 8 characters so you can log in on the website')
+      return
+    }
+    setEmailBusy(true); setEmailErr('')
+    try {
+      const updated = await accountApi.verifyEmailLink({
+        email: email.trim(),
+        code,
+        ...(!hasRealEmail && password ? { password } : {}),
+      })
+      setUser(updated)
+      setEmailDone(true)
+      setEmailStep('idle'); setCode(''); setPassword('')
+    } catch (e) {
+      setEmailErr(e instanceof Error ? e.message : 'Invalid code')
+    } finally { setEmailBusy(false) }
+  }
+
+  const startTelegramLink = async () => {
+    setTgBusy(true); setTgErr('')
+    try {
+      const { deepLink } = await accountApi.createTelegramLinkToken()
+      if (!deepLink) {
+        setTgErr('Telegram linking is not available right now. Please try again later.')
+        return
+      }
+      setTgLink(deepLink)
+      setTgWaiting(true)
+    } catch (e) {
+      setTgErr(e instanceof Error ? e.message : 'Failed to start Telegram linking')
+    } finally { setTgBusy(false) }
+  }
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-text-muted">
+        Connect one email and one Telegram account so you can reach the <strong>same</strong> RupChain
+        account from both the website and Telegram. For your security, an account already in use
+        can’t be merged.
+      </p>
+
+      {/* ── Email ── */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Mail size={16} className="text-text-muted" />
+            <h3 className="text-sm font-bold text-text-primary">Email</h3>
+          </div>
+          <Badge variant={hasRealEmail ? 'success' : 'default'} size="sm">
+            {hasRealEmail ? 'Connected' : 'Not set'}
+          </Badge>
+        </div>
+
+        {hasRealEmail ? (
+          <p className="text-sm text-text-primary">
+            {user?.email}
+            <span className="block text-xs text-text-muted mt-0.5">
+              You can sign in on the website with this email and your password.
+            </span>
+          </p>
+        ) : (
+          <p className="text-sm text-text-muted">
+            Add an email and password to also sign in on the website with this same account.
+          </p>
+        )}
+
+        {emailDone && (
+          <p className="text-sm text-success flex items-center gap-1.5">
+            <Check size={14} /> Email connected successfully.
+          </p>
+        )}
+
+        {emailStep === 'idle' && (
+          <div className="space-y-3">
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setEmailDone(false) }}
+              placeholder={hasRealEmail ? 'New email address' : 'you@example.com'}
+            />
+            {emailErr && <p className="text-sm text-danger">{emailErr}</p>}
+            <Button onClick={sendCode} disabled={emailBusy || !email.includes('@')}>
+              {emailBusy ? <Spinner size="sm" /> : hasRealEmail ? 'Change Email' : 'Add Email'}
+            </Button>
+          </div>
+        )}
+
+        {emailStep === 'code' && (
+          <div className="space-y-3">
+            <p className="text-xs text-text-muted">
+              We sent a 6-digit code to <strong>{email}</strong>. Enter it below.
+            </p>
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              maxLength={6}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+            />
+            {!hasRealEmail && (
+              <div>
+                <label className="text-sm font-medium text-text-primary block mb-1.5">Set a password</label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                />
+                <p className="text-xs text-text-muted mt-1">You’ll use this with your email to log in on the website.</p>
+              </div>
+            )}
+            {emailErr && <p className="text-sm text-danger">{emailErr}</p>}
+            <div className="flex gap-2">
+              <Button onClick={verifyCode} disabled={emailBusy || code.length !== 6}>
+                {emailBusy ? <Spinner size="sm" /> : 'Verify'}
+              </Button>
+              <Button variant="secondary" onClick={() => { setEmailStep('idle'); setCode(''); setEmailErr('') }} disabled={emailBusy}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Telegram ── */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Send size={16} className="text-text-muted" />
+            <h3 className="text-sm font-bold text-text-primary">Telegram</h3>
+          </div>
+          <Badge variant={telegramLinked ? 'success' : 'default'} size="sm">
+            {telegramLinked ? 'Connected' : 'Not linked'}
+          </Badge>
+        </div>
+
+        {telegramLinked ? (
+          <p className="text-sm text-text-primary flex items-center gap-1.5">
+            <Check size={14} className="text-success" />
+            Linked{user?.telegramUsername ? <> as <strong>@{user.telegramUsername}</strong></> : null}. Open the app in
+            Telegram and you’ll be signed into this same account.
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-text-muted">
+              Link your Telegram account to sign in from the Telegram Mini App with this same account.
+            </p>
+
+            {!tgLink && (
+              <>
+                {tgErr && <p className="text-sm text-danger">{tgErr}</p>}
+                <Button onClick={startTelegramLink} disabled={tgBusy}>
+                  {tgBusy ? <Spinner size="sm" /> : 'Link Telegram'}
+                </Button>
+              </>
+            )}
+
+            {tgLink && (
+              <div className="space-y-3">
+                <ol className="text-sm text-text-muted list-decimal list-inside space-y-1">
+                  <li>Tap the button below — it opens our bot in Telegram.</li>
+                  <li>Press <strong>Start</strong> in the chat.</li>
+                  <li>Come back here — this page updates automatically.</li>
+                </ol>
+                <a href={tgLink} target="_blank" rel="noopener noreferrer">
+                  <Button className="w-full sm:w-auto">Open Telegram to confirm</Button>
+                </a>
+                {tgWaiting && (
+                  <p className="text-xs text-text-muted flex items-center gap-1.5">
+                    <Spinner size="sm" /> Waiting for you to confirm in Telegram…
+                  </p>
+                )}
+                <p className="text-xs text-text-muted">This link expires in 15 minutes.</p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -444,6 +677,7 @@ export default function SettingsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'profile', label: 'Profile' },
     { id: 'security', label: 'Security' },
+    { id: 'connections', label: 'Connections' },
     { id: 'sessions', label: 'Sessions' },
     { id: 'danger', label: 'Danger Zone' },
   ]
@@ -471,6 +705,7 @@ export default function SettingsPage() {
 
       {activeTab === 'profile' && <ProfileTab />}
       {activeTab === 'security' && <SecurityTab />}
+      {activeTab === 'connections' && <ConnectionsTab />}
       {activeTab === 'sessions' && <SessionsTab />}
       {activeTab === 'danger' && (
         <div className="bg-danger/5 border border-danger/30 rounded-xl p-5 space-y-4">

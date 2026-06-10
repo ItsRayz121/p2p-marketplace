@@ -13,6 +13,10 @@ export interface AuthUser {
   referralCode: string
   isEmailVerified: boolean
   twoFaEnabled: boolean
+  // Account-linking state (see Settings → Connections)
+  telegramLinked: boolean
+  telegramUsername: string | null
+  hasRealEmail: boolean
   dailyBuyUsed: number
   dailyBuyLimit: number
   createdAt: string

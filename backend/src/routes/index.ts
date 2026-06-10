@@ -35,6 +35,7 @@ import { logosRoutes } from './logos.routes'
 import { supportRoutes } from './support.routes'
 import { appealRoutes } from './appeal.routes'
 import { telegramRoutes } from './telegram.routes'
+import { accountLinkRoutes } from './accountLink.routes'
 
 export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes)
@@ -73,4 +74,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(supportRoutes, { prefix: '/api/v1' })
   await app.register(appealRoutes, { prefix: '/api/v1' })
   await app.register(telegramRoutes, { prefix: '/api/v1' })
+  await app.register(accountLinkRoutes, { prefix: '/api/v1' })
 }
