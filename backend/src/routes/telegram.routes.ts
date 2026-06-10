@@ -4,6 +4,8 @@ import { AppError } from '../lib/errors'
 import { env } from '../lib/env'
 import { validateInitData, parseReferralStartParam } from '../lib/telegram'
 import { loginOrRegisterWithTelegram, COOKIE_OPTIONS } from '../services/auth.service'
+import { handleTelegramUpdate } from '../services/telegram-bot.service'
+import { logger } from '../lib/logger'
 
 const miniAppAuthSchema = z.object({
   initData: z.string().min(1, 'initData is required'),
@@ -62,6 +64,31 @@ export async function telegramRoutes(app: FastifyInstance) {
           isNew: result.isNew,
         },
       })
+    },
+  )
+
+  // POST /api/v1/telegram/webhook — receives bot updates from Telegram.
+  // Telegram echoes our secret in the X-Telegram-Bot-Api-Secret-Token header;
+  // we reject anything that doesn't match so the public endpoint can't be
+  // spoofed. We always reply 200 quickly (after handling) so Telegram does not
+  // retry — processing errors are swallowed and logged, never surfaced.
+  app.post(
+    '/telegram/webhook',
+    { config: { rateLimit: { max: 600, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const secret = env.TELEGRAM_WEBHOOK_SECRET
+      if (secret) {
+        const provided = req.headers['x-telegram-bot-api-secret-token']
+        if (provided !== secret) {
+          return reply.status(401).send({ success: false, error: 'UNAUTHORIZED' })
+        }
+      }
+      try {
+        await handleTelegramUpdate(req.body as Parameters<typeof handleTelegramUpdate>[0])
+      } catch (err) {
+        logger.warn({ err }, 'Telegram webhook handler error')
+      }
+      return reply.send({ ok: true })
     },
   )
 }

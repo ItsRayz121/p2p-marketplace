@@ -22,6 +22,7 @@ import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
 import { reportGasRpcStartupStatus } from './lib/gas/gasRpcStartupCheck'
 import { validatePrismaSchemaAtStartup } from './lib/schemaValidation'
 import { configurePush } from './lib/push.service'
+import { registerTelegramWebhook } from './services/telegram-bot.service'
 
 async function start() {
   let app: Awaited<ReturnType<typeof buildApp>> | null = null
@@ -95,6 +96,8 @@ async function start() {
     void reportMoralisStartupStatus()
     // Log RPC config for active gas chains; warns if using public defaults.
     void reportGasRpcStartupStatus()
+    // Register the Telegram bot webhook (no-ops when the bot isn't configured).
+    void registerTelegramWebhook()
   } catch (err) {
     logger.error({ err }, 'Failed to start server')
     process.exit(1)

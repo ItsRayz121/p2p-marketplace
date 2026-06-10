@@ -20,6 +20,10 @@ const CSRF_EXEMPT = new Set([
   '/api/v1/auth/reset-password',
   '/api/v1/auth/refresh',
   '/api/v1/auth/2fa/verify',
+  // Telegram Mini App: auth-bootstrap (analogous to /auth/login) + bot webhook
+  // (authenticated via the X-Telegram-Bot-Api-Secret-Token header, not CSRF).
+  '/api/v1/miniapp/auth',
+  '/api/v1/telegram/webhook',
   // Gas fee order creation uses optionalAuth — guests can create orders (no funds move at creation time).
   // Authenticated users can call these too; their browsers should send a CSRF token if available.
   '/api/v1/gas-fee/orders',
