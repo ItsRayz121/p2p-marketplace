@@ -22,7 +22,7 @@ import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
 import { reportGasRpcStartupStatus } from './lib/gas/gasRpcStartupCheck'
 import { validatePrismaSchemaAtStartup } from './lib/schemaValidation'
 import { configurePush } from './lib/push.service'
-import { registerTelegramWebhook } from './services/telegram-bot.service'
+import { registerTelegramWebhook, logTelegramBotIdentity } from './services/telegram-bot.service'
 
 async function start() {
   let app: Awaited<ReturnType<typeof buildApp>> | null = null
@@ -98,6 +98,8 @@ async function start() {
     void reportGasRpcStartupStatus()
     // Register the Telegram bot webhook (no-ops when the bot isn't configured).
     void registerTelegramWebhook()
+    // Log which bot the token resolves to — first thing to check for Mini App 401s.
+    void logTelegramBotIdentity()
   } catch (err) {
     logger.error({ err }, 'Failed to start server')
     process.exit(1)

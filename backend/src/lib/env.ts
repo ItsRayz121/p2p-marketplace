@@ -207,7 +207,10 @@ const envSchema = z.object({
   // validating Mini App initData and to drive the bot (webhook + /start).
   // When unset, all Telegram features no-op gracefully (miniapp auth returns
   // 503, the bot is not started) — the rest of the app is unaffected.
-  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  // .trim() is defensive: a token pasted into a Railway/host env var often
+  // carries a trailing newline or stray space, which silently breaks the
+  // initData HMAC (every Mini App login 401s) with no other symptom.
+  TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
   // TELEGRAM_BOT_USERNAME: the bot's @handle WITHOUT the leading "@"
   // (e.g. "RupChainBot"). Used to build t.me deep links for referrals.
   TELEGRAM_BOT_USERNAME: z.string().optional(),

@@ -135,6 +135,28 @@ export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
   await sendWelcome(chatId, msg.from.first_name)
 }
 
+// Log which bot the configured token actually belongs to. This is the fastest
+// way to diagnose Mini App "Invalid Telegram launch data" (HTTP 401) errors:
+// if this @username is NOT the bot the user is opening, the token is for the
+// wrong bot and the initData HMAC can never match. Fire-and-forget on boot.
+export async function logTelegramBotIdentity(): Promise<void> {
+  if (!env.TELEGRAM_BOT_TOKEN) return
+  try {
+    const res = await fetch(`${API_BASE}/bot${env.TELEGRAM_BOT_TOKEN}/getMe`)
+    const json = (await res.json()) as { ok: boolean; result?: { username?: string; id?: number }; description?: string }
+    if (json.ok && json.result) {
+      logger.info(
+        { botUsername: json.result.username, botId: json.result.id },
+        `Telegram token resolves to @${json.result.username} — this MUST match the bot whose Mini App users open`,
+      )
+    } else {
+      logger.error({ description: json.description }, 'TELEGRAM_BOT_TOKEN is set but getMe failed — token is invalid')
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Could not verify Telegram bot identity (getMe)')
+  }
+}
+
 // Register the webhook with Telegram. Called fire-and-forget on boot.
 export async function registerTelegramWebhook(): Promise<void> {
   if (!env.TELEGRAM_BOT_TOKEN) {
