@@ -5,6 +5,7 @@ import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import cookie from '@fastify/cookie'
 import { Prisma } from '@prisma/client'
+import { ZodError } from 'zod'
 import * as Sentry from '@sentry/node'
 import { env } from './lib/env'
 import { logger } from './lib/logger'
@@ -99,6 +100,17 @@ export async function buildApp() {
         success: false,
         error: error.code,
         message: error.message,
+      })
+    }
+
+    // Zod validation error (schema.parse in routes without a local handler,
+    // e.g. the telegram routes). Surface a 400 with the field details instead
+    // of falling through to the generic 500 below.
+    if (error instanceof ZodError) {
+      return reply.status(400).send({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '),
       })
     }
 
