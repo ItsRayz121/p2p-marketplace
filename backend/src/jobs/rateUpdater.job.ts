@@ -455,13 +455,14 @@ async function fetchTonUsdPrice(): Promise<DedicatedResult | null> {
 // Returns { coin → usdPrice } for coins successfully fetched.
 async function fetchMissingCoins(
   missingSymbols: string[],
+  coinMap: Record<string, string> = COINGECKO_IDS,
 ): Promise<{ prices: Record<string, number>; sources: Record<string, string> }> {
   const prices: Record<string, number> = {}
   const sources: Record<string, string> = {}
   if (missingSymbols.length === 0) return { prices, sources }
 
   // Attempt 1: CoinGecko batch for the missing coins
-  const geckoIds = missingSymbols.map(s => COINGECKO_IDS[s]).filter(Boolean)
+  const geckoIds = missingSymbols.map(s => coinMap[s]).filter(Boolean)
   if (geckoIds.length > 0) {
     try {
       const isPro = !!env.COINGECKO_API_KEY
@@ -473,7 +474,7 @@ async function fetchMissingCoins(
       if (res.ok) {
         const data = (await res.json()) as Record<string, { usd?: number }>
         for (const sym of missingSymbols) {
-          const geckoId = COINGECKO_IDS[sym]
+          const geckoId = coinMap[sym]
           const price = geckoId ? data[geckoId]?.usd : undefined
           if (price && price > 0) {
             prices[sym] = price
@@ -619,6 +620,24 @@ async function fetchPricesWithFallback(): Promise<{ priceMap: Record<string, num
 
 export async function updateRates(): Promise<void> {
   try {
+    // 0. Build dynamic coin map by merging DB chain registry into hardcoded COINGECKO_IDS.
+    //    DB entries take precedence so admins can override or add coins without code changes.
+    const activeCoinMap = { ...COINGECKO_IDS }
+    try {
+      const [dbChains, dbTokens] = await Promise.all([
+        db.gasChainConfig.findMany({ where: { isActive: true, coingeckoId: { not: null } }, select: { symbol: true, coingeckoId: true } }),
+        db.gasTokenConfig.findMany({ where: { isActive: true, coingeckoId: { not: null } }, select: { priceSymbol: true, coingeckoId: true } }),
+      ])
+      for (const c of dbChains) {
+        if (c.coingeckoId) activeCoinMap[c.symbol.toUpperCase()] = c.coingeckoId
+      }
+      for (const t of dbTokens) {
+        if (t.coingeckoId) activeCoinMap[t.priceSymbol.toUpperCase()] = t.coingeckoId
+      }
+    } catch (dbErr) {
+      logger.warn({ err: dbErr }, '[rateUpdater] DB coin map fetch failed — falling back to hardcoded COINGECKO_IDS only')
+    }
+
     // 1. Fetch USD/PKR rate
     const HARDCODED_USD_PKR = 278.5
     let usdPkr = HARDCODED_USD_PKR
@@ -692,10 +711,10 @@ export async function updateRates(): Promise<void> {
 
     // 2c. Patch any remaining coins still missing (e.g. SUI/APT/NEAR when
     // Kraken wins). Uses CoinGecko targeted batch → CoinPaprika per-coin fallback.
-    const missingAfterDedicated = Object.keys(COINGECKO_IDS).filter(s => !priceMap[s])
+    const missingAfterDedicated = Object.keys(activeCoinMap).filter(s => !priceMap[s])
     if (missingAfterDedicated.length > 0) {
       logger.warn({ missingAfterDedicated, source: priceSource }, 'Coins still missing after dedicated fetchers — running bulk fallback patch')
-      const { prices: patchedPrices, sources: patchedSources } = await fetchMissingCoins(missingAfterDedicated)
+      const { prices: patchedPrices, sources: patchedSources } = await fetchMissingCoins(missingAfterDedicated, activeCoinMap)
       for (const [sym, price] of Object.entries(patchedPrices)) {
         priceMap[sym] = price
         coinSources[sym] = patchedSources[sym] ?? 'fallback'
@@ -723,7 +742,7 @@ export async function updateRates(): Promise<void> {
     const skippedCoins: string[] = []
     const ttlExtendedCoins: string[] = []
     const legacyDroppedCoins: string[] = []
-    for (const coin of Object.keys(COINGECKO_IDS)) {
+    for (const coin of Object.keys(activeCoinMap)) {
       const usdPrice = priceMap[coin]
       if (!usdPrice) {
         // Coin missing from this bulk source cycle.

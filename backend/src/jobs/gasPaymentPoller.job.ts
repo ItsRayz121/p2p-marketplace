@@ -150,8 +150,16 @@ async function writePollerHeartbeat(network: string, result: HeartbeatResult | n
   }
 }
 
-// Resolve deposit address: DB override takes precedence over env var.
-async function resolveDepositAddress(dbKey: string, envValue: string | undefined): Promise<string | null> {
+// Resolve deposit address: GasChainConfig.depositAddressOverride → PlatformConfig → env var.
+// Admins can set the override field in the chain registry without touching PlatformConfig.
+async function resolveDepositAddress(dbKey: string, envValue: string | undefined, chainSlug?: string): Promise<string | null> {
+  if (chainSlug) {
+    const chainCfg = await db.gasChainConfig.findFirst({
+      where: { slug: chainSlug.toUpperCase(), isActive: true },
+      select: { depositAddressOverride: true },
+    }).catch(() => null)
+    if (chainCfg?.depositAddressOverride) return chainCfg.depositAddressOverride
+  }
   const dbOverride = await db.platformConfig.findUnique({ where: { key: dbKey } })
   if (dbOverride?.value) return dbOverride.value
   return envValue ?? null
@@ -165,7 +173,7 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   // null and the poller silently returned — leaving BEP20/ERC20 unscanned and
   // showing "no scan yet" in the admin health card.
   const depositAddress =
-    (await resolveDepositAddress(cfg.depositAddressDbKey, cfg.depositAddressEnvFn()))
+    (await resolveDepositAddress(cfg.depositAddressDbKey, cfg.depositAddressEnvFn(), cfg.paymentNetwork))
     ?? getEvmHotWalletAddress()
   if (!depositAddress) {
     await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, configured: false, error: 'No deposit address configured (env, platformConfig, or mnemonic)' })
@@ -353,7 +361,7 @@ async function scanTron(): Promise<void> {
   const base = env.TRON_FULLNODE_URL
   if (!base) { await writePollerHeartbeat('TRC20', { ok: false, configured: false, error: 'TRON_FULLNODE_URL not set' }); return }
 
-  const depositAddress = await resolveDepositAddress('gas_usdt_trc20_address', env.GAS_FEE_DEPOSIT_ADDRESS_TRC20)
+  const depositAddress = await resolveDepositAddress('gas_usdt_trc20_address', env.GAS_FEE_DEPOSIT_ADDRESS_TRC20, 'TRON')
   if (!depositAddress) { await writePollerHeartbeat('TRC20', { ok: false, configured: false, error: 'TRC20 deposit address not configured' }); return }
 
   const graceCutoff = new Date(Date.now() - GRACE_WINDOW_MS)
@@ -461,7 +469,7 @@ async function scanAptos(): Promise<void> {
   const indexerUrl = env.APTOS_INDEXER_URL
   if (!indexerUrl) { await writePollerHeartbeat('APTOS', { ok: false, configured: false, error: 'Aptos indexer URL not set' }); return }
 
-  const depositAddress = await resolveDepositAddress('gas_usdt_aptos_address', getAptosHotWalletAddress() ?? undefined)
+  const depositAddress = await resolveDepositAddress('gas_usdt_aptos_address', getAptosHotWalletAddress() ?? undefined, 'APT')
   if (!depositAddress) { await writePollerHeartbeat('APTOS', { ok: false, configured: false, error: 'Aptos deposit address not configured' }); return }
 
   const assetCfg = await db.platformConfig.findUnique({ where: { key: 'gas_usdt_aptos_asset' } })

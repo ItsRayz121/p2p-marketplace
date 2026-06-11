@@ -295,6 +295,22 @@ export async function runGasMonitorBalances(): Promise<void> {
     chainConfigs.map((c) => [c.backendChainId!, { alertThresholdUsd: c.alertThresholdUsd, pauseThresholdUsd: c.pauseThresholdUsd }]),
   ) as Record<string, ChainThresholds>
 
+  // Collect addresses already covered by GasHotWallet rows (to avoid duplicate monitoring)
+  const coveredAddresses = new Set(wallets.map((w) => w.address.toLowerCase()))
+
+  // Also monitor EVM chains registered in GasChainConfig with a depositAddressOverride
+  // but no GasHotWallet row — enables zero-code onboarding for new EVM chains.
+  const registryOnlyEvm: Array<{ address: string; symbol: string; slug: string }> = []
+  const evmRegistryCfgs = await db.gasChainConfig.findMany({
+    where: { isActive: true, chainType: 'EVM', depositAddressOverride: { not: null } },
+    select: { depositAddressOverride: true, symbol: true, slug: true, alertThresholdUsd: true, pauseThresholdUsd: true },
+  }).catch(() => [] as Array<{ depositAddressOverride: string | null; symbol: string; slug: string; alertThresholdUsd: number | null; pauseThresholdUsd: number | null }>)
+  for (const cfg of evmRegistryCfgs) {
+    if (cfg.depositAddressOverride && !coveredAddresses.has(cfg.depositAddressOverride.toLowerCase())) {
+      registryOnlyEvm.push({ address: cfg.depositAddressOverride, symbol: cfg.symbol, slug: cfg.slug })
+    }
+  }
+
   // Monitor all active chains in parallel; individual failures don't abort others
   await Promise.allSettled([
     ...wallets.map((w) => {
@@ -303,6 +319,32 @@ export async function runGasMonitorBalances(): Promise<void> {
       const thresholds: ChainThresholds = thresholdMap[dbChain] ?? { alertThresholdUsd: null, pauseThresholdUsd: null }
       return monitorChain(chain, w.id, w.address, thresholds)
     }),
+    // Registry-only EVM chains — track balance changes in Redis/ledger without a GasHotWallet row
+    ...registryOnlyEvm.map(({ address, symbol, slug }) => (async () => {
+      const balKey = `gas_registry_balance:${slug}`
+      const prevStr = await redis.get(balKey)
+      const prevBalance = prevStr !== null ? parseFloat(prevStr) : null
+      // Balance fetch via Redis cache (set by other paths) or skip if not available
+      const cached = await redis.get(`gas_wallet_balance:${slug}`)
+      if (!cached) return
+      const balance = parseFloat(cached)
+      if (prevBalance !== null) {
+        const delta = balance - prevBalance
+        if (delta > 0.000_01) {
+          logger.info({ slug, delta, balance }, '[gas-monitor] Registry EVM chain deposit detected')
+          await appendLedgerEntry({
+            entryType:     'external_hot_wallet_deposit',
+            chain:         'BSC' as GasChainId,
+            chainOverride: { dbChain: slug as import('../lib/gas/gas.chains').DbGasChain, nativeSymbol: symbol },
+            nativeAmount:  delta,
+            toAddress:     address,
+            sourceKey:     `BALANCE_DIFF:${slug}:${address.toLowerCase()}:${symbol}:${Math.floor(Date.now() / (2 * 60_000)) * (2 * 60_000)}`,
+            notes: `source:BALANCE_DIFF chain:${slug} prev:${prevBalance.toFixed(6)} now:${balance.toFixed(6)}`,
+          }).catch((e) => logger.warn({ err: e, slug }, '[gas-monitor] Failed to write registry EVM deposit ledger entry'))
+        }
+      }
+      await redis.set(balKey, String(balance), 'EX', 1800)
+    })()),
     // Aptos APT gas (separate inbound-only rail, no GasHotWallet row)
     monitorAptosGasBalance(),
   ])

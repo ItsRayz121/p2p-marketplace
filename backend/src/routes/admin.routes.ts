@@ -3839,6 +3839,53 @@ export async function adminRoutes(app: FastifyInstance) {
       allBalances = [...balances, aptEntry as any]
     }
 
+    // Inject any other chains registered in GasChainConfig with depositAddressOverride
+    // but no GasHotWallet row (and not already handled above as Aptos).
+    const coveredChains = new Set([
+      ...wallets.map((w) => (w.chain as string).toUpperCase()),
+      'APT',
+    ])
+    const registryOverrides = await db.gasChainConfig.findMany({
+      where: { isActive: true, depositAddressOverride: { not: null } },
+      select: { slug: true, symbol: true, depositAddressOverride: true },
+    }).catch(() => [] as Array<{ slug: string; symbol: string; depositAddressOverride: string | null }>)
+
+    const pendingRegistry = registryOverrides.filter(
+      (cfg) => cfg.depositAddressOverride && !coveredChains.has(cfg.slug.toUpperCase()),
+    )
+    if (pendingRegistry.length > 0) {
+      const registryResults = await Promise.allSettled(
+        pendingRegistry.map(async (cfg) => {
+          const address = cfg.depositAddressOverride!
+          const [cachedBal, rateRaw] = await Promise.all([
+            redis.get(`gas_wallet_balance:${cfg.slug}`).catch(() => null),
+            redis.get(`rate:${cfg.symbol.toUpperCase()}`).catch(() => null),
+          ])
+          const balance = cachedBal !== null ? parseFloat(cachedBal) : null
+          const usdPrice = rateRaw
+            ? (() => { try { return (JSON.parse(rateRaw) as { usdPrice?: number }).usdPrice ?? 0 } catch { return 0 } })()
+            : 0
+          return {
+            chain: cfg.slug as string,
+            address,
+            friendlyAddress: null as string | null,
+            balance,
+            balanceUsd: (balance !== null && usdPrice > 0 ? balance * usdPrice : null) as number | null,
+            nativeSymbol: cfg.symbol,
+            tokens: [] as Array<{ symbol: string; name: string; balanceFormatted: number; tokenAddress: string }>,
+            fetchedAt: new Date().toISOString(),
+            error: null as string | null,
+          }
+        }),
+      )
+      for (const r of registryResults) {
+        if (r.status === 'fulfilled') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          allBalances = [...allBalances, r.value as any]
+        }
+      }
+    }
+
     return reply.send({ success: true, data: { balances: allBalances, fetchedAt: new Date().toISOString() } })
   })
 
@@ -4756,19 +4803,30 @@ export async function adminRoutes(app: FastifyInstance) {
       symbol:             z.string().min(1),
       category:           z.string().min(1),
       networkLabel:       z.string().min(1),
-      addressType:        z.enum(['TRC20', 'EVM', 'SOL', 'SUI', 'TON']),
-      logoUrl:            z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
-      explorerBase:       z.string().url().nullable().default(null),
-      backendChainId:     z.string().nullable().default(null),
-      platformFeeUsdt:    z.number().min(0).default(0.25),
-      alertThresholdUsd:  z.number().positive().nullable().default(null),
-      pauseThresholdUsd:  z.number().positive().nullable().default(null),
-      defaultMinAmount:   z.number().positive().nullable().default(null),
-      defaultMaxUsdValue: z.number().positive().nullable().default(null),
-      isActive:           z.boolean().default(false),
-      isVisibleToUsers:   z.boolean().default(true),
-      readinessState:     z.enum(['inactive', 'testing', 'beta', 'stable']).default('inactive'),
-      displayOrder:       z.number().int().default(0),
+      addressType:           z.enum(['TRC20', 'EVM', 'SOL', 'SUI', 'TON', 'APTOS']),
+      logoUrl:               z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
+      explorerBase:          z.string().url().nullable().default(null),
+      backendChainId:        z.string().nullable().default(null),
+      platformFeeUsdt:       z.number().min(0).default(0.25),
+      alertThresholdUsd:     z.number().positive().nullable().default(null),
+      pauseThresholdUsd:     z.number().positive().nullable().default(null),
+      defaultMinAmount:      z.number().positive().nullable().default(null),
+      defaultMaxUsdValue:    z.number().positive().nullable().default(null),
+      isActive:              z.boolean().default(false),
+      isVisibleToUsers:      z.boolean().default(true),
+      readinessState:        z.enum(['inactive', 'testing', 'beta', 'stable']).default('inactive'),
+      displayOrder:          z.number().int().default(0),
+      // Operational / chain-registry fields
+      chainType:             z.enum(['EVM', 'APTOS', 'TRON', 'SOLANA', 'TON', 'SUI', 'CUSTOM']).default('EVM'),
+      rpcUrl:                z.string().url().nullable().default(null),
+      rpcUrlFallback:        z.string().url().nullable().default(null),
+      feeMethod:             z.enum(['EVM_RPC', 'APTOS_API', 'TRON_API', 'SOLANA_API', 'TON_API', 'FIXED', 'CUSTOM']).default('EVM_RPC'),
+      fixedFeeUsd:           z.number().positive().nullable().default(null),
+      coingeckoId:           z.string().nullable().default(null),
+      isPaymentEnabled:      z.boolean().default(false),
+      depositAddressOverride: z.string().nullable().default(null),
+      usdtContractAddress:   z.string().nullable().default(null),
+      usdtDecimals:          z.number().int().min(0).max(18).default(6),
     })
     const d = schema.parse(req.body)
     const chain = await db.gasChainConfig.create({
@@ -4781,6 +4839,10 @@ export async function adminRoutes(app: FastifyInstance) {
         defaultMinAmount: d.defaultMinAmount, defaultMaxUsdValue: d.defaultMaxUsdValue,
         isActive: d.isActive, isVisibleToUsers: d.isVisibleToUsers,
         readinessState: d.readinessState, displayOrder: d.displayOrder,
+        chainType: d.chainType, rpcUrl: d.rpcUrl, rpcUrlFallback: d.rpcUrlFallback,
+        feeMethod: d.feeMethod, fixedFeeUsd: d.fixedFeeUsd, coingeckoId: d.coingeckoId,
+        isPaymentEnabled: d.isPaymentEnabled, depositAddressOverride: d.depositAddressOverride,
+        usdtContractAddress: d.usdtContractAddress, usdtDecimals: d.usdtDecimals,
       },
     })
     await createAuditLog(req.user!.id, 'GAS_CHAIN_CREATED', 'GasChainConfig', chain.id, { slug: chain.slug }, clientIp(req), req.headers['user-agent'] as string | undefined)
@@ -4825,6 +4887,25 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!validStates.includes(state)) throw new AppError('VALIDATION_ERROR', `readinessState must be one of: ${validStates.join(', ')}`, 400)
       updateData.readinessState = state
     }
+    // Operational / chain-registry fields
+    if ('chainType' in body) {
+      const valid = ['EVM', 'APTOS', 'TRON', 'SOLANA', 'TON', 'SUI', 'CUSTOM']
+      if (!valid.includes(String(body.chainType))) throw new AppError('VALIDATION_ERROR', `chainType must be one of: ${valid.join(', ')}`, 400)
+      updateData.chainType = body.chainType
+    }
+    if ('rpcUrl' in body) updateData.rpcUrl = body.rpcUrl ?? null
+    if ('rpcUrlFallback' in body) updateData.rpcUrlFallback = body.rpcUrlFallback ?? null
+    if ('feeMethod' in body) {
+      const valid = ['EVM_RPC', 'APTOS_API', 'TRON_API', 'SOLANA_API', 'TON_API', 'FIXED', 'CUSTOM']
+      if (!valid.includes(String(body.feeMethod))) throw new AppError('VALIDATION_ERROR', `feeMethod must be one of: ${valid.join(', ')}`, 400)
+      updateData.feeMethod = body.feeMethod
+    }
+    if ('fixedFeeUsd' in body) updateData.fixedFeeUsd = body.fixedFeeUsd != null ? Math.max(0, Number(body.fixedFeeUsd)) : null
+    if ('coingeckoId' in body) updateData.coingeckoId = body.coingeckoId ?? null
+    if ('isPaymentEnabled' in body) updateData.isPaymentEnabled = Boolean(body.isPaymentEnabled)
+    if ('depositAddressOverride' in body) updateData.depositAddressOverride = body.depositAddressOverride ?? null
+    if ('usdtContractAddress' in body) updateData.usdtContractAddress = body.usdtContractAddress ?? null
+    if ('usdtDecimals' in body) updateData.usdtDecimals = Math.max(0, Math.min(18, Number(body.usdtDecimals) || 6))
 
     // ── Activation guardrails: refuse to enable a chain that isn't operationally ready ──
     const activating = updateData.isActive === true && chain.isActive === false

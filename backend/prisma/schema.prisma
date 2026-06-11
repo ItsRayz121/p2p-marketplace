@@ -1357,6 +1357,27 @@ model GasChainConfig {
   // inactive = hidden from public UI; stable = fully operational
   readinessState    String           @default("inactive")
   displayOrder   Int              @default(0)
+
+  // ── Operational / chain-registry fields ───────────────────────────────────
+  // chainType drives dispatch in fee calculator, balance monitor, and payment poller.
+  // Values: "EVM" | "APTOS" | "TRON" | "SOLANA" | "TON" | "SUI" | "CUSTOM"
+  chainType             String           @default("EVM")
+  // Primary and fallback RPC URLs for balance fetching and fee estimation.
+  rpcUrl                String?
+  rpcUrlFallback        String?
+  // How network fee is estimated. Values: "EVM_RPC" | "APTOS_API" | "TRON_API" | "SOLANA_API" | "TON_API" | "FIXED" | "CUSTOM"
+  feeMethod             String           @default("EVM_RPC")
+  fixedFeeUsd           Decimal?         @db.Decimal(10, 6)
+  // CoinGecko ID for native token price feed (e.g. "aptos", "binancecoin", "tron").
+  coingeckoId           String?
+  // This chain can receive USDT payments from users.
+  isPaymentEnabled      Boolean          @default(false)
+  // Override deposit address for USDT payments; null = derive from mnemonic.
+  depositAddressOverride String?
+  // USDT contract address on this chain (for payment detection).
+  usdtContractAddress   String?
+  usdtDecimals          Int              @default(6)
+
   tokens         GasTokenConfig[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -1371,7 +1392,8 @@ model GasTokenConfig {
   tokenType       String         // "native" | "token"
   contractAddress String?
   logoUrl         String?
-  priceSymbol     String         // "TRX", "BNB", "ETH" â€” Redis rate key for pricing
+  priceSymbol     String         // “TRX”, “BNB”, “ETH” — Redis rate key for pricing
+  coingeckoId     String?        // CoinGecko ID override; null = use chain-level coingeckoId
   platformFeeUsdt Float?         // Override; null = inherit from parent chain default
   minAmount       Decimal?       @db.Decimal(18, 8) // Override; null = inherit from parent chain default
   maxUsdValue     Decimal?       @db.Decimal(10, 4) // Override; null = inherit from parent chain default

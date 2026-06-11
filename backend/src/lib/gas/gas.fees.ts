@@ -13,6 +13,7 @@
  */
 
 import { redis } from '../redis'
+import { db } from '../prisma'
 import { getEvmGasPrice } from '../evmRpc'
 import { GAS_CHAINS, type GasChainId } from './gas.chains'
 
@@ -306,7 +307,7 @@ async function suiFee(): Promise<NetworkFeeResult> {
  *
  * To add a new payment chain: add a case below and implement its fetcher above.
  */
-export async function getUsdtNetworkFeeUsd(chainId: GasChainId | 'APTOS'): Promise<NetworkFeeResult> {
+export async function getUsdtNetworkFeeUsd(chainId: GasChainId | 'APTOS' | string): Promise<NetworkFeeResult> {
   switch (chainId) {
     case 'BSC':      return evmFee('BSC',      'BNB',  0.29)
     case 'ETHEREUM': return evmFee('ETHEREUM',  'ETH',  2.00)
@@ -320,5 +321,22 @@ export async function getUsdtNetworkFeeUsd(chainId: GasChainId | 'APTOS'): Promi
     case 'SOL':      return solanaFee()
     case 'TON':      return tonFee()
     case 'SUI':      return suiFee()
+    default: {
+      // Unknown chain — look up fee config from the DB chain registry.
+      const cfg = await db.gasChainConfig.findFirst({
+        where: { slug: chainId.toUpperCase(), isActive: true },
+        select: { feeMethod: true, fixedFeeUsd: true, symbol: true },
+      }).catch(() => null)
+      if (!cfg) return fallback(chainId, 0.50)
+      if (cfg.feeMethod === 'FIXED' && cfg.fixedFeeUsd != null) {
+        const feeUsd = Number(cfg.fixedFeeUsd)
+        return { feeUsd, feeNative: 0, nativeSymbol: cfg.symbol, isLive: false, feeDisplay: fmtUsd(feeUsd), feeNativeDisplay: `~${fmtNative(0, cfg.symbol)}` }
+      }
+      if (cfg.feeMethod === 'EVM_RPC') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return evmFee(chainId as any, cfg.symbol, 0.50)
+      }
+      return fallback(cfg.symbol, 0.50)
+    }
   }
 }

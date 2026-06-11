@@ -39,6 +39,17 @@ interface ChainFormState {
   displayOrder: string
   isActive: boolean
   readinessState: string
+  // Operational / chain-registry fields
+  chainType: string
+  rpcUrl: string
+  rpcUrlFallback: string
+  feeMethod: string
+  fixedFeeUsd: string
+  coingeckoId: string
+  isPaymentEnabled: boolean
+  depositAddressOverride: string
+  usdtContractAddress: string
+  usdtDecimals: string
 }
 
 const BLANK_CHAIN: ChainFormState = {
@@ -47,6 +58,9 @@ const BLANK_CHAIN: ChainFormState = {
   platformFeeUsdt: '0.25', alertThresholdUsd: '', pauseThresholdUsd: '',
   defaultMinAmount: '', defaultMaxUsdValue: '',
   displayOrder: '0', isActive: false, readinessState: 'inactive',
+  chainType: 'EVM', rpcUrl: '', rpcUrlFallback: '', feeMethod: 'EVM_RPC',
+  fixedFeeUsd: '', coingeckoId: '', isPaymentEnabled: false,
+  depositAddressOverride: '', usdtContractAddress: '', usdtDecimals: '6',
 }
 
 // ─── Token Form ───────────────────────────────────────────────────────────────
@@ -518,6 +532,135 @@ function ChainModal({
                 <option value="stable">Stable — visible with Stable badge, orderable</option>
               </select>
               <p className="text-xs text-text-muted mt-0.5">Controls frontend badge and whether chain appears on the public gas page.</p>
+            </div>
+
+            {/* ── Operational / Chain Registry ── */}
+            <div className="col-span-2 pt-1">
+              <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 border-t border-border pt-3">
+                Operational Config (Chain Registry)
+              </div>
+              <p className="text-xs text-text-muted mb-3">These fields power automatic price fetching, fee calculation, balance monitoring, and payment detection — no code changes needed when set correctly.</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Chain Type *</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.chainType} onChange={field('chainType')}>
+                <option value="EVM">EVM (Ethereum-compatible)</option>
+                <option value="TRON">TRON</option>
+                <option value="APTOS">Aptos</option>
+                <option value="SOLANA">Solana</option>
+                <option value="TON">TON</option>
+                <option value="SUI">SUI</option>
+                <option value="CUSTOM">Custom (requires code plugin)</option>
+              </select>
+              <p className="text-xs text-text-muted mt-0.5">Controls which scanning and delivery engine is used.</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Fee Estimation Method</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.feeMethod} onChange={field('feeMethod')}>
+                <option value="EVM_RPC">EVM RPC (eth_gasPrice)</option>
+                <option value="TRON_API">Tron API</option>
+                <option value="APTOS_API">Aptos API</option>
+                <option value="SOLANA_API">Solana API</option>
+                <option value="TON_API">TON API</option>
+                <option value="FIXED">Fixed (use value below)</option>
+                <option value="CUSTOM">Custom (code only)</option>
+              </select>
+            </div>
+
+            {form.feeMethod === 'FIXED' && (
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-text-muted block mb-1">Fixed Fee (USD)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  placeholder="e.g. 0.50"
+                  value={form.fixedFeeUsd}
+                  onChange={(e) => setForm({ ...form, fixedFeeUsd: e.target.value })}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">CoinGecko ID</label>
+              <input
+                type="text"
+                placeholder="e.g. aptos, binancecoin, tron"
+                value={form.coingeckoId}
+                onChange={(e) => setForm({ ...form, coingeckoId: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-text-muted mt-0.5">Used for automatic price feed. Find on CoinGecko coin page URL.</p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-5">
+              <input
+                id="chain-payment"
+                type="checkbox"
+                checked={form.isPaymentEnabled}
+                onChange={(e) => setForm({ ...form, isPaymentEnabled: e.target.checked })}
+                className="w-4 h-4 accent-primary"
+              />
+              <label htmlFor="chain-payment" className="text-sm font-medium text-text-primary">Accept USDT Payments</label>
+            </div>
+
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-text-muted block mb-1">Primary RPC URL</label>
+              <input
+                type="url"
+                placeholder="https://bsc-dataseed.binance.org/"
+                value={form.rpcUrl}
+                onChange={(e) => setForm({ ...form, rpcUrl: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-text-muted mt-0.5">Used for EVM fee estimation and balance monitoring.</p>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-text-muted block mb-1">Fallback RPC URL</label>
+              <input
+                type="url"
+                placeholder="https://bsc.publicnode.com"
+                value={form.rpcUrlFallback}
+                onChange={(e) => setForm({ ...form, rpcUrlFallback: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-text-muted block mb-1">USDT Contract Address</label>
+              <input
+                type="text"
+                placeholder="0x55d398326f99059fF775485246999027B3197955"
+                value={form.usdtContractAddress}
+                onChange={(e) => setForm({ ...form, usdtContractAddress: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-text-muted mt-0.5">USDT token contract on this chain (for payment detection).</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">USDT Decimals</label>
+              <input
+                type="number"
+                min="0"
+                max="18"
+                placeholder="6"
+                value={form.usdtDecimals}
+                onChange={(e) => setForm({ ...form, usdtDecimals: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Deposit Address Override</label>
+              <input
+                type="text"
+                placeholder="Leave blank to use mnemonic-derived address"
+                value={form.depositAddressOverride}
+                onChange={(e) => setForm({ ...form, depositAddressOverride: e.target.value })}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm"
+              />
             </div>
           </div>
 
@@ -1282,6 +1425,16 @@ export default function GasChainsAdminPage() {
       displayOrder: String(c.displayOrder),
       isActive: c.isActive,
       readinessState: c.readinessState ?? 'inactive',
+      chainType: c.chainType ?? 'EVM',
+      rpcUrl: c.rpcUrl ?? '',
+      rpcUrlFallback: c.rpcUrlFallback ?? '',
+      feeMethod: c.feeMethod ?? 'EVM_RPC',
+      fixedFeeUsd: c.fixedFeeUsd != null ? String(c.fixedFeeUsd) : '',
+      coingeckoId: c.coingeckoId ?? '',
+      isPaymentEnabled: c.isPaymentEnabled ?? false,
+      depositAddressOverride: c.depositAddressOverride ?? '',
+      usdtContractAddress: c.usdtContractAddress ?? '',
+      usdtDecimals: String(c.usdtDecimals ?? 6),
     })
     setChainFormError('')
     setShowChainModal(true)
@@ -1309,6 +1462,17 @@ export default function GasChainsAdminPage() {
         displayOrder: parseInt(chainForm.displayOrder) || 0,
         isActive: chainForm.isActive,
         readinessState: chainForm.readinessState,
+        // Operational / chain-registry fields
+        chainType: chainForm.chainType || 'EVM',
+        rpcUrl: chainForm.rpcUrl || null,
+        rpcUrlFallback: chainForm.rpcUrlFallback || null,
+        feeMethod: chainForm.feeMethod || 'EVM_RPC',
+        fixedFeeUsd: chainForm.fixedFeeUsd ? parseFloat(chainForm.fixedFeeUsd) : null,
+        coingeckoId: chainForm.coingeckoId || null,
+        isPaymentEnabled: chainForm.isPaymentEnabled,
+        depositAddressOverride: chainForm.depositAddressOverride || null,
+        usdtContractAddress: chainForm.usdtContractAddress || null,
+        usdtDecimals: parseInt(chainForm.usdtDecimals) || 6,
       }
       if (editingChain) {
         await adminApi.updateGasChain(editingChain.id, payload)

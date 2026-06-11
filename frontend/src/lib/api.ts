@@ -1543,6 +1543,17 @@ export interface AdminGasChain {
   isVisibleToUsers: boolean
   readinessState: string
   displayOrder: number
+  // Operational / chain-registry fields
+  chainType: string
+  rpcUrl: string | null
+  rpcUrlFallback: string | null
+  feeMethod: string
+  fixedFeeUsd: number | null
+  coingeckoId: string | null
+  isPaymentEnabled: boolean
+  depositAddressOverride: string | null
+  usdtContractAddress: string | null
+  usdtDecimals: number
   createdAt: string
   updatedAt: string
   tokens?: AdminGasToken[]
