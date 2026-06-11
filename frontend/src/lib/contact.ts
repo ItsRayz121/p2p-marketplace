@@ -1,7 +1,7 @@
 // Central contact configuration — single source of truth for support channels.
 // IMPORTANT: Use SUPPORT_EMAIL everywhere instead of hardcoding addresses.
 
-export const SUPPORT_EMAIL = 'fazalelahi5577@gmail.com'
+export const SUPPORT_EMAIL = 'support@rupchain.com'
 
 /** Build a mailto link with an optional subject. */
 export function supportMailto(subject?: string): string {
