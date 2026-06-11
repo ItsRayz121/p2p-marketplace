@@ -58,7 +58,7 @@ const nextConfig = {
       "default-src 'self'",
       // 'unsafe-inline': Next.js inline runtime + theme/telegram boot scripts + JSON-LD.
       // 'unsafe-eval': required by some WalletConnect/wagmi builds.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://telegram.org https://*.telegram.org https://us-assets.i.posthog.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://telegram.org https://*.telegram.org https://us-assets.i.posthog.com https://www.googletagmanager.com https://www.google-analytics.com",
       "style-src 'self' 'unsafe-inline'",
       // Token/chain logos come from many CDNs (see images.remotePatterns) — allow https broadly for img only.
       "img-src 'self' data: blob: https:",

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
@@ -6,6 +7,8 @@ import SupportChatWidget from '@/components/support/SupportChatWidget'
 import TelegramPolish from '@/components/providers/TelegramPolish'
 import { THEME_SCRIPT } from '@/lib/theme'
 import { TELEGRAM_DETECT_SCRIPT } from '@/lib/telegram'
+
+const GA_ID = 'G-8RBC5X1N38'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
 
@@ -96,6 +99,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SupportChatWidget />
           <TelegramPolish />
         </Providers>
+        <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+        <Script id="gtag-init" strategy="afterInteractive">{`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', '${GA_ID}');
+        `}</Script>
       </body>
     </html>
   )
