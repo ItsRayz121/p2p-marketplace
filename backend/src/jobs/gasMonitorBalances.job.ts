@@ -300,14 +300,15 @@ export async function runGasMonitorBalances(): Promise<void> {
 
   // Also monitor EVM chains registered in GasChainConfig with a depositAddressOverride
   // but no GasHotWallet row — enables zero-code onboarding for new EVM chains.
-  const registryOnlyEvm: Array<{ address: string; symbol: string; slug: string }> = []
+  type RegistryEvmCfg = { address: string; symbol: string; slug: string; rpcUrl: string | null; rpcUrlFallback: string | null }
+  const registryOnlyEvm: RegistryEvmCfg[] = []
   const evmRegistryCfgs = await db.gasChainConfig.findMany({
     where: { isActive: true, chainType: 'EVM', depositAddressOverride: { not: null } },
-    select: { depositAddressOverride: true, symbol: true, slug: true, alertThresholdUsd: true, pauseThresholdUsd: true },
-  }).catch(() => [] as Array<{ depositAddressOverride: string | null; symbol: string; slug: string; alertThresholdUsd: number | null; pauseThresholdUsd: number | null }>)
+    select: { depositAddressOverride: true, symbol: true, slug: true, rpcUrl: true, rpcUrlFallback: true, alertThresholdUsd: true, pauseThresholdUsd: true },
+  }).catch(() => [] as Array<{ depositAddressOverride: string | null; symbol: string; slug: string; rpcUrl: string | null; rpcUrlFallback: string | null; alertThresholdUsd: number | null; pauseThresholdUsd: number | null }>)
   for (const cfg of evmRegistryCfgs) {
     if (cfg.depositAddressOverride && !coveredAddresses.has(cfg.depositAddressOverride.toLowerCase())) {
-      registryOnlyEvm.push({ address: cfg.depositAddressOverride, symbol: cfg.symbol, slug: cfg.slug })
+      registryOnlyEvm.push({ address: cfg.depositAddressOverride, symbol: cfg.symbol, slug: cfg.slug, rpcUrl: cfg.rpcUrl, rpcUrlFallback: cfg.rpcUrlFallback })
     }
   }
 
@@ -319,15 +320,37 @@ export async function runGasMonitorBalances(): Promise<void> {
       const thresholds: ChainThresholds = thresholdMap[dbChain] ?? { alertThresholdUsd: null, pauseThresholdUsd: null }
       return monitorChain(chain, w.id, w.address, thresholds)
     }),
-    // Registry-only EVM chains — track balance changes in Redis/ledger without a GasHotWallet row
-    ...registryOnlyEvm.map(({ address, symbol, slug }) => (async () => {
+    // Registry-only EVM chains — fetch live balance via RPC, store for admin panel, detect deposits
+    ...registryOnlyEvm.map(({ address, symbol, slug, rpcUrl, rpcUrlFallback }) => (async () => {
+      const rpcEndpoints = [rpcUrl, rpcUrlFallback].filter((u): u is string => !!u)
+      if (rpcEndpoints.length === 0) return
+
+      let balance: number | null = null
+      for (const url of rpcEndpoints) {
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [address, 'latest'], id: 1 }),
+            signal: AbortSignal.timeout(10_000),
+          })
+          if (res.ok) {
+            const data = await res.json() as { result?: string }
+            if (data.result) { balance = Number(BigInt(data.result)) / 1e18; break }
+          }
+        } catch { /* try next RPC */ }
+      }
+      if (balance === null) {
+        logger.warn({ slug, address }, '[gas-monitor] Registry EVM chain: all RPC endpoints failed for balance fetch')
+        return
+      }
+
+      // Cache for admin live balance panel (Phase 8)
+      await redis.set(`gas_wallet_balance:${slug}`, String(balance), 'EX', 1800)
+
       const balKey = `gas_registry_balance:${slug}`
       const prevStr = await redis.get(balKey)
       const prevBalance = prevStr !== null ? parseFloat(prevStr) : null
-      // Balance fetch via Redis cache (set by other paths) or skip if not available
-      const cached = await redis.get(`gas_wallet_balance:${slug}`)
-      if (!cached) return
-      const balance = parseFloat(cached)
       if (prevBalance !== null) {
         const delta = balance - prevBalance
         if (delta > 0.000_01) {

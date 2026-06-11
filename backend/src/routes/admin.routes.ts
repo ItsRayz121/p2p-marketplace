@@ -4915,14 +4915,18 @@ export async function adminRoutes(app: FastifyInstance) {
 
       const failures: string[] = []
 
-      if (!effectiveBackendId) {
+      // Inbound-only rails (depositAddressOverride set, no GasHotWallet row) are valid
+      // for payment reception without gas delivery from this chain — skip hot wallet check.
+      const effectiveDepositOverride = (updateData.depositAddressOverride as string | null | undefined) ?? chain.depositAddressOverride
+      const isInboundOnlyRail = !!effectiveDepositOverride
+
+      if (!effectiveBackendId && !isInboundOnlyRail) {
         failures.push('backendChainId is not set — delivery is not wired for this chain')
-      } else {
+      } else if (effectiveBackendId && !isInboundOnlyRail) {
         // Hot wallet must exist and be active in DB
         const dbChain = effectiveBackendId === 'ETHEREUM' ? 'ETH' : effectiveBackendId
-        const hotWallet = await db.gasHotWallet.findFirst({
-          where: { chain: dbChain as 'TRON' | 'BSC' | 'ETH' | 'BASE' | 'ARB' | 'OP' | 'MATIC' | 'AVAX' | 'SOL' | 'TON' | 'SUI', isActive: true },
-        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: dbChain as any, isActive: true } })
         if (!hotWallet) failures.push(`No active GasHotWallet row for chain ${effectiveBackendId}`)
 
         // Live balance fetch must succeed
