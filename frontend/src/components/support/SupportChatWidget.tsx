@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
-import { MessageCircle, X, Send } from 'lucide-react'
+import { X, Send } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSSE } from '@/hooks/useSSE'
 import { supportChatApi, SUPPORT_CHAT_OPEN_EVENT, type SupportMessage } from '@/lib/supportChat'
@@ -14,14 +14,12 @@ export default function SupportChatWidget() {
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
-  const [unread, setUnread] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
     try {
       const state = await supportChatApi.get()
       setMessages(state.messages)
-      if (state.conversation?.unreadByUser) setUnread(true)
     } catch {
       /* ignore — user may be logged out */
     }
@@ -35,29 +33,29 @@ export default function SupportChatWidget() {
   }, [])
 
   // Instant delivery: when the backend pushes a support message over SSE, pull
-  // the latest thread and surface the unread dot if the widget is closed.
+  // the latest thread. Closed-widget alerts come from the bell notification +
+  // web push, so no floating unread dot is needed.
   useSSE(
     useCallback((event: { type: string; payload?: unknown }) => {
       if (event.type !== 'support_message') return
       const scope = (event.payload as { scope?: string } | undefined)?.scope
       if (scope && scope !== 'user') return
       refresh()
-      if (!open) setUnread(true)
-    }, [refresh, open]),
+    }, [refresh]),
   )
 
-  // Fallback poll (SSE is primary): every 20s, keeps the dot fresh if a push is missed
+  // Load the thread on mount; fallback poll (SSE is primary) only while open
   useEffect(() => {
     if (!isAuthenticated) return
     refresh()
+    if (!open) return
     const interval = setInterval(refresh, 20_000)
     return () => clearInterval(interval)
-  }, [isAuthenticated, refresh])
+  }, [isAuthenticated, open, refresh])
 
   // Mark read + scroll to bottom when opened or messages change
   useEffect(() => {
     if (open) {
-      setUnread(false)
       supportChatApi.markRead().catch(() => {})
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     }
@@ -90,22 +88,10 @@ export default function SupportChatWidget() {
   // Hidden for guests and inside the admin panel (admins reply from the inbox page)
   if (!isAuthenticated || pathname?.startsWith('/admin')) return null
 
+  // No floating launcher — chat opens via openSupportChat() (Help Centre
+  // "Live Chat" button and support bell notifications)
   return (
     <>
-      {/* Floating launcher */}
-      {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          aria-label="Open support chat"
-          className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
-        >
-          <MessageCircle className="w-6 h-6" />
-          {unread && (
-            <span className="absolute top-0 right-0 w-3.5 h-3.5 bg-danger rounded-full border-2 border-canvas" />
-          )}
-        </button>
-      )}
-
       {/* Chat panel */}
       {open && (
         <div className="fixed bottom-5 right-5 z-50 w-[calc(100vw-2.5rem)] sm:w-96 h-[32rem] max-h-[calc(100vh-2.5rem)] bg-surface border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
