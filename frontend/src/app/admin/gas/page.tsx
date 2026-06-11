@@ -1205,14 +1205,39 @@ export default function GasAdminPage() {
         </div>
       )}
 
-      {stats?.aptosGas?.lowApt && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          <span>
-            <strong>Aptos low on APT gas:</strong>{' '}
-            {stats.aptosGas.balance !== null ? `${stats.aptosGas.balance.toFixed(4)} APT` : 'unknown'} (floor {stats.aptosGas.minApt} APT).
-            {' '}USDT refunds on Aptos pay gas in APT — top up the Aptos hot wallet to avoid refund failures.
-          </span>
+      {/* ── Aptos Hot Wallet Card ────────────────────────────────────────────── */}
+      {stats?.aptosGas && (
+        <div className={`bg-surface border rounded-xl p-5 ${stats.aptosGas.lowApt ? 'border-warning/40 bg-yellow-50/30' : 'border-border'}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${stats.aptosGas.lowApt ? 'bg-yellow-400' : 'bg-green-500'}`} />
+                <h2 className="text-sm font-semibold text-text-primary">Aptos Hot Wallet</h2>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${stats.aptosGas.lowApt ? 'bg-warning/20 text-warning' : 'bg-success/20 text-success'}`}>
+                  {stats.aptosGas.lowApt ? 'Low Balance' : 'Healthy'}
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-alt text-text-muted border border-border">APT Refund Gas</span>
+              </div>
+              <p className="text-xs font-mono text-text-muted truncate mb-3">{stats.aptosGas.address}</p>
+              <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+                <div>
+                  <span className="text-text-muted">Balance: </span>
+                  <span className={`font-bold ${stats.aptosGas.lowApt ? 'text-warning' : 'text-success'}`}>
+                    {stats.aptosGas.balance !== null ? `${stats.aptosGas.balance.toFixed(4)} APT` : 'Unknown'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Min APT: </span>
+                  <span className="font-medium text-text-primary">{stats.aptosGas.minApt} APT</span>
+                </div>
+              </div>
+              {stats.aptosGas.lowApt && (
+                <p className="text-xs mt-2 text-warning font-medium">
+                  Low on APT gas — USDT refunds on Aptos require APT to pay transaction fees. Top up this wallet to prevent refund failures.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

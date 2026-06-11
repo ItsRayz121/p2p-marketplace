@@ -3221,12 +3221,15 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const mnemonicConfigured = gasWalletIsConfigured()
     const evmHotWallet = mnemonicConfigured ? getEvmHotWalletAddress() : null
+    const { getAptosHotWalletAddress } = await import('../lib/gas/aptosWalletService')
+    const aptosHotWallet = mnemonicConfigured ? getAptosHotWalletAddress() : null
 
-    // Deposit addresses: DB override → ENV var → mnemonic-derived (for EVM chains)
-    const envDepositMap: Array<{ coin: string; network: string; envVar: string; chain: string; evmFallback?: boolean }> = [
+    // Deposit addresses: DB override → ENV var → mnemonic-derived (EVM or chain-specific)
+    const envDepositMap: Array<{ coin: string; network: string; envVar: string; chain: string; evmFallback?: boolean; customFallback?: string | null }> = [
       { coin: 'USDT', network: 'TRC20',  envVar: 'GAS_FEE_DEPOSIT_ADDRESS_TRC20', chain: 'TRON' },
       { coin: 'USDT', network: 'BEP20',  envVar: 'GAS_FEE_DEPOSIT_ADDRESS_BEP20', chain: 'BSC',  evmFallback: true },
       { coin: 'USDT', network: 'ERC20',  envVar: 'GAS_FEE_DEPOSIT_ADDRESS_ERC20', chain: 'ETH',  evmFallback: true },
+      { coin: 'USDT', network: 'APTOS',  envVar: 'GAS_FEE_DEPOSIT_ADDRESS_APTOS', chain: 'APT',  customFallback: aptosHotWallet },
     ]
 
     const dbAddresses = await db.platformConfig.findMany({
@@ -3234,12 +3237,12 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     const dbMap = Object.fromEntries(dbAddresses.map((r) => [r.key, r]))
 
-    const depositAddresses = envDepositMap.map(({ coin, network, envVar, chain, evmFallback }) => {
+    const depositAddresses = envDepositMap.map(({ coin, network, envVar, chain, evmFallback, customFallback }) => {
       const dbKey   = `deposit_address_${coin.toLowerCase()}_${network.toLowerCase()}`
       const dbEntry = dbMap[dbKey]
       const envValue = (env as unknown as Record<string, string | undefined>)[envVar]
-      // Priority: DB override → ENV var → mnemonic-derived EVM address
-      const mnemonicValue = (evmFallback && evmHotWallet) ? evmHotWallet : null
+      // Priority: DB override → ENV var → mnemonic-derived (EVM hot wallet or chain-specific)
+      const mnemonicValue = (evmFallback && evmHotWallet) ? evmHotWallet : (customFallback ?? null)
       const address = dbEntry?.value ?? envValue ?? mnemonicValue ?? null
       const source  = dbEntry ? 'db' : envValue ? 'env' : mnemonicValue ? 'mnemonic' : null
       return {
@@ -3810,7 +3813,33 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     })
 
-    return reply.send({ success: true, data: { balances, fetchedAt: new Date().toISOString() } })
+    // Inject Aptos APT gas wallet — inbound-only rail with no GasHotWallet row
+    const { getAptosHotWalletAddress: getAptAddr } = await import('../lib/gas/aptosWalletService')
+    const aptAddr = getAptAddr()
+    let allBalances: typeof balances = balances
+    if (aptAddr) {
+      const aptCached   = await redis.get('gas_aptos_apt_balance')
+      const aptBalance  = aptCached !== null ? parseFloat(aptCached) : null
+      const aptUsdRaw   = await redis.get('rate:APT').catch(() => null)
+      const aptUsdPrice = aptUsdRaw
+        ? (() => { try { return (JSON.parse(aptUsdRaw) as { rate?: number }).rate ?? 0 } catch { return 0 } })()
+        : 0
+      const aptEntry = {
+        chain: 'APT' as string,
+        address: aptAddr,
+        friendlyAddress: null as string | null,
+        balance: aptBalance as number | null,
+        balanceUsd: (aptBalance !== null && aptUsdPrice > 0 ? aptBalance * aptUsdPrice : null) as number | null,
+        nativeSymbol: 'APT',
+        tokens: [] as Array<{ symbol: string; name: string; balanceFormatted: number; tokenAddress: string }>,
+        fetchedAt: new Date().toISOString(),
+        error: null as string | null,
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      allBalances = [...balances, aptEntry as any]
+    }
+
+    return reply.send({ success: true, data: { balances: allBalances, fetchedAt: new Date().toISOString() } })
   })
 
   // GET /admin/treasury/overview — aggregated platform treasury snapshot.
