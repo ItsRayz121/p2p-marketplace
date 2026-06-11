@@ -3822,7 +3822,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const aptBalance  = aptCached !== null ? parseFloat(aptCached) : null
       const aptUsdRaw   = await redis.get('rate:APT').catch(() => null)
       const aptUsdPrice = aptUsdRaw
-        ? (() => { try { return (JSON.parse(aptUsdRaw) as { rate?: number }).rate ?? 0 } catch { return 0 } })()
+        ? (() => { try { return (JSON.parse(aptUsdRaw) as { usdPrice?: number }).usdPrice ?? 0 } catch { return 0 } })()
         : 0
       const aptEntry = {
         chain: 'APT' as string,

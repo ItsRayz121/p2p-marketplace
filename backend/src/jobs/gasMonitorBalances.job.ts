@@ -9,12 +9,15 @@ import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 
 // Aptos is an inbound-only USDT rail (no GasHotWallet row), but its hot wallet
 // still needs native APT to pay gas for outgoing USDT refunds. Monitor it
 // separately so admins are warned before refunds start failing.
 const APT_LOW_ALERT_KEY = 'gas_aptos_apt_low_alerted'
 const APT_LOW_ALERT_TTL_S = 6 * 3600 // re-alert at most every 6h
+const APT_PREV_BALANCE_KEY = 'gas_monitor_prev_aptos_apt_balance'
+const APT_DUST_THRESHOLD = 0.000_01
 
 async function monitorAptosGasBalance(): Promise<void> {
   const address = getAptosHotWalletAddress()
@@ -29,6 +32,47 @@ async function monitorAptosGasBalance(): Promise<void> {
   }
 
   await redis.set('gas_aptos_apt_balance', String(apt), 'EX', 1800)
+
+  // Detect inbound APT deposits and write ledger entries so they appear in Wallet Activity.
+  // Aptos has no GasHotWallet row, so the gasHotWalletDepositPoller skips it — we fill
+  // that gap here using the same balance-diff approach.
+  const prevStr = await redis.get(APT_PREV_BALANCE_KEY)
+  if (prevStr !== null) {
+    const prevBalance = parseFloat(prevStr)
+    const delta = apt - prevBalance
+    if (delta > APT_DUST_THRESHOLD) {
+      const aptRateRaw = await redis.get('rate:APT').catch(() => null)
+      let aptUsdPrice = 0
+      if (aptRateRaw) {
+        try { aptUsdPrice = (JSON.parse(aptRateRaw) as { usdPrice?: number }).usdPrice ?? 0 } catch { /* ignore */ }
+      }
+      const usdAmount = aptUsdPrice > 0 ? delta * aptUsdPrice : 0
+      const bucketMs = Math.floor(Date.now() / (2 * 60_000)) * (2 * 60_000)
+      const sourceKey = `BALANCE_DIFF:APT:${address.toLowerCase()}:APT:${bucketMs}`
+
+      await appendLedgerEntry({
+        entryType:     'external_hot_wallet_deposit',
+        chain:         'BSC' as GasChainId, // dummy for type; chainOverride is authoritative
+        chainOverride: { dbChain: 'APT', nativeSymbol: 'APT' },
+        nativeAmount:  delta,
+        usdAmount,
+        toAddress:     address,
+        sourceKey,
+        notes: `source:BALANCE_DIFF chain:APT symbol:APT prev:${prevBalance.toFixed(6)} now:${apt.toFixed(6)}`,
+      }).catch((e) => logger.warn({ err: e }, '[gas-monitor] Failed to write Aptos deposit ledger entry'))
+
+      const usdStr = usdAmount > 0 ? ` (~$${usdAmount.toFixed(2)})` : ''
+      void createAdminNotif({
+        category: 'GAS',
+        title:    `Aptos Hot Wallet Topped Up — +${delta.toFixed(6)} APT${usdStr}`,
+        body:     `Aptos hot wallet received ${delta.toFixed(6)} APT${usdStr}. New balance: ${apt.toFixed(6)} APT.`,
+        href:     '/admin/gas',
+        metadata: { delta, balance: apt, usdAmount, address },
+      })
+      logger.info({ delta, balance: apt, address }, '[gas-monitor] Aptos APT deposit detected via balance diff')
+    }
+  }
+  await redis.set(APT_PREV_BALANCE_KEY, String(apt), 'EX', 1800)
   const minApt = env.GAS_APTOS_MIN_APT
 
   if (apt < minApt) {
