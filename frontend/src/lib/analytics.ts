@@ -56,5 +56,10 @@ export const analytics = {
   adCreated: (props: { coin: string; side: 'buy' | 'sell'; paymentMethod: string }) =>
     capture('ad_created', props),
 
-  pushNotificationSubscribed: () => capture('push_notification_subscribed'),
+  pushNotificationSubscribed: (props?: { trigger: string }) =>
+    capture('push_notification_subscribed', props),
+
+  pushPromptShown: (props: { trigger: string }) => capture('push_prompt_shown', props),
+
+  pushPromptDismissed: (props: { trigger: string }) => capture('push_prompt_dismissed', props),
 } as const

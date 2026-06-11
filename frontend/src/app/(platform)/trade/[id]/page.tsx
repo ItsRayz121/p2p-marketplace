@@ -24,6 +24,7 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { getTradeStatus } from '@/lib/tradeStatus'
+import { promptPushOptIn } from '@/lib/pushPrompt'
 import { isTrustedImageUrl } from '@/lib/utils'
 import {
   FileText,
@@ -302,6 +303,17 @@ export default function TradePage() {
   useEffect(() => { fetchTrade() }, [fetchTrade])
   // Polling as fallback; SSE triggers immediate refresh on trade events
   usePolling(fetchTrade, 30_000, !loading && !error)
+
+  // High-intent push opt-in: a user inside an active trade is the most likely
+  // to want alerts. The banner gates on permission state and snooze.
+  const pushPromptedRef = useRef(false)
+  useEffect(() => {
+    if (pushPromptedRef.current || !trade) return
+    const active = ['payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent']
+    if (!active.includes(trade.status)) return
+    pushPromptedRef.current = true
+    promptPushOptIn('trade')
+  }, [trade])
 
   useSSE((event) => {
     if (event.type === 'notification') {
