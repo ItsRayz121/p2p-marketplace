@@ -3626,7 +3626,7 @@ export async function adminRoutes(app: FastifyInstance) {
         take: limit,
         select: {
           id: true, entryType: true, chain: true,
-          nativeAmount: true, nativeSymbol: true, usdAmount: true,
+          nativeAmount: true, nativeSymbol: true, tokenSymbol: true, tokenAmount: true, usdAmount: true,
           txHash: true, fromAddress: true, toAddress: true,
           notes: true, createdAt: true,
           relatedOrder: { select: { orderRef: true, status: true, paymentCoin: true, paymentNetwork: true } },
