@@ -6604,6 +6604,7 @@ export async function adminRoutes(app: FastifyInstance) {
       onChainSupported: boolean
       onChainVerified: boolean; onChainSymbol: string | null; onChainDecimals: number | null; onChainError: string | null
       trustWalletVerified: boolean; trustWalletError: string | null
+      geckoTerminalVerified: boolean; geckoTerminalError: string | null
     } = {
       symbol: symbol.toUpperCase(), chainSlug, chainName: chain.name,
       address: null, decimals: null,
@@ -6612,16 +6613,22 @@ export async function adminRoutes(app: FastifyInstance) {
       onChainSupported: chain.family === 'EVM',
       onChainVerified: false, onChainSymbol: null, onChainDecimals: null, onChainError: null,
       trustWalletVerified: false, trustWalletError: null,
+      geckoTerminalVerified: false, geckoTerminalError: null,
     }
+
+    // Slug aliases: a chain may be registered under either name (e.g. 'avax' or
+    // 'avalanche'). Resolve both to the same canonical key so the verification
+    // maps below never miss purely due to which slug the admin typed.
+    const SLUG_ALIASES: Record<string, string> = { avax: 'avalanche', 'the-open-network': 'ton' }
+    const canonicalSlug = SLUG_ALIASES[chainSlug.toLowerCase()] ?? chainSlug.toLowerCase()
 
     // Layer 1: CoinGecko — supports EVM and non-EVM platforms (Solana/TON/SUI/Aptos/Tron).
     const COINGECKO_PLATFORM: Record<string, string> = {
       ethereum: 'ethereum', bsc: 'binance-smart-chain', polygon: 'polygon-pos',
       arbitrum: 'arbitrum-one', optimism: 'optimistic-ethereum', base: 'base', avalanche: 'avalanche',
-      tron: 'tron', solana: 'solana', ton: 'the-open-network', 'the-open-network': 'the-open-network',
-      sui: 'sui', aptos: 'aptos',
+      tron: 'tron', solana: 'solana', ton: 'the-open-network', sui: 'sui', aptos: 'aptos',
     }
-    const cgPlatform = COINGECKO_PLATFORM[chainSlug.toLowerCase()]
+    const cgPlatform = COINGECKO_PLATFORM[canonicalSlug]
     if (cgPlatform) {
       try {
         const cgBase = 'https://api.coingecko.com/api/v3'
@@ -6629,46 +6636,50 @@ export async function adminRoutes(app: FastifyInstance) {
           ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY }
           : {}
 
-        // Dynamically resolve symbol → CoinGecko ID via search API
+        // Resolve symbol → CoinGecko ID candidates via search API. We keep ALL
+        // exact-symbol matches (best market-cap rank first) instead of only the
+        // top one: the highest-ranked "USDT" coin may not list THIS platform in
+        // its detail_platforms even though a sibling entry does, which produced
+        // the spurious "not found on platform" errors.
         const searchRes = await fetch(`${cgBase}/search?query=${encodeURIComponent(symbol)}`, { headers })
-        let cgId: string | null = null
+        let candidates: string[] = []
         if (searchRes.ok) {
           const searchData = await searchRes.json() as { coins: Array<{ id: string; symbol: string; market_cap_rank: number | null }> }
-          // Pick the exact symbol match with the best (lowest) market cap rank
-          const matches = searchData.coins.filter(c => c.symbol.toUpperCase() === symbol.toUpperCase())
-          if (matches.length > 0) {
-            const best = matches.reduce((a, b) => {
-              if (a.market_cap_rank === null) return b
-              if (b.market_cap_rank === null) return a
-              return a.market_cap_rank <= b.market_cap_rank ? a : b
-            })
-            cgId = best.id
-          }
+          candidates = searchData.coins
+            .filter(c => c.symbol.toUpperCase() === symbol.toUpperCase())
+            .sort((a, b) => (a.market_cap_rank ?? 1e9) - (b.market_cap_rank ?? 1e9))
+            .map(c => c.id)
+            .slice(0, 5) // cap requests
         }
 
-        if (!cgId) {
+        if (candidates.length === 0) {
           result.coingeckoError = `No CoinGecko ID mapping for symbol ${symbol}`
         } else {
-          const res = await fetch(`${cgBase}/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`, { headers })
-          if (res.ok) {
+          let platformHit = false
+          for (const cgId of candidates) {
+            const res = await fetch(`${cgBase}/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`, { headers })
+            if (!res.ok) { result.coingeckoError = `CoinGecko returned HTTP ${res.status}`; continue }
             const data = await res.json() as {
               name?: string
               image?: { large?: string; small?: string; thumb?: string }
               detail_platforms?: Record<string, { contract_address: string; decimal_place: number } | null>
             }
-            // Autofill name + logo regardless of platform match
-            result.name = data.name ?? null
-            result.logoUrl = data.image?.large ?? data.image?.small ?? data.image?.thumb ?? null
+            // Keep the first candidate's name/logo as a sensible default
+            if (!result.name)   result.name   = data.name ?? null
+            if (!result.logoUrl) result.logoUrl = data.image?.large ?? data.image?.small ?? data.image?.thumb ?? null
             const platformData = data.detail_platforms?.[cgPlatform]
             if (platformData?.contract_address) {
+              result.name = data.name ?? result.name
+              result.logoUrl = data.image?.large ?? data.image?.small ?? data.image?.thumb ?? result.logoUrl
               result.address = platformData.contract_address
               result.decimals = platformData.decimal_place
               result.coingeckoVerified = true
-            } else {
-              result.coingeckoError = `Token ${symbol} not found on platform ${cgPlatform}`
+              platformHit = true
+              break
             }
-          } else {
-            result.coingeckoError = `CoinGecko returned HTTP ${res.status}`
+          }
+          if (!platformHit && !result.coingeckoError) {
+            result.coingeckoError = `Token ${symbol} not listed on ${cgPlatform} by CoinGecko (trying GeckoTerminal)`
           }
         }
       } catch (err) {
@@ -6676,6 +6687,73 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     } else {
       result.coingeckoError = `No CoinGecko platform mapping for chain ${chainSlug}`
+    }
+
+    // Layer 1b: GeckoTerminal fallback — indexes on-chain DEX tokens, so its
+    // coverage is far wider than CoinGecko's core listing (newer/long-tail
+    // tokens). Used to RESOLVE an address+decimals when CoinGecko had no entry
+    // for this platform. Free, no API key. Best-effort: failures are non-fatal.
+    const GT_NETWORK: Record<string, string> = {
+      ethereum: 'eth', bsc: 'bsc', polygon: 'polygon_pos', arbitrum: 'arbitrum',
+      optimism: 'optimism', base: 'base', avalanche: 'avax', tron: 'tron',
+      solana: 'solana', ton: 'ton', sui: 'sui', aptos: 'aptos',
+    }
+    const gtNetwork = GT_NETWORK[canonicalSlug]
+    if (!result.address && gtNetwork) {
+      try {
+        const gtBase = 'https://api.geckoterminal.com/api/v2'
+        const sRes = await fetch(`${gtBase}/search/pools?query=${encodeURIComponent(symbol)}&network=${gtNetwork}`, {
+          headers: { accept: 'application/json' }, signal: AbortSignal.timeout(7000),
+        })
+        if (sRes.ok) {
+          const sData = await sRes.json() as {
+            data?: Array<{ relationships?: { base_token?: { data?: { id?: string } } } }>
+            included?: Array<{ id?: string; attributes?: { symbol?: string; name?: string; address?: string } }>
+          }
+          // Pool ids look like "base_0xabc..."; the base_token id is "network_address".
+          const tokenIds = (sData.data ?? [])
+            .map(p => p.relationships?.base_token?.data?.id)
+            .filter((id): id is string => !!id)
+          // Find the first token whose symbol matches (via included[]), else first token.
+          const included = sData.included ?? []
+          let chosenAddr: string | null = null
+          for (const tid of tokenIds) {
+            const inc = included.find(i => i.id === tid)
+            const sym = inc?.attributes?.symbol?.toUpperCase()
+            const addr = inc?.attributes?.address ?? (tid.includes('_') ? tid.slice(tid.indexOf('_') + 1) : null)
+            if (sym === symbol.toUpperCase() && addr) { chosenAddr = addr; break }
+          }
+          if (!chosenAddr && tokenIds[0]) {
+            const tid = tokenIds[0]
+            chosenAddr = tid.includes('_') ? tid.slice(tid.indexOf('_') + 1) : null
+          }
+          if (chosenAddr) {
+            // Confirm via the token endpoint to pull decimals/name/logo authoritatively.
+            const tRes = await fetch(`${gtBase}/networks/${gtNetwork}/tokens/${chosenAddr}`, {
+              headers: { accept: 'application/json' }, signal: AbortSignal.timeout(7000),
+            })
+            if (tRes.ok) {
+              const tData = await tRes.json() as { data?: { attributes?: { name?: string; symbol?: string; decimals?: number; image_url?: string; address?: string } } }
+              const attr = tData.data?.attributes
+              if (attr?.symbol?.toUpperCase() === symbol.toUpperCase() && attr.address) {
+                result.address = attr.address
+                if (attr.decimals != null) result.decimals = attr.decimals
+                if (!result.name && attr.name) result.name = attr.name
+                if (!result.logoUrl && attr.image_url && attr.image_url !== 'missing.png') result.logoUrl = attr.image_url
+                result.geckoTerminalVerified = true
+              } else {
+                result.geckoTerminalError = `GeckoTerminal token symbol mismatch (got ${attr?.symbol ?? 'none'})`
+              }
+            }
+          } else {
+            result.geckoTerminalError = `No ${symbol} token found on GeckoTerminal ${gtNetwork}`
+          }
+        }
+      } catch (err) {
+        result.geckoTerminalError = err instanceof Error ? err.message : 'GeckoTerminal lookup failed'
+      }
+    } else if (!gtNetwork) {
+      result.geckoTerminalError = `No GeckoTerminal network mapping for chain ${chainSlug}`
     }
 
     // Layer 2: On-chain RPC (EVM only)
@@ -6706,6 +6784,8 @@ export async function adminRoutes(app: FastifyInstance) {
           }
           result.onChainSymbol = decodeString(symbolHex)
           result.onChainDecimals = decNum
+          // If no upstream gave decimals, trust the on-chain value.
+          if (result.decimals == null) result.decimals = decNum
           result.onChainVerified = (
             result.onChainSymbol?.toUpperCase() === symbol.toUpperCase() &&
             (result.decimals == null || result.onChainDecimals === result.decimals)
@@ -6720,23 +6800,28 @@ export async function adminRoutes(app: FastifyInstance) {
         result.onChainError = `No RPC URL configured for chain ${chain.id}`
       }
     } else if (address && chain.family !== 'EVM') {
-      result.onChainError = 'On-chain verification not available for non-EVM chains; using CoinGecko + TrustWallet instead'
+      result.onChainError = 'On-chain verification not available for non-EVM chains; using CoinGecko / GeckoTerminal / TrustWallet instead'
     }
 
-    // Layer 3: TrustWallet assets
+    // Layer 3: TrustWallet assets — confirms listing AND fills name/decimals/logo
+    // from info.json when upstream sources missed them.
     const TW_CHAIN: Record<string, string> = {
       ethereum: 'ethereum', bsc: 'smartchain', polygon: 'polygon',
-      arbitrum: 'arbitrum', optimism: 'optimism', base: 'base',
+      arbitrum: 'arbitrum', optimism: 'optimism', base: 'base', avalanche: 'avalanchec',
       tron: 'tron', solana: 'solana', ton: 'ton', sui: 'sui', aptos: 'aptos',
     }
-    const twChain = TW_CHAIN[chainSlug.toLowerCase()]
+    const twChain = TW_CHAIN[canonicalSlug]
     if (twChain && address) {
       try {
-        const checksumAddress = address
-        const twUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${twChain}/assets/${checksumAddress}/info.json`
-        const twRes = await fetch(twUrl)
+        const twUrl = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${twChain}/assets/${address}/info.json`
+        const twRes = await fetch(twUrl, { signal: AbortSignal.timeout(7000) })
         if (twRes.ok) {
           result.trustWalletVerified = true
+          try {
+            const info = await twRes.json() as { name?: string; symbol?: string; decimals?: number }
+            if (!result.name && info.name) result.name = info.name
+            if (result.decimals == null && info.decimals != null) result.decimals = info.decimals
+          } catch { /* info.json unparseable — existence alone still counts */ }
         } else {
           result.trustWalletError = twRes.status === 404 ? 'Not in TrustWallet registry' : `TrustWallet returned HTTP ${twRes.status}`
         }

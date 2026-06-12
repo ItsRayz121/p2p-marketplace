@@ -27,6 +27,7 @@ function VerBadge({ ok, label, error }: { ok: boolean; label: string; error?: st
 
 function LookupDisplay({ result }: { result: TokenLookupResult }) {
   const verifiedSource = result.coingeckoVerified ? 'CoinGecko'
+    : result.geckoTerminalVerified ? 'GeckoTerminal'
     : result.trustWalletVerified ? 'TrustWallet'
     : result.onChainVerified ? 'On-chain' : null
   return (
@@ -46,6 +47,7 @@ function LookupDisplay({ result }: { result: TokenLookupResult }) {
       )}
       <div className="flex items-center gap-2 flex-wrap">
         <VerBadge ok={result.coingeckoVerified} label="CoinGecko" error={result.coingeckoError} />
+        <VerBadge ok={result.geckoTerminalVerified} label="GeckoTerminal" error={result.geckoTerminalError} />
         {result.onChainSupported && <VerBadge ok={result.onChainVerified} label="On-chain" error={result.onChainError} />}
         <VerBadge ok={result.trustWalletVerified} label="TrustWallet" error={result.trustWalletError} />
       </div>
@@ -92,6 +94,7 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
   const [lookup,   setLookup]   = useState<TokenLookupResult | null>(null)
   const [lookupErr, setLookupErr] = useState<string | null>(null)
   const [saveErr,   setSaveErr]   = useState<string | null>(null)
+  const [manualOverride, setManualOverride] = useState(false)
 
   async function handleLookup() {
     if (!symbol.trim()) return
@@ -111,21 +114,24 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
   }
 
   // For EVM chains we require on-chain verification of the contract; for non-EVM
-  // chains (Solana/TON/SUI) on-chain verification isn't available, so a CoinGecko
-  // or TrustWallet match is sufficient.
-  const addressVerified = !address
+  // chains (Solana/TON/SUI) on-chain verification isn't available, so a CoinGecko,
+  // GeckoTerminal or TrustWallet match is sufficient. A manual override lets the
+  // admin add a token they've verified themselves when no automated source can
+  // reach it (e.g. a brand-new token, or a chain with no upstream coverage).
+  const autoVerified = !address
     ? true
     : lookup?.onChainSupported
-      ? !!lookup?.onChainVerified
-      : !!(lookup?.coingeckoVerified || lookup?.trustWalletVerified)
+      ? !!(lookup?.onChainVerified || lookup?.coingeckoVerified || lookup?.geckoTerminalVerified)
+      : !!(lookup?.coingeckoVerified || lookup?.geckoTerminalVerified || lookup?.trustWalletVerified)
+  const addressVerified = autoVerified || manualOverride
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!symbol || !decimals) return
     if (!addressVerified) {
       setSaveErr(lookup?.onChainSupported
-        ? 'On-chain verification must pass before adding a token with a contract address.'
-        : 'CoinGecko or TrustWallet must verify this token before adding it.')
+        ? 'On-chain, CoinGecko or GeckoTerminal verification must pass — or tick "add without verification" if you have checked this token yourself.'
+        : 'CoinGecko, GeckoTerminal or TrustWallet must verify this token — or tick "add without verification" if you have checked it yourself.')
       return
     }
     setSaving(true)
@@ -137,7 +143,7 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
         decimals: parseInt(decimals, 10),
         coingeckoId: lookup ? (lookup.symbol ? undefined : undefined) : undefined,
         onChainVerified: lookup?.onChainVerified ?? false,
-        trustWalletVerified: lookup?.trustWalletVerified ?? false,
+        trustWalletVerified: (lookup?.trustWalletVerified || lookup?.geckoTerminalVerified) ?? false,
       })
       setSymbol('')
       setAddress('')
@@ -213,12 +219,29 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
 
       {saveErr && <p className="text-xs text-red-600">{saveErr}</p>}
 
-      {address && !addressVerified && (
+      {address && !autoVerified && (
         <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
           ⚠ {lookup?.onChainSupported === false
-            ? 'Not yet verified. Use Lookup so CoinGecko or TrustWallet can confirm this token before saving.'
-            : 'On-chain verification has not passed. Use the Lookup button to verify the contract before saving.'}
+            ? 'Not auto-verified. Use Lookup so CoinGecko / GeckoTerminal / TrustWallet can confirm this token — or override below.'
+            : 'Automated verification has not passed. Use the Lookup button to verify the contract — or override below.'}
         </p>
+      )}
+
+      {/* Manual override — for tokens no automated source can reach. The admin
+          takes responsibility for the pasted address. */}
+      {address && !autoVerified && (
+        <label className="flex items-start gap-2 text-xs text-text-secondary cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={manualOverride}
+            onChange={(e) => setManualOverride(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded border-border"
+          />
+          <span>
+            <span className="font-medium text-text-primary">Add without automated verification.</span>{' '}
+            I have confirmed this contract address from the official source myself. Only the address you paste will be used for deposit detection.
+          </span>
+        </label>
       )}
 
       <Button
@@ -226,7 +249,7 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
         disabled={saving || !symbol || !decimals || !addressVerified}
         className="w-full"
       >
-        {saving ? 'Adding…' : 'Add Token'}
+        {saving ? 'Adding…' : manualOverride && !autoVerified ? 'Add Token (manual override)' : 'Add Token'}
       </Button>
     </form>
   )

@@ -133,6 +133,10 @@ export function getRpcUrl(chainSlug: string): string | undefined {
     case 'arbitrum': return env.ARBITRUM_RPC_URL
     case 'optimism': return env.OPTIMISM_RPC_URL
     case 'base':     return env.BASE_RPC_URL
+    // Accept both 'avax' and 'avalanche' — admins have created the deposit chain
+    // under either slug; the maps must resolve regardless of which was used.
+    case 'avax':
+    case 'avalanche': return env.AVALANCHE_RPC_URL
     default:         return undefined
   }
 }

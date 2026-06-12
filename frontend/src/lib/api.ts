@@ -1496,6 +1496,8 @@ export interface TokenLookupResult {
   onChainError: string | null
   trustWalletVerified: boolean
   trustWalletError: string | null
+  geckoTerminalVerified: boolean
+  geckoTerminalError: string | null
 }
 
 export interface TokenAddressLookupResult {

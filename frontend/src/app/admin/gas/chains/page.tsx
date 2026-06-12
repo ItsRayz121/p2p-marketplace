@@ -765,13 +765,24 @@ function TokenModal({
 
   // Tokens already registered (and verified) in the Deposit Chain Registry for
   // this chain — offered as one-click imports so admins don't re-type addresses.
+  // Some chains were registered under an alias slug (e.g. 'avax' vs 'avalanche'),
+  // so we try the canonical slug first and fall back to known aliases.
   const [depositTokens, setDepositTokens] = useState<AdminDepositToken[]>([])
   useEffect(() => {
     if (!depositSlug) { setDepositTokens([]); return }
     let cancelled = false
-    adminApi.getDepositTokens(depositSlug)
-      .then((d) => { if (!cancelled) setDepositTokens((d.tokens ?? []).filter((t) => t.isActive)) })
-      .catch(() => { if (!cancelled) setDepositTokens([]) })
+    const SLUG_ALT: Record<string, string[]> = { avalanche: ['avax'], ton: ['the-open-network'] }
+    const slugsToTry = [depositSlug, ...(SLUG_ALT[depositSlug] ?? [])]
+    ;(async () => {
+      for (const s of slugsToTry) {
+        try {
+          const d = await adminApi.getDepositTokens(s)
+          const active = (d.tokens ?? []).filter((t) => t.isActive)
+          if (!cancelled && active.length > 0) { setDepositTokens(active); return }
+        } catch { /* try next alias */ }
+      }
+      if (!cancelled) setDepositTokens([])
+    })()
     return () => { cancelled = true }
   }, [depositSlug])
   const tokenStandards = chainMeta?.tokenStandards ?? [
