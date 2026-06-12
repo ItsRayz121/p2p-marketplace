@@ -4506,6 +4506,8 @@ export async function adminRoutes(app: FastifyInstance) {
       base:      { name: 'Base',             slug: 'BASE',     symbol: 'ETH',  category: 'base',      addressType: 'EVM',        networkLabel: 'BASE',        explorerBase: 'https://basescan.org',              evmChainId: 8453,   coingeckoId: 'ethereum'  },
       bitcoin:   { name: 'Bitcoin',          slug: 'BTC',      symbol: 'BTC',  category: 'bitcoin',   addressType: 'BTC_BECH32', networkLabel: 'BTC',         explorerBase: 'https://mempool.space',             coingeckoId: 'bitcoin' },
       btc:       { name: 'Bitcoin',          slug: 'BTC',      symbol: 'BTC',  category: 'bitcoin',   addressType: 'BTC_BECH32', networkLabel: 'BTC',         explorerBase: 'https://mempool.space',             coingeckoId: 'bitcoin' },
+      aptos:     { name: 'Aptos',            slug: 'APT',      symbol: 'APT',  category: 'aptos',     addressType: 'APTOS',      networkLabel: 'APTOS',       explorerBase: 'https://explorer.aptoslabs.com',    coingeckoId: 'aptos' },
+      apt:       { name: 'Aptos',            slug: 'APT',      symbol: 'APT',  category: 'aptos',     addressType: 'APTOS',      networkLabel: 'APTOS',       explorerBase: 'https://explorer.aptoslabs.com',    coingeckoId: 'aptos' },
     }
 
     const warnings: string[] = []
@@ -4803,7 +4805,7 @@ export async function adminRoutes(app: FastifyInstance) {
       symbol:             z.string().min(1),
       category:           z.string().min(1),
       networkLabel:       z.string().min(1),
-      addressType:           z.enum(['TRC20', 'EVM', 'SOL', 'SUI', 'TON', 'APTOS']),
+      addressType:           z.enum(['TRC20', 'EVM', 'SOL', 'SUI', 'TON', 'APTOS', 'BTC_BECH32', 'BTC_LEGACY', 'BTC_P2SH', 'XRP', 'COSMOS', 'NEAR']),
       logoUrl:               z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
       explorerBase:          z.string().url().nullable().default(null),
       backendChainId:        z.string().nullable().default(null),
@@ -6411,7 +6413,7 @@ export async function adminRoutes(app: FastifyInstance) {
       slug:             z.string().min(1).max(50).regex(/^[a-z0-9-]+$/),
       chainId:          z.number().int().positive().optional(),
       name:             z.string().min(1).max(100),
-      family:           z.enum(['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC']),
+      family:           z.enum(['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC', 'APT']),
       nativeSymbol:     z.string().min(1).max(20),
       networkLabel:     z.string().min(1).max(50),
       minConfirmations: z.number().int().positive(),

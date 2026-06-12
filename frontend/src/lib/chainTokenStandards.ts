@@ -123,6 +123,22 @@ export const CHAIN_META: Record<string, ChainMeta> = {
     ],
   },
 
+  aptos: {
+    category: 'aptos', defaultAddressType: 'APTOS', nativeSymbol: 'APT',
+    networkLabel: 'APTOS',
+    explorerBase: 'https://explorer.aptoslabs.com',
+    addressFormat: {
+      encoding: 'hex64', prefix: '0x', checksummed: false,
+      example: '0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b',
+      regex: '^0x[0-9a-fA-F]{1,64}(::[A-Za-z0-9_]+::[A-Za-z0-9_]+)?$',
+    },
+    tokenStandards: [
+      { value: 'native',  label: 'APT (Native)',            isNative: true, hasContract: false },
+      { value: 'fa',      label: 'Fungible Asset (FA)',                     hasContract: true  },
+      { value: 'coin',    label: 'Legacy Coin (0x...::module::Type)',       hasContract: true  },
+    ],
+  },
+
   avalanche: {
     category: 'avalanche', defaultAddressType: 'EVM', nativeSymbol: 'AVAX',
     evmChainId: 43114, networkLabel: 'AVAX C-Chain',
@@ -255,6 +271,7 @@ export const CHAIN_CATEGORIES = [
   { value: 'solana',    label: 'Solana (L1)',                addressType: 'SOL'        },
   { value: 'ton',       label: 'TON (L1)',                   addressType: 'TON'        },
   { value: 'sui',       label: 'SUI (L1)',                   addressType: 'SUI'        },
+  { value: 'aptos',     label: 'Aptos (L1)',                 addressType: 'APTOS'      },
   { value: 'avalanche', label: 'Avalanche C-Chain (EVM L1)', addressType: 'EVM'        },
   { value: 'bitcoin',   label: 'Bitcoin (L1)',               addressType: 'BTC_BECH32' },
   { value: 'xrp',       label: 'XRP Ledger (L1)',            addressType: 'XRP'        },

@@ -88,6 +88,17 @@ const BLANK_TOKEN: TokenFormState = {
   presetAmounts: '', displayOrder: '0', isActive: true,
 }
 
+// Recommended public RPC endpoints per chain type — used as placeholders and
+// one-click fills so admins aren't left guessing what URL each engine expects.
+const RPC_SUGGESTIONS: Record<string, { primary: string; fallback: string }> = {
+  EVM:    { primary: 'https://bsc-dataseed.binance.org/',           fallback: 'https://bsc.publicnode.com' },
+  APTOS:  { primary: 'https://fullnode.mainnet.aptoslabs.com/v1',   fallback: 'https://aptos-mainnet.public.blastapi.io/v1' },
+  TRON:   { primary: 'https://api.trongrid.io',                     fallback: 'https://tron-rpc.publicnode.com' },
+  SOLANA: { primary: 'https://api.mainnet-beta.solana.com',         fallback: 'https://solana-rpc.publicnode.com' },
+  TON:    { primary: 'https://toncenter.com/api/v2/jsonRPC',        fallback: 'https://ton-rpc.publicnode.com' },
+  SUI:    { primary: 'https://fullnode.mainnet.sui.io',             fallback: 'https://sui-rpc.publicnode.com' },
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function presetDisplay(amounts: number[]): string {
@@ -402,7 +413,7 @@ function ChainModal({
                     .filter((c) => c.id !== editing?.id && c.backendChainId)
                     .map((c) => c.backendChainId as string)
                 )
-                const GAS_CHAINS = ['TRON','BSC','ETH','BASE','ARB','OP','MATIC','AVAX','SOL','TON','SUI']
+                const GAS_CHAINS = ['TRON','BSC','ETH','BASE','ARB','OP','MATIC','AVAX','SOL','TON','SUI','APT']
                 return (
                   <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.backendChainId} onChange={field('backendChainId')}>
                     <option value="">Not deliverable yet</option>
@@ -611,22 +622,48 @@ function ChainModal({
               <label className="text-xs font-medium text-text-muted block mb-1">Primary RPC URL</label>
               <input
                 type="url"
-                placeholder="https://bsc-dataseed.binance.org/"
+                placeholder={RPC_SUGGESTIONS[form.chainType]?.primary ?? 'https://...'}
                 value={form.rpcUrl}
                 onChange={(e) => setForm({ ...form, rpcUrl: e.target.value })}
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm"
               />
-              <p className="text-xs text-text-muted mt-0.5">Used for EVM fee estimation and balance monitoring.</p>
+              <p className="text-xs text-text-muted mt-0.5">Used for fee estimation and balance monitoring on this chain.</p>
+              {!form.rpcUrl && RPC_SUGGESTIONS[form.chainType] && (
+                <p className="text-xs text-blue-600 mt-0.5">
+                  Recommended for {form.chainType}:{' '}
+                  <button
+                    type="button"
+                    className="font-mono underline hover:text-blue-800"
+                    onClick={() => setForm({ ...form, rpcUrl: RPC_SUGGESTIONS[form.chainType]!.primary })}
+                  >
+                    {RPC_SUGGESTIONS[form.chainType]!.primary}
+                  </button>
+                  {' '}(click to fill)
+                </p>
+              )}
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Fallback RPC URL</label>
               <input
                 type="url"
-                placeholder="https://bsc.publicnode.com"
+                placeholder={RPC_SUGGESTIONS[form.chainType]?.fallback ?? 'https://...'}
                 value={form.rpcUrlFallback}
                 onChange={(e) => setForm({ ...form, rpcUrlFallback: e.target.value })}
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm"
               />
+              {!form.rpcUrlFallback && RPC_SUGGESTIONS[form.chainType] && (
+                <p className="text-xs text-blue-600 mt-0.5">
+                  Recommended:{' '}
+                  <button
+                    type="button"
+                    className="font-mono underline hover:text-blue-800"
+                    onClick={() => setForm({ ...form, rpcUrlFallback: RPC_SUGGESTIONS[form.chainType]!.fallback })}
+                  >
+                    {RPC_SUGGESTIONS[form.chainType]!.fallback}
+                  </button>
+                  {' '}(click to fill)
+                </p>
+              )}
             </div>
 
             <div className="col-span-2">
@@ -764,6 +801,7 @@ function TokenModal({
     const chainSlugMap: Record<string, string> = {
       ETH: 'ethereum', BSC: 'bsc', MATIC: 'polygon',
       ARB: 'arbitrum', OP: 'optimism', BASE: 'base', AVAX: 'avalanche',
+      TRON: 'tron', SOL: 'solana', TON: 'ton', SUI: 'sui', APT: 'aptos',
     }
     const chainSlug = chainSlugMap[selectedChain.backendChainId]
     if (!chainSlug) { setLookupErr(`No deposit chain mapping for ${selectedChain.backendChainId}`); return }
