@@ -4831,6 +4831,8 @@ export async function adminRoutes(app: FastifyInstance) {
       usdtDecimals:          z.number().int().min(0).max(18).default(6),
     })
     const d = schema.parse(req.body)
+    const dupe = await db.gasChainConfig.findUnique({ where: { slug: d.slug.toUpperCase() } })
+    if (dupe) throw new AppError('DUPLICATE_CHAIN', `A gas chain with slug ${d.slug.toUpperCase()} already exists (${dupe.name})`, 409)
     const chain = await db.gasChainConfig.create({
       data: {
         name: d.name, slug: d.slug.toUpperCase(), symbol: d.symbol,
@@ -5023,7 +5025,10 @@ export async function adminRoutes(app: FastifyInstance) {
       chainConfigId:   z.string().min(1),
       name:            z.string().min(1),
       symbol:          z.string().min(1),
-      tokenType:       z.enum(['native', 'token']),
+      // 'native' | legacy 'token' | named standards from the frontend chain catalog
+      // (erc20, bep20, trc20, spl, jetton, coin, fa, …). Backend logic only ever
+      // branches on tokenType === 'native', so any named standard is safe to store.
+      tokenType:       z.string().regex(/^[a-z0-9_]{2,20}$/, 'tokenType must be a lowercase standard id (e.g. native, erc20, fa)'),
       contractAddress: z.string().nullable().default(null),
       logoUrl:         z.string().url().refine(validateLogoUrl, { message: 'logoUrl must be a direct image URL (png/jpg/svg/webp). Google Drive share links are not supported.' }).nullable().default(null),
       priceSymbol:     z.string().min(1),
@@ -6418,7 +6423,7 @@ export async function adminRoutes(app: FastifyInstance) {
       networkLabel:     z.string().min(1).max(50),
       minConfirmations: z.number().int().positive(),
       explorerBase:     z.string().url(),
-      rpcEnvVar:        z.string().optional(),
+      rpcEnvVar:        z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'rpcEnvVar must be an environment variable NAME like APT_RPC_URL — not a URL').optional(),
     })
     const parsed = schema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
@@ -6438,7 +6443,7 @@ export async function adminRoutes(app: FastifyInstance) {
       name:             z.string().min(1).max(100).optional(),
       minConfirmations: z.number().int().positive().optional(),
       explorerBase:     z.string().url().optional(),
-      rpcEnvVar:        z.string().optional(),
+      rpcEnvVar:        z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'rpcEnvVar must be an environment variable NAME like APT_RPC_URL — not a URL').optional(),
       isActive:         z.boolean().optional(),
     })
     const parsed = schema.safeParse(req.body)

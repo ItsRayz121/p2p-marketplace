@@ -101,9 +101,16 @@ export async function isEvmNetwork(network: string): Promise<boolean> {
   return chain?.family === 'EVM'
 }
 
+// Non-EVM explorers use different tx path segments (Aptos /txn, SUI /txblock,
+// TRON /#/transaction, …). Admin-entered bases may already include that segment —
+// in that case append only the hash; otherwise default to the EVM-style /tx/.
+const TX_PATH_SUFFIX = /(\/(tx|txn|txs|transaction|transactions|txblock)|#\/transaction)\/?$/
+
 export async function explorerTxUrl(chainId: string, txHash: string): Promise<string | undefined> {
   const chain = await getChainBySlug(chainId)
-  return chain ? `${chain.explorerBase}/tx/${txHash}` : undefined
+  if (!chain) return undefined
+  const base = chain.explorerBase.replace(/\/+$/, '')
+  return TX_PATH_SUFFIX.test(base) ? `${base}/${txHash}` : `${base}/tx/${txHash}`
 }
 
 export async function explorerAddressUrl(chainId: string, address: string): Promise<string | undefined> {

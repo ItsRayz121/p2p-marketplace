@@ -43,7 +43,7 @@ const FAMILY_TO_GAS_CATEGORY: Record<Family, string> = {
 
 // ── Add Chain Form ─────────────────────────────────────────────────────────────
 
-function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) => void; onCancel: () => void }) {
   const [query,         setQuery]         = useState('')
   const [results,       setResults]       = useState<ChainSearchResult[]>([])
   const [searching,     setSearching]     = useState(false)
@@ -129,6 +129,10 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
       setError('Name, slug, native symbol, network label, and explorer URL are required.')
       return
     }
+    if (rpcEnvVar && !/^[A-Z][A-Z0-9_]*$/.test(rpcEnvVar)) {
+      setError('RPC Env Var must be a variable NAME like APT_RPC_URL — not the URL itself. The URL goes in the server environment; leave this blank if unsure.')
+      return
+    }
     setSubmitting(true)
     try {
       await adminApi.createDepositChain({
@@ -139,29 +143,43 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
         isActive: true,
       } as Parameters<typeof adminApi.createDepositChain>[0])
 
+      // The deposit chain is created at this point — a Gas-section failure below
+      // must not abort the flow (retrying would hit DUPLICATE_CHAIN), so it only
+      // downgrades to a warning.
+      let warning: string | undefined
       if (addToGas) {
         const gasCategory = FAMILY_TO_GAS_CATEGORY[family]
-        // Prefer CHAIN_META networkLabel if available (e.g. 'ERC20' for ethereum), else use form value
-        const gasNetworkLabel = CHAIN_META[gasCategory]?.networkLabel || networkLabel
-        // Strip any trailing /tx/ path that may have come from chainid.network auto-fill
-        const gasExplorerBase = explorerBase.replace(/\/tx\/?$/, '').replace(/\/$/, '') || null
-        await adminApi.createGasChain({
-          name,
-          slug:            slug.toUpperCase(),
-          symbol:          nativeSymbol,
-          category:        gasCategory,
-          networkLabel:    gasNetworkLabel,
-          addressType:     ADDRESS_TYPE_FOR_FAMILY[family],
-          explorerBase:    gasExplorerBase,
-          backendChainId:  null,
-          isActive:        false,
-          readinessState:  'inactive',
-          displayOrder:    999,
-          platformFeeUsdt: 0.25,
-        })
+        try {
+          const { chains: gasChains } = await adminApi.getGasChains()
+          const existingGas = gasChains.find((c) => c.category === gasCategory)
+          if (existingGas) {
+            warning = `Deposit chain created. Gas section already has "${existingGas.name}" (${existingGas.slug}) for this category — no duplicate was created.`
+          } else {
+            // Prefer CHAIN_META networkLabel if available (e.g. 'ERC20' for ethereum), else use form value
+            const gasNetworkLabel = CHAIN_META[gasCategory]?.networkLabel || networkLabel
+            // Strip any trailing /tx/ path that may have come from chainid.network auto-fill
+            const gasExplorerBase = explorerBase.replace(/\/tx\/?$/, '').replace(/\/$/, '') || null
+            await adminApi.createGasChain({
+              name,
+              slug:            slug.toUpperCase(),
+              symbol:          nativeSymbol,
+              category:        gasCategory,
+              networkLabel:    gasNetworkLabel,
+              addressType:     ADDRESS_TYPE_FOR_FAMILY[family],
+              explorerBase:    gasExplorerBase,
+              backendChainId:  null,
+              isActive:        false,
+              readinessState:  'inactive',
+              displayOrder:    999,
+              platformFeeUsdt: 0.25,
+            })
+          }
+        } catch (gasErr) {
+          warning = `Deposit chain created, but adding it to the Gas section failed: ${gasErr instanceof Error ? gasErr.message : 'unknown error'}. Add it manually under Gas → Chains.`
+        }
       }
 
-      onSuccess()
+      onSuccess(warning)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create chain')
     } finally {
@@ -268,7 +286,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: () => void; onCance
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Explorer Base URL * <span className="text-text-muted font-normal">(no trailing slash — system appends /tx/hash)</span></label>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Explorer Base URL * <span className="text-text-muted font-normal">(no trailing slash — system appends the tx hash, or /tx/hash if the URL has no tx path)</span></label>
           <input value={explorerBase} onChange={e => setExplorerBase(e.target.value)} placeholder="https://explorer.zetachain.com" required
             className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
@@ -341,6 +359,7 @@ export default function DepositChainsPage() {
   const [error,    setError]    = useState<string | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
   const [adding,   setAdding]   = useState(false)
+  const [warning,  setWarning]  = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -384,9 +403,16 @@ export default function DepositChainsPage() {
         )}
       </div>
 
+      {warning && (
+        <div className="flex items-start justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <span>{warning}</span>
+          <button onClick={() => setWarning(null)} className="shrink-0 font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
+
       {adding && (
         <AddChainPanel
-          onSuccess={() => { setAdding(false); void load() }}
+          onSuccess={(w) => { setAdding(false); setWarning(w ?? null); void load() }}
           onCancel={() => setAdding(false)}
         />
       )}
