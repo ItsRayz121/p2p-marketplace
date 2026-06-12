@@ -233,6 +233,7 @@ function WalletCard({
           {/* Title row */}
           <div className="flex items-center gap-2 mb-2">
             <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${walletHealthDot(wallet.status)}`} />
+            <EntityLogo type="chain" slug={wallet.chain} size="sm" />
             <h2 className="text-sm font-semibold text-text-primary">{chainDisplayName(wallet.chain)} Hot Wallet</h2>
             <Badge variant={walletStatusVariant(wallet.status)} size="sm">
               {walletStatusLabel(wallet.status, wallet.pauseReason)}
@@ -363,7 +364,12 @@ function AnalyticsPanel({ analytics }: { analytics: GasAnalytics }) {
             <tbody className="divide-y divide-border">
               {analytics.chainStats.sort((a, b) => b.total - a.total).map((c) => (
                 <tr key={c.chain} className="py-1.5">
-                  <td className="py-1.5 font-medium text-text-primary">{chainDisplayName(c.chain)}</td>
+                  <td className="py-1.5 font-medium text-text-primary">
+                    <span className="inline-flex items-center gap-1.5">
+                      <EntityLogo type="chain" slug={c.chain} size="xs" />
+                      {chainDisplayName(c.chain)}
+                    </span>
+                  </td>
                   <td className="py-1.5 text-right text-success">{c.delivered}</td>
                   <td className="py-1.5 text-right text-danger">{c.failed}</td>
                   <td className="py-1.5 text-right font-medium">
@@ -1213,6 +1219,7 @@ export default function GasAdminPage() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${stats.aptosGas.lowApt ? 'bg-yellow-400' : 'bg-green-500'}`} />
+                <EntityLogo type="chain" slug="APT" size="sm" />
                 <h2 className="text-sm font-semibold text-text-primary">Aptos Hot Wallet</h2>
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${stats.aptosGas.lowApt ? 'bg-warning/20 text-warning' : 'bg-success/20 text-success'}`}>
                   {stats.aptosGas.lowApt ? 'Low Balance' : 'Healthy'}

@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { RefreshCw, CheckCircle2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui/Modal'
 
@@ -208,7 +209,12 @@ export default function GasReconciliationPage() {
                   <tr key={r.id} className="hover:bg-surface/50 transition-colors">
                     <td className="px-4 py-3 text-text-primary">{fmt(r.ranAt)}</td>
                     <td className="px-4 py-3">
-                      {r.chain ? <Badge variant="default" size="sm">{r.chain}</Badge> : <span className="text-text-muted text-xs">All chains</span>}
+                      {r.chain ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <EntityLogo type="chain" slug={r.chain} size="xs" />
+                          <Badge variant="default" size="sm">{r.chain}</Badge>
+                        </span>
+                      ) : <span className="text-text-muted text-xs">All chains</span>}
                     </td>
                     <td className="px-4 py-3 text-text-muted">{r.totalOrders}</td>
                     <td className="px-4 py-3 text-text-muted">{r.ordersChecked}</td>

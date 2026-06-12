@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Input } from '@/components/ui/Input'
 
 // ── Verification badge ────────────────────────────────────────────────────────
@@ -336,7 +337,12 @@ export default function ChainTokensPage() {
           <tbody className="divide-y divide-border-subtle">
             {tokens.map((token) => (
               <tr key={token.id} className="hover:bg-surface-alt transition-colors">
-                <td className="px-4 py-3 font-semibold text-text-primary">{token.symbol}</td>
+                <td className="px-4 py-3 font-semibold text-text-primary">
+                  <span className="inline-flex items-center gap-2">
+                    <EntityLogo type="token" slug={token.symbol} size="sm" />
+                    {token.symbol}
+                  </span>
+                </td>
                 <td className="px-4 py-3 font-mono text-xs text-text-muted">
                   {token.address
                     ? <span title={token.address}>{token.address.slice(0, 10)}…{token.address.slice(-6)}</span>

@@ -7,6 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const FAMILIES = ['EVM', 'TRON', 'SOL', 'TON', 'SUI', 'BTC', 'APT'] as const
 type Family = typeof FAMILIES[number]
@@ -568,8 +569,13 @@ export default function DepositChainsPage() {
             {chains.map((chain) => (
               <tr key={chain.slug} className="hover:bg-surface-alt transition-colors">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-text-primary">{chain.name}</div>
-                  <div className="text-xs text-text-muted">{chain.slug}</div>
+                  <div className="flex items-center gap-2">
+                    <EntityLogo type="chain" slug={chain.slug} size="sm" />
+                    <div>
+                      <div className="font-medium text-text-primary">{chain.name}</div>
+                      <div className="text-xs text-text-muted">{chain.slug}</div>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-xs font-mono bg-surface-alt px-2 py-0.5 rounded">{chain.family}</span>

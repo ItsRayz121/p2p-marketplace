@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Flag } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuthStore } from '@/store/auth.store'
 import { Modal } from '@/components/ui/Modal'
 
@@ -177,7 +178,10 @@ export default function GasFlaggedPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant="default" size="sm">{item.order.chain}</Badge>
+                      <span className="inline-flex items-center gap-1.5">
+                        <EntityLogo type="chain" slug={item.order.chain} size="xs" />
+                        <Badge variant="default" size="sm">{item.order.chain}</Badge>
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <code className="text-xs bg-surface px-1.5 py-0.5 rounded" title={item.order.toAddress}>
@@ -248,7 +252,10 @@ export default function GasFlaggedPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Chain</span>
-                <span className="font-medium">{reviewing.order.chain}</span>
+                <span className="font-medium inline-flex items-center gap-1.5">
+                  <EntityLogo type="chain" slug={reviewing.order.chain} size="xs" />
+                  {reviewing.order.chain}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Amount</span>

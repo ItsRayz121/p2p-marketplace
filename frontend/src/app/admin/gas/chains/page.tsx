@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuthStore } from '@/store/auth.store'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1376,9 +1377,7 @@ function NonEvmSetupPanel({
             <div key={bid} className="px-5 py-4 flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  {chain.logoUrl && (
-                    <img src={chain.logoUrl} alt={chain.name} className="w-5 h-5 rounded-full object-contain" />
-                  )}
+                  <EntityLogo type="chain" slug={chain.slug} logoUrl={chain.logoUrl} size="sm" />
                   <span className="font-medium text-text-primary text-sm">{chain.name}</span>
                   <Badge variant="default" size="sm">{bid}</Badge>
                   {loading ? (
@@ -1853,14 +1852,7 @@ export default function GasChainsAdminPage() {
                       <tr key={c.id} className="hover:bg-surface/50 transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            {c.logoUrl && (
-                              <img
-                                src={c.logoUrl}
-                                alt={c.symbol}
-                                className="w-6 h-6 rounded-full object-contain"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                              />
-                            )}
+                            <EntityLogo type="chain" slug={c.slug} logoUrl={c.logoUrl} size="sm" />
                             <span className="font-medium text-text-primary">{c.name}</span>
                             <span className="text-text-muted text-xs">({c.symbol})</span>
                           </div>
@@ -1974,14 +1966,7 @@ export default function GasChainsAdminPage() {
                       <tr key={t.id} className="hover:bg-surface/50 transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            {t.logoUrl && (
-                              <img
-                                src={t.logoUrl}
-                                alt={t.symbol}
-                                className="w-5 h-5 rounded-full object-contain"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                              />
-                            )}
+                            <EntityLogo type="token" slug={t.symbol} logoUrl={t.logoUrl} size="sm" />
                             <span className="font-medium text-text-primary">{t.name}</span>
                             <span className="text-text-muted text-xs">({t.symbol})</span>
                           </div>
