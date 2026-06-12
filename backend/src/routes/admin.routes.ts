@@ -4300,6 +4300,94 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { wallets: walletsWithBalance } })
   })
 
+  // GET /admin/gas/hot-wallet/:chain/tokens — native + non-native token balances
+  // held by a chain's gas hot wallet. Reads live on-chain ERC-20/TRC-20/Aptos-FA
+  // balances so admins can see (and external token deposits become visible) how
+  // much USDT/USDC each hot wallet holds. Aptos has no GasHotWallet row — its
+  // address is derived and APT native balance comes from the monitor cache.
+  app.get('/admin/gas/hot-wallet/:chain/tokens', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chain } = req.params as { chain: string }
+    const dbChain = chain.toUpperCase() === 'ETHEREUM' ? 'ETH' : chain.toUpperCase()
+    const isAptos = dbChain === 'APT' || dbChain === 'APTOS'
+
+    const { redis: redisClient } = await import('../lib/redis')
+    const { getHotWalletTokenBalance } = await import('../lib/gas/gas.tokenBalance')
+    const { GAS_CHAINS, fromDbChain } = await import('../lib/gas/gas.chains')
+
+    // ── Resolve hot wallet address + native balance ──────────────────────────
+    let address: string | null = null
+    let nativeSymbol = dbChain
+    let nativeBalance: number | null = null
+    if (isAptos) {
+      const { getAptosHotWalletAddress } = await import('../lib/gas/aptosWalletService')
+      address = getAptosHotWalletAddress()
+      nativeSymbol = 'APT'
+      const cached = await redisClient.get('gas_aptos_apt_balance')
+      nativeBalance = cached !== null ? parseFloat(cached) : null
+    } else {
+      const w = await db.gasHotWallet.findFirst({ where: { chain: dbChain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI' } })
+      address = w?.address ?? null
+      try { nativeSymbol = GAS_CHAINS[fromDbChain(dbChain)]?.nativeSymbol ?? dbChain } catch { nativeSymbol = dbChain }
+      const cached = await redisClient.get(`gas_wallet_balance:${dbChain}`)
+      nativeBalance = cached !== null ? parseFloat(cached) : null
+    }
+    if (!address) throw Errors.NOT_FOUND('Gas hot wallet')
+
+    // ── Native USD value ─────────────────────────────────────────────────────
+    let nativeUsd: number | null = null
+    if (nativeBalance !== null) {
+      try {
+        if (isAptos) {
+          const raw = await redisClient.get('rate:APT')
+          const p = raw ? ((JSON.parse(raw) as { usdPrice?: number }).usdPrice ?? 0) : 0
+          nativeUsd = p > 0 ? nativeBalance * p : null
+        } else {
+          const { getNativeUsdPrice } = await import('../lib/gas/gas.balance')
+          const p = await getNativeUsdPrice(fromDbChain(dbChain))
+          nativeUsd = p > 0 ? nativeBalance * p : null
+        }
+      } catch { nativeUsd = null }
+    }
+
+    // ── Configured non-native tokens for this chain (from gas chain registry) ─
+    const chainCfg = await db.gasChainConfig.findFirst({
+      where: { backendChainId: dbChain },
+      include: { tokens: { where: { tokenType: 'token', isActive: true, contractAddress: { not: null } }, orderBy: { displayOrder: 'asc' } } },
+    })
+    const tokenList = chainCfg?.tokens ?? []
+
+    const tokens = await Promise.all(tokenList.map(async (t) => {
+      let balance: number | null = null
+      let decimals: number | null = null
+      let error: string | null = null
+      try {
+        const r = await getHotWalletTokenBalance(dbChain, t.contractAddress!, address!)
+        balance = r.balance; decimals = r.decimals
+      } catch (e) {
+        error = e instanceof Error ? e.message.slice(0, 160) : 'balance read failed'
+      }
+      // Stablecoins are ~$1; we don't price arbitrary tokens here.
+      const sym = t.symbol.toUpperCase()
+      const isStable = ['USDT', 'USDC', 'DAI', 'BUSD', 'USD'].some((s) => sym.includes(s))
+      const usd = balance !== null && isStable ? balance : null
+      return {
+        symbol:          t.symbol,
+        name:            t.name,
+        contractAddress: t.contractAddress,
+        logoUrl:         t.logoUrl,
+        balance,
+        decimals,
+        usd,
+        error,
+      }
+    }))
+
+    return reply.send({
+      success: true,
+      data: { chain: dbChain, address, nativeSymbol, nativeBalance, nativeUsd, tokens },
+    })
+  })
+
   // POST /admin/gas/wallets/:chain/balance — manually override cached balance (super_admin)
   app.post('/admin/gas/wallets/:chain/balance', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
     const { chain } = req.params as { chain: string }

@@ -2078,6 +2078,18 @@ export const adminApi = {
     apiRequest<GasFinancialKpi>(
       '/admin/gas/financials' + (from || to ? `?from=${from ?? ''}&to=${to ?? ''}` : ''),
     ),
+  getHotWalletTokens: (chain: string) =>
+    apiRequest<{
+      chain: string
+      address: string
+      nativeSymbol: string
+      nativeBalance: number | null
+      nativeUsd: number | null
+      tokens: Array<{
+        symbol: string; name: string; contractAddress: string | null; logoUrl: string | null
+        balance: number | null; decimals: number | null; usd: number | null; error: string | null
+      }>
+    }>(`/admin/gas/hot-wallet/${encodeURIComponent(chain)}/tokens`),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>

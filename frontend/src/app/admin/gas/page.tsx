@@ -207,6 +207,11 @@ function RpcTestModal({ result, onClose }: { result: RpcTestResult; onClose: () 
 
 // ─── WalletCard ───────────────────────────────────────────────────────────────
 
+// Chains that settle USDT refunds on their own network — their native hot-wallet
+// balance doubles as the "refund gas" that pays those refund tx fees. (Aptos is
+// surfaced separately via its own card.)
+const REFUND_GAS_CHAINS = new Set(['TRON', 'BSC', 'ETH'])
+
 function WalletCard({
   wallet, isSuperAdmin, toggling, onToggle, onRefresh, refreshing, onTestRpc, testingRpc,
 }: {
@@ -238,6 +243,11 @@ function WalletCard({
             <Badge variant={walletStatusVariant(wallet.status)} size="sm">
               {walletStatusLabel(wallet.status, wallet.pauseReason)}
             </Badge>
+            {REFUND_GAS_CHAINS.has(wallet.chain) && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-alt text-text-muted border border-border">
+                {wallet.nativeSymbol} Refund Gas
+              </span>
+            )}
           </div>
 
           {/* Address — TON shows user-friendly UQ… form */}
@@ -296,6 +306,12 @@ function WalletCard({
 
         {/* Actions */}
         <div className="flex flex-col gap-1.5 shrink-0">
+          <Link
+            href={`/admin/gas/wallet/${wallet.chain}`}
+            className="text-center text-xs font-medium text-primary border border-primary/20 rounded-lg px-3 py-1.5 hover:bg-primary/5 transition-colors"
+          >
+            View tokens →
+          </Link>
           <Button size="sm" variant="ghost" onClick={onRefresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh Balance'}
           </Button>
@@ -1245,6 +1261,12 @@ export default function GasAdminPage() {
                 </p>
               )}
             </div>
+            <Link
+              href="/admin/gas/wallet/APT"
+              className="shrink-0 text-center text-xs font-medium text-primary border border-primary/20 rounded-lg px-3 py-1.5 hover:bg-primary/5 transition-colors"
+            >
+              View tokens →
+            </Link>
           </div>
         </div>
       )}
