@@ -3552,7 +3552,13 @@ export async function adminRoutes(app: FastifyInstance) {
     const { page, limit, skip } = paginationParams(query)
 
     const where: Record<string, unknown> = {}
-    if (query.status) where.status = query.status
+    // 'active' is a dashboard convenience group matching the Active Orders KPI
+    // (everything still in flight, pre-delivery). All other values are exact.
+    if (query.status === 'active') {
+      where.status = { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] }
+    } else if (query.status) {
+      where.status = query.status
+    }
     // Strict PKR vs crypto separation. PKR orders carry paymentCoin='PKR';
     // crypto orders carry 'USDT' (or any non-PKR coin). Lets the dashboard link
     // straight to "PKR proof review" or "crypto" without mixing payment types.

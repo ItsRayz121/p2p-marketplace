@@ -18,6 +18,7 @@
     "gas:encrypt-mnemonic": "tsx src/scripts/encryptGasMnemonic.ts",
     "moralis:backfill": "prisma generate && tsx src/scripts/moralisBackfill.ts",
     "stats:backfill": "tsx src/scripts/backfillTradeStats.ts",
+    "gas:config-restrict": "tsx src/scripts/gasConfigRestrict.ts",
     "telegram:setup": "tsx src/scripts/telegramSetup.ts",
     "deploy:verify": "tsx src/scripts/deployVerify.ts",
     "deploy:verify:full": "tsx src/scripts/deployVerify.ts --full",

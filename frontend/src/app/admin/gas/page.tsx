@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { adminApi, apiRequest, type GasFinancialKpi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
@@ -117,6 +117,7 @@ const STATUS_LABELS: Record<string, string> = {
   delivered:        'Delivered',
   expired:          'Expired',
   failed:           'Failed',
+  refund_pending:   'Refund Pending',
   refunded:         'Refunded',
   cancelled:        'Cancelled',
 }
@@ -417,7 +418,7 @@ function fmtUsd(n: number) { return `$${n.toFixed(2)}` }
 function fmtPkr(n: number) { return `PKR ${Math.round(n).toLocaleString()}` }
 function fmtPct(n: number) { return `${n.toFixed(1)}%` }
 
-function FinancialKpiSection({ kpi, loading }: { kpi: GasFinancialKpi | null; loading: boolean }) {
+function FinancialKpiSection({ kpi, loading, onTotalOrders }: { kpi: GasFinancialKpi | null; loading: boolean; onTotalOrders?: () => void }) {
   if (loading) return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
       {Array.from({ length: 5 }).map((_, i) => (
@@ -431,8 +432,8 @@ function FinancialKpiSection({ kpi, loading }: { kpi: GasFinancialKpi | null; lo
   const marginColor = margin >= 50 ? 'text-success' : margin >= 20 ? 'text-warning' : 'text-danger'
   const marginBg    = margin >= 50 ? 'bg-success'   : margin >= 20 ? 'bg-warning'   : 'bg-danger'
 
-  const cards = [
-    { label: 'Total Orders',         primary: kpi.totalOrders.toLocaleString(), secondary: `Rate ${fmtUsd(kpi.usdPkrRate)}/USD`, accent: 'text-text-primary' },
+  const cards: Array<{ label: string; primary: string; secondary: string; accent: string; onClick?: () => void }> = [
+    { label: 'Total Orders',         primary: kpi.totalOrders.toLocaleString(), secondary: `Rate ${fmtUsd(kpi.usdPkrRate)}/USD`, accent: 'text-text-primary', onClick: onTotalOrders },
     { label: 'Payment Received',     primary: fmtUsd(kpi.paymentReceivedUsdt),  secondary: fmtPkr(kpi.paymentReceivedPkr),        accent: 'text-text-primary' },
     { label: 'Gas Delivered',        primary: fmtUsd(kpi.gasSpentUsdt),         secondary: fmtPkr(kpi.gasSpentPkr),               accent: 'text-warning' },
     { label: 'Refunds Issued',       primary: fmtUsd(kpi.refundCostUsdt),       secondary: fmtPkr(kpi.refundCostPkr),             accent: kpi.refundCostUsdt > 0 ? 'text-danger' : 'text-text-primary' },
@@ -441,9 +442,16 @@ function FinancialKpiSection({ kpi, loading }: { kpi: GasFinancialKpi | null; lo
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      {cards.map(({ label, primary, secondary, accent }) => (
-        <div key={label} className="bg-surface shadow-card border border-border rounded-xl p-4">
-          <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">{label}</p>
+      {cards.map(({ label, primary, secondary, accent, onClick }) => (
+        <div
+          key={label}
+          onClick={onClick}
+          role={onClick ? 'button' : undefined}
+          tabIndex={onClick ? 0 : undefined}
+          onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } : undefined}
+          className={`bg-surface shadow-card border border-border rounded-xl p-4 ${onClick ? 'cursor-pointer hover:border-primary/40 hover:shadow-md transition-all' : ''}`}
+        >
+          <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">{label}{onClick && <span className="text-primary ml-1">→</span>}</p>
           <p className={`text-xl font-bold ${accent}`}>{primary}</p>
           <p className="text-sm text-text-muted mt-0.5">{secondary}</p>
           {label === 'Net Profit' && (
@@ -783,6 +791,15 @@ export default function GasAdminPage() {
 
   const limit = 20
 
+  // Orders table anchor — KPI/stat cards filter the table and scroll to it.
+  const ordersSectionRef = useRef<HTMLDivElement>(null)
+  const goToOrders = useCallback((filter: string) => {
+    setStatusFilter(filter)
+    setPaymentTypeFilter('all')
+    setPage(1)
+    requestAnimationFrame(() => ordersSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [])
+
   const fetchStats = useCallback(async () => {
     try {
       const data = await adminApi.getGasStats()
@@ -1058,32 +1075,40 @@ export default function GasAdminPage() {
         </div>
       )}
 
-      {/* ── Operational Quick Stats ──────────────────────────────────────────── */}
+      {/* ── Operational Quick Stats (clickable → filtered orders / requests) ──── */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Active Orders</p>
+          <button
+            type="button"
+            onClick={() => goToOrders('active')}
+            className="text-left bg-surface shadow-card border border-border rounded-xl p-4 cursor-pointer hover:border-primary/40 hover:shadow-md transition-all"
+          >
+            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Active Orders <span className="text-primary ml-1">→</span></p>
             <p className="text-2xl font-bold text-warning mt-1">{stats.pendingCount}</p>
-          </div>
-          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Failed Orders</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => goToOrders('failed')}
+            className="text-left bg-surface shadow-card border border-border rounded-xl p-4 cursor-pointer hover:border-primary/40 hover:shadow-md transition-all"
+          >
+            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Failed Orders <span className="text-primary ml-1">→</span></p>
             <p className={`text-2xl font-bold mt-1 ${stats.failedCount > 0 ? 'text-danger' : 'text-text-primary'}`}>{stats.failedCount}</p>
-          </div>
-          {(stats.refundPendingCount ?? 0) > 0 ? (
-            <div className="bg-surface shadow-card border border-warning/40 rounded-xl p-4">
-              <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
-              <p className="text-2xl font-bold mt-1 text-warning">{stats.refundPendingCount}</p>
-            </div>
-          ) : (
-            <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-              <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending</p>
-              <p className="text-2xl font-bold mt-1 text-text-primary">0</p>
-            </div>
-          )}
-          <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Custom Requests</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => goToOrders('refund_pending')}
+            className={`text-left bg-surface shadow-card rounded-xl p-4 cursor-pointer hover:shadow-md transition-all ${(stats.refundPendingCount ?? 0) > 0 ? 'border border-warning/40 hover:border-warning' : 'border border-border hover:border-primary/40'}`}
+          >
+            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending <span className="text-primary ml-1">→</span></p>
+            <p className={`text-2xl font-bold mt-1 ${(stats.refundPendingCount ?? 0) > 0 ? 'text-warning' : 'text-text-primary'}`}>{stats.refundPendingCount ?? 0}</p>
+          </button>
+          <Link
+            href="/admin/gas/requests"
+            className="block bg-surface shadow-card border border-border rounded-xl p-4 cursor-pointer hover:border-primary/40 hover:shadow-md transition-all"
+          >
+            <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Custom Requests <span className="text-primary ml-1">→</span></p>
             <p className={`text-2xl font-bold mt-1 ${(stats.pendingCustomRequests ?? 0) > 0 ? 'text-warning' : 'text-text-primary'}`}>{stats.pendingCustomRequests ?? 0}</p>
-          </div>
+          </Link>
         </div>
       )}
 
@@ -1129,10 +1154,10 @@ export default function GasAdminPage() {
 
           {/* KPI cards */}
           {kpiTab === 'today' && (
-            <FinancialKpiSection kpi={stats?.today ?? null} loading={!stats} />
+            <FinancialKpiSection kpi={stats?.today ?? null} loading={!stats} onTotalOrders={() => goToOrders('all')} />
           )}
           {kpiTab === 'alltime' && (
-            <FinancialKpiSection kpi={stats?.allTime ?? null} loading={!stats} />
+            <FinancialKpiSection kpi={stats?.allTime ?? null} loading={!stats} onTotalOrders={() => goToOrders('all')} />
           )}
           {kpiTab === 'custom' && (
             <FinancialKpiSection kpi={customKpi} loading={customKpiLoading} />
@@ -1291,7 +1316,7 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Status Filters ───────────────────────────────────────────────────── */}
-      <div className="bg-surface shadow-card p-4 rounded-xl border border-border space-y-3">
+      <div ref={ordersSectionRef} className="bg-surface shadow-card p-4 rounded-xl border border-border space-y-3 scroll-mt-4">
         {/* Payment type — keeps PKR (manual proof) and crypto (auto-verified) flows separate */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-text-muted mr-1">Payment type:</span>
@@ -1314,7 +1339,7 @@ export default function GasAdminPage() {
           ))}
         </div>
         <div className="flex flex-wrap gap-2">
-          {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refunded', 'cancelled'].map((s) => (
+          {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refund_pending', 'refunded', 'cancelled'].map((s) => (
             <button
               key={s}
               onClick={() => { setStatusFilter(s); setPage(1) }}

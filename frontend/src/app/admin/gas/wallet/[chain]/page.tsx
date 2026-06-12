@@ -128,11 +128,7 @@ export default function HotWalletDetailPage() {
                       <TokenChainLogo tokenSymbol={t.symbol} chain={chain} size="sm" />
                       <div className="min-w-0">
                         <p className="font-medium text-text-primary">{t.symbol}</p>
-                        {t.contractAddress && (
-                          <p className="text-[10px] font-mono text-text-muted truncate max-w-[220px]" title={t.contractAddress}>
-                            {t.contractAddress}
-                          </p>
-                        )}
+                        {t.name && <p className="text-[11px] text-text-muted truncate max-w-[220px]">{t.name}</p>}
                       </div>
                     </div>
                   </td>
