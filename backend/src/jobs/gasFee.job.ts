@@ -64,7 +64,10 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
 
     appendLedgerEntry({
       entryType:      'gas_delivery',
-      chain:          fromDbChain(order.chain) as GasChainId,
+      // Aptos isn't in the GasChainId set — log it via chainOverride so the ledger
+      // entry attributes correctly (token deliveries on Aptos, e.g. USDT/USDC).
+      chain:          order.chain === 'APT' ? ('BSC' as GasChainId) : (fromDbChain(order.chain) as GasChainId),
+      ...(order.chain === 'APT' ? { chainOverride: { dbChain: 'APT' as const, nativeSymbol: 'APT' } } : {}),
       nativeAmount:   -Number(order.gasAmountNative),
       usdAmount:      Number(order.gasAmountUSD),
       txHash:         deliveryTxHash,

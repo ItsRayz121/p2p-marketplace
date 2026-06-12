@@ -889,9 +889,10 @@ function TokenModal({
           {/* Delivery-capability notice for non-native tokens */}
           {form.tokenType && form.tokenType !== 'native' && (
             <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-              <span className="font-semibold">Token delivery is not live yet</span> — the delivery engine currently
-              sends native coins only. This token will appear as &ldquo;coming soon&rdquo; on the public gas page and
-              cannot be ordered until token delivery ships.
+              <span className="font-semibold">Token delivery is gated.</span> This token stays
+              &ldquo;coming soon&rdquo; on the public gas page until a super-admin clicks
+              <span className="font-semibold"> Go Live</span> on its row — do that only after funding the chain&apos;s
+              hot wallet with this token <span className="font-semibold">and</span> enough native coin for gas.
             </div>
           )}
 
@@ -1469,6 +1470,7 @@ export default function GasChainsAdminPage() {
   const [confirmDeleteToken, setConfirmDeleteToken] = useState<AdminGasToken | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [togglingVisibility, setTogglingVisibility] = useState<Record<string, boolean>>({})
+  const [togglingLive, setTogglingLive] = useState<Record<string, boolean>>({})
 
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -1750,6 +1752,27 @@ export default function GasChainsAdminPage() {
     }
   }
 
+  // Enable/disable real-funds token delivery. Going live should only be done AFTER
+  // the chain's hot wallet is funded with the token + native gas (super-admin only).
+  async function toggleTokenDeliveryLive(t: AdminGasToken) {
+    if (!t.deliveryLive && !confirm(
+      `Go LIVE with ${t.symbol} delivery on ${t.chain?.name ?? 'this chain'}?\n\n` +
+      `Make sure the hot wallet is funded with ${t.symbol} AND enough native coin for gas. ` +
+      `Once live, users can order ${t.symbol} delivery and real funds will be sent.`,
+    )) return
+    setTogglingLive((prev) => ({ ...prev, [t.id]: true }))
+    setErrorMsg(null)
+    try {
+      await adminApi.updateGasToken(t.id, { deliveryLive: !t.deliveryLive })
+      flash(`${t.symbol} delivery ${t.deliveryLive ? 'taken offline' : 'is now LIVE'}.`)
+      fetchTokens()
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to update token delivery state')
+    } finally {
+      setTogglingLive((prev) => ({ ...prev, [t.id]: false }))
+    }
+  }
+
   // ── Resolve effective token values for display ──────────────────────────────
 
   function getEffectiveFee(t: AdminGasToken): string {
@@ -1991,6 +2014,11 @@ export default function GasChainsAdminPage() {
                             <Badge variant={t.isVisibleToUsers !== false ? 'outline' : 'warning'} size="sm">
                               {t.isVisibleToUsers !== false ? 'Visible' : 'Hidden'}
                             </Badge>
+                            {t.tokenType !== 'native' && (
+                              <Badge variant={t.deliveryLive ? 'success' : 'warning'} size="sm">
+                                {t.deliveryLive ? 'Delivery Live' : 'Delivery Off'}
+                              </Badge>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -2004,6 +2032,16 @@ export default function GasChainsAdminPage() {
                             >
                               {t.isVisibleToUsers !== false ? 'Hide' : 'Show'}
                             </Button>
+                            {isSuperAdmin && t.tokenType !== 'native' && (
+                              <Button
+                                size="sm"
+                                variant={t.deliveryLive ? 'ghost' : 'primary'}
+                                disabled={togglingLive[t.id]}
+                                onClick={() => void toggleTokenDeliveryLive(t)}
+                              >
+                                {togglingLive[t.id] ? '…' : t.deliveryLive ? 'Take Offline' : 'Go Live'}
+                              </Button>
+                            )}
                             {isSuperAdmin && (
                               <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteToken(t)}>Delete</Button>
                             )}

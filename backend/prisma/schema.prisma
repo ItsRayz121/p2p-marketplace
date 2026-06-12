@@ -1420,6 +1420,10 @@ model GasTokenConfig {
   presetAmounts   Json           // number[] e.g. [10, 50, 100, 200]
   isActive        Boolean        @default(true)
   isVisibleToUsers Boolean       @default(true)  // false = hidden from user-facing APIs and dropdowns
+  // Non-native token delivery (real funds) — orderable only when this is true AND
+  // the chain family has a delivery implementation. Default false: must be flipped
+  // by a super-admin after the hot wallet is funded with the token + native gas.
+  deliveryLive    Boolean        @default(false)
   displayOrder    Int            @default(0)
   orders          GasFeeOrder[]
   createdAt       DateTime       @default(now())

@@ -5174,6 +5174,13 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('isVisibleToUsers' in body) updateData.isVisibleToUsers = body.isVisibleToUsers
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
+    // Going live moves real funds — only a super-admin may enable it.
+    if ('deliveryLive' in body) {
+      if (body.deliveryLive && req.user?.role !== 'super_admin') {
+        throw new AppError('FORBIDDEN', 'Only a super-admin can enable token delivery (real funds).', 403)
+      }
+      updateData.deliveryLive = !!body.deliveryLive
+    }
 
     const updated = await db.gasTokenConfig.update({ where: { id }, data: updateData })
     await createAuditLog(req.user!.id, 'GAS_TOKEN_UPDATED', 'GasTokenConfig', id, updateData)

@@ -1608,6 +1608,7 @@ export interface AdminGasToken {
   presetAmounts: number[]
   isActive: boolean
   isVisibleToUsers: boolean
+  deliveryLive?: boolean
   displayOrder: number
   createdAt: string
   updatedAt: string

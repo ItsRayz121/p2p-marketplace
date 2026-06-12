@@ -13,6 +13,7 @@ import { GAS_CHAINS, type GasChainId, toDbChain } from '../lib/gas/gas.chains'
 import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { flagIfRisky } from '../lib/gas/gas.risk'
 import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
+import { tokenDeliverySupported } from '../lib/gas/gas.delivery'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import {
   gasCancelIdentity,
@@ -29,6 +30,15 @@ function isTrackingTokenValid(candidate: string | undefined, stored: string | nu
   const b = Buffer.from(stored, 'utf8')
   if (a.length !== b.length) return false
   return timingSafeEqual(a, b)
+}
+
+// A non-native token is orderable only when the chain family has a delivery
+// implementation AND a super-admin has flipped it live (after funding the hot
+// wallet). Native tokens are always deliverable on a configured chain.
+function isTokenOrderable(backendChainId: string | null, token: { tokenType: string; deliveryLive?: boolean }): boolean {
+  if (token.tokenType === 'native') return true
+  if (!backendChainId) return false
+  return tokenDeliverySupported(backendChainId) && token.deliveryLive === true
 }
 
 // ── Token config resolution (token override → chain default → system fallback) ─
@@ -216,10 +226,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const tokensWithPricing = await Promise.all(
       tokens.map(async (t) => {
-        // The delivery engine sends native coins only — surface non-native tokens
-        // as "coming soon" (not orderable) so the order endpoint's hard-block is
-        // never user-visible as an error.
-        const deliverable = t.tokenType === 'native'
+        // Native coins are always deliverable; non-native tokens become orderable
+        // only once delivery is implemented for the chain AND a super-admin has
+        // flipped the token live. Otherwise they surface as "coming soon".
+        const deliverable = isTokenOrderable(chainCfg.backendChainId, t)
         // Inactive tokens don't need live pricing
         const rateInfo = t.isActive ? await getNativeRateInfo(t.priceSymbol) : { usdPrice: 0, source: 'inactive', updatedAt: null }
         const rawUsdPrice = rateInfo.usdPrice
@@ -431,11 +441,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!tokenCfg || !tokenCfg.isActive) {
       throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
     }
-    // The delivery engine sends NATIVE coins only — a non-native order would be
-    // priced in token units (e.g. 5 USDT ≈ $5) but delivered as 5 native coins.
-    // Hard-block until token (contract) delivery is implemented.
-    if (tokenCfg.tokenType !== 'native') {
-      throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon — only native gas can be ordered right now`, 400)
+    // Non-native tokens are orderable only once delivery is implemented for the
+    // chain AND the token has been flipped live by a super-admin.
+    if (!isTokenOrderable(tokenCfg.chain.backendChainId, tokenCfg)) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
     }
     const chainCfg = tokenCfg.chain
     if (!chainCfg.isActive) {
@@ -953,6 +962,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const chainCfg = tokenCfg.chain
     if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
     if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
+    if (!isTokenOrderable(chainCfg.backendChainId, tokenCfg)) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
+    }
 
     if (!validateAddress(toAddress, chainCfg.addressType)) {
       throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
@@ -960,9 +972,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const legacyId = chainCfg.backendChainId === 'ETH' ? 'ETHEREUM' : chainCfg.backendChainId
     const legacyChainConfig = GAS_CHAINS[legacyId as GasChainId]
-    if (!legacyChainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery not configured`, 400)
+    // Aptos (APT) is an inbound rail with no GAS_CHAINS native-delivery config, but
+    // it supports fungible-asset (USDT/USDC) delivery — allow it through.
+    if (!legacyChainConfig && chainCfg.backendChainId !== 'APT') throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery not configured`, 400)
 
-    const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    const dbHotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    // Aptos has no GasHotWallet row — its hot wallet is the derived FA address.
+    const aptosHotAddr = chainCfg.backendChainId === 'APT' ? getAptosHotWalletAddress() : null
+    const hotWallet: { address: string } | null = dbHotWallet ?? (aptosHotAddr ? { address: aptosHotAddr } : null)
     const isAutoPaused = await redis.get(`gas_wallet_paused:${chainCfg.backendChainId}`)
     if (!hotWallet || isAutoPaused) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
 
@@ -1113,6 +1130,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const chainCfg = tokenCfg.chain
     if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
     if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
+    if (!isTokenOrderable(chainCfg.backendChainId, tokenCfg)) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
+    }
 
     if (!validateAddress(toAddress, chainCfg.addressType)) {
       throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
@@ -1120,9 +1140,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const legacyId = chainCfg.backendChainId === 'ETH' ? 'ETHEREUM' : chainCfg.backendChainId
     const legacyChainConfig = GAS_CHAINS[legacyId as GasChainId]
-    if (!legacyChainConfig) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery not configured`, 400)
+    // Aptos (APT) is an inbound rail with no GAS_CHAINS native-delivery config, but
+    // it supports fungible-asset (USDT/USDC) delivery — allow it through.
+    if (!legacyChainConfig && chainCfg.backendChainId !== 'APT') throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery not configured`, 400)
 
-    const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    const dbHotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    // Aptos has no GasHotWallet row — its hot wallet is the derived FA address.
+    const aptosHotAddr = chainCfg.backendChainId === 'APT' ? getAptosHotWalletAddress() : null
+    const hotWallet: { address: string } | null = dbHotWallet ?? (aptosHotAddr ? { address: aptosHotAddr } : null)
     const isAutoPaused = await redis.get(`gas_wallet_paused:${chainCfg.backendChainId}`)
     if (!hotWallet || isAutoPaused) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
 

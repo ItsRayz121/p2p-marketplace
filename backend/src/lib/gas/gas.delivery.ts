@@ -1,9 +1,11 @@
 import type { GasFeeOrder } from '@prisma/client'
 import type { Chain } from 'viem'
-import { createWalletClient, http, parseEther, parseGwei } from 'viem'
+import { createWalletClient, http, parseEther, parseGwei, parseUnits } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
+import { db } from '../prisma'
 import { env } from '../env'
+import { getHotWalletTokenBalance } from './gas.tokenBalance'
 import {
   decryptGasSeed,
   deriveTronPrivateKeyHex,
@@ -43,6 +45,167 @@ function getHotWalletAddressForChain(chain: string): string | null {
   if (chain === 'TON')  return getTonHotWalletAddress()
   if (chain === 'SUI')  return getSuiHotWalletAddress()
   return getEvmHotWalletAddress()
+}
+
+// ── Non-native token delivery (USDT / USDC) ───────────────────────────────────
+// EVM chains where ERC-20/BEP-20 token delivery is implemented.
+const EVM_TOKEN_CHAINS: Record<string, { chain: Chain; rpc: string }> = {
+  BSC:   { chain: bsc,       rpc: env.BSC_RPC_URL },
+  ETH:   { chain: mainnet,   rpc: env.ETHEREUM_RPC_URL },
+  BASE:  { chain: base,      rpc: env.BASE_RPC_URL },
+  ARB:   { chain: arbitrum,  rpc: env.ARBITRUM_RPC_URL },
+  OP:    { chain: optimism,  rpc: env.OPTIMISM_RPC_URL },
+  MATIC: { chain: polygon,   rpc: env.POLYGON_RPC_URL },
+  AVAX:  { chain: avalanche, rpc: env.AVALANCHE_RPC_URL },
+}
+
+/** True when the delivery engine can send a non-native token on this chain. */
+export function tokenDeliverySupported(dbChain: string): boolean {
+  return dbChain === 'TRON' || dbChain === 'APT' || dbChain in EVM_TOKEN_CHAINS
+}
+
+const ERC20_TRANSFER_ABI = [
+  { name: 'transfer', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+] as const
+
+// EVM ERC-20 transfer — same hot-wallet lock + nonce-reuse + gas-bump retry as the
+// native EVM path, so concurrent sends from the shared hot wallet can't collide.
+async function deliverEvmTokenTransfer(
+  order: GasFeeOrder,
+  viemChain: Chain,
+  rpcUrl: string,
+  privateKey: string,
+  chainKey: string,
+  contract: `0x${string}`,
+  decimals: number,
+): Promise<string> {
+  const account = privateKeyToAccount(privateKey as `0x${string}`)
+  const client = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
+  const amount = parseUnits(order.gasAmountNative.toString(), decimals)
+
+  return withHotWalletLock(chainKey, async () => {
+    const nonce = await getTransactionCount(rpcUrl, chainKey, account.address, 'pending')
+    const MAX_ATTEMPTS = 3
+    let lastErr: unknown
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const gasBump = attempt > 1 ? { maxFeePerGas: parseGwei(String(10 * 1.2 ** (attempt - 1))) } : {}
+        return await client.writeContract({
+          account,
+          address: contract,
+          abi: ERC20_TRANSFER_ABI,
+          functionName: 'transfer',
+          args: [order.toAddress as `0x${string}`, amount],
+          nonce,
+          ...gasBump,
+        })
+      } catch (err) {
+        lastErr = err
+        if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 2000 * attempt))
+      }
+    }
+    throw lastErr
+  })
+}
+
+async function deliverEvmToken(order: GasFeeOrder, contract: string, decimals: number, hdIndex: number): Promise<string> {
+  const m = EVM_TOKEN_CHAINS[order.chain]
+  if (!m) throw new Error(`deliverEvmToken: unsupported EVM chain ${order.chain}`)
+  const seed = decryptGasSeed()
+  try {
+    const privateKey = deriveEvmPrivateKeyHex(seed, hdIndex)
+    return await deliverEvmTokenTransfer(order, m.chain, m.rpc, privateKey, order.chain, contract as `0x${string}`, decimals)
+  } finally {
+    seed.fill(0)
+  }
+}
+
+// TRON TRC-20 transfer.
+async function deliverTronToken(order: GasFeeOrder, contract: string, decimals: number, hdIndex: number): Promise<string> {
+  const seed = decryptGasSeed()
+  try {
+    const privateKey = deriveTronPrivateKeyHex(seed, hdIndex)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { TronWeb } = require('tronweb')
+    const tronWeb = new TronWeb({
+      fullHost: env.TRON_FULLNODE_URL,
+      headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
+      privateKey,
+    })
+    const base10 = BigInt(Math.round(Number(order.gasAmountNative) * 10 ** decimals))
+    const c = await tronWeb.contract().at(contract)
+    const result = await c.transfer(order.toAddress, base10.toString()).send()
+    if (!result) throw new Error('TronWeb TRC20 transfer returned falsy result')
+    return result as string
+  } finally {
+    seed.fill(0)
+  }
+}
+
+// Aptos fungible-asset transfer (mirrors aptosRefund.sendAptosUsdtRefund).
+async function deliverAptosToken(order: GasFeeOrder, contract: string, decimals: number): Promise<string> {
+  const { Aptos, AptosConfig, Account, Ed25519PrivateKey } = await import('@aptos-labs/ts-sdk')
+  const { deriveAptosPrivateKeyForDelivery } = await import('./aptosWalletService')
+
+  const amount = BigInt(Math.round(Number(Number(order.gasAmountNative).toFixed(decimals)) * 10 ** decimals))
+  if (amount <= 0n) throw new Error(`deliverAptosToken: non-positive amount for ${order.gasAmountNative}`)
+
+  const config = new AptosConfig({
+    fullnode: env.APTOS_FULLNODE_URL,
+    indexer:  env.APTOS_INDEXER_URL,
+    ...(env.APTOS_API_KEY ? { clientConfig: { API_KEY: env.APTOS_API_KEY } } : {}),
+  })
+  const aptos = new Aptos(config)
+
+  const seed = decryptGasSeed()
+  let privKey: Buffer | null = null
+  try {
+    privKey = deriveAptosPrivateKeyForDelivery(seed)
+    const account = Account.fromPrivateKey({ privateKey: new Ed25519PrivateKey(new Uint8Array(privKey)) })
+    const txn = await aptos.transaction.build.simple({
+      sender: account.accountAddress,
+      data: {
+        function: '0x1::primary_fungible_store::transfer',
+        typeArguments: ['0x1::fungible_asset::Metadata'],
+        functionArguments: [contract, order.toAddress, amount],
+      },
+    })
+    const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
+    await aptos.waitForTransaction({ transactionHash: pending.hash })
+    return pending.hash
+  } finally {
+    seed.fill(0)
+    if (privKey) privKey.fill(0)
+  }
+}
+
+/**
+ * Deliver a non-native token. Reads the hot wallet's live token balance + decimals
+ * in one call: the decimals are authoritative (a failed read aborts delivery rather
+ * than risk wrong-decimals), and the balance gates against an under-funded wallet.
+ */
+async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: number): Promise<string> {
+  let owner: string | null
+  if (order.chain === 'APT') {
+    const { getAptosHotWalletAddress } = await import('./aptosWalletService')
+    owner = getAptosHotWalletAddress()
+  } else {
+    owner = getHotWalletAddressForChain(order.chain)
+  }
+  if (!owner) throw new Error(`deliverToken: no hot wallet address for ${order.chain}`)
+
+  const { balance, decimals } = await getHotWalletTokenBalance(order.chain, contract, owner)
+  const needed = Number(order.gasAmountNative)
+  if (balance < needed) {
+    throw Object.assign(
+      new Error(`Insufficient hot wallet token balance on ${order.chain}: have ${balance}, need ${needed} (order ${order.id})`),
+      { code: 'INSUFFICIENT_HOT_WALLET_TOKEN_BALANCE', orderId: order.id, chain: order.chain, balance, needed },
+    )
+  }
+
+  if (order.chain === 'TRON') return deliverTronToken(order, contract, decimals, hdIndex)
+  if (order.chain === 'APT')  return deliverAptosToken(order, contract, decimals)
+  return deliverEvmToken(order, contract, decimals, hdIndex)
 }
 
 /**
@@ -436,7 +599,23 @@ export type { NormalizedDeliveryError } from './gas.deliveryError'
 // ── Public dispatch ───────────────────────────────────────────────────────────
 
 export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  // Pre-flight: confirm hot wallet has enough balance before sending.
+  // Non-native token order? Route to the token-delivery path. The deliveryLive
+  // re-check here is belt-and-suspenders: even if an order was created while a
+  // token was live, a subsequent take-offline blocks delivery.
+  if (order.gasTokenConfigId) {
+    const tokenCfg = await db.gasTokenConfig.findUnique({
+      where: { id: order.gasTokenConfigId },
+      select: { tokenType: true, contractAddress: true, deliveryLive: true, symbol: true },
+    })
+    if (tokenCfg && tokenCfg.tokenType === 'token') {
+      if (!tokenCfg.contractAddress) throw new Error(`deliverGas: token ${tokenCfg.symbol} has no contract address`)
+      if (!tokenDeliverySupported(order.chain)) throw new Error(`deliverGas: token delivery not supported on ${order.chain}`)
+      if (!tokenCfg.deliveryLive) throw new Error(`deliverGas: token delivery is not live for ${tokenCfg.symbol}`)
+      return deliverToken(order, tokenCfg.contractAddress, hdIndex)
+    }
+  }
+
+  // Pre-flight: confirm hot wallet has enough native balance before sending.
   await assertHotWalletSufficient(order)
 
   switch (order.chain) {
