@@ -225,6 +225,7 @@ enum GasFeeOrderStatus {
   failed
   refund_pending
   refunded
+  cancelled
 }
 
 enum GasCustomRequestStatus {
@@ -1304,6 +1305,9 @@ model GasFeeOrder {
   retryCount          Int               @default(0)
   expiresAt           DateTime
 
+  cancelledAt         DateTime?
+  cancelReason        String?
+
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   deliveredAt         DateTime?
@@ -1315,6 +1319,22 @@ model GasFeeOrder {
   @@index([status, expiresAt])
   @@index([userId])
   @@index([orderRef])
+}
+
+// User-initiated gas-order cancellations, used to drive the abuse/cooldown ladder.
+// Identity is the userId when authenticated, otherwise the client IP for guests.
+// A rolling 7-day count of these events determines the cooldown a user incurs
+// before they may place another gas order (see lib/gas/gas.cancellation.ts).
+model GasCancellationEvent {
+  id        String   @id @default(cuid())
+  identity  String   // "user:<id>" or "ip:<addr>"
+  userId    String?
+  ipAddress String?
+  orderId   String
+  orderRef  String
+  createdAt DateTime @default(now())
+
+  @@index([identity, createdAt])
 }
 
 model GasHotWallet {

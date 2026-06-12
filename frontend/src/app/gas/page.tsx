@@ -94,6 +94,12 @@ export default function GasPage() {
   const [pollErrCount, setPollErrCount] = useState(0)
   const idempKeyRef = useRef(`gas_${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
+  // ── Cancellation ─────────────────────────────────────────────────────────────
+  const [cancelling, setCancelling]       = useState(false)
+  const [cancelError, setCancelError]     = useState('')
+  const [cancelPreview, setCancelPreview] = useState<{ cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null } | null>(null)
+  const [cancelResult, setCancelResult]   = useState<{ cooldownLabel: string | null } | null>(null)
+
   // ── Computed ───────────────────────────────────────────────────────────────
   const rawUsdPrice     = selectedToken?.rawUsdPrice ?? selectedToken?.priceUsd ?? 0
   const priceUsd        = rawUsdPrice
@@ -293,7 +299,28 @@ export default function GasPage() {
     } catch { setPollErrCount(c => c + 1) }
   }, [order?.orderRef, order?.trackingToken, router])
 
-  const isTerminal = order && ['delivered', 'failed', 'expired', 'refunded'].includes(order.status)
+  const loadCancelPreview = useCallback(async () => {
+    if (!order?.orderRef) return
+    try {
+      const p = await gasApi.getCancelPreview(order.orderRef, order.trackingToken ?? undefined)
+      setCancelPreview(p)
+    } catch { /* preview is best-effort; the confirm dialog still works without it */ }
+  }, [order?.orderRef, order?.trackingToken])
+
+  async function handleCancelOrder() {
+    if (!order?.orderRef) return
+    setCancelling(true); setCancelError('')
+    try {
+      const res = await gasApi.cancelOrder(order.orderRef, order.trackingToken ?? undefined)
+      setCancelResult({ cooldownLabel: res.cooldownLabel })
+      setOrder(prev => prev ? { ...prev, status: 'cancelled' } : prev)
+      try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
+    } catch (e: unknown) {
+      setCancelError(e instanceof Error ? e.message : 'Failed to cancel order')
+    } finally { setCancelling(false) }
+  }
+
+  const isTerminal = order && ['delivered', 'failed', 'expired', 'refunded', 'cancelled'].includes(order.status)
   usePolling(
     pollOrder, 8_000,
     !!(order?.orderRef) && !isTerminal &&
@@ -307,6 +334,7 @@ export default function GasPage() {
     setSelectedPkrMethod(null); setSelectedCryptoNetwork(null)
     setOrder(null); setPollErrCount(0)
     setPaymentSent(false)
+    setCancelling(false); setCancelError(''); setCancelPreview(null); setCancelResult(null)
     setPkrError(''); setCryptoError(''); setProofUrl(''); setProofError('')
     try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
     idempKeyRef.current = `gas_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -352,6 +380,7 @@ export default function GasPage() {
     verifyOpen, setVerifyOpen, verifyTxHash, setVerifyTxHash,
     verifying, verifyError, verifySuccess,
     handleCreateCryptoOrder, handleVerifyPayment, pollOrder,
+    cancelling, cancelError, cancelPreview, cancelResult, loadCancelPreview, handleCancelOrder,
     order, setOrder, pollErrCount, setPollErrCount,
     priceUsd, pricePkr, platformFeeUsdt, amountNum, gasValueUsd, usdPkrRate,
     totalUsd, computedUsd, computedPkr, maxUsd, minAmount, usdExceeded,

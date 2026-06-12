@@ -14,6 +14,12 @@ import { getChainCapabilities, isPubliclyVisible, isOrderable, READINESS_BADGE, 
 import { flagIfRisky } from '../lib/gas/gas.risk'
 import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
+import {
+  gasCancelIdentity,
+  assertNotInGasCooldown,
+  previewCancelPenalty,
+  recordCancellation,
+} from '../lib/gas/gas.cancellation'
 
 // ── Guest tracking token validator ────────────────────────────────────────────
 
@@ -395,6 +401,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   // ── POST /api/gas-fee/orders — new dynamic format + legacy ─────────────────
 
   app.post('/gas-fee/orders', { preHandler: [optionalAuth] }, async (req, reply) => {
+    await assertNotInGasCooldown(gasCancelIdentity(req.user?.id ?? null, req.ip))
     const body = req.body as Record<string, unknown>
 
     // Detect new vs legacy format
@@ -939,6 +946,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
     const { tokenConfigId, amount, toAddress, pkrPaymentMethod, idempotencyKey } = parsed.data
     const userId = req.user!.id
+    await assertNotInGasCooldown(gasCancelIdentity(userId, req.ip))
 
     const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
     if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
@@ -1079,6 +1087,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const { tokenConfigId, amount, toAddress, paymentNetwork, idempotencyKey } = parsed.data
+    await assertNotInGasCooldown(gasCancelIdentity(req.user?.id ?? null, req.ip))
 
     const configKeyMap: Record<string, string> = {
       TRC20:  'gas_usdt_trc20_address',
@@ -1376,6 +1385,81 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     } = order
 
     return reply.send({ success: true, data: { ...publicOrder, paymentAddress } })
+  })
+
+  // ── GET /gas-fee/orders/:orderRef/cancel-preview — penalty preview ──────────
+  // Lets the UI show the next-cancel penalty in the confirm dialog before the
+  // user commits. Access mirrors the order GET (owner / admin / tracking token).
+  app.get('/gas-fee/orders/:orderRef/cancel-preview', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const { orderRef } = req.params as { orderRef: string }
+    const { token }    = req.query as { token?: string }
+
+    const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    const isAdmin  = req.user?.role === 'admin' || req.user?.role === 'super_admin'
+    const isOwner  = !!(req.user && order.userId && req.user.id === order.userId)
+    const hasToken = isTrackingTokenValid(token, order.trackingToken)
+    if (!isAdmin && !isOwner && !hasToken) {
+      throw new AppError('FORBIDDEN', 'Access denied. Use the original order tracking link.', 403)
+    }
+
+    const cancellable = order.status === 'payment_pending' && !order.paymentTxHash
+    const ident   = gasCancelIdentity(order.userId, order.ipAddress ?? req.ip)
+    const preview = await previewCancelPenalty(ident)
+    return reply.send({ success: true, data: { cancellable, ...preview } })
+  })
+
+  // ── POST /gas-fee/orders/:orderRef/cancel — user-initiated cancellation ─────
+  // Only allowed while still `payment_pending` with no payment claimed. Once a
+  // tx hash is attached (or the order advances), it must go through the refund
+  // path instead. Each cancel is logged and feeds the escalating cooldown ladder.
+  app.post('/gas-fee/orders/:orderRef/cancel', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const { orderRef } = req.params as { orderRef: string }
+    const { token }    = (req.body ?? {}) as { token?: string }
+
+    const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    const isAdmin  = req.user?.role === 'admin' || req.user?.role === 'super_admin'
+    const isOwner  = !!(req.user && order.userId && req.user.id === order.userId)
+    const hasToken = isTrackingTokenValid(token, order.trackingToken)
+    if (!isAdmin && !isOwner && !hasToken) {
+      throw new AppError('FORBIDDEN', 'Access denied. Use the original order tracking link.', 403)
+    }
+
+    if (order.status !== 'payment_pending' || order.paymentTxHash) {
+      throw new AppError('INVALID_STATUS', `This order can no longer be cancelled (status: ${order.status}).`, 409)
+    }
+
+    // Atomic transition guards against a payment landing between the read above
+    // and the write (the poller could flip status concurrently).
+    const cancelled = await db.gasFeeOrder.updateMany({
+      where: { id: order.id, status: 'payment_pending', paymentTxHash: null },
+      data:  { status: 'cancelled', cancelledAt: new Date(), cancelReason: 'user_cancelled' },
+    })
+    if (cancelled.count === 0) {
+      const fresh = await db.gasFeeOrder.findUnique({ where: { id: order.id }, select: { status: true } })
+      throw new AppError('INVALID_STATUS', `This order can no longer be cancelled (status: ${fresh?.status ?? order.status}).`, 409)
+    }
+
+    // The pending expire job is now moot — drop it (best-effort).
+    try { await queues.gasFee.remove(`gas-expire-${order.id}`) } catch { /* non-fatal */ }
+
+    const ident   = gasCancelIdentity(order.userId, order.ipAddress ?? req.ip)
+    const penalty = await recordCancellation(ident, { id: order.id, orderRef: order.orderRef })
+
+    logger.info({ orderRef, cancelNumber: penalty.cancelNumber, cooldownMs: penalty.cooldownMs }, 'Gas order cancelled by user')
+    return reply.send({
+      success: true,
+      data: {
+        orderRef,
+        status:        'cancelled',
+        cancelNumber:  penalty.cancelNumber,
+        cooldownLabel: penalty.cooldownLabel,
+        cooldownUntil: penalty.cooldownUntil,
+      },
+    })
   })
 
   // ── GET /api/gas-fee/orders/:orderRef/refund-status — no auth ─────────────

@@ -98,11 +98,12 @@ export const STATUS_LABELS: Record<string, string> = {
   expired:          'Expired',
   refund_pending:   'Refund Processing',
   refunded:         'Refunded',
+  cancelled:        'Cancelled',
 }
 
 export function statusVariant(s: string): 'warning' | 'success' | 'danger' | 'default' {
   if (s === 'delivered' || s === 'refunded') return 'success'
-  if (s === 'failed' || s === 'expired') return 'danger'
+  if (s === 'failed' || s === 'expired' || s === 'cancelled') return 'danger'
   if (['payment_verified','payment_detected','sending','refund_pending','payment_uploaded'].includes(s)) return 'warning'
   return 'default'
 }

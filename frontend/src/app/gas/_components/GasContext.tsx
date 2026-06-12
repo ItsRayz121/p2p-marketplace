@@ -114,6 +114,14 @@ export interface GasFlowCtx {
   handleVerifyPayment: () => Promise<void>
   pollOrder: () => Promise<void>
 
+  // Cancellation
+  cancelling: boolean
+  cancelError: string
+  cancelPreview: { cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null } | null
+  cancelResult: { cooldownLabel: string | null } | null
+  loadCancelPreview: () => Promise<void>
+  handleCancelOrder: () => Promise<void>
+
   // Order
   order: GasOrder | null
   setOrder: (o: GasOrder | ((prev: GasOrder | null) => GasOrder | null)) => void

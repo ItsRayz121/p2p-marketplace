@@ -21,7 +21,13 @@ export function GasCryptoQRStep() {
     verifying, verifyError, verifySuccess,
     handleVerifyPayment,
     pollErrCount, setPollErrCount, pollOrder,
+    cancelling, cancelError, cancelPreview, cancelResult, loadCancelPreview, handleCancelOrder,
   } = useGasCtx()
+
+  // Inline cancel-confirmation panel. Opening it loads the penalty preview so the
+  // user sees the cooldown consequence before committing.
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  function openCancelConfirm() { setConfirmCancel(true); void loadCancelPreview() }
 
   // 60s auto-detection window after the user reports they've paid. While it runs
   // the order keeps polling; if it auto-completes the whole block re-renders away.
@@ -171,9 +177,58 @@ export function GasCryptoQRStep() {
               <p className="text-xs text-green-600">{verifySuccess}</p>
             </div>
           ) : !paymentSent ? (
-            <button onClick={() => setPaymentSent(true)} className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors shadow-card">
-              I&apos;ve Sent the Payment
-            </button>
+            <div className="space-y-2">
+              <button onClick={() => setPaymentSent(true)} className="w-full py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors shadow-card">
+                I&apos;ve Sent the Payment
+              </button>
+
+              {!confirmCancel ? (
+                <button
+                  onClick={openCancelConfirm}
+                  className="w-full text-xs text-text-muted hover:text-red-600 text-center py-1 transition-colors"
+                >
+                  Cancel this order
+                </button>
+              ) : (
+                <div className="bg-surface-alt border border-border rounded-xl p-4 space-y-3">
+                  <p className="text-sm font-semibold text-text-primary">Cancel this order?</p>
+                  <p className="text-xs text-text-muted">
+                    Only cancel if you haven&apos;t sent the payment. If you already paid, keep this open so we can detect it.
+                  </p>
+                  {cancelPreview && (
+                    cancelPreview.cooldownLabel ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        <p className="text-xs text-amber-700">
+                          You&apos;ve cancelled {cancelPreview.priorCancels} recent gas order{cancelPreview.priorCancels === 1 ? '' : 's'}. Cancelling again will
+                          {' '}<strong>block new gas orders for {cancelPreview.cooldownLabel}</strong>.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-surface border border-border rounded-lg px-3 py-2">
+                        <p className="text-xs text-text-muted">No penalty for this cancellation.</p>
+                      </div>
+                    )
+                  )}
+                  {cancelError && <p className="text-xs text-red-600">{cancelError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setConfirmCancel(false) }}
+                      disabled={cancelling}
+                      className="flex-1 py-2 rounded-lg border border-border text-xs font-semibold text-text-secondary hover:bg-surface transition-colors disabled:opacity-50"
+                    >
+                      Keep order
+                    </button>
+                    <button
+                      onClick={handleCancelOrder}
+                      disabled={cancelling}
+                      className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {cancelling ? 'Cancelling…' : 'Yes, cancel'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : !detectElapsed && !verifyOpen ? (
             /* 60s auto-detection window */
             <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3 text-center">
@@ -278,6 +333,21 @@ export function GasCryptoQRStep() {
               <Button onClick={resetFlow}>Try Again</Button>
             </>
           )}
+        </div>
+      )}
+
+      {order.status === 'cancelled' && (
+        <div className="text-center py-4">
+          <p className="text-base font-bold text-text-primary mb-2">Order Cancelled</p>
+          <p className="text-sm text-text-muted mb-3">This gas order was cancelled. No payment was taken.</p>
+          {cancelResult?.cooldownLabel && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 text-left">
+              <p className="text-xs text-amber-700">
+                Because of repeated cancellations, new gas orders are paused for <strong>{cancelResult.cooldownLabel}</strong>. Thanks for understanding.
+              </p>
+            </div>
+          )}
+          <Button onClick={resetFlow}>Create New Order</Button>
         </div>
       )}
 

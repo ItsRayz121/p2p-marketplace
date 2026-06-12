@@ -1279,7 +1279,7 @@ export interface GasOrder {
   userId?: string | null
   orderRef: string
   trackingToken?: string | null
-  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded' | 'cancelled'
   toAddress: string
   tier?: string | null
   chain: string
@@ -1405,6 +1405,14 @@ export const gasApi = {
 
   verifyPayment: (orderRef: string, txHash: string) =>
     apiRequest<{ status: string; message: string }>(`/gas-fee/orders/${orderRef}/verify-payment`, { method: 'POST', body: JSON.stringify({ txHash }) }),
+
+  getCancelPreview: (orderRef: string, trackingToken?: string) =>
+    apiRequest<{ cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null }>(
+      `/gas-fee/orders/${orderRef}/cancel-preview${trackingToken ? `?token=${encodeURIComponent(trackingToken)}` : ''}`),
+
+  cancelOrder: (orderRef: string, trackingToken?: string) =>
+    apiRequest<{ orderRef: string; status: string; cancelNumber: number; cooldownLabel: string | null; cooldownUntil: string | null }>(
+      `/gas-fee/orders/${orderRef}/cancel`, { method: 'POST', body: JSON.stringify(trackingToken ? { token: trackingToken } : {}) }),
 }
 
 export const gasFeeApi = {
