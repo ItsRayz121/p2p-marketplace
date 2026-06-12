@@ -139,5 +139,10 @@ export async function getHotWalletTokenBalance(
 ): Promise<TokenBalanceResult> {
   if (dbChain === 'TRON') return getTronTokenBalance(contract, owner, knownDecimals)
   if (dbChain === 'APT' || dbChain === 'APTOS') return getAptosFaBalance(contract, owner, knownDecimals)
+  // Non-EVM families without a balance reader yet. Throw a clear message instead of
+  // letting them fall through to the EVM path ("unsupported EVM chain SOL/TON").
+  if (dbChain === 'SOL' || dbChain === 'TON' || dbChain === 'SUI') {
+    throw new Error(`Live token-balance reads are not yet supported on ${dbChain}.`)
+  }
   return getEvmTokenBalance(dbChain, contract, owner, knownDecimals)
 }

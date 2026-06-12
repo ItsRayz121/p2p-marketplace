@@ -33,8 +33,36 @@ const APTOS_USDT_FA = '0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d
 // backendChainId values allowed to accept user gas payments.
 const PAYMENT_CHAINS = ['BSC', 'APT']
 
+// Canonical USDT/USDC token contracts per EVM chain (backendChainId → addresses).
+// Correcting these fixes the "decimals returned no data (0x)" read error that
+// happens when a token row holds a wrong/placeholder contract address.
+const EVM_TOKEN_CONTRACTS: Record<string, { USDT: string; USDC: string }> = {
+  BSC:   { USDT: '0x55d398326f99059fF775485246999027B3197955', USDC: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d' },
+  ETH:   { USDT: '0xdAC17F958D2ee523a2206206994597C13D831ec7', USDC: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' },
+  BASE:  { USDT: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' },
+  ARB:   { USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' },
+  OP:    { USDT: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', USDC: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85' },
+  MATIC: { USDT: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', USDC: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' },
+  AVAX:  { USDT: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', USDC: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E' },
+}
+
 async function main() {
   console.log('— Gas config update (restrict payments → BNB + Aptos) —\n')
+
+  // ── 0. Correct EVM USDT/USDC contract addresses (fixes "decimals 0x") ────────
+  for (const [chainId, contracts] of Object.entries(EVM_TOKEN_CONTRACTS)) {
+    const cfg = await db.gasChainConfig.findFirst({ where: { backendChainId: chainId }, include: { tokens: true } })
+    if (!cfg) continue
+    for (const sym of ['USDT', 'USDC'] as const) {
+      const tok = cfg.tokens.find((t) => t.symbol.toUpperCase() === sym)
+      if (!tok) continue
+      const want = contracts[sym]
+      if ((tok.contractAddress ?? '').toLowerCase() !== want.toLowerCase()) {
+        await db.gasTokenConfig.update({ where: { id: tok.id }, data: { contractAddress: want } })
+        console.log(`  ✓ ${cfg.slug} ${sym}: contractAddress corrected → ${want}`)
+      }
+    }
+  }
 
   // ── 1. Aptos token FA metadata addresses ─────────────────────────────────────
   const aptos = await db.gasChainConfig.findFirst({
