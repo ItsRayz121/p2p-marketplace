@@ -134,7 +134,10 @@ export default function HotWalletDetailPage() {
                   </td>
                   <td className="px-5 py-3 text-right">
                     {t.error
-                      ? <Badge variant="danger" size="sm">read failed</Badge>
+                      ? <span title={t.error} className="inline-flex flex-col items-end gap-0.5">
+                          <Badge variant="danger" size="sm">read failed</Badge>
+                          <span className="text-[10px] text-danger/80 max-w-[280px] truncate text-right">{t.error}</span>
+                        </span>
                       : <span className="font-semibold text-text-primary">{fmtBalance(t.balance)} {t.symbol}</span>}
                   </td>
                   <td className="px-5 py-3 text-right text-text-muted">{t.usd !== null ? fmtUsd(t.usd) : '—'}</td>
