@@ -32,12 +32,17 @@ function isTrackingTokenValid(candidate: string | undefined, stored: string | nu
   return timingSafeEqual(a, b)
 }
 
-// A non-native token is orderable only when the chain family has a delivery
-// implementation AND a super-admin has flipped it live (after funding the hot
-// wallet). Native tokens are always deliverable on a configured chain.
+// Orderability gate:
+//   native token → only on chains with a native-delivery config (GAS_CHAINS).
+//     Aptos is NOT in GAS_CHAINS (no native APT delivery) so native APT is blocked.
+//   non-native token → chain has a token-delivery impl AND a super-admin flipped
+//     it live (after funding the hot wallet).
 function isTokenOrderable(backendChainId: string | null, token: { tokenType: string; deliveryLive?: boolean }): boolean {
-  if (token.tokenType === 'native') return true
   if (!backendChainId) return false
+  if (token.tokenType === 'native') {
+    const legacyId = backendChainId === 'ETH' ? 'ETHEREUM' : backendChainId
+    return !!GAS_CHAINS[legacyId as GasChainId]
+  }
   return tokenDeliverySupported(backendChainId) && token.deliveryLive === true
 }
 
@@ -168,13 +173,21 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         // Check operational availability: needs backendChainId, deposit address, not paused
         let isAvailable = false
         if (c.isActive && c.backendChainId && orderable) {
-          const legacyId = c.backendChainId === 'ETH' ? 'ETHEREUM' : c.backendChainId
-          const chainCfg = GAS_CHAINS[legacyId as GasChainId]
-          if (chainCfg) {
-            const depositAddress = chainCfg.getDepositAddress()
-            const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
-            const isPaused = await redis.get(`gas_wallet_paused:${c.backendChainId}`)
-            isAvailable = !!(depositAddress && hotWallet && !isPaused)
+          if (c.backendChainId === 'APT') {
+            // Aptos has no GAS_CHAINS native-delivery config — it's reachable for
+            // (live) fungible-asset token delivery via its derived hot wallet.
+            const aptosAddr = getAptosHotWalletAddress()
+            const isPaused  = await redis.get('gas_wallet_paused:APT')
+            isAvailable = !!(aptosAddr && !isPaused)
+          } else {
+            const legacyId = c.backendChainId === 'ETH' ? 'ETHEREUM' : c.backendChainId
+            const chainCfg = GAS_CHAINS[legacyId as GasChainId]
+            if (chainCfg) {
+              const depositAddress = chainCfg.getDepositAddress()
+              const hotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+              const isPaused = await redis.get(`gas_wallet_paused:${c.backendChainId}`)
+              isAvailable = !!(depositAddress && hotWallet && !isPaused)
+            }
           }
         }
 
