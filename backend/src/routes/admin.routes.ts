@@ -6702,30 +6702,28 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!result.address && gtNetwork) {
       try {
         const gtBase = 'https://api.geckoterminal.com/api/v2'
-        const sRes = await fetch(`${gtBase}/search/pools?query=${encodeURIComponent(symbol)}&network=${gtNetwork}`, {
+        // include=base_token,quote_token populates `included` with full token
+        // objects (symbol/address) for BOTH sides of every pool — without it the
+        // searched symbol may only appear as the quote side and we'd resolve the
+        // wrong token. We then match the symbol across all included tokens.
+        const sRes = await fetch(`${gtBase}/search/pools?query=${encodeURIComponent(symbol)}&network=${gtNetwork}&include=base_token,quote_token`, {
           headers: { accept: 'application/json' }, signal: AbortSignal.timeout(7000),
         })
         if (sRes.ok) {
           const sData = await sRes.json() as {
             data?: Array<{ relationships?: { base_token?: { data?: { id?: string } } } }>
-            included?: Array<{ id?: string; attributes?: { symbol?: string; name?: string; address?: string } }>
+            included?: Array<{ id?: string; type?: string; attributes?: { symbol?: string; name?: string; address?: string } }>
           }
-          // Pool ids look like "base_0xabc..."; the base_token id is "network_address".
-          const tokenIds = (sData.data ?? [])
-            .map(p => p.relationships?.base_token?.data?.id)
-            .filter((id): id is string => !!id)
-          // Find the first token whose symbol matches (via included[]), else first token.
           const included = sData.included ?? []
           let chosenAddr: string | null = null
-          for (const tid of tokenIds) {
-            const inc = included.find(i => i.id === tid)
-            const sym = inc?.attributes?.symbol?.toUpperCase()
-            const addr = inc?.attributes?.address ?? (tid.includes('_') ? tid.slice(tid.indexOf('_') + 1) : null)
-            if (sym === symbol.toUpperCase() && addr) { chosenAddr = addr; break }
-          }
-          if (!chosenAddr && tokenIds[0]) {
-            const tid = tokenIds[0]
-            chosenAddr = tid.includes('_') ? tid.slice(tid.indexOf('_') + 1) : null
+          // 1) Exact symbol match across all included tokens (base or quote).
+          const match = included.find(i => i.attributes?.symbol?.toUpperCase() === symbol.toUpperCase() && i.attributes?.address)
+          if (match?.attributes?.address) {
+            chosenAddr = match.attributes.address
+          } else {
+            // 2) Fallback: first pool's base token (id format "network_address").
+            const firstBase = (sData.data ?? []).map(p => p.relationships?.base_token?.data?.id).find((id): id is string => !!id)
+            if (firstBase) chosenAddr = firstBase.includes('_') ? firstBase.slice(firstBase.indexOf('_') + 1) : null
           }
           if (chosenAddr) {
             // Confirm via the token endpoint to pull decimals/name/logo authoritatively.
@@ -6915,19 +6913,31 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     } catch { /* non-fatal — verdict still works off detail_platforms */ }
 
-    // Which registry chains exist (so we can offer "add under this chain")
+    // Which registry chains exist (so we can offer "add under this chain").
+    // Alias-aware: a chain may be registered under a non-canonical slug (e.g.
+    // 'avax' instead of 'avalanche'), so resolve to whatever slug actually
+    // exists — otherwise the "Add under <chain>" deep-link would be hidden.
     const registrySlugs = new Set((await getAllChains()).map(c => c.id))
+    const REGISTRY_SLUG_ALIASES: Record<string, string[]> = {
+      avalanche: ['avalanche', 'avax'],
+      ton:       ['ton', 'the-open-network'],
+    }
+    const resolveRegistrySlug = (canonical: string | null): string | null => {
+      if (!canonical) return null
+      const candidates = REGISTRY_SLUG_ALIASES[canonical] ?? [canonical]
+      return candidates.find((s) => registrySlugs.has(s)) ?? null
+    }
 
     // Build deployment list from detail_platforms (skip empty/native placeholder keys)
     const deployments = Object.entries(coin.detail_platforms ?? {})
       .filter(([pid, info]) => pid && info && info.contract_address)
       .map(([pid, info]) => {
-        const mappedSlug = CG_PLATFORM_TO_SLUG[pid] ?? null
+        const registrySlug = resolveRegistrySlug(CG_PLATFORM_TO_SLUG[pid] ?? null)
         return {
           platformId:   pid,
           chainName:    platformName[pid] ?? pid,
-          mappedSlug,
-          supported:    mappedSlug ? registrySlugs.has(mappedSlug) : false,
+          mappedSlug:   registrySlug,        // actual registry slug for the add link (null if unsupported)
+          supported:    !!registrySlug,
           address:      info!.contract_address,
           decimals:     info!.decimal_place ?? null,
         }
