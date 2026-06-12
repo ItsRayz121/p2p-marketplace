@@ -4356,9 +4356,13 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     // ── Configured non-native tokens for this chain (from gas chain registry) ─
+    // Match every non-native token, not just the legacy tokenType 'token'. Tokens
+    // created via the admin UI carry named standards (erc20, bep20, trc20, fa, …),
+    // so filtering on === 'token' silently hid all UI-created tokens (e.g. Base
+    // USDC/USDT, Aptos FA) even when active. Backend only ever branches on 'native'.
     const chainCfg = await db.gasChainConfig.findFirst({
       where: { backendChainId: dbChain },
-      include: { tokens: { where: { tokenType: 'token', isActive: true, contractAddress: { not: null } }, orderBy: { displayOrder: 'asc' } } },
+      include: { tokens: { where: { tokenType: { not: 'native' }, isActive: true, contractAddress: { not: null } }, orderBy: { displayOrder: 'asc' } } },
     })
     const tokenList = chainCfg?.tokens ?? []
 

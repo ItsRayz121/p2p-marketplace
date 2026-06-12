@@ -607,7 +607,10 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX)
       where: { id: order.gasTokenConfigId },
       select: { tokenType: true, contractAddress: true, deliveryLive: true, symbol: true },
     })
-    if (tokenCfg && tokenCfg.tokenType === 'token') {
+    // Any non-native token routes to token delivery. Match on !== 'native' (not
+    // === 'token') so UI-created tokens carrying named standards (erc20, bep20,
+    // trc20, fa, …) are not misrouted to the native-coin delivery path below.
+    if (tokenCfg && tokenCfg.tokenType !== 'native') {
       if (!tokenCfg.contractAddress) throw new Error(`deliverGas: token ${tokenCfg.symbol} has no contract address`)
       if (!tokenDeliverySupported(order.chain)) throw new Error(`deliverGas: token delivery not supported on ${order.chain}`)
       if (!tokenCfg.deliveryLive) throw new Error(`deliverGas: token delivery is not live for ${tokenCfg.symbol}`)
