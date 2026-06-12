@@ -210,10 +210,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     const tokensWithPricing = await Promise.all(
       tokens.map(async (t) => {
+        // The delivery engine sends native coins only — surface non-native tokens
+        // as "coming soon" (not orderable) so the order endpoint's hard-block is
+        // never user-visible as an error.
+        const deliverable = t.tokenType === 'native'
         // Inactive tokens don't need live pricing
         const rateInfo = t.isActive ? await getNativeRateInfo(t.priceSymbol) : { usdPrice: 0, source: 'inactive', updatedAt: null }
         const rawUsdPrice = rateInfo.usdPrice
-        const rateStale   = t.isActive && !(rawUsdPrice > 0)
+        const rateStale   = t.isActive && deliverable && !(rawUsdPrice > 0)
 
         const resolved = resolveTokenConfig(t, chainCfg)
 
@@ -235,7 +239,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           minAmount:       resolved.minAmount,
           maxUsdValue:     resolved.maxUsdValue,
           presetAmounts:   t.presetAmounts as number[],
-          isActive:        t.isActive,
+          isActive:        t.isActive && deliverable,
+          comingSoon:      t.isActive && !deliverable,
           rateStale,
         }
       }),
@@ -418,6 +423,12 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
     if (!tokenCfg || !tokenCfg.isActive) {
       throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
+    }
+    // The delivery engine sends NATIVE coins only — a non-native order would be
+    // priced in token units (e.g. 5 USDT ≈ $5) but delivered as 5 native coins.
+    // Hard-block until token (contract) delivery is implemented.
+    if (tokenCfg.tokenType !== 'native') {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon — only native gas can be ordered right now`, 400)
     }
     const chainCfg = tokenCfg.chain
     if (!chainCfg.isActive) {

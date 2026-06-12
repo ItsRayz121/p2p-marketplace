@@ -874,6 +874,15 @@ function TokenModal({
             </div>
           )}
 
+          {/* Delivery-capability notice for non-native tokens */}
+          {form.tokenType && form.tokenType !== 'native' && (
+            <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+              <span className="font-semibold">Token delivery is not live yet</span> — the delivery engine currently
+              sends native coins only. This token will appear as &ldquo;coming soon&rdquo; on the public gas page and
+              cannot be ordered until token delivery ships.
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="text-xs font-medium text-text-muted block mb-1">Chain *</label>
@@ -1648,6 +1657,22 @@ export default function GasChainsAdminPage() {
     try {
       const presets = parsePresets(tokenForm.presetAmounts)
       if (presets.length === 0) { setTokenFormError('Enter at least one preset amount'); return }
+
+      // "Native" means the chain's own coin — a USDT/USDC entry saved as native
+      // would make the delivery engine send the chain coin instead of the token.
+      const selChain = chains.find((c) => c.id === tokenForm.chainConfigId) ?? null
+      const selMeta = selChain ? CHAIN_META[selChain.category] : null
+      if (tokenForm.tokenType === 'native' && selChain &&
+          tokenForm.symbol.trim().toUpperCase() !== selChain.symbol.toUpperCase()) {
+        const suggested = selMeta?.tokenStandards.find((s) => s.hasContract)?.label ?? 'a token standard'
+        setTokenFormError(`"${tokenForm.symbol}" cannot be Native on ${selChain.name} — the native coin is ${selChain.symbol}. Select ${suggested} instead and provide the token's contract address.`)
+        return
+      }
+      const selStandard = selMeta?.tokenStandards.find((s) => s.value === tokenForm.tokenType)
+      if (tokenForm.tokenType !== 'native' && (selStandard?.hasContract ?? true) && !tokenForm.contractAddress.trim()) {
+        setTokenFormError('Contract address is required for non-native tokens. Use the import chips or the CoinGecko lookup to fill it.')
+        return
+      }
 
       // blank string → null (inherit from chain)
       const platformFeeUsdtVal = tokenForm.platformFeeUsdt.trim()
