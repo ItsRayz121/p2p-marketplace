@@ -48,6 +48,19 @@ const adminOrSuper = requireRole('admin', 'super_admin')
 const adminOrSuperOrKyc = requireRole('admin', 'super_admin', 'kyc_reviewer')
 const superAdminOnly = requireRole('super_admin')
 
+// Resolve the gas hot-wallet address that holds tokens on a chain — used to probe
+// a token contract on-chain before saving / going delivery-live (gas.tokenAddress).
+async function resolveGasHotWalletOwner(dbChain: string): Promise<string | null> {
+  if (dbChain === 'APT' || dbChain === 'APTOS') {
+    const { getAptosHotWalletAddress } = await import('../lib/gas/aptosWalletService')
+    return getAptosHotWalletAddress()
+  }
+  const w = await db.gasHotWallet.findFirst({
+    where: { chain: dbChain as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI' },
+  })
+  return w?.address ?? null
+}
+
 // Step-up auth for destructive admin actions (ban, money movement, config).
 // No-op for admins without 2FA enabled; admins WITH 2FA must supply a fresh
 // X-TOTP-Code header (the frontend api client prompts and retries on
@@ -5141,6 +5154,16 @@ export async function adminRoutes(app: FastifyInstance) {
     const chain = await db.gasChainConfig.findUnique({ where: { id: d.chainConfigId } })
     if (!chain) throw Errors.NOT_FOUND('Gas chain config')
 
+    // Guardrail: reject malformed contract addresses for non-native tokens at
+    // entry time — a wrong/placeholder address is the root cause of "read failed"
+    // balances and potential mis-delivery.
+    if (d.tokenType !== 'native' && d.contractAddress) {
+      const { addressFormatValid, addressFormatHint } = await import('../lib/gas/gas.tokenAddress')
+      if (!addressFormatValid(chain.addressType, chain.chainType, d.contractAddress)) {
+        throw new AppError('VALIDATION_ERROR', `Invalid contract address for ${chain.slug} — expected ${addressFormatHint(chain.addressType, chain.chainType)}.`, 400)
+      }
+    }
+
     const token = await db.gasTokenConfig.create({
       data: {
         chainConfigId: d.chainConfigId, name: d.name, symbol: d.symbol,
@@ -5192,9 +5215,51 @@ export async function adminRoutes(app: FastifyInstance) {
       updateData.deliveryLive = !!body.deliveryLive
     }
 
+    // ── Guardrails: validate contract address; verify on-chain before go-live ──
+    const effType = (updateData.tokenType as string | undefined) ?? token.tokenType
+    const effContract = ('contractAddress' in body ? (updateData.contractAddress as string | null) : token.contractAddress)
+    const goingLive = updateData.deliveryLive === true
+    if (effType !== 'native' && ('contractAddress' in body || 'tokenType' in body || goingLive)) {
+      const chain = await db.gasChainConfig.findUnique({ where: { id: token.chainConfigId } })
+      if (chain) {
+        const { addressFormatValid, addressFormatHint, probeTokenContract } = await import('../lib/gas/gas.tokenAddress')
+        if (effContract && !addressFormatValid(chain.addressType, chain.chainType, effContract)) {
+          throw new AppError('VALIDATION_ERROR', `Invalid contract address for ${chain.slug} — expected ${addressFormatHint(chain.addressType, chain.chainType)}.`, 400)
+        }
+        // Going delivery-live moves real funds — confirm a real token lives at the
+        // address on-chain first. Blocks the "wrong address" class of failures.
+        if (goingLive) {
+          if (!effContract) throw new AppError('VALIDATION_ERROR', 'Cannot enable delivery: token has no contract address.', 400)
+          const owner = await resolveGasHotWalletOwner(chain.backendChainId ?? '')
+          if (!owner) throw new AppError('VALIDATION_ERROR', `Cannot verify token: no hot wallet configured for ${chain.slug}.`, 400)
+          const probe = await probeTokenContract(chain.backendChainId ?? '', effContract, owner)
+          if (!probe.ok) throw new AppError('VALIDATION_ERROR', `On-chain token check failed (${probe.error}). Fix the contract address before enabling delivery.`, 400)
+        }
+      }
+    }
+
     const updated = await db.gasTokenConfig.update({ where: { id }, data: updateData })
     await createAuditLog(req.user!.id, 'GAS_TOKEN_UPDATED', 'GasTokenConfig', id, updateData)
     return reply.send({ success: true, data: updated })
+  })
+
+  // POST /admin/gas/tokens/verify-address — probe a token contract on-chain so the
+  // admin UI can validate an address before saving (catches wrong/placeholder
+  // addresses that format checks alone can't).
+  app.post('/admin/gas/tokens/verify-address', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { chainSlug, contractAddress } = z.object({
+      chainSlug: z.string().min(1), contractAddress: z.string().min(1),
+    }).parse(req.body)
+    const chain = await db.gasChainConfig.findUnique({ where: { slug: chainSlug.toUpperCase() } })
+    if (!chain) throw Errors.NOT_FOUND('Gas chain config')
+    const { addressFormatValid, addressFormatHint, probeTokenContract } = await import('../lib/gas/gas.tokenAddress')
+    if (!addressFormatValid(chain.addressType, chain.chainType, contractAddress)) {
+      return reply.send({ success: true, data: { ok: false, decimals: null, error: `Malformed address — expected ${addressFormatHint(chain.addressType, chain.chainType)}.` } })
+    }
+    const owner = await resolveGasHotWalletOwner(chain.backendChainId ?? '')
+    if (!owner) return reply.send({ success: true, data: { ok: false, decimals: null, error: `No hot wallet configured for ${chain.slug}.` } })
+    const probe = await probeTokenContract(chain.backendChainId ?? '', contractAddress, owner)
+    return reply.send({ success: true, data: probe })
   })
 
   // DELETE /admin/gas/tokens/:id — delete token (only if no orders reference it)
