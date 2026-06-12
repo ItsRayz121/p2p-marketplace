@@ -6835,6 +6835,136 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: result })
   })
 
+  // GET /admin/deposit-chains/identify?query=<symbol|name|0x-address>
+  // Classifies a project as a TOKEN (and on which chains) vs a NATIVE CHAIN coin,
+  // so admins know whether to add it under an existing chain or create a new one.
+  // Powered by CoinGecko's detail_platforms (all deployments) + asset_platforms
+  // (which coins are native chain coins).
+  app.get('/admin/deposit-chains/identify', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { query } = req.query as { query?: string }
+    if (!query || query.trim().length < 2) throw new AppError('VALIDATION_ERROR', 'query must be at least 2 characters', 400)
+    const q = query.trim()
+
+    const cgBase = 'https://api.coingecko.com/api/v3'
+    const headers: Record<string, string> = env.COINGECKO_API_KEY ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY } : {}
+
+    // CoinGecko platform id → our deposit-chain slug. Drives the "add under this
+    // chain" action and tells us which deployments we can actually support.
+    const CG_PLATFORM_TO_SLUG: Record<string, string> = {
+      ethereum: 'ethereum', 'binance-smart-chain': 'bsc', 'polygon-pos': 'polygon',
+      'arbitrum-one': 'arbitrum', 'optimistic-ethereum': 'optimism', base: 'base',
+      avalanche: 'avalanche', tron: 'tron', solana: 'solana',
+      'the-open-network': 'ton', sui: 'sui', aptos: 'aptos',
+    }
+
+    type CoinDetail = {
+      id?: string
+      name?: string
+      symbol?: string
+      image?: { large?: string; small?: string; thumb?: string }
+      asset_platform_id?: string | null
+      detail_platforms?: Record<string, { contract_address: string; decimal_place: number | null } | null>
+    }
+
+    // ── Resolve the query → a CoinGecko coin detail object ─────────────────────
+    let coin: CoinDetail | null = null
+    let resolveError: string | null = null
+    try {
+      if (/^0x[0-9a-fA-F]{40}$/.test(q)) {
+        // Address input — most are Ethereum; ask CoinGecko by contract there.
+        const r = await fetch(`${cgBase}/coins/ethereum/contract/${q.toLowerCase()}`, { headers, signal: AbortSignal.timeout(8000) })
+        if (r.ok) coin = await r.json() as CoinDetail
+        else resolveError = 'Address not found on Ethereum via CoinGecko. Enter the symbol/name instead, or treat it as a brand-new token and add it with the manual override.'
+      } else {
+        const sRes = await fetch(`${cgBase}/search?query=${encodeURIComponent(q)}`, { headers, signal: AbortSignal.timeout(8000) })
+        if (sRes.ok) {
+          const sData = await sRes.json() as { coins: Array<{ id: string; symbol: string; name: string; market_cap_rank: number | null }> }
+          const lc = q.toLowerCase()
+          // Prefer exact symbol match, else exact name match, else first result; best market cap first.
+          const ranked = [...sData.coins].sort((a, b) => (a.market_cap_rank ?? 1e9) - (b.market_cap_rank ?? 1e9))
+          const pick = ranked.find(c => c.symbol.toLowerCase() === lc)
+            ?? ranked.find(c => c.name.toLowerCase() === lc)
+            ?? ranked[0]
+          if (pick) {
+            const r = await fetch(`${cgBase}/coins/${pick.id}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`, { headers, signal: AbortSignal.timeout(8000) })
+            if (r.ok) coin = await r.json() as CoinDetail
+          } else {
+            resolveError = `No CoinGecko match for "${q}"`
+          }
+        }
+      }
+    } catch (err) {
+      resolveError = err instanceof Error ? err.message : 'CoinGecko lookup failed'
+    }
+
+    if (!coin) {
+      return reply.send({ success: true, data: { query: q, resolved: false, error: resolveError ?? 'Could not resolve this token/chain.' } })
+    }
+
+    // ── Determine native-chain coins via asset_platforms ───────────────────────
+    const nativeCoinIds = new Set<string>()
+    const platformName: Record<string, string> = {}
+    try {
+      const apRes = await fetch(`${cgBase}/asset_platforms`, { headers, signal: AbortSignal.timeout(8000) })
+      if (apRes.ok) {
+        const aps = await apRes.json() as Array<{ id: string; name: string; native_coin_id?: string | null }>
+        for (const ap of aps) {
+          platformName[ap.id] = ap.name
+          if (ap.native_coin_id) nativeCoinIds.add(ap.native_coin_id)
+        }
+      }
+    } catch { /* non-fatal — verdict still works off detail_platforms */ }
+
+    // Which registry chains exist (so we can offer "add under this chain")
+    const registrySlugs = new Set((await getAllChains()).map(c => c.id))
+
+    // Build deployment list from detail_platforms (skip empty/native placeholder keys)
+    const deployments = Object.entries(coin.detail_platforms ?? {})
+      .filter(([pid, info]) => pid && info && info.contract_address)
+      .map(([pid, info]) => {
+        const mappedSlug = CG_PLATFORM_TO_SLUG[pid] ?? null
+        return {
+          platformId:   pid,
+          chainName:    platformName[pid] ?? pid,
+          mappedSlug,
+          supported:    mappedSlug ? registrySlugs.has(mappedSlug) : false,
+          address:      info!.contract_address,
+          decimals:     info!.decimal_place ?? null,
+        }
+      })
+
+    const isNativeChainCoin = coin.id ? nativeCoinIds.has(coin.id) : false
+    const kind = isNativeChainCoin ? 'native_chain' : deployments.length > 0 ? 'token' : 'unknown'
+
+    let verdict: string
+    let nativeChain: { platformId: string; name: string } | null = null
+    if (kind === 'native_chain') {
+      nativeChain = { platformId: coin.id ?? '', name: coin.name ?? coin.id ?? '' }
+      verdict = `${coin.name} (${(coin.symbol ?? '').toUpperCase()}) is the NATIVE COIN of its own blockchain. Add it as a Blockchain (chain) — and only if you will operate deposits/delivery for that chain.`
+    } else if (kind === 'token') {
+      const chainList = deployments.map(d => d.chainName).join(', ')
+      verdict = `${coin.name} (${(coin.symbol ?? '').toUpperCase()}) is a TOKEN deployed on: ${chainList}. Add it under one of these chains — do NOT create a separate chain for it.`
+    } else {
+      verdict = `${coin.name} (${(coin.symbol ?? '').toUpperCase()}) has no on-chain contract listed by CoinGecko. It may be a native chain coin or a brand-new token — verify manually.`
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        query: q,
+        resolved: true,
+        kind,
+        coinId: coin.id ?? null,
+        name: coin.name ?? null,
+        symbol: (coin.symbol ?? '').toUpperCase() || null,
+        logoUrl: coin.image?.large ?? coin.image?.small ?? coin.image?.thumb ?? null,
+        nativeChain,
+        deployments,
+        verdict,
+      },
+    })
+  })
+
   // GET /admin/deposit-chains/rpc-health?family=SOL|TON|SUI|TRON|APT|EVM
   // Suggests recommended public RPC endpoints for a chain family and reports the
   // live health (reachable + latency) of the currently-configured endpoint, so

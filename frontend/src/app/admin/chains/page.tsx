@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { adminApi, type AdminDepositChain, type ChainSearchResult, type RpcHealthSuggestion } from '@/lib/api'
+import { adminApi, type AdminDepositChain, type ChainSearchResult, type RpcHealthSuggestion, type TokenIdentifyResult } from '@/lib/api'
 import { CHAIN_META } from '@/lib/chainTokenStandards'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -39,6 +39,138 @@ const ADDRESS_TYPE_FOR_FAMILY: Record<Family, string> = {
 // Maps deposit chain family → gas chain category (used when "Also add to Gas" is checked)
 const FAMILY_TO_GAS_CATEGORY: Record<Family, string> = {
   EVM: 'ethereum', TRON: 'tron', SOL: 'solana', TON: 'ton', SUI: 'sui', BTC: 'bitcoin', APT: 'aptos',
+}
+
+// ── Token Identifier ────────────────────────────────────────────────────────────
+// Answers "is this its own chain, or a token on an existing chain?" before you add
+// anything — so projects that brand themselves as a "network" (but are really an
+// ERC-20, e.g. Billions Network) get filed under the right chain.
+
+function TokenIdentifierPanel() {
+  const router = useRouter()
+  const [query,   setQuery]   = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result,  setResult]  = useState<TokenIdentifyResult | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
+
+  async function identify() {
+    if (query.trim().length < 2) return
+    setLoading(true)
+    setResult(null)
+    setError(null)
+    try {
+      setResult(await adminApi.identifyToken(query.trim()))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Lookup failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function addUnder(slug: string, symbol: string, address: string, decimals: number | null) {
+    const params = new URLSearchParams({ symbol, address, ...(decimals != null ? { decimals: String(decimals) } : {}) })
+    router.push(`/admin/chains/${slug}/tokens?${params.toString()}`)
+  }
+
+  return (
+    <div className="bg-surface shadow-card rounded-xl border border-border p-5 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold text-text-primary">Token Identifier</h2>
+        <p className="text-sm text-text-muted">
+          Check whether something is its own blockchain or a token on an existing chain — paste a symbol, name, or 0x contract.
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void identify()}
+          placeholder="e.g. BILL, Billions Network, or 0xb1110919…"
+          className="flex-1 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <Button onClick={() => void identify()} disabled={loading || query.trim().length < 2}>
+          {loading ? 'Checking…' : 'Identify'}
+        </Button>
+      </div>
+
+      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+
+      {result && !result.resolved && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          {result.error ?? 'Could not resolve this token/chain.'}
+        </p>
+      )}
+
+      {result && result.resolved && (
+        <div className="space-y-3">
+          <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${
+            result.kind === 'token'        ? 'bg-blue-50 border-blue-200' :
+            result.kind === 'native_chain' ? 'bg-purple-50 border-purple-200' :
+                                             'bg-surface-alt border-border'
+          }`}>
+            {result.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={result.logoUrl} alt={result.name ?? ''} className="w-8 h-8 rounded-full border border-border-subtle bg-white flex-shrink-0" />
+            )}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-text-primary">{result.name}</span>
+                <Badge variant={result.kind === 'token' ? 'default' : result.kind === 'native_chain' ? 'warning' : 'default'}>
+                  {result.kind === 'token' ? 'TOKEN' : result.kind === 'native_chain' ? 'OWN CHAIN' : 'UNKNOWN'}
+                </Badge>
+              </div>
+              <p className="text-sm text-text-secondary mt-0.5">{result.verdict}</p>
+            </div>
+          </div>
+
+          {result.kind === 'token' && result.deployments && result.deployments.length > 0 && (
+            <div className="border border-border-subtle rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-surface-alt border-b border-border-subtle">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-text-secondary">Chain</th>
+                    <th className="px-3 py-2 text-left font-medium text-text-secondary">Contract</th>
+                    <th className="px-3 py-2 text-center font-medium text-text-secondary">Decimals</th>
+                    <th className="px-3 py-2 text-right font-medium text-text-secondary">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-subtle">
+                  {result.deployments.map((d) => (
+                    <tr key={d.platformId}>
+                      <td className="px-3 py-2 font-medium text-text-primary">{d.chainName}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-text-muted" title={d.address}>
+                        {d.address.slice(0, 10)}…{d.address.slice(-6)}
+                      </td>
+                      <td className="px-3 py-2 text-center text-text-secondary">{d.decimals ?? '—'}</td>
+                      <td className="px-3 py-2 text-right">
+                        {d.supported && d.mappedSlug ? (
+                          <button
+                            onClick={() => addUnder(d.mappedSlug!, result.symbol ?? '', d.address, d.decimals)}
+                            className="text-xs font-medium text-blue-600 hover:underline"
+                          >
+                            Add under {d.chainName} →
+                          </button>
+                        ) : (
+                          <span className="text-xs text-text-muted">Chain not in your registry</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {result.kind === 'native_chain' && (
+            <p className="text-xs text-text-muted">
+              This is a real blockchain&apos;s native coin. Add it via <span className="font-medium">+ Add Blockchain</span> — and only if you&apos;ll operate deposits/delivery for it.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Add Chain Form ─────────────────────────────────────────────────────────────
@@ -409,6 +541,8 @@ export default function DepositChainsPage() {
           <button onClick={() => setWarning(null)} className="shrink-0 font-medium hover:underline">Dismiss</button>
         </div>
       )}
+
+      {!adding && <TokenIdentifierPanel />}
 
       {adding && (
         <AddChainPanel

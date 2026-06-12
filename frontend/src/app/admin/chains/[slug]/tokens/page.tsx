@@ -96,6 +96,17 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
   const [saveErr,   setSaveErr]   = useState<string | null>(null)
   const [manualOverride, setManualOverride] = useState(false)
 
+  // Prefill from the Token Identifier's "Add under this chain" deep-link
+  // (?symbol=&address=&decimals=). Read once on mount via location.search to
+  // avoid the useSearchParams() Suspense-boundary requirement at build time.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const s = sp.get('symbol'); const a = sp.get('address'); const d = sp.get('decimals')
+    if (s) setSymbol(s.toUpperCase())
+    if (a) setAddress(a)
+    if (d) setDecimals(d)
+  }, [])
+
   async function handleLookup() {
     if (!symbol.trim()) return
     setLooking(true)

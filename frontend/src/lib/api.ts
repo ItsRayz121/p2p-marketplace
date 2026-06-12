@@ -1500,6 +1500,29 @@ export interface TokenLookupResult {
   geckoTerminalError: string | null
 }
 
+export interface TokenIdentifyDeployment {
+  platformId: string
+  chainName: string
+  mappedSlug: string | null
+  supported: boolean
+  address: string
+  decimals: number | null
+}
+
+export interface TokenIdentifyResult {
+  query: string
+  resolved: boolean
+  error?: string
+  kind?: 'token' | 'native_chain' | 'unknown'
+  coinId?: string | null
+  name?: string | null
+  symbol?: string | null
+  logoUrl?: string | null
+  nativeChain?: { platformId: string; name: string } | null
+  deployments?: TokenIdentifyDeployment[]
+  verdict?: string
+}
+
 export interface TokenAddressLookupResult {
   address: string
   name: string | null
@@ -2100,6 +2123,8 @@ export const adminApi = {
     apiRequest<{ chains: ChainSearchResult[] }>(`/admin/deposit-chains/chain-search?query=${encodeURIComponent(query)}`),
   getRpcHealth: (family: string) =>
     apiRequest<RpcHealthSuggestion>(`/admin/deposit-chains/rpc-health?family=${encodeURIComponent(family)}`),
+  identifyToken: (query: string) =>
+    apiRequest<TokenIdentifyResult>(`/admin/deposit-chains/identify?query=${encodeURIComponent(query)}`),
 
   // Gas Chain Config CRUD
   lookupGasChain: (q: string) =>
