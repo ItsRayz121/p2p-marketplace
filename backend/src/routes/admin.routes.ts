@@ -4411,6 +4411,29 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /admin/gas/token-diagnostics — health-check every configured non-native gas
+  // token: will it show in the wallet view, is the stored address canonical, does a
+  // real token live there on-chain, and (if not) is the cause a wrong address, a
+  // rate-limited/unhealthy RPC, or an unsupported chain. Read-only.
+  app.get('/admin/gas/token-diagnostics', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { diagnoseGasTokens } = await import('../lib/gas/gas.tokenDiagnostics')
+    const report = await diagnoseGasTokens()
+    const counts = report.reduce<Record<string, number>>((m, d) => { m[d.verdict] = (m[d.verdict] ?? 0) + 1; return m }, {})
+    return reply.send({ success: true, data: { report, counts } })
+  })
+
+  // POST /admin/gas/token-diagnostics/fix-addresses — rewrite every non-canonical
+  // contract address to the canonical one (contractAddress only; never flips
+  // isActive/deliveryLive). Super-admin + audit-logged.
+  app.post('/admin/gas/token-diagnostics/fix-addresses', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { fixGasTokenAddresses } = await import('../lib/gas/gas.tokenDiagnostics')
+    const changes = await fixGasTokenAddresses()
+    if (changes.length > 0) {
+      await createAuditLog(req.user!.id, 'GAS_TOKEN_ADDRESS_FIX', 'GasTokenConfig', 'bulk', { changes }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    }
+    return reply.send({ success: true, data: { changes } })
+  })
+
   // POST /admin/gas/wallets/:chain/balance — manually override cached balance (super_admin)
   app.post('/admin/gas/wallets/:chain/balance', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
     const { chain } = req.params as { chain: string }

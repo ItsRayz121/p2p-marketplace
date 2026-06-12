@@ -2091,6 +2091,25 @@ export const adminApi = {
         balance: number | null; decimals: number | null; usd: number | null; error: string | null
       }>
     }>(`/admin/gas/hot-wallet/${encodeURIComponent(chain)}/tokens`),
+  getGasTokenDiagnostics: () =>
+    apiRequest<{
+      report: Array<{
+        chainSlug: string; backendChainId: string | null; chainType: string | null; addressType: string | null
+        rpcUrl: string; hotWalletAddress: string | null
+        symbol: string; name: string | null; tokenType: string
+        isActive: boolean; deliveryLive: boolean
+        configuredAddress: string | null; canonicalAddress: string | null; addressMatchesCanonical: boolean | null
+        probeOk: boolean | null; probeDecimals: number | null; probeError: string | null
+        willShowInWalletView: boolean
+        verdict: 'OK' | 'CANONICAL_UNKNOWN' | 'INACTIVE' | 'NOT_SUPPORTED' | 'RATE_LIMITED' | 'RPC_ERROR' | 'WRONG_ADDRESS' | 'ADDRESS_MISSING' | 'UNKNOWN_ERROR'
+        remediation: string
+      }>
+      counts: Record<string, number>
+    }>('/admin/gas/token-diagnostics'),
+  fixGasTokenAddresses: () =>
+    apiRequest<{ changes: Array<{ chain: string; symbol: string; from: string | null; to: string }> }>(
+      '/admin/gas/token-diagnostics/fix-addresses', { method: 'POST' },
+    ),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>
