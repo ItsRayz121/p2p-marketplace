@@ -1,6 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { adminApi, type AdminGasChain, type AdminGasToken, type TokenLookupResult, type GasChainLookupResult, type TokenAddressLookupResult } from '@/lib/api'
+import { adminApi, type AdminGasChain, type AdminGasToken, type AdminDepositToken, type TokenLookupResult, type GasChainLookupResult, type TokenAddressLookupResult } from '@/lib/api'
 import { CHAIN_META, CHAIN_CATEGORIES, ADDRESS_TYPES } from '@/lib/chainTokenStandards'
 import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
 import { invalidateLogoCache } from '@/hooks/useLogoRegistry'
@@ -97,6 +97,16 @@ const RPC_SUGGESTIONS: Record<string, { primary: string; fallback: string }> = {
   SOLANA: { primary: 'https://api.mainnet-beta.solana.com',         fallback: 'https://solana-rpc.publicnode.com' },
   TON:    { primary: 'https://toncenter.com/api/v2/jsonRPC',        fallback: 'https://ton-rpc.publicnode.com' },
   SUI:    { primary: 'https://fullnode.mainnet.sui.io',             fallback: 'https://sui-rpc.publicnode.com' },
+}
+
+// Gas chain category → Deposit Chain Registry slug. Lets the token modal pull
+// verified tokens (and run CoinGecko lookups) from the deposit registry without
+// requiring backendChainId to be wired first.
+const CATEGORY_TO_DEPOSIT_SLUG: Record<string, string> = {
+  ethereum: 'ethereum', bnb: 'bsc', tron: 'tron', solana: 'solana',
+  ton: 'ton', sui: 'sui', aptos: 'aptos', avalanche: 'avalanche',
+  polygon: 'polygon', arbitrum: 'arbitrum', optimism: 'optimism',
+  base: 'base', bitcoin: 'bitcoin',
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -749,6 +759,21 @@ function TokenModal({
 
   const selectedChain = chains.find((c) => c.id === form.chainConfigId) ?? null
   const chainMeta = selectedChain ? CHAIN_META[selectedChain.category] : null
+  // Deposit-registry slug for this gas chain — drives CoinGecko lookup and the
+  // import-token chips. Derived from category so it works before delivery wiring.
+  const depositSlug = selectedChain ? CATEGORY_TO_DEPOSIT_SLUG[selectedChain.category] ?? null : null
+
+  // Tokens already registered (and verified) in the Deposit Chain Registry for
+  // this chain — offered as one-click imports so admins don't re-type addresses.
+  const [depositTokens, setDepositTokens] = useState<AdminDepositToken[]>([])
+  useEffect(() => {
+    if (!depositSlug) { setDepositTokens([]); return }
+    let cancelled = false
+    adminApi.getDepositTokens(depositSlug)
+      .then((d) => { if (!cancelled) setDepositTokens((d.tokens ?? []).filter((t) => t.isActive)) })
+      .catch(() => { if (!cancelled) setDepositTokens([]) })
+    return () => { cancelled = true }
+  }, [depositSlug])
   const tokenStandards = chainMeta?.tokenStandards ?? [
     { value: 'native', label: 'Native Gas', isNative: true, hasContract: false },
     { value: 'erc20',  label: 'ERC-20 (Fungible Token)',    hasContract: true  },
@@ -797,19 +822,12 @@ function TokenModal({
   }, [form.contractAddress, selectedChain?.slug, selectedStandard?.hasContract])
 
   async function handleCoinGeckoLookup() {
-    if (!form.symbol || !selectedChain?.backendChainId) return
-    const chainSlugMap: Record<string, string> = {
-      ETH: 'ethereum', BSC: 'bsc', MATIC: 'polygon',
-      ARB: 'arbitrum', OP: 'optimism', BASE: 'base', AVAX: 'avalanche',
-      TRON: 'tron', SOL: 'solana', TON: 'ton', SUI: 'sui', APT: 'aptos',
-    }
-    const chainSlug = chainSlugMap[selectedChain.backendChainId]
-    if (!chainSlug) { setLookupErr(`No deposit chain mapping for ${selectedChain.backendChainId}`); return }
+    if (!form.symbol || !depositSlug) return
     setLooking(true)
     setLookupResult(null)
     setLookupErr(null)
     try {
-      const result = await adminApi.lookupDepositToken(form.symbol, chainSlug)
+      const result = await adminApi.lookupDepositToken(form.symbol, depositSlug)
       setLookupResult(result)
       if (result.address) setForm({ ...form, contractAddress: result.address })
     } catch (e) {
@@ -817,6 +835,19 @@ function TokenModal({
     } finally {
       setLooking(false)
     }
+  }
+
+  // One-click fill from a deposit-registry token (already verified there).
+  function importDepositToken(t: AdminDepositToken) {
+    const contractStd = chainMeta?.tokenStandards.find((s) => s.hasContract)?.value ?? 'token'
+    setForm({
+      ...form,
+      name:            t.symbol,
+      symbol:          t.symbol,
+      priceSymbol:     t.symbol,
+      tokenType:       t.address ? contractStd : 'native',
+      contractAddress: t.address ?? '',
+    })
   }
 
   return (
@@ -867,6 +898,29 @@ function TokenModal({
                 {chains.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>)}
               </select>
             </div>
+
+            {/* One-click import of verified tokens from the Deposit Chain Registry */}
+            {!editing && depositTokens.length > 0 && (
+              <div className="col-span-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs font-medium text-blue-900 mb-1.5">
+                  Found in Deposit Chain Registry — click to fill:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {depositTokens.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => importDepositToken(t)}
+                      className="px-3 py-1 text-xs font-medium rounded-full border border-blue-300 bg-white text-blue-700 hover:bg-blue-100 transition-colors"
+                      title={t.address ?? 'native asset'}
+                    >
+                      {t.symbol}{t.address ? '' : ' (native)'}
+                      {(t.onChainVerified || t.trustWalletVerified) && ' ✓'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-text-muted block mb-1">Token Name *</label>
               <Input placeholder="e.g. TRX" value={form.name} onChange={field('name')} />
@@ -916,7 +970,7 @@ function TokenModal({
                   }}
                   className="flex-1"
                 />
-                {form.symbol && selectedChain?.backendChainId && (
+                {form.symbol && depositSlug && (
                   <button
                     type="button"
                     onClick={handleCoinGeckoLookup}
