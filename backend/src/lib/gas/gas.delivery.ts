@@ -129,7 +129,7 @@ async function deliverTronToken(order: GasFeeOrder, contract: string, decimals: 
     const { TronWeb } = require('tronweb')
     const tronWeb = new TronWeb({
       fullHost: env.TRON_FULLNODE_URL,
-      headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
+      headers: env.TRONGRID_API_KEY ? { 'TRON-PRO-API-KEY': env.TRONGRID_API_KEY } : {},
       privateKey,
     })
     const base10 = BigInt(Math.round(Number(order.gasAmountNative) * 10 ** decimals))
@@ -252,7 +252,7 @@ async function deliverTron(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Prom
     const { TronWeb } = require('tronweb')
     const tronWeb = new TronWeb({
       fullHost: env.TRON_FULLNODE_URL,
-      headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
+      headers: env.TRONGRID_API_KEY ? { 'TRON-PRO-API-KEY': env.TRONGRID_API_KEY } : {},
       privateKey,
     })
 

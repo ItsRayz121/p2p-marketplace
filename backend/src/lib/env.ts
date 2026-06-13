@@ -118,6 +118,10 @@ const envSchema = z.object({
   // Blockchain RPCs
   TRON_FULLNODE_URL: z.string().url().default('https://api.trongrid.io'),
   TRONGRID_API_KEY: z.string().optional(),
+  // Optional comma-separated extra TRON full-node hosts to fall back to when the
+  // primary returns 429/5xx (e.g. "https://api.trongrid.io,https://trx.api.tatum.io").
+  // The API key is only sent to the primary (a TronGrid key is invalid elsewhere).
+  TRON_FULLNODE_FALLBACK_URLS: z.string().optional(),
   ETHERSCAN_API_KEY: z.string().optional(),
 
   // Gas Fee System — TRON

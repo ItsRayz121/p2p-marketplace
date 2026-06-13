@@ -64,7 +64,7 @@ async function sendTronFromTreasury(toAddress: string, nativeAmount: number): Pr
     const { TronWeb } = require('tronweb')
     const tronWeb = new TronWeb({
       fullHost: env.TRON_FULLNODE_URL,
-      headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
+      headers: env.TRONGRID_API_KEY ? { 'TRON-PRO-API-KEY': env.TRONGRID_API_KEY } : {},
       privateKey,
     })
 

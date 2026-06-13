@@ -64,7 +64,7 @@ function tronPrivKeyToAddress(privateKeyHex: string): string {
 
 async function tronGetBalance(address: string, nodeUrl: string, apiKey?: string): Promise<bigint> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (apiKey) headers['TRONGRID-API-Key'] = apiKey
+  if (apiKey) headers['TRON-PRO-API-KEY'] = apiKey
   const res = await fetch(`${nodeUrl}/v1/accounts/${address}`, { headers, signal: AbortSignal.timeout(15_000) })
   if (!res.ok) throw new Error(`TronGrid accounts API ${res.status}: ${await res.text()}`)
   const body = (await res.json()) as { data?: Array<{ balance?: number }> }
@@ -74,7 +74,7 @@ async function tronGetBalance(address: string, nodeUrl: string, apiKey?: string)
 async function tronGetUsdtBalance(address: string, nodeUrl: string, apiKey?: string): Promise<number> {
   const USDT_TRC20 = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (apiKey) headers['TRONGRID-API-Key'] = apiKey
+  if (apiKey) headers['TRON-PRO-API-KEY'] = apiKey
   const url = `${nodeUrl}/v1/accounts/${address}/tokens?token_id=${USDT_TRC20}&limit=1`
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) })
   if (!res.ok) return 0
@@ -88,7 +88,7 @@ async function tronDrain(legacyKeyHex: string, toAddress: string, nodeUrl: strin
   const { TronWeb } = require('tronweb')
   const tronWeb = new TronWeb({
     fullHost: nodeUrl,
-    headers: apiKey ? { 'TRONGRID-API-Key': apiKey } : {},
+    headers: apiKey ? { 'TRON-PRO-API-KEY': apiKey } : {},
     privateKey: legacyKeyHex,
   })
   const fromAddress = tronWeb.defaultAddress.base58 as string

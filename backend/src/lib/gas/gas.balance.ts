@@ -207,7 +207,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function fetchTronGridBalance(address: string): Promise<number> {
   const url = `${env.TRON_FULLNODE_URL}/v1/accounts/${encodeURIComponent(address)}`
   const headers: Record<string, string> = {}
-  if (env.TRONGRID_API_KEY) headers['TRONGRID-API-Key'] = env.TRONGRID_API_KEY
+  if (env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = env.TRONGRID_API_KEY
 
   // Up to 3 attempts with exponential backoff on 429 / 5xx.
   let lastStatus = 0

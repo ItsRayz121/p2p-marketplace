@@ -388,7 +388,7 @@ async function scanTron(): Promise<void> {
 
   const headers: Record<string, string> = {}
   // Header name matches the rest of the codebase's TronGrid calls.
-  if (env.TRONGRID_API_KEY) headers['TRONGRID-API-Key'] = env.TRONGRID_API_KEY
+  if (env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = env.TRONGRID_API_KEY
 
   let transfers: TronTrc20Tx[]
   try {

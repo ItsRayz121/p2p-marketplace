@@ -56,6 +56,25 @@ async function getEvmTokenBalance(
 
 // ── TRON (TRC-20) ───────────────────────────────────────────────────────────
 
+/**
+ * Ordered TRON full-node hosts: the operator primary first (carries the API key),
+ * then any configured fallbacks. De-duplicated. Only the primary is treated as
+ * keyed — a TronGrid key is not valid on a different provider.
+ */
+function getTronHostsInOrder(): Array<{ host: string; isPrimary: boolean }> {
+  const primary = env.TRON_FULLNODE_URL.replace(/\/$/, '')
+  const fallbacks = (env.TRON_FULLNODE_FALLBACK_URLS ?? '')
+    .split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean)
+  const seen = new Set<string>()
+  const out: Array<{ host: string; isPrimary: boolean }> = []
+  for (const [i, host] of [primary, ...fallbacks].entries()) {
+    if (seen.has(host)) continue
+    seen.add(host)
+    out.push({ host, isPrimary: i === 0 })
+  }
+  return out
+}
+
 async function getTronTokenBalance(
   contract: string,
   owner: string,
@@ -63,18 +82,31 @@ async function getTronTokenBalance(
 ): Promise<TokenBalanceResult> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { TronWeb } = require('tronweb')
-  const tronWeb = new TronWeb({
-    fullHost: env.TRON_FULLNODE_URL,
-    headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
-  })
-  // Read-only calls still need a caller address set on the instance.
-  tronWeb.setAddress(owner)
-  const c = await tronWeb.contract().at(contract)
 
-  const decimals = knownDecimals ?? Number((await c.decimals().call()).toString())
-  const raw = await c.balanceOf(owner).call()
-  const balance = Number(raw.toString()) / 10 ** decimals
-  return { balance, decimals }
+  let lastErr: unknown
+  for (const { host, isPrimary } of getTronHostsInOrder()) {
+    try {
+      const tronWeb = new TronWeb({
+        fullHost: host,
+        // TronGrid authenticates via the TRON-PRO-API-KEY header. An earlier
+        // misspelt header name was silently ignored, so the key never applied
+        // and every read hit the anonymous rate limit (429). Only the primary
+        // gets the key.
+        headers: isPrimary && env.TRONGRID_API_KEY ? { 'TRON-PRO-API-KEY': env.TRONGRID_API_KEY } : {},
+      })
+      // Read-only calls still need a caller address set on the instance.
+      tronWeb.setAddress(owner)
+      const c = await tronWeb.contract().at(contract)
+
+      const decimals = knownDecimals ?? Number((await c.decimals().call()).toString())
+      const raw = await c.balanceOf(owner).call()
+      const balance = Number(raw.toString()) / 10 ** decimals
+      return { balance, decimals }
+    } catch (err) {
+      lastErr = err // try the next host
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('TRON token balance read failed on all hosts')
 }
 
 // ── Solana (SPL token) ────────────────────────────────────────────────────────

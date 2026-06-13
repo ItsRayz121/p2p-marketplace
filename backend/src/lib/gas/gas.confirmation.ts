@@ -24,7 +24,7 @@ const REQUIRED_CONFIRMATIONS: Partial<Record<GasChainId, number>> = {
 async function checkTronTxConfirmed(txHash: string): Promise<boolean> {
   const url = `${env.TRON_FULLNODE_URL}/v1/transactions/${encodeURIComponent(txHash)}`
   const headers: Record<string, string> = {}
-  if (env.TRONGRID_API_KEY) headers['TRONGRID-API-Key'] = env.TRONGRID_API_KEY
+  if (env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = env.TRONGRID_API_KEY
 
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
   if (!res.ok) throw new Error(`TronGrid API error: HTTP ${res.status}`)

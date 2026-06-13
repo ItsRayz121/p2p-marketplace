@@ -58,7 +58,7 @@ async function sendTrc20UsdtRefund(toAddress: string, amountUsdt: Decimal): Prom
     const TronWeb = require('tronweb')
     const tronWeb = new TronWeb({
       fullHost: env.TRON_FULLNODE_URL,
-      headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
+      headers: env.TRONGRID_API_KEY ? { 'TRON-PRO-API-KEY': env.TRONGRID_API_KEY } : {},
       privateKey,
     })
 
@@ -190,7 +190,7 @@ export async function getSenderAddressFromTx(
       case 'TRON': {
         const url = `${env.TRON_FULLNODE_URL}/v1/transactions/${encodeURIComponent(txHash)}`
         const headers: Record<string, string> = {}
-        if (env.TRONGRID_API_KEY) headers['TRONGRID-API-Key'] = env.TRONGRID_API_KEY
+        if (env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = env.TRONGRID_API_KEY
         const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
         if (!res.ok) return null
         const data = (await res.json()) as { data?: Array<{ raw_data?: { contract?: Array<{ parameter?: { value?: { owner_address?: string } } }> } }> }

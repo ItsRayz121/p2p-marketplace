@@ -89,7 +89,7 @@ async function main() {
           const { TronWeb } = require('tronweb') as typeof import('tronweb')
           const tronWeb = new TronWeb({
             fullHost: env.TRON_FULLNODE_URL,
-            headers: env.TRONGRID_API_KEY ? { 'TRONGRID-API-Key': env.TRONGRID_API_KEY } : {},
+            headers: env.TRONGRID_API_KEY ? { 'TRON-PRO-API-KEY': env.TRONGRID_API_KEY } : {},
             privateKey,
           })
           const sunAmount = Math.round((balance - 1) * 1_000_000) // keep 1 TRX for fees
