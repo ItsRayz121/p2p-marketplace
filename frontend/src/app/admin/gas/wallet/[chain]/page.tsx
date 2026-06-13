@@ -54,6 +54,7 @@ export default function HotWalletDetailPage() {
   if (!data)   return null
 
   const tokenUsdTotal = data.tokens.reduce((sum, t) => sum + (t.usd ?? 0), 0)
+  const totalUsd = (data.nativeUsd ?? 0) + tokenUsdTotal
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -82,6 +83,25 @@ export default function HotWalletDetailPage() {
         <div className="bg-surface-alt rounded-lg p-3 flex items-start gap-2 border border-border">
           <p className="text-xs font-mono text-text-secondary break-all flex-1">{data.address}</p>
           <CopyButton text={data.address} />
+        </div>
+      </div>
+
+      {/* Balance summary — quick cover: gas (native) + tokens + total in USD */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-surface border border-border rounded-xl p-4">
+          <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Gas (native)</p>
+          <p className="text-base font-bold text-text-primary mt-1">{data.nativeUsd !== null ? fmtUsd(data.nativeUsd) : '—'}</p>
+          <p className="text-[11px] text-text-muted mt-0.5">{fmtBalance(data.nativeBalance)} {data.nativeSymbol}</p>
+        </div>
+        <div className="bg-surface border border-border rounded-xl p-4">
+          <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Tokens</p>
+          <p className="text-base font-bold text-text-primary mt-1">{tokenUsdTotal > 0 ? fmtUsd(tokenUsdTotal) : '—'}</p>
+          <p className="text-[11px] text-text-muted mt-0.5">{data.tokens.length} configured</p>
+        </div>
+        <div className="bg-surface border border-border rounded-xl p-4">
+          <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Total</p>
+          <p className="text-base font-bold text-text-primary mt-1">{totalUsd > 0 ? fmtUsd(totalUsd) : '—'}</p>
+          <p className="text-[11px] text-text-muted mt-0.5">native + tokens</p>
         </div>
       </div>
 

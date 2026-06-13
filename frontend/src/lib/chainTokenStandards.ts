@@ -113,8 +113,9 @@ export const CHAIN_META: Record<string, ChainMeta> = {
     explorerBase: 'https://suiscan.xyz',
     addressFormat: {
       encoding: 'hex64', prefix: '0x', checksummed: false,
-      example: '0x0000000000000000000000000000000000000000000000000000000000000002',
-      regex: '^0x[0-9a-fA-F]{1,64}$',
+      // SUI coins are referenced by their type tag: 0x<pkg>::<module>::<TYPE>.
+      example: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
+      regex: '^0x[0-9a-fA-F]{1,64}(::[A-Za-z0-9_]+::[A-Za-z0-9_]+)?$',
     },
     tokenStandards: [
       { value: 'native',  label: 'SUI (Native)',            isNative: true, hasContract: false },
@@ -288,7 +289,7 @@ export const ADDRESS_TYPES = [
   { value: 'TRC20',       label: 'TRON (T...)',              regex: '^T[0-9A-Za-z]{33}$' },
   { value: 'SOL',         label: 'Solana (Base58)',          regex: '^[1-9A-HJ-NP-Za-km-z]{32,44}$' },
   { value: 'TON',         label: 'TON (UQ.../EQ...)',        regex: '^[UE]Q[A-Za-z0-9_\\-]{46}$' },
-  { value: 'SUI',         label: 'SUI (0x + 64 hex)',        regex: '^0x[0-9a-fA-F]{1,64}$' },
+  { value: 'SUI',         label: 'SUI (0x…::module::TYPE)',  regex: '^0x[0-9a-fA-F]{1,64}(::[A-Za-z0-9_]+::[A-Za-z0-9_]+)?$' },
   { value: 'BTC_BECH32',  label: 'Bitcoin SegWit (bc1...)',  regex: '^bc1[0-9a-z]{39,59}$' },
   { value: 'BTC_LEGACY',  label: 'Bitcoin Legacy (1...)',    regex: '^1[1-9A-HJ-NP-Za-km-z]{25,34}$' },
   { value: 'BTC_P2SH',    label: 'Bitcoin P2SH (3...)',      regex: '^3[1-9A-HJ-NP-Za-km-z]{25,34}$' },

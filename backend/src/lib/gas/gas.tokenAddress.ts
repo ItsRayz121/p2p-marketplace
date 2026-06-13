@@ -38,8 +38,10 @@ export function addressFormatValid(
   switch (family(addressType, chainType)) {
     case 'EVM':   return /^0x[0-9a-fA-F]{40}$/.test(a)
     case 'TRON':  return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a)
-    case 'APTOS': return /^0x[0-9a-fA-F]{1,64}$/.test(a)
-    case 'SUI':   return /^0x[0-9a-fA-F]{1,64}$/.test(a)
+    case 'APTOS': return /^0x[0-9a-fA-F]{1,64}(::[A-Za-z0-9_]+::[A-Za-z0-9_]+)?$/.test(a)
+    // SUI coins are addressed by their type tag: 0x<pkg>::<module>::<TYPE>
+    // (e.g. 0xdba3…900e7::usdc::USDC). A bare object id is also accepted.
+    case 'SUI':   return /^0x[0-9a-fA-F]{1,64}(::[A-Za-z0-9_]+::[A-Za-z0-9_]+)?$/.test(a)
     case 'SOL':   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)
     case 'TON':   return a.length > 0 // EQ…/UQ… or raw 0:hex — accept non-empty
     default:      return a.length > 0
@@ -51,8 +53,8 @@ export function addressFormatHint(addressType: string | null, chainType: string 
   switch (family(addressType, chainType)) {
     case 'EVM':   return '0x followed by 40 hex characters'
     case 'TRON':  return 'a base58 address starting with T (34 chars)'
-    case 'APTOS': return '0x followed by up to 64 hex characters (fungible-asset metadata)'
-    case 'SUI':   return '0x followed by up to 64 hex characters'
+    case 'APTOS': return '0x + up to 64 hex (FA metadata), or 0x…::module::Type for a legacy coin'
+    case 'SUI':   return 'a SUI coin type: 0x…::module::TYPE (e.g. 0xdba3…900e7::usdc::USDC)'
     case 'SOL':   return 'a base58 mint address (32–44 chars)'
     default:      return 'a non-empty address'
   }

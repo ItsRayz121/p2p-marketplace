@@ -55,12 +55,14 @@ const RPC_FOR_CHAIN: Record<string, string> = {
   TRON:  env.TRON_FULLNODE_URL,
   SOL:   env.SOL_RPC_URL,
   SUI:   env.SUI_RPC_URL,
-  TON:   '(no balance reader)',
+  TON:   env.TON_ENDPOINT_URL,
   APT:   env.APTOS_FULLNODE_URL,
 }
 
-// Families we have no live token-balance reader for yet.
-const UNSUPPORTED_FAMILIES = new Set(['SOL', 'TON', 'SUI'])
+// Families we have no live token-balance reader for yet. SOL (SPL), SUI (Coin<T>)
+// and TON (jetton) all have readers now — leave this empty unless a new family is
+// added before its reader lands.
+const UNSUPPORTED_FAMILIES = new Set<string>([])
 
 export type TokenVerdict =
   | 'OK'                // probe succeeded and address is canonical (or canonical unknown)
