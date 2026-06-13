@@ -175,8 +175,9 @@ export default function HotWalletDetailPage() {
         )}
         <div className="px-5 py-3 border-t border-border bg-surface-alt">
           <p className="text-xs text-text-muted">
-            Balances are read live from the chain. Tokens sent to this address from anywhere — including external top-ups —
-            appear here automatically.
+            Balances are read live from the chain. The native coin and this chain&apos;s configured tokens (e.g. USDT/USDC) —
+            including external top-ups — appear here and in Wallet Activity automatically. Tokens that are not configured for
+            this chain are not tracked; if one is sent here, record it with a manual ledger entry.
           </p>
         </div>
       </div>
