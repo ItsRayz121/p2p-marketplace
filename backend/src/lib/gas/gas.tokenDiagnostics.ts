@@ -41,6 +41,15 @@ export const CANONICAL_GAS_TOKENS: Record<string, Record<string, string>> = {
     USDC: '0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b',
   },
   SOL:   { USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+  // SUI uses coin-type identifiers (package::module::TYPE), not bare addresses.
+  // Only native USDC (Circle) exists here. There is NO native USDT on Sui — the
+  // only USDT is Wormhole-bridged, which we deliberately do not offer, so it is
+  // intentionally absent (operator decision, 2026-06-13).
+  SUI:   { USDC: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC' },
+  // TON jettons. USDT is the official Tether jetton master. Circle does NOT issue
+  // USDC on TON, so there is no USDC entry (the TON USDC config is removed, not
+  // corrected) — operator decision, 2026-06-13.
+  TON:   { USDT: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs' },
 }
 
 // backendChainId → RPC URL we actually read balances through (for display/diagnosis).

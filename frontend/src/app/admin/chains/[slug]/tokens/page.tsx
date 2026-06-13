@@ -113,6 +113,13 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
     setLooking(true)
     setLookup(null)
     setLookupErr(null)
+    // Clear any values auto-filled by a PREVIOUS lookup. Otherwise, looking up a
+    // symbol the source can't resolve (e.g. USDT on Sui, which has no native
+    // listing) leaves the prior token's address/decimals in the form — so the
+    // USDT entry silently inherits the USDC contract address.
+    setAddress('')
+    setDecimals('')
+    setManualOverride(false)
     try {
       const result = await adminApi.lookupDepositToken(symbol.trim(), slug)
       setLookup(result)
