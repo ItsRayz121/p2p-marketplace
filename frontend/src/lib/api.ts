@@ -2032,8 +2032,8 @@ export const adminApi = {
     apiRequest<unknown>(`/admin/gas/orders/${ref}`),
   retryGasOrder: (id: string) =>
     apiRequest<void>(`/admin/gas/orders/${id}/retry`, { method: 'POST' }),
-  refundGasOrder: (id: string) =>
-    apiRequest<void>(`/admin/gas/orders/${id}/refund`, { method: 'POST' }),
+  refundGasOrder: (id: string, opts?: { mode?: 'auto' | 'manual'; toAddress?: string }) =>
+    apiRequest<{ message?: string }>(`/admin/gas/orders/${id}/refund`, { method: 'POST', body: JSON.stringify(opts ?? {}) }),
   approvePkrOrder: (id: string) =>
     apiRequest<{ status: string }>(`/admin/gas/orders/${id}/approve-pkr`, { method: 'POST' }),
   rejectPkrOrder: (id: string, reason?: string) =>

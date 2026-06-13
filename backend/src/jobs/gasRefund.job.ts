@@ -25,8 +25,8 @@ function planRefund(order: { paymentNetwork: string }): RefundPlan {
   return null // no automated refund path for this payment network
 }
 
-export async function processGasRefund(job: Job<{ orderId: string }>) {
-  const { orderId } = job.data
+export async function processGasRefund(job: Job<{ orderId: string; toAddressOverride?: string }>) {
+  const { orderId, toAddressOverride } = job.data
 
   // CAS claim: only proceed if status is still refund_pending.
   // jobId dedup (gas-refund-{orderId}) prevents duplicate jobs, but the CAS
@@ -40,7 +40,9 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
     logger.info({ orderId, status: order.status }, 'processGasRefund: order not in refund_pending — already processed')
     return
   }
-  if (!order.paymentTxHash) {
+  // A manual refund carries an admin-specified destination, so it does not need a
+  // payment tx hash (the admin is overriding the auto sender-resolution path).
+  if (!toAddressOverride && !order.paymentTxHash) {
     logger.warn({ orderId }, 'processGasRefund: no paymentTxHash — cannot determine refund destination, marking failed')
     await db.gasFeeOrder.update({
       where: { id: orderId },
@@ -73,11 +75,14 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
   // Lazy-load sender address from the payment tx if not already stored. Aptos
   // payments never carry a sender (poller stores a synthetic hash), so always
   // resolve via the indexer for those.
-  let senderAddress = order.paymentSenderAddress
-  if (!senderAddress) {
+  // Manual refund: use the admin-specified destination directly (validated on the
+  // settlement chain at the API boundary). Otherwise resolve the original payer.
+  let senderAddress = toAddressOverride ?? order.paymentSenderAddress
+  if (!senderAddress && order.paymentTxHash) {
+    const txHash = order.paymentTxHash
     senderAddress = plan.kind === 'aptos'
-      ? await getAptosSenderFromTx(order.paymentTxHash)
-      : await getSenderAddressFromTx(plan.chain, order.paymentTxHash)
+      ? await getAptosSenderFromTx(txHash)
+      : await getSenderAddressFromTx(plan.chain, txHash)
     if (senderAddress) {
       await db.gasFeeOrder.update({
         where: { id: orderId },
@@ -138,7 +143,7 @@ export async function processGasRefund(job: Job<{ orderId: string }>) {
       txHash:         refundTxHash,
       toAddress:      senderAddress,
       relatedOrderId: orderId,
-      notes:          `USDT refund for order ${order.orderRef}`,
+      notes:          `USDT refund for order ${order.orderRef}${toAddressOverride ? ' (manual address)' : ''}`,
       ...(order.fromHotWallet ? { fromAddress: order.fromHotWallet } : {}),
     }).catch((e) => logger.warn({ err: e, orderId }, 'Failed to write refund ledger entry'))
 

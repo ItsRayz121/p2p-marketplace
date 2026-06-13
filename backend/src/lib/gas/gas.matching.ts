@@ -139,6 +139,10 @@ export async function matchAndDeliverGasPayment(p: MatchParams): Promise<MatchRe
         verifiedAmount: incoming,
         verifiedAsset: 'USDT',
         verifiedConfirmations: confirmations,
+        // Persist the payer's address when the detection path captured it (EVM/TRON).
+        // Lets the admin see "Paid from" and pre-fill the refund destination without
+        // a later on-chain lookup. Aptos has no sender here — resolved lazily later.
+        ...(senderAddress ? { paymentSenderAddress: senderAddress } : {}),
       },
     })
     if (claimed.count > 0) {
@@ -178,6 +182,7 @@ export async function matchAndDeliverGasPayment(p: MatchParams): Promise<MatchRe
         verifiedAmount: incoming,
         verifiedAsset: 'USDT',
         verifiedConfirmations: confirmations,
+        ...(senderAddress ? { paymentSenderAddress: senderAddress } : {}),
       },
     })
     if (claimed.count > 0) {
@@ -233,6 +238,7 @@ export async function matchAndDeliverGasPayment(p: MatchParams): Promise<MatchRe
         verifiedAmount: incoming,
         verifiedAsset: 'USDT',
         verifiedConfirmations: confirmations,
+        ...(senderAddress ? { paymentSenderAddress: senderAddress } : {}),
       },
     })
     if (claimed.count > 0) {
@@ -274,6 +280,7 @@ export async function matchAndDeliverGasPayment(p: MatchParams): Promise<MatchRe
           verifiedAmount: incoming,
           verifiedAsset: 'USDT',
           verifiedConfirmations: confirmations,
+          ...(senderAddress ? { paymentSenderAddress: senderAddress } : {}),
         },
       })
       if (claimed.count > 0) {

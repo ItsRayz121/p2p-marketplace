@@ -4069,35 +4069,73 @@ export async function adminRoutes(app: FastifyInstance) {
         400,
       )
     }
-    if (!order.paymentTxHash) {
+
+    // Two modes:
+    //   auto   — resolve the original payer from the payment tx and send back to them.
+    //   manual — send to an admin-specified address (e.g. when the payer asked for a
+    //            different address, or there is no resolvable on-chain sender).
+    // Either way the refund settles on the PAYMENT network's chain (BEP20→BSC,
+    // APTOS→Aptos, …), never the gas-delivery chain — enforced in processGasRefund
+    // and, for the manual address, validated here against that same network.
+    const body = (req.body ?? {}) as { mode?: string; toAddress?: string }
+    const mode = body.mode === 'manual' ? 'manual' : 'auto'
+
+    let toAddressOverride: string | undefined
+    if (mode === 'manual') {
+      const addr = (body.toAddress ?? '').trim()
+      if (!addr) throw new AppError('VALIDATION_ERROR', 'Manual refund requires a destination address.', 400)
+      const net = order.paymentNetwork.toUpperCase()
+      let valid = false
+      let hint = `No automated USDT refund for payment network ${order.paymentNetwork}.`
+      if (net === 'TRC20') {
+        valid = /^T[A-Za-z1-9]{33}$/.test(addr); hint = 'Expected a TRON (TRC20) address starting with T.'
+      } else if (net === 'BEP20' || net === 'ERC20') {
+        valid = /^0x[0-9a-fA-F]{40}$/.test(addr); hint = 'Expected a 0x EVM address (40 hex characters).'
+      } else if (net === 'APTOS') {
+        const { validateAptosAddress } = await import('../lib/gas/aptosWalletService')
+        valid = validateAptosAddress(addr); hint = 'Expected a valid Aptos 0x address.'
+      }
+      if (!valid) throw new AppError('VALIDATION_ERROR', `Invalid refund address for ${order.paymentNetwork}. ${hint}`, 400)
+      toAddressOverride = addr
+    } else if (!order.paymentTxHash) {
       throw new AppError(
         'NO_PAYMENT',
-        `Order '${order.orderRef}' has no recorded payment tx — there is nothing to refund automatically. Resolve manually.`,
+        `Order '${order.orderRef}' has no recorded payment tx, so an automatic refund can't resolve the payer. Use a manual refund address instead.`,
         400,
       )
     }
 
-    // Move to refund_pending and enqueue the SAME automated refund job the system
-    // uses on delivery failure — it resolves the sender from the payment tx and
-    // sends the USDT back on the payment network (e.g. BEP20). jobId dedup makes
-    // repeated clicks idempotent; processGasRefund's CAS guards double-sends.
+    // Move to refund_pending and enqueue the same automated refund job the system
+    // uses on delivery failure. The gasFee queue retains completed/failed jobs, so a
+    // plain re-add with the existing jobId would no-op a re-attempt — remove the
+    // retained job first so each admin-triggered refund actually runs. One jobId per
+    // order still prevents concurrent double-sends; processGasRefund's CAS backs it up.
     await db.gasFeeOrder.update({
       where: { id },
       data: { status: 'refund_pending', failureReason: null },
     })
+    const jobId = `gas-refund-${id}`
+    try { await queues.gasFee.remove(jobId) } catch { /* active or absent — add() stays a safe no-op */ }
     await queues.gasFee.add(
       'process-refund',
-      { orderId: id },
-      { jobId: `gas-refund-${id}`, attempts: 5, backoff: { type: 'exponential', delay: 30_000 } },
+      { orderId: id, ...(toAddressOverride ? { toAddressOverride } : {}) },
+      { jobId, attempts: 5, backoff: { type: 'exponential', delay: 30_000 } },
     )
     await createAuditLog(req.user!.id, 'GAS_ORDER_REFUND_TRIGGERED', 'GasFeeOrder', id, {
       previousStatus: order.status,
       orderRef: order.orderRef,
       paymentNetwork: order.paymentNetwork,
       amount: order.paymentAmount.toString(),
+      mode,
+      ...(toAddressOverride ? { toAddress: toAddressOverride } : {}),
     }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
-    return reply.send({ success: true, message: 'Refund queued — USDT will be sent back to the payer automatically.' })
+    return reply.send({
+      success: true,
+      message: mode === 'manual'
+        ? `Refund queued — ${order.paymentAmount} USDT will be sent to the specified address on ${order.paymentNetwork}.`
+        : 'Refund queued — USDT will be sent back to the payer automatically.',
+    })
   })
 
   // GET /admin/gas/orders/:ref — order detail
@@ -4111,7 +4149,31 @@ export async function adminRoutes(app: FastifyInstance) {
     // Full payment-attribution + delivery audit trail (Redis-backed journal).
     const { getGasAudit } = await import('../lib/gas/gas.matching')
     const audit = await getGasAudit(order.id)
-    return reply.send({ success: true, data: { ...order, audit } })
+
+    // Lazily resolve + persist the original payer's address so the admin can see
+    // "Paid from" and pre-fill the automatic refund destination. EVM/TRON matches
+    // already persist it at detection time; Aptos (and any older order) is resolved
+    // here once, from the payment tx, then cached on the row.
+    let paymentSenderAddress = order.paymentSenderAddress
+    if (!paymentSenderAddress && order.paymentTxHash) {
+      try {
+        const net = (order.paymentNetwork || '').toUpperCase()
+        if (net === 'APTOS') {
+          const { getAptosSenderFromTx } = await import('../lib/gas/aptosRefund')
+          paymentSenderAddress = await getAptosSenderFromTx(order.paymentTxHash)
+        } else {
+          const { paymentNetworkSettlementChain, fromDbChain } = await import('../lib/gas/gas.chains')
+          const { getSenderAddressFromTx } = await import('../lib/gas/gas.refund')
+          const settle = paymentNetworkSettlementChain(order.paymentNetwork)
+          if (settle) paymentSenderAddress = await getSenderAddressFromTx(fromDbChain(settle.dbChain), order.paymentTxHash)
+        }
+        if (paymentSenderAddress) {
+          await db.gasFeeOrder.update({ where: { id: order.id }, data: { paymentSenderAddress } })
+        }
+      } catch { /* best-effort — the UI retries on next load */ }
+    }
+
+    return reply.send({ success: true, data: { ...order, paymentSenderAddress, audit } })
   })
 
   // ── Financial aggregation helper ─────────────────────────────────────────────

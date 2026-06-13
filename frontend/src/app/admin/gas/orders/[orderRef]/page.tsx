@@ -27,6 +27,7 @@ interface GasOrderDetail {
   paymentCoin: string | null
   paymentNetwork: string | null
   paymentTxHash: string | null
+  paymentSenderAddress: string | null
   pkrAmount: string | null
   pkrPaymentMethod: string | null
   paymentProofUrl: string | null
@@ -185,6 +186,9 @@ export default function GasOrderDetailPage() {
 
   const [retryOpen, setRetryOpen] = useState(false)
   const [refundOpen, setRefundOpen] = useState(false)
+  const [refundMode, setRefundMode] = useState<'auto' | 'manual'>('auto')
+  const [refundManualAddr, setRefundManualAddr] = useState('')
+  const [refundSubmitting, setRefundSubmitting] = useState(false)
   const [approvePkrOpen, setApprovePkrOpen] = useState(false)
   const [rejectPkrOpen, setRejectPkrOpen] = useState(false)
   const [markPaymentOpen, setMarkPaymentOpen] = useState(false)
@@ -252,13 +256,22 @@ export default function GasOrderDetailPage() {
   async function handleRefund() {
     if (!order) return
     setActionError(null)
+    setRefundSubmitting(true)
     try {
-      await adminApi.refundGasOrder(order.id)
+      const opts = refundMode === 'manual'
+        ? { mode: 'manual' as const, toAddress: refundManualAddr.trim() }
+        : { mode: 'auto' as const }
+      const res = await adminApi.refundGasOrder(order.id, opts)
       setRefundOpen(false)
+      setRefundManualAddr('')
+      setRefundMode('auto')
+      setActionSuccess(res?.message ?? 'Refund queued.')
       await fetchOrder()
     } catch (err) {
+      // Keep the modal open on error so the admin can correct the address.
       setActionError(err instanceof Error ? err.message : 'Refund failed')
-      setRefundOpen(false)
+    } finally {
+      setRefundSubmitting(false)
     }
   }
 
@@ -511,6 +524,14 @@ export default function GasOrderDetailPage() {
               ? <TxLink chain={paymentNetworkChain(order.paymentNetwork, order.chain)} hash={order.paymentTxHash} />
               : '—'}
           </InfoRow>
+          {order.paymentSenderAddress && (
+            <InfoRow label="Paid From">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="font-mono text-xs break-all">{order.paymentSenderAddress}</span>
+                <CopyButton text={order.paymentSenderAddress} size="sm" />
+              </span>
+            </InfoRow>
+          )}
           {order.refundTxHash && (
             <InfoRow label="Refund Tx">
               <TxLink chain={paymentNetworkChain(order.paymentNetwork, order.chain)} hash={order.refundTxHash} />
@@ -656,15 +677,67 @@ export default function GasOrderDetailPage() {
         confirmLabel="Retry"
         confirmVariant="primary"
       />
-      <ConfirmModal
+      {/* Refund modal — Automatic (to the detected payer) or Manual (admin address).
+          Either way the refund settles on the payment network's chain. */}
+      <Modal
         isOpen={refundOpen}
-        onClose={() => setRefundOpen(false)}
-        onConfirm={handleRefund}
+        onClose={() => { if (!refundSubmitting) { setRefundOpen(false); setRefundManualAddr(''); setRefundMode('auto') } }}
         title="Send USDT Refund"
-        description={`Send ${order.paymentAmount} USDT back to the payer for order ${order.orderRef} on the payment network (${order.paymentNetwork}). The system resolves the sender from the payment tx and transfers automatically from the hot wallet.`}
-        confirmLabel="Send Refund"
-        confirmVariant="danger"
-      />
+        size="sm"
+        footer={
+          <div className="flex gap-3 justify-end">
+            <Button variant="ghost" size="sm" disabled={refundSubmitting} onClick={() => { setRefundOpen(false); setRefundManualAddr(''); setRefundMode('auto') }}>Cancel</Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={refundSubmitting || (refundMode === 'manual' && !refundManualAddr.trim())}
+              onClick={handleRefund}
+            >
+              {refundSubmitting ? 'Queuing…' : 'Send Refund'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            Refund <span className="font-medium text-text-primary">{parseFloat(order.paymentAmount).toFixed(2)} USDT</span> for order{' '}
+            <span className="font-mono font-medium">{order.orderRef}</span>. The refund always settles on the payment network{' '}
+            <span className="font-medium text-text-primary">{order.paymentNetwork}</span>.
+          </p>
+
+          {/* Automatic */}
+          <label className={`flex gap-3 p-3 rounded-lg border cursor-pointer ${refundMode === 'auto' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+            <input type="radio" name="refundMode" className="mt-0.5 accent-primary" checked={refundMode === 'auto'} onChange={() => setRefundMode('auto')} />
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-text-primary">Automatic — refund the original payer</span>
+              <span className="block text-xs text-text-muted mt-0.5">
+                Sends back to the address the payment came from.{' '}
+                {order.paymentSenderAddress
+                  ? <>Detected sender: <span className="font-mono break-all">{order.paymentSenderAddress}</span></>
+                  : 'The payer address is resolved from the payment tx when the refund runs.'}
+              </span>
+            </span>
+          </label>
+
+          {/* Manual */}
+          <label className={`flex gap-3 p-3 rounded-lg border cursor-pointer ${refundMode === 'manual' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+            <input type="radio" name="refundMode" className="mt-0.5 accent-primary" checked={refundMode === 'manual'} onChange={() => setRefundMode('manual')} />
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-text-primary">Manual — send to a specific address</span>
+              <span className="block text-xs text-text-muted mt-0.5">Use when the payer asked for a different address, or no on-chain sender is recorded.</span>
+              {refundMode === 'manual' && (
+                <input
+                  type="text"
+                  placeholder={`Destination address on ${order.paymentNetwork}`}
+                  value={refundManualAddr}
+                  onChange={(e) => setRefundManualAddr(e.target.value)}
+                  className="mt-2 w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-primary font-mono placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              )}
+            </span>
+          </label>
+        </div>
+      </Modal>
 
       {/* Mark Payment Received modal */}
       <Modal
