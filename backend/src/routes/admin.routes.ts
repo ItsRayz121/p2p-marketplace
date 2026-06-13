@@ -4380,14 +4380,29 @@ export async function adminRoutes(app: FastifyInstance) {
     // the tokens exist and are active. Match either backendChainId alias or the slug.
     let backendIdAliases = [dbChain]
     try { backendIdAliases = Array.from(new Set([dbChain, fromDbChain(dbChain)])) } catch { /* keep dbChain */ }
-    const chainCfg = await db.gasChainConfig.findFirst({
+    // More than one chain config can resolve to the same hot wallet. In prod a
+    // separate "Billions Network" chain was created with backendChainId 'ETH',
+    // colliding with the real Ethereum chain. A single findFirst() (no orderBy)
+    // then non-deterministically picked the tokenless Billions row, so the view
+    // showed "0 configured" even though USDT/USDC live on the canonical ETH chain.
+    // Match EVERY config routing to this wallet and aggregate their non-native
+    // tokens (deduped by symbol+address) so a tokenless duplicate can never blank
+    // the view again — the ETH hot wallet legitimately holds tokens from any config
+    // that delivers through it.
+    const chainCfgs = await db.gasChainConfig.findMany({
       where: { OR: [
         { backendChainId: { in: backendIdAliases } },
         { slug: { in: [dbChain, chain.toUpperCase()] } },
       ] },
       include: { tokens: { where: { tokenType: { not: 'native' }, isActive: true, contractAddress: { not: null } }, orderBy: { displayOrder: 'asc' } } },
     })
-    const tokenList = chainCfg?.tokens ?? []
+    const seenTokenKeys = new Set<string>()
+    const tokenList = chainCfgs.flatMap((c) => c.tokens).filter((t) => {
+      const key = `${t.symbol.toUpperCase()}:${(t.contractAddress ?? '').toLowerCase()}`
+      if (seenTokenKeys.has(key)) return false
+      seenTokenKeys.add(key)
+      return true
+    })
 
     const tokens = await Promise.all(tokenList.map(async (t) => {
       let balance: number | null = null
