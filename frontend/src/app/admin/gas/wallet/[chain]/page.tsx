@@ -80,10 +80,17 @@ export default function HotWalletDetailPage() {
             <p className="text-xs text-text-muted">Live on-chain balances</p>
           </div>
         </div>
-        <div className="bg-surface-alt rounded-lg p-3 flex items-start gap-2 border border-border">
-          <p className="text-xs font-mono text-text-secondary break-all flex-1">{data.address}</p>
-          <CopyButton text={data.address} />
-        </div>
+        {/* TON addresses are stored raw (0:hex64); display + copy the user-friendly
+            UQ… form that wallets/exchanges actually accept for sends. */}
+        {(() => {
+          const displayAddr = chain === 'TON' && data.friendlyAddress ? data.friendlyAddress : data.address
+          return (
+            <div className="bg-surface-alt rounded-lg p-3 flex items-start gap-2 border border-border">
+              <p className="text-xs font-mono text-text-secondary break-all flex-1">{displayAddr}</p>
+              <CopyButton text={displayAddr} />
+            </div>
+          )
+        })()}
       </div>
 
       {/* Balance summary — quick cover: gas (native) + tokens + total in USD */}

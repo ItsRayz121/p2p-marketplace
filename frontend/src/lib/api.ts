@@ -2083,6 +2083,7 @@ export const adminApi = {
     apiRequest<{
       chain: string
       address: string
+      friendlyAddress: string | null
       nativeSymbol: string
       nativeBalance: number | null
       nativeUsd: number | null

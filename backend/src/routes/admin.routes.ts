@@ -4405,9 +4405,18 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }))
 
+    // TON addresses are stored raw (0:hex64) but wallets/exchanges expect the
+    // user-friendly non-bounceable UQ… form. Expose it so the detail view copies
+    // the address people can actually send to (matches every other gas view).
+    let friendlyAddress: string | null = null
+    if (dbChain === 'TON') {
+      const { tonRawToFriendly } = await import('../lib/gas/tonWalletService')
+      friendlyAddress = tonRawToFriendly(address)
+    }
+
     return reply.send({
       success: true,
-      data: { chain: dbChain, address, nativeSymbol, nativeBalance, nativeUsd, tokens },
+      data: { chain: dbChain, address, friendlyAddress, nativeSymbol, nativeBalance, nativeUsd, tokens },
     })
   })
 
