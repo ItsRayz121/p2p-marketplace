@@ -161,7 +161,11 @@ export async function diagnoseGasTokens(): Promise<TokenDiagnostic[]> {
   const out: TokenDiagnostic[] = []
 
   for (const chain of chains) {
-    const dbChain = chain.backendChainId ?? chain.slug.toUpperCase()
+    // Normalize the internal 'ETHEREUM' alias to the 'ETH' DB enum that the balance
+    // reader (EVM_MAP) and CANONICAL_GAS_TOKENS are keyed on; fall back to slug when
+    // backendChainId is null.
+    const rawChainId = chain.backendChainId ?? chain.slug.toUpperCase()
+    const dbChain = rawChainId === 'ETHEREUM' ? 'ETH' : rawChainId
     const hotWallet = await resolveHotWallet(chain.backendChainId, chain.chainType)
     const canonForChain = CANONICAL_GAS_TOKENS[dbChain] ?? {}
     const rpcUrl = RPC_FOR_CHAIN[dbChain] ?? '(unknown)'
@@ -286,7 +290,11 @@ export async function fixGasTokenAddresses(): Promise<
   const chains = await db.gasChainConfig.findMany({ include: { tokens: true } })
 
   for (const chain of chains) {
-    const dbChain = chain.backendChainId ?? chain.slug.toUpperCase()
+    // Normalize the internal 'ETHEREUM' alias to the 'ETH' DB enum that the balance
+    // reader (EVM_MAP) and CANONICAL_GAS_TOKENS are keyed on; fall back to slug when
+    // backendChainId is null.
+    const rawChainId = chain.backendChainId ?? chain.slug.toUpperCase()
+    const dbChain = rawChainId === 'ETHEREUM' ? 'ETH' : rawChainId
     const canon = CANONICAL_GAS_TOKENS[dbChain]
     if (!canon) continue
     for (const t of chain.tokens) {

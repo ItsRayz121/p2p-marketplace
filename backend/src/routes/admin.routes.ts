@@ -4373,8 +4373,18 @@ export async function adminRoutes(app: FastifyInstance) {
     // created via the admin UI carry named standards (erc20, bep20, trc20, fa, …),
     // so filtering on === 'token' silently hid all UI-created tokens (e.g. Base
     // USDC/USDT, Aptos FA) even when active. Backend only ever branches on 'native'.
+    // Resolve the chain tolerantly. backendChainId can store the internal
+    // 'ETHEREUM' alias (or be left null) while the hot wallet + balance paths use
+    // the 'ETH' DB enum, so a strict { backendChainId: 'ETH' } match silently
+    // returned zero tokens here — the wallet view showed "0 configured" even though
+    // the tokens exist and are active. Match either backendChainId alias or the slug.
+    let backendIdAliases = [dbChain]
+    try { backendIdAliases = Array.from(new Set([dbChain, fromDbChain(dbChain)])) } catch { /* keep dbChain */ }
     const chainCfg = await db.gasChainConfig.findFirst({
-      where: { backendChainId: dbChain },
+      where: { OR: [
+        { backendChainId: { in: backendIdAliases } },
+        { slug: { in: [dbChain, chain.toUpperCase()] } },
+      ] },
       include: { tokens: { where: { tokenType: { not: 'native' }, isActive: true, contractAddress: { not: null } }, orderBy: { displayOrder: 'asc' } } },
     })
     const tokenList = chainCfg?.tokens ?? []
