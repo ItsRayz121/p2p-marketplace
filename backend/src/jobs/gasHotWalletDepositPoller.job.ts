@@ -119,11 +119,136 @@ async function pollWalletTokens(
   }
 }
 
+// Aptos has NO GasHotWallet row (its address is HD-derived on demand), so the
+// main wallet loop skips it entirely — leaving APT top-ups and external USDT/USDC
+// sent to the Aptos gas wallet invisible in Wallet Activity. This polls it directly:
+//   - native APT via balance-diff (no overlap — orders are paid in USDT, not APT)
+//   - USDT/USDC FA via balance-diff, MINUS any amount already recorded as an
+//     order_payment on Aptos in the recent window, so on-chain order payments
+//     (already booked by the payment poller) are not double-counted here.
+async function pollAptosHotWallet(): Promise<void> {
+  const { getAptosHotWalletAddress } = await import('../lib/gas/aptosWalletService')
+  const address = getAptosHotWalletAddress()
+  if (!address) return // gas mnemonic/seed not configured in this environment
+
+  // APT price for the USD value on native deposits (avoid the generic native-price
+  // lookup, which is keyed on the delivery-chain symbol — wrong for an APT override).
+  async function aptUsd(amount: number): Promise<number> {
+    try {
+      const raw = await redis.get('rate:APT')
+      const p = raw ? ((JSON.parse(raw) as { usdPrice?: number }).usdPrice ?? 0) : 0
+      return p > 0 ? amount * p : 0
+    } catch { return 0 }
+  }
+
+  // ── Native APT ──────────────────────────────────────────────────────────────
+  try {
+    const { getAptosNativeBalance } = await import('../lib/gas/aptosRefund')
+    const current = await getAptosNativeBalance(address)
+    const key = redisKey('APT', address, 'APT')
+    const prevStr = await redis.get(key)
+    if (prevStr !== null) {
+      const prev = parseFloat(prevStr)
+      const diff = current - prev
+      if (diff > DUST_THRESHOLD) {
+        const sourceKey = sourceKeyFor('APT', address, 'APT')
+        logger.info({ source: 'BALANCE_DIFF', chain: 'APT', address, symbol: 'APT', diff: diff.toFixed(6), prev: prev.toFixed(6), now: current.toFixed(6), sourceKey }, 'Aptos hot wallet native deposit detected by balance-diff poller')
+        try {
+          await appendLedgerEntry({
+            entryType:    'external_hot_wallet_deposit',
+            chain:        fromDbChain('APT'),
+            chainOverride: { dbChain: 'APT', nativeSymbol: 'APT' },
+            nativeAmount: diff,
+            usdAmount:    await aptUsd(diff), // explicit → skips delivery-chain price lookup
+            toAddress:    address,
+            sourceKey,
+            notes: `source:BALANCE_DIFF chain:APT symbol:APT prev:${prev.toFixed(6)} now:${current.toFixed(6)}`,
+          })
+        } catch (ledgerErr) {
+          logger.warn({ err: ledgerErr, chain: 'APT', sourceKey }, 'Aptos native balance-diff: failed to write ledger entry')
+        }
+      }
+    }
+    await redis.set(key, String(current), 'EX', 3_600)
+  } catch (err) {
+    logger.warn({ chain: 'APT', err: err instanceof Error ? err.message : String(err) }, 'Aptos native balance-diff read failed')
+  }
+
+  // ── Aptos FA tokens (USDT/USDC) with order-payment reconciliation ─────────────
+  const aptCfg = await db.gasChainConfig.findFirst({
+    where: { OR: [{ backendChainId: 'APT' }, { slug: { in: ['APT', 'APTOS'] } }] },
+    select: { tokens: { where: { tokenType: { not: 'native' }, isActive: true, contractAddress: { not: null } }, select: { symbol: true, contractAddress: true } } },
+  })
+  for (const t of aptCfg?.tokens ?? []) {
+    const contract = t.contractAddress!
+    try {
+      const { balance: current } = await getHotWalletTokenBalance('APT', contract, address)
+      const key = tokenRedisKey('APT', address, t.symbol, contract)
+      const prevRaw = await redis.get(key)
+      const now = Date.now()
+      if (prevRaw !== null) {
+        // Baseline is stored as JSON { b: balance, t: epochMs }; tolerate a legacy
+        // bare-number value from before the timestamp was added.
+        let prevBal: number
+        let prevTs: number
+        try {
+          const o = JSON.parse(prevRaw) as { b: number; t: number }
+          prevBal = o.b; prevTs = o.t
+        } catch {
+          prevBal = parseFloat(prevRaw); prevTs = now - 3 * 60_000
+        }
+        const diff = current - prevBal
+        if (diff > TOKEN_DUST_THRESHOLD) {
+          // Subtract token already booked as order payments on Aptos SINCE THE LAST
+          // BASELINE — exactly the window this diff covers — so a USDT order payment
+          // the payment poller recorded isn't also logged here as an external deposit
+          // (and a prior tick's payment can't suppress a later genuine top-up).
+          const agg = await db.gasLedgerEntry.aggregate({
+            where: { chain: 'APT', entryType: 'order_payment', tokenSymbol: t.symbol.toUpperCase(), createdAt: { gte: new Date(prevTs) } },
+            _sum: { tokenAmount: true },
+          })
+          const explained = Number(agg._sum.tokenAmount ?? 0)
+          const external = diff - explained
+          if (external > TOKEN_DUST_THRESHOLD) {
+            const bucketMs = Math.floor(now / (2 * 60_000)) * (2 * 60_000)
+            const sourceKey = `BALANCE_DIFF:APT:${address.toLowerCase()}:${t.symbol.toUpperCase()}:${contract.toLowerCase()}:${bucketMs}`
+            logger.info({ source: 'TOKEN_BALANCE_DIFF', chain: 'APT', symbol: t.symbol, diff: diff.toFixed(6), explained: explained.toFixed(6), external: external.toFixed(6), sourceKey }, 'Aptos hot wallet TOKEN deposit detected (external portion) by balance-diff poller')
+            try {
+              await appendLedgerEntry({
+                entryType:    'external_hot_wallet_deposit',
+                chain:        fromDbChain('APT'),
+                chainOverride: { dbChain: 'APT', nativeSymbol: 'APT' },
+                nativeAmount: 0,
+                tokenSymbol:  t.symbol.toUpperCase(),
+                tokenAmount:  external,
+                usdAmount:    isStableSymbol(t.symbol) ? external : 0,
+                toAddress:    address,
+                sourceKey,
+                notes: `source:TOKEN_BALANCE_DIFF chain:APT token:${t.symbol.toUpperCase()} contract:${contract} diff:${diff.toFixed(6)} orderPaymentsExplained:${explained.toFixed(6)} external:${external.toFixed(6)}`,
+              })
+            } catch (ledgerErr) {
+              logger.warn({ err: ledgerErr, chain: 'APT', sourceKey }, 'Aptos token balance-diff: failed to write ledger entry')
+            }
+          }
+        }
+      }
+      await redis.set(key, JSON.stringify({ b: current, t: now }), 'EX', 3_600)
+    } catch (err) {
+      logger.warn({ chain: 'APT', symbol: t.symbol, err: err instanceof Error ? err.message : String(err) }, 'Aptos token balance-diff read failed')
+    }
+  }
+}
+
 export async function runHotWalletDepositPoller(): Promise<void> {
   const wallets = await db.gasHotWallet.findMany({
     where: { isActive: true },
     select: { chain: true, address: true },
   })
+
+  // Poll the Aptos hot wallet explicitly — it has no GasHotWallet row, so the loop
+  // below never reaches it. Independent of the EVM/other-chain wallets.
+  await pollAptosHotWallet().catch((err) =>
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Aptos hot wallet deposit poll error'))
 
   if (wallets.length === 0) return
 
