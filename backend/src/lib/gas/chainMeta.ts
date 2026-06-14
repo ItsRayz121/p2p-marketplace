@@ -317,9 +317,9 @@ export const UNSUPPORTED_FEATURES: UnsupportedFeatureEntry[] = [
   },
   {
     feature: 'SUI address on non-blake2b hosts',
-    affectedChains: ['SUI'],
-    reason: 'sha3-256 fallback produces wrong address if OpenSSL lacks blake2b-256',
-    resolution: 'Verify Node 20 + OpenSSL 3 on production host; run deploy:verify before activating SUI',
+    affectedChains: [],
+    reason: 'Previously: if the host OpenSSL lacked blake2b-256, the address silently fell back to sha3-256 — a wrong, unspendable address (balance showed funded, delivery failed "No valid gas coins found").',
+    resolution: 'RESOLVED — address now derived via the Mysten SDK Ed25519PublicKey (pure-JS blake2b, host-independent), so it always matches the spendable delivery keypair address.',
   },
 ]
 

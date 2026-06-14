@@ -4,19 +4,26 @@
  * Derivation path: m/44'/784'/0'/0'/0'  (Mysten standard for SUI)
  * Address format:  0x + hex(blake2b-256( 0x00 || public_key ))[0:64]
  *                  (signature_scheme_flag = 0x00 for ed25519)
- * Chain status:    beta — delivery enabled via @mysten/sui (requires blake2b-256)
+ * Chain status:    beta — delivery enabled via @mysten/sui
  *
- * blake2b-256:
- *   Node 20 + OpenSSL 3 expose BLAKE2b-256 as "blake2b-256".
- *   If unavailable (older OpenSSL build), falls back to sha3-256 with a startup
- *   warning — the address will be WRONG and delivery must not be enabled.
+ * Address hashing — IMPORTANT:
+ *   The address MUST be derived with the SAME blake2b-256 the delivery keypair
+ *   uses, or deposits land on an address the keypair can't sign for. We used to
+ *   hash via Node's `createHash('blake2b-256')`, which is ONLY exposed on
+ *   OpenSSL builds that ship BLAKE2b-256 as a digest — many builds (incl. some
+ *   Node 24 / Windows / Railway images) do NOT, and the old code then silently
+ *   fell back to sha3-256, producing a WRONG, unspendable address. Symptom:
+ *   balance shows funded, but delivery fails with "No valid gas coins found for
+ *   the transaction" (the keypair's real blake2b address is empty).
+ *   We now derive the address via the Mysten SDK's own Ed25519PublicKey (pure-JS
+ *   blake2b, host-independent) so display/balance == the spendable delivery
+ *   address on every host.
  *
  * Security rules:
  *   - Private key seeds are zeroed after use.
  *   - Stored address is public data (safe to cache).
  */
 
-import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { decryptGasSeed, gasWalletIsConfigured } from './gasWalletService'
 import { deriveSlip10Ed25519, ed25519PublicKeyFromSeed } from './nonEvmDerivation'
@@ -29,30 +36,14 @@ const SUI_SLIP10_PATH = "m/44'/784'/0'/0'/0'"
 // SUI address regex: 0x + 64 hex chars
 const SUI_ADDR_RE = /^0x[0-9a-fA-F]{64}$/
 
-// SUI ed25519 signature scheme flag
-const ED25519_FLAG = Buffer.from([0x00])
+// ── blake2b-256 availability (retained for API compatibility) ──────────────────
 
-// ── blake2b-256 availability detection ────────────────────────────────────────
-
-let _blake2bAvailable: boolean | null = null
-
+// Address hashing no longer depends on Node's OpenSSL blake2b — the Mysten SDK
+// (@noble/hashes) provides a pure-JS blake2b that is always available. Kept as a
+// constant `true` so existing callers/UI fields (`blake2bAvailable`) keep working
+// without claiming a missing-digest risk that no longer exists.
 function isBlake2bAvailable(): boolean {
-  if (_blake2bAvailable !== null) return _blake2bAvailable
-  try {
-    createHash('blake2b-256').update(Buffer.from('test')).digest()
-    _blake2bAvailable = true
-  } catch {
-    _blake2bAvailable = false
-  }
-  return _blake2bAvailable
-}
-
-function suiHash(data: Buffer): Buffer {
-  if (isBlake2bAvailable()) {
-    return Buffer.from(createHash('blake2b-256').update(data).digest())
-  }
-  // Fallback: sha3-256 — produces a WRONG address. Delivery must be blocked.
-  return Buffer.from(createHash('sha3-256').update(data).digest())
+  return true
 }
 
 // ── Address validation ────────────────────────────────────────────────────────
@@ -67,10 +58,12 @@ function deriveSuiPublicKeyAndAddress(seed: Buffer): { publicKey: Buffer; addres
   const { privateKey } = deriveSlip10Ed25519(seed, SUI_SLIP10_PATH)
   try {
     const publicKey = ed25519PublicKeyFromSeed(privateKey)
-    // SUI address = blake2b-256( 0x00 || pubkey )
-    const hashInput = Buffer.concat([ED25519_FLAG, publicKey])
-    const hashed    = suiHash(hashInput)
-    const address   = '0x' + hashed.toString('hex')
+    // Derive the address via the Mysten SDK's Ed25519PublicKey so it always
+    // matches what the delivery keypair (Ed25519Keypair) signs as — both use the
+    // SDK's pure-JS blake2b-256( 0x00 || pubkey ), independent of host OpenSSL.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Ed25519PublicKey } = require('@mysten/sui/keypairs/ed25519') as typeof import('@mysten/sui/keypairs/ed25519')
+    const address = new Ed25519PublicKey(new Uint8Array(publicKey)).toSuiAddress()
     return { publicKey: Buffer.from(publicKey), address }
   } finally {
     privateKey.fill(0)
