@@ -46,6 +46,7 @@
     "@sentry/node": "^10.53.1",
     "@solana/web3.js": "^1.98.4",
     "@ton/core": "^0.59.1",
+    "@ton/crypto": "^3.3.0",
     "@ton/ton": "^14.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.11",
