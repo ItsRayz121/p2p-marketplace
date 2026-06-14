@@ -20,6 +20,7 @@
     "stats:backfill": "tsx src/scripts/backfillTradeStats.ts",
     "gas:config-restrict": "tsx src/scripts/gasConfigRestrict.ts",
     "gas:diagnose-tokens": "tsx src/scripts/gasDiagnoseTokens.ts",
+    "gas:add-aptos-native": "tsx src/scripts/gasAddAptosNative.ts",
     "telegram:setup": "tsx src/scripts/telegramSetup.ts",
     "deploy:verify": "tsx src/scripts/deployVerify.ts",
     "deploy:verify:full": "tsx src/scripts/deployVerify.ts --full",

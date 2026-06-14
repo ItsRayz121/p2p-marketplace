@@ -34,13 +34,15 @@ function isTrackingTokenValid(candidate: string | undefined, stored: string | nu
 }
 
 // Orderability gate:
-//   native token → only on chains with a native-delivery config (GAS_CHAINS).
-//     Aptos is NOT in GAS_CHAINS (no native APT delivery) so native APT is blocked.
+//   native token → only on chains with a native-delivery config (GAS_CHAINS), plus
+//     Aptos: APT is not in GAS_CHAINS (it is an inbound rail) but native APT delivery
+//     is implemented via 0x1::aptos_account::transfer, so native APT is allowed here.
 //   non-native token → chain has a token-delivery impl AND a super-admin flipped
 //     it live (after funding the hot wallet).
 function isTokenOrderable(backendChainId: string | null, token: { tokenType: string; deliveryLive?: boolean }): boolean {
   if (!backendChainId) return false
   if (token.tokenType === 'native') {
+    if (backendChainId === 'APT') return true
     const legacyId = backendChainId === 'ETH' ? 'ETHEREUM' : backendChainId
     return !!GAS_CHAINS[legacyId as GasChainId]
   }

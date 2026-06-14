@@ -31,6 +31,7 @@ import {
   getSuiHotWalletAddress,
   deriveSuiPrivateKeyForDelivery,
 } from './suiWalletService'
+import { getAptosHotWalletAddress } from './aptosWalletService'
 
 // Map GasFeeOrder.chain (GasChain enum) to GasChainId used by balance helpers.
 const CHAIN_TO_BALANCE_ID: Partial<Record<string, GasChainId>> = {
@@ -44,6 +45,7 @@ function getHotWalletAddressForChain(chain: string): string | null {
   if (chain === 'SOL')  return getSolanaHotWalletAddress()
   if (chain === 'TON')  return getTonHotWalletAddress()
   if (chain === 'SUI')  return getSuiHotWalletAddress()
+  if (chain === 'APT')  return getAptosHotWalletAddress()
   return getEvmHotWalletAddress()
 }
 
@@ -179,6 +181,48 @@ async function deliverAptosToken(order: GasFeeOrder, contract: string, decimals:
   }
 }
 
+// Native APT delivery — sends the chain's own coin (APT, 8 decimals / octas).
+// Uses 0x1::aptos_account::transfer, which credits APT and auto-creates the
+// recipient account if it does not exist yet (a plain coin::transfer would fail
+// for a brand-new address). Mirrors the seed-zeroing discipline of the other
+// non-EVM senders.
+async function deliverAptosNative(order: GasFeeOrder): Promise<string> {
+  const { Aptos, AptosConfig, Account, Ed25519PrivateKey } = await import('@aptos-labs/ts-sdk')
+  const { deriveAptosPrivateKeyForDelivery } = await import('./aptosWalletService')
+
+  const APT_DECIMALS = 8
+  // toFixed avoids float drift before scaling APT → octas.
+  const amount = BigInt(Math.round(Number(Number(order.gasAmountNative).toFixed(APT_DECIMALS)) * 10 ** APT_DECIMALS))
+  if (amount <= 0n) throw new Error(`deliverAptosNative: non-positive amount for ${order.gasAmountNative}`)
+
+  const config = new AptosConfig({
+    fullnode: env.APTOS_FULLNODE_URL,
+    indexer:  env.APTOS_INDEXER_URL,
+    ...(env.APTOS_API_KEY ? { clientConfig: { API_KEY: env.APTOS_API_KEY } } : {}),
+  })
+  const aptos = new Aptos(config)
+
+  const seed = decryptGasSeed()
+  let privKey: Buffer | null = null
+  try {
+    privKey = deriveAptosPrivateKeyForDelivery(seed)
+    const account = Account.fromPrivateKey({ privateKey: new Ed25519PrivateKey(new Uint8Array(privKey)) })
+    const txn = await aptos.transaction.build.simple({
+      sender: account.accountAddress,
+      data: {
+        function: '0x1::aptos_account::transfer',
+        functionArguments: [order.toAddress, amount],
+      },
+    })
+    const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
+    await aptos.waitForTransaction({ transactionHash: pending.hash })
+    return pending.hash
+  } finally {
+    seed.fill(0)
+    if (privKey) privKey.fill(0)
+  }
+}
+
 /**
  * Deliver a non-native token. Reads the hot wallet's live token balance + decimals
  * in one call: the decimals are authoritative (a failed read aborts delivery rather
@@ -214,6 +258,30 @@ async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: numbe
  * job can mark the order as paused and enqueue a refill instead of retrying blindly.
  */
 async function assertHotWalletSufficient(order: GasFeeOrder): Promise<void> {
+  // Aptos has no GAS_CHAINS / GasHotWallet row — check its derived FA address's
+  // native APT balance directly. The hot wallet pays BOTH the delivered amount and
+  // the tx gas in APT, so require a small buffer on top.
+  if (order.chain === 'APT') {
+    const addr = getAptosHotWalletAddress()
+    if (!addr) return
+    let balance: number
+    try {
+      const { getAptosNativeBalance } = await import('./aptosRefund')
+      balance = await getAptosNativeBalance(addr)
+    } catch {
+      return // balance read failed (RPC down) — let the delivery attempt proceed
+    }
+    const required = Number(order.gasAmountNative)
+    const needed = required * 1.005 + 0.002 // delivered amount + headroom for the APT gas fee
+    if (balance < needed) {
+      throw Object.assign(
+        new Error(`Insufficient hot wallet balance on APT: have ${balance}, need ${needed} (order ${order.id})`),
+        { code: 'INSUFFICIENT_HOT_WALLET_BALANCE', orderId: order.id, chain: 'APT', balance, needed },
+      )
+    }
+    return
+  }
+
   const balanceChain = CHAIN_TO_BALANCE_ID[order.chain]
   if (!balanceChain) return
 
@@ -633,6 +701,7 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX)
     case 'SOL':   return deliverSol(order, hdIndex)
     case 'TON':   return deliverTon(order, hdIndex)
     case 'SUI':   return deliverSui(order, hdIndex)
+    case 'APT':   return deliverAptosNative(order)
     default: throw new Error(`deliverGas: unsupported chain ${order.chain}`)
   }
 }
