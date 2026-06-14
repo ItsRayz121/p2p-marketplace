@@ -242,6 +242,67 @@ function InheritHint({ label, value }: { label: string; value: string | number |
   )
 }
 
+// ─── Archived section (collapsed list at the bottom of each tab) ──────────────
+
+function ArchivedSection({
+  title, count, open, onToggle, children,
+}: {
+  title: string
+  count: number
+  open: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-surface/40">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-sm font-semibold text-text-muted">
+          {title} <span className="ml-1 text-text-muted/70">({count})</span>
+        </span>
+        <span className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+      {open && <div className="px-3 pb-3 space-y-2">{children}</div>}
+    </div>
+  )
+}
+
+function ArchivedRow({
+  slug, logoUrl, type, title, subtitle, busy, canDelete, onUnarchive, onDelete,
+}: {
+  slug: string
+  logoUrl: string | null
+  type: 'chain' | 'token'
+  title: string
+  subtitle: string
+  busy: boolean
+  canDelete: boolean
+  onUnarchive: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <EntityLogo type={type} slug={slug} logoUrl={logoUrl} size="sm" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-text-primary truncate">{title}</p>
+          {subtitle && <code className="text-xs text-text-muted">{subtitle}</code>}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onUnarchive}>
+          {busy ? '…' : 'Unarchive'}
+        </Button>
+        {canDelete && (
+          <Button size="sm" variant="ghost" onClick={onDelete}>Delete</Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Chain Modal ─────────────────────────────────────────────────────────────
 
 function ChainModal({
@@ -1471,6 +1532,8 @@ export default function GasChainsAdminPage() {
   const [deleting, setDeleting] = useState(false)
   const [togglingVisibility, setTogglingVisibility] = useState<Record<string, boolean>>({})
   const [togglingLive, setTogglingLive] = useState<Record<string, boolean>>({})
+  const [archiving, setArchiving] = useState<Record<string, boolean>>({})
+  const [showArchived, setShowArchived] = useState(false)
 
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -1633,6 +1696,22 @@ export default function GasChainsAdminPage() {
     }
   }
 
+  // Archive moves a chain out of the main list into the Archived section (and
+  // hides it from users). Unarchive restores it. Neither deletes anything.
+  async function toggleChainArchive(c: AdminGasChain) {
+    setArchiving((prev) => ({ ...prev, [c.id]: true }))
+    setErrorMsg(null)
+    try {
+      await adminApi.archiveGasChain(c.id, !c.isArchived)
+      flash(`Chain "${c.name}" ${c.isArchived ? 'unarchived' : 'archived'}.`)
+      fetchChains()
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to update archive state')
+    } finally {
+      setArchiving((prev) => ({ ...prev, [c.id]: false }))
+    }
+  }
+
   // ── Token CRUD ──────────────────────────────────────────────────────────────
 
   function openAddToken(preselectedChainId?: string) {
@@ -1752,6 +1831,20 @@ export default function GasChainsAdminPage() {
     }
   }
 
+  async function toggleTokenArchive(t: AdminGasToken) {
+    setArchiving((prev) => ({ ...prev, [t.id]: true }))
+    setErrorMsg(null)
+    try {
+      await adminApi.archiveGasToken(t.id, !t.isArchived)
+      flash(`Token "${t.name}" ${t.isArchived ? 'unarchived' : 'archived'}.`)
+      fetchTokens()
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to update archive state')
+    } finally {
+      setArchiving((prev) => ({ ...prev, [t.id]: false }))
+    }
+  }
+
   // Enable/disable real-funds token delivery. Going live should only be done AFTER
   // the chain's hot wallet is funded with the token + native gas (super-admin only).
   async function toggleTokenDeliveryLive(t: AdminGasToken) {
@@ -1795,6 +1888,13 @@ export default function GasChainsAdminPage() {
     if (chain?.defaultMaxUsdValue != null) return `$${chain.defaultMaxUsdValue} (chain)`
     return '$10 (fallback)'
   }
+
+  // Archived rows are pulled out of the main list into a collapsed section at the
+  // bottom of each tab, where they can be unarchived or permanently deleted.
+  const activeChains   = chains.filter((c) => !c.isArchived)
+  const archivedChains = chains.filter((c) => c.isArchived)
+  const activeTokens   = tokens.filter((t) => !t.isArchived)
+  const archivedTokens = tokens.filter((t) => t.isArchived)
 
   return (
     <div className="space-y-5">
@@ -1853,7 +1953,7 @@ export default function GasChainsAdminPage() {
             <EmptyState icon={Globe} title="No chains configured" description="Add a chain to get started." />
           )}
 
-          {!chainsLoading && chains.length > 0 && (
+          {!chainsLoading && activeChains.length > 0 && (
             <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1871,7 +1971,7 @@ export default function GasChainsAdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {chains.map((c) => (
+                    {activeChains.map((c) => (
                       <tr key={c.id} className="hover:bg-surface/50 transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -1934,6 +2034,14 @@ export default function GasChainsAdminPage() {
                             >
                               {c.isVisibleToUsers !== false ? 'Hide' : 'Show'}
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={archiving[c.id]}
+                              onClick={() => void toggleChainArchive(c)}
+                            >
+                              {archiving[c.id] ? '…' : 'Archive'}
+                            </Button>
                             {isSuperAdmin && (
                               <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteChain(c)}>
                                 Delete
@@ -1947,6 +2055,31 @@ export default function GasChainsAdminPage() {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* Archived chains — collapsed section at the bottom */}
+          {!chainsLoading && archivedChains.length > 0 && (
+            <ArchivedSection
+              title="Archived Chains"
+              count={archivedChains.length}
+              open={showArchived}
+              onToggle={() => setShowArchived((v) => !v)}
+            >
+              {archivedChains.map((c) => (
+                <ArchivedRow
+                  key={c.id}
+                  slug={c.slug}
+                  logoUrl={c.logoUrl}
+                  type="chain"
+                  title={`${c.name} (${c.symbol})`}
+                  subtitle={c.slug}
+                  busy={!!archiving[c.id]}
+                  canDelete={isSuperAdmin}
+                  onUnarchive={() => void toggleChainArchive(c)}
+                  onDelete={() => setConfirmDeleteChain(c)}
+                />
+              ))}
+            </ArchivedSection>
           )}
         </div>
       )}
@@ -1967,7 +2100,7 @@ export default function GasChainsAdminPage() {
             <EmptyState icon={Coins} title="No tokens configured" description="Add a token to a chain." />
           )}
 
-          {!tokensLoading && tokens.length > 0 && (
+          {!tokensLoading && activeTokens.length > 0 && (
             <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1985,7 +2118,7 @@ export default function GasChainsAdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {tokens.map((t) => (
+                    {activeTokens.map((t) => (
                       <tr key={t.id} className="hover:bg-surface/50 transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -2032,6 +2165,14 @@ export default function GasChainsAdminPage() {
                             >
                               {t.isVisibleToUsers !== false ? 'Hide' : 'Show'}
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={archiving[t.id]}
+                              onClick={() => void toggleTokenArchive(t)}
+                            >
+                              {archiving[t.id] ? '…' : 'Archive'}
+                            </Button>
                             {isSuperAdmin && t.tokenType !== 'native' && (
                               <Button
                                 size="sm"
@@ -2053,6 +2194,31 @@ export default function GasChainsAdminPage() {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* Archived tokens — collapsed section at the bottom */}
+          {!tokensLoading && archivedTokens.length > 0 && (
+            <ArchivedSection
+              title="Archived Tokens"
+              count={archivedTokens.length}
+              open={showArchived}
+              onToggle={() => setShowArchived((v) => !v)}
+            >
+              {archivedTokens.map((t) => (
+                <ArchivedRow
+                  key={t.id}
+                  slug={t.symbol}
+                  logoUrl={t.logoUrl}
+                  type="token"
+                  title={`${t.name} (${t.symbol})`}
+                  subtitle={t.chain?.slug ?? ''}
+                  busy={!!archiving[t.id]}
+                  canDelete={isSuperAdmin}
+                  onUnarchive={() => void toggleTokenArchive(t)}
+                  onDelete={() => setConfirmDeleteToken(t)}
+                />
+              ))}
+            </ArchivedSection>
           )}
         </div>
       )}
@@ -2089,7 +2255,7 @@ export default function GasChainsAdminPage() {
         onClose={() => setConfirmDeleteChain(null)}
         onConfirm={() => { if (confirmDeleteChain) void deleteChain(confirmDeleteChain) }}
         title={`Delete Gas Chain: ${confirmDeleteChain?.name ?? ''}`}
-        description="Deleting this chain may break historical records and cannot be undone. Use the Hide button instead if you only want to remove it from user-facing pages — it stays in admin and can be shown again later."
+        description="Deleting this chain may break historical records and cannot be undone. Use Archive instead to move it out of the main list (it stays in the Archived section and can be restored later), or Hide to just remove it from user-facing pages."
         confirmLabel="Delete Anyway"
         confirmVariant="danger"
       />
@@ -2099,7 +2265,7 @@ export default function GasChainsAdminPage() {
         onClose={() => setConfirmDeleteToken(null)}
         onConfirm={() => { if (confirmDeleteToken) void deleteToken(confirmDeleteToken) }}
         title={`Delete Token: ${confirmDeleteToken?.name ?? ''}`}
-        description="Deleting this token may affect historical records. Use the Hide button instead to remove it from users without losing the config. Existing orders will remain intact."
+        description="Deleting this token may affect historical records. Use Archive instead to move it into the Archived section (restorable later), or Hide to remove it from users without losing the config. Existing orders will remain intact."
         confirmLabel="Delete Anyway"
         confirmVariant="danger"
       />

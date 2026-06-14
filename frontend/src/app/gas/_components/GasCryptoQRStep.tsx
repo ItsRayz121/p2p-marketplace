@@ -11,6 +11,10 @@ import { ProcessingTimeline, RefundTimeline, STATUS_LABELS, statusVariant } from
 // tx-hash entry. On-chain deposits are usually detected by the poller within ~1 min.
 const DETECT_WINDOW_MS = 60_000
 
+// How long a PAID order may sit in payment_detected/sending (delivery delayed)
+// before we let the user request a refund themselves. Matches the backend gate.
+const STUCK_REFUND_THRESHOLD_MS = 7 * 60_000
+
 export function GasCryptoQRStep() {
   const {
     order, setOrder, setPhase, resetFlow,
@@ -22,6 +26,7 @@ export function GasCryptoQRStep() {
     handleVerifyPayment,
     pollErrCount, setPollErrCount, pollOrder,
     cancelling, cancelError, cancelPreview, cancelResult, loadCancelPreview, handleCancelOrder,
+    requestingRefund, refundReqError, handleRequestRefund,
   } = useGasCtx()
 
   // Inline cancel-confirmation panel. Opening it loads the penalty preview so the
@@ -40,6 +45,16 @@ export function GasCryptoQRStep() {
 
   const [detectDeadline, setDetectDeadline] = useState<string | null>(null)
   const [detectElapsed, setDetectElapsed] = useState(false)
+
+  // Ticking clock so the "delivery delayed" notice can unlock the self-refund
+  // button once the order has been stuck past the grace window.
+  const [nowTs, setNowTs] = useState(() => Date.now())
+  const isProcessingStuck = order?.status === 'payment_detected' || order?.status === 'sending'
+  useEffect(() => {
+    if (!isProcessingStuck) return
+    const t = setInterval(() => setNowTs(Date.now()), 5_000)
+    return () => clearInterval(t)
+  }, [isProcessingStuck])
 
   // Restore a persisted deadline after refresh.
   useEffect(() => {
@@ -155,6 +170,10 @@ export function GasCryptoQRStep() {
           <div className="bg-surface-alt rounded-xl p-3 text-xs space-y-1.5 border border-border">
             <div className="flex justify-between"><span className="text-text-muted">Network</span><span className="font-bold text-text-primary">{order.paymentNetwork}</span></div>
             <div className="flex justify-between"><span className="text-text-muted">Order ID</span><span className="font-mono text-text-secondary">{order.orderRef}</span></div>
+            <div className="flex justify-between gap-3 pt-1.5 border-t border-border">
+              <span className="text-text-muted shrink-0">Gas delivered to</span>
+              <span className="font-mono text-text-secondary break-all text-right">{order.toAddress}</span>
+            </div>
           </div>
 
           <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
@@ -285,12 +304,51 @@ export function GasCryptoQRStep() {
         </div>
       )}
 
-      {(order.status === 'payment_detected' || order.status === 'sending') && (
-        <div>
-          <p className="text-xs font-bold text-text-muted uppercase tracking-wide mb-4">Processing</p>
-          <ProcessingTimeline status={order.status} isPkr={false} />
-        </div>
-      )}
+      {(order.status === 'payment_detected' || order.status === 'sending') && (() => {
+        const startTs = order.createdAt ? new Date(order.createdAt).getTime() : nowTs
+        const stuckMs = nowTs - startTs
+        // Self-refund only while paused in payment_detected — never during an
+        // in-flight 'sending' (matches the backend, which rejects 'sending').
+        const refundEligible = order.status === 'payment_detected' &&
+          (!!order.failureReason || stuckMs >= STUCK_REFUND_THRESHOLD_MS)
+        return (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-bold text-text-muted uppercase tracking-wide mb-4">Processing</p>
+              <ProcessingTimeline status={order.status} isPkr={false} />
+            </div>
+
+            {/* Delivery-delay notice — payment is safe; offer a self-serve refund once stuck. */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p className="text-sm font-semibold text-amber-800">Your payment is confirmed</p>
+              </div>
+              <p className="text-xs text-amber-700">
+                We&apos;re delivering your gas now. This occasionally takes a few minutes. Your USDT is safe — if we can&apos;t
+                deliver, it&apos;s refunded automatically to the wallet you paid from.
+              </p>
+              {refundEligible ? (
+                <div className="pt-1 space-y-2">
+                  <p className="text-xs text-amber-700">Taking longer than expected? You can request your refund now.</p>
+                  {refundReqError && <p className="text-xs text-red-600">{refundReqError}</p>}
+                  <button
+                    onClick={handleRequestRefund}
+                    disabled={requestingRefund}
+                    className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {requestingRefund ? 'Requesting refund…' : 'Request refund now'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-600/80 pt-1">
+                  If it isn&apos;t delivered shortly, a refund option will appear here.
+                </p>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {(order.status === 'expired' || order.status === 'failed') && (
         <div className="text-center py-4">

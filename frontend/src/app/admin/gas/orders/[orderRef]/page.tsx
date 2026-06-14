@@ -319,6 +319,10 @@ export default function GasOrderDetailPage() {
 
   const isFailed = order.status === 'failed'
   const isRefundPending = order.status === 'refund_pending'
+  // Paid order paused before delivery — typically an empty hot wallet
+  // (INSUFFICIENT_HOT_WALLET_BALANCE). Surface refill/retry/refund controls.
+  const isStuckDetected = order.status === 'payment_detected'
+  const isInsufficientBalance = isStuckDetected && /insufficient|gas coins|not enough|lamports/i.test(order.failureReason ?? '')
   const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
   const isPaymentVerified = order.status === 'payment_verified'
   // USDT payment_uploaded = user submitted tx hash but deposit address wasn't configured for auto-verify
@@ -465,6 +469,33 @@ export default function GasOrderDetailPage() {
             <Button variant="danger" size="sm" onClick={() => setCancelOpen(true)}>
               {isUsdtProofPending ? 'Reject' : 'Cancel Order'}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Actions — paid order stuck before delivery (e.g. empty hot wallet) */}
+      {isStuckDetected && (
+        <div className="mb-6 p-4 rounded-xl border bg-amber-50 border-amber-200">
+          <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-100 border border-amber-200">
+            <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p className="text-xs font-semibold text-amber-800">
+              {isInsufficientBalance
+                ? `Delivery paused — the ${chainName} hot wallet doesn't have enough balance to send this gas. Refill the wallet then Retry, or Refund the user.`
+                : 'Payment confirmed but delivery has not completed. Retry delivery, or refund the user.'}
+              {' '}If left unresolved it auto-refunds when the order expires.
+            </p>
+          </div>
+          <div className="flex gap-3 items-start">
+            <div className="flex-1">
+              <p className="text-sm font-semibold mb-0.5 text-amber-900">Paid — Awaiting Gas Delivery</p>
+              <p className="text-xs text-amber-700">
+                {parseFloat(order.gasAmountNative).toFixed(6)} {nativeSymbol} to {order.toAddress.slice(0, 10)}…
+              </p>
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>Retry Delivery</Button>
+            <Button variant="danger" size="sm" onClick={() => setRefundOpen(true)}>Refund</Button>
           </div>
         </div>
       )}

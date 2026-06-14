@@ -110,9 +110,11 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     const attemptNumber = job.attemptsMade + 1
     const maxAttempts = job.opts.attempts ?? 3
     const rawErrMsg = err instanceof Error ? err.message : String(err)
-    const errCode = (err as { code?: string }).code
     // Normalize the raw provider/RPC error (e.g. "Request failed with status code
-    // 500") into an actionable reason + recommended action for the admin.
+    // 500", or SUI "No valid gas coins found") into an actionable reason +
+    // recommended action for the admin. We branch on the NORMALIZED code so
+    // chain-specific phrasings (SUI/SOL empty-wallet errors that carry no .code)
+    // are still recognised as insufficient balance.
     const normalized = describeDeliveryError(order.chain, err)
     const errMsg = normalized.message
 
@@ -125,7 +127,7 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     // Insufficient hot wallet balance — don't burn retries on a tx that can't succeed.
     // Reset to payment_detected, alert admin, and let the refill job replenish the wallet
     // before the next delivery attempt is scheduled via the balance monitor.
-    if (errCode === 'INSUFFICIENT_HOT_WALLET_BALANCE') {
+    if (normalized.code === 'INSUFFICIENT_HOT_WALLET_BALANCE') {
       await db.gasFeeOrder.update({
         where: { id: orderId },
         data: { status: 'payment_detected', failureReason: errMsg },

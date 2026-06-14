@@ -23,6 +23,17 @@ describe('describeDeliveryError', () => {
     expect(r.action).toMatch(/refill/i)
   })
 
+  it('classifies a SUI "no valid gas coins" failure as insufficient balance (the empty-hot-wallet bug)', () => {
+    const r = describeDeliveryError('SUI', new Error('No valid gas coins found for the transaction.'))
+    expect(r.code).toBe('INSUFFICIENT_HOT_WALLET_BALANCE')
+    expect(r.action).toMatch(/refill/i)
+  })
+
+  it('classifies a SOL "insufficient lamports" failure as insufficient balance', () => {
+    const r = describeDeliveryError('SOL', new Error('Transaction simulation failed: insufficient lamports 0, need 5000'))
+    expect(r.code).toBe('INSUFFICIENT_HOT_WALLET_BALANCE')
+  })
+
   it('detects a missing mnemonic / signing key', () => {
     const r = describeDeliveryError('SOL', new Error('GAS_SEED_CIPHERTEXT not configured'))
     expect(r.code).toBe('WALLET_NOT_CONFIGURED')

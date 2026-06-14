@@ -122,6 +122,11 @@ export interface GasFlowCtx {
   loadCancelPreview: () => Promise<void>
   handleCancelOrder: () => Promise<void>
 
+  // Refund request (paid-but-stuck orders)
+  requestingRefund: boolean
+  refundReqError: string
+  handleRequestRefund: () => Promise<void>
+
   // Order
   order: GasOrder | null
   setOrder: (o: GasOrder | ((prev: GasOrder | null) => GasOrder | null)) => void

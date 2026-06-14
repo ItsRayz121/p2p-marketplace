@@ -99,6 +99,8 @@ export default function GasPage() {
   const [cancelError, setCancelError]     = useState('')
   const [cancelPreview, setCancelPreview] = useState<{ cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null } | null>(null)
   const [cancelResult, setCancelResult]   = useState<{ cooldownLabel: string | null } | null>(null)
+  const [requestingRefund, setRequestingRefund] = useState(false)
+  const [refundReqError, setRefundReqError]     = useState('')
 
   // ── Computed ───────────────────────────────────────────────────────────────
   const rawUsdPrice     = selectedToken?.rawUsdPrice ?? selectedToken?.priceUsd ?? 0
@@ -320,6 +322,17 @@ export default function GasPage() {
     } finally { setCancelling(false) }
   }
 
+  async function handleRequestRefund() {
+    if (!order?.orderRef) return
+    setRequestingRefund(true); setRefundReqError('')
+    try {
+      await gasApi.requestRefund(order.orderRef, order.trackingToken ?? undefined)
+      setOrder(prev => prev ? { ...prev, status: 'refund_pending' } : prev)
+    } catch (e: unknown) {
+      setRefundReqError(e instanceof Error ? e.message : 'Failed to request refund')
+    } finally { setRequestingRefund(false) }
+  }
+
   const isTerminal = order && ['delivered', 'failed', 'expired', 'refunded', 'cancelled'].includes(order.status)
   usePolling(
     pollOrder, 8_000,
@@ -381,6 +394,7 @@ export default function GasPage() {
     verifying, verifyError, verifySuccess,
     handleCreateCryptoOrder, handleVerifyPayment, pollOrder,
     cancelling, cancelError, cancelPreview, cancelResult, loadCancelPreview, handleCancelOrder,
+    requestingRefund, refundReqError, handleRequestRefund,
     order, setOrder, pollErrCount, setPollErrCount,
     priceUsd, pricePkr, platformFeeUsdt, amountNum, gasValueUsd, usdPkrRate,
     totalUsd, computedUsd, computedPkr, maxUsd, minAmount, usdExceeded,

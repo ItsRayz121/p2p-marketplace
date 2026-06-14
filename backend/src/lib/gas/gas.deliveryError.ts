@@ -24,7 +24,14 @@ export function describeDeliveryError(chain: string, err: unknown): NormalizedDe
     message: `[${c}] ${reason} — ${action} (raw: ${rawTail})`,
   })
 
-  if (code === 'INSUFFICIENT_HOT_WALLET_BALANCE' || /insufficient.*balance|not enough/.test(lower)) {
+  // Insufficient native balance to deliver — including chain-specific phrasings:
+  //   SUI: "No valid gas coins found for the transaction" (wallet holds zero SUI)
+  //   SOL: "insufficient lamports", "insufficient funds for rent"
+  //   EVM: "insufficient funds for gas * price + value"
+  if (
+    code === 'INSUFFICIENT_HOT_WALLET_BALANCE' ||
+    /insufficient.*balance|not enough|insufficient funds|insufficient lamports|for rent|no valid gas coins|no gas coins|no coins of type|gas coins found/.test(lower)
+  ) {
     return build('INSUFFICIENT_HOT_WALLET_BALANCE', `Hot wallet has insufficient ${chain} balance to deliver`, `Refill the ${chain} hot wallet, then retry`)
   }
   if (/seed|mnemonic|gas_seed|gas_master_key|decryptgasseed|key not|not configured|missing.*key/.test(lower)) {

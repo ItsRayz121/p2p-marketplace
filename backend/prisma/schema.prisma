@@ -1373,6 +1373,9 @@ model GasChainConfig {
   defaultMaxUsdValue Decimal?        @db.Decimal(10, 4) // Default max USD value for tokens under this chain
   isActive          Boolean          @default(true)
   isVisibleToUsers  Boolean          @default(true)  // false = hidden from all user-facing APIs and UI
+  // true = removed from the main admin list into an "Archived" section. Implies
+  // hidden from users; kept (not deleted) so it can be unarchived or removed later.
+  isArchived        Boolean          @default(false)
   // Feature readiness state: inactive | testing | beta | stable
   // inactive = hidden from public UI; stable = fully operational
   readinessState    String           @default("inactive")
@@ -1420,6 +1423,9 @@ model GasTokenConfig {
   presetAmounts   Json           // number[] e.g. [10, 50, 100, 200]
   isActive        Boolean        @default(true)
   isVisibleToUsers Boolean       @default(true)  // false = hidden from user-facing APIs and dropdowns
+  // true = removed from the main admin list into an "Archived" section. Implies
+  // hidden from users; kept (not deleted) so it can be unarchived or removed later.
+  isArchived      Boolean        @default(false)
   // Non-native token delivery (real funds) — orderable only when this is true AND
   // the chain family has a delivery implementation. Default false: must be flipped
   // by a super-admin after the hot wallet is funded with the token + native gas.

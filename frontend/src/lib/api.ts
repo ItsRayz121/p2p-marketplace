@@ -1295,6 +1295,7 @@ export interface GasOrder {
   nativeSymbol?: string
   deliveryTxHash?: string
   refundTxHash?: string | null
+  failureReason?: string | null
   expiresAt: string
   createdAt?: string
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null
@@ -1413,6 +1414,11 @@ export const gasApi = {
   cancelOrder: (orderRef: string, trackingToken?: string) =>
     apiRequest<{ orderRef: string; status: string; cancelNumber: number; cooldownLabel: string | null; cooldownUntil: string | null }>(
       `/gas-fee/orders/${orderRef}/cancel`, { method: 'POST', body: JSON.stringify(trackingToken ? { token: trackingToken } : {}) }),
+
+  // Request a refund on a PAID order that's stuck before delivery (e.g. empty hot wallet).
+  requestRefund: (orderRef: string, trackingToken?: string) =>
+    apiRequest<{ orderRef: string; status: string }>(
+      `/gas-fee/orders/${orderRef}/request-refund`, { method: 'POST', body: JSON.stringify(trackingToken ? { token: trackingToken } : {}) }),
 }
 
 export const gasFeeApi = {
@@ -1574,6 +1580,7 @@ export interface AdminGasChain {
   defaultMaxUsdValue: number | null
   isActive: boolean
   isVisibleToUsers: boolean
+  isArchived?: boolean
   readinessState: string
   displayOrder: number
   // Operational / chain-registry fields
@@ -1608,6 +1615,7 @@ export interface AdminGasToken {
   presetAmounts: number[]
   isActive: boolean
   isVisibleToUsers: boolean
+  isArchived?: boolean
   deliveryLive?: boolean
   displayOrder: number
   createdAt: string
@@ -2182,6 +2190,8 @@ export const adminApi = {
     apiRequest<void>(`/admin/gas/chains/${id}`, { method: 'DELETE' }),
   toggleGasChainVisibility: (id: string, isVisibleToUsers: boolean) =>
     apiRequest<AdminGasChain>(`/admin/gas/chains/${id}`, { method: 'PATCH', body: JSON.stringify({ isVisibleToUsers }) }),
+  archiveGasChain: (id: string, isArchived: boolean) =>
+    apiRequest<AdminGasChain>(`/admin/gas/chains/${id}`, { method: 'PATCH', body: JSON.stringify({ isArchived }) }),
 
   // Gas Token Config CRUD
   getGasTokens: (chainId?: string) =>
@@ -2194,6 +2204,8 @@ export const adminApi = {
     apiRequest<void>(`/admin/gas/tokens/${id}`, { method: 'DELETE' }),
   toggleGasTokenVisibility: (id: string, isVisibleToUsers: boolean) =>
     apiRequest<AdminGasToken>(`/admin/gas/tokens/${id}`, { method: 'PATCH', body: JSON.stringify({ isVisibleToUsers }) }),
+  archiveGasToken: (id: string, isArchived: boolean) =>
+    apiRequest<AdminGasToken>(`/admin/gas/tokens/${id}`, { method: 'PATCH', body: JSON.stringify({ isArchived }) }),
 
   // Phase 4 — Reconciliation
   listReconciliationRuns: (page = 1, limit = 20) =>

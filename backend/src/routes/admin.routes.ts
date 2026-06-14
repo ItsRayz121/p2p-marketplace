@@ -4037,21 +4037,30 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/gas/orders/:id/retry', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
-    // CAS: only transition failed → payment_detected. Concurrent retries will
-    // find count=0 on the second call and hit the conflict branch below.
+    // CAS: transition failed → payment_detected so the delivery worker can re-claim it.
+    // Concurrent retries find count=0 on the second call and fall through below.
     const claimed = await db.gasFeeOrder.updateMany({
       where: { id, status: 'failed' },
       data: { status: 'payment_detected', failureReason: null, retryCount: { increment: 1 } },
     })
 
+    let previousStatus = 'failed'
     if (claimed.count === 0) {
       const order = await db.gasFeeOrder.findUnique({ where: { id } })
       if (!order) throw Errors.NOT_FOUND('Gas fee order')
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — only failed orders can be retried`, 409)
+      // An order paused on insufficient hot-wallet balance sits in payment_detected
+      // (not failed). After the admin refills the wallet, "Retry" simply re-enqueues
+      // the delivery job — the order is already in the claimable state.
+      if (order.status === 'payment_detected') {
+        previousStatus = 'payment_detected'
+        await db.gasFeeOrder.update({ where: { id }, data: { failureReason: null } })
+      } else {
+        throw new AppError('CONFLICT', `Order is in '${order.status}' — only failed or stuck (payment_detected) orders can be retried`, 409)
+      }
     }
 
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus: 'failed' }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -4062,10 +4071,13 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
 
     // A refund only makes sense for orders that took a payment but never delivered.
-    if (!['failed', 'refund_pending', 'expired'].includes(order.status)) {
+    // 'payment_detected' is included so an order stuck because the hot wallet is
+    // empty (insufficient balance — delivery paused, not yet failed) can be
+    // refunded directly from the admin order page without waiting for expiry.
+    if (!['failed', 'refund_pending', 'expired', 'payment_detected'].includes(order.status)) {
       throw new AppError(
         'INVALID_STATUS',
-        `Cannot refund an order with status '${order.status}'. Only failed / refund_pending / expired orders can be refunded.`,
+        `Cannot refund an order with status '${order.status}'. Only failed / refund_pending / expired / payment_detected orders can be refunded.`,
         400,
       )
     }
@@ -4110,10 +4122,19 @@ export async function adminRoutes(app: FastifyInstance) {
     // plain re-add with the existing jobId would no-op a re-attempt — remove the
     // retained job first so each admin-triggered refund actually runs. One jobId per
     // order still prevents concurrent double-sends; processGasRefund's CAS backs it up.
-    await db.gasFeeOrder.update({
-      where: { id },
+    //
+    // CAS guard: a 'payment_detected' order can be claimed by the delivery worker
+    // (payment_detected → sending) at any moment. Only flip to refund_pending if the
+    // status is still one of the refundable ones — never overwrite an in-flight
+    // 'sending'/'delivered' state, which would double-spend (deliver AND refund).
+    const moved = await db.gasFeeOrder.updateMany({
+      where: { id, status: { in: ['failed', 'refund_pending', 'expired', 'payment_detected'] } },
       data: { status: 'refund_pending', failureReason: null },
     })
+    if (moved.count === 0) {
+      const fresh = await db.gasFeeOrder.findUnique({ where: { id }, select: { status: true } })
+      throw new AppError('CONFLICT', `Order moved to '${fresh?.status ?? 'unknown'}' before the refund could start — it can no longer be refunded from here.`, 409)
+    }
     const jobId = `gas-refund-${id}`
     try { await queues.gasFee.remove(jobId) } catch { /* active or absent — add() stays a safe no-op */ }
     await queues.gasFee.add(
@@ -5114,6 +5135,11 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('defaultMaxUsdValue' in body) updateData.defaultMaxUsdValue = body.defaultMaxUsdValue != null ? Math.max(0, Number(body.defaultMaxUsdValue)) : null
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('isVisibleToUsers' in body) updateData.isVisibleToUsers = body.isVisibleToUsers
+    // Archiving a chain also forces it hidden from users (archived ⇒ not visible).
+    if ('isArchived' in body) {
+      updateData.isArchived = !!body.isArchived
+      if (body.isArchived) updateData.isVisibleToUsers = false
+    }
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
     if ('readinessState' in body) {
       const validStates = ['inactive', 'testing', 'beta', 'stable']
@@ -5208,6 +5234,11 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('isVisibleToUsers' in updateData) {
       await createAuditLog(req.user!.id, updateData.isVisibleToUsers ? 'GAS_CHAIN_SHOWN' : 'GAS_CHAIN_HIDDEN', 'GasChainConfig', id, {
         slug: chain.slug, isVisibleToUsers: updateData.isVisibleToUsers,
+      })
+    }
+    if ('isArchived' in updateData) {
+      await createAuditLog(req.user!.id, updateData.isArchived ? 'GAS_CHAIN_ARCHIVED' : 'GAS_CHAIN_UNARCHIVED', 'GasChainConfig', id, {
+        slug: chain.slug, isArchived: updateData.isArchived,
       })
     }
     await createAuditLog(req.user!.id, 'GAS_CHAIN_UPDATED', 'GasChainConfig', id, updateData)
@@ -5325,6 +5356,11 @@ export async function adminRoutes(app: FastifyInstance) {
     if ('presetAmounts' in body) updateData.presetAmounts = body.presetAmounts
     if ('isActive' in body) updateData.isActive = body.isActive
     if ('isVisibleToUsers' in body) updateData.isVisibleToUsers = body.isVisibleToUsers
+    // Archiving a token also forces it hidden from users (archived ⇒ not visible).
+    if ('isArchived' in body) {
+      updateData.isArchived = !!body.isArchived
+      if (body.isArchived) updateData.isVisibleToUsers = false
+    }
     if ('displayOrder' in body) updateData.displayOrder = Number(body.displayOrder) || 0
     // Going live moves real funds — only a super-admin may enable it.
     if ('deliveryLive' in body) {

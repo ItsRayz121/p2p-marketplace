@@ -15,6 +15,7 @@ import { flagIfRisky } from '../lib/gas/gas.risk'
 import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
 import { tokenDeliverySupported } from '../lib/gas/gas.delivery'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
+import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import {
   gasCancelIdentity,
   assertNotInGasCooldown,
@@ -157,9 +158,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
   app.get('/gas-fee/chains', async (_req, reply) => {
     const dbChains = await db.gasChainConfig.findMany({
-      where: { isVisibleToUsers: true },
+      where: { isVisibleToUsers: true, isArchived: false },
       orderBy: { displayOrder: 'asc' },
-      include: { tokens: { where: { isActive: true, isVisibleToUsers: true }, orderBy: { displayOrder: 'asc' } } },
+      include: { tokens: { where: { isActive: true, isVisibleToUsers: true, isArchived: false }, orderBy: { displayOrder: 'asc' } } },
     })
 
     const chains = await Promise.all(
@@ -229,9 +230,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!chainCfg) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' not found`, 404)
     if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' is not currently active`, 400)
     if (!chainCfg.isVisibleToUsers) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' is not available`, 400)
+    if (chainCfg.isArchived) throw new AppError('CHAIN_NOT_SUPPORTED', `Chain '${chainSlug}' is not available`, 400)
 
     const tokens = await db.gasTokenConfig.findMany({
-      where: { chainConfigId: chainCfg.id, isVisibleToUsers: true },
+      where: { chainConfigId: chainCfg.id, isVisibleToUsers: true, isArchived: false },
       orderBy: [{ isActive: 'desc' }, { displayOrder: 'asc' }],
     })
 
@@ -462,6 +464,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const chainCfg = tokenCfg.chain
     if (!chainCfg.isActive) {
       throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
+    }
+    // Archived chains/tokens are retired — not orderable even via a stale client.
+    if (tokenCfg.isArchived || chainCfg.isArchived) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} is no longer available`, 400)
     }
     if (!chainCfg.backendChainId) {
       throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
@@ -974,6 +980,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
     const chainCfg = tokenCfg.chain
     if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
+    // Archived chains/tokens are retired — not orderable even via a stale client.
+    if (tokenCfg.isArchived || chainCfg.isArchived) throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} is no longer available`, 400)
     if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
     if (!isTokenOrderable(chainCfg.backendChainId, tokenCfg)) {
       throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
@@ -1142,6 +1150,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
     const chainCfg = tokenCfg.chain
     if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
+    // Archived chains/tokens are retired — not orderable even via a stale client.
+    if (tokenCfg.isArchived || chainCfg.isArchived) throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} is no longer available`, 400)
     if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
     if (!isTokenOrderable(chainCfg.backendChainId, tokenCfg)) {
       throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
@@ -1519,6 +1529,72 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         failureReason: order.failureReason,
       },
     })
+  })
+
+  // ── POST /gas-fee/orders/:orderRef/request-refund — user-initiated refund ───
+  // For a PAID order that's stuck before delivery (e.g. the hot wallet is empty
+  // so delivery is paused/failing). Allowed once the order has been stuck past a
+  // short grace window, or as soon as a delivery failure is recorded. Moves the
+  // order to refund_pending and enqueues the same automated refund job the system
+  // uses on delivery failure — the USDT goes back to the wallet it was paid from.
+  const STUCK_REFUND_THRESHOLD_MS = 7 * 60_000
+
+  app.post('/gas-fee/orders/:orderRef/request-refund', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const { orderRef } = req.params as { orderRef: string }
+    const { token }    = (req.body ?? {}) as { token?: string }
+
+    const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
+    const isAdmin  = req.user?.role === 'admin' || req.user?.role === 'super_admin'
+    const isOwner  = !!(req.user && order.userId && req.user.id === order.userId)
+    const hasToken = isTrackingTokenValid(token, order.trackingToken)
+    if (!isAdmin && !isOwner && !hasToken) {
+      throw new AppError('FORBIDDEN', 'Access denied. Use the original order tracking link.', 403)
+    }
+
+    // Only a paid order that is PAUSED before delivery can be user-refunded. We
+    // deliberately exclude 'sending': that means the delivery worker has already
+    // claimed the order (payment_detected → sending) and a transfer may be in
+    // flight — refunding then could double-spend (deliver AND refund). The stuck/
+    // insufficient-balance case we care about always sits in 'payment_detected'.
+    if (order.status !== 'payment_detected') {
+      throw new AppError('INVALID_STATUS', `This order can't be refunded from here (status: ${order.status}).`, 409)
+    }
+    if (!order.paymentTxHash) {
+      throw new AppError('NO_PAYMENT', 'No payment is recorded for this order yet, so there is nothing to refund.', 409)
+    }
+
+    // Gate: only once delivery has failed or the order has been stuck past the grace window.
+    const stuckMs = Date.now() - new Date(order.createdAt).getTime()
+    const eligible = isAdmin || !!order.failureReason || stuckMs >= STUCK_REFUND_THRESHOLD_MS
+    if (!eligible) {
+      const waitS = Math.ceil((STUCK_REFUND_THRESHOLD_MS - stuckMs) / 1000)
+      throw new AppError('TOO_EARLY', `Please wait a little longer — a refund can be requested in about ${waitS}s if delivery hasn't completed.`, 429)
+    }
+
+    // CAS transition: races the delivery worker's payment_detected → sending claim.
+    // Only one of the two updateMany calls can win, so we never refund a claimed order.
+    const moved = await db.gasFeeOrder.updateMany({
+      where: { id: order.id, status: 'payment_detected' },
+      data:  { status: 'refund_pending', failureReason: order.failureReason ?? 'User requested refund (delivery delayed)' },
+    })
+    if (moved.count === 0) {
+      const fresh = await db.gasFeeOrder.findUnique({ where: { id: order.id }, select: { status: true } })
+      throw new AppError('INVALID_STATUS', `This order can no longer be refunded from here (status: ${fresh?.status ?? order.status}).`, 409)
+    }
+
+    const jobId = `gas-refund-${order.id}`
+    try { await queues.gasFee.remove(jobId) } catch { /* active or absent — add() stays a safe no-op */ }
+    await queues.gasFee.add(
+      'process-refund',
+      { orderId: order.id },
+      { jobId, attempts: 5, backoff: { type: 'exponential', delay: 30_000 } },
+    )
+    await notifyMerchantWebhook(order.id, 'refund_pending')
+
+    logger.info({ orderRef }, 'Gas order refund requested by user')
+    return reply.send({ success: true, data: { orderRef, status: 'refund_pending' } })
   })
 
   // ── POST /gas-fee/orders/:orderRef/verify-payment — user self-reports txHash ─
