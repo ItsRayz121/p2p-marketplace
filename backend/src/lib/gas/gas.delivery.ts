@@ -496,27 +496,30 @@ async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
     let lastErr: unknown
     for (const ep of endpoints) {
       try {
-        if (ep.kind === 'v4') {
-          const client = new TonClient4({ endpoint: ep.jsonRpcUrl, timeout: 15_000 })
-          const contract = client.open(wallet)
-          const seqno = await contract.getSeqno()
-          const transfer = buildTransfer(seqno)
-          // External message cell hash — unique identifier usable on Tonscan
-          const txHash = transfer.hash().toString('hex')
-          await client.sendMessage(transfer.toBoc())
-          return txHash
-        }
+        // Open the wallet against this endpoint's client and send through the
+        // contract provider. contract.send() → provider.external() does two things
+        // that a raw client.sendFile(transfer.toBoc()) does NOT:
+        //   1. wraps the signed transfer BODY into a complete external-in message
+        //      (toncenter rejects a bare body cell with HTTP 406 Not Acceptable);
+        //   2. attaches the wallet StateInit when the account is not yet deployed,
+        //      so the very first outgoing tx deploys the V4 contract. A freshly
+        //      funded hot wallet that has never sent is uninitialised — without the
+        //      StateInit even a correctly-wrapped message bounces/406s.
+        // Both TonClient (v2) and TonClient4 (v4) implement provider.external with
+        // this wrapping + deploy-state detection, so the two endpoint kinds collapse
+        // to the same call.
+        const client =
+          ep.kind === 'v4'
+            ? new TonClient4({ endpoint: ep.jsonRpcUrl, timeout: 15_000 })
+            : new TonClient({ endpoint: ep.jsonRpcUrl, ...(ep.apiKey ? { apiKey: ep.apiKey } : {}) })
 
-        const client = new TonClient({
-          endpoint: ep.jsonRpcUrl,
-          ...(ep.apiKey ? { apiKey: ep.apiKey } : {}),
-        })
         const contract = client.open(wallet)
         const seqno = await contract.getSeqno()
         const transfer = buildTransfer(seqno)
-        // External message cell hash — unique identifier usable on Tonscan
+        // Body cell hash — a stable identifier for our audit trail. (Not the
+        // explorer tx hash; TON confirmation is time-based, not hash-lookup based.)
         const txHash = transfer.hash().toString('hex')
-        await client.sendFile(transfer.toBoc())
+        await contract.send(transfer)
         return txHash
       } catch (err) {
         lastErr = err // provider failed — try the next endpoint

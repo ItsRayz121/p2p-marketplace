@@ -4204,7 +4204,17 @@ export async function adminRoutes(app: FastifyInstance) {
       } catch { /* best-effort — the UI retries on next load */ }
     }
 
-    return reply.send({ success: true, data: { ...order, paymentSenderAddress, audit } })
+    // TON hot-wallet addresses are stored in raw (0:hex64) form, but the gas
+    // wallet card and TON explorers show the user-friendly (UQ…) form. Surface the
+    // friendly form here too so admins don't mistake the raw value for a different
+    // wallet — both encode the SAME address (see tonRawToFriendly).
+    let fromHotWallet = order.fromHotWallet
+    if (order.chain === 'TON' && fromHotWallet) {
+      const { tonRawToFriendly } = await import('../lib/gas/tonWalletService')
+      fromHotWallet = tonRawToFriendly(fromHotWallet)
+    }
+
+    return reply.send({ success: true, data: { ...order, fromHotWallet, paymentSenderAddress, audit } })
   })
 
   // ── Financial aggregation helper ─────────────────────────────────────────────
