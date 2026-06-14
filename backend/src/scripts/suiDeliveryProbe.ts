@@ -28,9 +28,30 @@
  */
 
 import 'dotenv/config'
+import { createHash } from 'crypto'
 import { env } from '../lib/env'
 import { gasWalletIsConfigured, decryptGasSeed } from '../lib/gas/gasWalletService'
 import { getSuiHotWalletAddress, deriveSuiPrivateKeyForDelivery } from '../lib/gas/suiWalletService'
+import { deriveSlip10Ed25519, ed25519PublicKeyFromSeed } from '../lib/gas/nonEvmDerivation'
+
+const SUI_SLIP10_PATH = "m/44'/784'/0'/0'/0'"
+// The address shown as "From Wallet" in admin / where the user deposited 2 SUI.
+const FUNDED_ADDR = '0x1990cc54460686e360376426876377b3b17ea3212aaefa6b5481a1a601992e2f'
+
+/** Legacy sha3-256 address formula: 0x + hex(sha3_256(0x00 || pubkey))[0:64]. */
+function legacySha3Address(pubkey: Buffer): string {
+  const h = createHash('sha3-256').update(Buffer.concat([Buffer.from([0x00]), pubkey])).digest('hex')
+  return `0x${h.slice(0, 64)}`
+}
+
+async function suiBalance(addr: string): Promise<string> {
+  const res = await fetch(env.SUI_RPC_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'suix_getBalance', params: [addr, '0x2::sui::SUI'] }),
+  })
+  const data = await res.json() as { result?: { totalBalance?: string } }
+  return data.result?.totalBalance ?? '0'
+}
 
 const C = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
@@ -108,6 +129,34 @@ async function main() {
   } catch (e) { line('getOwnedObjects', `${C.red}ERROR: ${(e as Error).message}${C.reset}`) }
   console.log('')
 
+  // ── Legacy (sha3) address comparison — where did the 2 SUI go? ────────────
+  console.log(`${C.bold}Address derivation comparison${C.reset}`)
+  let legacyAddr: string | null = null
+  let legacyBal = '0'
+  let liveBal = '0'
+  {
+    const seed0 = decryptGasSeed()
+    try {
+      const { privateKey } = deriveSlip10Ed25519(seed0, SUI_SLIP10_PATH)
+      try {
+        const pubkey = ed25519PublicKeyFromSeed(privateKey)
+        line('ed25519 pubkey', `0x${pubkey.toString('hex')}`)
+        legacyAddr = legacySha3Address(pubkey)
+      } finally { privateKey.fill(0) }
+    } finally { seed0.fill(0) }
+  }
+  liveBal = await suiBalance(address)
+  line('CURRENT (blake2b)', `${address}`)
+  line('  balance', `${liveBal} MIST ${liveBal === '0' ? C.red + '(EMPTY)' + C.reset : C.green + '(funded)' + C.reset}`)
+  if (legacyAddr) {
+    legacyBal = await suiBalance(legacyAddr)
+    const isFundedAddr = legacyAddr.toLowerCase() === FUNDED_ADDR.toLowerCase()
+    line('LEGACY (sha3)', `${legacyAddr} ${isFundedAddr ? C.yellow + '← matches the funded address' + C.reset : ''}`)
+    line('  balance', `${legacyBal} MIST ${legacyBal !== '0' ? C.yellow + '(holds funds — NOT spendable by this keypair)' + C.reset : '(empty)'}`)
+  }
+  line('Funded addr (admin)', FUNDED_ADDR)
+  console.log('')
+
   // ── Build the exact delivery tx and resolve gas (no broadcast) ───────────
   console.log(`${C.bold}Delivery simulation (build + dryRun, NO broadcast)${C.reset}`)
   const seed = decryptGasSeed()
@@ -131,10 +180,23 @@ async function main() {
     } catch (e) {
       line('tx.build (gas select)', `${C.red}FAILED${C.reset}`)
       console.log(`  ${C.red}${(e as Error).message}${C.reset}`)
-      console.log(`\n${C.yellow}${C.bold}VERDICT:${C.reset} ${C.yellow}The SDK cannot source gas from this balance at v${sdkVersion}.`)
-      console.log(`The 2 SUI is held in the address-balance accumulator and is NOT a`)
-      console.log(`selectable owned Coin object. Delivery needs an SDK upgrade + an`)
-      console.log(`address-balance gas/withdraw path, or the funds converted to a Coin.${C.reset}\n`)
+      console.log('')
+      // Data-driven verdict: distinguish "wallet empty" from "SDK can't spend".
+      if (liveBal === '0' && legacyBal !== '0') {
+        console.log(`${C.yellow}${C.bold}VERDICT:${C.reset} ${C.yellow}Wrong address funded.`)
+        console.log(`The live delivery wallet (blake2b) is EMPTY. The ${legacyBal} MIST you`)
+        console.log(`funded sits on the LEGACY sha3 address, which this keypair cannot sign`)
+        console.log(`for (SUI derives the sender from blake2b(pubkey), not sha3).`)
+        console.log(`FIX: fund the CURRENT address  ${address}`)
+        console.log(`Those legacy funds are not spendable by the gas keypair.${C.reset}\n`)
+      } else if (liveBal === '0') {
+        console.log(`${C.yellow}${C.bold}VERDICT:${C.reset} ${C.yellow}The live delivery wallet is simply EMPTY.`)
+        console.log(`FIX: fund  ${address}  with SUI and delivery will proceed.${C.reset}\n`)
+      } else {
+        console.log(`${C.yellow}${C.bold}VERDICT:${C.reset} ${C.yellow}Wallet holds ${liveBal} MIST but the SDK could not`)
+        console.log(`select a gas coin at v${sdkVersion} — funds may be in the address-balance`)
+        console.log(`accumulator (not a selectable Coin object). Needs SDK upgrade / withdraw path.${C.reset}\n`)
+      }
       return
     }
 
