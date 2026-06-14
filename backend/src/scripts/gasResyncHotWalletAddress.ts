@@ -27,7 +27,17 @@
  */
 
 import 'dotenv/config'
-import { db } from '../lib/prisma'
+import { PrismaClient } from '@prisma/client'
+import { db as sharedDb } from '../lib/prisma'
+
+// `railway run` injects the INTERNAL DATABASE_URL (postgres.railway.internal),
+// which is only reachable from inside Railway's network — so a local run can't
+// connect. Set RESYNC_DATABASE_URL to Railway's PUBLIC database URL to run this
+// from your machine while still getting the gas seed from `railway run`.
+const overrideDbUrl = process.env.RESYNC_DATABASE_URL?.trim()
+const db = overrideDbUrl
+  ? new PrismaClient({ datasources: { db: { url: overrideDbUrl } } })
+  : sharedDb
 
 const C = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
@@ -60,7 +70,8 @@ function sameAddress(a: string, b: string): boolean {
 
 async function main() {
   const doFix = process.argv.includes('--fix')
-  console.log(`\n${C.bold}${C.cyan}Gas Hot Wallet Address Re-sync${C.reset}  ${C.dim}(${doFix ? 'FIX mode' : 'read-only'})${C.reset}\n`)
+  console.log(`\n${C.bold}${C.cyan}Gas Hot Wallet Address Re-sync${C.reset}  ${C.dim}(${doFix ? 'FIX mode' : 'read-only'})${C.reset}`)
+  console.log(`${C.dim}DB: ${overrideDbUrl ? 'RESYNC_DATABASE_URL (public override)' : 'DATABASE_URL (default)'}${C.reset}\n`)
 
   const wallets = await db.gasHotWallet.findMany({ orderBy: { chain: 'asc' } })
   if (wallets.length === 0) { console.log(`${C.yellow}No GasHotWallet rows found.${C.reset}\n`); return }
