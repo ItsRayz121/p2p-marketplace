@@ -25,7 +25,7 @@ import {
 import {
   getTonHotWalletAddress,
   deriveTonKeypairForDelivery,
-  getTonEndpointsInOrder,
+  getTonEndpoints,
 } from './tonWalletService'
 import {
   getSuiHotWalletAddress,
@@ -477,17 +477,18 @@ async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
     const wallet = WalletContractV4.create({ workchain: 0, publicKey: Buffer.from(publicKey) })
     const value = toNano(Number(order.gasAmountNative).toFixed(9))
 
-    // Try each endpoint (operator primary → public fallbacks). A transient 5xx /
-    // network outage on one provider falls through to the next instead of failing
-    // the whole delivery. getSeqno + send happen on the SAME client per attempt so
-    // the seqno stays consistent; this mirrors the existing job-level retry risk.
-    const endpoints = getTonEndpointsInOrder()
+    // Try each endpoint (operator primary → orbs ton-access → public toncenter).
+    // A transient 5xx / network outage on one provider falls through to the next
+    // instead of failing the whole delivery. getSeqno + send happen on the SAME
+    // client per attempt so the seqno stays consistent; this mirrors the existing
+    // job-level retry risk.
+    const endpoints = await getTonEndpoints()
     let lastErr: unknown
     for (const ep of endpoints) {
       try {
         const client = new TonClient({
-          endpoint: `${ep.baseUrl}/api/v2/jsonRPC`,
-          ...(ep.isPrimary && env.TON_API_KEY ? { apiKey: env.TON_API_KEY } : {}),
+          endpoint: ep.jsonRpcUrl,
+          ...(ep.apiKey ? { apiKey: ep.apiKey } : {}),
         })
         const contract = client.open(wallet)
         const seqno = await contract.getSeqno()

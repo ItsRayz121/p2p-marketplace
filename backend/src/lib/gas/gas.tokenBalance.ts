@@ -201,17 +201,20 @@ async function getTonJettonBalance(
   owner: string,
   knownDecimals?: number,
 ): Promise<TokenBalanceResult> {
-  const { getTonEndpointsInOrder } = await import('./tonWalletService')
+  const { getTonEndpoints } = await import('./tonWalletService')
 
   let lastErr: unknown
-  for (const ep of getTonEndpointsInOrder()) {
+  for (const ep of await getTonEndpoints()) {
     try {
       const headers: Record<string, string> = { Accept: 'application/json' }
-      if (ep.isPrimary && env.TON_API_KEY) headers['X-API-Key'] = env.TON_API_KEY
+      if (ep.apiKey) headers['X-API-Key'] = ep.apiKey
 
+      // jetton wallet lookup uses the toncenter v3 REST API. restBase ends in
+      // `/api/v2` (toncenter) or `…/toncenter-api-v2` (orbs) — swap to v3 for these.
+      const v3Base = ep.restBase.replace(/\/api\/v2$/i, '/api/v3').replace(/-v2$/i, '-v3')
       // toncenter v3: the owner's jetton wallet for this master holds the balance.
       const walletUrl =
-        `${ep.baseUrl}/api/v3/jetton/wallets?owner_address=${encodeURIComponent(owner)}` +
+        `${v3Base}/jetton/wallets?owner_address=${encodeURIComponent(owner)}` +
         `&jetton_address=${encodeURIComponent(jettonMaster)}&limit=1`
       const wRes = await fetch(walletUrl, { headers, signal: AbortSignal.timeout(10_000) })
       if (!wRes.ok) throw new Error(`TON API jetton/wallets HTTP ${wRes.status}`)
@@ -221,7 +224,7 @@ async function getTonJettonBalance(
       let decimals = knownDecimals
       if (decimals == null) {
         try {
-          const mUrl = `${ep.baseUrl}/api/v3/jetton/masters?address=${encodeURIComponent(jettonMaster)}&limit=1`
+          const mUrl = `${v3Base}/jetton/masters?address=${encodeURIComponent(jettonMaster)}&limit=1`
           const mRes = await fetch(mUrl, { headers, signal: AbortSignal.timeout(10_000) })
           const mData = await mRes.json() as { jetton_masters?: Array<{ jetton_content?: { decimals?: string | number } }> }
           const d = mData.jetton_masters?.[0]?.jetton_content?.decimals

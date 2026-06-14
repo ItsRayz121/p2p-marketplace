@@ -125,6 +125,8 @@ const STATUS_LABELS: Record<string, string> = {
   delivered:        'Delivered',
   expired:          'Expired',
   failed:           'Failed',
+  awaiting_refund:  'Delivery Delayed (Refund Window)',
+  refund_pending:   'Refund Processing',
   refunded:         'Refunded',
 }
 
@@ -132,6 +134,7 @@ function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' 
   if (s === 'delivered' || s === 'payment_verified') return 'success'
   if (s === 'failed' || s === 'expired') return 'danger'
   if (s === 'refunded') return 'warning'
+  if (s === 'awaiting_refund' || s === 'refund_pending') return 'warning'
   if (s === 'payment_uploaded') return 'warning'
   if (s === 'payment_detected' || s === 'sending') return 'default'
   return 'outline'
@@ -319,6 +322,8 @@ export default function GasOrderDetailPage() {
 
   const isFailed = order.status === 'failed'
   const isRefundPending = order.status === 'refund_pending'
+  // Delivery failed; system still retrying within the user-facing refund window.
+  const isAwaitingRefund = order.status === 'awaiting_refund'
   // Paid order paused before delivery — typically an empty hot wallet
   // (INSUFFICIENT_HOT_WALLET_BALANCE). Surface refill/retry/refund controls.
   const isStuckDetected = order.status === 'payment_detected'
@@ -501,16 +506,23 @@ export default function GasOrderDetailPage() {
       )}
 
       {/* Actions — failed or stuck-refund order */}
-      {(isFailed || isRefundPending) && (
-        <div className="flex gap-3 mb-6">
-          {isFailed && (
-            <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>
-              Retry Delivery
-            </Button>
+      {(isFailed || isRefundPending || isAwaitingRefund) && (
+        <div className="mb-6">
+          {isAwaitingRefund && (
+            <p className="text-sm text-amber-600 font-medium mb-2">
+              Delivery failed — the system is still retrying and the user can request a refund once the window elapses. You can force a refund now, or retry delivery.
+            </p>
           )}
-          <Button variant="danger" size="sm" onClick={() => setRefundOpen(true)}>
-            {isRefundPending ? 'Send Refund Now' : 'Refund'}
-          </Button>
+          <div className="flex gap-3">
+            {(isFailed || isAwaitingRefund) && (
+              <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>
+                Retry Delivery
+              </Button>
+            )}
+            <Button variant="danger" size="sm" onClick={() => setRefundOpen(true)}>
+              {isRefundPending ? 'Send Refund Now' : 'Refund'}
+            </Button>
+          </div>
         </div>
       )}
 

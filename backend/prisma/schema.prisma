@@ -223,6 +223,7 @@ enum GasFeeOrderStatus {
   delivered
   expired
   failed
+  awaiting_refund
   refund_pending
   refunded
   cancelled
@@ -1299,6 +1300,10 @@ model GasFeeOrder {
 
   refundTxHash        String?
   refundAmount        Decimal?          @db.Decimal(10, 4)
+  // When set (on a delivery-failed order), the moment after which the user may
+  // request an immediate refund. Before this, the system keeps retrying delivery
+  // and the UI shows a countdown. See lib/gas/gas.refundWindow.ts.
+  refundEligibleAt    DateTime?
 
   status              GasFeeOrderStatus @default(created)
   failureReason       String?

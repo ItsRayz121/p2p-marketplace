@@ -21,34 +21,69 @@ import type { RpcHealthResult } from './gas.balance'
 
 const TON_SLIP10_PATH = "m/44'/607'/0'/0'"
 
-// Free public TON HTTP API v2 endpoint(s) used as fallbacks when the operator's
-// primary endpoint returns a transient 5xx / network error. toncenter.com is the
-// canonical public gateway. Operators should still set a keyed primary via
-// TON_ENDPOINT_URL for rate limits; these only catch primary outages.
-const TON_PUBLIC_FALLBACKS = ['https://toncenter.com']
+// Public TON HTTP API v2 gateway used as a keyless last-resort fallback. The
+// keyless public toncenter tier is hard rate-limited and frequently 5xx's on
+// getSeqno/sendBoc, so the REAL resilience comes from the orbs ton-access
+// fallback below (decentralised + unthrottled, no API key required).
+const TON_PUBLIC_TONCENTER = 'https://toncenter.com'
 
 export interface TonEndpoint {
-  /** Base URL with no trailing slash, e.g. https://toncenter.com */
-  baseUrl: string
-  /** Whether this is the operator-configured primary (gets the API key). */
-  isPrimary: boolean
+  /** Full JSON-RPC URL for TonClient ({ endpoint }) — e.g. https://…/api/v2/jsonRPC */
+  jsonRpcUrl: string
+  /** Base for REST v2 calls; append `/getAddressBalance`, `/getMasterchainInfo`, `/jetton/…`. */
+  restBase: string
+  /** API key to send (X-API-Key header / TonClient apiKey). Only the keyed operator primary. */
+  apiKey?: string
+  /** Human label for logs/diagnostics. */
+  label: string
+}
+
+// orbs ton-access resolves an unthrottled, keyless endpoint via a config lookup.
+// Cache it so we don't re-fetch that config on every balance read / delivery.
+let _orbsCache: { url: string; at: number } | null = null
+const ORBS_TTL_MS = 10 * 60_000
+
+async function resolveOrbsEndpoint(): Promise<string | null> {
+  if (_orbsCache && Date.now() - _orbsCache.at < ORBS_TTL_MS) return _orbsCache.url
+  try {
+    const { getHttpEndpoint } = await import('@orbs-network/ton-access')
+    const url = await getHttpEndpoint() // mainnet toncenter-api-v2 jsonRPC, keyless
+    _orbsCache = { url, at: Date.now() }
+    return url
+  } catch {
+    return null // orbs config lookup failed — fall through to toncenter
+  }
+}
+
+function toncenterEndpoint(base: string, apiKey: string | undefined, label: string): TonEndpoint {
+  const b = base.replace(/\/$/, '')
+  return { jsonRpcUrl: `${b}/api/v2/jsonRPC`, restBase: `${b}/api/v2`, ...(apiKey ? { apiKey } : {}), label }
 }
 
 /**
- * Ordered, de-duplicated list of TON endpoints to try: operator primary first,
- * then free public fallbacks. Only the primary carries the API key (a toncenter
- * key is not valid on a different provider).
+ * Ordered, de-duplicated TON endpoints to try, async because the orbs fallback is
+ * resolved over the network:
+ *   1. operator primary (TON_ENDPOINT_URL) with TON_API_KEY if configured;
+ *   2. orbs ton-access — decentralised, unthrottled, keyless (the real fallback);
+ *   3. public toncenter.com (keyless last resort).
+ * Only the operator primary carries the API key — a toncenter key isn't valid
+ * on a different provider.
  */
-export function getTonEndpointsInOrder(): TonEndpoint[] {
-  const primary = env.TON_ENDPOINT_URL.replace(/\/$/, '')
-  const seen = new Set<string>()
+export async function getTonEndpoints(): Promise<TonEndpoint[]> {
   const out: TonEndpoint[] = []
-  for (const [i, base] of [primary, ...TON_PUBLIC_FALLBACKS].entries()) {
-    const url = base.replace(/\/$/, '')
-    if (seen.has(url)) continue
-    seen.add(url)
-    out.push({ baseUrl: url, isPrimary: i === 0 })
+  const seen = new Set<string>()
+  const push = (ep: TonEndpoint | null) => {
+    if (!ep || seen.has(ep.jsonRpcUrl)) return
+    seen.add(ep.jsonRpcUrl)
+    out.push(ep)
   }
+
+  push(toncenterEndpoint(env.TON_ENDPOINT_URL, env.TON_API_KEY || undefined, 'operator'))
+
+  const orbs = await resolveOrbsEndpoint()
+  if (orbs) push({ jsonRpcUrl: orbs, restBase: orbs.replace(/\/jsonRPC$/i, ''), label: 'orbs-ton-access' })
+
+  push(toncenterEndpoint(TON_PUBLIC_TONCENTER, undefined, 'toncenter-public'))
   return out
 }
 
@@ -178,11 +213,11 @@ export function validateTonAtStartup(): {
  */
 export async function getTonBalance(address: string): Promise<number> {
   let lastErr: unknown
-  for (const ep of getTonEndpointsInOrder()) {
+  for (const ep of await getTonEndpoints()) {
     try {
-      const url = `${ep.baseUrl}/api/v2/getAddressBalance?address=${encodeURIComponent(address)}`
+      const url = `${ep.restBase}/getAddressBalance?address=${encodeURIComponent(address)}`
       const headers: Record<string, string> = { Accept: 'application/json' }
-      if (ep.isPrimary && env.TON_API_KEY) headers['X-API-Key'] = env.TON_API_KEY
+      if (ep.apiKey) headers['X-API-Key'] = ep.apiKey
 
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
       if (!res.ok) throw new Error(`TON API getAddressBalance HTTP ${res.status}`)
@@ -201,13 +236,13 @@ export async function getTonBalance(address: string): Promise<number> {
 
 export async function checkTonRpc(): Promise<RpcHealthResult> {
   let lastResult: RpcHealthResult = { reachable: false, latencyMs: 0, error: 'no TON endpoint configured' }
-  for (const ep of getTonEndpointsInOrder()) {
+  for (const ep of await getTonEndpoints()) {
     const start = Date.now()
     try {
       const headers: Record<string, string> = { Accept: 'application/json' }
-      if (ep.isPrimary && env.TON_API_KEY) headers['X-API-Key'] = env.TON_API_KEY
+      if (ep.apiKey) headers['X-API-Key'] = ep.apiKey
 
-      const res = await fetch(`${ep.baseUrl}/api/v2/getMasterchainInfo`, {
+      const res = await fetch(`${ep.restBase}/getMasterchainInfo`, {
         headers,
         signal: AbortSignal.timeout(8_000),
       })

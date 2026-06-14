@@ -1279,7 +1279,7 @@ export interface GasOrder {
   userId?: string | null
   orderRef: string
   trackingToken?: string | null
-  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refund_pending' | 'refunded' | 'cancelled'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'awaiting_refund' | 'refund_pending' | 'refunded' | 'cancelled'
   toAddress: string
   tier?: string | null
   chain: string
@@ -1296,6 +1296,7 @@ export interface GasOrder {
   deliveryTxHash?: string
   refundTxHash?: string | null
   failureReason?: string | null
+  refundEligibleAt?: string | null
   expiresAt: string
   createdAt?: string
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null

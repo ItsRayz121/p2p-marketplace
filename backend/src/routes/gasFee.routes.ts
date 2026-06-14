@@ -16,6 +16,7 @@ import { getUsdtNetworkFeeUsd } from '../lib/gas/gas.fees'
 import { tokenDeliverySupported } from '../lib/gas/gas.delivery'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
+import { isRefundEligible, refundWaitRemainingMs } from '../lib/gas/gas.refundWindow'
 import {
   gasCancelIdentity,
   assertNotInGasCooldown,
@@ -1555,36 +1556,50 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('FORBIDDEN', 'Access denied. Use the original order tracking link.', 403)
     }
 
-    // Only a paid order that is PAUSED before delivery can be user-refunded. We
-    // deliberately exclude 'sending': that means the delivery worker has already
-    // claimed the order (payment_detected → sending) and a transfer may be in
-    // flight — refunding then could double-spend (deliver AND refund). The stuck/
-    // insufficient-balance case we care about always sits in 'payment_detected'.
-    if (order.status !== 'payment_detected') {
+    // Two refundable shapes, both PAID:
+    //   • payment_detected — stuck BEFORE delivery (e.g. empty hot wallet). Gated by
+    //     a stuck grace window / a recorded failure / admin.
+    //   • awaiting_refund  — delivery FAILED and we're in the interactive refund
+    //     window. Gated by refundEligibleAt (the 5-min button-unlock) / admin.
+    // We deliberately exclude 'sending': the worker has claimed the order and a
+    // transfer may be in flight — refunding then could double-spend.
+    if (order.status !== 'payment_detected' && order.status !== 'awaiting_refund') {
       throw new AppError('INVALID_STATUS', `This order can't be refunded from here (status: ${order.status}).`, 409)
     }
     if (!order.paymentTxHash) {
       throw new AppError('NO_PAYMENT', 'No payment is recorded for this order yet, so there is nothing to refund.', 409)
     }
 
-    // Gate: only once delivery has failed or the order has been stuck past the grace window.
-    const stuckMs = Date.now() - new Date(order.createdAt).getTime()
-    const eligible = isAdmin || !!order.failureReason || stuckMs >= STUCK_REFUND_THRESHOLD_MS
-    if (!eligible) {
-      const waitS = Math.ceil((STUCK_REFUND_THRESHOLD_MS - stuckMs) / 1000)
-      throw new AppError('TOO_EARLY', `Please wait a little longer — a refund can be requested in about ${waitS}s if delivery hasn't completed.`, 429)
+    if (order.status === 'awaiting_refund') {
+      // Delivery failed — refundable once the window has elapsed.
+      if (!isAdmin && !isRefundEligible(order.refundEligibleAt)) {
+        const waitS = Math.ceil(refundWaitRemainingMs(order.refundEligibleAt) / 1000)
+        throw new AppError('TOO_EARLY', `We're still trying to deliver your gas. You can request a refund in about ${waitS}s if it hasn't arrived.`, 429)
+      }
+    } else {
+      // payment_detected — stuck before delivery: only once it's failed or sat past the grace window.
+      const stuckMs = Date.now() - new Date(order.createdAt).getTime()
+      const eligible = isAdmin || !!order.failureReason || stuckMs >= STUCK_REFUND_THRESHOLD_MS
+      if (!eligible) {
+        const waitS = Math.ceil((STUCK_REFUND_THRESHOLD_MS - stuckMs) / 1000)
+        throw new AppError('TOO_EARLY', `Please wait a little longer — a refund can be requested in about ${waitS}s if delivery hasn't completed.`, 429)
+      }
     }
 
-    // CAS transition: races the delivery worker's payment_detected → sending claim.
-    // Only one of the two updateMany calls can win, so we never refund a claimed order.
+    // CAS transition from whichever refundable state the order is in. Races the
+    // delivery worker's claim (→ sending) and the auto-refund safety net; only one
+    // transition can win, so we never refund a claimed/already-refunding order.
     const moved = await db.gasFeeOrder.updateMany({
-      where: { id: order.id, status: 'payment_detected' },
+      where: { id: order.id, status: order.status },
       data:  { status: 'refund_pending', failureReason: order.failureReason ?? 'User requested refund (delivery delayed)' },
     })
     if (moved.count === 0) {
       const fresh = await db.gasFeeOrder.findUnique({ where: { id: order.id }, select: { status: true } })
       throw new AppError('INVALID_STATUS', `This order can no longer be refunded from here (status: ${fresh?.status ?? order.status}).`, 409)
     }
+
+    // Drop the pending safety-net auto-refund — the user beat it to the punch.
+    try { await queues.gasFee.remove(`gas-auto-refund-${order.id}`) } catch { /* non-fatal */ }
 
     const jobId = `gas-refund-${order.id}`
     try { await queues.gasFee.remove(jobId) } catch { /* active or absent — add() stays a safe no-op */ }

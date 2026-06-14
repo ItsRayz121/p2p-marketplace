@@ -39,6 +39,7 @@
     "@fastify/multipart": "^8.3.1",
     "@fastify/rate-limit": "^9.1.0",
     "@mysten/sui": "^1.45.2",
+    "@orbs-network/ton-access": "^2.3.3",
     "@prisma/client": "^5.16.0",
     "@sentry/node": "^10.53.1",
     "@solana/web3.js": "^1.98.4",

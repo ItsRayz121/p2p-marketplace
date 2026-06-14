@@ -4037,11 +4037,12 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/gas/orders/:id/retry', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
-    // CAS: transition failed → payment_detected so the delivery worker can re-claim it.
+    // CAS: transition failed/awaiting_refund → payment_detected so the delivery
+    // worker can re-claim it. For awaiting_refund we also clear the refund window.
     // Concurrent retries find count=0 on the second call and fall through below.
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: 'failed' },
-      data: { status: 'payment_detected', failureReason: null, retryCount: { increment: 1 } },
+      where: { id, status: { in: ['failed', 'awaiting_refund'] } },
+      data: { status: 'payment_detected', failureReason: null, refundEligibleAt: null, retryCount: { increment: 1 } },
     })
 
     let previousStatus = 'failed'
@@ -4055,8 +4056,12 @@ export async function adminRoutes(app: FastifyInstance) {
         previousStatus = 'payment_detected'
         await db.gasFeeOrder.update({ where: { id }, data: { failureReason: null } })
       } else {
-        throw new AppError('CONFLICT', `Order is in '${order.status}' — only failed or stuck (payment_detected) orders can be retried`, 409)
+        throw new AppError('CONFLICT', `Order is in '${order.status}' — only failed, stuck (payment_detected), or awaiting_refund orders can be retried`, 409)
       }
+    } else {
+      // Came from awaiting_refund (or failed): drop the pending safety-net auto-refund
+      // so it can't fire after a manual retry. The retry-delivery chain self-stops.
+      try { await queues.gasFee.remove(`gas-auto-refund-${id}`) } catch { /* non-fatal */ }
     }
 
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
@@ -4074,10 +4079,13 @@ export async function adminRoutes(app: FastifyInstance) {
     // 'payment_detected' is included so an order stuck because the hot wallet is
     // empty (insufficient balance — delivery paused, not yet failed) can be
     // refunded directly from the admin order page without waiting for expiry.
-    if (!['failed', 'refund_pending', 'expired', 'payment_detected'].includes(order.status)) {
+    // 'awaiting_refund' is the post-delivery-failure window: the system is still
+    // retrying and the user can self-refund once it elapses, but an admin may also
+    // force the refund immediately from here.
+    if (!['failed', 'refund_pending', 'expired', 'payment_detected', 'awaiting_refund'].includes(order.status)) {
       throw new AppError(
         'INVALID_STATUS',
-        `Cannot refund an order with status '${order.status}'. Only failed / refund_pending / expired / payment_detected orders can be refunded.`,
+        `Cannot refund an order with status '${order.status}'. Only failed / refund_pending / expired / payment_detected / awaiting_refund orders can be refunded.`,
         400,
       )
     }
@@ -4128,13 +4136,15 @@ export async function adminRoutes(app: FastifyInstance) {
     // status is still one of the refundable ones — never overwrite an in-flight
     // 'sending'/'delivered' state, which would double-spend (deliver AND refund).
     const moved = await db.gasFeeOrder.updateMany({
-      where: { id, status: { in: ['failed', 'refund_pending', 'expired', 'payment_detected'] } },
+      where: { id, status: { in: ['failed', 'refund_pending', 'expired', 'payment_detected', 'awaiting_refund'] } },
       data: { status: 'refund_pending', failureReason: null },
     })
     if (moved.count === 0) {
       const fresh = await db.gasFeeOrder.findUnique({ where: { id }, select: { status: true } })
       throw new AppError('CONFLICT', `Order moved to '${fresh?.status ?? 'unknown'}' before the refund could start — it can no longer be refunded from here.`, 409)
     }
+    // If this was sitting in the post-failure window, cancel its pending safety-net auto-refund.
+    try { await queues.gasFee.remove(`gas-auto-refund-${id}`) } catch { /* non-fatal */ }
     const jobId = `gas-refund-${id}`
     try { await queues.gasFee.remove(jobId) } catch { /* active or absent — add() stays a safe no-op */ }
     await queues.gasFee.add(
