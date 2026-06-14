@@ -61,8 +61,15 @@ async function main() {
     process.exit(1)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const sdkVersion = require('@mysten/sui/package.json').version as string
+  // Resolve the installed @mysten/sui version without touching its (blocked)
+  // ./package.json export — walk up from a real export entry and read the file.
+  let sdkVersion = 'unknown'
+  try {
+    const { readFileSync } = await import('fs')
+    const entry = require.resolve('@mysten/sui/client')
+    const m = entry.match(/^(.*[\\/]@mysten[\\/]sui)[\\/]/)
+    if (m) sdkVersion = JSON.parse(readFileSync(`${m[1]}/package.json`, 'utf8')).version
+  } catch { /* version is informational only */ }
   const { SuiClient } = await import('@mysten/sui/client')
   const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519')
   const { Transaction } = await import('@mysten/sui/transactions')
