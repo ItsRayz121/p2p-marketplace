@@ -205,6 +205,7 @@ async function getTonJettonBalance(
 
   let lastErr: unknown
   for (const ep of await getTonEndpoints()) {
+    if (ep.kind !== 'jsonrpc-v2') continue // v4 (TON Hub) has no toncenter REST jetton route
     try {
       const headers: Record<string, string> = { Accept: 'application/json' }
       if (ep.apiKey) headers['X-API-Key'] = ep.apiKey

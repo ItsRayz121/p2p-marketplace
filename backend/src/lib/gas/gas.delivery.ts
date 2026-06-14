@@ -461,7 +461,7 @@ async function deliverSol(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
 // ── TON delivery ──────────────────────────────────────────────────────────────
 
 async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  const { WalletContractV4, TonClient, internal } = await import('@ton/ton')
+  const { WalletContractV4, TonClient, TonClient4, internal } = await import('@ton/ton')
   const { toNano } = await import('@ton/core')
 
   const seed = decryptGasSeed()
@@ -477,28 +477,43 @@ async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
     const wallet = WalletContractV4.create({ workchain: 0, publicKey: Buffer.from(publicKey) })
     const value = toNano(Number(order.gasAmountNative).toFixed(9))
 
-    // Try each endpoint (operator primary → orbs ton-access → public toncenter).
-    // A transient 5xx / network outage on one provider falls through to the next
-    // instead of failing the whole delivery. getSeqno + send happen on the SAME
-    // client per attempt so the seqno stays consistent; this mirrors the existing
-    // job-level retry risk.
+    // Signed transfer cell is identical regardless of which provider broadcasts it —
+    // it only depends on the seqno. createTransfer lives on the wallet (no provider
+    // needed), so build it per attempt with that endpoint's freshly-read seqno.
+    const buildTransfer = (seqno: number) =>
+      wallet.createTransfer({
+        seqno,
+        secretKey,
+        messages: [internal({ to: order.toAddress, value, bounce: false })],
+      })
+
+    // Try each endpoint in order. 1–3 are the toncenter v2 family (operator → orbs →
+    // public) and tend to fail together when that backend 5xx's; the 'v4' endpoint is
+    // TON Hub's independent infrastructure and is the real survivor of a toncenter
+    // outage. getSeqno + send happen on the SAME client per attempt so the seqno
+    // stays consistent.
     const endpoints = await getTonEndpoints()
     let lastErr: unknown
     for (const ep of endpoints) {
       try {
+        if (ep.kind === 'v4') {
+          const client = new TonClient4({ endpoint: ep.jsonRpcUrl, timeout: 15_000 })
+          const contract = client.open(wallet)
+          const seqno = await contract.getSeqno()
+          const transfer = buildTransfer(seqno)
+          // External message cell hash — unique identifier usable on Tonscan
+          const txHash = transfer.hash().toString('hex')
+          await client.sendMessage(transfer.toBoc())
+          return txHash
+        }
+
         const client = new TonClient({
           endpoint: ep.jsonRpcUrl,
           ...(ep.apiKey ? { apiKey: ep.apiKey } : {}),
         })
         const contract = client.open(wallet)
         const seqno = await contract.getSeqno()
-
-        const transfer = contract.createTransfer({
-          seqno,
-          secretKey,
-          messages: [internal({ to: order.toAddress, value, bounce: false })],
-        })
-
+        const transfer = buildTransfer(seqno)
         // External message cell hash — unique identifier usable on Tonscan
         const txHash = transfer.hash().toString('hex')
         await client.sendFile(transfer.toBoc())

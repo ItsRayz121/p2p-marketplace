@@ -92,6 +92,9 @@ const envSchema = z.object({
   TON_ENDPOINT_URL: z.string().url().default('https://toncenter.com'),
   // TON_API_KEY: optional API key for toncenter.com rate-limit tier
   TON_API_KEY: z.string().optional(),
+  // TON v4 API (TON Hub) — genuinely independent of toncenter, used as the real
+  // delivery fallback when the toncenter-family v2 backend is 5xx'ing.
+  TON_V4_ENDPOINT_URL: z.string().url().default('https://mainnet-v4.tonhubapi.com'),
   // SUI: SUI Mainnet JSON-RPC node (mysten, Shinami, QuickNode, etc.)
   SUI_RPC_URL: z.string().url().default('https://fullnode.mainnet.sui.io'),
   // Aptos Indexer GraphQL endpoint — used by the gas payment poller to detect

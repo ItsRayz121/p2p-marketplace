@@ -36,6 +36,15 @@ export interface TonEndpoint {
   apiKey?: string
   /** Human label for logs/diagnostics. */
   label: string
+  /**
+   * Which TON API protocol this endpoint speaks:
+   *   - 'jsonrpc-v2': toncenter HTTP API v2 (TonClient + REST). The whole toncenter
+   *     family (operator/orbs/public) shares this backend — a 5xx on one tends to be
+   *     a 5xx on all.
+   *   - 'v4': TON Hub v4 API (TonClient4). Independent infrastructure — used as the
+   *     real delivery fallback. Does NOT expose the v2 REST balance/health routes.
+   */
+  kind: 'jsonrpc-v2' | 'v4'
 }
 
 // orbs ton-access resolves an unthrottled, keyless endpoint via a config lookup.
@@ -60,17 +69,20 @@ async function resolveOrbsEndpoint(): Promise<string | null> {
 
 function toncenterEndpoint(base: string, apiKey: string | undefined, label: string): TonEndpoint {
   const b = base.replace(/\/$/, '')
-  return { jsonRpcUrl: `${b}/api/v2/jsonRPC`, restBase: `${b}/api/v2`, ...(apiKey ? { apiKey } : {}), label }
+  return { jsonRpcUrl: `${b}/api/v2/jsonRPC`, restBase: `${b}/api/v2`, ...(apiKey ? { apiKey } : {}), label, kind: 'jsonrpc-v2' }
 }
 
 /**
  * Ordered, de-duplicated TON endpoints to try, async because the orbs fallback is
  * resolved over the network:
  *   1. operator primary (TON_ENDPOINT_URL) with TON_API_KEY if configured;
- *   2. orbs ton-access — decentralised, unthrottled, keyless (the real fallback);
- *   3. public toncenter.com (keyless last resort).
- * Only the operator primary carries the API key — a toncenter key isn't valid
- * on a different provider.
+ *   2. orbs ton-access — decentralised, unthrottled, keyless toncenter-v2 access;
+ *   3. public toncenter.com (keyless last resort);
+ *   4. TON Hub v4 (TonClient4) — INDEPENDENT infrastructure, not toncenter. This is
+ *      the genuine fallback when the whole toncenter-v2 family is 5xx'ing.
+ * 1–3 all speak the same toncenter v2 backend, so a backend outage takes all three
+ * down together; (4) is the one that survives that. Only the operator primary
+ * carries the API key — a toncenter key isn't valid on a different provider.
  */
 export async function getTonEndpoints(): Promise<TonEndpoint[]> {
   const out: TonEndpoint[] = []
@@ -84,9 +96,12 @@ export async function getTonEndpoints(): Promise<TonEndpoint[]> {
   push(toncenterEndpoint(env.TON_ENDPOINT_URL, env.TON_API_KEY || undefined, 'operator'))
 
   const orbs = await resolveOrbsEndpoint()
-  if (orbs) push({ jsonRpcUrl: orbs, restBase: orbs.replace(/\/jsonRPC$/i, ''), label: 'orbs-ton-access' })
+  if (orbs) push({ jsonRpcUrl: orbs, restBase: orbs.replace(/\/jsonRPC$/i, ''), label: 'orbs-ton-access', kind: 'jsonrpc-v2' })
 
   push(toncenterEndpoint(TON_PUBLIC_TONCENTER, undefined, 'toncenter-public'))
+
+  // Independent provider (not toncenter) — TonClient4 against TON Hub's v4 API.
+  push({ jsonRpcUrl: env.TON_V4_ENDPOINT_URL, restBase: env.TON_V4_ENDPOINT_URL, label: 'tonhub-v4', kind: 'v4' })
   return out
 }
 
@@ -217,6 +232,7 @@ export function validateTonAtStartup(): {
 export async function getTonBalance(address: string): Promise<number> {
   let lastErr: unknown
   for (const ep of await getTonEndpoints()) {
+    if (ep.kind !== 'jsonrpc-v2') continue // v4 has no REST /getAddressBalance route
     try {
       const url = `${ep.restBase}/getAddressBalance?address=${encodeURIComponent(address)}`
       const headers: Record<string, string> = { Accept: 'application/json' }
@@ -240,6 +256,7 @@ export async function getTonBalance(address: string): Promise<number> {
 export async function checkTonRpc(): Promise<RpcHealthResult> {
   let lastResult: RpcHealthResult = { reachable: false, latencyMs: 0, error: 'no TON endpoint configured' }
   for (const ep of await getTonEndpoints()) {
+    if (ep.kind !== 'jsonrpc-v2') continue // v4 has no REST /getMasterchainInfo route
     const start = Date.now()
     try {
       const headers: Record<string, string> = { Accept: 'application/json' }
@@ -255,6 +272,22 @@ export async function checkTonRpc(): Promise<RpcHealthResult> {
       if (!data.ok) { lastResult = { reachable: false, latencyMs, error: data.error ?? 'API returned ok:false' }; continue }
       const blockNumber = data.result?.last?.seqno
       return { reachable: true, latencyMs, ...(blockNumber !== undefined ? { blockNumber } : {}) }
+    } catch (err) {
+      lastResult = { reachable: false, latencyMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  // All toncenter-v2 endpoints failed — try the independent TON Hub v4 provider so a
+  // toncenter outage doesn't make the admin dry-run report TON as unreachable when
+  // delivery would actually succeed via v4.
+  const v4 = (await getTonEndpoints()).find((ep) => ep.kind === 'v4')
+  if (v4) {
+    const start = Date.now()
+    try {
+      const { TonClient4 } = await import('@ton/ton')
+      const client = new TonClient4({ endpoint: v4.jsonRpcUrl, timeout: 8_000 })
+      const { last } = await client.getLastBlock()
+      return { reachable: true, latencyMs: Date.now() - start, blockNumber: last.seqno }
     } catch (err) {
       lastResult = { reachable: false, latencyMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) }
     }
