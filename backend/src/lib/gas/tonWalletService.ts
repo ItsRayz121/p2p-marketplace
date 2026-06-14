@@ -50,8 +50,11 @@ async function resolveOrbsEndpoint(): Promise<string | null> {
     const url = await getHttpEndpoint() // mainnet toncenter-api-v2 jsonRPC, keyless
     _orbsCache = { url, at: Date.now() }
     return url
-  } catch {
-    return null // orbs config lookup failed — fall through to toncenter
+  } catch (err) {
+    // Surface why the orbs fallback was skipped — otherwise a failed resolution is
+    // invisible and TON delivery silently degrades to operator + public toncenter only.
+    console.warn('[ton] orbs ton-access endpoint resolution failed; falling back to toncenter:', err instanceof Error ? err.message : String(err))
+    return null
   }
 }
 
