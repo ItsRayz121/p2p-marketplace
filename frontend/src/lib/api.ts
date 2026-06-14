@@ -1852,6 +1852,27 @@ export const adminApi = {
       }>
       pagination: { page: number; limit: number; total: number; pages: number }
     }>('/admin/platform-revenue/sweep-history' + buildQs(params)),
+  // External wallet withdrawal of platform-owned revenue (safe headroom only)
+  getWithdrawConfig: () =>
+    apiRequest<{
+      destinations: { evm: string | null; tron: string | null; aptos: string | null }
+      withdrawable: Array<{
+        token: string; chain: string; family: string | null; network: string | null
+        onChain: number; userLiability: number; pendingOut: number; buffer: number
+        available: number; destinationSet: boolean; supported: boolean
+      }>
+    }>('/admin/platform-revenue/withdraw-config'),
+  setWithdrawDestination: (data: { family: 'evm' | 'tron' | 'aptos'; address: string }) =>
+    apiRequest<{ family: string; address: string }>(
+      '/admin/platform-revenue/withdraw-destination',
+      { method: 'PUT', body: JSON.stringify(data) },
+    ),
+  withdrawRevenue: (data: { tokenSymbol: string; chain: string; amount?: number }) =>
+    apiRequest<{
+      txHash: string; destination: string; hotWalletAddress: string
+      tokenSymbol: string; chain: string; amount: number
+      hotWalletBalanceBefore: number; remainingAvailable: number
+    }>('/admin/platform-revenue/withdraw', { method: 'POST', body: JSON.stringify(data) }),
 
   // Ratings
   getAdminRatings: (params?: Record<string, string | number | undefined>) =>

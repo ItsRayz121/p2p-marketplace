@@ -245,6 +245,7 @@ enum GasLedgerEntryType {
   platform_fee         // platform fee collected from user withdrawals (stays in hot wallet)
   platform_fee_sweep   // accumulated platform fees swept from hot wallet → treasury wallet
   external_hot_wallet_deposit  // direct native-token send to hot wallet (e.g. admin top-up)
+  platform_revenue_withdrawal  // platform-owned funds withdrawn from hot wallet → external wallet
 }
 
 enum GasRefillRequestStatus {

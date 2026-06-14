@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { cloudinary, CLOUDINARY_FOLDERS, signCloudinaryDeliveryUrl } from '../lib/cloudinary'
@@ -7602,107 +7602,136 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
-  // POST /admin/platform-revenue/sweep — super_admin only, on-chain transfer
-  app.post('/admin/platform-revenue/sweep', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
-    const { sweepTokenToTreasury } = await import('../lib/treasury.sweep')
+  // GET /admin/platform-revenue/withdraw-config — destinations + safe-withdrawable
+  // balances per token×chain (the real platform-owned funds that can be paid out).
+  app.get('/admin/platform-revenue/withdraw-config', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { getAllWithdrawDestinations, getWithdrawable, chainFamily } = await import('../lib/gas/gas.revenue')
+
+    // Candidate (token, chain) pairs: anything that has ever produced revenue.
+    const pairs = await db.gasLedgerEntry.groupBy({
+      by: ['tokenSymbol', 'chain'],
+      where: { entryType: { in: ['order_payment', 'platform_fee'] }, tokenSymbol: { not: null } },
+    })
+
+    const [destinations, withdrawable] = await Promise.all([
+      getAllWithdrawDestinations(),
+      Promise.all(
+        pairs
+          .filter(p => p.tokenSymbol && chainFamily(p.chain as string))
+          .map(p => getWithdrawable(p.chain as string, p.tokenSymbol as string)),
+      ),
+    ])
+
+    return reply.send({
+      success: true,
+      data: { destinations, withdrawable: withdrawable.sort((a, b) => b.available - a.available) },
+    })
+  })
+
+  // PUT /admin/platform-revenue/withdraw-destination — set external payout address
+  app.put('/admin/platform-revenue/withdraw-destination', { preHandler: superStepUp }, async (req, reply) => {
+    const { setWithdrawDestination, validateDestination } = await import('../lib/gas/gas.revenue')
+    const schema = z.object({
+      family:  z.enum(['evm', 'tron', 'aptos']),
+      address: z.string().trim().min(1),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const { family, address } = parsed.data
+    if (!validateDestination(family, address)) {
+      return reply.status(400).send({ success: false, error: `Invalid ${family.toUpperCase()} address format.` })
+    }
+
+    const row = await setWithdrawDestination(family, address)
+    await createAuditLog(req.user!.id, 'GAS_WITHDRAW_DESTINATION_SET', 'PlatformConfig', row.id, { family, address }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: { family, address } })
+  })
+
+  // POST /admin/platform-revenue/withdraw — super_admin only. Sends platform-owned
+  // funds from the hot wallet to the operator's EXTERNAL wallet. Hard-capped at the
+  // conservative safe-withdrawable headroom (never touches user-custodied funds).
+  // Kept under /sweep too for backward-compatible API clients.
+  const withdrawHandler = async (req: FastifyRequest, reply: FastifyReply) => {
+    const { getWithdrawable, getWithdrawDestination, chainFamily } = await import('../lib/gas/gas.revenue')
+    const { withdrawHotWalletToken } = await import('../lib/treasury.sweep')
 
     const body = req.body as { tokenSymbol?: string; chain?: string; amount?: number }
     if (!body.tokenSymbol || !body.chain) {
       return reply.status(400).send({ success: false, error: 'tokenSymbol and chain are required' })
     }
-
     const tokenSymbol = body.tokenSymbol.toUpperCase()
     const chain       = body.chain.toUpperCase()
 
-    // Calculate available balance from the ledger — this is the safety gate
-    const [collectedAgg, sweptAgg] = await Promise.all([
-      db.gasLedgerEntry.aggregate({
-        where: { entryType: 'platform_fee', tokenSymbol, chain: chain as import('@prisma/client').GasChain },
-        _sum: { tokenAmount: true },
-      }),
-      db.gasLedgerEntry.aggregate({
-        where: { entryType: 'platform_fee_sweep', tokenSymbol, chain: chain as import('@prisma/client').GasChain },
-        _sum: { tokenAmount: true },
-      }),
-    ])
+    const family = chainFamily(chain)
+    if (!family) return reply.status(400).send({ success: false, error: `Withdrawal not supported for chain ${chain}.` })
+    if (family === 'tron') return reply.status(400).send({ success: false, error: 'TRON withdrawal is manual — sweep TRC20 from your wallet app.' })
 
-    const totalCollected = Number(collectedAgg._sum?.tokenAmount ?? 0)
-    const totalSwept     = Number(sweptAgg._sum?.tokenAmount     ?? 0)
-    const available      = Math.max(0, totalCollected - totalSwept)
+    const destination = await getWithdrawDestination(family)
+    if (!destination) {
+      return reply.status(400).send({ success: false, error: `No ${family.toUpperCase()} withdrawal destination configured. Set it under Withdrawal Destination first.` })
+    }
 
-    if (available <= 0) {
+    // Safety gate: recompute the conservative platform-owned headroom right now.
+    const w = await getWithdrawable(chain, tokenSymbol)
+    if (!w.supported) return reply.status(400).send({ success: false, error: `Withdrawal not supported for ${tokenSymbol} on ${chain}.` })
+    if (w.available <= 0) {
       return reply.status(400).send({
         success: false,
-        error:   `No platform fees available to sweep for ${tokenSymbol} on ${chain}. Collected: ${totalCollected}, already swept: ${totalSwept}.`,
+        error: `No platform-owned ${tokenSymbol} available to withdraw on ${chain}. On-chain ${w.onChain.toFixed(4)}, owed to users ${w.userLiability.toFixed(4)}, pending ${w.pendingOut.toFixed(4)}.`,
       })
     }
 
-    // Sweep amount: use requested or default to all available
-    const sweepAmount = body.amount != null
-      ? Math.min(Number(body.amount), available)
-      : available
+    const amount = body.amount != null ? Math.min(Number(body.amount), w.available) : w.available
+    if (!(amount > 0)) return reply.status(400).send({ success: false, error: 'Withdrawal amount must be greater than zero.' })
 
-    if (sweepAmount <= 0) {
-      return reply.status(400).send({ success: false, error: 'Sweep amount must be greater than zero' })
-    }
+    // Execute on-chain transfer — throws on failure / revert; nothing recorded if it throws.
+    const result = await withdrawHotWalletToken(tokenSymbol, chain, amount, destination)
 
-    // Execute on-chain transfer — throws on failure; nothing is recorded if it throws
-    const result = await sweepTokenToTreasury(tokenSymbol, chain, sweepAmount)
-
-    // Record sweep in ledger. If the DB write fails after a successful on-chain tx,
-    // we still return success with the txHash so the admin can record it manually.
-    // sourceKey ensures idempotency — a retry will skip the duplicate write silently.
-    const sourceKey = `platform_fee_sweep:${result.txHash}`
+    const sourceKey = `platform_revenue_withdrawal:${result.txHash}`
     try {
       await appendLedgerEntry({
-        entryType:   'platform_fee_sweep',
-        chain:       chain as import('../lib/gas/gas.chains').GasChainId,
+        entryType:    'platform_revenue_withdrawal',
+        chain:        chain as import('../lib/gas/gas.chains').GasChainId,
         nativeAmount: 0,
         tokenSymbol,
-        tokenAmount:  sweepAmount,
-        usdAmount:    sweepAmount,
+        tokenAmount:  amount,
+        usdAmount:    amount,
         txHash:       result.txHash,
         fromAddress:  result.hotWalletAddress,
-        toAddress:    result.treasuryAddress,
+        toAddress:    result.destination,
         sourceKey,
-        notes: `Treasury sweep by admin ${req.user!.id} — ${sweepAmount} ${tokenSymbol} on ${chain}`,
+        notes: `Revenue withdrawal by admin ${req.user!.id} — ${amount} ${tokenSymbol} on ${chain} → ${result.destination}`,
       })
-
-      await createAuditLog(
-        req.user!.id,
-        'PLATFORM_FEE_SWEEP',
-        'GasLedgerEntry',
-        result.txHash,
-        { tokenSymbol, chain, amount: sweepAmount, treasuryAddress: result.treasuryAddress, txHash: result.txHash },
-      )
+      await createAuditLog(req.user!.id, 'PLATFORM_REVENUE_WITHDRAWAL', 'GasLedgerEntry', result.txHash, { tokenSymbol, chain, amount, destination: result.destination, txHash: result.txHash })
     } catch (dbErr) {
-      // On-chain tx already broadcast — DB failure must not hide the success from admin
-      log.error({ dbErr, txHash: result.txHash, tokenSymbol, chain, sweepAmount }, 'platform-revenue/sweep: DB write failed after successful on-chain sweep')
+      log.error({ dbErr, txHash: result.txHash, tokenSymbol, chain, amount }, 'platform-revenue/withdraw: DB write failed after successful on-chain withdrawal')
     }
 
-    const { createAdminNotif: notifSweep } = await import('../services/adminNotification.service')
-    void notifSweep({
+    const { createAdminNotif: notifWithdraw } = await import('../services/adminNotification.service')
+    void notifWithdraw({
       category: 'SYSTEM',
-      title:    `Platform Fee Swept: ${sweepAmount} ${tokenSymbol}`,
-      body:     `Admin swept ${sweepAmount} ${tokenSymbol} (${chain}) from hot wallet to treasury ${result.treasuryAddress.slice(0, 10)}... TX: ${result.txHash.slice(0, 18)}...`,
+      title:    `Revenue Withdrawn: ${amount} ${tokenSymbol}`,
+      body:     `Admin withdrew ${amount} ${tokenSymbol} (${chain}) from hot wallet to external wallet ${result.destination.slice(0, 10)}… TX: ${result.txHash.slice(0, 18)}…`,
       href:     '/admin/platform-revenue',
-      metadata: { txHash: result.txHash, tokenSymbol, chain, amount: String(sweepAmount) },
+      metadata: { txHash: result.txHash, tokenSymbol, chain, amount: String(amount) },
     })
 
     return reply.send({
       success: true,
       data: {
         txHash:           result.txHash,
-        treasuryAddress:  result.treasuryAddress,
+        destination:      result.destination,
         hotWalletAddress: result.hotWalletAddress,
-        tokenSymbol,
-        chain,
-        amount:           sweepAmount,
+        tokenSymbol, chain, amount,
         hotWalletBalanceBefore: result.hotWalletBalanceBefore,
-        remainingAvailable: available - sweepAmount,
+        remainingAvailable: Math.max(0, w.available - amount),
       },
     })
-  })
+  }
+
+  app.post('/admin/platform-revenue/withdraw', { preHandler: superStepUp }, withdrawHandler)
+  app.post('/admin/platform-revenue/sweep',    { preHandler: superStepUp }, withdrawHandler)
 
   // GET /admin/platform-revenue/history — paginated fee entries (platform_fee only)
   app.get('/admin/platform-revenue/history', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
@@ -7749,9 +7778,10 @@ export async function adminRoutes(app: FastifyInstance) {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
 
+    const HISTORY_WHERE = { entryType: { in: ['platform_fee_sweep', 'platform_revenue_withdrawal'] as import('@prisma/client').GasLedgerEntryType[] } }
     const [entries, total] = await Promise.all([
       db.gasLedgerEntry.findMany({
-        where: { entryType: 'platform_fee_sweep' },
+        where: HISTORY_WHERE,
         orderBy: { createdAt: 'desc' },
         skip, take: limit,
         select: {
@@ -7761,7 +7791,7 @@ export async function adminRoutes(app: FastifyInstance) {
           notes: true, createdAt: true,
         },
       }),
-      db.gasLedgerEntry.count({ where: { entryType: 'platform_fee_sweep' } }),
+      db.gasLedgerEntry.count({ where: HISTORY_WHERE }),
     ])
 
     return reply.send({
