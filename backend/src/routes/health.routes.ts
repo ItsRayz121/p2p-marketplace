@@ -40,13 +40,21 @@ export async function healthRoutes(app: FastifyInstance) {
     const healthy = dbStatus === 'ok' && redisStatus === 'ok'
     const httpStatus = healthy ? 200 : 503
 
+    // Short deployed-commit SHA so we can confirm WHICH build is live (Railway
+    // injects RAILWAY_GIT_COMMIT_SHA). A 7-char SHA is not sensitive and ends the
+    // "is my deploy live yet?" guessing during incident response.
+    const version =
+      (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || '').slice(0, 7) || 'unknown'
+
     const result =
       env.NODE_ENV === 'production'
         ? {
             status: healthy ? 'ok' : 'degraded',
+            version,
           }
         : {
             status: healthy ? 'ok' : 'degraded',
+            version,
             timestamp: new Date().toISOString(),
             uptimeSeconds: Math.floor(process.uptime()),
             services: {
