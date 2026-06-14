@@ -18,16 +18,16 @@
  *   --fix, updates the stored value so admin display == the spendable delivery
  *   address. Read-only by default. Safe to run against production.
  *
+ *   Each chain's derivation module is loaded LAZILY so a missing optional dep
+ *   (e.g. @ton/crypto absent from a local node_modules) only skips that one
+ *   chain instead of aborting the whole run.
+ *
  * After --fix, click "Refresh Balance" on each updated chain in admin (or wait
  * for the 30-min monitor cycle) so the cached balance reflects the new address.
  */
 
 import 'dotenv/config'
 import { db } from '../lib/prisma'
-import { getTronHotWalletAddress, getEvmHotWalletAddress } from '../lib/gas/gasWalletService'
-import { getSolanaHotWalletAddress } from '../lib/gas/solanaWalletService'
-import { getTonHotWalletAddress, tonRawToFriendly } from '../lib/gas/tonWalletService'
-import { getSuiHotWalletAddress } from '../lib/gas/suiWalletService'
 
 const C = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
@@ -36,21 +36,25 @@ const C = {
 
 const EVM_CHAINS = new Set(['BSC', 'ETH', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX'])
 
-/** Live mnemonic-derived address for a stored hot-wallet row, or null if N/A. */
-function deriveLive(chain: string, hdIndex: number): string | null {
-  if (chain === 'SUI')  return getSuiHotWalletAddress()
-  if (chain === 'SOL')  return getSolanaHotWalletAddress()
-  if (chain === 'TON')  return getTonHotWalletAddress()
-  if (chain === 'TRON') return getTronHotWalletAddress(hdIndex)
-  if (EVM_CHAINS.has(chain)) return getEvmHotWalletAddress(hdIndex)
-  return null
+/**
+ * Live mnemonic-derived address for a stored hot-wallet row, or null if the
+ * derivation isn't available (unsupported chain or a failed lazy import).
+ */
+async function deriveLive(chain: string, hdIndex: number): Promise<string | null> {
+  try {
+    if (chain === 'SUI')  return (await import('../lib/gas/suiWalletService')).getSuiHotWalletAddress()
+    if (chain === 'SOL')  return (await import('../lib/gas/solanaWalletService')).getSolanaHotWalletAddress()
+    if (chain === 'TON')  return (await import('../lib/gas/tonWalletService')).getTonHotWalletAddress()
+    if (chain === 'TRON') return (await import('../lib/gas/gasWalletService')).getTronHotWalletAddress(hdIndex)
+    if (EVM_CHAINS.has(chain)) return (await import('../lib/gas/gasWalletService')).getEvmHotWalletAddress(hdIndex)
+    return null
+  } catch (e) {
+    console.log(`  ${C.yellow}(could not load ${chain} derivation: ${(e as Error).message.split('\n')[0]})${C.reset}`)
+    return null
+  }
 }
 
-/** Normalize for comparison — TON has multiple encodings, EVM is checksum-cased. */
-function sameAddress(chain: string, a: string, b: string): boolean {
-  if (chain === 'TON') {
-    try { return tonRawToFriendly(a) === tonRawToFriendly(b) } catch { /* fall through */ }
-  }
+function sameAddress(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase()
 }
 
@@ -63,16 +67,13 @@ async function main() {
 
   let drifted = 0
   let fixed = 0
+  let skipped = 0
 
   for (const w of wallets) {
-    let live: string | null
-    try { live = deriveLive(w.chain, w.hdIndex) } catch (e) { live = null
-      console.log(`${C.red}✗ ${w.chain}${C.reset}  derive error: ${(e as Error).message}`); continue }
+    const live = await deriveLive(w.chain, w.hdIndex)
+    if (!live) { console.log(`${C.gray}• ${w.chain.padEnd(6)} (hd ${w.hdIndex}) — no live derivation; skipped${C.reset}`); skipped++; continue }
 
-    if (!live) { console.log(`${C.gray}• ${w.chain.padEnd(6)} (hd ${w.hdIndex}) — no live derivation; skipped${C.reset}`); continue }
-
-    const ok = sameAddress(w.chain, w.address, live)
-    if (ok) {
+    if (sameAddress(w.address, live)) {
       console.log(`${C.green}✓ ${w.chain.padEnd(6)}${C.reset} ${C.dim}(hd ${w.hdIndex})${C.reset} in sync  ${C.gray}${w.address}${C.reset}`)
       continue
     }
@@ -90,7 +91,7 @@ async function main() {
   }
 
   console.log('')
-  console.log(`${C.bold}Summary:${C.reset} ${wallets.length} wallet(s), ${drifted} drifted${doFix ? `, ${fixed} fixed` : ''}.`)
+  console.log(`${C.bold}Summary:${C.reset} ${wallets.length} wallet(s), ${drifted} drifted${doFix ? `, ${fixed} fixed` : ''}${skipped ? `, ${skipped} skipped` : ''}.`)
   if (drifted > 0 && !doFix) {
     console.log(`${C.yellow}Re-run with  --fix  to update the drifted address(es).${C.reset}`)
   } else if (fixed > 0) {
