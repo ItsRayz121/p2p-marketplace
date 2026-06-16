@@ -381,7 +381,7 @@ export default function GasOrderDetailPage() {
           )}
           <div className="flex gap-3 items-start">
             <div className="flex-1">
-              <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-red-900' : 'text-amber-900'}`}>PKR Payment Proof Submitted</p>
+              <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>PKR Payment Proof Submitted</p>
               <p className={`text-xs ${isOrderExpired ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
                 {isOrderExpired ? 'Order expired — cannot approve. Reject to close this order.' : 'Verify the screenshot below, then approve or reject.'}
               </p>
@@ -412,7 +412,7 @@ export default function GasOrderDetailPage() {
           </div>
           <div className="flex gap-3 items-start">
             <div className="flex-1">
-              <p className="text-sm font-semibold mb-0.5 text-green-900">Payment Verified — Ready to Release Gas</p>
+              <p className="text-sm font-semibold mb-0.5 text-green-900 dark:text-green-200">Payment Verified — Ready to Release Gas</p>
               {order.paymentTxHash && (
                 <p className="text-xs font-mono text-green-700 dark:text-green-300">
                   {order.paymentTxHash.slice(0, 20)}…{order.paymentTxHash.slice(-10)}
@@ -454,7 +454,7 @@ export default function GasOrderDetailPage() {
           <div className="flex gap-3 items-start">
             <div className="flex-1">
               <p className={`text-sm font-semibold mb-0.5 ${
-                isUsdtProofPending ? 'text-purple-900' : isOrderExpired ? 'text-amber-900' : 'text-blue-900'
+                isUsdtProofPending ? 'text-purple-900 dark:text-purple-200' : isOrderExpired ? 'text-amber-900 dark:text-amber-200' : 'text-blue-900 dark:text-blue-200'
               }`}>
                 {isUsdtProofPending ? 'TX Hash Submitted — Pending Review' : isOrderExpired ? 'Order Expired' : 'Awaiting Payment'}
               </p>
@@ -494,7 +494,7 @@ export default function GasOrderDetailPage() {
           </div>
           <div className="flex gap-3 items-start">
             <div className="flex-1">
-              <p className="text-sm font-semibold mb-0.5 text-amber-900">Paid — Awaiting Gas Delivery</p>
+              <p className="text-sm font-semibold mb-0.5 text-amber-900 dark:text-amber-200">Paid — Awaiting Gas Delivery</p>
               <p className="text-xs text-amber-700 dark:text-amber-300">
                 {parseFloat(order.gasAmountNative).toFixed(6)} {nativeSymbol} to {order.toAddress.slice(0, 10)}…
               </p>

@@ -621,7 +621,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <p className="text-xs font-semibold text-red-800 dark:text-red-300 uppercase tracking-wide">Admin requests</p>
                   {trade.dispute.messages.map((m) => (
                     <div key={m.id} className="bg-surface border border-red-500/30 rounded-lg px-3 py-2">
-                      <p className="text-red-900">{m.message}</p>
+                      <p className="text-red-900 dark:text-red-200">{m.message}</p>
                       <p className="text-[11px] text-red-500 mt-0.5">{new Date(m.createdAt).toLocaleString()}</p>
                     </div>
                   ))}
@@ -679,7 +679,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-blue-700 dark:text-blue-300">Amount required:</span>
-                        <span className="font-bold text-blue-900">{trade.escrowAmount ? `PKR ${Number(trade.escrowAmount).toLocaleString()}` : `PKR ${Number(trade.fiatAmount).toLocaleString()}`}</span>
+                        <span className="font-bold text-blue-900 dark:text-blue-200">{trade.escrowAmount ? `PKR ${Number(trade.escrowAmount).toLocaleString()}` : `PKR ${Number(trade.fiatAmount).toLocaleString()}`}</span>
                       </div>
                       {trade.escrowConfirmedAt
                         ? <p className="text-xs text-green-700 dark:text-green-300 font-medium">Deposit confirmed — trade is progressing.</p>

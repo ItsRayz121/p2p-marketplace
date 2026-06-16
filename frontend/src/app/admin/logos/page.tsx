@@ -339,7 +339,7 @@ export default function AdminLogosPage() {
       {/* ── Search logos from web ───────────────────────────────────────────── */}
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-5 space-y-4">
         <div>
-          <h2 className="font-semibold text-blue-900">Search Logos from Web</h2>
+          <h2 className="font-semibold text-blue-900 dark:text-blue-200">Search Logos from Web</h2>
           <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
             Type a brand name or domain — we try multiple sources and show what's available. Click "Use this" to fill the form below.
           </p>

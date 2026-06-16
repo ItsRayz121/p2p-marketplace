@@ -438,7 +438,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
                 <>
                   {rpcSuggestion.recommended.length > 0 && (
                     <div className="space-y-1">
-                      <p className="font-semibold text-blue-900">Recommended public RPC{rpcSuggestion.envVar ? ` — set ${rpcSuggestion.envVar} on the server` : ''}:</p>
+                      <p className="font-semibold text-blue-900 dark:text-blue-200">Recommended public RPC{rpcSuggestion.envVar ? ` — set ${rpcSuggestion.envVar} on the server` : ''}:</p>
                       {rpcSuggestion.recommended.map((r) => (
                         <div key={r.url} className="flex items-center gap-2">
                           <code className="font-mono text-[11px] text-blue-800 dark:text-blue-300 break-all">{r.url}</code>

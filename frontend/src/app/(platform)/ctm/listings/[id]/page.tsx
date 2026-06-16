@@ -587,7 +587,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Complete Trade banner — shown when buyer's bid was accepted but payment details not yet provided */}
       {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
         <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
-          <p className="font-semibold text-amber-900">Your bid was accepted!</p>
+          <p className="font-semibold text-amber-900 dark:text-amber-200">Your bid was accepted!</p>
           <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
             Complete your payment details to open the trade. The window expires at{' '}
             {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.

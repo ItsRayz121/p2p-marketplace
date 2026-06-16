@@ -985,7 +985,7 @@ function TokenModal({
             {/* One-click import of verified tokens from the Deposit Chain Registry */}
             {!editing && depositTokens.length > 0 && (
               <div className="col-span-2 px-3 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p className="text-xs font-medium text-blue-900 mb-1.5">
+                <p className="text-xs font-medium text-blue-900 dark:text-blue-200 mb-1.5">
                   Found in Deposit Chain Registry — click to fill:
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -994,7 +994,7 @@ function TokenModal({
                       key={t.id}
                       type="button"
                       onClick={() => importDepositToken(t)}
-                      className="px-3 py-1 text-xs font-medium rounded-full border border-blue-500/40 bg-white text-blue-700 dark:text-blue-300 hover:bg-blue-500/15 transition-colors"
+                      className="px-3 py-1 text-xs font-medium rounded-full border border-blue-500/40 bg-surface text-blue-700 dark:text-blue-300 hover:bg-blue-500/15 transition-colors"
                       title={t.address ?? 'native asset'}
                     >
                       {t.symbol}{t.address ? '' : ' (native)'}
