@@ -547,7 +547,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       {/* ─── Instant Trade Modal ─────────────────────────────────────────── */}
       {showInstantModal && ad && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto border border-border shadow-card-lg">
+          <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto border border-border shadow-card-lg">
             <div>
               <h3 className="font-bold text-lg text-text-primary">{isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}</h3>
               <p className="text-xs text-text-muted mt-0.5">Trade at the listed price of PKR {Number(ad.price).toLocaleString()}.</p>
@@ -650,7 +650,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       {/* ─── Bid Modal ───────────────────────────────────────────────────── */}
       {showBidModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto border border-border shadow-card-lg">
+          <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto border border-border shadow-card-lg">
             <div>
               <h3 className="font-bold text-lg text-text-primary">Place a Bid</h3>
               <p className="text-xs text-text-muted mt-0.5">Offer your own price. The owner has 30 minutes to accept or reject.</p>
@@ -716,7 +716,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       {/* ─── Confirm Bid Details Modal ───────────────────────────────────── */}
       {showConfirmModal && myActiveBid && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto border border-border shadow-card-lg">
+          <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto border border-border shadow-card-lg">
             <div>
               <h3 className="font-bold text-lg text-text-primary">Complete Trade Details</h3>
               <p className="text-xs text-text-muted mt-0.5">Your bid was accepted. Provide payment details to open the trade.</p>

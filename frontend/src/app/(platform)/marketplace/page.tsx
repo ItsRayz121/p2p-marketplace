@@ -487,15 +487,15 @@ export default function MarketplacePage() {
       {/* Recent trades ticker */}
       <RecentTradesFeed trades={recentTrades} />
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      {/* Filters — 2-col grid on phones (no ragged wrap), flex row on sm+ */}
+      <div className="grid grid-cols-2 gap-2 mb-6 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
         {/* Side toggle */}
-        <div className="flex bg-surface border border-border rounded-lg overflow-hidden flex-shrink-0">
+        <div className="col-span-2 flex bg-surface border border-border rounded-lg overflow-hidden sm:flex-shrink-0">
           {(['buy', 'sell'] as const).map((s) => (
             <button
               key={s}
               onClick={() => { setFilters((f) => ({ ...f, side: s })); setPage(1) }}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium transition-colors ${
                 filters.side === s ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface'
               }`}
             >
@@ -504,22 +504,22 @@ export default function MarketplacePage() {
           ))}
         </div>
 
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={filters.network}
             onChange={(e) => { setFilters((f) => ({ ...f, network: e.target.value })); setPage(1) }}
-            className="appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
+            className="w-full sm:w-auto appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
           >
             {NETWORKS.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}
           </select>
           <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
         </div>
 
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={filters.paymentMethod}
             onChange={(e) => { setFilters((f) => ({ ...f, paymentMethod: e.target.value })); setPage(1) }}
-            className="appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
+            className="w-full sm:w-auto appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
           >
             <option value="">All payment methods</option>
             {PAYMENT_METHODS.map((pm) => <option key={pm} value={pm}>{pm}</option>)}
@@ -532,19 +532,19 @@ export default function MarketplacePage() {
           placeholder="Min PKR"
           value={filters.minAmount}
           onChange={(e) => setFilters((f) => ({ ...f, minAmount: e.target.value }))}
-          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
+          className="w-full sm:w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
         />
         <input
           type="number"
           placeholder="Max PKR"
           value={filters.maxAmount}
           onChange={(e) => setFilters((f) => ({ ...f, maxAmount: e.target.value }))}
-          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
+          className="w-full sm:w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
         />
 
         <button
           onClick={() => setFilters({ side: 'buy', network: '', paymentMethod: '', minAmount: '', maxAmount: '' })}
-          className="border border-border rounded-lg px-3 py-2 text-sm bg-surface hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
+          className="col-span-2 sm:w-auto border border-border rounded-lg px-3 py-2 text-sm bg-surface hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
         >
           Clear
         </button>
