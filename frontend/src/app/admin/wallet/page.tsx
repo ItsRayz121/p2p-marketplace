@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Eye, EyeOff } from 'lucide-react'
 
 type WalletStatus = Awaited<ReturnType<typeof adminApi.getWalletStatus>>
 
@@ -59,6 +60,7 @@ function TreasuryOverview() {
   const [t, setT] = useState<TreasuryData | null>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
+  const [hidden, setHidden] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -77,11 +79,12 @@ function TreasuryOverview() {
   if (!t) return null
 
   const pkr = (usd: number) => money(usd * t.usdPkrRate)
+  const mask = (s: string) => (hidden ? '••••••' : s)
   const maxChainUsd = Math.max(1, ...t.perChain.map((c) => c.usd))
   const maxTokenUsd = Math.max(1, ...t.perToken.map((c) => c.usd))
 
   const cards: Array<{ label: string; usd: number; sub?: string; tone: string }> = [
-    { label: 'Hot Wallets', usd: t.categories.hot.usd, sub: `native $${money(t.categories.hot.nativeUsd)} · USDT $${money(t.categories.hot.usdtUsd)}`, tone: 'text-orange-600' },
+    { label: 'Hot Wallets', usd: t.categories.hot.usd, sub: hidden ? '••••••' : `native $${money(t.categories.hot.nativeUsd)} · USDT $${money(t.categories.hot.usdtUsd)}`, tone: 'text-orange-600' },
     { label: 'Escrow (locked)', usd: t.categories.escrow.usdt, sub: 'user collateral in trades', tone: 'text-blue-600' },
     { label: 'User Custody', usd: t.categories.custody.usdt, sub: 'USDT user balances', tone: 'text-text-secondary' },
     { label: 'Platform Revenue', usd: t.categories.revenue.usd, sub: 'fees collected (lifetime)', tone: 'text-purple-600' },
@@ -94,14 +97,26 @@ function TreasuryOverview() {
           <h2 className="text-lg font-semibold text-text-primary">Treasury Overview</h2>
           <p className="text-xs text-text-muted">Live on-chain balances · USDT valued 1:1 · rate ${t.usdPkrRate.toFixed(2)}/USD</p>
         </div>
-        <Button size="sm" variant="secondary" onClick={load} loading={loading}>Refresh</Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setHidden((h) => !h)}
+            aria-label={hidden ? 'Show balances' : 'Hide balances'}
+            title={hidden ? 'Show balances' : 'Hide balances'}
+            aria-pressed={hidden}
+            className="p-1.5 rounded-lg border border-border text-text-muted hover:text-text-primary hover:border-primary transition-colors"
+          >
+            {hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+          <Button size="sm" variant="secondary" onClick={load} loading={loading}>Refresh</Button>
+        </div>
       </div>
 
       {/* Total platform-controlled assets */}
       <div className="rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 p-4">
         <p className="text-xs text-text-muted">Platform-controlled assets (hot wallets)</p>
-        <p className="text-3xl font-bold text-text-primary mt-1">${money(t.platformControlledUsd)}</p>
-        <p className="text-sm text-text-muted">PKR {pkr(t.platformControlledUsd)}</p>
+        <p className="text-3xl font-bold text-text-primary mt-1">{hidden ? '••••••' : `$${money(t.platformControlledUsd)}`}</p>
+        <p className="text-sm text-text-muted">PKR {mask(pkr(t.platformControlledUsd))}</p>
       </div>
 
       {/* Category cards */}
@@ -109,8 +124,8 @@ function TreasuryOverview() {
         {cards.map((c) => (
           <div key={c.label} className="rounded-lg border border-border p-3">
             <p className="text-xs text-text-muted">{c.label}</p>
-            <p className={`text-lg font-bold ${c.tone}`}>${money(c.usd)}</p>
-            <p className="text-[10px] text-text-muted">PKR {pkr(c.usd)}</p>
+            <p className={`text-lg font-bold ${c.tone}`}>{hidden ? '••••••' : `$${money(c.usd)}`}</p>
+            <p className="text-[10px] text-text-muted">PKR {mask(pkr(c.usd))}</p>
             {c.sub && <p className="text-[10px] text-text-muted mt-0.5">{c.sub}</p>}
           </div>
         ))}
@@ -125,11 +140,11 @@ function TreasuryOverview() {
               {t.perChain.map((c) => (
                 <div key={c.chain}>
                   <div className="flex justify-between text-xs mb-0.5">
-                    <span className="text-text-secondary">{c.chain} <span className="text-text-muted">({(c.hotNative + c.treasuryNative).toFixed(4)} {c.symbol})</span></span>
-                    <span className="text-text-primary font-medium">${money(c.usd)}</span>
+                    <span className="text-text-secondary">{c.chain} <span className="text-text-muted">({hidden ? '••••' : `${(c.hotNative + c.treasuryNative).toFixed(4)} ${c.symbol}`})</span></span>
+                    <span className="text-text-primary font-medium">{hidden ? '••••••' : `$${money(c.usd)}`}</span>
                   </div>
                   <div className="h-2 rounded-full bg-surface-alt overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.max(2, (c.usd / maxChainUsd) * 100)}%` }} />
+                    {!hidden && <div className="h-full bg-primary rounded-full" style={{ width: `${Math.max(2, (c.usd / maxChainUsd) * 100)}%` }} />}
                   </div>
                 </div>
               ))}
@@ -143,11 +158,11 @@ function TreasuryOverview() {
               {t.perToken.map((c) => (
                 <div key={c.symbol}>
                   <div className="flex justify-between text-xs mb-0.5">
-                    <span className="text-text-secondary">{c.symbol} <span className="text-text-muted">({c.amount.toFixed(4)})</span></span>
-                    <span className="text-text-primary font-medium">${money(c.usd)}</span>
+                    <span className="text-text-secondary">{c.symbol} <span className="text-text-muted">({hidden ? '••••' : c.amount.toFixed(4)})</span></span>
+                    <span className="text-text-primary font-medium">{hidden ? '••••••' : `$${money(c.usd)}`}</span>
                   </div>
                   <div className="h-2 rounded-full bg-surface-alt overflow-hidden">
-                    <div className="h-full bg-success rounded-full" style={{ width: `${Math.max(2, (c.usd / maxTokenUsd) * 100)}%` }} />
+                    {!hidden && <div className="h-full bg-success rounded-full" style={{ width: `${Math.max(2, (c.usd / maxTokenUsd) * 100)}%` }} />}
                   </div>
                 </div>
               ))}
