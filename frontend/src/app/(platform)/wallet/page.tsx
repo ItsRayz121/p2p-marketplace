@@ -23,7 +23,7 @@ import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAccount } from 'wagmi'
-import { ArrowUpDown, Lock, Clock } from 'lucide-react'
+import { ArrowUpDown, Lock, Clock, AlertTriangle } from 'lucide-react'
 import { toast } from '@/lib/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -82,6 +82,26 @@ function fmtTxDateTime(dateStr: string): string {
 }
 
 const SUPPORTED_PLATFORM_NETWORKS = new Set(['BEP20', 'APTOS', 'Aptos'])
+
+// EVM-style networks share the 0x…40-hex address format.
+const EVM_WITHDRAW_NETWORKS = new Set(['BEP20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'BASE', 'ERC20'])
+
+// Non-blocking client-side sanity check for the recipient address. The backend
+// validates authoritatively; this only catches the dangerous obvious mistakes
+// (e.g. pasting a TRON address while BEP20 is selected) before funds are sent.
+function withdrawAddressWarning(address: string, network: string): string | null {
+  const a = address.trim()
+  if (!a) return null
+  if (EVM_WITHDRAW_NETWORKS.has(network)) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a)) return `This doesn't look like a valid ${network} address — it should start with 0x and be 42 characters. Double-check the network.`
+  } else if (network === 'Aptos') {
+    if (!/^0x[0-9a-fA-F]{1,64}$/.test(a)) return `This doesn't look like a valid Aptos address — it should start with 0x.`
+  } else if (network === 'TRC20') {
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a)) return `This doesn't look like a valid TRC20 address — it should start with T and be 34 characters.`
+  }
+  // Bitcoin / unrecognised networks: formats vary too much to safely flag.
+  return null
+}
 
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
@@ -175,6 +195,21 @@ function WithdrawModal({
     Number.isFinite(totalNum) &&
     totalNum > 0 &&
     totalNum > availableBalance
+
+  // Max withdrawable = balance minus the live fee (which is added on top of the
+  // amount). Lets the user empty their balance in one tap without hitting the
+  // insufficient-balance error from typing the gross balance.
+  const maxWithdrawable =
+    availableBalance !== undefined && Number.isFinite(feeNum)
+      ? Math.max(0, availableBalance - feeNum)
+      : undefined
+  const canFillMax = maxWithdrawable !== undefined && maxWithdrawable > 0 && !state.loadingFee && !state.feeError
+  const fillMax = () => {
+    if (maxWithdrawable === undefined) return
+    setState((s) => ({ ...s, amount: maxWithdrawable.toFixed(6).replace(/\.?0+$/, '') }))
+  }
+
+  const addrWarn = withdrawAddressWarning(state.address, state.network)
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -298,11 +333,29 @@ function WithdrawModal({
                 placeholder={`Enter ${state.network} address`}
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
               />
+              {addrWarn && (
+                <p className="mt-1 flex items-start gap-1.5 text-xs text-warning bg-warning/10 rounded-lg px-2.5 py-1.5">
+                  <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" aria-hidden />
+                  <span>{addrWarn}</span>
+                </p>
+              )}
             </div>
 
             {/* Amount */}
             <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">Amount ({coin})</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-text-muted">Amount ({coin})</label>
+                {availableBalance !== undefined && (
+                  <button
+                    type="button"
+                    onClick={fillMax}
+                    disabled={!canFillMax}
+                    className="text-xs font-semibold text-primary hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+                  >
+                    Max: {maxWithdrawable?.toFixed(6).replace(/\.?0+$/, '') ?? '0'}
+                  </button>
+                )}
+              </div>
               <input
                 type="number"
                 value={state.amount}
@@ -310,6 +363,9 @@ function WithdrawModal({
                 placeholder="0.00"
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
+              {availableBalance !== undefined && (
+                <p className="text-xs text-text-muted mt-1">Available: {availableBalance.toFixed(6).replace(/\.?0+$/, '')} {coin}{!state.loadingFee && !state.feeError && feeNum > 0 ? ' · fee deducted on top' : ''}</p>
+              )}
             </div>
 
             {/* Fee display */}
