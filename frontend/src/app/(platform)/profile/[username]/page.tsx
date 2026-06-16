@@ -239,7 +239,7 @@ export default function TraderProfilePage() {
                 <button
                   onClick={toggleFavorite}
                   disabled={favLoading}
-                  className={`ml-1 p-1.5 rounded-full transition-colors ${favorited ? 'text-red-500 bg-red-50 dark:bg-red-950/30' : 'text-text-muted hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30'}`}
+                  className={`ml-1 p-1.5 rounded-full transition-colors ${favorited ? 'text-red-500 bg-red-500/10 dark:bg-red-950/30' : 'text-text-muted hover:text-red-500 hover:bg-red-500/10 dark:hover:bg-red-950/30'}`}
                   title={favorited ? 'Remove from favorites' : 'Add to favorites'}
                 >
                   <Heart size={16} className={favorited ? 'fill-current' : ''} />

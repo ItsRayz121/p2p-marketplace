@@ -498,7 +498,7 @@ export default function KycPage() {
                 <ul className="space-y-1.5">
                   {['CNIC front photo (clear, unobstructed)', 'CNIC back photo', 'A simple selfie'].map((item, i) => (
                     <li key={i} className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                      <span className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
                       <span>{item}</span>
                     </li>
                   ))}
@@ -512,7 +512,7 @@ export default function KycPage() {
                 <ul className="space-y-1.5">
                   {['Everything in Basic', '2 or more social media profile links', 'Short video verification upload'].map((item, i) => (
                     <li key={i} className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-amber-500/10 text-amber-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">+</span>
+                      <span className="w-5 h-5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold flex items-center justify-center flex-shrink-0">+</span>
                       <span>{item}</span>
                     </li>
                   ))}

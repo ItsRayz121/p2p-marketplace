@@ -447,7 +447,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                       </div>
                       <div className="flex gap-2 flex-shrink-0 items-start">
                         {bid.status === 'accepted_pending_buyer' ? (
-                          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 font-medium">Awaiting buyer</span>
+                          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-medium">Awaiting buyer</span>
                         ) : (
                           <>
                             <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
@@ -482,10 +482,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                       </div>
                       <div className="text-right flex-shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          t.status === 'crypto_released' ? 'bg-green-100 text-green-700' :
+                          t.status === 'crypto_released' ? 'bg-green-500/15 text-green-700 dark:text-green-300' :
                           t.status === 'cancelled'       ? 'bg-surface-alt text-text-secondary' :
-                          t.status === 'disputed'        ? 'bg-red-100 text-red-700'    :
-                          'bg-blue-100 text-blue-700'
+                          t.status === 'disputed'        ? 'bg-red-500/15 text-red-700 dark:text-red-300'    :
+                          'bg-blue-500/15 text-blue-700 dark:text-blue-300'
                         }`}>{t.status.replace(/_/g, ' ')}</span>
                         <p className="text-xs text-text-muted mt-1">
                           <a href={`/trade/${t.id}`} className="text-primary hover:underline">View →</a>
@@ -500,9 +500,9 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Accepted bid banner */}
       {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
           <p className="font-semibold text-amber-900">Your bid was accepted!</p>
-          <p className="text-sm text-amber-700 mt-1">
+          <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
             Complete your payment details to open the trade. Window expires at{' '}
             {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </p>
@@ -517,12 +517,12 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Pending bid notice */}
       {!isMine && myActiveBid?.status === 'pending' && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
           You have a pending bid on this listing. Waiting for the owner to respond.
         </div>
       )}
 
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
 
       {/* CTA buttons — instant trade only available on sell ads */}
       {!isMine && ad.status === 'active' && !myActiveBid && (
@@ -552,7 +552,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <h3 className="font-bold text-lg text-text-primary">{isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}</h3>
               <p className="text-xs text-text-muted mt-0.5">Trade at the listed price of PKR {Number(ad.price).toLocaleString()}.</p>
             </div>
-            {instantError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{instantError}</div>}
+            {instantError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{instantError}</div>}
 
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
@@ -655,7 +655,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <h3 className="font-bold text-lg text-text-primary">Place a Bid</h3>
               <p className="text-xs text-text-muted mt-0.5">Offer your own price. The owner has 30 minutes to accept or reject.</p>
             </div>
-            {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
+            {error && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{error}</div>}
 
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Your bid price per {ad.coin} (PKR)</label>
@@ -699,7 +699,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               )
             })()}
 
-            <p className="text-xs text-text-muted bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+            <p className="text-xs text-text-muted bg-blue-500/10 border border-blue-100 rounded-xl px-3 py-2">
               Payment details and delivery address will be collected after the owner accepts your bid.
             </p>
 
@@ -731,7 +731,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               </div>
             </div>
 
-            {confirmError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{confirmError}</div>}
+            {confirmError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{confirmError}</div>}
 
             {/* Payment method */}
             <div>

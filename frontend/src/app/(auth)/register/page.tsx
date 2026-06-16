@@ -212,7 +212,7 @@ export default function RegisterPage() {
         )}
 
         {conflictEmail && (
-          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 space-y-2">
+          <div className="text-sm text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-3 space-y-2">
             <p className="font-medium">An account with this email already exists.</p>
             <p>If you haven&apos;t verified your email yet, check your inbox or resend the verification email.</p>
             <div className="flex flex-wrap gap-3 pt-1">

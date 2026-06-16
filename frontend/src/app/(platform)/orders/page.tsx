@@ -198,7 +198,7 @@ export default function OrdersPage() {
                         {(() => { const s = getTradeStatus(t.status); return <Badge variant={s.variant} icon={s.icon} size="sm">{s.label}</Badge> })()}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isBuyer ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'}`}>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isBuyer ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>
                           {isBuyer ? 'Buyer' : 'Seller'}
                         </span>
                       </td>
@@ -240,7 +240,7 @@ export default function OrdersPage() {
                           <UserAvatar name={counterparty} avatarUrl={cp?.avatarUrl} size="xs" />
                           <p className="text-sm font-medium text-text-primary">{counterparty}</p>
                         </div>
-                        <p className={`text-xs font-medium mt-0.5 ${isBuyer ? 'text-emerald-600' : 'text-blue-600'}`}>{isBuyer ? 'You bought' : 'You sold'}</p>
+                        <p className={`text-xs font-medium mt-0.5 ${isBuyer ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'}`}>{isBuyer ? 'You bought' : 'You sold'}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-text-primary">

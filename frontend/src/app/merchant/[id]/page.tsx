@@ -25,9 +25,9 @@ const RANK_LABELS: Record<string, string> = {
 }
 
 const RANK_COLORS: Record<string, string> = {
-  bronze: 'text-amber-600 bg-amber-50 border-amber-200',
+  bronze: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30',
   silver: 'text-slate-500 bg-slate-50 border-slate-200',
-  gold:   'text-yellow-600 bg-yellow-50 border-yellow-200',
+  gold:   'text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
   elite:  'text-primary bg-primary/10 border-primary/20',
 }
 
@@ -174,8 +174,8 @@ export default function MerchantProfilePage({ params }: { params: Promise<{ id: 
             {ads.map((ad) => {
               const isSell = ad.side === 'sell'
               const accentCls = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
-              const priceCls  = isSell ? 'text-emerald-600' : 'text-blue-600'
-              const chipCls   = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
+              const priceCls  = isSell ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
+              const chipCls   = isSell ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
               return (
                 <Link
                   key={ad.id}

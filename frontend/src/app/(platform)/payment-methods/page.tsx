@@ -52,10 +52,10 @@ const TYPE_ICONS: Record<MethodType, string> = {
 }
 
 const TYPE_COLORS: Record<MethodType, string> = {
-  jazzcash:     'bg-orange-100 text-orange-700',
-  easypaisa:    'bg-green-100 text-green-700',
-  sadapay:      'bg-teal-100 text-teal-700',
-  nayapay:      'bg-indigo-100 text-indigo-700',
+  jazzcash:     'bg-orange-500/15 text-orange-700 dark:text-orange-300',
+  easypaisa:    'bg-green-500/15 text-green-700 dark:text-green-300',
+  sadapay:      'bg-teal-500/15 text-teal-700 dark:text-teal-300',
+  nayapay:      'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
   bank_transfer: 'bg-primary/10 text-primary',
 }
 

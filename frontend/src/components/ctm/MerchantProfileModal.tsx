@@ -35,7 +35,7 @@ const TIER_COLORS: Record<string, string> = {
   new: 'bg-surface-alt text-text-secondary',
   basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
   verified: 'bg-green-500/15 text-green-700 dark:text-green-300',
-  elite: 'bg-purple-100 text-purple-700',
+  elite: 'bg-purple-500/15 text-purple-700',
 }
 
 function StarRow({ rating }: { rating: number }) {

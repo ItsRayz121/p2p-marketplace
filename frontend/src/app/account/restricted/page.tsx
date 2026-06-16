@@ -153,9 +153,9 @@ function RestrictedInner() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
       {/* Restriction banner */}
-      <div className={`rounded-xl border p-5 ${copy.tone === 'danger' ? 'border-danger/30 bg-danger/5' : 'border-amber-300 bg-amber-50'}`}>
+      <div className={`rounded-xl border p-5 ${copy.tone === 'danger' ? 'border-danger/30 bg-danger/5' : 'border-amber-500/40 bg-amber-500/10'}`}>
         <div className="flex items-start gap-3">
-          <ShieldX className={`w-6 h-6 mt-0.5 ${copy.tone === 'danger' ? 'text-danger' : 'text-amber-600'}`} />
+          <ShieldX className={`w-6 h-6 mt-0.5 ${copy.tone === 'danger' ? 'text-danger' : 'text-amber-600 dark:text-amber-400'}`} />
           <div>
             <h1 className="text-lg font-bold text-text-primary">{copy.title}</h1>
             {data.reason && <p className="text-sm text-text-secondary mt-1">Reason: {data.reason}</p>}

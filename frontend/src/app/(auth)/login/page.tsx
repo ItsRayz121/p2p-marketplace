@@ -217,20 +217,20 @@ function LoginInner() {
         )}
 
         {alreadyVerified && (
-          <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          <div className="text-sm text-green-700 dark:text-green-300 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
             <p className="font-medium mb-0.5">Your email is already verified.</p>
             <p>You can sign in now using the form above.</p>
           </div>
         )}
 
         {unverifiedEmail && (
-          <div className="text-sm bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex flex-col gap-3">
+          <div className="text-sm bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 flex flex-col gap-3">
             <div>
-              <p className="font-semibold text-amber-800 mb-1">Email verification required</p>
-              <p className="text-amber-700 text-xs leading-relaxed">
+              <p className="font-semibold text-amber-800 dark:text-amber-300 mb-1">Email verification required</p>
+              <p className="text-amber-700 dark:text-amber-300 text-xs leading-relaxed">
                 Verification status could not be confirmed. Possible reasons:
               </p>
-              <ul className="text-amber-700 text-xs mt-1 ml-3 list-disc space-y-0.5">
+              <ul className="text-amber-700 dark:text-amber-300 text-xs mt-1 ml-3 list-disc space-y-0.5">
                 <li>Sync delay after recent verification</li>
                 <li>Verification link/code expired</li>
                 <li>Previous verification was incomplete</li>
@@ -247,13 +247,13 @@ function LoginInner() {
               </button>
               <Link
                 href={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
-                className="px-3 py-1.5 bg-surface border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
+                className="px-3 py-1.5 bg-surface border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-semibold rounded-md hover:bg-amber-500/10 transition-colors"
               >
                 Enter verification code
               </Link>
               <button
                 type="button"
-                className="px-3 py-1.5 bg-surface border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-50 transition-colors"
+                className="px-3 py-1.5 bg-surface border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-semibold rounded-md hover:bg-amber-500/10 transition-colors"
                 onClick={handleResend}
               >
                 Resend verification email

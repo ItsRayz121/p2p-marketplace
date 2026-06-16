@@ -81,11 +81,11 @@ interface BadgeTier {
 }
 
 const BADGE_TIERS: BadgeTier[] = [
-  { name: 'Bronze',  Icon: Medal,       color: 'text-amber-700',  bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-300',  minTrades: 0,   minRate: 0,    blurb: 'Every verified trader starts here.' },
+  { name: 'Bronze',  Icon: Medal,       color: 'text-amber-700 dark:text-amber-300',  bg: 'bg-amber-500/10 dark:bg-amber-950/30', border: 'border-amber-500/40',  minTrades: 0,   minRate: 0,    blurb: 'Every verified trader starts here.' },
   { name: 'Silver',  Icon: CheckCircle, color: 'text-slate-500',  bg: 'bg-slate-100 dark:bg-slate-800/40', border: 'border-slate-300', minTrades: 5,   minRate: 0.80, blurb: 'You are an active, reliable trader.' },
-  { name: 'Gold',    Icon: Star,        color: 'text-yellow-600', bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-300', minTrades: 50,  minRate: 0.90, blurb: 'A trusted, high-volume trader.' },
-  { name: 'Diamond', Icon: Trophy,      color: 'text-cyan-600',   bg: 'bg-cyan-50 dark:bg-cyan-900/20', border: 'border-cyan-300',   minTrades: 200, minRate: 0.95, blurb: 'Among the top traders on RupChain.' },
-  { name: 'Elite',   Icon: Gem,         color: 'text-purple-700', bg: 'bg-purple-50 dark:bg-purple-900/20', border: 'border-purple-300', minTrades: 500, minRate: 0.98, blurb: 'The highest tier — elite reputation.' },
+  { name: 'Gold',    Icon: Star,        color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-500/10 dark:bg-yellow-900/20', border: 'border-yellow-500/40', minTrades: 50,  minRate: 0.90, blurb: 'A trusted, high-volume trader.' },
+  { name: 'Diamond', Icon: Trophy,      color: 'text-cyan-600 dark:text-cyan-400',   bg: 'bg-cyan-500/10 dark:bg-cyan-900/20', border: 'border-cyan-500/40',   minTrades: 200, minRate: 0.95, blurb: 'Among the top traders on RupChain.' },
+  { name: 'Elite',   Icon: Gem,         color: 'text-purple-700 dark:text-purple-300', bg: 'bg-purple-500/10 dark:bg-purple-900/20', border: 'border-purple-500/40', minTrades: 500, minRate: 0.98, blurb: 'The highest tier — elite reputation.' },
 ]
 
 // ─── Trust score factors ────────────────────────────────────────────────────────

@@ -156,7 +156,7 @@ export default function FavoritesPage() {
                   {/* Remove button */}
                   <button
                     onClick={() => removeFavorite(trader.username)}
-                    className="p-1.5 rounded-full text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex-shrink-0"
+                    className="p-1.5 rounded-full text-red-400 hover:text-red-600 dark:text-red-400 hover:bg-red-500/10 dark:hover:bg-red-950/30 transition-colors flex-shrink-0"
                     title="Remove from favorites"
                   >
                     <Heart size={16} className="fill-current" />

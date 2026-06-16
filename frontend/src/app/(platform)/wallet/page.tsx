@@ -224,7 +224,7 @@ function WithdrawModal({
       <Modal isOpen={isOpen} onClose={onClose} title={`Withdraw ${coin}`}>
         {requiresEmailConfirm ? (
           <div className="text-center py-6 space-y-3">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto text-blue-600 text-2xl">✉</div>
+            <div className="w-12 h-12 bg-blue-500/15 rounded-full flex items-center justify-center mx-auto text-blue-600 text-2xl">✉</div>
             <p className="text-sm font-medium text-text-primary">Check your email</p>
             <p className="text-xs text-text-muted">
               A confirmation email has been sent with Confirm and Cancel links. The link expires in 15 minutes.
@@ -654,7 +654,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
             </div>
           )}
           {formError && <p className="text-xs text-danger">{formError}</p>}
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-700">
             This address will have a 24-hour activation delay before it can be used for withdrawals.
           </div>
           <Button fullWidth loading={adding} onClick={handleAdd}>Add Trusted Address</Button>
@@ -681,9 +681,9 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
                     <span className="text-sm font-medium text-text-primary">{a.label}</span>
                     <span className="text-xs text-text-muted">{a.coin} · {a.network}</span>
                     {active ? (
-                      <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">Active</span>
+                      <span className="px-1.5 py-0.5 bg-emerald-500/15 text-emerald-700 text-xs rounded-full">Active</span>
                     ) : (
-                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">Activates in {wait}</span>
+                      <span className="px-1.5 py-0.5 bg-amber-500/15 text-amber-700 text-xs rounded-full">Activates in {wait}</span>
                     )}
                   </div>
                   <p className="font-mono text-xs text-text-muted truncate">{a.address}</p>
@@ -1413,7 +1413,7 @@ export default function WalletPage() {
 
       {/* ── Withdrawal security lock banner ── */}
       {wdLockActive && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 flex items-start gap-3">
           <Lock size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>

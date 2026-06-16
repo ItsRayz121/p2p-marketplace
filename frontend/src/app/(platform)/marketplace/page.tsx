@@ -101,8 +101,8 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
   const isSell     = ad.side === 'sell'
   const userAction = isSell ? 'BUY' : 'SELL'
   const accentCls  = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
-  const chipCls    = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
-  const priceCls   = isSell ? 'text-emerald-600' : 'text-blue-600'
+  const chipCls    = isSell ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+  const priceCls   = isSell ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
   const profileHref = `/profile/${ad.seller?.username}`
   const sellerName = traderDisplayName({
     fullName: ad.seller?.fullName,

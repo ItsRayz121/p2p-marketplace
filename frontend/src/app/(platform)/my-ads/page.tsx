@@ -309,9 +309,9 @@ function CtmListingsTab() {
       </div>
 
       {actionError && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-start justify-between gap-3">
+        <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300 flex items-start justify-between gap-3">
           <span className="flex-1">{actionError}</span>
-          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 flex-shrink-0" aria-label="Dismiss">×</button>
+          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 dark:text-red-300 flex-shrink-0" aria-label="Dismiss">×</button>
         </div>
       )}
 
@@ -344,7 +344,7 @@ function CtmListingsTab() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-text-primary">{l.side === 'sell' ? 'Selling' : 'Buying'} {l.token.name}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-100 text-green-700' : l.status === 'paused' ? 'bg-yellow-100 text-yellow-700' : 'bg-surface-alt text-text-secondary'}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : l.status === 'paused' ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : 'bg-surface-alt text-text-secondary'}`}>
                         {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
                       </span>
                     </div>
@@ -359,12 +359,12 @@ function CtmListingsTab() {
                     </button>
                   )}
                   {l.status === 'paused' && (
-                    <button onClick={() => handleAction(l.id, 'activate')} disabled={actionLoading === l.id} className="text-xs border border-green-300 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50 disabled:opacity-50">
+                    <button onClick={() => handleAction(l.id, 'activate')} disabled={actionLoading === l.id} className="text-xs border border-green-500/40 text-green-700 dark:text-green-300 px-3 py-1.5 rounded-lg hover:bg-green-500/10 disabled:opacity-50">
                       {actionLoading === l.id ? '…' : 'Activate'}
                     </button>
                   )}
                   {(l.status === 'active' || l.status === 'paused') && (
-                    <button onClick={() => handleAction(l.id, 'delete')} disabled={actionLoading === l.id} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 disabled:opacity-50">
+                    <button onClick={() => handleAction(l.id, 'delete')} disabled={actionLoading === l.id} className="text-xs border border-red-500/30 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10 disabled:opacity-50">
                       Cancel
                     </button>
                   )}
@@ -419,7 +419,7 @@ function TradingAnalyticsTab() {
         <h2 className="font-semibold text-text-primary mb-3">All Marketplaces — Combined</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Total Trades" value={data.combined.totalTrades} />
-          <StatCard label="Completed" value={combinedRate != null ? `${data.combined.completedTrades} (${combinedRate}%)` : data.combined.completedTrades} accent="text-green-700" />
+          <StatCard label="Completed" value={combinedRate != null ? `${data.combined.completedTrades} (${combinedRate}%)` : data.combined.completedTrades} accent="text-green-700 dark:text-green-300" />
           <StatCard label="Total Volume" value={fmtPkr(data.combined.totalVolumePkr)} />
           <StatCard label="Gas Spend" value={`$${data.gas.spentUsd}`} sub="USDT" />
         </div>
@@ -433,7 +433,7 @@ function TradingAnalyticsTab() {
         </div>
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.usdt.totalTrades} />
-          <StatCard label="Completed" value={data.usdt.completedTrades} accent="text-green-700" />
+          <StatCard label="Completed" value={data.usdt.completedTrades} accent="text-green-700 dark:text-green-300" />
           <StatCard label="Volume" value={fmtPkr(data.usdt.volumePkr)} />
         </div>
       </div>
@@ -446,7 +446,7 @@ function TradingAnalyticsTab() {
         </div>
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.ctm.totalTrades} />
-          <StatCard label="Completed" value={data.ctm.completedTrades} accent="text-green-700" />
+          <StatCard label="Completed" value={data.ctm.completedTrades} accent="text-green-700 dark:text-green-300" />
           <StatCard label="Volume" value={fmtPkr(data.ctm.volumePkr)} />
         </div>
         {data.ctm.isMerchant && (
@@ -465,7 +465,7 @@ function TradingAnalyticsTab() {
         </div>
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Orders" value={data.gas.totalOrders} />
-          <StatCard label="Delivered" value={data.gas.deliveredOrders} accent="text-green-700" />
+          <StatCard label="Delivered" value={data.gas.deliveredOrders} accent="text-green-700 dark:text-green-300" />
           <StatCard label="Total Spent" value={`$${data.gas.spentUsd}`} sub="USDT" />
         </div>
       </div>

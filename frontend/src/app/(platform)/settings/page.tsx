@@ -253,11 +253,11 @@ function SecurityTab() {
     <div className="space-y-6">
       {/* Withdrawal lock notice */}
       {wdLocked && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3">
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 flex items-start gap-3">
           <Lock size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>
-            <p className="text-xs text-amber-700 mt-0.5">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Withdrawals Temporarily Locked</p>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
               Due to a recent <strong>{user?.withdrawalLockReason ?? 'security change'}</strong>, withdrawals are locked until{' '}
               <strong>{new Date(user!.withdrawalLockedUntil!).toLocaleString()}</strong>.
               This is a security measure — no action is required.
