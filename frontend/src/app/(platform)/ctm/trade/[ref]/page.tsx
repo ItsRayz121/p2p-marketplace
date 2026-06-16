@@ -115,7 +115,7 @@ function Countdown({ deadline }: { deadline: string }) {
     const t = setInterval(() => setDiff(new Date(deadline).getTime() - Date.now()), 1000)
     return () => clearInterval(t)
   }, [deadline])
-  if (diff <= 0) return <span className="text-red-600 font-bold">Expired</span>
+  if (diff <= 0) return <span className="text-red-600 dark:text-red-400 font-bold">Expired</span>
   const h = Math.floor(diff / 3600000); const m = Math.floor((diff % 3600000) / 60000); const s = Math.floor((diff % 60000) / 1000)
   return <span className="font-mono font-bold text-primary">{h > 0 ? `${h}:` : ''}{String(m).padStart(2, '0')}:{String(s).padStart(2, '0')}</span>
 }
@@ -149,7 +149,7 @@ function StepCard({
   return (
     <div className={`border rounded-xl overflow-hidden transition-colors ${
       state === 'active' ? 'border-primary bg-surface shadow-card ring-1 ring-primary/10'
-        : state === 'completed' ? 'border-green-200 bg-surface'
+        : state === 'completed' ? 'border-green-500/30 bg-surface'
         : 'border-border bg-surface/50'
     }`}>
       <div
@@ -398,7 +398,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     if (needsSelection) {
       return (
         <div>
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 mb-3">
             Select the payment account you will use to send PKR {Number(trade.fiatAmount).toLocaleString()}. This will be locked for the trade.
           </p>
           <div className="space-y-2">
@@ -424,7 +424,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     }
     if (waitingForSelection) {
       return (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-sm text-amber-800 dark:text-amber-300">
           Waiting for buyer to select a payment account. You will be notified once they choose.
         </div>
       )
@@ -495,7 +495,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     ) : null
 
   const disputeBtn = (isBuyer || isSeller) && ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'].includes(trade.status) && !trade.dispute
-    ? <button onClick={() => setDisputeOpen(true)} className="w-full border border-red-200 text-red-600 py-2 rounded-xl text-sm hover:bg-red-50">Open Dispute</button>
+    ? <button onClick={() => setDisputeOpen(true)} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Open Dispute</button>
     : null
 
   const ratingPanel = (counterparty: string) => (
@@ -506,10 +506,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <p className="text-xs text-text-muted">How was your experience with @{counterparty}?</p>
         </div>
         {traderRatingDone ? (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">✓ Trader rating submitted.</div>
+          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Trader rating submitted.</div>
         ) : (
           <>
-            {ratingError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{ratingError}</div>}
+            {ratingError && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300">{ratingError}</div>}
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((s) => (
                 <button key={s} onClick={() => setRating(s)} className={`text-2xl ${s <= rating ? 'text-yellow-400' : 'text-text-disabled'}`}>★</button>
@@ -529,7 +529,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <p className="text-xs text-text-muted">Share suggestions to improve RupChain.</p>
         </div>
         {platformRatingDone ? (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">✓ Platform feedback received. Thank you!</div>
+          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Platform feedback received. Thank you!</div>
         ) : (
           <>
             <div className="flex gap-2">
@@ -566,7 +566,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <h1 className="font-bold text-text-primary text-lg">{trade.tokenAmount} {trade.token.symbol}</h1>
                 <p className="text-text-muted text-sm">PKR {Number(trade.fiatAmount).toLocaleString()} · Trade #{trade.displayRef ?? trade.tradeRef.slice(-8)}</p>
               </div>
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${trade.status === 'completed' ? 'bg-green-100 text-green-700' : trade.status === 'disputed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-800'}`}>
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${trade.status === 'completed' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : trade.status === 'disputed' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300'}`}>
                 {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
               </span>
             </div>
@@ -587,11 +587,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         {i < stepIndex ? '✓' : i + 1}
                       </div>
                       <div className="mt-1.5 w-16 text-center">
-                        <p className={`text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 font-medium' : 'text-text-muted'}`}>
+                        <p className={`text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 dark:text-green-400 font-medium' : 'text-text-muted'}`}>
                           {STEP_INFO[i].label}
                         </p>
                         {STEP_INFO[i].actor && (
-                          <span className={`text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (STEP_INFO[i].actor === 'Buyer' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600') : 'bg-surface-alt text-text-muted'}`}>
+                          <span className={`text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (STEP_INFO[i].actor === 'Buyer' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400') : 'bg-surface-alt text-text-muted'}`}>
                             {STEP_INFO[i].actor}
                           </span>
                         )}
@@ -606,29 +606,29 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             </div>
           </div>
 
-          {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
+          {error && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{error}</div>}
 
           {trade.dispute && (
             <div
               ref={disputeSectionRef}
-              className={`bg-red-50 border rounded-xl p-4 text-sm transition-shadow ${highlightDispute ? 'border-red-400 ring-2 ring-red-400 shadow-lg' : 'border-red-200'}`}
+              className={`bg-red-500/10 border rounded-xl p-4 text-sm transition-shadow ${highlightDispute ? 'border-red-500/50 ring-2 ring-red-400 shadow-lg' : 'border-red-500/30'}`}
             >
-              <p className="font-semibold text-red-800 mb-1">Dispute Open: {trade.dispute.reason.replace(/_/g, ' ')}</p>
-              <p className="text-red-700">{trade.dispute.description}</p>
+              <p className="font-semibold text-red-800 dark:text-red-300 mb-1">Dispute Open: {trade.dispute.reason.replace(/_/g, ' ')}</p>
+              <p className="text-red-700 dark:text-red-300">{trade.dispute.description}</p>
               {/* Admin evidence requests / dispute thread */}
               {trade.dispute.messages && trade.dispute.messages.length > 0 && (
-                <div className="mt-3 space-y-2 border-t border-red-200 pt-3">
-                  <p className="text-xs font-semibold text-red-800 uppercase tracking-wide">Admin requests</p>
+                <div className="mt-3 space-y-2 border-t border-red-500/30 pt-3">
+                  <p className="text-xs font-semibold text-red-800 dark:text-red-300 uppercase tracking-wide">Admin requests</p>
                   {trade.dispute.messages.map((m) => (
-                    <div key={m.id} className="bg-white/70 border border-red-200 rounded-lg px-3 py-2">
+                    <div key={m.id} className="bg-surface border border-red-500/30 rounded-lg px-3 py-2">
                       <p className="text-red-900">{m.message}</p>
                       <p className="text-[11px] text-red-500 mt-0.5">{new Date(m.createdAt).toLocaleString()}</p>
                     </div>
                   ))}
-                  <p className="text-xs text-red-700">Respond using the chat on the right, or upload evidence below.</p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Respond using the chat on the right, or upload evidence below.</p>
                 </div>
               )}
-              {trade.dispute.resolution && <p className="mt-2 text-green-700 font-medium">Resolution: {trade.dispute.resolution}</p>}
+              {trade.dispute.resolution && <p className="mt-2 text-green-700 dark:text-green-300 font-medium">Resolution: {trade.dispute.resolution}</p>}
             </div>
           )}
 
@@ -656,7 +656,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
                     <p className="text-sm font-semibold text-text-primary">Seller Receiving Account</p>
-                    {isAccountLocked && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium ml-auto">Locked</span>}
+                    {isAccountLocked && <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium ml-auto">Locked</span>}
                   </div>
                   <p className="text-xs text-text-muted mb-2">Send PKR {Number(trade.fiatAmount).toLocaleString()} to this account.</p>
                   {renderSellerAccountBlock(true)}
@@ -671,19 +671,19 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 </div>
                 {trade.status === 'awaiting_payment' && trade.settlementType === 'ON_CHAIN' && trade.escrowAddress && (
                   <div className="space-y-3">
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
-                      <p className="text-sm font-semibold text-blue-800">Send USDT to Escrow Address</p>
-                      <div className="bg-surface rounded-lg border border-blue-200 p-2">
+                    <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 space-y-2">
+                      <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Send USDT to Escrow Address</p>
+                      <div className="bg-surface rounded-lg border border-blue-500/30 p-2">
                         <p className="text-xs text-text-muted mb-1">Escrow Address ({trade.escrowCurrency ?? 'USDT_TRC20'})</p>
                         <p className="font-mono text-xs text-text-primary break-all select-all">{trade.escrowAddress}</p>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-blue-700">Amount required:</span>
+                        <span className="text-blue-700 dark:text-blue-300">Amount required:</span>
                         <span className="font-bold text-blue-900">{trade.escrowAmount ? `PKR ${Number(trade.escrowAmount).toLocaleString()}` : `PKR ${Number(trade.fiatAmount).toLocaleString()}`}</span>
                       </div>
                       {trade.escrowConfirmedAt
-                        ? <p className="text-xs text-green-700 font-medium">Deposit confirmed — trade is progressing.</p>
-                        : <p className="text-xs text-blue-600">Send exact amount. Deposit auto-confirms within 5 minutes.</p>
+                        ? <p className="text-xs text-green-700 dark:text-green-300 font-medium">Deposit confirmed — trade is progressing.</p>
+                        : <p className="text-xs text-blue-600 dark:text-blue-400">Send exact amount. Deposit auto-confirms within 5 minutes.</p>
                       }
                     </div>
                     <div>
@@ -693,14 +693,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         {actionLoading ? 'Uploading…' : 'Upload Deposit Screenshot'}
                       </button>
                     </div>
-                    <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-200 text-red-600 py-2 rounded-xl text-sm hover:bg-red-50">Cancel Trade</button>
+                    <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Cancel Trade</button>
                   </div>
                 )}
                 {trade.status === 'awaiting_payment' && !(trade.settlementType === 'ON_CHAIN' && trade.escrowAddress) && (() => {
                   const needsAccountSelection = isMultiAccount && snap?.selectedIdx === undefined
                   if (needsAccountSelection) {
                     return (
-                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
                         Select a payment account above before uploading payment proof.
                       </p>
                     )
@@ -712,7 +712,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       <button onClick={handleUploadPaymentProof} disabled={actionLoading || !proofFile} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 hover:bg-primary/90">
                         {actionLoading ? 'Uploading…' : 'Upload Payment Proof'}
                       </button>
-                      <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-200 text-red-600 py-2 rounded-xl text-sm hover:bg-red-50">Cancel Trade</button>
+                      <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Cancel Trade</button>
                     </div>
                   )
                 })()}
@@ -737,12 +737,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 summary="Payment confirmed by seller"
                 expanded={expandedSteps.has(2)} onToggle={() => toggleStep(2)}>
                 {trade.status === 'payment_uploaded' ? (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm">
-                    <p className="font-semibold text-yellow-800 mb-1">Payment proof submitted</p>
-                    <p className="text-yellow-700">Waiting for seller to confirm they received your payment. This usually takes a few minutes.</p>
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
+                    <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Payment proof submitted</p>
+                    <p className="text-yellow-700 dark:text-yellow-300">Waiting for seller to confirm they received your payment. This usually takes a few minutes.</p>
                   </div>
                 ) : (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
                     ✓ Seller confirmed your payment.
                   </div>
                 )}
@@ -759,30 +759,30 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <Row label="Method" value={settlementLabel(trade.settlementType)} />
                 </div>
                 {trade.settlementNote && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
-                    <p className="font-medium text-amber-800 mb-1">Transfer instructions:</p>
-                    <p className="text-amber-700">{trade.settlementNote}</p>
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-sm">
+                    <p className="font-medium text-amber-800 dark:text-amber-300 mb-1">Transfer instructions:</p>
+                    <p className="text-amber-700 dark:text-amber-300">{trade.settlementNote}</p>
                   </div>
                 )}
                 {trade.status === 'payment_confirmed' && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm">
-                    <p className="font-semibold text-blue-800 mb-1">Payment confirmed by seller</p>
-                    <p className="text-blue-700">Seller is now sending your {trade.token.symbol} tokens. Please wait.</p>
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm">
+                    <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">Payment confirmed by seller</p>
+                    <p className="text-blue-700 dark:text-blue-300">Seller is now sending your {trade.token.symbol} tokens. Please wait.</p>
                   </div>
                 )}
                 {trade.status === 'seller_transferring' && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm">
-                    <p className="font-semibold text-blue-800 mb-1">Seller is transferring tokens</p>
-                    <p className="text-blue-700">Seller has started the transfer. They will upload proof shortly. Check your wallet.</p>
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm">
+                    <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">Seller is transferring tokens</p>
+                    <p className="text-blue-700 dark:text-blue-300">Seller has started the transfer. They will upload proof shortly. Check your wallet.</p>
                   </div>
                 )}
                 {renderTokenProofsList()}
                 {trade.status === 'proof_submitted' && (
                   <div className="space-y-3">
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
-                      <p className="font-semibold text-green-800">Seller has submitted transfer proof</p>
-                      <p className="text-xs text-green-700">Check your wallet / account for the incoming tokens, then confirm below.</p>
-                      <div className="bg-surface rounded-lg border border-green-200 p-3 space-y-1.5 text-sm">
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 space-y-3">
+                      <p className="font-semibold text-green-800 dark:text-green-300">Seller has submitted transfer proof</p>
+                      <p className="text-xs text-green-700 dark:text-green-300">Check your wallet / account for the incoming tokens, then confirm below.</p>
+                      <div className="bg-surface rounded-lg border border-green-500/30 p-3 space-y-1.5 text-sm">
                         <p className="text-xs font-semibold text-text-muted mb-2">Delivery Summary</p>
                         <Row label="Token" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
                         <Row label="Method" value={settlementLabel(trade.settlementType)} />
@@ -791,7 +791,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         )}
                       </div>
                       {latestTokenProof && (
-                        <div className="bg-surface rounded-lg border border-green-200 p-3 space-y-2">
+                        <div className="bg-surface rounded-lg border border-green-500/30 p-3 space-y-2">
                           <p className="text-xs font-semibold text-text-muted">Transfer Proof from Seller</p>
                           {latestTokenProof.txHash && (
                             <div className="space-y-1">
@@ -843,7 +843,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
                     <p className="text-sm font-semibold text-text-primary">Your Receiving Account</p>
-                    {isAccountLocked && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium ml-auto">Locked</span>}
+                    {isAccountLocked && <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium ml-auto">Locked</span>}
                   </div>
                   <p className="text-xs text-text-muted mb-2">You will receive PKR {Number(trade.fiatAmount).toLocaleString()} from the buyer.</p>
                   {renderSellerAccountBlock(false)}
@@ -857,9 +857,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   {renderBuyerAccountBlock()}
                 </div>
                 {trade.status === 'awaiting_payment' && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm">
-                    <p className="font-semibold text-yellow-800 mb-1">Waiting for buyer payment</p>
-                    <p className="text-yellow-700">The buyer is sending PKR to your account. You&apos;ll be notified when payment proof is uploaded.</p>
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
+                    <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Waiting for buyer payment</p>
+                    <p className="text-yellow-700 dark:text-yellow-300">The buyer is sending PKR to your account. You&apos;ll be notified when payment proof is uploaded.</p>
                   </div>
                 )}
               </StepCard>
@@ -883,7 +883,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     </button>
                   </div>
                 ) : (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
                     ✓ You confirmed receiving PKR {Number(trade.fiatAmount).toLocaleString()}.
                   </div>
                 )}
@@ -900,9 +900,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
                 </div>
                 {trade.settlementNote && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
-                    <p className="font-medium text-amber-800 mb-1">Transfer instructions:</p>
-                    <p className="text-amber-700">{trade.settlementNote}</p>
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-sm">
+                    <p className="font-medium text-amber-800 dark:text-amber-300 mb-1">Transfer instructions:</p>
+                    <p className="text-amber-700 dark:text-amber-300">{trade.settlementNote}</p>
                   </div>
                 )}
                 {trade.status === 'payment_confirmed' && (
@@ -950,9 +950,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 summary="Trade complete"
                 expanded={expandedSteps.has(4)} onToggle={() => toggleStep(4)}>
                 {trade.status === 'proof_submitted' && !ratingOpen && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm">
-                    <p className="font-semibold text-yellow-800 mb-1">Waiting for buyer confirmation</p>
-                    <p className="text-yellow-700">Transfer proof submitted. Buyer has 30 minutes to confirm receipt. If they don&apos;t respond, the trade escalates to admin.</p>
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
+                    <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Waiting for buyer confirmation</p>
+                    <p className="text-yellow-700 dark:text-yellow-300">Transfer proof submitted. Buyer has 30 minutes to confirm receipt. If they don&apos;t respond, the trade escalates to admin.</p>
                   </div>
                 )}
                 {trade.status === 'completed' && !ratingOpen && (
@@ -1070,10 +1070,10 @@ function CompletedSummary({
   const starRow = (rating: number) =>
     Array.from({ length: 5 }, (_, i) => <span key={i} className={i < rating ? 'text-yellow-400' : 'text-text-disabled'}>★</span>)
   return (
-    <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 space-y-3">
       <div className="flex items-center gap-2">
-        <span className="text-green-600 text-lg">✓</span>
-        <p className="font-bold text-green-800">Trade Completed!</p>
+        <span className="text-green-600 dark:text-green-400 text-lg">✓</span>
+        <p className="font-bold text-green-800 dark:text-green-300">Trade Completed!</p>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div><p className="text-xs text-text-muted">Token</p><p className="font-semibold text-text-primary">{trade.tokenAmount} {trade.token.symbol}</p></div>
@@ -1081,27 +1081,27 @@ function CompletedSummary({
         <div><p className="text-xs text-text-muted">Payment</p><p className="font-semibold text-text-primary">{trade.sellerPaymentSnapshot?.label ?? trade.paymentMethod}</p></div>
         <div><p className="text-xs text-text-muted">Counterparty</p><p className="font-semibold text-text-primary">@{counterparty}</p></div>
       </div>
-      <div className="border-t border-green-200 pt-3 space-y-2">
+      <div className="border-t border-green-500/30 pt-3 space-y-2">
         {myRating && (
-          <p className="text-sm text-green-700 flex items-center gap-1.5">
+          <p className="text-sm text-green-700 dark:text-green-300 flex items-center gap-1.5">
             <span>You rated @{counterparty}:</span><span className="flex">{starRow(myRating.rating)}</span>
           </p>
         )}
         {theirRating && (
-          <p className="text-sm text-green-700 flex items-center gap-1.5">
+          <p className="text-sm text-green-700 dark:text-green-300 flex items-center gap-1.5">
             <span>@{counterparty} rated you:</span><span className="flex">{starRow(theirRating.rating)}</span>
           </p>
         )}
         {!myRating && (
           <>
-            {ratingError && <p className="text-xs text-red-600">{ratingError}</p>}
-            <button onClick={onOpenRating} className="w-full border border-green-600 text-green-700 py-2 rounded-xl text-sm font-semibold hover:bg-green-100 transition-colors">
+            {ratingError && <p className="text-xs text-red-600 dark:text-red-400">{ratingError}</p>}
+            <button onClick={onOpenRating} className="w-full border border-green-600 text-green-700 dark:text-green-300 py-2 rounded-xl text-sm font-semibold hover:bg-green-500/15 transition-colors">
               ★ Rate This Trade
             </button>
           </>
         )}
       </div>
-      <p className="text-xs text-center text-green-700">Thank you for using RupChain.</p>
+      <p className="text-xs text-center text-green-700 dark:text-green-300">Thank you for using RupChain.</p>
     </div>
   )
 }
@@ -1116,7 +1116,7 @@ function CopyableText({ value, mono }: { value: string; mono?: boolean }) {
       <p className={`text-xs text-text-primary break-all flex-1 ${mono ? 'font-mono' : ''}`}>{value}</p>
       <button onClick={handleCopy} title="Copy" className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors mt-0.5">
         {copied ? (
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
         ) : (
           <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" /><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" /></svg>
         )}
@@ -1138,7 +1138,7 @@ function Row({ label, value, mono, breakAll, copyable }: { label: string; value:
         {copyable && (
           <button onClick={handleCopy} title="Copy" className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors">
             {copied ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
               </svg>
             ) : (
