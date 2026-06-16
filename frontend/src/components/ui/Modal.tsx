@@ -56,7 +56,7 @@ export function Modal({ isOpen, onClose, title, size = 'md', children, footer }:
             <Dialog.Close
               onClick={onClose}
               className={cn(
-                'rounded-lg p-1.5 text-text-muted hover:text-text-primary hover:bg-surface',
+                'rounded-lg p-2.5 -mr-1.5 text-text-muted hover:text-text-primary hover:bg-surface',
                 'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
               )}
               aria-label="Close"
