@@ -191,3 +191,17 @@
   background: rgb(37 99 235 / 0.4);
   color: rgb(var(--color-text-primary));
 }
+
+/* ─── Reduced motion ──────────────────────────────────────────────────────────
+   Respect the OS "reduce motion" setting (vestibular safety, WCAG). Neutralises
+   the infinite marquee tickers (Recent Trades / CTM), pulse, spin and long
+   transitions for users who opt out. Uses !important so it also overrides the
+   inline `style={{ animation }}` on the marquee, which utility classes can't. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
