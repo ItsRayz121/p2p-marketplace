@@ -114,6 +114,7 @@ export default function AdminCtmDashboardPage() {
         <div>
           <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">Top Tokens by Volume</h2>
           <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
@@ -138,6 +139,7 @@ export default function AdminCtmDashboardPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

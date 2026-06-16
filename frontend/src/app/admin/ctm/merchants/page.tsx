@@ -122,6 +122,7 @@ export default function AdminCtmMerchantsPage() {
         <div className="text-center py-16 text-text-muted">{tab === 'pending' ? 'No pending approvals.' : 'No merchants found.'}</div>
       ) : (
         <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border">
               <tr>
@@ -179,6 +180,7 @@ export default function AdminCtmMerchantsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

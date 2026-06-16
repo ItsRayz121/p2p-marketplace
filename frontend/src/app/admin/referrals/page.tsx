@@ -265,6 +265,7 @@ export default function ReferralsPage() {
           <EmptyState icon={Users} title="No inviters yet" description="No users have referred others yet." />
         ) : (
           <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
@@ -300,6 +301,7 @@ export default function ReferralsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )
       ) : (

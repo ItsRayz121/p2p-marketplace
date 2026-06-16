@@ -127,6 +127,7 @@ function TokenIdentifierPanel() {
 
           {result.kind === 'token' && result.deployments && result.deployments.length > 0 && (
             <div className="border border-border-subtle rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-surface-alt border-b border-border-subtle">
                   <tr>
@@ -160,6 +161,7 @@ function TokenIdentifierPanel() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 
@@ -553,6 +555,7 @@ export default function DepositChainsPage() {
       )}
 
       <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-surface-alt border-b border-border-subtle">
             <tr>
@@ -620,6 +623,7 @@ export default function DepositChainsPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {chains.length === 0 && (
           <div className="px-4 py-12 text-center text-text-muted">
             No deposit chains configured. Run the seed script to populate from the static config.

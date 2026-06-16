@@ -622,6 +622,7 @@ export default function PlatformRevenuePage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-surface shadow-card border border-border rounded-xl p-4">
           <h2 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">Fees by Token</h2>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-xs text-text-muted border-b border-border"><th className="text-left py-1.5">Token</th><th className="text-right py-1.5">Collected</th><th className="text-right py-1.5">USD</th><th className="text-right py-1.5">Count</th></tr></thead>
             <tbody>
@@ -636,9 +637,11 @@ export default function PlatformRevenuePage() {
               {s.byToken.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-text-muted">No data</td></tr>}
             </tbody>
           </table>
+          </div>
         </div>
         <div className="bg-surface shadow-card border border-border rounded-xl p-4">
           <h2 className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wide">Fees by Network</h2>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-xs text-text-muted border-b border-border"><th className="text-left py-1.5">Network</th><th className="text-right py-1.5">Collected</th><th className="text-right py-1.5">USD</th><th className="text-right py-1.5">Count</th></tr></thead>
             <tbody>
@@ -653,6 +656,7 @@ export default function PlatformRevenuePage() {
               {s.byChain.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-text-muted">No data</td></tr>}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 

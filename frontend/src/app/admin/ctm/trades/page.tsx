@@ -420,6 +420,7 @@ export default function AdminCtmTradesPage() {
         </div>
       ) : (
         <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border">
               <tr>
@@ -473,6 +474,7 @@ export default function AdminCtmTradesPage() {
               ))}
             </tbody>
           </table>
+          </div>
           {trades.length === 0 && <p className="text-center py-12 text-text-muted">No trades found.</p>}
         </div>
       )}

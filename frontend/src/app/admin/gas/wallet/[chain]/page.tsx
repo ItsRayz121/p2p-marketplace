@@ -139,6 +139,7 @@ export default function HotWalletDetailPage() {
             {' '}<button onClick={() => router.push('/admin/gas/chains')} className="text-primary underline">Gas Chains</button>.
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface-alt border-b border-border">
               <tr>
@@ -172,6 +173,7 @@ export default function HotWalletDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <div className="px-5 py-3 border-t border-border bg-surface-alt">
           <p className="text-xs text-text-muted">

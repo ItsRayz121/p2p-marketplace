@@ -113,7 +113,7 @@ function QueueRow({ q, onChanged }: { q: QueueHealthRow; onChanged: () => void }
       </div>
       {msg && <p className="px-3 pb-1.5 text-[10px] text-text-secondary">{msg}</p>}
       {open && q.failedJobs.length > 0 && (
-        <div className="border-t border-red-500/30 divide-y divide-red-100">
+        <div className="border-t border-red-500/30 divide-y divide-red-500/20">
           {q.failedJobs.map((j) => (
             <div key={j.id} className="px-3 py-1.5">
               <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">

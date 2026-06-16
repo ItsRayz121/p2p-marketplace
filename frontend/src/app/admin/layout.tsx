@@ -843,7 +843,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
             {/* Dropdown */}
             {bellOpen && (
-              <div className="absolute right-0 top-12 w-96 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
+              <div className="absolute right-0 top-12 w-[calc(100vw-1.5rem)] sm:w-96 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                   <div className="flex items-center gap-2">

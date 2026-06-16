@@ -298,6 +298,7 @@ export default function AdminCtmTokensPage() {
         <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-16 animate-pulse" />)}</div>
       ) : (
         <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border">
               <tr>
@@ -356,6 +357,7 @@ export default function AdminCtmTokensPage() {
               ))}
             </tbody>
           </table>
+          </div>
           {tokens.length === 0 && <p className="text-center py-12 text-text-muted">No tokens found.</p>}
         </div>
       )}

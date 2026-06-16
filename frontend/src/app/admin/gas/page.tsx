@@ -1025,7 +1025,7 @@ export default function GasAdminPage() {
               size="sm"
               variant="secondary"
               onClick={() => setConfirmGlobalPause(false)}
-              className="bg-white text-red-700 dark:text-red-300 hover:bg-red-500/10 border-white font-semibold flex-shrink-0"
+              className="bg-white text-red-700 hover:bg-red-50 border-white font-semibold flex-shrink-0"
             >
               Resume Delivery
             </Button>

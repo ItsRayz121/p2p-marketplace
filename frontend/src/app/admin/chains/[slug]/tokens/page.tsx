@@ -330,6 +330,7 @@ export default function ChainTokensPage() {
 
       {/* Token table */}
       <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-surface-alt border-b border-border-subtle">
             <tr>
@@ -382,6 +383,7 @@ export default function ChainTokensPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {tokens.length === 0 && (
           <div className="px-4 py-12 text-center text-text-muted">
             No tokens on this chain yet.
