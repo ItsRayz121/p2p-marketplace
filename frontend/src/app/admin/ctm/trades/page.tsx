@@ -10,15 +10,15 @@ import { Spinner } from '@/components/ui/Spinner'
 import { CtmStatusTimeline } from '@/components/admin/CtmStatusTimeline'
 
 const STATUS_COLORS: Record<string, string> = {
-  awaiting_payment:    'bg-yellow-100 text-yellow-700',
-  payment_uploaded:    'bg-blue-100 text-blue-700',
-  payment_confirmed:   'bg-blue-100 text-blue-700',
-  seller_transferring: 'bg-indigo-100 text-indigo-700',
-  proof_submitted:     'bg-purple-100 text-purple-700',
-  completed:           'bg-green-100 text-green-700',
+  awaiting_payment:    'bg-yellow-500/15 text-yellow-700',
+  payment_uploaded:    'bg-blue-500/15 text-blue-700',
+  payment_confirmed:   'bg-blue-500/15 text-blue-700',
+  seller_transferring: 'bg-indigo-500/15 text-indigo-700',
+  proof_submitted:     'bg-purple-500/15 text-purple-700',
+  completed:           'bg-green-500/15 text-green-700',
   cancelled:           'bg-surface-alt text-text-secondary',
-  disputed:            'bg-red-100 text-red-700',
-  dispute_resolved:    'bg-green-100 text-green-700',
+  disputed:            'bg-red-500/15 text-red-700',
+  dispute_resolved:    'bg-green-500/15 text-green-700',
   expired:             'bg-surface-alt text-text-secondary',
 }
 
@@ -256,7 +256,7 @@ function TradeDetailModal({
                   return (
                     <div key={m.id ?? i} className={`text-xs flex gap-2 ${isBuyer ? '' : 'flex-row-reverse'}`}>
                       <div className={`rounded-lg px-2.5 py-1.5 max-w-[80%] ${
-                        isBuyer ? 'bg-blue-50 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200' : isSeller ? 'bg-green-50 text-green-800 dark:bg-green-500/15 dark:text-green-200' : 'bg-purple-50 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200'
+                        isBuyer ? 'bg-blue-500/10 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200' : isSeller ? 'bg-green-500/10 text-green-800 dark:bg-green-500/15 dark:text-green-200' : 'bg-purple-500/10 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200'
                       }`}>
                         <p className="font-semibold text-[10px] mb-0.5">{label}</p>
                         <p>{m.message}</p>

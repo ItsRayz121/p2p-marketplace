@@ -16,7 +16,7 @@ function VerBadge({ ok, label, error }: { ok: boolean; label: string; error?: st
     <span
       title={error ?? undefined}
       className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium cursor-default ${
-        ok ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'
+        ok ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-surface-alt text-text-muted'
       }`}
     >
       {ok ? '✓' : '–'} {label}
@@ -53,7 +53,7 @@ function LookupDisplay({ result }: { result: TokenLookupResult }) {
         <VerBadge ok={result.trustWalletVerified} label="TrustWallet" error={result.trustWalletError} />
       </div>
       <div className="flex items-center gap-3 text-xs text-text-muted">
-        {verifiedSource && <span className="text-emerald-700 font-medium">✓ Verified via {verifiedSource}</span>}
+        {verifiedSource && <span className="text-emerald-700 dark:text-emerald-300 font-medium">✓ Verified via {verifiedSource}</span>}
         <span>Last checked: {new Date(result.checkedAt).toLocaleString()}</span>
       </div>
       {result.address && (
@@ -67,10 +67,10 @@ function LookupDisplay({ result }: { result: TokenLookupResult }) {
         </div>
       )}
       {result.onChainError && (
-        <div className="text-xs text-red-600">⚠ On-chain: {result.onChainError}</div>
+        <div className="text-xs text-red-600 dark:text-red-400">⚠ On-chain: {result.onChainError}</div>
       )}
       {result.coingeckoError && (
-        <div className="text-xs text-amber-600">⚠ CoinGecko: {result.coingeckoError}</div>
+        <div className="text-xs text-amber-600 dark:text-amber-400">⚠ CoinGecko: {result.coingeckoError}</div>
       )}
       {result.trustWalletError && (
         <div className="text-xs text-text-muted">ℹ TrustWallet: {result.trustWalletError}</div>
@@ -204,7 +204,7 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
       </div>
 
       {lookup && <LookupDisplay result={lookup} />}
-      {lookupErr && <p className="text-xs text-red-600">{lookupErr}</p>}
+      {lookupErr && <p className="text-xs text-red-600 dark:text-red-400">{lookupErr}</p>}
 
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -236,10 +236,10 @@ function AddTokenForm({ slug, onSuccess }: AddTokenFormProps) {
         </div>
       </div>
 
-      {saveErr && <p className="text-xs text-red-600">{saveErr}</p>}
+      {saveErr && <p className="text-xs text-red-600 dark:text-red-400">{saveErr}</p>}
 
       {address && !autoVerified && (
-        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+        <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2">
           ⚠ {lookup?.onChainSupported === false
             ? 'Not auto-verified. Use Lookup so CoinGecko / GeckoTerminal / TrustWallet can confirm this token — or override below.'
             : 'Automated verification has not passed. Use the Lookup button to verify the contract — or override below.'}

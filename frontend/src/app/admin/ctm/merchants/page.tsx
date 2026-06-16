@@ -6,9 +6,9 @@ import { Modal } from '@/components/ui/Modal'
 
 const TIER_COLORS: Record<string, string> = {
   new: 'bg-surface-alt text-text-secondary',
-  basic: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
-  elite: 'bg-purple-100 text-purple-700',
+  basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  verified: 'bg-green-500/15 text-green-700 dark:text-green-300',
+  elite: 'bg-purple-500/15 text-purple-700 dark:text-purple-300',
 }
 
 interface CtmMerchant {
@@ -146,7 +146,7 @@ export default function AdminCtmMerchantsPage() {
                   </td>
                   <td className="px-4 py-3 text-text-muted">{m.completedCtmTrades}/{m.totalCtmTrades}</td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs font-medium ${parseFloat(m.ctmDisputeRate) > 0.05 ? 'text-red-600' : 'text-green-600'}`}>
+                    <span className={`text-xs font-medium ${parseFloat(m.ctmDisputeRate) > 0.05 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                       {(parseFloat(m.ctmDisputeRate) * 100).toFixed(1)}%
                     </span>
                   </td>
@@ -155,15 +155,15 @@ export default function AdminCtmMerchantsPage() {
                     {m.approvedAt ? (
                       m.isActive ? (
                         m.suspendedUntil && new Date(m.suspendedUntil) > new Date() ? (
-                          <span className="text-xs text-orange-600 font-medium">Suspended</span>
+                          <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">Suspended</span>
                         ) : (
-                          <span className="text-xs text-green-600 font-medium">Active</span>
+                          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Active</span>
                         )
                       ) : (
-                        <span className="text-xs text-red-600 font-medium">Inactive</span>
+                        <span className="text-xs text-red-600 dark:text-red-400 font-medium">Inactive</span>
                       )
                     ) : (
-                      <span className="text-xs text-yellow-600 font-medium">Pending</span>
+                      <span className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">Pending</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -172,7 +172,7 @@ export default function AdminCtmMerchantsPage() {
                         <button onClick={() => handleApprove(m.id)} className="text-xs bg-green-600 text-white px-2 py-1 rounded-lg hover:bg-green-700">Approve</button>
                       )}
                       <button onClick={() => { setTierModal(m); setNewTier(m.tier) }} className="text-xs border border-border px-2 py-1 rounded-lg hover:bg-surface">Tier</button>
-                      <button onClick={() => { setSuspendModal(m); setSuspendReason('') }} className="text-xs border border-red-200 text-red-600 px-2 py-1 rounded-lg hover:bg-red-50">Suspend</button>
+                      <button onClick={() => { setSuspendModal(m); setSuspendReason('') }} className="text-xs border border-red-500/30 text-red-600 dark:text-red-400 px-2 py-1 rounded-lg hover:bg-red-500/10">Suspend</button>
                     </div>
                   </td>
                 </tr>

@@ -337,10 +337,10 @@ export default function AdminLogosPage() {
       </div>
 
       {/* ── Search logos from web ───────────────────────────────────────────── */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 space-y-4">
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-5 space-y-4">
         <div>
           <h2 className="font-semibold text-blue-900">Search Logos from Web</h2>
-          <p className="text-xs text-blue-700 mt-0.5">
+          <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
             Type a brand name or domain — we try multiple sources and show what's available. Click "Use this" to fill the form below.
           </p>
         </div>
@@ -352,7 +352,7 @@ export default function AdminLogosPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="e.g. Meezan Bank, meezanbank.com, SadaPay…"
-            className="flex-1 border border-blue-300 rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+            className="flex-1 border border-blue-500/40 rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-400/40"
           />
           <button
             onClick={handleSearch}
@@ -366,7 +366,7 @@ export default function AdminLogosPage() {
         {hasSearched && (
           <div>
             {searchCandidates.length === 0 ? (
-              <p className="text-sm text-blue-700">No candidates found. Try entering the website domain directly (e.g. meezanbank.com).</p>
+              <p className="text-sm text-blue-700 dark:text-blue-300">No candidates found. Try entering the website domain directly (e.g. meezanbank.com).</p>
             ) : (
               <div className="flex flex-wrap gap-3">
                 {searchCandidates.map((c) => (
@@ -378,7 +378,7 @@ export default function AdminLogosPage() {
                 ))}
               </div>
             )}
-            <p className="text-xs text-blue-600 mt-2">
+            <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
               Faded cards = logo not found at that source. Only visible cards have a real logo.
             </p>
           </div>
@@ -390,7 +390,7 @@ export default function AdminLogosPage() {
         ref={formRef}
         className={`border rounded-xl p-5 space-y-4 transition-colors ${
           isEditing
-            ? 'bg-amber-50 border-amber-300'
+            ? 'bg-amber-500/10 border-amber-500/40'
             : 'bg-surface border-border'
         }`}
       >
@@ -401,7 +401,7 @@ export default function AdminLogosPage() {
               {isEditing ? 'Edit Logo' : 'Add / Replace Logo'}
             </h2>
             {isEditing && editingEntry && (
-              <p className="text-xs text-amber-700 mt-0.5">
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
                 Editing: <span className="font-mono font-semibold">{editingEntry.type} / {editingEntry.slug}</span>
               </p>
             )}
@@ -560,7 +560,7 @@ export default function AdminLogosPage() {
                     key={entry.id}
                     className={`transition-colors ${
                       editingId === entry.id
-                        ? 'bg-amber-50'
+                        ? 'bg-amber-500/10'
                         : 'hover:bg-surface-raised/40'
                     }`}
                   >

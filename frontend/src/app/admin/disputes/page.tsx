@@ -79,9 +79,9 @@ function slaLabel(date: string): string {
 
 function slaBadgeClass(date: string): string {
   const days = daysAgo(date)
-  if (days >= 3) return 'bg-red-100 text-red-700 border-red-200'
-  if (days >= 1) return 'bg-orange-100 text-orange-700 border-orange-200'
-  return 'bg-green-100 text-green-700 border-green-200'
+  if (days >= 3) return 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30'
+  if (days >= 1) return 'bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/30'
+  return 'bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/30'
 }
 
 const statusVariant = (s: string): 'default' | 'success' | 'warning' | 'danger' => {
@@ -402,7 +402,7 @@ export default function DisputesPage() {
                     const isBuyer = msg.senderId === (selected.trade?.buyer?.id ?? selected.trade?.buyerId)
                     return (
                       <div key={msg.id} className="text-xs">
-                        <span className={`font-semibold ${isBuyer ? 'text-blue-600' : 'text-green-700'}`}>
+                        <span className={`font-semibold ${isBuyer ? 'text-blue-600 dark:text-blue-400' : 'text-green-700 dark:text-green-300'}`}>
                           {isBuyer ? selected.trade?.buyer?.username ?? 'Buyer' : selected.trade?.seller?.username ?? 'Seller'}:
                         </span>
                         <span className="text-text-secondary ml-1">{msg.message}</span>

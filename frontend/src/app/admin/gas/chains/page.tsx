@@ -701,11 +701,11 @@ function ChainModal({
               />
               <p className="text-xs text-text-muted mt-0.5">Used for fee estimation and balance monitoring on this chain.</p>
               {!form.rpcUrl && RPC_SUGGESTIONS[form.chainType] && (
-                <p className="text-xs text-blue-600 mt-0.5">
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
                   Recommended for {form.chainType}:{' '}
                   <button
                     type="button"
-                    className="font-mono underline hover:text-blue-800"
+                    className="font-mono underline hover:text-blue-800 dark:text-blue-300"
                     onClick={() => setForm({ ...form, rpcUrl: RPC_SUGGESTIONS[form.chainType]!.primary })}
                   >
                     {RPC_SUGGESTIONS[form.chainType]!.primary}
@@ -724,11 +724,11 @@ function ChainModal({
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm"
               />
               {!form.rpcUrlFallback && RPC_SUGGESTIONS[form.chainType] && (
-                <p className="text-xs text-blue-600 mt-0.5">
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
                   Recommended:{' '}
                   <button
                     type="button"
-                    className="font-mono underline hover:text-blue-800"
+                    className="font-mono underline hover:text-blue-800 dark:text-blue-300"
                     onClick={() => setForm({ ...form, rpcUrlFallback: RPC_SUGGESTIONS[form.chainType]!.fallback })}
                   >
                     {RPC_SUGGESTIONS[form.chainType]!.fallback}
@@ -949,7 +949,7 @@ function TokenModal({
 
           {/* Delivery-capability notice for non-native tokens */}
           {form.tokenType && form.tokenType !== 'native' && (
-            <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            <div className="px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-800 dark:text-amber-300">
               <span className="font-semibold">Token delivery is gated.</span> This token stays
               &ldquo;coming soon&rdquo; on the public gas page until a super-admin clicks
               <span className="font-semibold"> Go Live</span> on its row — do that only after funding the chain&apos;s
@@ -984,7 +984,7 @@ function TokenModal({
 
             {/* One-click import of verified tokens from the Deposit Chain Registry */}
             {!editing && depositTokens.length > 0 && (
-              <div className="col-span-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="col-span-2 px-3 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <p className="text-xs font-medium text-blue-900 mb-1.5">
                   Found in Deposit Chain Registry — click to fill:
                 </p>
@@ -994,7 +994,7 @@ function TokenModal({
                       key={t.id}
                       type="button"
                       onClick={() => importDepositToken(t)}
-                      className="px-3 py-1 text-xs font-medium rounded-full border border-blue-300 bg-white text-blue-700 hover:bg-blue-100 transition-colors"
+                      className="px-3 py-1 text-xs font-medium rounded-full border border-blue-500/40 bg-white text-blue-700 dark:text-blue-300 hover:bg-blue-500/15 transition-colors"
                       title={t.address ?? 'native asset'}
                     >
                       {t.symbol}{t.address ? '' : ' (native)'}
@@ -1058,7 +1058,7 @@ function TokenModal({
                     type="button"
                     onClick={handleCoinGeckoLookup}
                     disabled={looking}
-                    className="shrink-0 px-3 py-2 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                    className="shrink-0 px-3 py-2 text-xs font-medium bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 rounded-lg hover:bg-blue-500/15 disabled:opacity-50 transition-colors"
                   >
                     {looking ? '…' : '🔍 CoinGecko'}
                   </button>
@@ -1076,10 +1076,10 @@ function TokenModal({
               )}
               {addrLookup && !addrLooking && (
                 <div className="mt-2 flex gap-2 flex-wrap">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.onChainVerified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-surface-alt text-text-muted'}`}>
                     {addrLookup.onChainVerified ? '✓' : '–'} On-chain
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${addrLookup.coingeckoVerified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-surface-alt text-text-muted'}`}>
                     {addrLookup.coingeckoVerified ? '✓' : '–'} CoinGecko
                   </span>
                   {addrLookup.symbol && <span className="text-xs text-text-muted">symbol: {addrLookup.symbol}</span>}
@@ -1088,13 +1088,13 @@ function TokenModal({
               )}
               {lookupResult && (
                 <div className="mt-2 flex gap-2 flex-wrap">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.coingeckoVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.coingeckoVerified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-surface-alt text-text-muted'}`}>
                     {lookupResult.coingeckoVerified ? '✓' : '–'} CoinGecko
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.onChainVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.onChainVerified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-surface-alt text-text-muted'}`}>
                     {lookupResult.onChainVerified ? '✓' : '–'} On-chain
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.trustWalletVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-surface-alt text-text-muted'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${lookupResult.trustWalletVerified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-surface-alt text-text-muted'}`}>
                     {lookupResult.trustWalletVerified ? '✓' : '–'} TrustWallet
                   </span>
                   {lookupResult.decimals != null && (

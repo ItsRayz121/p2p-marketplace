@@ -95,10 +95,10 @@ function TokenIdentifierPanel() {
         </Button>
       </div>
 
-      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>}
 
       {result && !result.resolved && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <p className="text-sm text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
           {result.error ?? 'Could not resolve this token/chain.'}
         </p>
       )}
@@ -106,8 +106,8 @@ function TokenIdentifierPanel() {
       {result && result.resolved && (
         <div className="space-y-3">
           <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${
-            result.kind === 'token'        ? 'bg-blue-50 border-blue-200' :
-            result.kind === 'native_chain' ? 'bg-purple-50 border-purple-200' :
+            result.kind === 'token'        ? 'bg-blue-500/10 border-blue-500/30' :
+            result.kind === 'native_chain' ? 'bg-purple-500/10 border-purple-500/30' :
                                              'bg-surface-alt border-border'
           }`}>
             {result.logoUrl && (
@@ -148,7 +148,7 @@ function TokenIdentifierPanel() {
                         {d.supported && d.mappedSlug ? (
                           <button
                             onClick={() => addUnder(d.mappedSlug!, result.symbol ?? '', d.address, d.decimals)}
-                            className="text-xs font-medium text-blue-600 hover:underline"
+                            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
                           >
                             Add under {d.chainName} →
                           </button>
@@ -333,7 +333,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
               key={t.slug}
               type="button"
               onClick={() => applyTemplate(t)}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-blue-50 hover:border-blue-400 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-blue-500/10 hover:border-blue-500/50 transition-colors"
             >
               {t.label}
             </button>
@@ -363,7 +363,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
               <li
                 key={r.chainId}
                 onMouseDown={() => applyResult(r)}
-                className="px-3 py-2 cursor-pointer hover:bg-blue-50 flex items-center justify-between"
+                className="px-3 py-2 cursor-pointer hover:bg-blue-500/10 flex items-center justify-between"
               >
                 <span className="font-medium">{r.name}</span>
                 <span className="text-xs text-text-muted">chainId {r.chainId} · {r.nativeSymbol}</span>
@@ -372,7 +372,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
           </ul>
         )}
         {selected && (
-          <p className="mt-1 text-xs text-emerald-600">✓ Auto-filled from chainid.network — review fields below</p>
+          <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">✓ Auto-filled from chainid.network — review fields below</p>
         )}
       </div>
 
@@ -395,7 +395,7 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
               {FAMILIES.map(f => <option key={f}>{f}</option>)}
             </select>
             {family !== 'EVM' && (
-              <p className="text-xs text-blue-600 mt-1">
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                 Non-EVM chain — auto-lookup is EVM-only. Fill all fields manually below.
                 After creating, go to Gas → Chains to assign a Backend Chain ID and seed the hot wallet.
               </p>
@@ -431,9 +431,9 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
 
           {/* Recommended public RPC for non-EVM families + live health of the configured endpoint */}
           {(rpcChecking || rpcSuggestion) && (
-            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs space-y-2">
+            <div className="mt-2 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs space-y-2">
               {rpcChecking ? (
-                <p className="text-blue-700">Checking recommended RPC + configured endpoint health…</p>
+                <p className="text-blue-700 dark:text-blue-300">Checking recommended RPC + configured endpoint health…</p>
               ) : rpcSuggestion && (
                 <>
                   {rpcSuggestion.recommended.length > 0 && (
@@ -441,15 +441,15 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
                       <p className="font-semibold text-blue-900">Recommended public RPC{rpcSuggestion.envVar ? ` — set ${rpcSuggestion.envVar} on the server` : ''}:</p>
                       {rpcSuggestion.recommended.map((r) => (
                         <div key={r.url} className="flex items-center gap-2">
-                          <code className="font-mono text-[11px] text-blue-800 break-all">{r.url}</code>
-                          <button type="button" onClick={() => navigator.clipboard.writeText(r.url)} className="text-blue-600 hover:underline whitespace-nowrap">Copy</button>
+                          <code className="font-mono text-[11px] text-blue-800 dark:text-blue-300 break-all">{r.url}</code>
+                          <button type="button" onClick={() => navigator.clipboard.writeText(r.url)} className="text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap">Copy</button>
                           <span className="text-blue-500">— {r.label}</span>
                         </div>
                       ))}
                     </div>
                   )}
                   {rpcSuggestion.configuredHealth && (
-                    <p className={rpcSuggestion.configuredHealth.reachable ? 'text-emerald-700' : 'text-red-600'}>
+                    <p className={rpcSuggestion.configuredHealth.reachable ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}>
                       Configured endpoint: {rpcSuggestion.configuredHealth.reachable
                         ? `✓ reachable (${rpcSuggestion.configuredHealth.latencyMs}ms)`
                         : `✗ unreachable${rpcSuggestion.configuredHealth.error ? ` — ${rpcSuggestion.configuredHealth.error}` : ''}`}
@@ -463,14 +463,14 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
 
         <label className="flex items-center gap-3 cursor-pointer select-none">
           <input type="checkbox" checked={addToGas} onChange={e => setAddToGas(e.target.checked)}
-            className="w-4 h-4 rounded border-border text-blue-600 focus:ring-blue-500" />
+            className="w-4 h-4 rounded border-border text-blue-600 dark:text-blue-400 focus:ring-blue-500" />
           <div>
             <span className="text-sm font-medium text-text-primary">Also add to Gas section</span>
             <p className="text-xs text-text-muted">Creates an inactive Gas chain entry so you can configure it under Gas → Chains later.</p>
           </div>
         </label>
 
-        {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>}
 
         <div className="flex gap-3 pt-1">
           <Button type="submit" disabled={submitting}>
@@ -537,7 +537,7 @@ export default function DepositChainsPage() {
       </div>
 
       {warning && (
-        <div className="flex items-start justify-between gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+        <div className="flex items-start justify-between gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-sm text-amber-800 dark:text-amber-300">
           <span>{warning}</span>
           <button onClick={() => setWarning(null)} className="shrink-0 font-medium hover:underline">Dismiss</button>
         </div>
@@ -586,7 +586,7 @@ export default function DepositChainsPage() {
                 <td className="px-4 py-3 text-center">
                   <button
                     onClick={() => router.push(`/admin/chains/${chain.slug}/tokens`)}
-                    className="text-blue-600 hover:underline font-medium"
+                    className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
                   >
                     {chain.activeTokens} tokens
                   </button>

@@ -15,9 +15,9 @@ interface CtmStats {
 
 const TIER_COLORS: Record<string, string> = {
   new: 'bg-surface-alt text-text-secondary',
-  basic: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
-  elite: 'bg-purple-100 text-purple-700',
+  basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  verified: 'bg-green-500/15 text-green-700 dark:text-green-300',
+  elite: 'bg-purple-500/15 text-purple-700 dark:text-purple-300',
 }
 
 function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
@@ -74,9 +74,9 @@ export default function AdminCtmDashboardPage() {
         <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">Trades</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <StatCard label="Total Trades" value={stats.trades.total.toLocaleString()} />
-          <StatCard label="Completed" value={stats.trades.completed.toLocaleString()} accent="text-green-600" sub={`${completionRate}% completion`} />
-          <StatCard label="Active Now" value={stats.trades.active.toLocaleString()} accent="text-blue-600" />
-          <StatCard label="Disputed" value={stats.trades.disputed.toLocaleString()} accent={stats.trades.disputed > 0 ? 'text-red-600' : undefined} />
+          <StatCard label="Completed" value={stats.trades.completed.toLocaleString()} accent="text-green-600 dark:text-green-400" sub={`${completionRate}% completion`} />
+          <StatCard label="Active Now" value={stats.trades.active.toLocaleString()} accent="text-blue-600 dark:text-blue-400" />
+          <StatCard label="Disputed" value={stats.trades.disputed.toLocaleString()} accent={stats.trades.disputed > 0 ? 'text-red-600 dark:text-red-400' : undefined} />
           <StatCard label="Expired" value={stats.trades.expired.toLocaleString()} />
         </div>
       </div>
@@ -87,7 +87,7 @@ export default function AdminCtmDashboardPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <StatCard label="Total Volume (PKR)" value={`PKR ${Number(stats.totalVolumePkr).toLocaleString()}`} />
           <StatCard label="Active Listings" value={stats.listings.active.toLocaleString()} />
-          <StatCard label="Open Disputes" value={stats.openDisputes} accent={stats.openDisputes > 0 ? 'text-red-600' : undefined} />
+          <StatCard label="Open Disputes" value={stats.openDisputes} accent={stats.openDisputes > 0 ? 'text-red-600 dark:text-red-400' : undefined} />
         </div>
       </div>
 
@@ -96,7 +96,7 @@ export default function AdminCtmDashboardPage() {
         <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">Merchants</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Active Merchants" value={stats.merchants.active.toLocaleString()} />
-          <StatCard label="Pending Approval" value={stats.merchants.pendingApproval.toLocaleString()} accent={stats.merchants.pendingApproval > 0 ? 'text-yellow-600' : undefined} />
+          <StatCard label="Pending Approval" value={stats.merchants.pendingApproval.toLocaleString()} accent={stats.merchants.pendingApproval > 0 ? 'text-yellow-600 dark:text-yellow-400' : undefined} />
           {Object.entries(stats.merchants.byTier).map(([tier, count]) => (
             <div key={tier} className="bg-surface shadow-card border border-border rounded-xl p-4">
               <p className="text-xs text-text-muted mb-1">Tier</p>

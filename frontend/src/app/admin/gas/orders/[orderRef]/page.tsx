@@ -368,13 +368,13 @@ export default function GasOrderDetailPage() {
 
       {/* Actions — PKR proof review */}
       {isPkrProof && (
-        <div className={`mb-6 p-4 rounded-xl border ${isOrderExpired ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+        <div className={`mb-6 p-4 rounded-xl border ${isOrderExpired ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
           {isOrderExpired && (
-            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-red-100 border border-red-200">
-              <svg className="w-4 h-4 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-red-500/15 border border-red-500/30">
+              <svg className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <p className="text-xs font-semibold text-red-700">
+              <p className="text-xs font-semibold text-red-700 dark:text-red-300">
                 This order is expired. Approving it would queue gas delivery for an expired order. Reject it so the user can create a new order.
               </p>
             </div>
@@ -382,7 +382,7 @@ export default function GasOrderDetailPage() {
           <div className="flex gap-3 items-start">
             <div className="flex-1">
               <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-red-900' : 'text-amber-900'}`}>PKR Payment Proof Submitted</p>
-              <p className={`text-xs ${isOrderExpired ? 'text-red-700' : 'text-amber-700'}`}>
+              <p className={`text-xs ${isOrderExpired ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
                 {isOrderExpired ? 'Order expired — cannot approve. Reject to close this order.' : 'Verify the screenshot below, then approve or reject.'}
               </p>
             </div>
@@ -394,12 +394,12 @@ export default function GasOrderDetailPage() {
 
       {/* Actions — payment auto-verified by poller, awaiting admin release */}
       {isPaymentVerified && (
-        <div className="mb-6 p-4 rounded-xl border bg-green-50 border-green-200">
-          <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-green-100 border border-green-200">
-            <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="mb-6 p-4 rounded-xl border bg-green-500/10 border-green-500/30">
+          <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-green-500/15 border border-green-500/30">
+            <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="text-xs font-semibold text-green-800">
+            <p className="text-xs font-semibold text-green-800 dark:text-green-300">
               Payment auto-verified on-chain by the payment poller.{' '}
               {order.verifiedAmount && order.verifiedAsset && (
                 <span>{parseFloat(order.verifiedAmount).toFixed(4)} {order.verifiedAsset} confirmed</span>
@@ -414,7 +414,7 @@ export default function GasOrderDetailPage() {
             <div className="flex-1">
               <p className="text-sm font-semibold mb-0.5 text-green-900">Payment Verified — Ready to Release Gas</p>
               {order.paymentTxHash && (
-                <p className="text-xs font-mono text-green-700">
+                <p className="text-xs font-mono text-green-700 dark:text-green-300">
                   {order.paymentTxHash.slice(0, 20)}…{order.paymentTxHash.slice(-10)}
                 </p>
               )}
@@ -428,25 +428,25 @@ export default function GasOrderDetailPage() {
       {/* Actions — awaiting payment / USDT proof submitted */}
       {isAwaitingPayment && (
         <div className={`mb-6 p-4 rounded-xl border ${
-          isUsdtProofPending ? 'bg-purple-50 border-purple-200' :
-          isOrderExpired ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'
+          isUsdtProofPending ? 'bg-purple-500/10 border-purple-500/30' :
+          isOrderExpired ? 'bg-amber-500/10 border-amber-500/30' : 'bg-blue-500/10 border-blue-500/30'
         }`}>
           {isUsdtProofPending && (
-            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-purple-100 border border-purple-200">
-              <svg className="w-4 h-4 text-purple-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-purple-500/15 border border-purple-500/30">
+              <svg className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="text-xs font-semibold text-purple-800">
+              <p className="text-xs font-semibold text-purple-800 dark:text-purple-300">
                 User submitted a transaction hash for manual review. Verify the tx on-chain then confirm or reject below.
               </p>
             </div>
           )}
           {isOrderExpired && !isUsdtProofPending && (
-            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-100 border border-amber-200">
-              <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-500/15 border border-amber-500/30">
+              <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <p className="text-xs font-semibold text-amber-800">
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
                 Order expired. If the user paid before expiry, mark it to still deliver gas.
               </p>
             </div>
@@ -459,7 +459,7 @@ export default function GasOrderDetailPage() {
                 {isUsdtProofPending ? 'TX Hash Submitted — Pending Review' : isOrderExpired ? 'Order Expired' : 'Awaiting Payment'}
               </p>
               <p className={`text-xs font-mono ${
-                isUsdtProofPending ? 'text-purple-700' : isOrderExpired ? 'text-amber-700' : 'text-blue-700'
+                isUsdtProofPending ? 'text-purple-700 dark:text-purple-300' : isOrderExpired ? 'text-amber-700 dark:text-amber-300' : 'text-blue-700 dark:text-blue-300'
               }`}>
                 {isUsdtProofPending && order.paymentTxHash
                   ? `${order.paymentTxHash.slice(0, 20)}…${order.paymentTxHash.slice(-10)}`
@@ -480,12 +480,12 @@ export default function GasOrderDetailPage() {
 
       {/* Actions — paid order stuck before delivery (e.g. empty hot wallet) */}
       {isStuckDetected && (
-        <div className="mb-6 p-4 rounded-xl border bg-amber-50 border-amber-200">
-          <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-100 border border-amber-200">
-            <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="mb-6 p-4 rounded-xl border bg-amber-500/10 border-amber-500/30">
+          <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-500/15 border border-amber-500/30">
+            <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
-            <p className="text-xs font-semibold text-amber-800">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
               {isInsufficientBalance
                 ? `Delivery paused — the ${chainName} hot wallet doesn't have enough balance to send this gas. Refill the wallet then Retry, or Refund the user.`
                 : 'Payment confirmed but delivery has not completed. Retry delivery, or refund the user.'}
@@ -495,7 +495,7 @@ export default function GasOrderDetailPage() {
           <div className="flex gap-3 items-start">
             <div className="flex-1">
               <p className="text-sm font-semibold mb-0.5 text-amber-900">Paid — Awaiting Gas Delivery</p>
-              <p className="text-xs text-amber-700">
+              <p className="text-xs text-amber-700 dark:text-amber-300">
                 {parseFloat(order.gasAmountNative).toFixed(6)} {nativeSymbol} to {order.toAddress.slice(0, 10)}…
               </p>
             </div>
@@ -509,7 +509,7 @@ export default function GasOrderDetailPage() {
       {(isFailed || isRefundPending || isAwaitingRefund) && (
         <div className="mb-6">
           {isAwaitingRefund && (
-            <p className="text-sm text-amber-600 font-medium mb-2">
+            <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mb-2">
               Delivery failed — the system is still retrying and the user can request a refund once the window elapses. You can force a refund now, or retry delivery.
             </p>
           )}
@@ -592,7 +592,7 @@ export default function GasOrderDetailPage() {
           )}
           {order.verifiedAmount && order.verifiedAsset && (
             <InfoRow label="Verified Amount">
-              <span className="text-green-700 font-semibold">{parseFloat(order.verifiedAmount).toFixed(4)} {order.verifiedAsset}</span>
+              <span className="text-green-700 dark:text-green-300 font-semibold">{parseFloat(order.verifiedAmount).toFixed(4)} {order.verifiedAsset}</span>
             </InfoRow>
           )}
           {order.verifiedConfirmations != null && (

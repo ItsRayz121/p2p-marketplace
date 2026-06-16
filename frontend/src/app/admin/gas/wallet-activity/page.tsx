@@ -59,13 +59,13 @@ const ENTRY_TYPE_LABELS: Record<string, string> = {
 }
 
 const ENTRY_TYPE_COLORS: Record<string, string> = {
-  order_payment:               'text-blue-700 bg-blue-50',
-  gas_delivery:                'text-orange-700 bg-orange-50',
+  order_payment:               'text-blue-700 dark:text-blue-300 bg-blue-500/10',
+  gas_delivery:                'text-orange-700 dark:text-orange-300 bg-orange-500/10',
   delivery_refund:             'text-warning bg-warning/10',
   refill_hot_from_treasury:    'text-success bg-success/10',
   drain_hot_to_treasury:       'text-danger bg-danger/10',
   platform_fee:                'text-text-muted bg-surface',
-  external_hot_wallet_deposit: 'text-purple-700 bg-purple-50',
+  external_hot_wallet_deposit: 'text-purple-700 dark:text-purple-300 bg-purple-500/10',
 }
 
 const ENTRY_TYPES = Object.keys(ENTRY_TYPE_LABELS)

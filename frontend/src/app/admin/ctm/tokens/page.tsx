@@ -9,11 +9,11 @@ import { Button } from '@/components/ui/Button'
 import { useAdminLogoUpload } from '@/hooks/useAdminLogoUpload'
 
 const STATUS_COLORS: Record<string, string> = {
-  approved: 'bg-green-100 text-green-700',
-  pending_review: 'bg-yellow-100 text-yellow-700',
-  rejected: 'bg-red-100 text-red-700',
+  approved: 'bg-green-500/15 text-green-700 dark:text-green-300',
+  pending_review: 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300',
+  rejected: 'bg-red-500/15 text-red-700 dark:text-red-300',
   delisted: 'bg-surface-alt text-text-secondary',
-  restricted: 'bg-orange-100 text-orange-700',
+  restricted: 'bg-orange-500/15 text-orange-700 dark:text-orange-300',
 }
 const TOKEN_STATUS_LABELS: Record<string, string> = {
   approved: 'Approved', pending_review: 'Pending Review',
@@ -22,10 +22,10 @@ const TOKEN_STATUS_LABELS: Record<string, string> = {
 const tokenStatusLabel = (s: string) => TOKEN_STATUS_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 const RISK_COLORS: Record<string, string> = {
-  low: 'bg-green-100 text-green-800',
-  medium: 'bg-yellow-100 text-yellow-800',
-  high: 'bg-orange-100 text-orange-800',
-  extreme: 'bg-red-100 text-red-800',
+  low: 'bg-green-500/15 text-green-800 dark:text-green-300',
+  medium: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300',
+  high: 'bg-orange-500/15 text-orange-800 dark:text-orange-300',
+  extreme: 'bg-red-500/15 text-red-800 dark:text-red-300',
 }
 
 interface Token {
@@ -287,10 +287,10 @@ export default function AdminCtmTokensPage() {
       </div>
 
       {addSuccess && (
-        <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-800 rounded-xl px-4 py-3 text-sm">
-          <svg className="w-4 h-4 flex-shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+        <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/30 text-green-800 dark:text-green-300 rounded-xl px-4 py-3 text-sm">
+          <svg className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
           {addSuccess}
-          <button onClick={() => setAddSuccess('')} className="ml-auto text-green-600 hover:text-green-800">✕</button>
+          <button onClick={() => setAddSuccess('')} className="ml-auto text-green-600 dark:text-green-400 hover:text-green-800 dark:text-green-300">✕</button>
         </div>
       )}
 
@@ -321,7 +321,7 @@ export default function AdminCtmTokensPage() {
                   <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-surface-alt text-text-secondary'}`}>{tokenStatusLabel(t.status)}</span></td>
                   <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RISK_COLORS[t.riskTier] ?? 'bg-surface-alt text-text-secondary'}`}>{t.riskTier.charAt(0).toUpperCase() + t.riskTier.slice(1)}</span></td>
                   <td className="px-4 py-3 text-text-muted">{t.totalTrades}</td>
-                  <td className="px-4 py-3"><span className={`text-xs font-medium ${t.isListingEnabled ? 'text-green-600' : 'text-red-500'}`}>{t.isListingEnabled ? 'Enabled' : 'Disabled'}</span></td>
+                  <td className="px-4 py-3"><span className={`text-xs font-medium ${t.isListingEnabled ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>{t.isListingEnabled ? 'Enabled' : 'Disabled'}</span></td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <button onClick={() => {
@@ -349,7 +349,7 @@ export default function AdminCtmTokensPage() {
                           isListingEnabled: t.isListingEnabled,
                         } as typeof EMPTY_ADD & { status: string; isListingEnabled: boolean })
                       }} className="text-xs border border-border px-2 py-1 rounded-lg hover:bg-surface">Edit</button>
-                      {t.status !== 'delisted' && <button onClick={() => handleDelist(t.id)} className="text-xs border border-red-200 text-red-600 px-2 py-1 rounded-lg hover:bg-red-50">Delist</button>}
+                      {t.status !== 'delisted' && <button onClick={() => handleDelist(t.id)} className="text-xs border border-red-500/30 text-red-600 dark:text-red-400 px-2 py-1 rounded-lg hover:bg-red-500/10">Delist</button>}
                     </div>
                   </td>
                 </tr>
@@ -557,7 +557,7 @@ export default function AdminCtmTokensPage() {
         footer={
           <div className="space-y-3">
             {addError && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <div className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
                 {addError}
                 {addDuplicateSlug && (
                   <button
@@ -578,7 +578,7 @@ export default function AdminCtmTokensPage() {
         }
       >
         <div className="space-y-6">
-          <p className="text-xs text-text-muted">Tokens added here are immediately <span className="font-semibold text-green-600">approved</span> and visible on the marketplace. Queue submissions still go through the review process.</p>
+          <p className="text-xs text-text-muted">Tokens added here are immediately <span className="font-semibold text-green-600 dark:text-green-400">approved</span> and visible on the marketplace. Queue submissions still go through the review process.</p>
 
           {/* Section: Basic Info */}
           <div className="space-y-4">

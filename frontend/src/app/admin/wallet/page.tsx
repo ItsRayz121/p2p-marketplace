@@ -103,10 +103,10 @@ function TreasuryOverview() {
   const maxTokenUsd = Math.max(1, ...t.perToken.map((c) => c.usd))
 
   const cards: Array<{ label: string; usd: number; sub?: string; tone: string }> = [
-    { label: 'Hot Wallets', usd: t.categories.hot.usd, sub: hidden ? '••••••' : `native $${money(t.categories.hot.nativeUsd)} · USDT $${money(t.categories.hot.usdtUsd)}`, tone: 'text-orange-600' },
-    { label: 'Escrow (locked)', usd: t.categories.escrow.usdt, sub: 'user collateral in trades', tone: 'text-blue-600' },
+    { label: 'Hot Wallets', usd: t.categories.hot.usd, sub: hidden ? '••••••' : `native $${money(t.categories.hot.nativeUsd)} · USDT $${money(t.categories.hot.usdtUsd)}`, tone: 'text-orange-600 dark:text-orange-400' },
+    { label: 'Escrow (locked)', usd: t.categories.escrow.usdt, sub: 'user collateral in trades', tone: 'text-blue-600 dark:text-blue-400' },
     { label: 'User Custody', usd: t.categories.custody.usdt, sub: 'USDT user balances', tone: 'text-text-secondary' },
-    { label: 'Platform Revenue', usd: t.categories.revenue.usd, sub: 'fees collected (lifetime)', tone: 'text-purple-600' },
+    { label: 'Platform Revenue', usd: t.categories.revenue.usd, sub: 'fees collected (lifetime)', tone: 'text-purple-600 dark:text-purple-400' },
   ]
 
   return (

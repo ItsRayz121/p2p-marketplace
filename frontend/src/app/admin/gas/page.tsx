@@ -229,9 +229,9 @@ function WalletCard({
 
   return (
     <div className={`bg-surface border rounded-xl p-5 ${
-      wallet.status === 'paused' || wallet.status === 'rpc_error' ? 'border-danger/40 bg-red-50/30'
-      : wallet.status === 'low' ? 'border-warning/40 bg-yellow-50/30'
-      : wallet.status === 'price_unavailable' ? 'border-orange-400/40 bg-orange-50/30'
+      wallet.status === 'paused' || wallet.status === 'rpc_error' ? 'border-danger/40 bg-red-500/10/30'
+      : wallet.status === 'low' ? 'border-warning/40 bg-yellow-500/10/30'
+      : wallet.status === 'price_unavailable' ? 'border-orange-500/50/40 bg-orange-500/10/30'
       : 'border-border'
     }`}>
       <div className="flex items-start justify-between gap-4">
@@ -1025,7 +1025,7 @@ export default function GasAdminPage() {
               size="sm"
               variant="secondary"
               onClick={() => setConfirmGlobalPause(false)}
-              className="bg-white text-red-700 hover:bg-red-50 border-white font-semibold flex-shrink-0"
+              className="bg-white text-red-700 dark:text-red-300 hover:bg-red-500/10 border-white font-semibold flex-shrink-0"
             >
               Resume Delivery
             </Button>
@@ -1202,10 +1202,10 @@ export default function GasAdminPage() {
       {/* PKR-only: crypto payments auto-verify on-chain and must never enter the
           manual proof-review flow. */}
       {orders.some(o => o.status === 'payment_uploaded' && o.paymentCoin === 'PKR') && statusFilter === 'all' && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-800 dark:text-amber-300">
           <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span><strong>PKR payments pending review.</strong> Orders with &ldquo;Proof Submitted&rdquo; status need approval before gas is released.</span>
-          <button onClick={() => { setStatusFilter('payment_uploaded'); setPaymentTypeFilter('PKR'); setPage(1) }} className="ml-auto text-xs font-bold border border-amber-400 rounded-lg px-2.5 py-1 hover:bg-amber-100">
+          <button onClick={() => { setStatusFilter('payment_uploaded'); setPaymentTypeFilter('PKR'); setPage(1) }} className="ml-auto text-xs font-bold border border-amber-500/50 rounded-lg px-2.5 py-1 hover:bg-amber-500/15">
             View All →
           </button>
         </div>
@@ -1213,10 +1213,10 @@ export default function GasAdminPage() {
 
       {/* ── Custom Gas Requests Alert ────────────────────────────────────────── */}
       {(stats?.pendingCustomRequests ?? 0) > 0 && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
+        <div className="flex items-center gap-3 px-4 py-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-sm text-blue-800 dark:text-blue-300">
           <svg className="w-5 h-5 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
           <span><strong>{stats!.pendingCustomRequests} custom gas request{stats!.pendingCustomRequests > 1 ? 's' : ''} pending review.</strong> Users have submitted unsupported chain requests.</span>
-          <Link href="/admin/gas/requests" className="ml-auto text-xs font-bold border border-blue-400 rounded-lg px-2.5 py-1 hover:bg-blue-100">
+          <Link href="/admin/gas/requests" className="ml-auto text-xs font-bold border border-blue-500/50 rounded-lg px-2.5 py-1 hover:bg-blue-500/15">
             Review →
           </Link>
         </div>
@@ -1224,7 +1224,7 @@ export default function GasAdminPage() {
 
       {/* ── Critical Wallet Alert ────────────────────────────────────────────── */}
       {stats?.wallets?.some(w => w.status === 'paused') && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-800 dark:text-red-300">
           <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>
             <strong>Hot wallet paused:</strong>{' '}
@@ -1239,7 +1239,7 @@ export default function GasAdminPage() {
 
       {/* ── Price Unavailable Warning ────────────────────────────────────────── */}
       {stats?.wallets?.some(w => w.status === 'price_unavailable') && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
+        <div className="flex items-center gap-3 px-4 py-3 bg-orange-500/10 border border-orange-500/30 rounded-xl text-sm text-orange-800 dark:text-orange-300">
           <svg className="w-5 h-5 flex-shrink-0 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>
             <strong>Price unavailable:</strong>{' '}
@@ -1251,7 +1251,7 @@ export default function GasAdminPage() {
 
       {/* ── RPC Error Warning ────────────────────────────────────────────────── */}
       {stats?.wallets?.some(w => w.status === 'rpc_error') && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-800 dark:text-red-300">
           <svg className="w-5 h-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>
             <strong>RPC error:</strong>{' '}
@@ -1263,7 +1263,7 @@ export default function GasAdminPage() {
 
       {/* ── Aptos Hot Wallet Card ────────────────────────────────────────────── */}
       {stats?.aptosGas && (
-        <div className={`bg-surface border rounded-xl p-5 ${stats.aptosGas.lowApt ? 'border-warning/40 bg-yellow-50/30' : 'border-border'}`}>
+        <div className={`bg-surface border rounded-xl p-5 ${stats.aptosGas.lowApt ? 'border-warning/40 bg-yellow-500/10/30' : 'border-border'}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">

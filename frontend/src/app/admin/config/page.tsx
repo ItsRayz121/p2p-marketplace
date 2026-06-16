@@ -519,7 +519,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="Nayapay"
             configured={npConfigured}
-            icon={<div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-sm font-bold text-purple-600">NP</div>}
+            icon={<div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center text-sm font-bold text-purple-600 dark:text-purple-400">NP</div>}
           >
             <LogoUploadField logoUrl={npLogo} onLogoUrlChange={setNpLogo} />
             <Field label="Account Name" hint="Full name on the Nayapay account">
@@ -537,7 +537,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="Sadapay"
             configured={spConfigured}
-            icon={<div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-sm font-bold text-orange-600">SP</div>}
+            icon={<div className="w-8 h-8 rounded-lg bg-orange-500/15 flex items-center justify-center text-sm font-bold text-orange-600 dark:text-orange-400">SP</div>}
           >
             <LogoUploadField logoUrl={spLogo} onLogoUrlChange={setSpLogo} />
             <Field label="Account Name" hint="Full name on the Sadapay account">
@@ -611,7 +611,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="USDT BEP20 (BSC)"
             configured={bep20Set}
-            icon={<div className="w-8 h-8 rounded-lg bg-yellow-100 flex items-center justify-center text-sm font-bold text-yellow-700">BNB</div>}
+            icon={<div className="w-8 h-8 rounded-lg bg-yellow-500/15 flex items-center justify-center text-sm font-bold text-yellow-700 dark:text-yellow-300">BNB</div>}
           >
             <LogoUploadField logoUrl={bep20Logo} onLogoUrlChange={setBep20Logo} />
             <Field label="Deposit Address" hint={bep20Set ? 'Override — using DB value' : 'Leave blank to auto-use hot wallet'}>
@@ -628,7 +628,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="USDT Aptos"
             configured={aptosSet}
-            icon={<div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center text-sm font-bold text-teal-700">APT</div>}
+            icon={<div className="w-8 h-8 rounded-lg bg-teal-500/15 flex items-center justify-center text-sm font-bold text-teal-700 dark:text-teal-300">APT</div>}
           >
             <LogoUploadField logoUrl={aptosLogo} onLogoUrlChange={setAptosLogo} />
             <Field label="Deposit Address" hint="64-char Aptos address">

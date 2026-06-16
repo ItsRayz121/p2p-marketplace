@@ -6,20 +6,20 @@ import { cn } from '@/lib/utils'
 
 const CATEGORIES: { id: AdminNotifCategory | 'ALL'; label: string; color: string }[] = [
   { id: 'ALL',     label: 'All',      color: 'bg-surface-alt text-text-secondary' },
-  { id: 'KYC',     label: 'KYC',      color: 'bg-blue-100 text-blue-700' },
-  { id: 'TRADE',   label: 'Trade',    color: 'bg-purple-100 text-purple-700' },
-  { id: 'DISPUTE', label: 'Dispute',  color: 'bg-red-100 text-red-700' },
-  { id: 'GAS',     label: 'Gas',      color: 'bg-orange-100 text-orange-700' },
-  { id: 'CTM',     label: 'CTM',      color: 'bg-teal-100 text-teal-700' },
+  { id: 'KYC',     label: 'KYC',      color: 'bg-blue-500/15 text-blue-700 dark:text-blue-300' },
+  { id: 'TRADE',   label: 'Trade',    color: 'bg-purple-500/15 text-purple-700 dark:text-purple-300' },
+  { id: 'DISPUTE', label: 'Dispute',  color: 'bg-red-500/15 text-red-700 dark:text-red-300' },
+  { id: 'GAS',     label: 'Gas',      color: 'bg-orange-500/15 text-orange-700 dark:text-orange-300' },
+  { id: 'CTM',     label: 'CTM',      color: 'bg-teal-500/15 text-teal-700 dark:text-teal-300' },
   { id: 'SYSTEM',  label: 'System',   color: 'bg-surface-alt text-text-secondary' },
 ]
 
 const CATEGORY_COLOR: Record<AdminNotifCategory, string> = {
-  KYC:     'bg-blue-100 text-blue-700',
-  TRADE:   'bg-purple-100 text-purple-700',
-  GAS:     'bg-orange-100 text-orange-700',
-  DISPUTE: 'bg-red-100 text-red-700',
-  CTM:     'bg-teal-100 text-teal-700',
+  KYC:     'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  TRADE:   'bg-purple-500/15 text-purple-700 dark:text-purple-300',
+  GAS:     'bg-orange-500/15 text-orange-700 dark:text-orange-300',
+  DISPUTE: 'bg-red-500/15 text-red-700 dark:text-red-300',
+  CTM:     'bg-teal-500/15 text-teal-700 dark:text-teal-300',
   SYSTEM:  'bg-surface-alt text-text-secondary',
 }
 
@@ -178,7 +178,7 @@ export default function AdminNotificationsPage() {
                 key={n.id}
                 className={cn(
                   'flex items-start gap-4 px-5 py-4 transition-colors',
-                  !n.isRead ? 'bg-blue-50/30' : 'hover:bg-surface',
+                  !n.isRead ? 'bg-blue-500/10/30' : 'hover:bg-surface',
                 )}
               >
                 {/* Unread dot */}
@@ -224,7 +224,7 @@ export default function AdminNotificationsPage() {
                     <button
                       onClick={() => void markRead(n.id)}
                       disabled={actionLoading === n.id}
-                      className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 disabled:opacity-50 transition-colors"
+                      className="p-1.5 rounded-lg text-green-600 dark:text-green-400 hover:bg-green-500/10 disabled:opacity-50 transition-colors"
                       title="Mark as read"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

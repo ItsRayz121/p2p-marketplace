@@ -98,7 +98,7 @@ export default function AdminTokenQueuePage() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-bold text-text-primary">{r.tokenName} ({r.tokenSymbol})</h3>
-                    <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">pending</span>
+                    <span className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 px-2 py-0.5 rounded-full">pending</span>
                   </div>
                   <p className="text-sm text-text-muted mb-2">{r.description}</p>
                   <div className="flex flex-wrap gap-3 text-xs text-text-muted">
@@ -109,7 +109,7 @@ export default function AdminTokenQueuePage() {
                   </div>
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => { setRejectModal(r); setRejectNote('') }} className="border border-red-200 text-red-600 text-sm px-3 py-1.5 rounded-lg hover:bg-red-50">Reject</button>
+                  <button onClick={() => { setRejectModal(r); setRejectNote('') }} className="border border-red-500/30 text-red-600 dark:text-red-400 text-sm px-3 py-1.5 rounded-lg hover:bg-red-500/10">Reject</button>
                   <button onClick={() => openApprove(r)} className="bg-green-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-green-700">Approve & Create Token</button>
                 </div>
               </div>

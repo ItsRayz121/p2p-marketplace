@@ -243,7 +243,7 @@ function DestinationEditor({ destinations, isSuperAdmin, onSaved }: {
       <p className="text-xs text-text-muted mb-3">
         Funds are withdrawn from the hot wallet to <strong>these</strong> addresses. Set the wallet you control for each network. {isSuperAdmin ? '' : 'Only a super-admin can change these.'}
       </p>
-      {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
+      {err && <p className="text-xs text-red-600 dark:text-red-400 mb-2">{err}</p>}
       <div className="space-y-3">
         {families.map(family => {
           const current = destinations[family]
@@ -255,8 +255,8 @@ function DestinationEditor({ destinations, isSuperAdmin, onSaved }: {
               </div>
               <p className="text-xs font-mono break-all mb-2">
                 {current
-                  ? <span className="text-emerald-600">{current}</span>
-                  : <span className="text-amber-600">Not set — withdrawals disabled for this network</span>}
+                  ? <span className="text-emerald-600 dark:text-emerald-400">{current}</span>
+                  : <span className="text-amber-600 dark:text-amber-400">Not set — withdrawals disabled for this network</span>}
               </p>
               {isSuperAdmin && (
                 <div className="flex gap-2">
@@ -300,14 +300,14 @@ function WithdrawModal({ row, destination, onConfirm, onClose, busy }: WithdrawM
   return (
     <Modal isOpen onClose={onClose} title="Withdraw Platform Revenue to External Wallet">
       <div className="space-y-4 text-sm">
-        <div className="bg-amber-50 border border-amber-200 rounded p-3 text-amber-700 text-xs space-y-1">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3 text-amber-700 dark:text-amber-300 text-xs space-y-1">
           <p className="font-semibold">Safety notice</p>
           <p>This sends funds <strong>on-chain</strong> from the hot wallet to your external wallet. The transaction cannot be reversed.</p>
           <p>The amount is capped at <strong>platform-owned funds only</strong> — on-chain balance minus what is owed to users and minus pending user withdrawals. User funds can never be withdrawn here.</p>
         </div>
 
         <div className="bg-surface border border-border rounded p-3 space-y-2 text-xs font-mono">
-          <div className="flex justify-between"><span className="text-text-muted">Token</span><span className="text-emerald-600">{row.token}</span></div>
+          <div className="flex justify-between"><span className="text-text-muted">Token</span><span className="text-emerald-600 dark:text-emerald-400">{row.token}</span></div>
           <div className="flex justify-between"><span className="text-text-muted">Network</span><span className="text-primary">{CHAIN_LABEL[row.chain] ?? row.chain}</span></div>
           <div className="flex justify-between"><span className="text-text-muted">On-chain balance</span><span className="text-text-secondary">{fmtAmount(row.onChain)}</span></div>
           <div className="flex justify-between"><span className="text-text-muted">Owed to users</span><span className="text-text-secondary">−{fmtAmount(row.userLiability)}</span></div>
@@ -464,8 +464,8 @@ export default function PlatformRevenuePage() {
 
       {/* Withdraw result banner */}
       {withdrawResult && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-sm">
-          <p className="font-semibold text-emerald-700 mb-2">Withdrawal confirmed on-chain ✓</p>
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 text-sm">
+          <p className="font-semibold text-emerald-700 dark:text-emerald-300 mb-2">Withdrawal confirmed on-chain ✓</p>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs font-mono text-text-secondary">
             <span className="text-text-muted">Amount</span>
             <span>{fmtAmount(withdrawResult.amount)} {withdrawResult.tokenSymbol} on {CHAIN_LABEL[withdrawResult.chain] ?? withdrawResult.chain}</span>
@@ -488,7 +488,7 @@ export default function PlatformRevenuePage() {
 
       {/* Withdraw error banner */}
       {withdrawError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-sm text-red-700 dark:text-red-300">
           <p className="font-semibold mb-1">Withdrawal failed</p>
           <p className="text-xs">{withdrawError}</p>
           <button onClick={() => setWithdrawError(null)} className="mt-2 text-xs text-text-muted hover:text-text-primary">Dismiss</button>
@@ -527,7 +527,7 @@ export default function PlatformRevenuePage() {
                   <th className="text-left py-2">Network</th>
                   <th className="text-right py-2">On-chain</th>
                   <th className="text-right py-2">Owed to users</th>
-                  <th className="text-right py-2 text-emerald-600">Available</th>
+                  <th className="text-right py-2 text-emerald-600 dark:text-emerald-400">Available</th>
                   <th className="text-right py-2">Action</th>
                 </tr>
               </thead>
@@ -537,7 +537,7 @@ export default function PlatformRevenuePage() {
                   const canWithdraw = isSuperAdmin && row.supported && row.available > 0 && !!dest
                   return (
                     <tr key={`${row.token}:${row.chain}`} className="border-b border-border hover:bg-surface">
-                      <td className="py-2 font-mono text-emerald-600">{row.token}</td>
+                      <td className="py-2 font-mono text-emerald-600 dark:text-emerald-400">{row.token}</td>
                       <td className="py-2 text-primary">{CHAIN_LABEL[row.chain] ?? row.chain}</td>
                       <td className="py-2 text-right text-text-secondary font-mono">{fmtAmount(row.onChain)}</td>
                       <td className="py-2 text-right text-text-muted font-mono">{fmtAmount(row.userLiability)}</td>
@@ -548,9 +548,9 @@ export default function PlatformRevenuePage() {
                             Withdraw →
                           </button>
                         ) : !row.supported ? (
-                          <span className="text-xs text-amber-600">Manual</span>
+                          <span className="text-xs text-amber-600 dark:text-amber-400">Manual</span>
                         ) : !dest ? (
-                          <span className="text-xs text-amber-600">Set destination</span>
+                          <span className="text-xs text-amber-600 dark:text-amber-400">Set destination</span>
                         ) : row.available <= 0 ? (
                           <span className="text-xs text-text-muted">None</span>
                         ) : (
@@ -591,7 +591,7 @@ export default function PlatformRevenuePage() {
                       <tr key={e.id} className="border-b border-border hover:bg-surface">
                         <td className="py-2 text-text-muted whitespace-nowrap">{fmtDate(e.createdAt)}</td>
                         <td className="py-2 text-primary">{CHAIN_LABEL[e.chain] ?? e.chain}</td>
-                        <td className="py-2 text-right font-mono text-emerald-600">{fmtAmount(e.tokenAmount)} {e.tokenSymbol}</td>
+                        <td className="py-2 text-right font-mono text-emerald-600 dark:text-emerald-400">{fmtAmount(e.tokenAmount)} {e.tokenSymbol}</td>
                         <td className="py-2 pl-4">
                           {url ? (
                             <a href={url} target="_blank" rel="noopener noreferrer" className="font-mono text-primary hover:underline">{e.txHash?.slice(0, 12)}…</a>
@@ -627,7 +627,7 @@ export default function PlatformRevenuePage() {
             <tbody>
               {s.byToken.map(r => (
                 <tr key={r.token} className="border-b border-border hover:bg-surface">
-                  <td className="py-2 font-mono text-emerald-600">{r.token}</td>
+                  <td className="py-2 font-mono text-emerald-600 dark:text-emerald-400">{r.token}</td>
                   <td className="py-2 text-right text-text-primary">{fmtAmount(r.amount)}</td>
                   <td className="py-2 text-right text-text-muted">{fmtUsd(r.usdAmount)}</td>
                   <td className="py-2 text-right text-text-muted">{r.count}</td>
@@ -703,7 +703,7 @@ export default function PlatformRevenuePage() {
                       <tr key={e.id} className="border-b border-border hover:bg-surface">
                         <td className="py-2 text-text-muted whitespace-nowrap">{fmtDate(e.createdAt)}</td>
                         <td className="py-2 text-primary">{CHAIN_LABEL[e.chain] ?? e.chain}</td>
-                        <td className="py-2 text-right font-mono text-emerald-600">{fmtAmount(e.tokenAmount)} {e.tokenSymbol}</td>
+                        <td className="py-2 text-right font-mono text-emerald-600 dark:text-emerald-400">{fmtAmount(e.tokenAmount)} {e.tokenSymbol}</td>
                         <td className="py-2 text-right text-text-muted">{fmtUsd(e.usdAmount)}</td>
                         <td className="py-2 pl-3">
                           {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="font-mono text-primary hover:underline">{e.txHash?.slice(0, 10)}…</a> : <span className="font-mono text-text-muted">{e.txHash?.slice(0, 10) ?? '—'}</span>}
@@ -732,8 +732,8 @@ export default function PlatformRevenuePage() {
       </div>
 
       {/* Info box */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-700 space-y-1">
-        <p className="font-semibold text-blue-800">How it works</p>
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-xs text-blue-700 dark:text-blue-300 space-y-1">
+        <p className="font-semibold text-blue-800 dark:text-blue-300">How it works</p>
         <p>The hot wallet holds both user balances and platform revenue (gas-order payments + withdrawal fees). The <strong>Available</strong> figure subtracts everything owed to users and every pending user withdrawal, so only platform-owned funds can ever be withdrawn.</p>
         <p>Clicking <strong>Withdraw →</strong> sends that amount on-chain to the external wallet you configured above, and waits for on-chain confirmation before recording it.</p>
         <p>TRON (TRC20) and other non-EVM/Aptos networks are withdrawn manually for now.</p>

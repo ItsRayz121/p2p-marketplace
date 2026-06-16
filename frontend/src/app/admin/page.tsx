@@ -14,11 +14,11 @@ import {
 type Stats = Awaited<ReturnType<typeof adminApi.getStats>>
 
 const CATEGORY_COLORS: Record<AdminNotifCategory, string> = {
-  KYC:     'bg-blue-100 text-blue-700',
-  TRADE:   'bg-purple-100 text-purple-700',
-  GAS:     'bg-orange-100 text-orange-700',
-  DISPUTE: 'bg-red-100 text-red-700',
-  CTM:     'bg-teal-100 text-teal-700',
+  KYC:     'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  TRADE:   'bg-purple-500/15 text-purple-700 dark:text-purple-300',
+  GAS:     'bg-orange-500/15 text-orange-700 dark:text-orange-300',
+  DISPUTE: 'bg-red-500/15 text-red-700 dark:text-red-300',
+  CTM:     'bg-teal-500/15 text-teal-700 dark:text-teal-300',
   SYSTEM:  'bg-surface-alt text-text-secondary',
 }
 
@@ -68,9 +68,9 @@ export default function AdminDashboardPage() {
   const todayCards = [
     { label: "Today's Revenue",          value: `PKR ${fmt(stats?.todayRevenuePkr ?? 0)}`,                      sub: 'from completed trades',        color: 'text-success',       icon: <DollarSign className="w-5 h-5 text-success" /> },
     { label: "Today's Trades",           value: fmt(stats?.todayTrades ?? 0),                                   sub: 'trades started today',         color: 'text-primary',       icon: <BarChart2 className="w-5 h-5 text-primary" /> },
-    { label: 'New Users Today',          value: fmt(stats?.newUsersToday ?? 0),                                  sub: 'registered today',             color: 'text-violet-600',    icon: <Users className="w-5 h-5 text-violet-600" /> },
-    { label: "Today's Gas Orders",       value: fmt(stats?.todayGasOrders ?? 0),                                 sub: 'gas fee orders today',         color: 'text-orange-600',    icon: <Fuel className="w-5 h-5 text-orange-500" /> },
-    { label: "Today's Gas Revenue",      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,                sub: 'from delivered gas orders',    color: 'text-orange-600',    icon: <TrendingUp className="w-5 h-5 text-orange-500" /> },
+    { label: 'New Users Today',          value: fmt(stats?.newUsersToday ?? 0),                                  sub: 'registered today',             color: 'text-violet-600 dark:text-violet-400',    icon: <Users className="w-5 h-5 text-violet-600 dark:text-violet-400" /> },
+    { label: "Today's Gas Orders",       value: fmt(stats?.todayGasOrders ?? 0),                                 sub: 'gas fee orders today',         color: 'text-orange-600 dark:text-orange-400',    icon: <Fuel className="w-5 h-5 text-orange-500" /> },
+    { label: "Today's Gas Revenue",      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,                sub: 'from delivered gas orders',    color: 'text-orange-600 dark:text-orange-400',    icon: <TrendingUp className="w-5 h-5 text-orange-500" /> },
     { label: "Today's Withdrawals Sent", value: fmt((stats as any)?.todaySentWithdrawals ?? 0),                  sub: 'withdrawals completed today',  color: 'text-primary',       icon: <PackageCheck className="w-5 h-5 text-primary" /> },
     { label: "Today's Withdrawal Fees",  value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,sub: 'fees collected from withdrawals',color: 'text-success',      icon: <ArrowDownToLine className="w-5 h-5 text-success" /> },
   ]
@@ -194,7 +194,7 @@ export default function AdminDashboardPage() {
             <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Recent Notifications</h2>
             <div className="flex items-center gap-2">
               {(stats?.unreadNotifCount ?? 0) > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-bold">
+                <span className="px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 text-xs font-bold">
                   {stats!.unreadNotifCount} unread
                 </span>
               )}
@@ -218,7 +218,7 @@ export default function AdminDashboardPage() {
                     key={n.id}
                     className={cn(
                       'flex items-start gap-3 px-4 py-3',
-                      !n.isRead ? 'bg-blue-50/30' : 'hover:bg-surface',
+                      !n.isRead ? 'bg-blue-500/10/30' : 'hover:bg-surface',
                     )}
                   >
                     {!n.isRead && <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
@@ -276,10 +276,10 @@ export default function AdminDashboardPage() {
                 const shortHash   = (h: string) => `${h.slice(0, 8)}…${h.slice(-6)}`
                 const statusColors: Record<string, string> = {
                   delivered:        'text-success',
-                  payment_detected: 'text-blue-600',
-                  payment_pending:  'text-amber-600',
-                  payment_uploaded: 'text-amber-600',
-                  sending:          'text-blue-600',
+                  payment_detected: 'text-blue-600 dark:text-blue-400',
+                  payment_pending:  'text-amber-600 dark:text-amber-400',
+                  payment_uploaded: 'text-amber-600 dark:text-amber-400',
+                  sending:          'text-blue-600 dark:text-blue-400',
                   failed:           'text-danger',
                   expired:          'text-text-muted',
                   refunded:         'text-warning',
@@ -304,14 +304,14 @@ export default function AdminDashboardPage() {
                     <div className={cn(
                       'mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
                       hasDeposit && hasDelivery ? 'bg-success/10' :
-                      hasDeposit ? 'bg-blue-50' : 'bg-orange-50',
+                      hasDeposit ? 'bg-blue-500/10' : 'bg-orange-500/10',
                     )}>
                       {hasDeposit && hasDelivery ? (
                         <svg className="w-3.5 h-3.5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                         </svg>
                       ) : hasDeposit ? (
-                        <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                         </svg>
                       ) : (
@@ -325,20 +325,20 @@ export default function AdminDashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-text-primary font-mono">{tx.orderRef}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-bold">{tx.chain}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-700 dark:text-orange-300 font-bold">{tx.chain}</span>
                         <span className={cn('text-[10px] font-semibold', statusColors[tx.status] ?? 'text-text-muted')}>
                           {statusLabels[tx.status] ?? tx.status}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                         {hasDeposit && (
-                          <span className="text-[11px] text-blue-600 font-medium">
+                          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
                             ↓ {parseFloat(tx.paymentAmount).toFixed(2)} {tx.paymentCoin ?? 'USDT'} ({tx.paymentNetwork})
                             <span className="ml-1 font-mono text-text-muted">{shortHash(tx.paymentTxHash!)}</span>
                           </span>
                         )}
                         {hasDelivery && (
-                          <span className="text-[11px] text-orange-600 font-medium">
+                          <span className="text-[11px] text-orange-600 dark:text-orange-400 font-medium">
                             ↑ {parseFloat(tx.gasAmountNative).toFixed(6)} {tx.chain}
                             <span className="ml-1 font-mono text-text-muted">{shortHash(tx.deliveryTxHash!)}</span>
                           </span>

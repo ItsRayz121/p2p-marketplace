@@ -79,7 +79,7 @@ function QueueRow({ q, onChanged }: { q: QueueHealthRow; onChanged: () => void }
   }
 
   return (
-    <div className={cn('rounded-lg border', hasFailures ? 'border-red-200 bg-red-50/40' : 'border-border bg-surface-alt')}>
+    <div className={cn('rounded-lg border', hasFailures ? 'border-red-500/30 bg-red-500/10/40' : 'border-border bg-surface-alt')}>
       <div className="flex items-center gap-3 px-3 py-2">
         <button
           onClick={() => hasFailures && setOpen((o) => !o)}
@@ -100,7 +100,7 @@ function QueueRow({ q, onChanged }: { q: QueueHealthRow; onChanged: () => void }
           {hasFailures && (
             <div className="flex items-center gap-1">
               <button onClick={retry} disabled={busy !== null}
-                className="px-2 py-0.5 rounded border border-amber-400 text-amber-700 text-[10px] font-bold hover:bg-amber-100 disabled:opacity-50">
+                className="px-2 py-0.5 rounded border border-amber-500/50 text-amber-700 dark:text-amber-300 text-[10px] font-bold hover:bg-amber-500/15 disabled:opacity-50">
                 {busy === 'retry' ? '…' : 'Retry'}
               </button>
               <button onClick={clean} disabled={busy !== null}
@@ -113,14 +113,14 @@ function QueueRow({ q, onChanged }: { q: QueueHealthRow; onChanged: () => void }
       </div>
       {msg && <p className="px-3 pb-1.5 text-[10px] text-text-secondary">{msg}</p>}
       {open && q.failedJobs.length > 0 && (
-        <div className="border-t border-red-200 divide-y divide-red-100">
+        <div className="border-t border-red-500/30 divide-y divide-red-100">
           {q.failedJobs.map((j) => (
             <div key={j.id} className="px-3 py-1.5">
               <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">
                 <span className="font-mono">#{j.id} · {j.name} · {j.attemptsMade} attempt(s)</span>
                 <span>{j.failedAt ? fmtDate(j.failedAt) : '—'}</span>
               </div>
-              <p className="text-[10px] text-red-600 font-mono break-words">{j.failedReason}</p>
+              <p className="text-[10px] text-red-600 dark:text-red-400 font-mono break-words">{j.failedReason}</p>
             </div>
           ))}
           <p className="px-3 py-1 text-[9px] text-text-muted">Showing latest {q.failedJobs.length} of {q.failed}.</p>
@@ -171,7 +171,7 @@ export default function SystemHealthPage() {
 
   if (error && !sys) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+      <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-700 dark:text-red-300">
         {error}
         <button onClick={() => void fetchAll()} className="ml-3 underline font-medium">Retry</button>
       </div>
@@ -205,18 +205,18 @@ export default function SystemHealthPage() {
           className={cn(
             'rounded-xl p-4 border',
             sys.overallHealthy
-              ? 'bg-emerald-50 border-emerald-200'
-              : 'bg-red-50 border-red-200',
+              ? 'bg-emerald-500/10 border-emerald-500/30'
+              : 'bg-red-500/10 border-red-500/30',
           )}
         >
           <div className="flex items-center gap-2.5">
             <Dot status={sys.overallHealthy ? 'green' : 'red'} />
-            <span className={cn('text-sm font-bold', sys.overallHealthy ? 'text-emerald-700' : 'text-red-700')}>
+            <span className={cn('text-sm font-bold', sys.overallHealthy ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300')}>
               {sys.overallHealthy ? 'All systems operational' : `${sys.criticalIssues.length} critical issue${sys.criticalIssues.length === 1 ? '' : 's'}`}
             </span>
           </div>
           {!sys.overallHealthy && sys.criticalIssues.length > 0 && (
-            <ul className="mt-2 ml-5 list-disc text-xs text-red-700 space-y-0.5">
+            <ul className="mt-2 ml-5 list-disc text-xs text-red-700 dark:text-red-300 space-y-0.5">
               {sys.criticalIssues.map((issue, i) => <li key={i}>{issue}</li>)}
             </ul>
           )}
@@ -232,7 +232,7 @@ export default function SystemHealthPage() {
             <Tile label="Gas Delivery" ok={!sys.globallyPaused} detail={sys.globallyPaused ? 'Globally paused' : 'Active'} />
           </div>
           {sys.staleRates.length > 0 && (
-            <p className="mt-3 text-xs text-amber-600">
+            <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
               ⚠ Stale price rates: {sys.staleRates.join(', ')}
             </p>
           )}
@@ -299,7 +299,7 @@ export default function SystemHealthPage() {
                     <td className="px-1 py-1.5 text-right text-text-secondary">{c.blockNumber?.toLocaleString() ?? '—'}</td>
                     <td className="px-1 py-1.5 text-right text-text-secondary">{c.latencyMs}ms</td>
                     <td className="px-1 py-1.5">
-                      <span className={cn('text-[11px]', c.deliveryImplemented ? 'text-emerald-600' : 'text-text-muted')}>
+                      <span className={cn('text-[11px]', c.deliveryImplemented ? 'text-emerald-600 dark:text-emerald-400' : 'text-text-muted')}>
                         {c.deliveryImplemented ? 'live' : 'n/a'}
                       </span>
                     </td>

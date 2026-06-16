@@ -160,9 +160,9 @@ export default function AdminCtmTradeDetailPage() {
               return (
                 <div key={m.id ?? i} className={`flex ${isBuyer ? 'justify-start' : 'justify-end'}`}>
                   <div className={`rounded-lg px-3 py-2 max-w-[80%] text-xs ${
-                    isBuyer ? 'bg-blue-50 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200'
-                      : isSeller ? 'bg-green-50 text-green-800 dark:bg-green-500/15 dark:text-green-200'
-                      : 'bg-purple-50 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200'
+                    isBuyer ? 'bg-blue-500/10 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200'
+                      : isSeller ? 'bg-green-500/10 text-green-800 dark:bg-green-500/15 dark:text-green-200'
+                      : 'bg-purple-500/10 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200'
                   }`}>
                     <p className="font-semibold text-[10px] mb-0.5">{label}</p>
                     <p>{m.message}</p>
