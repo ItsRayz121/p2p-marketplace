@@ -1,7 +1,7 @@
 ﻿'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { authApi, accountApi } from '@/lib/api'
-import type { Session } from '@/lib/api'
+import type { Session, TrustedDevice } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/auth.store'
 import { Button } from '@/components/ui/Button'
@@ -378,11 +378,17 @@ function SessionsTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [revoking, setRevoking] = useState<string | null>(null)
+  const [devices, setDevices] = useState<TrustedDevice[]>([])
+  const [forgetting, setForgetting] = useState<string | null>(null)
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await authApi.getSessions()
-      setSessions(res)
+      const [sess, devs] = await Promise.all([
+        authApi.getSessions(),
+        authApi.getTrustedDevices().catch(() => [] as TrustedDevice[]),
+      ])
+      setSessions(sess)
+      setDevices(devs)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load sessions')
     } finally { setLoading(false) }
@@ -398,11 +404,28 @@ function SessionsTab() {
     } catch { /* silent */ } finally { setRevoking(null) }
   }
 
+  const handleForget = async (id: string) => {
+    setForgetting(id)
+    try {
+      await authApi.forgetTrustedDevice(id)
+      setDevices((d) => d.filter((dev) => dev.id !== id))
+    } catch { /* silent */ } finally { setForgetting(null) }
+  }
+
+  const handleForgetAll = async () => {
+    setForgetting('all')
+    try {
+      await authApi.forgetAllTrustedDevices()
+      setDevices([])
+    } catch { /* silent */ } finally { setForgetting(null) }
+  }
+
   if (loading) return <LoadingState message="Loading sessions..." />
   if (error) return <p className="text-sm text-danger">{error}</p>
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
+      <div className="space-y-3">
       {sessions.length === 0 && <p className="text-sm text-text-muted">No active sessions found.</p>}
       {sessions.map((sess) => (
         <div
@@ -432,6 +455,59 @@ function SessionsTab() {
           </div>
         </div>
       ))}
+      </div>
+
+      {/* Trusted devices — those that skip the login 2FA code for 30 days. */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">Trusted devices</h3>
+            <p className="text-xs text-text-muted">
+              These devices skip the 2FA code at login. Forget any you don&apos;t recognise.
+            </p>
+          </div>
+          {devices.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleForgetAll}
+              disabled={forgetting === 'all'}
+            >
+              {forgetting === 'all' ? <Spinner size="sm" /> : 'Forget all'}
+            </Button>
+          )}
+        </div>
+
+        {devices.length === 0 && (
+          <p className="text-sm text-text-muted">No trusted devices. You&apos;ll enter a 2FA code at each login.</p>
+        )}
+        {devices.map((dev) => (
+          <div
+            key={dev.id}
+            className={`shadow-card border rounded-xl p-4 ${dev.current ? 'border-primary/40 bg-primary/5' : 'border-border bg-surface'}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-sm font-semibold text-text-primary truncate">{dev.label}</p>
+                  {dev.current && <Badge variant="success" size="sm">This device</Badge>}
+                </div>
+                <p className="text-xs text-text-muted">IP: {dev.lastIp ?? dev.ip ?? 'unknown'}</p>
+                <p className="text-xs text-text-muted">Last used: {timeAgo(dev.lastUsedAt)}</p>
+                <p className="text-xs text-text-muted">Trusted until: {new Date(dev.expiresAt).toLocaleDateString()}</p>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => handleForget(dev.id)}
+                disabled={forgetting === dev.id}
+              >
+                {forgetting === dev.id ? <Spinner size="sm" /> : 'Forget'}
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

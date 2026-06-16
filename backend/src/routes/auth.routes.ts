@@ -24,6 +24,13 @@ import {
   loginOrRegisterWithGoogle,
   COOKIE_OPTIONS,
 } from '../services/auth.service'
+import {
+  DEVICE_COOKIE_NAME,
+  DEVICE_COOKIE_OPTIONS,
+  listTrustedDevices,
+  revokeTrustedDevice,
+  revokeAllTrustedDevices,
+} from '../services/trusted-device.service'
 import { env } from '../lib/env'
 import { logger } from '../lib/logger'
 import { assertTurnstileValid } from '../lib/turnstile'
@@ -79,6 +86,8 @@ const twoFaCodeSchema = z.object({
 const verify2FaSchema = z.object({
   preAuthToken: z.string().min(1, 'Pre-auth token is required'),
   code: z.string().length(6, '2FA code must be 6 digits'),
+  // Opt-in "Trust this device for 30 days" — skips the login code next time.
+  trustDevice: z.boolean().optional(),
 })
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -129,10 +138,12 @@ export async function authRoutes(app: FastifyInstance) {
       await assertTurnstileValid(body.turnstileToken, req.ip)
       const { turnstileToken: _t, ...credentials } = body
       const ua = req.headers['user-agent']
+      const deviceTrustToken = req.cookies?.[DEVICE_COOKIE_NAME]
       const result = await login({
         ...credentials,
         ...(ua ? { userAgent: ua } : {}),
         ip: req.ip,
+        ...(deviceTrustToken ? { deviceTrustToken } : {}),
       })
 
       if (result.refreshToken) {
@@ -272,11 +283,14 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const { preAuthToken, code } = verify2FaSchema.parse(req.body)
-      const result = await verify2Fa(preAuthToken, code, req.headers['user-agent'], req.ip)
+      const { preAuthToken, code, trustDevice } = verify2FaSchema.parse(req.body)
+      const result = await verify2Fa(preAuthToken, code, req.headers['user-agent'], req.ip, trustDevice ?? false)
 
       if (result.refreshToken) {
         reply.setCookie('refresh_token', result.refreshToken, COOKIE_OPTIONS)
+      }
+      if (result.deviceTrustToken) {
+        reply.setCookie(DEVICE_COOKIE_NAME, result.deviceTrustToken, DEVICE_COOKIE_OPTIONS)
       }
 
       return reply.send({
@@ -374,6 +388,8 @@ export async function authRoutes(app: FastifyInstance) {
     })
     // Lock withdrawals for 24h after a password change (security policy).
     void applyWithdrawalLock(req.user!.id, 'password_changed').catch(() => {})
+    // Security event — clear trusted devices so 2FA is required again everywhere.
+    void revokeAllTrustedDevices(req.user!.id).catch(() => {})
     return reply.send({ success: true, data: { message: 'Password changed successfully.' } })
   })
 
@@ -407,6 +423,33 @@ export async function authRoutes(app: FastifyInstance) {
     if (session.userId !== req.user!.id) throw new AppError('FORBIDDEN', 'Forbidden', 403)
     await db.session.update({ where: { id }, data: { revokedAt: new Date() } })
     return reply.send({ success: true, data: { message: 'Session revoked.' } })
+  })
+
+  // GET /devices — list trusted devices (those that skip the login 2FA code)
+  app.get('/devices', { preHandler: [authenticate] }, async (req, reply) => {
+    const currentToken = req.cookies?.[DEVICE_COOKIE_NAME]
+    const devices = await listTrustedDevices(req.user!.id, currentToken)
+    return reply.send({ success: true, data: devices })
+  })
+
+  // DELETE /devices/:id — forget (un-trust) a single device
+  app.delete('/devices/:id', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    await revokeTrustedDevice(req.user!.id, id)
+    return reply.send({ success: true, data: { message: 'Device forgotten.' } })
+  })
+
+  // DELETE /devices — forget ALL trusted devices (the "log out everywhere" backstop)
+  app.delete('/devices', { preHandler: [authenticate] }, async (req, reply) => {
+    await revokeAllTrustedDevices(req.user!.id)
+    // Also clear the cookie on the current browser so it re-enrols next time.
+    reply.clearCookie(DEVICE_COOKIE_NAME, {
+      path: '/',
+      sameSite: DEVICE_COOKIE_OPTIONS.sameSite,
+      secure: DEVICE_COOKIE_OPTIONS.secure,
+      ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+    })
+    return reply.send({ success: true, data: { message: 'All trusted devices forgotten.' } })
   })
 
   // Local error handler for this plugin scope.

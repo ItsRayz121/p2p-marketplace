@@ -24,6 +24,10 @@ export default function TwoFaPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [preAuthToken, setPreAuthToken] = useState<string | null>(null)
+  const [trustDevice, setTrustDevice] = useState(true)
+  // Keep the latest checkbox value reachable from the auto-submit callback,
+  // which is memoised and would otherwise capture a stale value.
+  const trustDeviceRef = useRef(true)
   const inputRefs = useRef<Array<HTMLInputElement | null>>(Array(OTP_LENGTH).fill(null))
 
   const focusInput = (index: number) => {
@@ -50,7 +54,7 @@ export default function TwoFaPage() {
       setLoading(true)
       setError(null)
       try {
-        const result = await authApi.verify2fa({ preAuthToken: token, code })
+        const result = await authApi.verify2fa({ preAuthToken: token, code, trustDevice: trustDeviceRef.current })
         sessionStorage.removeItem('preAuthToken')
         setAccessToken(result.accessToken)
         setUser(result.user)
@@ -166,6 +170,25 @@ export default function TwoFaPage() {
       {loading && (
         <p className="text-sm text-text-muted text-center mb-4">Verifying…</p>
       )}
+
+      <label className="flex items-center gap-2.5 cursor-pointer select-none mb-2">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30 cursor-pointer"
+          checked={trustDevice}
+          onChange={(e) => {
+            setTrustDevice(e.target.checked)
+            trustDeviceRef.current = e.target.checked
+          }}
+          disabled={loading}
+        />
+        <span className="text-sm text-text-secondary">
+          Trust this device for 30 days
+        </span>
+      </label>
+      <p className="text-xs text-text-muted mb-4">
+        Skip the code on this device next time. Don&apos;t tick this on a shared or public computer.
+      </p>
 
       <Button
         type="button"

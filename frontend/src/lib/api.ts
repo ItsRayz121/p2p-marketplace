@@ -426,6 +426,17 @@ export interface Session {
   isCurrent: boolean
 }
 
+export interface TrustedDevice {
+  id: string
+  label: string
+  ip: string | null
+  lastIp: string | null
+  createdAt: string
+  lastUsedAt: string
+  expiresAt: string
+  current: boolean
+}
+
 export type AdminNotifCategory = 'KYC' | 'TRADE' | 'GAS' | 'DISPUTE' | 'CTM' | 'SYSTEM'
 
 export interface AdminNotif {
@@ -699,7 +710,7 @@ export const authApi = {
     apiRequest<{ available: boolean }>('/auth/check-username?username=' + encodeURIComponent(username)),
   updateAvatar: (avatarUrl: string) =>
     apiRequest<AuthUser>('/upload/avatar', { method: 'PATCH', body: JSON.stringify({ avatarUrl }) }),
-  verify2fa: (data: { preAuthToken: string; code: string }) =>
+  verify2fa: (data: { preAuthToken: string; code: string; trustDevice?: boolean }) =>
     apiRequest<{ accessToken: string; user: AuthUser }>('/auth/2fa/verify', { method: 'POST', body: JSON.stringify(data) }),
   changePassword: (data: { currentPassword: string; newPassword: string }) =>
     apiRequest<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),
@@ -707,6 +718,12 @@ export const authApi = {
     apiRequest<Session[]>('/auth/sessions'),
   revokeSession: (id: string) =>
     apiRequest<void>(`/auth/sessions/${id}`, { method: 'DELETE' }),
+  getTrustedDevices: () =>
+    apiRequest<TrustedDevice[]>('/auth/devices'),
+  forgetTrustedDevice: (id: string) =>
+    apiRequest<void>(`/auth/devices/${id}`, { method: 'DELETE' }),
+  forgetAllTrustedDevices: () =>
+    apiRequest<void>('/auth/devices', { method: 'DELETE' }),
   setup2fa: () =>
     apiRequest<{ secret: string; qrCode: string }>('/auth/2fa/setup', { method: 'POST' }),
   enable2fa: (code: string) =>

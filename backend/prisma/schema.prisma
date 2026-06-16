@@ -470,6 +470,7 @@ model User {
   depositAddresses       DepositAddress[]
   deposits               Deposit[]
   trustedAddresses       TrustedWithdrawalAddress[]
+  trustedDevices         TrustedDevice[]
   ctmTokenRequests       CtmTokenRequest[]
   ctmMerchantProfile     CtmMerchantProfile?
   ctmBuyTrades           CtmTrade[]            @relation("CtmTradeBuyer")
@@ -884,6 +885,29 @@ model TrustedWithdrawalAddress {
   @@unique([userId, coin, network, address])
   @@index([userId])
   @@index([userId, removedAt])
+}
+
+// Trusted devices — once a user clears 2FA on a device and opts to trust it, a
+// hashed device-trust token is stored here so future logins from the SAME device
+// skip the login TOTP step (until expiry, or a security event revokes it).
+// This ONLY shortcuts the login-time code; step-up 2FA for withdrawals / admin
+// money-moves is unaffected.
+model TrustedDevice {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique          // sha256 of the random cookie token
+  fingerprint String                     // sha256 of the user-agent (device binding)
+  label       String?   @db.VarChar(200) // human-readable UA summary for the device list
+  ip          String?                    // IP at enrolment
+  lastIp      String?                    // IP at most recent use
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([userId])
+  @@index([tokenHash])
 }
 
 model CollateralLock {

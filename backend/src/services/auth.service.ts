@@ -31,6 +31,11 @@ import {
   generateReferralCode,
 } from '../lib/hash'
 import { signAccessToken, signPreAuthToken, verifyPreAuthToken, signAppealToken } from '../lib/jwt'
+import {
+  isDeviceTrusted,
+  createTrustedDevice,
+  revokeAllTrustedDevices,
+} from './trusted-device.service'
 import { sendOtpEmail } from './email.service'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
@@ -51,6 +56,9 @@ export interface LoginInput {
   password: string
   userAgent?: string
   ip?: string
+  // Raw value of the `device_trust` cookie, if the browser presented one. When it
+  // matches an active trusted device, a 2FA-enabled user skips the login code.
+  deviceTrustToken?: string
 }
 
 export interface LoginResult {
@@ -58,6 +66,9 @@ export interface LoginResult {
   refreshToken?: string
   preAuthToken?: string
   requiresTwoFa: boolean
+  // Raw device-trust token to set as the `device_trust` cookie — present only
+  // when the user opted to trust this device during 2FA verification.
+  deviceTrustToken?: string
   user?: SafeUser
   // Set when the account is banned/suspended. The appeal token lets the user
   // submit an appeal without a full session.
@@ -370,7 +381,7 @@ export async function register(input: RegisterInput): Promise<{ message: string 
 }
 
 export async function login(input: LoginInput): Promise<LoginResult> {
-  const { email, password, userAgent, ip } = input
+  const { email, password, userAgent, ip, deviceTrustToken } = input
 
   await assertLoginNotLocked(email)
 
@@ -422,10 +433,22 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     }
   }
 
-  // 2FA flow — issue pre-auth token, do NOT issue full session yet
+  // 2FA flow — issue pre-auth token, do NOT issue full session yet.
+  // EXCEPTION: if this device was previously trusted (and still matches), skip
+  // the login code and issue a full session directly. Step-up 2FA for
+  // withdrawals / admin actions is unaffected.
   if (user.twoFaEnabled) {
-    const preAuthToken = signPreAuthToken({ userId: user.id, email: user.email })
-    return { requiresTwoFa: true, preAuthToken }
+    const trusted = await isDeviceTrusted({
+      userId: user.id,
+      token: deviceTrustToken,
+      userAgent,
+      ip,
+    })
+    if (!trusted) {
+      const preAuthToken = signPreAuthToken({ userId: user.id, email: user.email })
+      return { requiresTwoFa: true, preAuthToken }
+    }
+    // Trusted device → fall through to issue a full session below.
   }
 
   // Issue full session
@@ -574,6 +597,9 @@ export async function resetPassword(email: string, code: string, newPassword: st
   // Lock withdrawals for 24h after a password reset (security policy).
   // Fire-and-forget — failure must not roll back the reset itself.
   void applyWithdrawalLock(user.id, 'password_reset').catch(() => {})
+
+  // Security event — clear trusted devices so 2FA is required on every device.
+  void revokeAllTrustedDevices(user.id).catch(() => {})
 }
 
 export async function refreshAccessToken(
@@ -657,6 +683,10 @@ export async function enable2Fa(userId: string, code: string): Promise<void> {
   if (!valid) throw new AppError('INVALID_OTP', 'Invalid 2FA code', 400)
 
   await db.user.update({ where: { id: userId }, data: { twoFaEnabled: true } })
+
+  // Security event — drop any previously trusted devices so the new 2FA must be
+  // proven afresh on each device.
+  void revokeAllTrustedDevices(userId).catch(() => {})
 }
 
 export async function disable2Fa(userId: string, code: string): Promise<void> {
@@ -678,6 +708,9 @@ export async function disable2Fa(userId: string, code: string): Promise<void> {
 
   // Lock withdrawals for 72h after 2FA is disabled (security policy).
   void applyWithdrawalLock(userId, '2fa_disabled').catch(() => {})
+
+  // Security event — clear trusted devices.
+  void revokeAllTrustedDevices(userId).catch(() => {})
 }
 
 export async function verify2Fa(
@@ -685,6 +718,7 @@ export async function verify2Fa(
   code: string,
   userAgent?: string,
   ip?: string,
+  trustDevice = false,
 ): Promise<LoginResult> {
   const payload = verifyPreAuthToken(preAuthToken)
   if (!payload) throw new AppError('UNAUTHORIZED', 'Invalid or expired pre-auth token', 401)
@@ -721,11 +755,18 @@ export async function verify2Fa(
   const fullUser = await db.user.findUnique({ where: { id: user.id }, select: USER_SELECT })
   if (!fullUser) throw new AppError('NOT_FOUND', 'User not found', 404)
 
+  // Opt-in: remember this device so the next login from it skips the code.
+  let deviceTrustToken: string | undefined
+  if (trustDevice) {
+    deviceTrustToken = await createTrustedDevice({ userId: user.id, userAgent, ip })
+  }
+
   return {
     requiresTwoFa: false,
     accessToken,
     refreshToken,
     user: toSafeUser(fullUser),
+    ...(deviceTrustToken ? { deviceTrustToken } : {}),
   }
 }
 
