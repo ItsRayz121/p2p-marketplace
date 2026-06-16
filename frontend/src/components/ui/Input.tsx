@@ -1,5 +1,6 @@
 'use client'
-import { forwardRef } from 'react'
+import { forwardRef, useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -19,9 +20,28 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
   disabled,
   className,
   id,
+  type,
   ...props
 }, ref) => {
   const inputId = id ?? (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
+
+  // Built-in show/hide toggle for password fields (unless the caller supplies its
+  // own rightElement). Lets users verify what they typed — important on mobile
+  // where mistypes are common. tabIndex={-1} keeps tab order on the inputs.
+  const [reveal, setReveal] = useState(false)
+  const isPassword = type === 'password'
+  const effectiveType = isPassword && reveal ? 'text' : type
+  const right = isPassword && !rightElement ? (
+    <button
+      type="button"
+      onClick={() => setReveal((v) => !v)}
+      className="text-text-muted hover:text-text-primary transition-colors"
+      aria-label={reveal ? 'Hide password' : 'Show password'}
+      tabIndex={-1}
+    >
+      {reveal ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+    </button>
+  ) : rightElement
 
   return (
     <div className="flex flex-col gap-1.5 w-full">
@@ -42,6 +62,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
         <input
           ref={ref}
           id={inputId}
+          type={effectiveType}
           disabled={disabled}
           className={cn(
             'w-full rounded-lg border bg-surface text-text-primary placeholder:text-text-muted',
@@ -52,15 +73,15 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
               ? 'border-danger focus:ring-danger/30'
               : 'border-border focus:ring-primary/30 focus:border-primary',
             leftIcon && 'pl-10',
-            rightElement && 'pr-10',
+            right && 'pr-10',
             disabled && 'opacity-50 cursor-not-allowed bg-surface',
             className,
           )}
           {...props}
         />
-        {rightElement && (
+        {right && (
           <span className="absolute right-3 flex items-center">
-            {rightElement}
+            {right}
           </span>
         )}
       </div>
