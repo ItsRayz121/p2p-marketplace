@@ -26,7 +26,7 @@ const RANK_LABELS: Record<string, string> = {
 
 const RANK_COLORS: Record<string, string> = {
   bronze: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30',
-  silver: 'text-slate-500 bg-slate-50 border-slate-200',
+  silver: 'text-slate-500 dark:text-slate-300 bg-slate-500/10 border-slate-500/30',
   gold:   'text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
   elite:  'text-primary bg-primary/10 border-primary/20',
 }

@@ -218,7 +218,7 @@ export default function AdminDashboardPage() {
                     key={n.id}
                     className={cn(
                       'flex items-start gap-3 px-4 py-3',
-                      !n.isRead ? 'bg-blue-500/10/30' : 'hover:bg-surface',
+                      !n.isRead ? 'bg-blue-500/10' : 'hover:bg-surface',
                     )}
                   >
                     {!n.isRead && <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}

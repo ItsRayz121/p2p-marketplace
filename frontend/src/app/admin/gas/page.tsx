@@ -229,9 +229,9 @@ function WalletCard({
 
   return (
     <div className={`bg-surface border rounded-xl p-5 ${
-      wallet.status === 'paused' || wallet.status === 'rpc_error' ? 'border-danger/40 bg-red-500/10/30'
-      : wallet.status === 'low' ? 'border-warning/40 bg-yellow-500/10/30'
-      : wallet.status === 'price_unavailable' ? 'border-orange-500/50/40 bg-orange-500/10/30'
+      wallet.status === 'paused' || wallet.status === 'rpc_error' ? 'border-danger/40 bg-red-500/10'
+      : wallet.status === 'low' ? 'border-warning/40 bg-yellow-500/10'
+      : wallet.status === 'price_unavailable' ? 'border-orange-500/50 bg-orange-500/10'
       : 'border-border'
     }`}>
       <div className="flex items-start justify-between gap-4">
@@ -1263,7 +1263,7 @@ export default function GasAdminPage() {
 
       {/* ── Aptos Hot Wallet Card ────────────────────────────────────────────── */}
       {stats?.aptosGas && (
-        <div className={`bg-surface border rounded-xl p-5 ${stats.aptosGas.lowApt ? 'border-warning/40 bg-yellow-500/10/30' : 'border-border'}`}>
+        <div className={`bg-surface border rounded-xl p-5 ${stats.aptosGas.lowApt ? 'border-warning/40 bg-yellow-500/10' : 'border-border'}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">

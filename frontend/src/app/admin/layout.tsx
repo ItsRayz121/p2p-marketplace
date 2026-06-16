@@ -875,7 +875,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     bellNotifs.map((n) => (
                       <div
                         key={n.id}
-                        className={cn('px-4 py-3 hover:bg-surface transition-colors', !n.isRead && 'bg-blue-500/10/40')}
+                        className={cn('px-4 py-3 hover:bg-surface transition-colors', !n.isRead && 'bg-blue-500/10')}
                       >
                         <div className="flex items-start gap-3">
                           <span className={cn('mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide', CATEGORY_COLORS[n.category])}>

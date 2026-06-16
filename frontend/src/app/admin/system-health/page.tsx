@@ -79,7 +79,7 @@ function QueueRow({ q, onChanged }: { q: QueueHealthRow; onChanged: () => void }
   }
 
   return (
-    <div className={cn('rounded-lg border', hasFailures ? 'border-red-500/30 bg-red-500/10/40' : 'border-border bg-surface-alt')}>
+    <div className={cn('rounded-lg border', hasFailures ? 'border-red-500/30 bg-red-500/10' : 'border-border bg-surface-alt')}>
       <div className="flex items-center gap-3 px-3 py-2">
         <button
           onClick={() => hasFailures && setOpen((o) => !o)}

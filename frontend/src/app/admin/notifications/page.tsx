@@ -178,7 +178,7 @@ export default function AdminNotificationsPage() {
                 key={n.id}
                 className={cn(
                   'flex items-start gap-4 px-5 py-4 transition-colors',
-                  !n.isRead ? 'bg-blue-500/10/30' : 'hover:bg-surface',
+                  !n.isRead ? 'bg-blue-500/10' : 'hover:bg-surface',
                 )}
               >
                 {/* Unread dot */}
