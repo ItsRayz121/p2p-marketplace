@@ -290,7 +290,7 @@ export default function AdminCtmTokensPage() {
         <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/30 text-green-800 dark:text-green-300 rounded-xl px-4 py-3 text-sm">
           <svg className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
           {addSuccess}
-          <button onClick={() => setAddSuccess('')} className="ml-auto text-green-600 dark:text-green-400 hover:text-green-800 dark:text-green-300">✕</button>
+          <button onClick={() => setAddSuccess('')} className="ml-auto text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300">✕</button>
         </div>
       )}
 

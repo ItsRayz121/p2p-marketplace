@@ -84,7 +84,7 @@ export default function MyListingsPage() {
       {actionError && (
         <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300 flex items-start justify-between gap-3">
           <span className="flex-1">{actionError}</span>
-          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 dark:text-red-300 flex-shrink-0" aria-label="Dismiss">×</button>
+          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 dark:hover:text-red-300 flex-shrink-0" aria-label="Dismiss">×</button>
         </div>
       )}
 

@@ -204,7 +204,7 @@ export function GasCryptoQRStep() {
               {!confirmCancel ? (
                 <button
                   onClick={openCancelConfirm}
-                  className="w-full text-xs text-text-muted hover:text-red-600 dark:text-red-400 text-center py-1 transition-colors"
+                  className="w-full text-xs text-text-muted hover:text-red-600 dark:hover:text-red-400 text-center py-1 transition-colors"
                 >
                   Cancel this order
                 </button>
@@ -280,7 +280,7 @@ export function GasCryptoQRStep() {
               <button onClick={() => setVerifyOpen(true)} className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors">
                 Enter Transaction Hash
               </button>
-              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-amber-600 dark:text-amber-400/70 hover:text-amber-700 dark:text-amber-300 text-center">
+              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-amber-600 dark:text-amber-400/70 hover:text-amber-700 dark:hover:text-amber-300 text-center">
                 I haven&apos;t sent yet — go back
               </button>
             </div>
@@ -359,7 +359,7 @@ export function GasCryptoQRStep() {
               {!verifyOpen && !verifySuccess ? (
                 <div className="mb-4 space-y-2">
                   <p className="text-xs text-text-muted">Already sent the payment? We can still verify it.</p>
-                  <button onClick={() => setVerifyOpen(true)} className="text-xs text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-800 dark:text-blue-300 font-semibold">
+                  <button onClick={() => setVerifyOpen(true)} className="text-xs text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-800 dark:hover:text-blue-300 font-semibold">
                     Enter transaction hash to verify
                   </button>
                 </div>
@@ -452,7 +452,7 @@ function VerifyHashForm({
     <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold text-blue-800 dark:text-blue-300">{label}</p>
-        <button onClick={onClose} className="text-blue-400 hover:text-blue-600 dark:text-blue-400 text-lg leading-none" aria-label="Close">&times;</button>
+        <button onClick={onClose} className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-400 text-lg leading-none" aria-label="Close">&times;</button>
       </div>
       <p className="text-xs text-blue-700 dark:text-blue-300">{hint}</p>
       <input

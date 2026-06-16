@@ -705,7 +705,7 @@ function ChainModal({
                   Recommended for {form.chainType}:{' '}
                   <button
                     type="button"
-                    className="font-mono underline hover:text-blue-800 dark:text-blue-300"
+                    className="font-mono underline hover:text-blue-800 dark:hover:text-blue-300"
                     onClick={() => setForm({ ...form, rpcUrl: RPC_SUGGESTIONS[form.chainType]!.primary })}
                   >
                     {RPC_SUGGESTIONS[form.chainType]!.primary}
@@ -728,7 +728,7 @@ function ChainModal({
                   Recommended:{' '}
                   <button
                     type="button"
-                    className="font-mono underline hover:text-blue-800 dark:text-blue-300"
+                    className="font-mono underline hover:text-blue-800 dark:hover:text-blue-300"
                     onClick={() => setForm({ ...form, rpcUrlFallback: RPC_SUGGESTIONS[form.chainType]!.fallback })}
                   >
                     {RPC_SUGGESTIONS[form.chainType]!.fallback}
