@@ -82,7 +82,6 @@ function TreasuryOverview() {
 
   const cards: Array<{ label: string; usd: number; sub?: string; tone: string }> = [
     { label: 'Hot Wallets', usd: t.categories.hot.usd, sub: `native $${money(t.categories.hot.nativeUsd)} · USDT $${money(t.categories.hot.usdtUsd)}`, tone: 'text-orange-600' },
-    { label: 'Treasury', usd: t.categories.treasury.usd, sub: 'reserve (native)', tone: 'text-success' },
     { label: 'Escrow (locked)', usd: t.categories.escrow.usdt, sub: 'user collateral in trades', tone: 'text-blue-600' },
     { label: 'User Custody', usd: t.categories.custody.usdt, sub: 'USDT user balances', tone: 'text-text-secondary' },
     { label: 'Platform Revenue', usd: t.categories.revenue.usd, sub: 'fees collected (lifetime)', tone: 'text-purple-600' },
@@ -100,13 +99,13 @@ function TreasuryOverview() {
 
       {/* Total platform-controlled assets */}
       <div className="rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 p-4">
-        <p className="text-xs text-text-muted">Platform-controlled assets (hot + treasury)</p>
+        <p className="text-xs text-text-muted">Platform-controlled assets (hot wallets)</p>
         <p className="text-3xl font-bold text-text-primary mt-1">${money(t.platformControlledUsd)}</p>
         <p className="text-sm text-text-muted">PKR {pkr(t.platformControlledUsd)}</p>
       </div>
 
       {/* Category cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {cards.map((c) => (
           <div key={c.label} className="rounded-lg border border-border p-3">
             <p className="text-xs text-text-muted">{c.label}</p>
@@ -120,7 +119,7 @@ function TreasuryOverview() {
       {/* Distribution: per-chain + per-token */}
       <div className="grid md:grid-cols-2 gap-5">
         <div>
-          <h3 className="text-sm font-semibold text-text-primary mb-2">By chain (hot + treasury)</h3>
+          <h3 className="text-sm font-semibold text-text-primary mb-2">By chain</h3>
           {t.perChain.length === 0 ? <p className="text-xs text-text-muted">No active chains.</p> : (
             <div className="space-y-2">
               {t.perChain.map((c) => (

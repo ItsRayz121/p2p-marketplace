@@ -3915,7 +3915,6 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/treasury/overview', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
     const { getHotWalletBalance, getNativeUsdPrice } = await import('../lib/gas/gas.balance')
     const { fromDbChain } = await import('../lib/gas/gas.chains')
-    const { getTreasuryAddress } = await import('../lib/gas/gas.treasury')
 
     const usdtRaw = await redis.get('rate:USDT').catch(() => null)
     const usdPkr = usdtRaw ? (() => { try { return (JSON.parse(usdtRaw) as { rate?: number }).rate ?? 278.5 } catch { return 278.5 } })() : 278.5
@@ -3926,19 +3925,21 @@ export async function adminRoutes(app: FastifyInstance) {
       activeWallets.map(async (w) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const chainId = fromDbChain(w.chain) as any
-        const treasuryAddr = getTreasuryAddress(chainId)
-        const [hotNative, price, tokens, treasuryNative] = await Promise.all([
+        // NOTE: on EVM/TRON the treasury address is derived at the same HD index
+        // as the hot wallet (index 0), so it IS the hot wallet — reading it again
+        // double-counts the same on-chain funds. Treasury is therefore not a
+        // separate balance and is excluded here (treasuryNative kept at 0).
+        const [hotNative, price, tokens] = await Promise.all([
           getHotWalletBalance(chainId, w.address).catch(() => 0),
           getNativeUsdPrice(chainId).catch(() => 0),
           getWalletTokenBalances(w.chain as string, w.address).catch(() => [] as Array<{ symbol: string; balanceFormatted: number }>),
-          treasuryAddr ? getHotWalletBalance(chainId, treasuryAddr).catch(() => 0) : Promise.resolve(0),
         ])
         const usdtToken = (tokens ?? []).filter((t) => /usdt/i.test(t.symbol)).reduce((a, t) => a + (t.balanceFormatted || 0), 0)
         return {
           chain: w.chain as string,
           symbol: nativeSymbol(chainId as string),
           hotNative, hotUsd: hotNative * price,
-          treasuryNative, treasuryUsd: treasuryNative * price,
+          treasuryNative: 0, treasuryUsd: 0,
           usdtUsd: usdtToken,
           error: null as string | null,
         }
