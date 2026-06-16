@@ -857,6 +857,11 @@ export default function GasAdminPage() {
 
   usePolling(refresh, 30_000)
 
+  // usePolling only re-runs on mount + interval, so it won't react to filter
+  // changes. Refetch orders immediately whenever the status/payment-type filter
+  // or page changes, otherwise clicking a tab does nothing until the next poll.
+  useEffect(() => { void fetchOrders() }, [fetchOrders])
+
   // Fetch analytics on demand
   const handleShowAnalytics = useCallback(async () => {
     setShowAnalytics(true)

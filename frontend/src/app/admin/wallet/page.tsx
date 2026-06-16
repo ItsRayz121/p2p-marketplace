@@ -60,7 +60,26 @@ function TreasuryOverview() {
   const [t, setT] = useState<TreasuryData | null>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
+  // Persist the hide/show choice so a page refresh keeps balances masked.
   const [hidden, setHidden] = useState(false)
+
+  // Restore the saved preference on mount (localStorage is client-only, so this
+  // runs after hydration to avoid an SSR mismatch).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.localStorage.getItem('admin-treasury-hidden') === '1') {
+      setHidden(true)
+    }
+  }, [])
+
+  const toggleHidden = useCallback(() => {
+    setHidden((h) => {
+      const next = !h
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('admin-treasury-hidden', next ? '1' : '0')
+      }
+      return next
+    })
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -100,7 +119,7 @@ function TreasuryOverview() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setHidden((h) => !h)}
+            onClick={toggleHidden}
             aria-label={hidden ? 'Show balances' : 'Hide balances'}
             title={hidden ? 'Show balances' : 'Hide balances'}
             aria-pressed={hidden}
