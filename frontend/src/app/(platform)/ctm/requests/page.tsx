@@ -101,9 +101,9 @@ export default function RequestBoardPage() {
       </div>
 
       {actionError && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-start justify-between gap-3">
+        <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300 flex items-start justify-between gap-3">
           <span className="flex-1">{actionError}</span>
-          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 flex-shrink-0" aria-label="Dismiss">×</button>
+          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 dark:text-red-300 flex-shrink-0" aria-label="Dismiss">×</button>
         </div>
       )}
 
@@ -192,7 +192,7 @@ export default function RequestBoardPage() {
           <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4">
             <h3 className="font-bold text-lg text-text-primary">Submit Bid</h3>
             <p className="text-sm text-text-muted">For: {bidModal.amount} {bidModal.token.symbol}</p>
-            {bidError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{bidError}</div>}
+            {bidError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{bidError}</div>}
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">Your price per token (PKR) *</label>
               <input type="number" min="0" step="0.01" value={bidPrice} onChange={(e) => setBidPrice(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />

@@ -33,8 +33,8 @@ interface Profile {
 
 const TIER_COLORS: Record<string, string> = {
   new: 'bg-surface-alt text-text-secondary',
-  basic: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
+  basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  verified: 'bg-green-500/15 text-green-700 dark:text-green-300',
   elite: 'bg-purple-100 text-purple-700',
 }
 
@@ -88,7 +88,7 @@ export function MerchantProfileModal({ userId, onClose }: { userId: string; onCl
               <div className="h-24 bg-surface rounded-xl" />
             </div>
           ) : error ? (
-            <p className="text-sm text-red-600 text-center py-8">{error}</p>
+            <p className="text-sm text-red-600 dark:text-red-400 text-center py-8">{error}</p>
           ) : !profile ? (
             <p className="text-sm text-text-muted text-center py-8">Profile not found.</p>
           ) : (

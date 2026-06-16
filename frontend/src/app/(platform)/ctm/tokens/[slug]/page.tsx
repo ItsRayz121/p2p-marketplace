@@ -9,10 +9,10 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 
 const RISK_COLORS: Record<string, string> = {
-  low: 'bg-green-100 text-green-800',
-  medium: 'bg-yellow-100 text-yellow-800',
-  high: 'bg-orange-100 text-orange-800',
-  extreme: 'bg-red-100 text-red-800',
+  low: 'bg-green-500/15 text-green-800 dark:text-green-300',
+  medium: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300',
+  high: 'bg-orange-500/15 text-orange-800 dark:text-orange-300',
+  extreme: 'bg-red-500/15 text-red-800 dark:text-red-300',
 }
 
 interface CtmToken {
@@ -86,7 +86,7 @@ export default function CtmTokenDetailPage() {
         )}
 
         {token.riskNotes && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3 text-xs text-amber-800">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mt-3 text-xs text-amber-800 dark:text-amber-300">
             <strong>Risk note:</strong> {token.riskNotes}
           </div>
         )}

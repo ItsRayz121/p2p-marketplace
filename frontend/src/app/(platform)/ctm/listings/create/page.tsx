@@ -132,7 +132,7 @@ export default function CreateListingPage() {
       <h1 className="text-2xl font-bold text-text-primary mb-6">Create Listing</h1>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{error}</div>}
+        {error && <div className="bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 rounded-xl p-3 text-sm">{error}</div>}
 
         {/* Token */}
         <div>
@@ -307,7 +307,7 @@ export default function CreateListingPage() {
 
         {/* Buy listing info note — seller provides payment details when accepting */}
         {form.side === 'buy' && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-sm text-blue-800 dark:text-blue-300">
             Payment details are not required on a buy listing. The seller will provide their payment receiving account when they accept your trade.
           </div>
         )}

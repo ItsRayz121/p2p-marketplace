@@ -10,10 +10,10 @@ import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Coins } from 'lucide-react'
 
 const RISK_COLORS: Record<string, string> = {
-  low: 'bg-green-100 text-green-800',
-  medium: 'bg-yellow-100 text-yellow-800',
-  high: 'bg-orange-100 text-orange-800',
-  extreme: 'bg-red-100 text-red-800',
+  low: 'bg-green-500/15 text-green-800 dark:text-green-300',
+  medium: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300',
+  high: 'bg-orange-500/15 text-orange-800 dark:text-orange-300',
+  extreme: 'bg-red-500/15 text-red-800 dark:text-red-300',
 }
 
 interface CtmToken {

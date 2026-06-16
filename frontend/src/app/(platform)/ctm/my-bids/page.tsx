@@ -24,9 +24,9 @@ interface ListingBid {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  accepted: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
+  pending: 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300',
+  accepted: 'bg-green-500/15 text-green-700 dark:text-green-300',
+  rejected: 'bg-red-500/15 text-red-700 dark:text-red-300',
   expired: 'bg-surface-alt text-text-muted',
   cancelled: 'bg-surface-alt text-text-muted',
 }
@@ -137,7 +137,7 @@ export default function MyBidsPage() {
                 <button
                   onClick={() => handleCancel(bid.id)}
                   disabled={cancelling === bid.id}
-                  className="px-4 py-2 border border-red-200 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 border border-red-500/30 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-50"
                 >
                   {cancelling === bid.id ? 'Cancelling…' : 'Cancel Bid'}
                 </button>

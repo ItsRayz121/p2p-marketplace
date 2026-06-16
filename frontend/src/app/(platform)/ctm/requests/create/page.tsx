@@ -63,7 +63,7 @@ export default function CreateRequestPage() {
       <p className="text-text-muted text-sm mb-6">Describe what you need and let merchants come to you with their best offers.</p>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{error}</div>}
+        {error && <div className="bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 rounded-xl p-3 text-sm">{error}</div>}
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Token *</label>

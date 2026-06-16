@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { Star } from 'lucide-react'
 
-const TIER_COLORS: Record<string, string> = { new: 'bg-surface-alt text-text-secondary', basic: 'bg-blue-100 text-blue-700', verified: 'bg-green-100 text-green-700', elite: 'bg-primary/10 text-primary' }
+const TIER_COLORS: Record<string, string> = { new: 'bg-surface-alt text-text-secondary', basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300', verified: 'bg-green-500/15 text-green-700 dark:text-green-300', elite: 'bg-primary/10 text-primary' }
 
 const METHOD_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -333,7 +333,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <p className="text-text-muted text-sm">{listing.token.symbol} · {listing.token.settlementType}</p>
             </div>
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">
@@ -533,7 +533,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                       <div className="flex gap-2 flex-shrink-0 items-start">
                         {bid.status === 'accepted_pending_buyer' ? (
-                          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 font-medium">Awaiting buyer</span>
+                          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-medium">Awaiting buyer</span>
                         ) : (
                           <>
                             <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
@@ -568,10 +568,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                       <div className="text-right flex-shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          t.status === 'completed'  ? 'bg-green-100 text-green-700' :
+                          t.status === 'completed'  ? 'bg-green-500/15 text-green-700 dark:text-green-300' :
                           t.status === 'cancelled'  ? 'bg-surface-alt text-text-secondary' :
-                          t.status === 'disputed'   ? 'bg-red-100 text-red-700' :
-                          'bg-blue-100 text-blue-700'
+                          t.status === 'disputed'   ? 'bg-red-500/15 text-red-700 dark:text-red-300' :
+                          'bg-blue-500/15 text-blue-700 dark:text-blue-300'
                         }`}>{t.status.replace(/_/g, ' ')}</span>
                         <p className="text-xs text-text-muted mt-1">
                           <a href={`/ctm/trade/${t.tradeRef}`} className="text-primary hover:underline">View →</a>
@@ -586,9 +586,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Complete Trade banner — shown when buyer's bid was accepted but payment details not yet provided */}
       {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
           <p className="font-semibold text-amber-900">Your bid was accepted!</p>
-          <p className="text-sm text-amber-700 mt-1">
+          <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
             Complete your payment details to open the trade. The window expires at{' '}
             {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </p>
@@ -620,7 +620,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       )}
       {/* Pending bid notice */}
       {!isMine && myActiveBid?.status === 'pending' && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
           You have a pending bid on this listing. Waiting for the merchant to respond.
         </div>
       )}
@@ -630,7 +630,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
           <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4">
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
-            {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
+            {error && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{error}</div>}
 
             {/* Token-quantity input */}
             <div>
@@ -692,7 +692,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 <p className="text-xs text-text-muted mb-2">Select all accounts you're happy to receive payment to — buyer will choose one.</p>
               )}
               {isBuyListing && myMethods.length === 0 && (
-                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
                   No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
                 </p>
               )}
@@ -807,7 +807,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <h3 className="font-bold text-lg text-text-primary">Place a Bid</h3>
               <p className="text-xs text-text-muted mt-0.5">Offer your own price. The merchant has 30 minutes to accept or reject.</p>
             </div>
-            {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{error}</div>}
+            {error && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{error}</div>}
 
             {/* Bid price */}
             <div>
@@ -875,7 +875,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               )
             })()}
 
-            <p className="text-xs text-text-muted bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+            <p className="text-xs text-text-muted bg-blue-500/10 border border-blue-100 rounded-xl px-3 py-2">
               Payment details and your wallet address will be collected after the merchant accepts your bid.
             </p>
 
@@ -914,7 +914,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
 
-            {confirmError && <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 text-sm">{confirmError}</div>}
+            {confirmError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{confirmError}</div>}
 
             {/* Payment method selection */}
             <div>
@@ -922,7 +922,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 {isBuyListing ? 'Choose where you want to receive payment' : "Select the seller's payment account you'll send to"}
               </label>
               {isBuyListing && myMethods.length === 0 && (
-                <p className="text-xs text-text-muted bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
                   No saved payment accounts. <a href="/payment-methods" className="text-primary underline">Add one →</a>
                 </p>
               )}

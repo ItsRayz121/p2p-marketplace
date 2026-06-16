@@ -94,9 +94,9 @@ export default function MyRequestsPage() {
       </div>
 
       {actionError && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-start justify-between gap-3">
+        <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300 flex items-start justify-between gap-3">
           <span className="flex-1">{actionError}</span>
-          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 flex-shrink-0" aria-label="Dismiss">×</button>
+          <button onClick={() => setActionError('')} className="text-red-500 hover:text-red-700 dark:text-red-300 flex-shrink-0" aria-label="Dismiss">×</button>
         </div>
       )}
 
@@ -146,7 +146,7 @@ export default function MyRequestsPage() {
                     </div>
                   </div>
                   {r.status === 'open' && (
-                    <button onClick={() => setConfirmCancel(r.id)} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Cancel</button>
+                    <button onClick={() => setConfirmCancel(r.id)} className="text-xs border border-red-500/30 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10">Cancel</button>
                   )}
                 </div>
 
@@ -184,7 +184,7 @@ export default function MyRequestsPage() {
                   <p className="text-xs text-text-muted">Your bid: PKR {Number(b.totalPkr).toLocaleString()} · {b.status}</p>
                 </div>
                 {b.status === 'pending' && (
-                  <button onClick={() => setConfirmWithdraw({ requestId: b.request.id, bidId: b.id })} className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50">Withdraw</button>
+                  <button onClick={() => setConfirmWithdraw({ requestId: b.request.id, bidId: b.id })} className="text-xs border border-red-500/30 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10">Withdraw</button>
                 )}
               </div>
             ))}

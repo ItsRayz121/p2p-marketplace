@@ -228,8 +228,8 @@ function ListingRow({
 
   const isSell    = listing.side === 'sell'
   const accentCls = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
-  const chipCls   = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'
-  const priceCls  = isSell ? 'text-emerald-600' : 'text-blue-600'
+  const chipCls   = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+  const priceCls  = isSell ? 'text-emerald-600' : 'text-blue-600 dark:text-blue-400'
 
   // Order-limit PKR equivalent — derived from this listing's own price.
   const price  = Number(listing.pricePerUnit)

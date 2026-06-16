@@ -73,7 +73,7 @@ export function MarketInsightWidget({ tokenId, tokenSymbol, side }: Props) {
         </span>
         <div className="flex items-center gap-1.5">
           {insight.lowData && (
-            <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium text-[10px]">
+            <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 font-medium text-[10px]">
               Low data
             </span>
           )}
@@ -104,7 +104,7 @@ export function MarketInsightWidget({ tokenId, tokenSymbol, side }: Props) {
             {insight.sellAvg12h !== null && (
               <div>
                 <span className="text-text-muted block">Sell avg</span>
-                <span className="font-semibold text-blue-600">PKR {fmt(insight.sellAvg12h)}</span>
+                <span className="font-semibold text-blue-600 dark:text-blue-400">PKR {fmt(insight.sellAvg12h)}</span>
               </div>
             )}
           </div>

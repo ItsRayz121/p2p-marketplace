@@ -39,8 +39,8 @@ function StarRating({ rating, size = 'sm' }: { rating: number; size?: 'sm' | 'xs
 
 const TIER_COLORS: Record<string, string> = {
   new: 'bg-surface-alt text-text-secondary',
-  basic: 'bg-blue-100 text-blue-700',
-  verified: 'bg-green-100 text-green-700',
+  basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  verified: 'bg-green-500/15 text-green-700 dark:text-green-300',
   elite: 'bg-primary/10 text-primary',
 }
 
