@@ -109,9 +109,11 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
 
         {/* Hold page content until auth hydration finishes to avoid unauthenticated
             API calls racing with the refresh cycle in Providers.tsx */}
-        {/* pb-24 reserves space for the mobile BottomNav (FAB clears 64-80px);
+        {/* pb reserves space for the mobile BottomNav (FAB clears 64-80px) plus
+            the device safe-area inset (home indicator / gesture bar), so content
+            is never hidden behind the nav on notched phones or in Telegram.
             individual pages no longer need to add it themselves. */}
-        <main className="flex-1 pb-24 lg:pb-0">
+        <main className="flex-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
           {authLoading ? (
             <div className="flex items-center justify-center min-h-[60vh]">
               <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

@@ -31,13 +31,16 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
   binance:   { label: 'Binance',   url: 'https://www.binance.com' },
 }
 
+// Tints use the `/10` opacity pattern (same as the navbar dropdown) so each
+// colour stays vivid in light mode AND adapts correctly on dark surfaces —
+// unlike raw `bg-blue-100` etc., which render as a fixed pale colour in dark mode.
 const QUICK_ACTIONS = [
-  { href: '/marketplace', label: 'USDT Market',      Icon: ArrowLeftRight, iconCls: 'text-blue-600',    bgCls: 'bg-blue-100'    },
-  { href: '/ctm',         label: 'Tokens',           Icon: Coins,          iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
-  { href: '/gas',         label: 'Gas Fees',         Icon: Fuel,           iconCls: 'text-amber-600',   bgCls: 'bg-amber-100'   },
-  { href: '/wallet',      label: 'Wallet',           Icon: Wallet,         iconCls: 'text-cyan-600',    bgCls: 'bg-cyan-100'    },
-  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList,  iconCls: 'text-emerald-600', bgCls: 'bg-emerald-100' },
-  { href: '/referral',    label: 'Referral',         Icon: Gift,           iconCls: 'text-pink-600',    bgCls: 'bg-pink-100'    },
+  { href: '/marketplace', label: 'USDT Market',      Icon: ArrowLeftRight, iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'    },
+  { href: '/ctm',         label: 'Tokens',           Icon: Coins,          iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'    },
+  { href: '/gas',         label: 'Gas Fees',         Icon: Fuel,           iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'   },
+  { href: '/wallet',      label: 'Wallet',           Icon: Wallet,         iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'    },
+  { href: '/orders',      label: 'My Trades',        Icon: ClipboardList,  iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10' },
+  { href: '/referral',    label: 'Referral',         Icon: Gift,           iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'    },
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -238,7 +241,7 @@ export default function DashboardPage() {
               <span>Daily trading used</span>
               <span>PKR {dailyUsed.toLocaleString()} / {dailyLimit.toLocaleString()}</span>
             </div>
-            <div className="h-2 bg-surface rounded-full overflow-hidden">
+            <div className="h-2 bg-surface-alt rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full transition-all"
                 style={{ width: `${dailyPct}%` }}

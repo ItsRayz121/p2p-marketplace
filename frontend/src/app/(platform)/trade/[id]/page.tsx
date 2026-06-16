@@ -20,6 +20,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { CopyButton } from '@/components/ui/CopyButton'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
@@ -697,7 +698,20 @@ export default function TradePage() {
                     <div
                       key={step.key}
                       onClick={() => done && handleStepClick(step.key)}
-                      className={`flex gap-3 ${clickable ? 'cursor-pointer group' : ''}`}
+                      {...(clickable
+                        ? {
+                            role: 'button',
+                            tabIndex: 0,
+                            'aria-label': `View ${step.label}`,
+                            onKeyDown: (e: React.KeyboardEvent) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                handleStepClick(step.key)
+                              }
+                            },
+                          }
+                        : {})}
+                      className={`flex gap-3 rounded-lg ${clickable ? 'cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40' : ''}`}
                     >
                       {/* Spine column */}
                       <div className="flex flex-col items-center flex-shrink-0">
@@ -836,7 +850,10 @@ export default function TradePage() {
                         <span className="text-text-muted flex-shrink-0">
                           {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
                         </span>
-                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
+                        <span className="inline-flex items-start gap-1 min-w-0">
+                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
+                          <CopyButton text={trade.buyerDeliveryAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
+                        </span>
                       </div>
                     )}
                   </>
@@ -846,7 +863,10 @@ export default function TradePage() {
                       <span className="text-text-muted flex-shrink-0">
                         {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
                       </span>
-                      <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
+                      <span className="inline-flex items-start gap-1 min-w-0">
+                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
+                        <CopyButton text={trade.buyerWalletAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
+                      </span>
                     </div>
                   ) : (
                     <p className="text-xs text-text-muted">Delivery details not specified.</p>
@@ -857,15 +877,18 @@ export default function TradePage() {
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
                       <div className="flex flex-col items-end gap-1">
-                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
+                        <span className="inline-flex items-start gap-1 min-w-0">
+                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
+                          <CopyButton text={trade.sellerTxHash} size="sm" className="flex-shrink-0 -mt-0.5" />
+                        </span>
                         {trade.txVerificationStatus === 'verified' && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 bg-green-50 border border-green-200 rounded px-2 py-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-500/10 border border-green-500/30 rounded px-2 py-0.5">
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                             On-chain verified
                           </span>
                         )}
                         {trade.txVerificationStatus === 'pending' && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-700 dark:text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded px-2 py-0.5">
                             ⏳ Confirming on-chain
                           </span>
                         )}
@@ -875,7 +898,7 @@ export default function TradePage() {
                           </span>
                         )}
                         {trade.txVerificationStatus === 'not_found' && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 dark:text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded px-2 py-0.5">
                             ⚠ Tx not found — pending or invalid
                           </span>
                         )}
@@ -957,7 +980,7 @@ export default function TradePage() {
                 <>
                   <AutoReleaseCountdown updatedAt={trade.updatedAt} hoursWindow={AUTO_RELEASE_HOURS} />
                   {isAdminReview && (
-                    <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 space-y-1">
+                    <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
                       <p className="font-semibold">⏳ Pending admin verification</p>
                       {trade.network === 'Aptos' ? (
                         <p className="text-xs">Aptos transactions are verified manually by our team (automatic on-chain checks aren’t available for this network yet). This is normal — an admin will review the transaction shortly, after which you can release. You can always confirm the transfer yourself on an Aptos explorer in the meantime.</p>
@@ -967,13 +990,13 @@ export default function TradePage() {
                     </div>
                   )}
                   {isPending && (
-                    <div className="rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800 space-y-1">
+                    <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm text-orange-800 dark:text-orange-300 space-y-1">
                       <p className="font-semibold">⚠ Transaction not confirmed</p>
                       <p className="text-xs">The submitted transaction hash was not found or is still pending on-chain. The seller must resubmit a confirmed transaction hash. Do not release until you see the funds in your wallet.</p>
                     </div>
                   )}
                   {vs === 'verified' && (
-                    <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+                    <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-800 dark:text-green-300">
                       <p className="font-semibold">✓ On-chain verified</p>
                       <p className="text-xs">The transaction was independently verified on the blockchain. You may release once you have confirmed receipt.</p>
                     </div>
@@ -1050,7 +1073,10 @@ export default function TradePage() {
 
         {/* Right: Chat — display class is conditional so `flex` and `hidden`
             never coexist in the class list (which is ambiguous in Tailwind). */}
-        <div className={`bg-surface rounded-xl border border-border shadow-card flex-col ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`} style={{ minHeight: '400px', maxHeight: '600px' }}>
+        {/* Mobile: chat fills most of the dynamic viewport so it behaves like a
+            messaging screen and the send box stays reachable above the keyboard.
+            Desktop (lg): fixed 400–600px box inside the two-column layout. */}
+        <div className={`bg-surface rounded-xl border border-border shadow-card flex-col min-h-[60dvh] max-h-[75dvh] lg:min-h-[400px] lg:max-h-[600px] ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`}>
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-semibold text-text-primary">Chat with {counterparty}</h2>
           </div>

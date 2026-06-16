@@ -113,9 +113,20 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
-  /* Prevent iOS Safari auto-zoom on input focus */
+  /* Prevent iOS Safari auto-zoom on input focus.
+     The base rule below is a bare element selector (specificity 0,0,1), so any
+     `text-sm`/`text-xs` utility class (0,1,0) on an input silently overrides it
+     and re-introduces the <16px zoom trigger. To guarantee no zoom on phones we
+     additionally force 16px at <=640px with a higher-priority rule. Scoped to
+     small screens only, so desktop dense inputs keep their intended size. */
   input, select, textarea {
     font-size: 16px;
+  }
+
+  @media (max-width: 640px) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
   }
 
   /* Form controls default to themed surface + text so typed text and
