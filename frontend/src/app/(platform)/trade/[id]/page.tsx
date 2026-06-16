@@ -56,6 +56,16 @@ interface ChatMessage {
 const AUTO_RELEASE_HOURS = 2
 
 
+interface SellerPaymentAccount {
+  type: string
+  label: string
+  accountName: string
+  mobileNumber?: string
+  bankName?: string
+  ibanNumber?: string
+  accountNumber?: string
+}
+
 interface ExtendedTrade extends Trade {
   paymentProofUrl?: string
   txHash?: string
@@ -65,6 +75,10 @@ interface ExtendedTrade extends Trade {
   buyerDeliveryAddress?: string
   ratedByMe?: boolean
   txVerificationStatus?: string
+  /** Clean display label for the payment method (resolves stored PaymentMethod id). */
+  paymentMethodLabel?: string
+  /** Seller's receiving account, resolved server-side for trade participants. */
+  sellerPaymentAccount?: SellerPaymentAccount | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -193,7 +207,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Payment Method</p>
-          <p className="font-semibold text-text-primary">{trade.paymentMethod}</p>
+          <p className="font-semibold text-text-primary">{trade.paymentMethodLabel ?? trade.paymentMethod}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">{isUserBuyer ? 'Seller' : 'Buyer'}</p>
@@ -560,6 +574,8 @@ export default function TradePage() {
   if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={fetchTrade} />
 
   const currentStep = stepIndex(trade.status)
+  const pmLabel = trade.paymentMethodLabel ?? trade.paymentMethod
+  const sellerAccount = trade.sellerPaymentAccount
   const canCancel = isUserBuyer && trade.status === 'payment_pending'
   // crypto_sent included: buyer may need to dispute non-receipt or a tx stuck
   // in admin verification (matches backend disputeStatuses in trade.service.ts)
@@ -783,14 +799,34 @@ export default function TradePage() {
                   <span className="text-text-muted">Pay via</span>
                   <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
                     <EntityLogo
-                      type={PK_MOBILE_METHODS.includes(trade.paymentMethod) ? 'payment_method' : 'bank'}
-                      slug={trade.paymentMethod}
+                      type={PK_MOBILE_METHODS.includes(pmLabel) ? 'payment_method' : 'bank'}
+                      slug={pmLabel}
                       size="xs"
                       className="flex-shrink-0"
                     />
-                    {trade.paymentMethod}
+                    {pmLabel}
                   </span>
                 </div>
+
+                {/* Seller's receiving account — so the buyer knows exactly where
+                    to send PKR (previously only obtainable by asking in chat). */}
+                {sellerAccount && (
+                  <div className="pt-3 mt-1 border-t border-border space-y-2">
+                    <p className="text-xs font-semibold text-text-primary">
+                      {isUserBuyer ? 'Send your PKR payment to' : 'Your receiving account'}
+                    </p>
+                    <PayToRow label="Account name" value={sellerAccount.accountName} />
+                    {sellerAccount.mobileNumber && <PayToRow label="Mobile number" value={sellerAccount.mobileNumber} copy />}
+                    {sellerAccount.accountNumber && <PayToRow label="Account number" value={sellerAccount.accountNumber} copy />}
+                    {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
+                    {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
+                    {isUserBuyer && (
+                      <p className="text-xs text-text-muted leading-snug pt-1">
+                        Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof below.
+                      </p>
+                    )}
+                  </div>
+                )}
                 {trade.paymentProofUrl && (
                   <div className="pt-3 border-t border-border">
                     <p className="text-xs text-text-muted mb-2">Payment Proof</p>
@@ -1219,6 +1255,18 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between">
       <span className="text-text-muted">{label}</span>
       <span className="font-medium text-text-primary">{value}</span>
+    </div>
+  )
+}
+
+function PayToRow({ label, value, copy }: { label: string; value: string; copy?: boolean }) {
+  return (
+    <div className="flex justify-between items-start gap-2">
+      <span className="text-text-muted flex-shrink-0">{label}</span>
+      <span className="inline-flex items-start gap-1 min-w-0">
+        <span className="font-medium text-text-primary text-right break-all">{value}</span>
+        {copy && <CopyButton text={value} size="sm" className="flex-shrink-0 -mt-0.5" />}
+      </span>
     </div>
   )
 }

@@ -18,6 +18,56 @@ import {
 } from './blockchainVerification.service'
 import { logger } from '../lib/logger'
 
+// ─── Payment-method resolution ──────────────────────────────────────────────
+// A trade stores `paymentMethod` as the buyer's selection. For current trades
+// that is a PaymentMethod *id* (the buyer picks one of the seller's receiving
+// accounts attached to the ad); legacy trades may hold a plain label. We resolve
+// it to (a) a clean display label and (b) the seller's account details, so the
+// buyer can see exactly where to send PKR instead of asking in chat.
+
+const PM_LABELS: Record<string, string> = {
+  jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay',
+  nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
+}
+
+// Detects opaque CUIDs (PaymentMethod ids) so a raw id is never shown as a label.
+function isOpaquePaymentId(value: string): boolean {
+  const v = value.trim()
+  if (v.includes(' ')) return false
+  return /^[a-z][a-z0-9]{19,}$/.test(v)
+}
+
+async function resolveSellerPaymentAccount(paymentMethod: string, sellerId: string) {
+  const looksLikeId = isOpaquePaymentId(paymentMethod)
+  // Only query when the value looks like an id; a plain label can't be an id.
+  // Scope to the seller so a buyer can never resolve an unrelated account.
+  const pm = looksLikeId
+    ? await db.paymentMethod.findFirst({ where: { id: paymentMethod, userId: sellerId } })
+    : null
+
+  if (pm) {
+    const label = pm.type === 'bank_transfer'
+      ? (pm.bankName ?? 'Bank Transfer')
+      : (PM_LABELS[pm.type] ?? pm.type)
+    return {
+      label,
+      account: {
+        type: pm.type,
+        label,
+        accountName: pm.accountName,
+        ...(pm.mobileNumber ? { mobileNumber: pm.mobileNumber } : {}),
+        ...(pm.bankName ? { bankName: pm.bankName } : {}),
+        ...(pm.ibanNumber ? { ibanNumber: pm.ibanNumber } : {}),
+        ...(pm.accountNumber ? { accountNumber: pm.accountNumber } : {}),
+      },
+    }
+  }
+
+  // Unresolvable (legacy label, or the account was deleted): show the label as-is,
+  // but never leak a raw CUID. No account block renders in that case.
+  return { label: looksLikeId ? 'Seller payment account' : paymentMethod, account: null }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CreateTradeInput {
@@ -928,5 +978,15 @@ export async function getTradeById(tradeId: string, userId: string, role: string
     select: { id: true },
   })
 
-  return { ...trade, ratedByMe: !!ratedByMeRecord }
+  // Resolve the seller's receiving account so the buyer sees where to pay.
+  // Only participants reach this point (auth check above), so exposing the
+  // seller's account details to the counterparty is intended.
+  const resolvedPm = await resolveSellerPaymentAccount(trade.paymentMethod, trade.sellerId)
+
+  return {
+    ...trade,
+    ratedByMe: !!ratedByMeRecord,
+    paymentMethodLabel: resolvedPm.label,
+    sellerPaymentAccount: resolvedPm.account,
+  }
 }
