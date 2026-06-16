@@ -569,6 +569,8 @@ export default function KycPage() {
                 <label className="block text-sm font-medium text-text-primary mb-1">CNIC Number</label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={cnicNumber}
                   onChange={(e) => setCnicNumber(formatCnic(e.target.value))}
                   placeholder="XXXXX-XXXXXXX-X"
