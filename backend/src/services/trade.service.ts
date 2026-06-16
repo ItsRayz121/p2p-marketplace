@@ -37,6 +37,33 @@ function isOpaquePaymentId(value: string): boolean {
   return /^[a-z][a-z0-9]{19,}$/.test(v)
 }
 
+interface PmFields {
+  type: string
+  accountName: string
+  mobileNumber: string | null
+  bankName: string | null
+  ibanNumber: string | null
+  accountNumber: string | null
+}
+
+// Builds the immutable account object stored on the trade / returned to the room.
+export function buildPaymentAccountSnapshot(pm: PmFields) {
+  const label = pm.type === 'bank_transfer'
+    ? (pm.bankName ?? 'Bank Transfer')
+    : (PM_LABELS[pm.type] ?? pm.type)
+  return {
+    type: pm.type,
+    label,
+    accountName: pm.accountName,
+    ...(pm.mobileNumber ? { mobileNumber: pm.mobileNumber } : {}),
+    ...(pm.bankName ? { bankName: pm.bankName } : {}),
+    ...(pm.ibanNumber ? { ibanNumber: pm.ibanNumber } : {}),
+    ...(pm.accountNumber ? { accountNumber: pm.accountNumber } : {}),
+  }
+}
+
+// Read-time fallback for legacy trades created before sellerPaymentSnapshot
+// existed (or where the value is a plain label, not a PaymentMethod id).
 async function resolveSellerPaymentAccount(paymentMethod: string, sellerId: string) {
   const looksLikeId = isOpaquePaymentId(paymentMethod)
   // Only query when the value looks like an id; a plain label can't be an id.
@@ -46,21 +73,8 @@ async function resolveSellerPaymentAccount(paymentMethod: string, sellerId: stri
     : null
 
   if (pm) {
-    const label = pm.type === 'bank_transfer'
-      ? (pm.bankName ?? 'Bank Transfer')
-      : (PM_LABELS[pm.type] ?? pm.type)
-    return {
-      label,
-      account: {
-        type: pm.type,
-        label,
-        accountName: pm.accountName,
-        ...(pm.mobileNumber ? { mobileNumber: pm.mobileNumber } : {}),
-        ...(pm.bankName ? { bankName: pm.bankName } : {}),
-        ...(pm.ibanNumber ? { ibanNumber: pm.ibanNumber } : {}),
-        ...(pm.accountNumber ? { accountNumber: pm.accountNumber } : {}),
-      },
-    }
+    const account = buildPaymentAccountSnapshot(pm)
+    return { label: account.label, account }
   }
 
   // Unresolvable (legacy label, or the account was deleted): show the label as-is,
@@ -296,6 +310,19 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       },
     })
 
+    // Snapshot the seller's receiving account now, so the buyer's pay-to details
+    // are locked for the life of the trade (immutable dispute evidence) even if
+    // the seller later edits or deletes that payment method. data.paymentMethod is
+    // a PaymentMethod id for current trades; scope the lookup to the ad owner.
+    let sellerPaymentSnapshot: Prisma.InputJsonValue | undefined
+    if (isOpaquePaymentId(data.paymentMethod)) {
+      const pm = await tx.paymentMethod.findFirst({
+        where: { id: data.paymentMethod, userId: adRows.userId },
+        select: { type: true, accountName: true, mobileNumber: true, bankName: true, ibanNumber: true, accountNumber: true },
+      })
+      if (pm) sellerPaymentSnapshot = buildPaymentAccountSnapshot(pm)
+    }
+
     // Create the trade
     const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000)
     const orderRef = generateOrderRef('TRD')
@@ -312,6 +339,7 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
         price: adRows.price,
         fiatAmount,
         paymentMethod: data.paymentMethod,
+        ...(sellerPaymentSnapshot ? { sellerPaymentSnapshot } : {}),
         buyerWalletAddress: data.buyerWalletAddress,
         ...(data.buyerDeliveryMethod ? { buyerDeliveryMethod: data.buyerDeliveryMethod } : {}),
         ...(data.buyerDeliveryAddress ? { buyerDeliveryAddress: data.buyerDeliveryAddress } : {}),
@@ -978,15 +1006,26 @@ export async function getTradeById(tradeId: string, userId: string, role: string
     select: { id: true },
   })
 
-  // Resolve the seller's receiving account so the buyer sees where to pay.
-  // Only participants reach this point (auth check above), so exposing the
-  // seller's account details to the counterparty is intended.
-  const resolvedPm = await resolveSellerPaymentAccount(trade.paymentMethod, trade.sellerId)
+  // Seller's receiving account so the buyer sees where to pay. Prefer the
+  // immutable snapshot captured at creation; fall back to read-time resolution
+  // for legacy trades created before the snapshot column existed. Only trade
+  // participants reach this point (auth check above).
+  const snap = trade.sellerPaymentSnapshot as { label?: string; accountName?: string } | null
+  let paymentMethodLabel: string
+  let sellerPaymentAccount: unknown
+  if (snap && typeof snap === 'object' && typeof snap.accountName === 'string') {
+    sellerPaymentAccount = snap
+    paymentMethodLabel = snap.label ?? trade.paymentMethod
+  } else {
+    const resolvedPm = await resolveSellerPaymentAccount(trade.paymentMethod, trade.sellerId)
+    paymentMethodLabel = resolvedPm.label
+    sellerPaymentAccount = resolvedPm.account
+  }
 
   return {
     ...trade,
     ratedByMe: !!ratedByMeRecord,
-    paymentMethodLabel: resolvedPm.label,
-    sellerPaymentAccount: resolvedPm.account,
+    paymentMethodLabel,
+    sellerPaymentAccount,
   }
 }
