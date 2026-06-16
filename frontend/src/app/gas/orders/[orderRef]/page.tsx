@@ -182,7 +182,7 @@ function GasOrderTrackingPageInner() {
   if (accessDenied) return (
     <div className="min-h-screen bg-canvas flex items-center justify-center px-4">
       <div className="bg-surface shadow-card rounded-xl border border-border p-8 max-w-sm w-full text-center space-y-4">
-        <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto">
+        <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
           <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
           </svg>
@@ -247,17 +247,17 @@ function GasOrderTrackingPageInner() {
           <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-4">Order Status</h2>
 
           {order.status === 'expired' && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-700 dark:text-red-300">
               This order expired before payment was received. Please create a new order.
             </div>
           )}
           {order.status === 'failed' && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-700 dark:text-red-300">
               This order failed. Contact support if you already sent payment.
             </div>
           )}
           {order.status === 'refunded' && (
-            <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700">
+            <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-700 dark:text-amber-300">
               This order has been refunded.
             </div>
           )}
@@ -293,7 +293,7 @@ function GasOrderTrackingPageInner() {
                   </div>
                   <div className="pb-3 flex-1 min-w-0 pt-1">
                     <p className={`text-sm font-semibold ${
-                      done ? 'text-green-700'
+                      done ? 'text-green-700 dark:text-green-300'
                       : cur  ? 'text-primary'
                       : 'text-text-muted'
                     }`}>

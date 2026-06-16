@@ -36,9 +36,9 @@ function AwaitingRefundView() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 flex items-start gap-2.5">
+      <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2.5 flex items-start gap-2.5">
         <Spinner size="sm" />
-        <p className="text-xs text-amber-700 font-medium">
+        <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
           Delivery is taking a little longer than usual — the network may be briefly congested.
           We&apos;re still trying to deliver your gas automatically, so no action is needed yet.
         </p>
@@ -52,7 +52,7 @@ function AwaitingRefundView() {
           <Button className="w-full" variant="secondary" onClick={handleRequestRefund} disabled={requestingRefund}>
             {requestingRefund ? 'Requesting Refund…' : 'Request Refund'}
           </Button>
-          {refundReqError && <p className="text-xs text-red-600 text-center">{refundReqError}</p>}
+          {refundReqError && <p className="text-xs text-red-600 dark:text-red-400 text-center">{refundReqError}</p>}
         </div>
       ) : (
         <div className="rounded-lg bg-surface-alt px-3 py-3 text-center">
@@ -84,8 +84,8 @@ export function GasProcessingView() {
         <AwaitingRefundView />
       ) : isRefund ? (
         <>
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-            <p className="text-xs text-amber-700 font-medium">
+          <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+            <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
               {order.status === 'refund_pending'
                 ? "We couldn't deliver your gas, so your USDT is being sent back to the wallet you paid from. No action needed."
                 : 'Your USDT has been sent back to the wallet you paid from.'}
@@ -102,7 +102,7 @@ export function GasProcessingView() {
       )}
       {['failed', 'expired'].includes(order.status) && (
         <div className="text-center">
-          <p className="text-sm text-red-600 font-semibold mb-3">Order failed. Please try again.</p>
+          <p className="text-sm text-red-600 dark:text-red-400 font-semibold mb-3">Order failed. Please try again.</p>
           <Button onClick={resetFlow}>Try Again</Button>
         </div>
       )}

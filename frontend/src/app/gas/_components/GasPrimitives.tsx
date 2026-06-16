@@ -143,7 +143,7 @@ export function ProcessingTimeline({ status, isPkr }: { status: string; isPkr: b
                 : <div className="w-2 h-2 rounded-full bg-text-disabled" />
               }
             </div>
-            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600' : cur ? 'text-primary' : 'text-text-muted'}`}>{label}</p>
+            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600 dark:text-green-400' : cur ? 'text-primary' : 'text-text-muted'}`}>{label}</p>
             {cur && <Spinner size="sm" />}
           </div>
         )
@@ -177,7 +177,7 @@ export function RefundTimeline({ status }: { status: string }) {
                 : <div className="w-2 h-2 rounded-full bg-text-disabled" />
               }
             </div>
-            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600' : cur ? 'text-amber-600' : 'text-text-muted'}`}>{label}</p>
+            <p className={`text-sm font-semibold flex-1 ${done ? 'text-green-600 dark:text-green-400' : cur ? 'text-amber-600 dark:text-amber-400' : 'text-text-muted'}`}>{label}</p>
             {cur && status !== 'refunded' && <Spinner size="sm" />}
           </div>
         )

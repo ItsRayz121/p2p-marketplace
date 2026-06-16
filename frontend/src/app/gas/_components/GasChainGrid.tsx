@@ -39,7 +39,7 @@ export function GasChainGrid() {
       {!chainsLoading && !chainsError && chains.length === 0 && (
         <div className="text-center py-16 px-4">
           <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 rounded-xl bg-amber-50 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-xl bg-amber-500/10 flex items-center justify-center">
               <Fuel size={32} className="text-amber-500" />
             </div>
           </div>

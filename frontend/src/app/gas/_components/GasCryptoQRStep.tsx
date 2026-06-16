@@ -107,8 +107,8 @@ export function GasCryptoQRStep() {
       {order.status === 'payment_pending' && (
         <>
           {/* Countdown */}
-          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <div className="flex items-center gap-2 text-amber-700 text-xs font-semibold">
+          <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-xs font-semibold">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               Payment window
             </div>
@@ -118,9 +118,9 @@ export function GasCryptoQRStep() {
           {/* QR */}
           <div className="flex flex-col items-center gap-2 py-2">
             {qrFailed ? (
-              <div className="w-48 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
-                <p className="text-xs text-amber-700 font-semibold mb-1">QR code unavailable</p>
-                <p className="text-xs text-amber-600">Copy the address below to pay.</p>
+              <div className="w-48 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-center">
+                <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold mb-1">QR code unavailable</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">Copy the address below to pay.</p>
               </div>
             ) : (
               <div className="w-48 h-48 rounded-xl overflow-hidden border-4 border-surface shadow-lg">
@@ -176,24 +176,24 @@ export function GasCryptoQRStep() {
             </div>
           </div>
 
-          <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-start gap-2">
             <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            <p className="text-xs text-red-700 font-medium">
+            <p className="text-xs text-red-700 dark:text-red-300 font-medium">
               Send ONLY USDT on <strong>{order.paymentNetwork}</strong> network. Wrong network = permanent loss.
             </p>
           </div>
 
           {pollErrCount >= 3 && (
-            <p className="text-xs text-amber-600 text-center">
+            <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
               Connection issue. <button className="underline font-semibold" onClick={() => { setPollErrCount(0); void pollOrder() }}>Refresh</button>
             </p>
           )}
 
           {/* Payment sent / verify flow */}
           {verifySuccess ? (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
-              <p className="text-sm font-bold text-green-700 mb-0.5">Payment Submitted!</p>
-              <p className="text-xs text-green-600">{verifySuccess}</p>
+            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-center">
+              <p className="text-sm font-bold text-green-700 dark:text-green-300 mb-0.5">Payment Submitted!</p>
+              <p className="text-xs text-green-600 dark:text-green-400">{verifySuccess}</p>
             </div>
           ) : !paymentSent ? (
             <div className="space-y-2">
@@ -204,7 +204,7 @@ export function GasCryptoQRStep() {
               {!confirmCancel ? (
                 <button
                   onClick={openCancelConfirm}
-                  className="w-full text-xs text-text-muted hover:text-red-600 text-center py-1 transition-colors"
+                  className="w-full text-xs text-text-muted hover:text-red-600 dark:text-red-400 text-center py-1 transition-colors"
                 >
                   Cancel this order
                 </button>
@@ -216,8 +216,8 @@ export function GasCryptoQRStep() {
                   </p>
                   {cancelPreview && (
                     cancelPreview.cooldownLabel ? (
-                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                        <p className="text-xs text-amber-700">
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
                           You&apos;ve cancelled {cancelPreview.priorCancels} recent gas order{cancelPreview.priorCancels === 1 ? '' : 's'}. Cancelling again will
                           {' '}<strong>block new gas orders for {cancelPreview.cooldownLabel}</strong>.
                         </p>
@@ -228,7 +228,7 @@ export function GasCryptoQRStep() {
                       </div>
                     )
                   )}
-                  {cancelError && <p className="text-xs text-red-600">{cancelError}</p>}
+                  {cancelError && <p className="text-xs text-red-600 dark:text-red-400">{cancelError}</p>}
                   <div className="flex gap-2">
                     <button
                       onClick={() => { setConfirmCancel(false) }}
@@ -269,18 +269,18 @@ export function GasCryptoQRStep() {
             </div>
           ) : !verifyOpen ? (
             /* Detection window elapsed — offer manual tx-hash verification */
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <p className="text-sm font-semibold text-amber-800">Still detecting your payment</p>
+                <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Still detecting your payment</p>
               </div>
-              <p className="text-xs text-amber-700">
+              <p className="text-xs text-amber-700 dark:text-amber-300">
                 We haven&apos;t confirmed your payment automatically yet. If you&apos;ve already sent it, paste your transaction hash below and our team will verify it manually and release your gas.
               </p>
               <button onClick={() => setVerifyOpen(true)} className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-semibold transition-colors">
                 Enter Transaction Hash
               </button>
-              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-amber-600/70 hover:text-amber-700 text-center">
+              <button onClick={() => setPaymentSent(false)} className="w-full text-xs text-amber-600 dark:text-amber-400/70 hover:text-amber-700 dark:text-amber-300 text-center">
                 I haven&apos;t sent yet — go back
               </button>
             </div>
@@ -299,7 +299,7 @@ export function GasCryptoQRStep() {
 
       {order.status === 'payment_verified' && (
         <div className="text-center py-4">
-          <p className="text-sm font-bold text-green-700 mb-1">Payment Verified</p>
+          <p className="text-sm font-bold text-green-700 dark:text-green-300 mb-1">Payment Verified</p>
           <p className="text-xs text-text-muted">Your payment has been confirmed on-chain. Gas will be released shortly.</p>
         </div>
       )}
@@ -319,19 +319,19 @@ export function GasCryptoQRStep() {
             </div>
 
             {/* Delivery-delay notice — payment is safe; offer a self-serve refund once stuck. */}
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-2">
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <p className="text-sm font-semibold text-amber-800">Your payment is confirmed</p>
+                <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Your payment is confirmed</p>
               </div>
-              <p className="text-xs text-amber-700">
+              <p className="text-xs text-amber-700 dark:text-amber-300">
                 We&apos;re delivering your gas now. This occasionally takes a few minutes. Your USDT is safe — if we can&apos;t
                 deliver, it&apos;s refunded automatically to the wallet you paid from.
               </p>
               {refundEligible ? (
                 <div className="pt-1 space-y-2">
-                  <p className="text-xs text-amber-700">Taking longer than expected? You can request your refund now.</p>
-                  {refundReqError && <p className="text-xs text-red-600">{refundReqError}</p>}
+                  <p className="text-xs text-amber-700 dark:text-amber-300">Taking longer than expected? You can request your refund now.</p>
+                  {refundReqError && <p className="text-xs text-red-600 dark:text-red-400">{refundReqError}</p>}
                   <button
                     onClick={handleRequestRefund}
                     disabled={requestingRefund}
@@ -341,7 +341,7 @@ export function GasCryptoQRStep() {
                   </button>
                 </div>
               ) : (
-                <p className="text-xs text-amber-600/80 pt-1">
+                <p className="text-xs text-amber-600 dark:text-amber-400/80 pt-1">
                   If it isn&apos;t delivered shortly, a refund option will appear here.
                 </p>
               )}
@@ -352,21 +352,21 @@ export function GasCryptoQRStep() {
 
       {(order.status === 'expired' || order.status === 'failed') && (
         <div className="text-center py-4">
-          <p className="text-base font-bold text-red-600 mb-2">{order.status === 'expired' ? 'Order Expired' : 'Order Failed'}</p>
+          <p className="text-base font-bold text-red-600 dark:text-red-400 mb-2">{order.status === 'expired' ? 'Order Expired' : 'Order Failed'}</p>
           {order.status === 'expired' ? (
             <>
               <p className="text-sm text-text-muted mb-3">Payment not received in time.</p>
               {!verifyOpen && !verifySuccess ? (
                 <div className="mb-4 space-y-2">
                   <p className="text-xs text-text-muted">Already sent the payment? We can still verify it.</p>
-                  <button onClick={() => setVerifyOpen(true)} className="text-xs text-blue-600 underline underline-offset-2 hover:text-blue-800 font-semibold">
+                  <button onClick={() => setVerifyOpen(true)} className="text-xs text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-800 dark:text-blue-300 font-semibold">
                     Enter transaction hash to verify
                   </button>
                 </div>
               ) : verifySuccess ? (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center mb-4">
-                  <p className="text-sm font-bold text-green-700 mb-0.5">Payment Verified!</p>
-                  <p className="text-xs text-green-600">{verifySuccess}</p>
+                <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-center mb-4">
+                  <p className="text-sm font-bold text-green-700 dark:text-green-300 mb-0.5">Payment Verified!</p>
+                  <p className="text-xs text-green-600 dark:text-green-400">{verifySuccess}</p>
                 </div>
               ) : (
                 <div className="mb-4">
@@ -399,8 +399,8 @@ export function GasCryptoQRStep() {
           <p className="text-base font-bold text-text-primary mb-2">Order Cancelled</p>
           <p className="text-sm text-text-muted mb-3">This gas order was cancelled. No payment was taken.</p>
           {cancelResult?.cooldownLabel && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4 text-left">
-              <p className="text-xs text-amber-700">
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 mb-4 text-left">
+              <p className="text-xs text-amber-700 dark:text-amber-300">
                 Because of repeated cancellations, new gas orders are paused for <strong>{cancelResult.cooldownLabel}</strong>. Thanks for understanding.
               </p>
             </div>
@@ -411,9 +411,9 @@ export function GasCryptoQRStep() {
 
       {(order.status === 'refund_pending' || order.status === 'refunded') && (
         <div className="space-y-4">
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-            <p className="text-sm font-bold text-amber-700 mb-0.5">{order.status === 'refund_pending' ? 'Refunding Your Payment' : 'USDT Refunded'}</p>
-            <p className="text-xs text-amber-600">
+          <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-300 mb-0.5">{order.status === 'refund_pending' ? 'Refunding Your Payment' : 'USDT Refunded'}</p>
+            <p className="text-xs text-amber-600 dark:text-amber-400">
               {order.status === 'refund_pending'
                 ? "We couldn't deliver your gas, so your USDT is being sent back to the wallet you paid from. No action needed."
                 : 'Your USDT has been sent back to the wallet you paid from.'}
@@ -449,20 +449,20 @@ function VerifyHashForm({
   buttonLabel?: string
 }) {
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+    <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-blue-800">{label}</p>
-        <button onClick={onClose} className="text-blue-400 hover:text-blue-600 text-lg leading-none" aria-label="Close">&times;</button>
+        <p className="text-xs font-bold text-blue-800 dark:text-blue-300">{label}</p>
+        <button onClick={onClose} className="text-blue-400 hover:text-blue-600 dark:text-blue-400 text-lg leading-none" aria-label="Close">&times;</button>
       </div>
-      <p className="text-xs text-blue-700">{hint}</p>
+      <p className="text-xs text-blue-700 dark:text-blue-300">{hint}</p>
       <input
         type="text"
         value={verifyTxHash}
         onChange={e => setVerifyTxHash(e.target.value)}
         placeholder="0x... transaction hash"
-        className="w-full text-xs font-mono bg-surface border border-blue-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-text-disabled"
+        className="w-full text-xs font-mono bg-surface border border-blue-500/30 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-text-disabled"
       />
-      {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
+      {verifyError && <p className="text-xs text-red-600 dark:text-red-400">{verifyError}</p>}
       <Button onClick={handleVerifyPayment} disabled={verifying || !verifyTxHash.trim()} className="w-full text-sm">
         {verifying ? 'Verifying…' : buttonLabel}
       </Button>

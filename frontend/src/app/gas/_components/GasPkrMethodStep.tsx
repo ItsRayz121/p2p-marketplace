@@ -80,16 +80,16 @@ export function GasPkrMethodStep() {
             )}
             <div className="flex justify-between pt-2 border-t border-border">
               <span className="font-bold text-text-primary">Total Payable in PKR</span>
-              <span className="font-bold text-green-700 text-base">PKR {computedPkr.toFixed(0)}</span>
+              <span className="font-bold text-green-700 dark:text-green-300 text-base">PKR {computedPkr.toFixed(0)}</span>
             </div>
           </div>
         </div>
       )}
 
-      {pkrError && <p className="text-sm text-red-500 bg-red-50 rounded-xl px-3 py-2">{pkrError}</p>}
+      {pkrError && <p className="text-sm text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{pkrError}</p>}
 
       {!user && selectedPkrMethod && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-300">
           You must be logged in to pay with PKR.{' '}
           <Link href="/login" className="font-bold underline">Log in →</Link>
         </div>

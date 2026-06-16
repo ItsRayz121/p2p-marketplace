@@ -46,7 +46,7 @@ export function GasTokenStep() {
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-bold text-text-primary">{t.name}</p>
                     {inactive && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-border text-text-muted">Soon</span>}
-                    {!inactive && t.rateStale && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700">Rate stale</span>}
+                    {!inactive && t.rateStale && <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-yellow-500/15 text-yellow-700 dark:text-yellow-300">Rate stale</span>}
                   </div>
                   <p className="text-xs text-text-muted">{t.symbol} · {selectedChain.networkLabel}</p>
                 </div>
@@ -55,7 +55,7 @@ export function GasTokenStep() {
                     <p className="text-sm text-text-muted">Coming soon</p>
                   ) : (
                     <>
-                      <p className={`text-sm font-bold ${t.rateStale ? 'text-yellow-600' : 'text-text-primary'}`}>{displayPrice}</p>
+                      <p className={`text-sm font-bold ${t.rateStale ? 'text-yellow-600 dark:text-yellow-400' : 'text-text-primary'}`}>{displayPrice}</p>
                       <p className="text-xs text-text-muted">{displaySub || `per ${t.symbol}`}</p>
                     </>
                   )}
