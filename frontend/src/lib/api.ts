@@ -2326,6 +2326,58 @@ export const adminApi = {
     apiRequest<void>('/admin/notifications/read-all' + (category ? `?category=${category}` : ''), { method: 'PATCH' }),
   deleteOldAdminNotifs: () =>
     apiRequest<{ deleted: number }>('/admin/notifications/old', { method: 'DELETE' }),
+
+  // ── Announcements (broadcast) ──
+  getAnnouncementAudience: () =>
+    apiRequest<{ bell: number; telegram: number }>('/admin/announcements/audience'),
+  getAnnouncements: (params?: { page?: number; limit?: number }) =>
+    apiRequest<{
+      announcements: Announcement[]
+      pagination: { page: number; limit: number; total: number; pages: number }
+    }>('/admin/announcements' + buildQs(params as Record<string, string | number | undefined>)),
+  createAnnouncement: (data: { title: string; body: string; linkUrl?: string; channels: AnnouncementChannel[] }) =>
+    apiRequest<Announcement>('/admin/announcements', { method: 'POST', body: JSON.stringify(data) }),
+  deactivateAnnouncement: (id: string) =>
+    apiRequest<void>(`/admin/announcements/${id}/deactivate`, { method: 'PATCH' }),
+}
+
+export type AnnouncementChannel = 'web' | 'bell' | 'telegram'
+
+export interface Announcement {
+  id: string
+  title: string
+  body: string
+  linkUrl: string | null
+  channels: AnnouncementChannel[]
+  isActive: boolean
+  bellRecipients: number
+  telegramSent: number
+  telegramFailed: number
+  createdAt: string
+  sentByAdmin?: { username: string } | null
+}
+
+export interface AnnouncementBanner {
+  id: string
+  title: string
+  body: string
+  linkUrl: string | null
+  createdAt: string
+}
+
+// User-facing announcement + notification-preference calls
+export const announcementApi = {
+  getActiveBanners: () =>
+    apiRequest<{ banners: AnnouncementBanner[] }>('/announcements/active'),
+  dismissBanner: (id: string) =>
+    apiRequest<void>(`/announcements/${id}/dismiss`, { method: 'POST' }),
+  getPreferences: () =>
+    apiRequest<{ announcementsEnabled: boolean; marketingEmailsEnabled: boolean }>('/me/notification-preferences'),
+  setAnnouncementsEnabled: (announcementsEnabled: boolean) =>
+    apiRequest<{ announcementsEnabled: boolean }>('/me/notification-preferences', {
+      method: 'PATCH',
+      body: JSON.stringify({ announcementsEnabled }),
+    }),
 }
 
 // ─── Community Token Market ───────────────────────────────────────────────────

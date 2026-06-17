@@ -8,6 +8,7 @@ import { marketplaceApi } from '@/lib/api'
 import { Web3Provider } from '@/lib/web3/Web3Provider'
 import { useAuthStore } from '@/store/auth.store'
 import { PushOptInBanner } from '@/components/ui/PushOptInBanner'
+import { AnnouncementBanner } from '@/components/ui/AnnouncementBanner'
 
 interface SiteConfig {
   site_notice?: string
@@ -106,6 +107,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             </button>
           </div>
         )}
+
+        {user && <AnnouncementBanner />}
 
         {/* Hold page content until auth hydration finishes to avoid unauthenticated
             API calls racing with the refresh cycle in Providers.tsx */}

@@ -379,6 +379,11 @@ model User {
   telegramUsername  String?
   telegramPhotoUrl  String?
   telegramAuthAt    DateTime?
+  // Set when the bot gets a 403 from this user (blocked the bot, or never
+  // /start-ed it so we "can't initiate conversation"). While non-null we send
+  // them NO bot messages — continuing to DM blocked users is the #1 Telegram
+  // ban trigger. Cleared automatically when they next /start the bot.
+  telegramBlockedAt DateTime?
 
   role          UserRole  @default(user)
   intendedRole  String    @default("user")
@@ -426,6 +431,10 @@ model User {
   completedSellTrades    Int     @default(0)
   firstTradeBonusPaid    Boolean @default(false)
   marketingEmailsEnabled Boolean @default(true)
+  // Broadcast announcements (admin-curated product/feature/gas updates). Default
+  // ON; users may mute in Settings. Independent of transactional notifications —
+  // muting this NEVER suppresses trade/money/security alerts.
+  announcementsEnabled   Boolean @default(true)
 
   socialLinks            Json    @default("{}")
   socialLinksPublic      Boolean @default(false)
@@ -482,6 +491,8 @@ model User {
   favorites              UserFavorite[]         @relation("FavoritingUser")
   favoritedBy            UserFavorite[]         @relation("FavoritedTrader")
   supportConversations   SupportConversation[]
+  announcementsSent      Announcement[]          @relation("AnnouncementsSent")
+  announcementDismissals AnnouncementDismissal[]
 
   @@index([email])
   @@index([username])
@@ -1006,6 +1017,49 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, isRead])
+}
+
+// ── BROADCAST ANNOUNCEMENTS ────────────────────────────────────────────────
+// Admin-composed announcements fanned out to all users across up to three
+// channels: a dismissible website banner ("web"), the in-app bell ("bell"),
+// and the Telegram bot ("telegram"). Deliberately admin-triggered — NOT an
+// automatic per-event firehose — so it stays a low-frequency, high-signal lane.
+model Announcement {
+  id             String   @id @default(cuid())
+  title          String
+  body           String
+  // Optional call-to-action link (internal path like /gas, or absolute URL).
+  linkUrl        String?
+  // Subset of: "web" | "bell" | "telegram" — chosen per announcement by admin.
+  channels       String[]
+  // Controls the website banner only. Admin can retire a banner without
+  // affecting bell/telegram copies already delivered.
+  isActive       Boolean  @default(true)
+  sentByAdminId  String?
+  sentByAdmin    User?    @relation("AnnouncementsSent", fields: [sentByAdminId], references: [id], onDelete: SetNull)
+  // Delivery telemetry, stamped by the broadcast job.
+  bellRecipients Int      @default(0)
+  telegramSent   Int      @default(0)
+  telegramFailed Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  dismissals     AnnouncementDismissal[]
+
+  @@index([isActive, createdAt])
+}
+
+// Per-user dismissal of the website banner. Bell/Telegram copies are not
+// "dismissed" here — this only hides the sticky banner for that user.
+model AnnouncementDismissal {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([announcementId, userId])
+  @@index([userId])
 }
 
 // ── LIVE SUPPORT CHAT ──────────────────────────────────────────────────────

@@ -42,6 +42,7 @@ export const QUEUE_NAMES = {
   GAS_HOT_WALLET_DEPOSIT_POLL:      'gas-hot-wallet-deposit-poll',
   WITHDRAWAL_CONFIRMATION_WATCHER:  'withdrawal-confirmation-watcher',
   MODERATION_EXPIRY:                'moderation-expiry',
+  ANNOUNCEMENT_BROADCAST:           'announcement-broadcast',
 } as const
 
 export const queues = {
@@ -121,5 +122,11 @@ export const queues = {
   moderationExpiry: new Queue(QUEUE_NAMES.MODERATION_EXPIRY, {
     connection,
     defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
+  }),
+  // Broadcast fan-out (bell + throttled Telegram). attempts:1 — a partial resend
+  // would double-DM users, so we never auto-retry; failures are logged + alerted.
+  announcementBroadcast: new Queue(QUEUE_NAMES.ANNOUNCEMENT_BROADCAST, {
+    connection,
+    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
 }

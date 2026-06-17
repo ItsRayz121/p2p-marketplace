@@ -22,9 +22,17 @@ export default function MiniAppBridge() {
     void loadTelegramSdk().then((wa) => { try { wa?.ready?.(); wa?.expand?.() } catch { /* noop */ } })
   }, [])
 
-  // Forward to the dashboard as soon as Providers has a session.
+  // Forward as soon as Providers has a session. A `?path=` query (set by the
+  // bot's notification "Open" button) deep-links to the relevant screen; we
+  // only honour internal absolute paths and otherwise land on the dashboard.
   useEffect(() => {
-    if (user) router.replace('/dashboard')
+    if (!user) return
+    let dest = '/dashboard'
+    try {
+      const p = new URLSearchParams(window.location.search).get('path')
+      if (p && p.startsWith('/') && !p.startsWith('//')) dest = p
+    } catch { /* ignore malformed query */ }
+    router.replace(dest)
   }, [user, router])
 
   // Safety net: if bootstrap is still pending after ~20s, surface the error UI.

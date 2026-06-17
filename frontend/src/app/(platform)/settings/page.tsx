@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
+import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { Lock, Camera, Mail, Send, Check } from 'lucide-react'
 import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
@@ -366,6 +367,19 @@ function SecurityTab() {
         <h3 className="text-base font-semibold text-text-primary">Push Notifications</h3>
         <p className="text-sm text-text-muted">Get instant alerts for trade updates and payment events.</p>
         <PushToggle />
+      </div>
+
+      {/* Announcements & updates */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-text-primary">Announcements &amp; updates</h3>
+            <p className="text-sm text-text-muted">
+              Product news, new features and gas-fee updates. Turning this off never affects your trade, payment or security alerts.
+            </p>
+          </div>
+          <AnnouncementsToggle />
+        </div>
       </div>
     </div>
   )

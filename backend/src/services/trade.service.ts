@@ -807,11 +807,24 @@ export async function sendMessage(
     },
   })
 
-  // Notify the other party so their SSE feed fires immediately
+  // Notify the other party. The in-app bell always updates live (SSE), but we
+  // COALESCE the device buzz: the first message in a trade buzzes their phone,
+  // then we go quiet for 5 minutes so a rapid back-and-forth negotiation can't
+  // fire 20+ push/Telegram alerts. A fresh buzz resumes once the window lapses.
   const recipientId = trade.buyerId === senderId ? trade.sellerId : trade.buyerId
   const senderLabel = sender?.username ?? 'Someone'
   const preview = content.length > 60 ? content.slice(0, 57) + '…' : content
-  notify(recipientId, 'trade', 'New Message', `${senderLabel}: ${preview}`, { tradeId }, tradeId)
+
+  // SET NX EX = atomically "claim" the buzz slot; succeeds only if no key exists.
+  // null reply ⇒ a buzz already fired within the window ⇒ deliver silently.
+  const buzzKey = `notif:chatbuzz:${recipientId}:${tradeId}`
+  const claimed = await redis.set(buzzKey, '1', 'EX', 300, 'NX').catch(() => 'OK')
+  const silent = claimed === null
+
+  // Chat messages are NOT important enough for a Telegram DM (too frequent →
+  // raises block/report rates). Web push + in-app bell only; telegram: false
+  // force-excludes them even though they share type 'trade'.
+  notify(recipientId, 'trade', 'New Message', `${senderLabel}: ${preview}`, { tradeId }, tradeId, undefined, { silent, telegram: false })
 
   return msg
 }

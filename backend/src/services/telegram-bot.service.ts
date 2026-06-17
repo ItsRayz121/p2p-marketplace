@@ -14,6 +14,7 @@ import { logger } from '../lib/logger'
 import { db } from '../lib/prisma'
 import { parseReferralStartParam } from '../lib/telegram'
 import { linkTelegramViaToken } from './accountLink.service'
+import { telegramRequest } from '../lib/telegram.client'
 
 const API_BASE = 'https://api.telegram.org'
 
@@ -34,22 +35,14 @@ interface TgUpdate {
   message?: TgMessage
 }
 
+// Bot chat replies (welcome / help / link outcome). Routed through the SAME
+// global gateway as notifications so replies count against the shared 25/sec
+// budget and never push us toward the ceiling — even if the webhook is flooded.
+// Reply-driven and single-shot: on throttle / 429 / block we simply drop the
+// reply (never retry), because a missed reply is harmless next to a ban.
 async function callTelegram(method: string, body: Record<string, unknown>): Promise<void> {
-  const token = env.TELEGRAM_BOT_TOKEN
-  if (!token) return
-  try {
-    const res = await fetch(`${API_BASE}/bot${token}/${method}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      logger.warn({ method, status: res.status, text }, 'Telegram API call failed')
-    }
-  } catch (err) {
-    logger.warn({ err, method }, 'Telegram API call threw')
-  }
+  if (!env.TELEGRAM_BOT_TOKEN) return
+  await telegramRequest(method, body)
 }
 
 function miniAppUrl(): string {
@@ -151,6 +144,14 @@ export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
   const fromId = msg.from.id
   const chatId = msg.chat.id
 
+  // Any inbound message proves the bot CAN reach this user — clear a prior
+  // 403 block flag so they become reachable for notifications again. (Fixes the
+  // case where a Mini-App user who never /start-ed got flagged on first send,
+  // then later starts the bot.) Fire-and-forget; no-ops if no account yet.
+  db.user
+    .updateMany({ where: { telegramId: BigInt(fromId), telegramBlockedAt: { not: null } }, data: { telegramBlockedAt: null } })
+    .catch(() => {})
+
   if (text.startsWith('/start')) {
     // "/start ref_ABC123" → payload after the first space
     const payload = text.split(/\s+/)[1]
@@ -223,6 +224,17 @@ export async function registerTelegramWebhook(): Promise<void> {
   if (!env.TELEGRAM_WEBHOOK_URL) {
     logger.warn('TELEGRAM_BOT_TOKEN set but TELEGRAM_WEBHOOK_URL unset — webhook NOT registered')
     return
+  }
+  // The secret token is what stops a third party POSTing forged updates to our
+  // public webhook (which could make the bot fire replies and rack up failed
+  // sends → ban risk). In PRODUCTION we refuse to register the webhook without
+  // it — the bot stays safely inert until configured, rather than spoofable.
+  if (!env.TELEGRAM_WEBHOOK_SECRET) {
+    if (env.NODE_ENV === 'production') {
+      logger.error('TELEGRAM_WEBHOOK_SECRET is NOT set — refusing to register the Telegram webhook in production (spoofing risk). Set the secret to enable the bot.')
+      return
+    }
+    logger.warn('TELEGRAM_WEBHOOK_SECRET is NOT set — webhook is unauthenticated (dev only). Set it before production.')
   }
   const webhookUrl = `${env.TELEGRAM_WEBHOOK_URL.replace(/\/$/, '')}/api/v1/telegram/webhook`
   await callTelegram('setWebhook', {

@@ -82,7 +82,14 @@ export async function telegramRoutes(app: FastifyInstance) {
     { config: { rateLimit: { max: 600, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const secret = env.TELEGRAM_WEBHOOK_SECRET
-      if (secret) {
+      if (!secret) {
+        // No secret configured ⇒ the endpoint can't tell real Telegram updates
+        // from forged ones. In production we process NOTHING (acting on a spoofed
+        // update could make the bot send messages → ban risk). Safe over sorry.
+        if (env.NODE_ENV === 'production') {
+          return reply.status(503).send({ success: false, error: 'WEBHOOK_NOT_SECURED' })
+        }
+      } else {
         const provided = req.headers['x-telegram-bot-api-secret-token']
         if (provided !== secret) {
           return reply.status(401).send({ success: false, error: 'UNAUTHORIZED' })

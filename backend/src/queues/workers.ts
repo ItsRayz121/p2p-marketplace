@@ -23,6 +23,7 @@ import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
 import { runModerationExpiry } from '../jobs/moderationExpiry.job'
+import { runAnnouncementBroadcast } from '../services/announcement.service'
 import { env } from '../lib/env'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -272,6 +273,18 @@ export function startWorkers() {
   createWorker(QUEUE_NAMES.WITHDRAWAL_CONFIRMATION_WATCHER, async () => {
     await runWithdrawalConfirmationWatcher()
   }, { max: 1, duration: 60_000 })
+
+  // Announcement broadcast — one job per announcement; concurrency 1 so two
+  // broadcasts never contend, and the job self-throttles Telegram internally.
+  createWorker(
+    QUEUE_NAMES.ANNOUNCEMENT_BROADCAST,
+    async (job) => {
+      const announcementId = (job.data as { announcementId?: string }).announcementId
+      if (!announcementId) throw new Error('announcementId missing in job data')
+      await runAnnouncementBroadcast(announcementId)
+    },
+    { max: 1, duration: 1000 },
+  )
 
   logger.info('BullMQ workers ready')
 }
