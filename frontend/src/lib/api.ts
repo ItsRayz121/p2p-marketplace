@@ -1736,7 +1736,7 @@ export const adminApi = {
 
   // KYC
   getKycQueue: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ submissions: unknown[]; total: number }>('/admin/kyc/queue' + buildQs(params)),
+    apiRequest<{ submissions: unknown[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/kyc/queue' + buildQs(params)),
   getKycSubmission: (id: string) =>
     apiRequest<unknown>(`/admin/kyc/${id}`),
   approveKyc: (id: string, data: { notes?: string }) =>

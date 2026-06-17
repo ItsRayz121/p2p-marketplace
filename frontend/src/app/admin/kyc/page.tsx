@@ -14,26 +14,37 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Input } from '@/components/ui/Input'
 
+type KycStatus = 'pending' | 'approved' | 'rejected'
+
 interface KycSubmission {
   id: string
   userId: string
   user?: { email: string; username: string }
-  level: 'basic' | 'enhanced'
-  status: 'pending' | 'approved' | 'rejected'
+  tier: 'basic' | 'enhanced'
+  status: KycStatus
   cnicNumberHash?: string
   frontUrl?: string
   backUrl?: string
   selfieUrl?: string
   videoUrl?: string | null
   socialLinks?: Array<{ platform: string; url: string }>
+  rejectionReason?: string | null
   createdAt: string
   reviewedAt?: string
 }
 
 interface KycQueueResponse {
   submissions: KycSubmission[]
-  total: number
-  page: number
+  pagination: { total: number; page: number; limit: number; pages: number }
+}
+
+const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected'] as const
+type StatusFilter = (typeof STATUS_FILTERS)[number]
+
+const STATUS_BADGE: Record<KycStatus, 'gold' | 'success' | 'danger'> = {
+  pending: 'gold',
+  approved: 'success',
+  rejected: 'danger',
 }
 
 function daysAgo(date: string) {
@@ -48,6 +59,7 @@ export default function KycQueuePage() {
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [tierFilter, setTierFilter] = useState<'all' | 'basic' | 'enhanced'>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [search, setSearch] = useState('')
 
   const [selected, setSelected] = useState<KycSubmission | null>(null)
@@ -63,19 +75,19 @@ export default function KycQueuePage() {
 
   const fetchQueue = useCallback(async () => {
     try {
-      const params: Record<string, string | number> = { status: 'pending', page, limit }
-      if (tierFilter !== 'all') params.level = tierFilter
+      const params: Record<string, string | number> = { status: statusFilter, page, limit }
+      if (tierFilter !== 'all') params.tier = tierFilter
       if (search) params.search = search
       const data = await adminApi.getKycQueue(params) as KycQueueResponse
       setSubmissions(data.submissions ?? [])
-      setTotal(data.total ?? 0)
+      setTotal(data.pagination?.total ?? 0)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load KYC queue')
     } finally {
       setLoading(false)
     }
-  }, [page, tierFilter, search])
+  }, [page, tierFilter, statusFilter, search])
 
   usePolling(fetchQueue, 30_000)
 
@@ -129,11 +141,30 @@ export default function KycQueuePage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">KYC Queue</h1>
-          <p className="text-text-muted text-sm mt-0.5">{total} pending submissions</p>
+          <p className="text-text-muted text-sm mt-0.5">
+            {total} {statusFilter === 'all' ? '' : `${statusFilter} `}submission{total === 1 ? '' : 's'}
+          </p>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Status filter */}
+      <div className="flex flex-wrap gap-2">
+        {STATUS_FILTERS.map((st) => (
+          <button
+            key={st}
+            onClick={() => { setStatusFilter(st); setPage(1) }}
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+              statusFilter === st
+                ? 'bg-primary text-white border-primary'
+                : 'bg-surface text-text-secondary border-border hover:bg-surface'
+            }`}
+          >
+            {st.charAt(0).toUpperCase() + st.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Search + tier filter */}
       <div className="flex flex-wrap gap-3 bg-surface shadow-card p-4 rounded-xl border border-border">
         <div className="flex-1 min-w-48">
           <Input
@@ -160,7 +191,11 @@ export default function KycQueuePage() {
       </div>
 
       {submissions.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="No pending KYC submissions" description="All submissions have been reviewed." />
+        <EmptyState
+          icon={ShieldCheck}
+          title={statusFilter === 'all' ? 'No KYC submissions' : `No ${statusFilter} KYC submissions`}
+          description={statusFilter === 'pending' ? 'All submissions have been reviewed.' : 'Nothing matches the current filters.'}
+        />
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
@@ -169,6 +204,7 @@ export default function KycQueuePage() {
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Tier</th>
+                  <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Submitted</th>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Waiting</th>
                   <th className="px-4 py-3" />
@@ -184,21 +220,30 @@ export default function KycQueuePage() {
                       <p className="text-text-muted text-xs">{sub.user?.email}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={sub.level === 'enhanced' ? 'gold' : 'default'} size="sm">
-                        {sub.level}
+                      <Badge variant={sub.tier === 'enhanced' ? 'gold' : 'default'} size="sm">
+                        {sub.tier}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={STATUS_BADGE[sub.status]} size="sm">
+                        {sub.status}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-text-secondary">
                       {fmtDate(sub.createdAt)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-sm font-medium ${daysAgo(sub.createdAt) > 3 ? 'text-danger' : 'text-text-secondary'}`}>
-                        {daysAgo(sub.createdAt)}d
-                      </span>
+                      {sub.status === 'pending' ? (
+                        <span className={`text-sm font-medium ${daysAgo(sub.createdAt) > 3 ? 'text-danger' : 'text-text-secondary'}`}>
+                          {daysAgo(sub.createdAt)}d
+                        </span>
+                      ) : (
+                        <span className="text-sm text-text-muted">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => openReview(sub)}>
-                        Review
+                        {sub.status === 'pending' ? 'Review' : 'View'}
                       </Button>
                     </td>
                   </tr>
@@ -227,7 +272,7 @@ export default function KycQueuePage() {
         title="KYC Review"
         size="lg"
         footer={
-          selected && (
+          selected && selected.status === 'pending' && (
             <div className="flex gap-3">
               <Button
                 variant="danger"
@@ -259,7 +304,11 @@ export default function KycQueuePage() {
                 </div>
                 <div>
                   <p className="text-text-muted">Tier</p>
-                  <Badge variant={selected.level === 'enhanced' ? 'gold' : 'default'}>{selected.level}</Badge>
+                  <Badge variant={selected.tier === 'enhanced' ? 'gold' : 'default'}>{selected.tier}</Badge>
+                </div>
+                <div>
+                  <p className="text-text-muted">Status</p>
+                  <Badge variant={STATUS_BADGE[selected.status]}>{selected.status}</Badge>
                 </div>
                 <div>
                   <p className="text-text-muted">Submitted</p>
@@ -328,33 +377,52 @@ export default function KycQueuePage() {
                 )}
               </div>
 
+              {/* Already-reviewed submissions are read-only */}
+              {selected.status !== 'pending' && (
+                <div className="px-3 py-2 bg-surface border border-border rounded-lg text-sm space-y-1">
+                  <p className="text-text-secondary">
+                    This submission was <span className="font-medium text-text-primary">{selected.status}</span>
+                    {selected.reviewedAt ? ` on ${fmtDateTime(selected.reviewedAt)}` : ''}.
+                  </p>
+                  {selected.status === 'rejected' && selected.rejectionReason && (
+                    <p className="text-text-secondary">
+                      <span className="text-text-muted">Reason:</span> {selected.rejectionReason}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Notes for approval */}
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1.5">
-                  Approval Notes <span className="text-text-muted font-normal">(optional)</span>
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  placeholder="Add notes for the user..."
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-              </div>
+              {selected.status === 'pending' && (
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">
+                    Approval Notes <span className="text-text-muted font-normal">(optional)</span>
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={2}
+                    placeholder="Add notes for the user..."
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  />
+                </div>
+              )}
 
               {/* Reject reason */}
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1.5">
-                  Rejection Reason <span className="text-text-muted font-normal">(required if rejecting)</span>
-                </label>
-                <textarea
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  rows={2}
-                  placeholder="Explain why the submission is being rejected..."
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-              </div>
+              {selected.status === 'pending' && (
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-1.5">
+                    Rejection Reason <span className="text-text-muted font-normal">(required if rejecting)</span>
+                  </label>
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    rows={2}
+                    placeholder="Explain why the submission is being rejected..."
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  />
+                </div>
+              )}
 
               {actionError && (
                 <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">

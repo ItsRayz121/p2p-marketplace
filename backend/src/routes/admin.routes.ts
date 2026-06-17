@@ -1175,17 +1175,47 @@ export async function adminRoutes(app: FastifyInstance) {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
 
+    // Filters — all optional. Omitting `status` (or 'all') returns every
+    // submission regardless of review state so nothing is ever hidden.
+    const where: Prisma.KycSubmissionWhereInput = {}
+
+    const status = query.status
+    if (status && status !== 'all' && ['pending', 'approved', 'rejected'].includes(status)) {
+      where.status = status as Prisma.EnumKycStatusFilter
+    }
+
+    // The frontend tier tabs send `level`; accept `tier` too for robustness.
+    const tier = query.tier || query.level
+    if (tier && tier !== 'all' && ['basic', 'enhanced'].includes(tier)) {
+      where.tier = tier as Prisma.EnumKycSubmissionTierFilter
+    }
+
+    const s = query.search?.trim()
+    if (s) {
+      where.user = {
+        OR: [
+          { email: { contains: s, mode: 'insensitive' } },
+          { username: { contains: s, mode: 'insensitive' } },
+        ],
+      }
+    }
+
+    // Pending = work queue → oldest first (longest waiting). Otherwise show
+    // the most recent submissions first.
+    const orderBy: Prisma.KycSubmissionOrderByWithRelationInput =
+      where.status === 'pending' ? { createdAt: 'asc' } : { createdAt: 'desc' }
+
     const [submissions, total] = await Promise.all([
       db.kycSubmission.findMany({
-        where: { status: 'pending' },
-        orderBy: { createdAt: 'asc' },
+        where,
+        orderBy,
         skip,
         take: limit,
         include: {
           user: { select: { id: true, email: true, username: true, fullName: true } },
         },
       }),
-      db.kycSubmission.count({ where: { status: 'pending' } }),
+      db.kycSubmission.count({ where }),
     ])
 
     // KYC documents are stored as authenticated Cloudinary assets — sign the
