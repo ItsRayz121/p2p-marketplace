@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { Errors } from '../lib/errors'
 import { queues } from '../queues/definitions'
 import {
@@ -13,6 +14,22 @@ import {
 } from '../services/announcement.service'
 
 const adminOrSuper = requireRole('admin', 'super_admin')
+
+// Anti-spam guardrail: minimum gap between Telegram BROADCASTS. Frequent bulk
+// DMs — even to opted-in users — raise block/report rates, which is Telegram's
+// real spam signal and the path to a bot ban. Website/bell-only announcements
+// carry no DM and are NOT cooled down. 4h ⇒ at most a handful of DMs/day.
+const TG_BROADCAST_COOLDOWN_S = 4 * 60 * 60
+const TG_BROADCAST_COOLDOWN_KEY = 'announcement:tg:cooldown'
+
+function humanizeSeconds(s: number): string {
+  if (s >= 3600) {
+    const h = Math.floor(s / 3600)
+    const m = Math.round((s % 3600) / 60)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+  return `${Math.max(1, Math.round(s / 60))}m`
+}
 
 function sanitizeChannels(raw: unknown): AnnouncementChannel[] {
   if (!Array.isArray(raw)) return []
@@ -78,6 +95,17 @@ export async function announcementRoutes(app: FastifyInstance) {
       linkUrl = linkUrlRaw
     }
 
+    // Anti-spam cooldown — only gates the Telegram channel (the DM/ban-risk one).
+    if (channels.includes('telegram')) {
+      const ttl = await redis.ttl(TG_BROADCAST_COOLDOWN_KEY).catch(() => -2)
+      if (ttl > 0) {
+        throw Errors.VALIDATION_ERROR(
+          `A Telegram broadcast was sent recently. To protect the bot from spam flags, ` +
+          `please wait ${humanizeSeconds(ttl)} before the next one — or send this via Website/Bell only.`,
+        )
+      }
+    }
+
     const announcement = await createAnnouncement({
       title, body, channels, adminId: req.user!.id,
       ...(linkUrl ? { linkUrl } : {}),
@@ -88,6 +116,11 @@ export async function announcementRoutes(app: FastifyInstance) {
       await queues.announcementBroadcast
         .add('broadcast', { announcementId: announcement.id })
         .catch(() => { /* logged by queue; banner still works */ })
+    }
+
+    // Arm the Telegram cooldown only after a telegram broadcast is enqueued.
+    if (channels.includes('telegram')) {
+      await redis.set(TG_BROADCAST_COOLDOWN_KEY, '1', 'EX', TG_BROADCAST_COOLDOWN_S).catch(() => {})
     }
 
     return reply.code(201).send({ success: true, data: announcement })
