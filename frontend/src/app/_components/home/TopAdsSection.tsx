@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/Badge'
 import { EntityLogo } from '@/components/ui/EntityLogo'
@@ -8,6 +8,7 @@ import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { traderDisplayName } from '@/lib/traderName'
 import { PK_MOBILE_METHODS, isOpaqueId } from '@/lib/pkPaymentMethods'
+import { marketplaceApi, ctmApi, gasApi } from '@/lib/api'
 import type { MarketplaceAd } from '@/lib/api'
 
 function completionColor(pct: number) {
@@ -184,25 +185,66 @@ function GasChainCard({ chain }: { chain: GasChainSummary }) {
   )
 }
 
+function LoadingSkeleton() {
+  return (
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {[...Array(3)].map((_, i) => (
+        <div key={i} className="bg-surface shadow-card border border-border rounded-xl p-4 h-36 animate-pulse-subtle" />
+      ))}
+    </div>
+  )
+}
+
 type MainTab = 'usdt' | 'ctm' | 'gas'
 
 export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | null; topCtm?: CtmTopListing[] | null; topGas?: GasChainSummary[] | null }) {
   const [activeTab, setActiveTab] = useState<MainTab>('usdt')
 
+  // Seed from the server-rendered props for instant paint, but keep the data in
+  // state so we can self-heal: when the Vercel SSR fetch to the backend fails
+  // (server-to-server reachability), the props arrive `null` and we re-fetch
+  // client-side from the browser, which can always reach the API.
+  const [ads, setAds] = useState<TopAds | null>(topAds)
+  const [ctm, setCtm] = useState<CtmTopListing[] | null>(topCtm ?? null)
+  const [gas, setGas] = useState<GasChainSummary[] | null>(topGas ?? null)
+
+  useEffect(() => {
+    if (ads === null) {
+      marketplaceApi.getTopAds()
+        .then((d) => setAds(d as TopAds))
+        .catch(() => setAds({ buys: [], sells: [] }))
+    }
+    if (ctm === null) {
+      ctmApi.getListings({ limit: 6, side: 'sell', status: 'active' })
+        .then((d) => setCtm((d.listings ?? []) as CtmTopListing[]))
+        .catch(() => setCtm([]))
+    }
+    if (gas === null) {
+      gasApi.getChains()
+        .then((d) => setGas((d.chains ?? []) as unknown as GasChainSummary[]))
+        .catch(() => setGas([]))
+    }
+    // Run once on mount — the props are the SSR snapshot; client refetch only
+    // fills gaps left by a failed server fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Unified USDT list (admin-ranked server-side). Fall back to merging
   // buys/sells for older API responses that don't include `usdt`.
-  const usdtAds = topAds
-    ? (topAds.usdt && topAds.usdt.length > 0
-        ? topAds.usdt
-        : [...(topAds.sells ?? []), ...(topAds.buys ?? [])])
+  const usdtAds = ads
+    ? (ads.usdt && ads.usdt.length > 0
+        ? ads.usdt
+        : [...(ads.sells ?? []), ...(ads.buys ?? [])])
     : []
-  const ctmListings = topCtm ?? []
-  const gasChains = topGas ?? []
+  const ctmListings = ctm ?? []
+  const gasChains = gas ?? []
 
+  // Always expose all three surfaces so the tabs never silently disappear; each
+  // tab renders its own empty/CTA state when it has no data.
   const tabs: { key: MainTab; label: string }[] = [
     { key: 'usdt', label: 'USDT Marketplace' },
-    ...(ctmListings.length > 0 ? [{ key: 'ctm' as const, label: 'Community Tokens' }] : []),
-    ...(gasChains.length > 0 ? [{ key: 'gas' as const, label: 'Crypto Gas Fees' }] : []),
+    { key: 'ctm', label: 'Community Tokens' },
+    { key: 'gas', label: 'Crypto Gas Fees' },
   ]
 
   const viewAllHref = activeTab === 'ctm' ? '/ctm/listings' : activeTab === 'gas' ? '/gas' : '/marketplace'
@@ -230,6 +272,9 @@ export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | nul
         </div>
 
         {activeTab === 'gas' ? (
+          gas === null ? (
+            <LoadingSkeleton />
+          ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
             {gasChains.slice(0, 6).map((c) => <GasChainCard key={c.id} chain={c} />)}
             {gasChains.length === 0 && (
@@ -241,7 +286,11 @@ export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | nul
               </div>
             )}
           </div>
+          )
         ) : activeTab === 'ctm' ? (
+          ctm === null ? (
+            <LoadingSkeleton />
+          ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
             {ctmListings.slice(0, 3).map((l) => <CtmListingCard key={l.id} listing={l} />)}
             {ctmListings.length === 0 && (
@@ -253,7 +302,8 @@ export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | nul
               </div>
             )}
           </div>
-        ) : topAds ? (
+          )
+        ) : ads ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
             {usdtAds.slice(0, 4).map((ad) => <AdCard key={ad.id} ad={ad} />)}
             {usdtAds.length === 0 && (
@@ -277,11 +327,7 @@ export function TopAdsSection({ topAds, topCtm, topGas }: { topAds: TopAds | nul
             )}
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="bg-surface shadow-card border border-border rounded-xl p-4 h-36 animate-pulse-subtle" />
-            ))}
-          </div>
+          <LoadingSkeleton />
         )}
 
         <div className="mt-6 text-center">

@@ -9,10 +9,8 @@ import { useAuthStore } from '@/store/auth.store'
 // authenticated users get a single Dashboard link.
 const NAV_LINKS = [
   { href: '/marketplace', label: 'Marketplace' },
-  { href: '/ctm', label: 'Tokens' },
+  { href: '/ctm', label: 'Community Tokens' },
   { href: '/gas', label: 'Gas Fees' },
-  { href: '/fees', label: 'Fees' },
-  { href: '/help', label: 'Help' },
 ]
 
 export function MarketingHeader() {
