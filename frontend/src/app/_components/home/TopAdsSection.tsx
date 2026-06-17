@@ -163,6 +163,8 @@ interface GasChainSummary {
   logoUrl?: string | null
   platformFeeUsdt?: string | null
   isAvailable?: boolean
+  isActive?: boolean
+  orderable?: boolean
 }
 
 function GasChainCard({ chain }: { chain: GasChainSummary }) {
@@ -172,7 +174,7 @@ function GasChainCard({ chain }: { chain: GasChainSummary }) {
       href="/gas"
       className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md hover:border-primary/30 transition-all flex items-center gap-3"
     >
-      <EntityLogo type="chain" slug={chain.symbol || chain.slug} size="lg" logoUrl={chain.logoUrl ?? undefined} />
+      <EntityLogo type="chain" slug={chain.slug || chain.symbol} size="lg" logoUrl={chain.logoUrl ?? undefined} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-text-primary truncate">{chain.name}</p>
         <p className="text-xs text-text-muted">{chain.symbol}</p>
@@ -180,7 +182,12 @@ function GasChainCard({ chain }: { chain: GasChainSummary }) {
           <p className="text-xs text-text-secondary mt-1">From <span className="font-semibold text-text-primary">${fee.toFixed(2)}</span></p>
         )}
       </div>
-      {chain.isAvailable === false && <Badge variant="default" size="sm">Soon</Badge>}
+      {/* "Soon" only for chains users genuinely can't order yet — mirror the
+          gas page's `!isActive || !orderable` rule, not the `isAvailable`
+          (hot-wallet-funded) flag which stays false for live, orderable chains. */}
+      {(chain.orderable === false || chain.isActive === false) && (
+        <Badge variant="default" size="sm">Soon</Badge>
+      )}
     </Link>
   )
 }

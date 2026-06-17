@@ -57,6 +57,8 @@ interface GasChainSummary {
   logoUrl?: string | null
   platformFeeUsdt?: string | null
   isAvailable?: boolean
+  isActive?: boolean
+  orderable?: boolean
 }
 
 interface HomeData {

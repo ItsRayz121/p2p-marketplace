@@ -19,6 +19,7 @@
     "moralis:backfill": "prisma generate && tsx src/scripts/moralisBackfill.ts",
     "stats:backfill": "tsx src/scripts/backfillTradeStats.ts",
     "gas:config-restrict": "tsx src/scripts/gasConfigRestrict.ts",
+    "gas:fix-base-logo": "tsx src/scripts/gasFixBaseLogo.ts",
     "gas:diagnose-tokens": "tsx src/scripts/gasDiagnoseTokens.ts",
     "gas:add-aptos-native": "tsx src/scripts/gasAddAptosNative.ts",
     "gas:probe-sui": "tsx src/scripts/suiDeliveryProbe.ts",
