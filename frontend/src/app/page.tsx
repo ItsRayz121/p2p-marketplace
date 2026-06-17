@@ -201,8 +201,8 @@ export default async function HomePage() {
                 </span>
               </h1>
               <p className="mt-4 text-lg text-slate-300 max-w-md">
-                Peer-to-peer trading with dispute protection. Pay with JazzCash, Easypaisa, or bank transfer.
-                Your funds, your control.
+                Peer-to-peer trading with secure escrow. Pay with JazzCash, Easypaisa, or bank transfer.
+                Funds release only when both sides confirm.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 mt-6">
                 <Link
@@ -260,7 +260,7 @@ export default async function HomePage() {
               { Icon: ShieldCheck,     title: 'Escrow Protected',   desc: 'Funds locked until both parties confirm',        color: 'text-success',    bg: 'bg-success/10'    },
               { Icon: Users,           title: 'KYC Verified',       desc: 'Every trader identity-verified via CNIC',        color: 'text-primary',    bg: 'bg-primary/10'    },
               { Icon: Lock,            title: 'Secure Withdrawals', desc: '2FA + email confirmation on every withdrawal',   color: 'text-warning',    bg: 'bg-warning/10'    },
-              { Icon: Headphones,      title: '24/7 Support',       desc: 'Live support for trades and disputes',           color: 'text-violet-500', bg: 'bg-violet-500/10' },
+              { Icon: Headphones,      title: 'Dedicated Support',  desc: 'Real help with trades and disputes',             color: 'text-violet-500', bg: 'bg-violet-500/10' },
             ].map(({ Icon, title, desc, color, bg }) => (
               <div key={title} className="flex flex-col items-center text-center gap-2 px-3 py-4 bg-surface rounded-xl border border-border shadow-card">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
@@ -298,7 +298,7 @@ export default async function HomePage() {
                 Icon: UserPlus,
                 step: '1',
                 title: 'Create your account',
-                text: 'Sign up free with email, Google, or Telegram. No deposit required — your crypto stays in your own wallet.',
+                text: 'Sign up free with email, Google, or Telegram. No deposit to join — your crypto stays in your own wallet until you start a trade.',
                 color: 'text-primary', bg: 'bg-primary/10',
               },
               {
