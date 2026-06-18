@@ -9,7 +9,7 @@ import { queues } from '../queues/definitions'
 import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
-import { FLAGS, isFlagEnabled } from './platformFlags.service'
+import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
 import {
   verifyTradeTx,
   assertNoDuplicateTradeTxHash,
@@ -243,12 +243,14 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
           429,
         )
       }
-      // Early-access per-order cap (admin-configurable, default 100 USDT). Limits
-      // at-risk exposure while trust is being established.
-      const capRow = await db.platformConfig.findUnique({ where: { key: 'noncustodial_max_order_usdt' } })
-      const maxOrderUsdt = capRow ? parseFloat(capRow.value) : 100
-      if (Number.isFinite(maxOrderUsdt) && new Prisma.Decimal(data.amount).gt(maxOrderUsdt)) {
-        throw new AppError('ORDER_TOO_LARGE', `During early access, the maximum order is ${maxOrderUsdt} USDT.`, 400)
+      // Early-access per-order cap, tier-aware: Level 1 default 50 USDT, Level 2
+      // default unlimited (0). Caps at-risk exposure while trust is established.
+      const isL2 = u?.kycLevel === 'enhanced'
+      const maxOrderUsdt = isL2
+        ? await getNumberConfig('noncustodial_max_order_usdt_l2', 0)
+        : await getNumberConfig('noncustodial_max_order_usdt_l1', 50)
+      if (maxOrderUsdt > 0 && new Prisma.Decimal(data.amount).gt(maxOrderUsdt)) {
+        throw new AppError('ORDER_TOO_LARGE', `During early access, your maximum order is ${maxOrderUsdt} USDT.`, 400)
       }
       // Concurrency cap for Level-1 takers; enhanced (L2) users are uncapped.
       if (u?.kycLevel !== 'enhanced') {

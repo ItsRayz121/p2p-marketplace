@@ -48,3 +48,11 @@ export async function isFlagEnabled(key: FlagKey, fallback = false): Promise<boo
 export function clearFlagCache(): void {
   cache.clear()
 }
+
+/** Read a numeric PlatformConfig value, falling back when missing/invalid. */
+export async function getNumberConfig(key: string, fallback: number): Promise<number> {
+  const row = await db.platformConfig.findUnique({ where: { key } })
+  if (!row) return fallback
+  const n = parseFloat(row.value)
+  return Number.isFinite(n) ? n : fallback
+}

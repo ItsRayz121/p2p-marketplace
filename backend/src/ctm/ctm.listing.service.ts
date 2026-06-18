@@ -2,7 +2,7 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prisma/client'
-import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
+import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 
 type Tx = Prisma.TransactionClient
 
@@ -82,8 +82,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
   if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
     const u = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
     if (u?.kycLevel !== 'enhanced') {
-      const l1Row = await db.platformConfig.findUnique({ where: { key: 'noncustodial_l1_max_ads' } })
-      const l1Max = l1Row ? parseInt(l1Row.value, 10) : 1
+      const l1Max = Math.floor(await getNumberConfig('noncustodial_l1_max_ads_ctm', 2))
       const activeCount = await db.ctmListing.count({
         where: { merchantProfileId: merchantProfile.id, status: { in: ['active', 'paused'] } },
       })

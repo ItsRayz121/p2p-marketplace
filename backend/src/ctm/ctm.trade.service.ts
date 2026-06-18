@@ -7,6 +7,7 @@ import { verifyTradeTx, HARD_REJECT_STATUSES, ADMIN_REVIEW_STATUSES, RELEASE_ALL
 import { logger } from '../lib/logger'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { notify as centralNotify } from '../lib/notify'
+import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -560,6 +561,26 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (tradeTokenAmount.gt(listing.availableAmount)) throw new AppError('VALIDATION_ERROR', 'Requested amount exceeds available listing amount', 400)
   if (tradeTokenAmount.lt(listing.minOrderTokens)) throw new AppError('VALIDATION_ERROR', `Minimum order is ${listing.minOrderTokens.toString()} ${listing.token.symbol}`, 400)
   if (tradeTokenAmount.gt(listing.maxOrderTokens)) throw new AppError('VALIDATION_ERROR', `Maximum order is ${listing.maxOrderTokens.toString()} ${listing.token.symbol}`, 400)
+
+  // Non-custodial early-access per-order cap, expressed in USDT-equivalent and
+  // tier-aware (taker = buyerId). L1 default 50 USDT-equiv, L2 default unlimited.
+  // Converts the PKR order value using the platform USDT→PKR rate; if that rate
+  // is unavailable the cap is skipped (fail-open) rather than blocking trades.
+  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+    const taker = await db.user.findUnique({ where: { id: buyerId }, select: { kycLevel: true } })
+    const capUsdt = taker?.kycLevel === 'enhanced'
+      ? await getNumberConfig('noncustodial_max_order_usdt_l2', 0)
+      : await getNumberConfig('noncustodial_max_order_usdt_l1', 50)
+    if (capUsdt > 0) {
+      const usdtPkr = await getNumberConfig('rate_USDT_PKR', 0)
+      if (usdtPkr > 0) {
+        const orderUsdtEquiv = listing.pricePerUnit.mul(tradeTokenAmount).toNumber() / usdtPkr
+        if (orderUsdtEquiv > capUsdt) {
+          throw new AppError('ORDER_TOO_LARGE', `During early access, your maximum order is ${capUsdt} USDT-equivalent.`, 400)
+        }
+      }
+    }
+  }
 
   // Snapshot the payment account(s) that will RECEIVE the PKR payment (always the seller).
   // For SELL listings: single account — seller = listing creator.

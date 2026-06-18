@@ -78,7 +78,8 @@ export interface PublicConfig {
   kycLimitBasicDaily: number
   kycLimitEnhancedDaily: number
   nonCustodialP2p: boolean
-  nonCustodialMaxOrderUsdt: number
+  nonCustodialMaxOrderUsdtL1: number
+  nonCustodialMaxOrderUsdtL2: number
 }
 
 export interface GetAdsParams {
@@ -459,7 +460,8 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     'kyc_limit_basic_daily',
     'kyc_limit_enhanced_daily',
     'noncustodial_p2p_enabled',
-    'noncustodial_max_order_usdt',
+    'noncustodial_max_order_usdt_l1',
+    'noncustodial_max_order_usdt_l2',
   ]
 
   const rows = await db.platformConfig.findMany({
@@ -487,7 +489,8 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     kycLimitBasicDaily: parseFloat(map['kyc_limit_basic_daily'] ?? '50000'),
     kycLimitEnhancedDaily: parseFloat(map['kyc_limit_enhanced_daily'] ?? '200000'),
     nonCustodialP2p: map['noncustodial_p2p_enabled'] === 'true',
-    nonCustodialMaxOrderUsdt: parseFloat(map['noncustodial_max_order_usdt'] ?? '100'),
+    nonCustodialMaxOrderUsdtL1: parseFloat(map['noncustodial_max_order_usdt_l1'] ?? '50'),
+    nonCustodialMaxOrderUsdtL2: parseFloat(map['noncustodial_max_order_usdt_l2'] ?? '0'),
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 60)

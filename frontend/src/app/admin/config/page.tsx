@@ -43,7 +43,8 @@ const STRUCTURED_KEYS = new Set([
   'gas_usdt_bep20_address', 'gas_usdt_aptos_address',
   'gas_bep20_logo_url', 'gas_aptos_logo_url',
   'home_offers_mode', 'home_pinned_ad_ids',
-  'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt', 'noncustodial_l1_max_ads',
+  'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt_l1', 'noncustodial_max_order_usdt_l2',
+  'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -209,8 +210,10 @@ export default function ConfigPage() {
 
   // ── Non-Custodial P2P ────────────────────────────────────────────────────────
   const [ncEnabled, setNcEnabled] = useState(false)
-  const [ncMaxOrder, setNcMaxOrder] = useState('100')
-  const [ncL1MaxAds, setNcL1MaxAds] = useState('1')
+  const [ncMaxOrderL1, setNcMaxOrderL1] = useState('50')
+  const [ncMaxOrderL2, setNcMaxOrderL2] = useState('0')
+  const [ncL1AdsUsdt, setNcL1AdsUsdt] = useState('1')
+  const [ncL1AdsCtm, setNcL1AdsCtm] = useState('2')
   const [ncSaving, setNcSaving] = useState(false)
 
   // ── Homepage Top Offers ─────────────────────────────────────────────────────
@@ -305,8 +308,10 @@ export default function ConfigPage() {
       }
       setPinnedAdIds(m['home_pinned_ad_ids'] ?? '')
       setNcEnabled(m['noncustodial_p2p_enabled'] === 'true')
-      setNcMaxOrder(m['noncustodial_max_order_usdt'] ?? '100')
-      setNcL1MaxAds(m['noncustodial_l1_max_ads'] ?? '1')
+      setNcMaxOrderL1(m['noncustodial_max_order_usdt_l1'] ?? '50')
+      setNcMaxOrderL2(m['noncustodial_max_order_usdt_l2'] ?? '0')
+      setNcL1AdsUsdt(m['noncustodial_l1_max_ads'] ?? '1')
+      setNcL1AdsCtm(m['noncustodial_l1_max_ads_ctm'] ?? '2')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -431,8 +436,10 @@ export default function ConfigPage() {
     try {
       await saveKeys([
         { key: 'noncustodial_p2p_enabled', value: ncEnabled ? 'true' : 'false' },
-        { key: 'noncustodial_max_order_usdt', value: String(parseFloat(ncMaxOrder) || 100) },
-        { key: 'noncustodial_l1_max_ads', value: String(parseInt(ncL1MaxAds, 10) || 1) },
+        { key: 'noncustodial_max_order_usdt_l1', value: String(parseFloat(ncMaxOrderL1) || 50) },
+        { key: 'noncustodial_max_order_usdt_l2', value: String(Math.max(parseFloat(ncMaxOrderL2) || 0, 0)) },
+        { key: 'noncustodial_l1_max_ads', value: String(parseInt(ncL1AdsUsdt, 10) || 1) },
+        { key: 'noncustodial_l1_max_ads_ctm', value: String(parseInt(ncL1AdsCtm, 10) || 2) },
       ])
       showToast(ncEnabled ? 'Non-custodial mode is ON.' : 'Non-custodial mode is OFF.')
     } catch { showToast('Failed to save non-custodial settings.', false) }
@@ -502,12 +509,20 @@ export default function ConfigPage() {
             </div>
           </label>
 
-          <Field label="Max order (USDT)" hint="Per-order cap during early access">
-            <input className={inputCls} type="number" min="1" value={ncMaxOrder} onChange={(e) => setNcMaxOrder(e.target.value)} placeholder="100" />
+          <Field label="L1 max order (USDT)" hint="Per-order cap for Level-1 users — USDT-equivalent, applies to USDT + CTM">
+            <input className={inputCls} type="number" min="1" value={ncMaxOrderL1} onChange={(e) => setNcMaxOrderL1(e.target.value)} placeholder="50" />
           </Field>
 
-          <Field label="Level-1 active ads" hint="How many ads/listings a Level-1 user may keep at once">
-            <input className={inputCls} type="number" min="0" value={ncL1MaxAds} onChange={(e) => setNcL1MaxAds(e.target.value)} placeholder="1" />
+          <Field label="L2 max order (USDT)" hint="Per-order cap for Level-2 users. 0 = unlimited (recommended ~500 during early access)">
+            <input className={inputCls} type="number" min="0" value={ncMaxOrderL2} onChange={(e) => setNcMaxOrderL2(e.target.value)} placeholder="0" />
+          </Field>
+
+          <Field label="Level-1 ads — USDT" hint="Active USDT ads a Level-1 user may keep">
+            <input className={inputCls} type="number" min="0" value={ncL1AdsUsdt} onChange={(e) => setNcL1AdsUsdt(e.target.value)} placeholder="1" />
+          </Field>
+
+          <Field label="Level-1 ads — CTM" hint="Active CTM listings a Level-1 user may keep">
+            <input className={inputCls} type="number" min="0" value={ncL1AdsCtm} onChange={(e) => setNcL1AdsCtm(e.target.value)} placeholder="2" />
           </Field>
 
           <div className="flex justify-end">
