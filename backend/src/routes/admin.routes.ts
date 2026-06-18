@@ -1686,6 +1686,9 @@ export async function adminRoutes(app: FastifyInstance) {
       winner: z.enum(['buyer', 'seller']),
       resolution: z.string().min(1).max(2000),
       resolutionNote: z.string().max(2000).optional(),
+      // Optional escalation against the losing party. Defaults to 'none' so the
+      // existing resolve behavior is unchanged.
+      loserPenalty: z.enum(['none', 'review', 'ban']).default('none'),
     })
     const parsed = bodySchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
@@ -1738,11 +1741,38 @@ export async function adminRoutes(app: FastifyInstance) {
       resolution: parsed.data.resolution,
     }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
+    // Optional escalation against the losing party, via the proper moderation
+    // pipeline (so it shows up in ModerationAction history like a normal ban).
+    if (parsed.data.loserPenalty !== 'none') {
+      const loser = await db.user.findUnique({ where: { id: loserId }, select: MODERATION_SELECT })
+      if (loser) {
+        const prevStatus = computeModerationStatus(loser)
+        const penaltyReason = `Lost dispute on trade ${dispute.trade.orderRef}`
+        if (parsed.data.loserPenalty === 'ban') {
+          await db.user.update({
+            where: { id: loserId },
+            data: { isBanned: true, banType: 'permanent', bannedUntil: null, moderationReason: penaltyReason, suspendReason: penaltyReason },
+          })
+          await recordModerationAction({ targetUserId: loserId, moderatorId: req.user!.id, action: 'ban_permanent', reason: penaltyReason, previousStatus: prevStatus, newStatus: 'permanently_banned', durationLabel: 'Permanent' })
+          notifyModeration(loserId, 'Account banned', `Your account has been permanently banned. Reason: ${penaltyReason}`, { action: 'ban', reason: penaltyReason })
+        } else {
+          await db.user.update({ where: { id: loserId }, data: { underReview: true } })
+          await recordModerationAction({ targetUserId: loserId, moderatorId: req.user!.id, action: 'flag_review', reason: penaltyReason, previousStatus: prevStatus, newStatus: computeModerationStatus({ ...loser, underReview: true }) })
+        }
+        await createAuditLog(req.user!.id, 'DISPUTE_LOSER_PENALTY', 'User', loserId, { penalty: parsed.data.loserPenalty, disputeId: id }, clientIp(req), req.headers['user-agent'] as string | undefined)
+      }
+    }
+
+    // Notify both parties of the ruling. Non-custodial: the platform never moves
+    // funds — the parties settle directly per the ruling.
+    notify(winnerId, 'dispute', 'Dispute Resolved', `The dispute on trade #${dispute.trade.orderRef} was resolved in your favour. The platform does not move funds — settle directly with your counterparty per the ruling.`, { tradeId: dispute.tradeId }, dispute.tradeId)
+    notify(loserId, 'dispute', 'Dispute Resolved', `The dispute on trade #${dispute.trade.orderRef} was resolved in favour of the other party. Resolution: ${parsed.data.resolution}`, { tradeId: dispute.tradeId }, dispute.tradeId)
+
     await Promise.allSettled([
       // Simple notification emails — reuse admin alert as fallback
       sendAdminAlertEmail(
         `Dispute ${id} resolved`,
-        `Trade: ${dispute.trade.orderRef}\nWinner: ${parsed.data.winner}\nResolution: ${parsed.data.resolution}`,
+        `Trade: ${dispute.trade.orderRef}\nWinner: ${parsed.data.winner}\nResolution: ${parsed.data.resolution}\nLoser penalty: ${parsed.data.loserPenalty}`,
       ),
     ])
 
