@@ -124,7 +124,8 @@ export async function tradeRoutes(app: FastifyInstance) {
       const userId = req.user!.id
       const role = req.user!.role
       const { id } = req.params as { id: string }
-      const trade = await confirmPayment(id, userId, role)
+      const confirmedReceipt = (req.body as { confirmedReceipt?: boolean } | undefined)?.confirmedReceipt === true
+      const trade = await confirmPayment(id, userId, role, { confirmedReceipt })
       return reply.send({ success: true, data: trade })
     })
   }

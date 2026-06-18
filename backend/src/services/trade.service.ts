@@ -9,6 +9,7 @@ import { queues } from '../queues/definitions'
 import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
+import { FLAGS, isFlagEnabled } from './platformFlags.service'
 import {
   verifyTradeTx,
   assertNoDuplicateTradeTxHash,
@@ -417,7 +418,24 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
   return updated
 }
 
-export async function confirmPayment(tradeId: string, actorId: string, role: string) {
+export async function confirmPayment(
+  tradeId: string,
+  actorId: string,
+  role: string,
+  opts?: { confirmedReceipt?: boolean },
+) {
+  // Verified-receipt rule (non-custodial): the seller must confirm the money has
+  // actually landed in their account — never release on a screenshot alone. The
+  // client must send an explicit acknowledgment. Admins are exempt. Flag OFF
+  // preserves the original one-click confirm behavior.
+  if (role !== 'admin' && opts?.confirmedReceipt !== true && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
+    throw new AppError(
+      'RECEIPT_NOT_CONFIRMED',
+      'Confirm that the payment has actually arrived in your account (a screenshot is not enough) before releasing.',
+      400,
+    )
+  }
+
   const updated = await db.$transaction(async (tx: Tx) => {
     const rows = await tx.$queryRaw<Array<{ id: string; status: string; sellerId: string; buyerId: string }>>`
       SELECT id, status, "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE

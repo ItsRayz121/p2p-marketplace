@@ -903,9 +903,11 @@ export const tradesApi = {
   // Buyer: upload payment proof (transitions payment_pending → payment_uploaded)
   uploadPaymentProof: (id: string, paymentProofUrl: string) =>
     apiRequest<Trade>(`/trades/${id}/payment-proof`, { method: 'POST', body: JSON.stringify({ paymentProofUrl }) }),
-  // Seller: confirm payment received (transitions payment_uploaded → payment_confirmed)
-  confirmPayment: (id: string) =>
-    apiRequest<Trade>(`/trades/${id}/confirm-payment`, { method: 'POST' }),
+  // Seller: confirm payment received (transitions payment_uploaded → payment_confirmed).
+  // confirmedReceipt is the verified-receipt acknowledgment ("money actually arrived,
+  // not just a screenshot") required by non-custodial mode.
+  confirmPayment: (id: string, confirmedReceipt = true) =>
+    apiRequest<Trade>(`/trades/${id}/confirm-payment`, { method: 'POST', body: JSON.stringify({ confirmedReceipt }) }),
   // Seller: mark crypto sent with txHash (transitions payment_confirmed → crypto_sent)
   markCryptoSent: (id: string, txHash: string) =>
     apiRequest<Trade>(`/trades/${id}/crypto-sent`, { method: 'POST', body: JSON.stringify({ txHash }) }),
