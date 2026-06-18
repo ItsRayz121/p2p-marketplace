@@ -243,6 +243,13 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
           429,
         )
       }
+      // Early-access per-order cap (admin-configurable, default 100 USDT). Limits
+      // at-risk exposure while trust is being established.
+      const capRow = await db.platformConfig.findUnique({ where: { key: 'noncustodial_max_order_usdt' } })
+      const maxOrderUsdt = capRow ? parseFloat(capRow.value) : 100
+      if (Number.isFinite(maxOrderUsdt) && new Prisma.Decimal(data.amount).gt(maxOrderUsdt)) {
+        throw new AppError('ORDER_TOO_LARGE', `During early access, the maximum order is ${maxOrderUsdt} USDT.`, 400)
+      }
       // Concurrency cap for Level-1 takers; enhanced (L2) users are uncapped.
       if (u?.kycLevel !== 'enhanced') {
         const completed = u?.tradeStats?.completedTrades ?? 0
