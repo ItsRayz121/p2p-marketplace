@@ -69,6 +69,11 @@ export async function submitKyc(
     if (nonCustodial && !legalName) {
       throw new AppError('VALIDATION_ERROR', 'Enter your full name exactly as printed on your CNIC', 400)
     }
+    // Require at least one social profile (Facebook/Instagram preferred) even at
+    // Level 1 — it is the real-time traceability anchor for non-custodial trust.
+    if (nonCustodial && (data.socialLinks?.filter((l) => l.url.trim()).length ?? 0) < 1) {
+      throw new AppError('VALIDATION_ERROR', 'Add at least one social profile (Facebook or Instagram preferred)', 400)
+    }
     cnicHash = hashCnic(data.cnicNumber)
   }
 

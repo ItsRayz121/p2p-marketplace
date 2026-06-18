@@ -2,6 +2,7 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prisma/client'
+import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 
 type Tx = Prisma.TransactionClient
 
@@ -74,6 +75,15 @@ export async function createListing(userId: string, data: CreateListingInput) {
   })
   if (!merchantProfile) throw new AppError('FORBIDDEN', 'You must be a registered CTM merchant to create listings', 403)
   if (!merchantProfile.isActive) throw new AppError('FORBIDDEN', 'Your CTM merchant profile is suspended', 403)
+
+  // Non-custodial trust model: creating listings (the maker role) requires
+  // Level 2 (enhanced) KYC. Flag OFF preserves the original behavior.
+  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+    const u = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
+    if (u?.kycLevel !== 'enhanced') {
+      throw new AppError('KYC_LEVEL2_REQUIRED', 'Level 2 (enhanced) KYC is required to create listings', 403)
+    }
+  }
 
   const token = await db.ctmToken.findUnique({ where: { id: data.tokenId } })
   if (!token) throw new AppError('NOT_FOUND', 'Token not found', 404)

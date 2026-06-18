@@ -44,12 +44,18 @@ export interface GetUserAdsParams {
 export async function createAd(userId: string, data: CreateAdInput) {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { kycStatus: true },
+    select: { kycStatus: true, kycLevel: true },
   })
 
   if (!user) throw new AppError('NOT_FOUND', 'User not found', 404)
   if (user.kycStatus !== 'approved') {
     throw new AppError('KYC_REQUIRED', 'KYC approval required to post ads', 403)
+  }
+  // Non-custodial trust model: posting ads (the maker role) requires Level 2
+  // (enhanced) KYC, while Level 1 (basic) users can still take/respond to trades.
+  // Flag OFF preserves the original behavior (any approved user can post).
+  if (user.kycLevel !== 'enhanced' && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
+    throw new AppError('KYC_LEVEL2_REQUIRED', 'Level 2 (enhanced) KYC is required to create ads', 403)
   }
 
   if (data.minOrder > data.maxOrder) {

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { kycApi } from '@/lib/api'
+import { kycApi, marketplaceApi } from '@/lib/api'
 import type { KycDocument } from '@/lib/api'
 import { analytics } from '@/lib/analytics'
 import { useFileUpload } from '@/hooks/useFileUpload'
@@ -219,6 +219,9 @@ export default function KycPage() {
   const [kycLevel, setKycLevel] = useState<string>('none')
   const [latestSubmission, setLatestSubmission] = useState<KycDocument | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Non-custodial mode gates the new Level-1 requirements (legal name + social).
+  // When OFF, the form looks/behaves exactly as before.
+  const [nonCustodial, setNonCustodial] = useState(false)
 
   const [selectedTier, setSelectedTier] = useState<KycTier | null>(null)
 
@@ -259,6 +262,12 @@ export default function KycPage() {
 
   useEffect(() => { fetchStatus() }, [fetchStatus])
 
+  useEffect(() => {
+    marketplaceApi.getConfig()
+      .then((c) => setNonCustodial(!!(c as { nonCustodialP2p?: boolean }).nonCustodialP2p))
+      .catch(() => {})
+  }, [])
+
   // Poll every 20s while pending so the approved state appears without a manual refresh
   usePolling(fetchStatus, 20000, uiState === 'pending')
 
@@ -298,12 +307,16 @@ export default function KycPage() {
         setSubmitError('Please fill all required fields and upload all documents.')
         return
       }
-      if (legalName.trim().length < 3) {
+      if (nonCustodial && legalName.trim().length < 3) {
         setSubmitError('Enter your full name exactly as printed on your CNIC.')
         return
       }
       if (!isValidCnic(cnicNumber)) {
         setSubmitError('CNIC format must be XXXXX-XXXXXXX-X (e.g. 42201-1234567-8).')
+        return
+      }
+      if (nonCustodial && socialLinks.filter((l) => l.url.trim()).length < 1) {
+        setSubmitError('Add at least one social profile (Facebook or Instagram preferred).')
         return
       }
     } else {
@@ -326,9 +339,11 @@ export default function KycPage() {
       await kycApi.submit({
         tier: selectedTier,
         // Level 1 only — Level 2 reuses the already-approved identity documents.
-        ...(selectedTier === 'basic' ? { cnicNumber, legalName: legalName.trim(), frontUrl, backUrl, selfieUrl } : {}),
+        ...(selectedTier === 'basic'
+          ? { cnicNumber, ...(legalName.trim() ? { legalName: legalName.trim() } : {}), frontUrl, backUrl, selfieUrl }
+          : {}),
         ...(selectedTier === 'enhanced' && videoUrl ? { videoUrl } : {}),
-        ...(selectedTier === 'enhanced' && validLinks.length > 0 ? { socialLinks: validLinks } : {}),
+        ...(validLinks.length > 0 ? { socialLinks: validLinks } : {}),
       })
       analytics.kycSubmitted({ level: selectedTier })
       await fetchStatus()
@@ -569,22 +584,24 @@ export default function KycPage() {
               the already-approved Level 1 documents, so these are not shown. */}
           {selectedTier === 'basic' && (
             <>
-              {/* Legal name as printed on CNIC */}
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Full name (as on CNIC)</label>
-                <input
-                  type="text"
-                  autoComplete="name"
-                  value={legalName}
-                  onChange={(e) => setLegalName(e.target.value)}
-                  placeholder="e.g. Ahmed Raza Khan"
-                  maxLength={100}
-                  className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <p className="text-xs text-text-muted mt-1">
-                  Must match your CNIC exactly. After approval this becomes your verified name and can&apos;t be changed.
-                </p>
-              </div>
+              {/* Legal name as printed on CNIC (non-custodial mode only) */}
+              {nonCustodial && (
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-1">Full name (as on CNIC)</label>
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={legalName}
+                    onChange={(e) => setLegalName(e.target.value)}
+                    placeholder="e.g. Ahmed Raza Khan"
+                    maxLength={100}
+                    className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <p className="text-xs text-text-muted mt-1">
+                    Must match your CNIC exactly. After approval this becomes your verified name and can&apos;t be changed.
+                  </p>
+                </div>
+              )}
 
               {/* CNIC Number */}
               <div>
@@ -650,11 +667,13 @@ export default function KycPage() {
             </>
           )}
 
-          {/* Enhanced: social links */}
-          {selectedTier === 'enhanced' && (
+          {/* Social links — Enhanced always; Basic only in non-custodial mode (min 1) */}
+          {(selectedTier === 'enhanced' || (selectedTier === 'basic' && nonCustodial)) && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-text-primary">Social Media Profiles (min 2)</label>
+                <label className="text-sm font-medium text-text-primary">
+                  Social Media Profiles ({selectedTier === 'enhanced' ? 'min 2' : 'min 1 — Facebook or Instagram preferred'})
+                </label>
                 {socialLinks.length < 3 && (
                   <Button size="sm" variant="ghost" onClick={addSocialLink}>+ Add</Button>
                 )}
@@ -700,10 +719,12 @@ export default function KycPage() {
                 { label: 'At least 2 social links', done: socialLinks.filter((l) => l.url.trim()).length >= 2 },
                 { label: 'Verification video uploaded', done: !!videoUrl },
               ] : [
+                ...(nonCustodial ? [{ label: 'Full name (as on CNIC) entered', done: legalName.trim().length >= 3 }] : []),
                 { label: 'CNIC number entered', done: !!cnicNumber },
                 { label: 'CNIC front uploaded', done: !!frontUrl },
                 { label: 'CNIC back uploaded', done: !!backUrl },
                 { label: 'Selfie uploaded', done: !!selfieUrl },
+                ...(nonCustodial ? [{ label: 'At least 1 social profile', done: socialLinks.filter((l) => l.url.trim()).length >= 1 }] : []),
               ]).map((item, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${item.done ? 'bg-success text-white' : 'border border-border'}`}>
