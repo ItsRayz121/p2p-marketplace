@@ -402,6 +402,11 @@ model User {
   avatarUrl         String?
   usernameChangedAt DateTime?
 
+  // Set when KYC approval locks fullName to the CNIC legal name. While non-null,
+  // the user can no longer self-edit their display name (admin override only).
+  // Canonical identity for non-custodial P2P trust.
+  legalNameLockedAt DateTime?
+
   // Withdrawal security lock â€” set after password/email/2FA changes.
   // requestWithdrawal checks this before creating any withdrawal.
   withdrawalLockedUntil DateTime?
@@ -813,6 +818,10 @@ model KycSubmission {
   selfieUrl       String
   videoUrl        String?
   cnicNumberHash  String
+  // Legal name exactly as printed on the CNIC, typed by the applicant so the
+  // reviewer can compare it against the card image. On approval this becomes the
+  // user's canonical, locked name (User.legalNameLockedAt). Non-custodial P2P.
+  legalName       String?
   socialLinks     Json              @default("[]")
   rejectionReason String?           @db.VarChar(500)
   reviewedAt      DateTime?

@@ -22,6 +22,7 @@ interface KycSubmission {
   user?: { email: string; username: string }
   tier: 'basic' | 'enhanced'
   status: KycStatus
+  legalName?: string | null
   cnicNumberHash?: string
   frontUrl?: string
   backUrl?: string
@@ -322,6 +323,13 @@ export default function KycQueuePage() {
                       : 'N/A'}
                   </p>
                 </div>
+                {selected.legalName && (
+                  <div>
+                    <p className="text-text-muted">Name (as on CNIC)</p>
+                    <p className="font-medium text-text-primary">{selected.legalName}</p>
+                    <p className="text-xs text-text-muted">Compare against the CNIC image before approving.</p>
+                  </div>
+                )}
               </div>
 
               {/* Document previews */}

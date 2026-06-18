@@ -1045,6 +1045,7 @@ export const kycApi = {
     // CNIC + document photos are required for Basic only; Enhanced reuses the
     // approved Level 1 documents server-side.
     cnicNumber?: string
+    legalName?: string
     frontUrl?: string
     backUrl?: string
     selfieUrl?: string

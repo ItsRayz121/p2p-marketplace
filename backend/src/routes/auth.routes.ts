@@ -7,6 +7,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { hashPassword, verifyPassword, hashToken } from '../lib/hash'
 import { applyWithdrawalLock } from '../services/withdrawal-security.service'
+import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import {
   register,
   login,
@@ -328,9 +329,19 @@ export async function authRoutes(app: FastifyInstance) {
 
     const current = await db.user.findUnique({
       where: { id: req.user!.id },
-      select: { username: true, usernameChangedAt: true },
+      select: { username: true, usernameChangedAt: true, legalNameLockedAt: true },
     })
     if (!current) throw new AppError('NOT_FOUND', 'User not found', 404)
+
+    // Once the name is locked to the verified CNIC legal name, the user can no
+    // longer self-edit it (admin override only). Username stays freely editable.
+    if (parsed.fullName && current.legalNameLockedAt && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
+      throw new AppError(
+        'NAME_LOCKED',
+        'Your name is verified from your CNIC and cannot be changed. Contact support if it is incorrect.',
+        403,
+      )
+    }
 
     const isUsernameChange = parsed.username && parsed.username !== current.username
     if (isUsernameChange) {

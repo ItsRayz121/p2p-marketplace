@@ -10,6 +10,7 @@ import { AppError } from '../lib/errors'
 import { hashCnic } from '../lib/hash'
 import { sendKycEmail } from './email.service'
 import { assertCloudinaryUrl } from '../lib/upload'
+import { FLAGS, isFlagEnabled } from './platformFlags.service'
 
 export async function getKycStatus(userId: string) {
   const [user, submission] = await Promise.all([
@@ -30,6 +31,7 @@ export async function submitKyc(
   data: {
     tier: 'basic' | 'enhanced'
     cnicNumber?: string
+    legalName?: string
     frontUrl?: string
     backUrl?: string
     selfieUrl?: string
@@ -37,6 +39,8 @@ export async function submitKyc(
     socialLinks?: Array<{ platform: string; url: string }>
   },
 ) {
+  const nonCustodial = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
+  const legalName = data.legalName?.trim()
   // Enhanced (Level 2) reuses the already-approved Level 1 identity documents so
   // users don't re-upload their CNIC/selfie. Pull them from the prior approved
   // submission rather than asking again.
@@ -59,6 +63,11 @@ export async function submitKyc(
   } else {
     if (!data.cnicNumber || !frontUrl || !backUrl || !selfieUrl) {
       throw new AppError('VALIDATION_ERROR', 'Basic KYC requires your CNIC number and front, back, and selfie photos', 400)
+    }
+    // Non-custodial trust depends on the CNIC name being the canonical identity,
+    // so require it at submission once the mode is enabled.
+    if (nonCustodial && !legalName) {
+      throw new AppError('VALIDATION_ERROR', 'Enter your full name exactly as printed on your CNIC', 400)
     }
     cnicHash = hashCnic(data.cnicNumber)
   }
@@ -103,6 +112,7 @@ export async function submitKyc(
       selfieUrl,
       videoUrl: data.videoUrl ?? null,
       cnicNumberHash: cnicHash,
+      legalName: legalName ?? null,
       socialLinks: data.socialLinks ?? [],
     },
   })

@@ -224,6 +224,7 @@ export default function KycPage() {
 
   // Form state
   const [cnicNumber, setCnicNumber] = useState('')
+  const [legalName, setLegalName] = useState('')
   const [frontUrl, setFrontUrl] = useState('')
   const [backUrl, setBackUrl] = useState('')
   const [selfieUrl, setSelfieUrl] = useState('')
@@ -297,6 +298,10 @@ export default function KycPage() {
         setSubmitError('Please fill all required fields and upload all documents.')
         return
       }
+      if (legalName.trim().length < 3) {
+        setSubmitError('Enter your full name exactly as printed on your CNIC.')
+        return
+      }
       if (!isValidCnic(cnicNumber)) {
         setSubmitError('CNIC format must be XXXXX-XXXXXXX-X (e.g. 42201-1234567-8).')
         return
@@ -321,7 +326,7 @@ export default function KycPage() {
       await kycApi.submit({
         tier: selectedTier,
         // Level 1 only — Level 2 reuses the already-approved identity documents.
-        ...(selectedTier === 'basic' ? { cnicNumber, frontUrl, backUrl, selfieUrl } : {}),
+        ...(selectedTier === 'basic' ? { cnicNumber, legalName: legalName.trim(), frontUrl, backUrl, selfieUrl } : {}),
         ...(selectedTier === 'enhanced' && videoUrl ? { videoUrl } : {}),
         ...(selectedTier === 'enhanced' && validLinks.length > 0 ? { socialLinks: validLinks } : {}),
       })
@@ -564,6 +569,23 @@ export default function KycPage() {
               the already-approved Level 1 documents, so these are not shown. */}
           {selectedTier === 'basic' && (
             <>
+              {/* Legal name as printed on CNIC */}
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">Full name (as on CNIC)</label>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  value={legalName}
+                  onChange={(e) => setLegalName(e.target.value)}
+                  placeholder="e.g. Ahmed Raza Khan"
+                  maxLength={100}
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <p className="text-xs text-text-muted mt-1">
+                  Must match your CNIC exactly. After approval this becomes your verified name and can&apos;t be changed.
+                </p>
+              </div>
+
               {/* CNIC Number */}
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1">CNIC Number</label>

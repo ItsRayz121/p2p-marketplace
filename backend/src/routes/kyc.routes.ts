@@ -13,6 +13,7 @@ const submitKycSchema = z.object({
   // Enhanced (Level 2) these are reused from the user's approved Level 1
   // submission — see submitKyc — so they are optional here.
   cnicNumber: z.string().regex(/^\d{5}-\d{7}-\d$|^\d{13}$/, 'Invalid CNIC format (expected XXXXX-XXXXXXX-X or 13 digits)').optional(),
+  legalName: z.string().trim().min(3, 'Enter your full name as printed on your CNIC').max(100).optional(),
   frontUrl: z.string().url().optional(),
   backUrl: z.string().url().optional(),
   selfieUrl: z.string().url().optional(),
@@ -56,11 +57,12 @@ export async function kycRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { tier, cnicNumber, frontUrl, backUrl, selfieUrl, videoUrl, socialLinks } = parsed.data
+    const { tier, cnicNumber, legalName, frontUrl, backUrl, selfieUrl, videoUrl, socialLinks } = parsed.data
     // Build the payload with only defined fields (exactOptionalPropertyTypes).
     const submission = await submitKyc(userId, {
       tier,
       ...(cnicNumber ? { cnicNumber } : {}),
+      ...(legalName ? { legalName } : {}),
       ...(frontUrl ? { frontUrl } : {}),
       ...(backUrl ? { backUrl } : {}),
       ...(selfieUrl ? { selfieUrl } : {}),

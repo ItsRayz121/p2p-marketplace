@@ -12,6 +12,7 @@ import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
+import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
 import { processDepositEvent, creditDetectedDeposit } from '../services/depositWatcher.service'
@@ -1272,6 +1273,12 @@ export async function adminRoutes(app: FastifyInstance) {
     const cfg = await getPublicConfig()
     const dailyLimit = kycLevel === 'enhanced' ? cfg.kycLimitEnhancedDaily : cfg.kycLimitBasicDaily
 
+    // Non-custodial mode: on approval, lock the user's display name to the CNIC
+    // legal name so it is canonical everywhere and can no longer be self-edited.
+    // Flag OFF (default) leaves the name untouched, preserving current behavior.
+    const nonCustodial = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
+    const lockLegalName = nonCustodial && !!submission.legalName?.trim()
+
     await db.$transaction(async (tx) => {
       await tx.kycSubmission.update({
         where: { id },
@@ -1284,6 +1291,9 @@ export async function adminRoutes(app: FastifyInstance) {
           kycLevel,
           dailyBuyLimit: dailyLimit,
           dailySellLimit: dailyLimit,
+          ...(lockLegalName
+            ? { fullName: submission.legalName!.trim(), legalNameLockedAt: new Date() }
+            : {}),
         },
       })
     })

@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { db } from '../lib/prisma'
 import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
+import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
+import { maskName } from '../lib/identity'
 
 const PAYMENT_METHOD_TYPES = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay', 'bank_transfer'] as const
 
@@ -117,13 +119,21 @@ export async function userRoutes(app: FastifyInstance) {
       for (const pm of pms) pmTypeMap.set(pm.id, pm.type)
     }
 
+    // Non-custodial privacy: never expose a trader's full legal name publicly —
+    // mask it here; the full name is revealed only to a counterparty inside an
+    // active trade. Flag OFF preserves the current behavior.
+    const maskLegalNames = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
+
     // Hide social links if user has opted out
     const profile = {
       ...user,
+      fullName: maskLegalNames ? maskName(user.fullName) : user.fullName,
       verifiedEmail: user.isEmailVerified,
       isFavorited,
       socialLinks: user.socialLinksPublic ? user.socialLinks : null,
-      ratings: enrichedRatings,
+      ratings: maskLegalNames
+        ? enrichedRatings.map((r) => ({ ...r, reviewerFullName: maskName(r.reviewerFullName) }))
+        : enrichedRatings,
       activeAds: user.ads.map((ad) => ({
         ...ad,
         price: ad.price.toString(),
