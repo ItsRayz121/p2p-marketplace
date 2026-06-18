@@ -247,7 +247,7 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       // default unlimited (0). Caps at-risk exposure while trust is established.
       const isL2 = u?.kycLevel === 'enhanced'
       const maxOrderUsdt = isL2
-        ? await getNumberConfig('noncustodial_max_order_usdt_l2', 0)
+        ? await getNumberConfig('noncustodial_max_order_usdt_l2', 500)
         : await getNumberConfig('noncustodial_max_order_usdt_l1', 50)
       if (maxOrderUsdt > 0 && new Prisma.Decimal(data.amount).gt(maxOrderUsdt)) {
         throw new AppError('ORDER_TOO_LARGE', `During early access, your maximum order is ${maxOrderUsdt} USDT.`, 400)

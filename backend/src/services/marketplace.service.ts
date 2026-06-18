@@ -490,7 +490,7 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     kycLimitEnhancedDaily: parseFloat(map['kyc_limit_enhanced_daily'] ?? '200000'),
     nonCustodialP2p: map['noncustodial_p2p_enabled'] === 'true',
     nonCustodialMaxOrderUsdtL1: parseFloat(map['noncustodial_max_order_usdt_l1'] ?? '50'),
-    nonCustodialMaxOrderUsdtL2: parseFloat(map['noncustodial_max_order_usdt_l2'] ?? '0'),
+    nonCustodialMaxOrderUsdtL2: parseFloat(map['noncustodial_max_order_usdt_l2'] ?? '500'),
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 60)

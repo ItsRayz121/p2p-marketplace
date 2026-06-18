@@ -569,7 +569,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
     const taker = await db.user.findUnique({ where: { id: buyerId }, select: { kycLevel: true } })
     const capUsdt = taker?.kycLevel === 'enhanced'
-      ? await getNumberConfig('noncustodial_max_order_usdt_l2', 0)
+      ? await getNumberConfig('noncustodial_max_order_usdt_l2', 500)
       : await getNumberConfig('noncustodial_max_order_usdt_l1', 50)
     if (capUsdt > 0) {
       const usdtPkr = await getNumberConfig('rate_USDT_PKR', 0)

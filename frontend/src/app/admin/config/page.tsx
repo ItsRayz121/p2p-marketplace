@@ -211,7 +211,7 @@ export default function ConfigPage() {
   // ── Non-Custodial P2P ────────────────────────────────────────────────────────
   const [ncEnabled, setNcEnabled] = useState(false)
   const [ncMaxOrderL1, setNcMaxOrderL1] = useState('50')
-  const [ncMaxOrderL2, setNcMaxOrderL2] = useState('0')
+  const [ncMaxOrderL2, setNcMaxOrderL2] = useState('500')
   const [ncL1AdsUsdt, setNcL1AdsUsdt] = useState('1')
   const [ncL1AdsCtm, setNcL1AdsCtm] = useState('2')
   const [ncSaving, setNcSaving] = useState(false)
@@ -309,7 +309,7 @@ export default function ConfigPage() {
       setPinnedAdIds(m['home_pinned_ad_ids'] ?? '')
       setNcEnabled(m['noncustodial_p2p_enabled'] === 'true')
       setNcMaxOrderL1(m['noncustodial_max_order_usdt_l1'] ?? '50')
-      setNcMaxOrderL2(m['noncustodial_max_order_usdt_l2'] ?? '0')
+      setNcMaxOrderL2(m['noncustodial_max_order_usdt_l2'] ?? '500')
       setNcL1AdsUsdt(m['noncustodial_l1_max_ads'] ?? '1')
       setNcL1AdsCtm(m['noncustodial_l1_max_ads_ctm'] ?? '2')
       setError(null)
@@ -513,8 +513,8 @@ export default function ConfigPage() {
             <input className={inputCls} type="number" min="1" value={ncMaxOrderL1} onChange={(e) => setNcMaxOrderL1(e.target.value)} placeholder="50" />
           </Field>
 
-          <Field label="L2 max order (USDT)" hint="Per-order cap for Level-2 users. 0 = unlimited (recommended ~500 during early access)">
-            <input className={inputCls} type="number" min="0" value={ncMaxOrderL2} onChange={(e) => setNcMaxOrderL2(e.target.value)} placeholder="0" />
+          <Field label="L2 max order (USDT)" hint="Per-order cap for Level-2 users (recommended 300–500). 0 = unlimited">
+            <input className={inputCls} type="number" min="0" value={ncMaxOrderL2} onChange={(e) => setNcMaxOrderL2(e.target.value)} placeholder="500" />
           </Field>
 
           <Field label="Level-1 ads — USDT" hint="Active USDT ads a Level-1 user may keep">
