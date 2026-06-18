@@ -73,7 +73,7 @@ const defaultForm: FormState = {
   paymentMethods: [],
   tokenDeliveryTypes: [],
   settlementMethod: '',
-  tradeWindow: 45,
+  tradeWindow: 15,
   terms: '',
 }
 

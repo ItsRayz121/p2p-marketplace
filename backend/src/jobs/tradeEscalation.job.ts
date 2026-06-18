@@ -4,6 +4,9 @@
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import { sendAdminAlertEmail } from '../services/email.service'
+import { notify } from '../lib/notify'
+import { createAdminNotif } from '../services/adminNotification.service'
+import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 
 export async function runTradeEscalation(): Promise<void> {
   const now = new Date()
@@ -62,6 +65,49 @@ export async function runTradeEscalation(): Promise<void> {
     }
   }
 
+  // 1b. Non-custodial release window: auto-escalate payment_confirmed trades
+  // whose releaseDeadlineAt has passed (seller confirmed payment but never
+  // released). Opens a dispute on the buyer's behalf so funds aren't left in
+  // limbo. releaseDeadlineAt is only ever set while the flag is ON, but we guard
+  // the flag too so this whole step is a no-op when non-custodial mode is off.
+  let releaseEscalated = 0
+  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+    const staleRelease = await db.trade.findMany({
+      where: { status: 'payment_confirmed', releaseDeadlineAt: { lt: now } },
+      take: 200,
+      orderBy: { releaseDeadlineAt: 'asc' },
+      select: { id: true, buyerId: true, sellerId: true, orderRef: true },
+    })
+    for (const trade of staleRelease) {
+      try {
+        await db.$transaction(async (tx) => {
+          const [current] = await tx.$queryRaw<{ status: string }[]>`
+            SELECT status FROM "Trade" WHERE id = ${trade.id} FOR UPDATE
+          `
+          if (!current || current.status !== 'payment_confirmed') return
+          // Skip if a dispute somehow already exists (unique tradeId).
+          const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true } })
+          if (existing) return
+          await tx.dispute.create({
+            data: {
+              tradeId: trade.id,
+              openedById: trade.buyerId,
+              reason: 'release_timeout',
+              description: 'Auto-escalated: the seller confirmed payment but did not release within the release window.',
+            },
+          })
+          await tx.trade.update({ where: { id: trade.id }, data: { status: 'disputed' } })
+        })
+        notify(trade.buyerId, 'dispute', 'Trade Escalated', 'The seller did not release in time, so your trade was escalated to a dispute for admin review.', { tradeId: trade.id }, trade.id)
+        notify(trade.sellerId, 'dispute', 'Trade Escalated', 'You confirmed payment but did not release in time, so the trade was escalated to a dispute.', { tradeId: trade.id }, trade.id)
+        createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (release timeout)', body: `Trade #${trade.orderRef} — seller did not release in time.`, href: '/admin/disputes' })
+        releaseEscalated++
+      } catch (err) {
+        logger.error({ err, tradeId: trade.id }, 'Failed to auto-escalate release-timeout trade')
+      }
+    }
+  }
+
   // 2. Alert admin for payment_uploaded trades older than 2 hours (no action)
   const alertBefore = new Date(now.getTime() - 2 * 60 * 60 * 1000)
   const awaitingReview = await db.trade.count({
@@ -92,7 +138,7 @@ export async function runTradeEscalation(): Promise<void> {
   }
 
   logger.info(
-    { cancelled: stalePending.length, awaitingReview, oldDisputes },
+    { cancelled: stalePending.length, releaseEscalated, awaitingReview, oldDisputes },
     'Trade escalation check complete',
   )
 }

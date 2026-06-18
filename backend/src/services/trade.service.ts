@@ -428,13 +428,22 @@ export async function confirmPayment(
   // actually landed in their account — never release on a screenshot alone. The
   // client must send an explicit acknowledgment. Admins are exempt. Flag OFF
   // preserves the original one-click confirm behavior.
-  if (role !== 'admin' && opts?.confirmedReceipt !== true && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
+  const nonCustodial = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
+  if (role !== 'admin' && opts?.confirmedReceipt !== true && nonCustodial) {
     throw new AppError(
       'RECEIPT_NOT_CONFIRMED',
       'Confirm that the payment has actually arrived in your account (a screenshot is not enough) before releasing.',
       400,
     )
   }
+
+  // Release window: once payment is confirmed, the seller must release within
+  // RELEASE_WINDOW_MIN or the trade auto-escalates to a dispute (see
+  // tradeEscalation.job). Only enforced in non-custodial mode.
+  const RELEASE_WINDOW_MIN = 15
+  const releaseDeadlineAt = nonCustodial
+    ? new Date(Date.now() + RELEASE_WINDOW_MIN * 60 * 1000)
+    : null
 
   const updated = await db.$transaction(async (tx: Tx) => {
     const rows = await tx.$queryRaw<Array<{ id: string; status: string; sellerId: string; buyerId: string }>>`
@@ -452,7 +461,11 @@ export async function confirmPayment(
 
     return tx.trade.update({
       where: { id: tradeId },
-      data: { status: 'payment_confirmed', paymentConfirmedAt: new Date() },
+      data: {
+        status: 'payment_confirmed',
+        paymentConfirmedAt: new Date(),
+        ...(releaseDeadlineAt ? { releaseDeadlineAt } : {}),
+      },
     })
   })
 

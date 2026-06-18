@@ -669,6 +669,10 @@ model Trade {
   expiresAt          DateTime
   paymentUploadedAt  DateTime?   // set when buyer uploads payment proof
   paymentConfirmedAt DateTime?   // set when seller confirms payment received
+  // Non-custodial release window: when the seller confirms payment, they must
+  // release within this deadline or the trade auto-escalates to a dispute.
+  // Only set when noncustodial_p2p_enabled is ON.
+  releaseDeadlineAt  DateTime?
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   adBidId            String?     @unique
