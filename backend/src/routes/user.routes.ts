@@ -4,7 +4,7 @@ import { db } from '../lib/prisma'
 import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
-import { maskName } from '../lib/identity'
+import { maskName, namesMatch } from '../lib/identity'
 
 const PAYMENT_METHOD_TYPES = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay', 'bank_transfer'] as const
 
@@ -172,6 +172,20 @@ export async function userRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const { type, displayName, accountName, mobileNumber, bankName, ibanNumber, accountNumber } = parsed.data
+
+    // Non-custodial anti-fraud: the payment account holder name must match the
+    // user's verified CNIC legal name — kills third-party-payment scams. Only
+    // enforced once the name is locked (legalNameLockedAt) and the flag is ON.
+    if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+      const u = await db.user.findUnique({ where: { id: userId }, select: { fullName: true, legalNameLockedAt: true } })
+      if (u?.legalNameLockedAt && !namesMatch(accountName, u.fullName)) {
+        throw new AppError(
+          'NAME_MISMATCH',
+          'The account holder name must match your verified CNIC name. Third-party accounts are not allowed.',
+          400,
+        )
+      }
+    }
 
     const count = await db.paymentMethod.count({ where: { userId, isActive: true } })
     if (count >= 10) throw new AppError('LIMIT_EXCEEDED', 'Maximum 10 payment methods allowed', 400)
