@@ -225,6 +225,49 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     throw new AppError('DUPLICATE_REQUEST', 'A matching trade is already being created. Please wait a moment.', 409)
   }
 
+  // ── Non-custodial concurrency + anti-griefing (taker = buyer here) ──────────
+  // Flag OFF (default) skips all of this, so production is unchanged. This only
+  // ever caps the TAKER (the buyer initiating the trade), never the maker (the
+  // ad owner / seller), whose seller-side trades are not counted.
+  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+    try {
+      const u = await db.user.findUnique({
+        where: { id: buyerId },
+        select: { kycLevel: true, tradeCooldownUntil: true, tradeStats: { select: { completedTrades: true } } },
+      })
+      // Anti-griefing cooldown: blocks users who recently abandoned a trade.
+      if (u?.tradeCooldownUntil && u.tradeCooldownUntil > new Date()) {
+        throw new AppError(
+          'TRADE_COOLDOWN',
+          'You recently left a trade unpaid. Please wait a little before starting a new one.',
+          429,
+        )
+      }
+      // Concurrency cap for Level-1 takers; enhanced (L2) users are uncapped.
+      if (u?.kycLevel !== 'enhanced') {
+        const completed = u?.tradeStats?.completedTrades ?? 0
+        const maxOpen = 1 + Math.floor(completed / 10)
+        const openCount = await db.trade.count({
+          where: {
+            buyerId,
+            status: { in: ['payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent'] },
+          },
+        })
+        if (openCount >= maxOpen) {
+          throw new AppError(
+            'TOO_MANY_OPEN_TRADES',
+            `You can have ${maxOpen} open trade${maxOpen === 1 ? '' : 's'} at a time. Finish your current trade first.`,
+            429,
+          )
+        }
+      }
+    } catch (err) {
+      // Release the idempotency claim so the user can retry once unblocked.
+      if (err instanceof AppError) await redis.del(idempKey).catch(() => {})
+      throw err
+    }
+  }
+
   let trade: Awaited<ReturnType<typeof db.trade.create>>
   try {
     trade = await db.$transaction(async (tx: Tx) => {

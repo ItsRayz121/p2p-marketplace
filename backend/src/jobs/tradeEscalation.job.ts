@@ -10,6 +10,7 @@ import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 
 export async function runTradeEscalation(): Promise<void> {
   const now = new Date()
+  const nonCustodial = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
 
   // 1. Auto-cancel payment_pending trades that have passed their expiresAt deadline
   // take: 200 prevents OOM if many trades expire simultaneously (e.g. after downtime)
@@ -47,6 +48,21 @@ export async function runTradeEscalation(): Promise<void> {
           SET "dailyBuyUsed" = GREATEST("dailyBuyUsed" - ${trade.fiatAmount ?? 0}, 0)
           WHERE id = ${trade.buyerId}
         `
+        // Anti-griefing penalty (non-custodial only): the buyer abandoned this
+        // trade by never paying. Increment their abandon count and apply an
+        // escalating cooldown (30 min × offenses) before they can start another.
+        if (nonCustodial) {
+          const [u] = await tx.$queryRaw<{ tradeAbandonCount: number }[]>`
+            SELECT "tradeAbandonCount" FROM "User" WHERE id = ${trade.buyerId} FOR UPDATE
+          `
+          const offenses = (u?.tradeAbandonCount ?? 0) + 1
+          const cooldownUntil = new Date(now.getTime() + Math.min(offenses, 6) * 30 * 60 * 1000)
+          await tx.$executeRaw`
+            UPDATE "User"
+            SET "tradeAbandonCount" = ${offenses}, "tradeCooldownUntil" = ${cooldownUntil}
+            WHERE id = ${trade.buyerId}
+          `
+        }
         // Restore inventory AND reactivate the ad if this trade had consumed
         // the last of it (status flipped to 'completed' at creation time) —
         // mirrors the manual cancelTrade path.
@@ -71,7 +87,7 @@ export async function runTradeEscalation(): Promise<void> {
   // limbo. releaseDeadlineAt is only ever set while the flag is ON, but we guard
   // the flag too so this whole step is a no-op when non-custodial mode is off.
   let releaseEscalated = 0
-  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+  if (nonCustodial) {
     const staleRelease = await db.trade.findMany({
       where: { status: 'payment_confirmed', releaseDeadlineAt: { lt: now } },
       take: 200,

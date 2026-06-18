@@ -433,6 +433,12 @@ model User {
   dailyBuyLimit          Decimal @default(50000) @db.Decimal(14, 2)
   dailySellLimit         Decimal @default(50000) @db.Decimal(14, 2)
 
+  // Non-custodial anti-griefing: incremented when the user abandons a trade
+  // (auto-cancelled for non-payment); tradeCooldownUntil blocks starting a new
+  // trade until it elapses. Only enforced when noncustodial_p2p_enabled is ON.
+  tradeAbandonCount      Int       @default(0)
+  tradeCooldownUntil     DateTime?
+
   completedSellTrades    Int     @default(0)
   firstTradeBonusPaid    Boolean @default(false)
   marketingEmailsEnabled Boolean @default(true)
