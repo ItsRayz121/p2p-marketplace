@@ -43,6 +43,7 @@ const STRUCTURED_KEYS = new Set([
   'gas_usdt_bep20_address', 'gas_usdt_aptos_address',
   'gas_bep20_logo_url', 'gas_aptos_logo_url',
   'home_offers_mode', 'home_pinned_ad_ids',
+  'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt', 'noncustodial_l1_max_ads',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -204,6 +205,13 @@ export default function ConfigPage() {
   const [cryptoOpen, setCryptoOpen] = useState(false)
   const [offersOpen, setOffersOpen] = useState(false)
   const [advOpen, setAdvOpen] = useState(false)
+  const [ncOpen, setNcOpen] = useState(false)
+
+  // ── Non-Custodial P2P ────────────────────────────────────────────────────────
+  const [ncEnabled, setNcEnabled] = useState(false)
+  const [ncMaxOrder, setNcMaxOrder] = useState('100')
+  const [ncL1MaxAds, setNcL1MaxAds] = useState('1')
+  const [ncSaving, setNcSaving] = useState(false)
 
   // ── Homepage Top Offers ─────────────────────────────────────────────────────
   const [offersMode, setOffersMode] = useState<'top' | 'latest' | 'pinned'>('top')
@@ -296,6 +304,9 @@ export default function ConfigPage() {
         setOffersMode((['top', 'latest', 'pinned'].includes(mode) ? mode : 'top') as 'top' | 'latest' | 'pinned')
       }
       setPinnedAdIds(m['home_pinned_ad_ids'] ?? '')
+      setNcEnabled(m['noncustodial_p2p_enabled'] === 'true')
+      setNcMaxOrder(m['noncustodial_max_order_usdt'] ?? '100')
+      setNcL1MaxAds(m['noncustodial_l1_max_ads'] ?? '1')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -415,6 +426,19 @@ export default function ConfigPage() {
     finally { setOffersSaving(false) }
   }
 
+  async function saveNonCustodial() {
+    setNcSaving(true)
+    try {
+      await saveKeys([
+        { key: 'noncustodial_p2p_enabled', value: ncEnabled ? 'true' : 'false' },
+        { key: 'noncustodial_max_order_usdt', value: String(parseFloat(ncMaxOrder) || 100) },
+        { key: 'noncustodial_l1_max_ads', value: String(parseInt(ncL1MaxAds, 10) || 1) },
+      ])
+      showToast(ncEnabled ? 'Non-custodial mode is ON.' : 'Non-custodial mode is OFF.')
+    } catch { showToast('Failed to save non-custodial settings.', false) }
+    finally { setNcSaving(false) }
+  }
+
   async function saveEdit(key: string) {
     setEditSaving(true)
     try {
@@ -455,6 +479,42 @@ export default function ConfigPage() {
           {toast.msg}
         </div>
       )}
+
+      {/* ══ Non-Custodial P2P ═════════════════════════════════════════════════ */}
+      <Accordion
+        title="Non-Custodial P2P"
+        subtitle="Master switch for non-custodial mode (identity, KYC tiers, verified-receipt, caps)"
+        open={ncOpen}
+        onToggle={() => setNcOpen((v) => !v)}
+        badge={ncEnabled ? <Badge variant="success" size="sm">ON</Badge> : <Badge variant="outline" size="sm">OFF</Badge>}
+      >
+        <div className="p-5 space-y-5">
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={ncEnabled} onChange={(e) => setNcEnabled(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Enable non-custodial mode</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Turns on the whole non-custodial system: CNIC-name identity + privacy, KYC tiers
+                (L1 trades / L1 gets 1 ad / L2 unlimited ads), verified-receipt, release-window
+                escalation, concurrency + anti-griefing, payment-name match, and the order cap.
+                Reversible instantly — untick to return to current behavior.
+              </p>
+            </div>
+          </label>
+
+          <Field label="Max order (USDT)" hint="Per-order cap during early access">
+            <input className={inputCls} type="number" min="1" value={ncMaxOrder} onChange={(e) => setNcMaxOrder(e.target.value)} placeholder="100" />
+          </Field>
+
+          <Field label="Level-1 active ads" hint="How many ads/listings a Level-1 user may keep at once">
+            <input className={inputCls} type="number" min="0" value={ncL1MaxAds} onChange={(e) => setNcL1MaxAds(e.target.value)} placeholder="1" />
+          </Field>
+
+          <div className="flex justify-end">
+            <Button size="sm" loading={ncSaving} onClick={saveNonCustodial}>Save Non-Custodial Settings</Button>
+          </div>
+        </div>
+      </Accordion>
 
       {/* ══ Branchless Wallets ════════════════════════════════════════════════ */}
       <Accordion

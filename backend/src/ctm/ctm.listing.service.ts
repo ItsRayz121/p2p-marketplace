@@ -76,12 +76,24 @@ export async function createListing(userId: string, data: CreateListingInput) {
   if (!merchantProfile) throw new AppError('FORBIDDEN', 'You must be a registered CTM merchant to create listings', 403)
   if (!merchantProfile.isActive) throw new AppError('FORBIDDEN', 'Your CTM merchant profile is suspended', 403)
 
-  // Non-custodial trust model: creating listings (the maker role) requires
-  // Level 2 (enhanced) KYC. Flag OFF preserves the original behavior.
+  // Non-custodial trust model: Level 2 (enhanced) makers list freely; Level 1
+  // (basic) makers may keep a limited number of active listings (default 1).
+  // Flag OFF preserves the original behavior.
   if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
     const u = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
     if (u?.kycLevel !== 'enhanced') {
-      throw new AppError('KYC_LEVEL2_REQUIRED', 'Level 2 (enhanced) KYC is required to create listings', 403)
+      const l1Row = await db.platformConfig.findUnique({ where: { key: 'noncustodial_l1_max_ads' } })
+      const l1Max = l1Row ? parseInt(l1Row.value, 10) : 1
+      const activeCount = await db.ctmListing.count({
+        where: { merchantProfileId: merchantProfile.id, status: { in: ['active', 'paused'] } },
+      })
+      if (activeCount >= l1Max) {
+        throw new AppError(
+          'KYC_LEVEL2_REQUIRED',
+          `Level 1 users can have ${l1Max} active listing${l1Max === 1 ? '' : 's'} at a time. Upgrade to Level 2 (enhanced) KYC to list more.`,
+          403,
+        )
+      }
     }
   }
 

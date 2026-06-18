@@ -51,11 +51,21 @@ export async function createAd(userId: string, data: CreateAdInput) {
   if (user.kycStatus !== 'approved') {
     throw new AppError('KYC_REQUIRED', 'KYC approval required to post ads', 403)
   }
-  // Non-custodial trust model: posting ads (the maker role) requires Level 2
-  // (enhanced) KYC, while Level 1 (basic) users can still take/respond to trades.
-  // Flag OFF preserves the original behavior (any approved user can post).
+  // Non-custodial trust model: Level 2 (enhanced) makers post unlimited ads;
+  // Level 1 (basic) makers get the privilege of a limited number of active ads
+  // at a time (default 1) so a scammer can't run a storefront. Flag OFF
+  // preserves the original behavior (any approved user can post freely).
   if (user.kycLevel !== 'enhanced' && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
-    throw new AppError('KYC_LEVEL2_REQUIRED', 'Level 2 (enhanced) KYC is required to create ads', 403)
+    const l1Row = await db.platformConfig.findUnique({ where: { key: 'noncustodial_l1_max_ads' } })
+    const l1Max = l1Row ? parseInt(l1Row.value, 10) : 1
+    const activeCount = await db.ad.count({ where: { userId, status: { in: ['active', 'paused'] } } })
+    if (activeCount >= l1Max) {
+      throw new AppError(
+        'KYC_LEVEL2_REQUIRED',
+        `Level 1 users can have ${l1Max} active ad${l1Max === 1 ? '' : 's'} at a time. Upgrade to Level 2 (enhanced) KYC to post more.`,
+        403,
+      )
+    }
   }
 
   if (data.minOrder > data.maxOrder) {
