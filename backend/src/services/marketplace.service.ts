@@ -77,6 +77,7 @@ export interface PublicConfig {
   homeFaqs: unknown[]
   kycLimitBasicDaily: number
   kycLimitEnhancedDaily: number
+  nonCustodialP2p: boolean
 }
 
 export interface GetAdsParams {
@@ -456,6 +457,7 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     'home_faqs',
     'kyc_limit_basic_daily',
     'kyc_limit_enhanced_daily',
+    'noncustodial_p2p_enabled',
   ]
 
   const rows = await db.platformConfig.findMany({
@@ -482,6 +484,7 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     homeFaqs,
     kycLimitBasicDaily: parseFloat(map['kyc_limit_basic_daily'] ?? '50000'),
     kycLimitEnhancedDaily: parseFloat(map['kyc_limit_enhanced_daily'] ?? '200000'),
+    nonCustodialP2p: map['noncustodial_p2p_enabled'] === 'true',
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 60)

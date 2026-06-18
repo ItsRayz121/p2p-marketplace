@@ -1,6 +1,7 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
+import { FLAGS, isFlagEnabled } from './platformFlags.service'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,24 +61,34 @@ export async function createAd(userId: string, data: CreateAdInput) {
 
   const totalAmount = data.totalAmount ?? 0
 
-  // For sell ads: verify the user has enough balance in their wallet
+  // For sell ads: verify the user has enough balance in their wallet.
+  //
+  // Non-custodial mode (flag OFF by default): the platform holds no USDT, so a
+  // sell ad no longer requires pre-funded/locked on-platform balance — the asset
+  // settles off-platform and protection shifts to KYC + identity + reputation +
+  // dispute. With the flag OFF, the original custodial balance check is enforced
+  // unchanged, so production behavior is identical until a super-admin flips
+  // `noncustodial_p2p_enabled`.
   if (data.side === 'sell') {
     if (totalAmount <= 0) {
       throw new AppError('VALIDATION_ERROR', 'Total available amount is required for sell listings', 400)
     }
-    const wallet = await db.wallet.findFirst({
-      where: { userId, coin: data.coin.toUpperCase() },
-      select: { balance: true, lockedBalance: true },
-    })
-    const available = wallet
-      ? new Prisma.Decimal(wallet.balance).sub(new Prisma.Decimal(wallet.lockedBalance))
-      : new Prisma.Decimal(0)
-    if (new Prisma.Decimal(totalAmount).gt(available)) {
-      throw new AppError(
-        'INSUFFICIENT_BALANCE',
-        `Insufficient ${data.coin} balance. Available: ${available.toFixed(8)}, Required: ${totalAmount}`,
-        400,
-      )
+    const nonCustodial = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
+    if (!nonCustodial) {
+      const wallet = await db.wallet.findFirst({
+        where: { userId, coin: data.coin.toUpperCase() },
+        select: { balance: true, lockedBalance: true },
+      })
+      const available = wallet
+        ? new Prisma.Decimal(wallet.balance).sub(new Prisma.Decimal(wallet.lockedBalance))
+        : new Prisma.Decimal(0)
+      if (new Prisma.Decimal(totalAmount).gt(available)) {
+        throw new AppError(
+          'INSUFFICIENT_BALANCE',
+          `Insufficient ${data.coin} balance. Available: ${available.toFixed(8)}, Required: ${totalAmount}`,
+          400,
+        )
+      }
     }
   }
 
