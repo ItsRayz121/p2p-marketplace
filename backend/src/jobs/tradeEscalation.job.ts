@@ -7,6 +7,7 @@ import { sendAdminAlertEmail } from '../services/email.service'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
+import { releaseMakerBond } from '../services/makerBond.service'
 
 export async function runTradeEscalation(): Promise<void> {
   const now = new Date()
@@ -75,6 +76,10 @@ export async function runTradeEscalation(): Promise<void> {
           },
         })
       })
+      // Buyer never paid → not a maker fault → return the maker's bond.
+      await releaseMakerBond({ tradeType: 'usdt', tradeId: trade.id }).catch((err) =>
+        logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on auto-cancel'),
+      )
       logger.info({ tradeId: trade.id }, 'Auto-cancelled stale trade')
     } catch (err) {
       logger.error({ err, tradeId: trade.id }, 'Failed to auto-cancel trade')

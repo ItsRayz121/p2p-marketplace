@@ -8,7 +8,7 @@ import { logger } from '../lib/logger'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { notify as centralNotify } from '../lib/notify'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
-import { getBondConfig, lockMakerBondTx } from '../services/makerBond.service'
+import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 
 type JsonValue = Prisma.InputJsonValue
@@ -335,6 +335,11 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
     }
   })
 
+  // Trade completed cleanly → release the maker's bond (idempotent; no-op when off).
+  await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+    logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond after CTM completion'),
+  )
+
   queues.badgeRecalculate.add('recalc', { userId: buyerId }).catch(() => {})
   queues.badgeRecalculate.add('recalc', { userId: trade.sellerId }).catch(() => {})
 
@@ -384,6 +389,11 @@ export async function cancelTrade(tradeRef: string, userId: string, reason: stri
     }
   })
 
+  // Cancellation is not a maker fault → return the bond (idempotent; no-op when off).
+  await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+    logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond after CTM cancel'),
+  )
+
   const otherId = trade.buyerId === userId ? trade.sellerId : trade.buyerId
   notify(otherId, 'CTM_TRADE_CANCELLED', 'Trade cancelled', `Trade ${refLabel(trade.displayRef)} has been cancelled.`, { tradeRef, displayRef: trade.displayRef, reason })
 }
@@ -418,6 +428,14 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
       metadata: { tradeRef, winner: data.winner, resolution: data.resolution } as JsonValue,
     },
   }).catch(() => {})
+
+  // Maker collateral bond (Phase 5): seize to the winner if the maker lost, else
+  // release. 'split' returns the bond. The helper looks up the maker from the
+  // BondHold, so we just pass the winning/losing user ids.
+  const winnerUserId = data.winner === 'buyer' ? trade.buyerId : data.winner === 'seller' ? trade.sellerId : null
+  const loserUserId  = data.winner === 'buyer' ? trade.sellerId : data.winner === 'seller' ? trade.buyerId : null
+  await resolveBondOnDispute({ tradeType: 'ctm', tradeId: trade.id, loserId: loserUserId, winnerId: winnerUserId })
+    .catch((err) => logger.error({ err, tradeId: trade.id }, 'Failed to resolve maker bond on CTM dispute'))
 
   notify(trade.buyerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
   notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })

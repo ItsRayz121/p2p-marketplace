@@ -248,3 +248,26 @@ export async function seizeMakerBond(params: {
   }
   return { seized: done, amount: hold.amount.toString() }
 }
+
+/**
+ * Apply the correct bond outcome when a dispute is resolved. If the MAKER (the
+ * bonded party) lost, the bond is seized to the winning counterparty; otherwise
+ * (maker won, split, or indeterminate) the bond is returned. Looks the maker up
+ * from the BondHold itself, so callers don't need to know who the maker was.
+ * Idempotent + no-op when no bond was held.
+ */
+export async function resolveBondOnDispute(params: {
+  tradeType: BondTradeType
+  tradeId: string
+  loserId: string | null
+  winnerId: string | null
+}): Promise<void> {
+  const { tradeType, tradeId, loserId, winnerId } = params
+  const hold = await db.bondHold.findUnique({ where: { tradeType_tradeId: { tradeType, tradeId } } })
+  if (!hold || hold.status !== 'held') return
+  if (loserId && winnerId && hold.makerId === loserId) {
+    await seizeMakerBond({ tradeType, tradeId, victimId: winnerId })
+  } else {
+    await releaseMakerBond({ tradeType, tradeId })
+  }
+}

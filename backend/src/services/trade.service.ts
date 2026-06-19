@@ -10,7 +10,7 @@ import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
 import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
-import { getBondConfig, lockMakerBondTx } from './makerBond.service'
+import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
   verifyTradeTx,
@@ -738,6 +738,12 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     await recalcSellerReleaseTime(tx, rows.sellerId)
   })
 
+  // Trade completed cleanly → release the maker's collateral bond (idempotent;
+  // no-op when bonds are off or none was held).
+  await releaseMakerBond({ tradeType: 'usdt', tradeId }).catch((err) =>
+    logger.error({ err, tradeId }, 'Failed to release maker bond after release'),
+  )
+
   // Queue badge recalculation for both
   await queues.badgeRecalculate.add('recalculate', { userId: buyerId })
   await queues.badgeRecalculate.add('recalculate', { userId: tradeDetails.sellerId })
@@ -835,6 +841,11 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
       WHERE id = ${trade.buyerId}
     `
   })
+
+  // Cancellation is not a maker fault → return the bond to the maker (idempotent).
+  await releaseMakerBond({ tradeType: 'usdt', tradeId }).catch((err) =>
+    logger.error({ err, tradeId }, 'Failed to release maker bond after cancel'),
+  )
 
   const otherPartyId = actorId === buyerId! ? sellerId! : buyerId!
   notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId }, tradeId)

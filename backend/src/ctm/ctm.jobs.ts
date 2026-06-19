@@ -2,6 +2,7 @@ import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import https from 'node:https'
 import { notify as centralNotify } from '../lib/notify'
+import { releaseMakerBond } from '../services/makerBond.service'
 
 /** Human-readable trade label for user-facing notifications — never exposes the raw cuid. */
 const lbl = (t: { displayRef?: string | null }): string => t.displayRef ?? 'your CTM trade'
@@ -35,6 +36,11 @@ export async function runCtmTradeExpiry() {
         })
       }
     })
+
+    // Buyer never paid → not a maker fault → return the maker's bond.
+    await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+      logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM expiry'),
+    )
 
     notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — payment was not uploaded in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
     notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — buyer did not upload payment proof in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })

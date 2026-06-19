@@ -10,6 +10,7 @@ import { AppError, Errors } from '../lib/errors'
 import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
+import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
@@ -1517,6 +1518,11 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     await createAuditLog(req.user!.id, 'TRADE_CANCELLED_ADMIN', 'Trade', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
+    // Neutral admin cancel → return the maker's bond. (To penalise a maker the
+    // admin resolves a dispute against them instead, which seizes the bond.)
+    await releaseMakerBond({ tradeType: 'usdt', tradeId: id })
+      .catch((err) => log.error({ err, tradeId: id }, 'Failed to release maker bond on admin cancel'))
+
     return reply.send({ success: true })
   })
 
@@ -1740,6 +1746,12 @@ export async function adminRoutes(app: FastifyInstance) {
       winner: parsed.data.winner,
       resolution: parsed.data.resolution,
     }, clientIp(req), req.headers['user-agent'] as string | undefined)
+
+    // Maker collateral bond (Phase 5): seize to the winner if the maker lost,
+    // else release. Idempotent + no-op when bonds are off or none was held.
+    // Outside the resolve tx — a bond hiccup must never block the ruling.
+    await resolveBondOnDispute({ tradeType: 'usdt', tradeId: dispute.tradeId, loserId, winnerId })
+      .catch((err) => log.error({ err, tradeId: dispute.tradeId }, 'Failed to resolve maker bond on dispute'))
 
     // Optional escalation against the losing party, via the proper moderation
     // pipeline (so it shows up in ModerationAction history like a normal ban).
