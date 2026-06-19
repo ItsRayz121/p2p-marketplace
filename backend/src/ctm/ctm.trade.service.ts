@@ -8,6 +8,8 @@ import { logger } from '../lib/logger'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { notify as centralNotify } from '../lib/notify'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
+import { getBondConfig, lockMakerBondTx } from '../services/makerBond.service'
+import { recordAuditLog } from '../lib/audit'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -636,7 +638,25 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
 
   const expiresAt = new Date(Date.now() + (listing.tradeWindowMins ?? 45) * 60 * 1000)
 
-  return db.$transaction(async (tx: Tx) => {
+  // Maker collateral bond (non-custodial Phase 5): the LISTING CREATOR (maker)
+  // posts the bond, regardless of buy/sell side. CTM is priced in PKR, so the
+  // bond is computed on the USDT-equivalent via the platform USDT→PKR rate. If
+  // that rate is unavailable we skip the bond (fail-open, consistent with the
+  // order-cap) rather than block trading.
+  const makerId = listing.merchantProfile.userId
+  const bondCfg = await getBondConfig()
+  let bondUsdtEquiv = 0
+  if (bondCfg.enabled) {
+    const usdtPkr = await getNumberConfig('rate_USDT_PKR', 0)
+    if (usdtPkr > 0) {
+      bondUsdtEquiv = listing.pricePerUnit.mul(tradeTokenAmount).toNumber() / usdtPkr
+    } else {
+      logger.warn({ listingId }, 'maker bond skipped for CTM trade — USDT/PKR rate unavailable')
+    }
+  }
+  const willBond = bondCfg.enabled && bondUsdtEquiv > 0
+
+  const created = await db.$transaction(async (tx: Tx) => {
     // Atomic availability check: only lock if availableAmount >= requested amount (prevents race condition)
     const updated = await tx.ctmListing.updateMany({
       where: { id: listing.id, availableAmount: { gte: tradeTokenAmount } },
@@ -680,11 +700,32 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
       },
     })
 
+    // Maker collateral bond — lock the maker's USDT bond in the SAME transaction
+    // (placed last so nothing can fail after it). Throws INSUFFICIENT_BOND →
+    // the whole trade creation, incl. the listing availability decrement, rolls
+    // back atomically.
+    if (willBond) {
+      await lockMakerBondTx(
+        tx,
+        { tradeType: 'ctm', tradeId: trade.id, makerId, tradeUsdt: bondUsdtEquiv },
+        bondCfg,
+      )
+    }
+
     // Notify the listing creator (buyer for BUY listings, seller for SELL listings)
     notify(listing.merchantProfile.userId, 'ctm_trade_created', 'New CTM Trade', `New trade for your ${listing.token.symbol} listing`, { tradeRef: trade.tradeRef })
 
     return trade
   })
+
+  if (willBond) {
+    void recordAuditLog(makerId, 'BOND_LOCKED', 'BondHold', `ctm:${created.id}`, {
+      tradeType: 'ctm', tradeId: created.id, amountUsdt: bondUsdtEquiv.toString(),
+    })
+    logger.info({ tradeId: created.id, makerId, amountUsdt: bondUsdtEquiv }, 'Maker bond locked (CTM)')
+  }
+
+  return created
 }
 
 export async function sendMessage(tradeRef: string, senderId: string, message: string, attachmentUrl?: string) {

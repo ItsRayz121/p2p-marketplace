@@ -10,6 +10,8 @@ import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
 import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
+import { getBondConfig, lockMakerBondTx } from './makerBond.service'
+import { recordAuditLog } from '../lib/audit'
 import {
   verifyTradeTx,
   assertNoDuplicateTradeTxHash,
@@ -277,6 +279,10 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     }
   }
 
+  // Maker bond config read once, outside the transaction (cheap, cached).
+  const bondCfg = await getBondConfig()
+  let bondHeldAmount: string | null = null
+
   let trade: Awaited<ReturnType<typeof db.trade.create>>
   try {
     trade = await db.$transaction(async (tx: Tx) => {
@@ -410,6 +416,19 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       },
     })
 
+      // Maker collateral bond (non-custodial Phase 5). Locks the maker's USDT
+      // bond in the SAME transaction so the trade and the lock commit together;
+      // if the maker can't cover it, lockMakerBondTx throws and the whole trade
+      // creation rolls back (no orphaned lock, no half-created trade).
+      if (bondCfg.enabled) {
+        const lock = await lockMakerBondTx(
+          tx,
+          { tradeType: 'usdt', tradeId: newTrade.id, makerId: adRows.userId, tradeUsdt: amount.toString() },
+          bondCfg,
+        )
+        if (lock.status === 'held' && !lock.alreadyHeld) bondHeldAmount = lock.amount
+      }
+
       return newTrade
     })
   } catch (err) {
@@ -421,6 +440,14 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
   // Replace the 'pending' marker with the real trade id (5 min TTL) so a
   // sequential retry returns the same trade instead of creating a new one.
   await redis.set(idempKey, trade.id, 'EX', 300)
+
+  // Audit the bond lock after the transaction has committed.
+  if (bondHeldAmount) {
+    void recordAuditLog(trade.sellerId, 'BOND_LOCKED', 'BondHold', `usdt:${trade.id}`, {
+      tradeType: 'usdt', tradeId: trade.id, amountUsdt: bondHeldAmount,
+    })
+    logger.info({ tradeId: trade.id, makerId: trade.sellerId, amount: bondHeldAmount }, 'Maker bond locked')
+  }
 
   return trade
 }

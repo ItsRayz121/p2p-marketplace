@@ -59,11 +59,57 @@ export type BondLockResult =
   | { status: 'skipped'; reason: 'disabled' | 'zero' }
   | { status: 'held'; amount: string; alreadyHeld: boolean }
 
+// Minimal client shape shared by db and an interactive-transaction client.
+type BondTxClient = Prisma.TransactionClient
+
 /**
- * Lock the maker's bond for a trade. Idempotent: a second call for the same
- * (tradeType, tradeId) returns the existing hold without locking again.
- * Throws AppError('INSUFFICIENT_BOND') if no single USDT wallet has enough
- * available to cover the bond.
+ * Core lock, operating on a provided transaction client so the bond lock can
+ * commit ATOMICALLY with the trade it backs (caller passes its own `tx`).
+ * Idempotent within (tradeType, tradeId). Throws AppError('INSUFFICIENT_BOND')
+ * when no single USDT wallet covers the bond. Does NOT write audit logs — the
+ * caller logs after its transaction commits.
+ */
+export async function lockMakerBondTx(
+  tx: BondTxClient,
+  params: { tradeType: BondTradeType; tradeId: string; makerId: string; tradeUsdt: number | string | Prisma.Decimal },
+  cfg: BondConfig,
+): Promise<BondLockResult> {
+  const { tradeType, tradeId, makerId } = params
+  if (!cfg.enabled) return { status: 'skipped', reason: 'disabled' }
+  const bond = computeBondUsdt(params.tradeUsdt, cfg)
+  if (bond.lte(0)) return { status: 'skipped', reason: 'zero' }
+
+  // Re-check inside the transaction so two concurrent opens collapse to one.
+  const dup = await tx.bondHold.findUnique({ where: { tradeType_tradeId: { tradeType, tradeId } } })
+  if (dup) return { status: 'held', amount: dup.amount.toString(), alreadyHeld: true }
+
+  // Row-lock the maker's USDT wallets; pick one whose available covers the bond.
+  const wallets = await tx.$queryRaw<Array<{ id: string; balance: string; lockedBalance: string }>>`
+    SELECT id, balance, "lockedBalance"
+    FROM "Wallet"
+    WHERE "userId" = ${makerId} AND coin = 'USDT'
+    ORDER BY (balance - "lockedBalance") DESC
+    FOR UPDATE
+  `
+  const chosen = wallets.find((w) => new Prisma.Decimal(w.balance).sub(w.lockedBalance).gte(bond))
+  if (!chosen) {
+    throw new AppError(
+      'INSUFFICIENT_BOND',
+      'This offer can’t accept trades right now (the maker’s collateral bond is insufficient). Please choose another offer.',
+      400,
+    )
+  }
+
+  await tx.wallet.update({ where: { id: chosen.id }, data: { lockedBalance: { increment: bond } } })
+  await tx.bondHold.create({
+    data: { tradeType, tradeId, makerId, walletId: chosen.id, amount: bond, status: 'held' },
+  })
+  return { status: 'held', amount: bond.toString(), alreadyHeld: false }
+}
+
+/**
+ * Standalone lock (opens its own transaction). For callers not already inside a
+ * transaction. Idempotent; throws AppError('INSUFFICIENT_BOND') as above.
  */
 export async function lockMakerBond(params: {
   tradeType: BondTradeType
@@ -71,59 +117,22 @@ export async function lockMakerBond(params: {
   makerId: string
   tradeUsdt: number | string | Prisma.Decimal
 }): Promise<BondLockResult> {
-  const { tradeType, tradeId, makerId } = params
   const cfg = await getBondConfig()
   if (!cfg.enabled) return { status: 'skipped', reason: 'disabled' }
 
-  // Fast idempotency check outside the transaction.
-  const pre = await db.bondHold.findUnique({ where: { tradeType_tradeId: { tradeType, tradeId } } })
+  const pre = await db.bondHold.findUnique({
+    where: { tradeType_tradeId: { tradeType: params.tradeType, tradeId: params.tradeId } },
+  })
   if (pre) return { status: 'held', amount: pre.amount.toString(), alreadyHeld: true }
 
-  const bond = computeBondUsdt(params.tradeUsdt, cfg)
-  if (bond.lte(0)) return { status: 'skipped', reason: 'zero' }
-
-  const result = await db.$transaction(async (tx) => {
-    // Re-check inside the transaction so two concurrent opens collapse to one.
-    const dup = await tx.bondHold.findUnique({ where: { tradeType_tradeId: { tradeType, tradeId } } })
-    if (dup) return { amount: dup.amount.toString(), alreadyHeld: true }
-
-    // Row-lock the maker's USDT wallets and pick one whose available covers the
-    // bond. FOR UPDATE serialises concurrent locks against the same pool.
-    const wallets = await tx.$queryRaw<Array<{ id: string; balance: string; lockedBalance: string }>>`
-      SELECT id, balance, "lockedBalance"
-      FROM "Wallet"
-      WHERE "userId" = ${makerId} AND coin = 'USDT'
-      ORDER BY (balance - "lockedBalance") DESC
-      FOR UPDATE
-    `
-    const chosen = wallets.find((w) =>
-      new Prisma.Decimal(w.balance).sub(w.lockedBalance).gte(bond),
-    )
-    if (!chosen) {
-      throw new AppError(
-        'INSUFFICIENT_BOND',
-        `Maker has insufficient USDT bond available. A ${bond.toString()} USDT bond is required to back this trade.`,
-        400,
-      )
-    }
-
-    await tx.wallet.update({
-      where: { id: chosen.id },
-      data: { lockedBalance: { increment: bond } },
+  const result = await db.$transaction((tx) => lockMakerBondTx(tx, params, cfg))
+  if (result.status === 'held' && !result.alreadyHeld) {
+    void recordAuditLog(params.makerId, 'BOND_LOCKED', 'BondHold', `${params.tradeType}:${params.tradeId}`, {
+      tradeType: params.tradeType, tradeId: params.tradeId, amountUsdt: result.amount,
     })
-    const hold = await tx.bondHold.create({
-      data: { tradeType, tradeId, makerId, walletId: chosen.id, amount: bond, status: 'held' },
-    })
-    return { amount: hold.amount.toString(), alreadyHeld: false }
-  })
-
-  if (!result.alreadyHeld) {
-    void recordAuditLog(makerId, 'BOND_LOCKED', 'BondHold', `${tradeType}:${tradeId}`, {
-      tradeType, tradeId, amountUsdt: result.amount,
-    })
-    logger.info({ tradeType, tradeId, makerId, amount: result.amount }, 'Maker bond locked')
+    logger.info({ ...params, amount: result.amount }, 'Maker bond locked')
   }
-  return { status: 'held', amount: result.amount, alreadyHeld: result.alreadyHeld }
+  return result
 }
 
 /**
