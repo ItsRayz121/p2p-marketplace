@@ -96,11 +96,41 @@ export function normalizeBank(slug: string): string {
   return BANK_ALIASES[lower] ?? lower
 }
 
+// ── Self-hosted local fallbacks ────────────────────────────────────────────────
+// Bundled SVGs served from our own /public — they physically cannot 404, rate
+// limit, or be geo-blocked the way the external favicon/CDN services can. This is
+// the guaranteed tier that prevents the grey "initials" fallback from ever showing
+// for the core entities, which is why payment-method logos kept disappearing.
+// Admin-uploaded (DB) logos still take priority for pixel-perfect official art.
+
+export const PAYMENT_METHOD_LOGO_LOCAL: Record<string, string> = {
+  jazzcash:  '/logos/payment/jazzcash.svg',
+  easypaisa: '/logos/payment/easypaisa.svg',
+  sadapay:   '/logos/payment/sadapay.svg',
+  nayapay:   '/logos/payment/nayapay.svg',
+}
+
+export const TOKEN_LOGO_LOCAL: Record<string, string> = {
+  USDT: '/logos/token/usdt.svg',
+  USDC: '/logos/token/usdc.svg',
+}
+
+export const CHAIN_LOGO_LOCAL: Record<string, string> = {
+  BSC:   '/logos/chain/bsc.svg',
+  TRON:  '/logos/chain/tron.svg',
+  ETH:   '/logos/chain/eth.svg',
+  APTOS: '/logos/chain/aptos.svg',
+  APT:   '/logos/chain/aptos.svg',
+}
+
+// Generic fallback so any bank slug renders a bank glyph rather than initials.
+export const BANK_LOGO_LOCAL_GENERIC = '/logos/bank/_generic.svg'
+
 // ── Static CDN fallbacks ───────────────────────────────────────────────────────
 // TrustWallet assets via the raw.githubusercontent.com mirror — the legacy
 // assets.trustwallet.com CDN now 404s on every path. PK payment methods and banks use
 // icon.horse / Google gstatic / worldvectorlogo — all verified working.
-// EntityLogo catches 404s and falls back to initials in all cases.
+// EntityLogo catches 404s and falls back to the local SVG, then initials.
 
 export const CHAIN_LOGO_STATIC: Record<string, string> = {
   BSC:    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png',
@@ -222,6 +252,32 @@ export function resolveLogoStatic(type: EntityType, slug: string): string | null
       return BANK_LOGO_STATIC[key] ?? BANK_LOGO_STATIC[slug.toLowerCase()] ?? null
     }
     default: return null
+  }
+}
+
+// ── Local-only resolver (self-hosted /public SVGs) ───────────────────────────
+// Returns a same-origin path for the core entities; null otherwise. Banks fall
+// back to a generic bank glyph so they never degrade to initials.
+
+export function resolveLogoLocal(type: EntityType, slug: string): string | null {
+  switch (type) {
+    case 'chain': {
+      const key = normalizeChain(slug)
+      return CHAIN_LOGO_LOCAL[key] ?? CHAIN_LOGO_LOCAL[slug.toUpperCase()] ?? null
+    }
+    case 'token': {
+      const key = normalizeToken(slug)
+      return TOKEN_LOGO_LOCAL[key] ?? TOKEN_LOGO_LOCAL[slug.toUpperCase()] ?? null
+    }
+    case 'payment_method': {
+      const key = normalizePaymentMethod(slug)
+      return PAYMENT_METHOD_LOGO_LOCAL[key] ?? PAYMENT_METHOD_LOGO_LOCAL[slug.toLowerCase()] ?? null
+    }
+    // Banks have no per-bank local art; the generic glyph is applied by the
+    // caller as a LAST resort (after the external official-logo tier) so each
+    // bank still shows its real favicon when reachable.
+    default:
+      return null
   }
 }
 

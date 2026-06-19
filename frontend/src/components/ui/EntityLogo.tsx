@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useLogoRegistry } from '@/hooks/useLogoRegistry'
-import { resolveLogoDbOnly, resolveLogoStatic, getAvatarColor, getInitials } from '@/lib/logoRegistry'
+import { resolveLogoDbOnly, resolveLogoStatic, resolveLogoLocal, BANK_LOGO_LOCAL_GENERIC, getAvatarColor, getInitials } from '@/lib/logoRegistry'
 import type { EntityType, LogoMap } from '@/lib/logoRegistry'
 
 // ── Size map ──────────────────────────────────────────────────────────────────
@@ -45,14 +45,22 @@ export function EntityLogo({
   // Build a deduped, ordered candidate list:
   //   1. urlOverride (pre-fetched from caller's API data)
   //   2. DB-uploaded URL (from GasChainConfig / GasTokenConfig / CtmToken / LogoRegistry)
-  //   3. Static CDN URL (TrustWallet open-source assets)
-  // Each tier is tried independently so a broken DB URL still falls through to CDN.
+  //   3. Local self-hosted SVG (/public) — guaranteed same-origin, never 404s
+  //   4. Static CDN URL (TrustWallet / favicon services — reliable but external)
+  // The local tier sits ahead of the external CDN so a flaky/blocked favicon
+  // service can never collapse a known entity to the grey initials avatar.
+  // Each tier is tried independently so a broken URL falls through to the next.
   const dbUrl     = logoMap ? resolveLogoDbOnly(type, slug, logoMap as LogoMap) : null
+  const localUrl  = resolveLogoLocal(type, slug)
   const staticUrl = resolveLogoStatic(type, slug)
+
+  // Generic bank glyph: last-resort same-origin fallback for banks only, applied
+  // AFTER the external official-logo tier so a real bank favicon wins when it loads.
+  const genericUrl = type === 'bank' ? BANK_LOGO_LOCAL_GENERIC : null
 
   const seen = new Set<string>()
   const candidates: string[] = []
-  for (const url of [urlOverride ?? null, dbUrl, staticUrl]) {
+  for (const url of [urlOverride ?? null, dbUrl, localUrl, staticUrl, genericUrl]) {
     if (url && !seen.has(url)) { seen.add(url); candidates.push(url) }
   }
 
