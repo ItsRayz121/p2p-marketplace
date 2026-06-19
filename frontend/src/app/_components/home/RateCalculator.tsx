@@ -65,10 +65,13 @@ function UnitToggle({
   units,
   value,
   onChange,
+  renderLabel,
 }: {
   units: string[]
   value: string
   onChange: (u: string) => void
+  /** Optional display label per unit — lets the GAS unit render as the token symbol (TRX, ETH…). */
+  renderLabel?: (u: string) => string
 }) {
   return (
     <div className="inline-flex rounded-lg bg-white/5 border border-white/10 p-0.5">
@@ -81,7 +84,7 @@ function UnitToggle({
             value === u ? 'bg-primary text-white' : 'text-slate-300 hover:text-white'
           }`}
         >
-          {u}
+          {renderLabel ? renderLabel(u) : u}
         </button>
       ))}
     </div>
@@ -289,6 +292,9 @@ function GasCalculator({ options }: { options: MarketRateToken[] }) {
             units={units}
             value={unit}
             onChange={(u) => setUnit(u as 'GAS' | 'USDT' | 'PKR')}
+            // Show the actual gas-token symbol (TRX, ETH…) instead of the generic
+            // "GAS" so the toggle reads e.g. "TRX · USDT · PKR".
+            renderLabel={(u) => (u === 'GAS' ? opt.symbol : u)}
           />
         </div>
         <input
