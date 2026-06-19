@@ -2,39 +2,50 @@
 
 Context: the non-custodial P2P rebuild shipped 2026-06-18 (Phases 0–4, 6, 7, 9),
 all behind the `noncustodial_p2p_enabled` flag, toggled from
-**Admin → Config → Non-Custodial P2P**. Two phases were deliberately deferred,
-plus a couple of minor UX-polish items. They are **not blocking** — the platform
-runs fully without them.
+**Admin → Config → Non-Custodial P2P**. Phase 5 (Maker Collateral Bond) has since
+shipped (2026-06-19, behind its own `maker_bond_enabled` flag — see below). One
+phase (Phase 8) remains deferred, plus a couple of minor UX-polish items. They are
+**not blocking** — the platform runs fully without them.
 
 ---
 
-## Phase 5 — Maker Collateral Bond (deferred by product decision)
+## Phase 5 — Maker Collateral Bond — ✅ SHIPPED 2026-06-19
 
-**What it is:** a small, refundable stake ("bond") posted by a maker (ad creator),
-which is *slashed* if they're found to have committed fraud. It gives makers
+**What it is:** a small, refundable stake ("bond") locked from a maker's
+*deposited USDT* when a trade opens. Released on a clean close; **seized to the
+wronged counterparty** if the maker loses a dispute. It gives makers
 skin-in-the-game and provides partial victim recovery, on top of the existing
 identity + reputation + dispute system.
 
-**Why deferred:** decided at launch to **hold nothing** so onboarding stays
-frictionless and we acquire makers/merchants faster.
+**Status:** built across commits `c62a263`…`95956ea` and live behind the
+`maker_bond_enabled` flag (default OFF). Covers BOTH the USDT marketplace and CTM
+trades.
 
-**The thing to be careful about:** the bond is the **one place the platform takes
-custody** — we'd hold the staked funds and the keys to them. That brings:
-- Key-management responsibility (a hot wallet / custodial balance for bonds).
-- A small **regulatory footprint** (holding user funds = money-transmission-ish).
-- It is a **deterrent + partial recovery, NOT insurance** — a ~1% bond never makes
-  a victim whole; never message it as a guarantee.
+**How it works (as built):**
+- **Scope:** per-trade. On trade open we lock `ratio% × tradeUsdt` from the
+  maker's available USDT into `lockedBalance` (one `BondHold` row per trade,
+  unique on `(tradeType, tradeId)`). CTM is priced in PKR, so the bond is computed
+  on the USDT-equivalent via `rate_USDT_PKR`; if that rate is missing the bond is
+  skipped (fail-open).
+- **Asset / custody:** the maker's existing on-platform USDT balance — no new hot
+  wallet. The lock is just `lockedBalance`; a seizure debits the maker's
+  balance + lock and credits the victim's USDT on the same network, writing
+  `bond_seized` / `bond_received` ledger Transactions.
+- **Slash flow:** wired into dispute resolution. Maker loses → seize to winner;
+  maker wins / split / no-winner close → release. All terminal trade paths
+  (complete, cancel, auto-cancel, expire, dispute-resolve, dispute-close) release
+  or seize; `disputed` keeps the bond held. Exactly-once + idempotent via a
+  `held → released | seized` status gate and `SELECT … FOR UPDATE`.
 
-**Design when we build it:**
-- Ratio: ~1% (user's "$0.1 backs $10" idea) — make it a config value.
-- Scope decision needed: **per-merchant** (one stake covers all their ads) vs
-  **per-ad** (locked per active listing).
-- Held in what / where: USDT on-platform hot wallet, or a fiat deposit?
-- Slash flow: tie into the dispute resolution (`loserPenalty`) so a lost dispute
-  can slash the bond + record it in moderation/audit history.
+**It is a deterrent + partial recovery, NOT insurance** — a small bond never makes
+a victim whole; never message it as a guarantee.
 
-**Decisions needed from owner before building:** bond ratio, per-merchant vs
-per-ad, and the custody location/asset.
+**Operate it at Admin → Config → Maker collateral bond:**
+- `maker_bond_enabled` — master on/off (default OFF).
+- `maker_bond_ratio_pct` — bond as % of trade size (default 10 → $1 bond per $10).
+- `maker_bond_min_usdt` — floor per bond regardless of ratio (default 0).
+- Fully reversible: untick Enable + Save. Bonds already held are unaffected and
+  still release/seize on their trade's terminal path.
 
 ---
 
