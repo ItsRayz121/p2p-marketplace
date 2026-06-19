@@ -91,14 +91,19 @@ export async function requireTotpIfEnabled(req: FastifyRequest, _reply: FastifyR
     throw new AppError('TOTP_REQUIRED', '2FA code required for this action — provide it in X-TOTP-Code header', 403)
   }
 
+  await verifyTotpCode(req.user.id, code, record.twoFaSecret)
+}
+
+// Shared TOTP verification with replay guard. Throws on invalid/replayed codes.
+async function verifyTotpCode(userId: string, code: string, secret: string): Promise<void> {
   // Replay guard — each 6-digit code is valid for one use within its 90-second window
-  const replayKey = `totp:used:${req.user.id}:${code}`
+  const replayKey = `totp:used:${userId}:${code}`
   const alreadyUsed = await redis.get(replayKey)
   if (alreadyUsed) {
     throw new AppError('TOTP_REPLAY', '2FA code has already been used — wait for the next code', 403)
   }
 
-  const result = await otpVerify({ token: code, secret: record.twoFaSecret })
+  const result = await otpVerify({ token: code, secret })
   const valid = (result as { valid: boolean }).valid
   if (!valid) {
     throw new AppError('TOTP_INVALID', 'Invalid 2FA code', 403)
@@ -106,6 +111,38 @@ export async function requireTotpIfEnabled(req: FastifyRequest, _reply: FastifyR
 
   // Mark code as used; TTL covers the full TOTP window (30s step × 3 = 90s)
   await redis.set(replayKey, '1', 'EX', 90)
+}
+
+// "Sudo mode" grace window: how long a single successful step-up is honoured for
+// subsequent admin actions before a fresh 2FA code is required again.
+const STEP_UP_GRACE_SECONDS = 5 * 60
+
+// Step-up variant for admin actions. Behaves like requireTotpIfEnabled, but a
+// successful verification opens a short grace window so admins don't have to
+// re-enter their authenticator code on every single config click. Wallet
+// withdrawals deliberately keep using the strict requireTotpIfEnabled.
+export async function requireAdminStepUp(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
+  if (!req.user) throw new AppError('UNAUTHORIZED', 'Authentication required', 401)
+
+  const record = await db.user.findUnique({
+    where: { id: req.user.id },
+    select: { twoFaEnabled: true, twoFaSecret: true },
+  })
+  if (!record?.twoFaEnabled || !record.twoFaSecret) return
+
+  const graceKey = `totp:stepup:${req.user.id}`
+  const code = (req.headers['x-totp-code'] as string | undefined)?.trim()
+
+  if (!code) {
+    // Within an active grace window? Allow without re-prompting for a fresh code.
+    const grace = await redis.get(graceKey)
+    if (grace) return
+    throw new AppError('TOTP_REQUIRED', '2FA code required for this action — provide it in X-TOTP-Code header', 403)
+  }
+
+  await verifyTotpCode(req.user.id, code, record.twoFaSecret)
+  // Open/refresh the grace window so the next few minutes of admin actions are smooth.
+  await redis.set(graceKey, '1', 'EX', STEP_UP_GRACE_SECONDS)
 }
 
 export async function optionalAuth(req: FastifyRequest, _reply: FastifyReply): Promise<void> {

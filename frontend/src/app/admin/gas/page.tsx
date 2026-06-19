@@ -1410,7 +1410,7 @@ export default function GasAdminPage() {
                       <div>
                         <Badge variant={statusVariant(o.status)} size="sm">{STATUS_LABELS[o.status] ?? o.status}</Badge>
                         {o.failureReason && (
-                          <p className="text-xs text-danger mt-0.5 max-w-xs truncate">{o.failureReason}</p>
+                          <p className="text-xs text-danger mt-0.5 max-w-[160px] truncate" title={o.failureReason}>{o.failureReason}</p>
                         )}
                       </div>
                     </td>

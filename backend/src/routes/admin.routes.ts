@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { cloudinary, CLOUDINARY_FOLDERS, signCloudinaryDeliveryUrl } from '../lib/cloudinary'
-import { authenticate, requireRole, requireTotpIfEnabled } from '../middleware/auth.middleware'
+import { authenticate, requireRole, requireAdminStepUp } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
@@ -67,8 +67,8 @@ async function resolveGasHotWalletOwner(dbChain: string): Promise<string | null>
 // No-op for admins without 2FA enabled; admins WITH 2FA must supply a fresh
 // X-TOTP-Code header (the frontend api client prompts and retries on
 // TOTP_REQUIRED). Strongly recommended: enable 2FA on all admin accounts.
-const adminStepUp = [authenticate, adminOrSuper, requireTotpIfEnabled]
-const superStepUp = [authenticate, superAdminOnly, requireTotpIfEnabled]
+const adminStepUp = [authenticate, adminOrSuper, requireAdminStepUp]
+const superStepUp = [authenticate, superAdminOnly, requireAdminStepUp]
 
 // Rejects known non-direct-image URLs (Google Drive share links etc.)
 function validateLogoUrl(url: string): boolean {

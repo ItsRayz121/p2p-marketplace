@@ -333,7 +333,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     // inline TOTP field (wallet withdraw / trusted address) pre-send the
     // header, so this prompt only fires for flows without one (admin actions).
     if (res.status === 403 && (data as { error?: string }).error === 'TOTP_REQUIRED' && typeof window !== 'undefined') {
-      const code = window.prompt('This action requires your 2FA code.\nEnter the 6-digit code from your authenticator app:')
+      const code = window.prompt('This action requires your 2FA code.\nEnter the 6-digit code from your authenticator app.\n(You won’t be asked again for a few minutes.)')
       if (code && /^\d{6}$/.test(code.trim())) {
         headers['X-TOTP-Code'] = code.trim()
         const retryController = new AbortController()
