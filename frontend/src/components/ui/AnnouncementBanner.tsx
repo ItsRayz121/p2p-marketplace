@@ -1,8 +1,10 @@
 'use client'
-// Per-user dismissible banner for admin broadcast announcements (the "web"
+// Per-user "show once" banner for admin broadcast announcements (the "web"
 // channel). Fetches the active, not-yet-dismissed banners for the signed-in
-// user and renders them stacked below the navbar. Dismissal is persisted
-// server-side so it stays gone across devices.
+// user and renders them stacked below the navbar. The banner is shown exactly
+// once: as soon as it loads we persist the dismissal server-side, so on the
+// next page load / refresh it is gone and lives only in the bell/notifications.
+// This avoids a sticky banner that lingers for hours or returns after a refresh.
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { announcementApi, type AnnouncementBanner as Banner } from '@/lib/api'
@@ -18,7 +20,13 @@ export function AnnouncementBanner() {
     let active = true
     announcementApi
       .getActiveBanners()
-      .then((res) => { if (active) setBanners(res.banners) })
+      .then((res) => {
+        if (!active) return
+        setBanners(res.banners)
+        // Show-once: mark each shown banner dismissed immediately so it never
+        // re-appears on refresh. It remains accessible in the notifications bell.
+        res.banners.forEach((b) => void announcementApi.dismissBanner(b.id).catch(() => { /* will retry on next load */ }))
+      })
       .catch(() => { /* silent — banner is non-critical */ })
     return () => { active = false }
   }, [])
