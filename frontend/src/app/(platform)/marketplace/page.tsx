@@ -229,10 +229,13 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           </p>
         </div>
 
-        {/* ── 4. PAYMENT METHODS ── */}
-        {methods.length > 0 && (
-          <div className="sm:w-32 flex-shrink-0">
-            <p className="text-xs text-text-muted mb-1">Payment</p>
+        {/* ── 4. PAYMENT METHODS ──
+            Column is ALWAYS rendered (fixed width) so that an ad with no payment
+            methods leaves this slot blank instead of collapsing the flex row and
+            shifting Order Limit / CTA out of alignment with the other rows. */}
+        <div className="sm:w-32 flex-shrink-0">
+          <p className="text-xs text-text-muted mb-1">Payment</p>
+          {methods.length > 0 ? (
             <div className="flex flex-wrap gap-1">
               {methods.slice(0, 3).map((pm) => (
                 <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
@@ -246,8 +249,10 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
                 </span>
               )}
             </div>
-          </div>
-        )}
+          ) : (
+            <span className="text-xs text-text-muted/50">—</span>
+          )}
+        </div>
 
         {/* ── 5. CTA ── */}
         {parseFloat(ad.availableAmount) > 0 ? (

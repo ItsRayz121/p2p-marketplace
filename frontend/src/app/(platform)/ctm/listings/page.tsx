@@ -215,10 +215,12 @@ export default function BrowseListingsPage() {
                     </button>
                   </div>
 
-                  {/* Payment methods */}
-                  {methods.length > 0 && (
-                    <div className="sm:w-36">
-                      <p className="text-xs text-text-muted mb-1">Payment</p>
+                  {/* Payment methods — column always rendered (fixed width) so a
+                      listing with no payment methods leaves this slot blank
+                      instead of collapsing the row and shifting Order Limit. */}
+                  <div className="sm:w-36">
+                    <p className="text-xs text-text-muted mb-1">Payment</p>
+                    {methods.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
                         {methods.slice(0, 3).map((pm) => (
                           <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm.label)}`}>
@@ -232,8 +234,10 @@ export default function BrowseListingsPage() {
                           </span>
                         )}
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <span className="text-xs text-text-muted/50">—</span>
+                    )}
+                  </div>
 
                   {/* CTA */}
                   <Link href={`/ctm/listings/${l.id}`} className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${l.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
