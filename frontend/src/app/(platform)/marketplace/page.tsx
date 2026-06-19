@@ -7,7 +7,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, isOpaqueId } from '@/lib/pkPaymentMethods'
+import { ALL_PAYMENT_METHODS, getPaymentMethodColor, isMobileMethod, canonicalPaymentLabel, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
@@ -237,12 +237,15 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           <p className="text-xs text-text-muted mb-1">Payment</p>
           {methods.length > 0 ? (
             <div className="flex flex-wrap gap-1">
-              {methods.slice(0, 3).map((pm) => (
-                <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
-                  <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
-                  {pm}
-                </span>
-              ))}
+              {methods.slice(0, 3).map((pm) => {
+                const label = canonicalPaymentLabel(pm)
+                return (
+                  <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(label)}`}>
+                    <EntityLogo type={isMobileMethod(label) ? 'payment_method' : 'bank'} slug={label} size="xs" className="flex-shrink-0" />
+                    {label}
+                  </span>
+                )
+              })}
               {methods.length > 3 && (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface-alt text-text-secondary">
                   +{methods.length - 3}

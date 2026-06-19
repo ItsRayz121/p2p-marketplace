@@ -77,12 +77,27 @@ export function cleanPaymentLabels<T extends { label: string }>(methods: T[]): T
   return methods.filter((m) => m.label && !isOpaqueId(m.label))
 }
 
+// Canonical, properly-cased label for any payment-method string regardless of
+// how it was stored. USDT P2P ads persist methods lowercase ("jazzcash") while
+// CTM stores them title-cased ("JazzCash"); without normalizing, case-sensitive
+// lookups (icon type, chip color) silently fall back to the generic bank glyph.
+export function canonicalPaymentLabel(method: string): string {
+  return ALL_PAYMENT_METHODS.find((m) => m.toLowerCase() === method.toLowerCase()) ?? method
+}
+
+// Case-insensitive check for the branchless/fintech mobile wallets so the right
+// EntityLogo `type` ('payment_method' vs 'bank') is chosen no matter the casing.
+export function isMobileMethod(method: string): boolean {
+  return PK_MOBILE_METHODS.some((m) => m.toLowerCase() === method.toLowerCase())
+}
+
 // Returns a Tailwind className string for a payment method badge chip.
 // Includes dark-mode variants so chips stay readable in both themes.
 export function getPaymentMethodColor(method: string): string {
-  if (method === 'JazzCash') return 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
-  if (method === 'Easypaisa') return 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'
-  if (method === 'SadaPay') return 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300'
-  if (method === 'NayaPay') return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+  const m = canonicalPaymentLabel(method)
+  if (m === 'JazzCash') return 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
+  if (m === 'Easypaisa') return 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'
+  if (m === 'SadaPay') return 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300'
+  if (m === 'NayaPay') return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
   return 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' // banks
 }

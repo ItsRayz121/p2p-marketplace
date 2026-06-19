@@ -107,18 +107,27 @@ interface CtmTopListing {
   minOrderPkr?: string
   maxOrderPkr?: string
   paymentMethods: string[]
-  merchantProfile: { user: { username: string; avatarUrl?: string } }
+  merchantProfile: {
+    user: { username: string; fullName?: string | null; avatarUrl?: string }
+    merchant?: { businessName?: string | null; status?: string } | null
+  }
 }
 
 function CtmListingCard({ listing }: { listing: CtmTopListing }) {
+  const mp = listing.merchantProfile
+  const sellerName = traderDisplayName({
+    fullName: mp.user.fullName,
+    merchantName: mp.merchant?.status === 'approved' ? mp.merchant?.businessName : null,
+    username: mp.user.username,
+  })
   return (
     <div className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <UserAvatar name={listing.merchantProfile.user.username} avatarUrl={listing.merchantProfile.user.avatarUrl ?? null} size="sm" />
+            <UserAvatar name={sellerName} avatarUrl={mp.user.avatarUrl ?? null} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-text-primary truncate">{listing.merchantProfile.user.username}</p>
+              <p className="text-sm font-semibold text-text-primary truncate">{sellerName}</p>
               <p className="text-xs text-text-muted">{listing.side === 'sell' ? 'Selling' : 'Buying'} {listing.token.symbol}</p>
             </div>
           </div>

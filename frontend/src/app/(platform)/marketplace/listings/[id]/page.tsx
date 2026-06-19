@@ -259,7 +259,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       <div className="bg-surface shadow-card border border-border rounded-xl p-6">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-xl font-bold text-primary flex-shrink-0">$</div>
+            <EntityLogo type="token" slug={ad.coin} size="xl" className="flex-shrink-0" />
             <div>
               <h1 className="text-xl font-bold text-text-primary">
                 {isMine
