@@ -5,8 +5,17 @@ import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { maskName, namesMatch } from '../lib/identity'
+import { recordAuditLog } from '../lib/audit'
 
 const PAYMENT_METHOD_TYPES = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay', 'bank_transfer'] as const
+
+/** Mask an account/IBAN/mobile for audit metadata — keep only the last 4 digits. */
+function maskAccount(v: string | null | undefined): string | null {
+  if (!v) return null
+  const s = String(v).trim()
+  if (s.length <= 4) return '••••'
+  return `••••${s.slice(-4)}`
+}
 
 const paymentMethodSchema = z.object({
   type: z.enum(PAYMENT_METHOD_TYPES),
@@ -199,6 +208,15 @@ export async function userRoutes(app: FastifyInstance) {
         ...(accountNumber ? { accountNumber } : {}),
       },
     })
+    // Audit trail: preserve every payment-method change for the admin user
+    // history (account numbers stored masked — last 4 digits only).
+    void recordAuditLog(userId, 'PAYMENT_METHOD_ADDED', 'PaymentMethod', method.id, {
+      type, displayName, accountName,
+      bankName: bankName ?? null,
+      mobileNumber: maskAccount(mobileNumber),
+      ibanNumber: maskAccount(ibanNumber),
+      accountNumber: maskAccount(accountNumber),
+    })
     return reply.code(201).send({ success: true, data: method })
   })
 
@@ -209,6 +227,16 @@ export async function userRoutes(app: FastifyInstance) {
     const method = await db.paymentMethod.findUnique({ where: { id } })
     if (!method || method.userId !== userId) throw new AppError('NOT_FOUND', 'Payment method not found', 404)
     await db.paymentMethod.update({ where: { id }, data: { isActive: false } })
+    // Audit trail: record the removal (soft-delete) for the admin user history.
+    void recordAuditLog(userId, 'PAYMENT_METHOD_REMOVED', 'PaymentMethod', method.id, {
+      type: method.type,
+      displayName: method.displayName,
+      accountName: method.accountName,
+      bankName: method.bankName ?? null,
+      mobileNumber: maskAccount(method.mobileNumber),
+      ibanNumber: maskAccount(method.ibanNumber),
+      accountNumber: maskAccount(method.accountNumber),
+    })
     return reply.send({ success: true, data: null })
   })
 

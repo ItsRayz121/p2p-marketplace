@@ -919,11 +919,21 @@ export async function addSavedAddress(
   userId: string,
   data: { coin: string; network: string; address: string; label: string },
 ) {
-  return db.savedAddress.create({ data: { userId, ...data } })
+  const saved = await db.savedAddress.create({ data: { userId, ...data } })
+  // Audit trail: keep a record of every delivery-address change for admin history.
+  void recordAuditLog(userId, 'SAVED_ADDRESS_ADDED', 'SavedAddress', saved.id, {
+    coin: saved.coin, network: saved.network, label: saved.label, address: saved.address,
+  })
+  return saved
 }
 
 export async function deleteSavedAddress(userId: string, id: string) {
   const addr = await db.savedAddress.findFirst({ where: { id, userId } })
   if (!addr) throw new AppError('NOT_FOUND', 'Address not found', 404)
+  // Capture the address details before the hard delete so the change history
+  // survives in the audit log even though the row itself is removed.
+  void recordAuditLog(userId, 'SAVED_ADDRESS_REMOVED', 'SavedAddress', id, {
+    coin: addr.coin, network: addr.network, label: addr.label, address: addr.address,
+  })
   return db.savedAddress.delete({ where: { id } })
 }
