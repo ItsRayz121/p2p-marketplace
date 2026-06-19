@@ -1666,6 +1666,13 @@ export async function adminRoutes(app: FastifyInstance) {
       data: { status: 'resolved', resolution: parsed.data.note, resolvedAt: new Date(), resolvedBy: req.user!.id },
     })
     await createAuditLog(req.user!.id, 'DISPUTE_CLOSED', 'Dispute', id, { note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
+
+    // Closed without a winner = no fault assigned → return the maker's bond
+    // (idempotent; no-op when bonds are off or none was held). Without this the
+    // bond would stay locked forever on a no-winner close.
+    await releaseMakerBond({ tradeType: 'usdt', tradeId: dispute.tradeId })
+      .catch((err) => log.error({ err, tradeId: dispute.tradeId }, 'Failed to release maker bond on dispute close'))
+
     return reply.send({ success: true })
   })
 

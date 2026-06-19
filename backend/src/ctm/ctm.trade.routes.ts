@@ -26,6 +26,8 @@ import {
   selectTradePaymentAccount,
 } from './ctm.trade.service'
 import { db } from '../lib/prisma'
+import { releaseMakerBond } from '../services/makerBond.service'
+import { logger } from '../lib/logger'
 
 const disputeSchema = z.object({
   reason: z.enum(['proof_fake', 'not_received', 'amount_mismatch', 'wrong_token', 'seller_unresponsive', 'buyer_unresponsive', 'other']),
@@ -318,6 +320,12 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     await db.auditLog.create({
       data: { actorId: req.user!.id, action: 'CTM_ADMIN_FORCE_RELEASE', metadata: { tradeRef: ref } },
     }).catch(() => {})
+
+    // Force-release completes the trade in the maker's favour → return the bond
+    // (idempotent; no-op when off or none held).
+    await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+      logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM force-release'),
+    )
 
     return reply.send({ success: true })
   })

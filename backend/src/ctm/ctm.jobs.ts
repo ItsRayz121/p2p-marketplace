@@ -134,6 +134,11 @@ export async function runCtmProofDeadline() {
         })
       })
 
+      // Clean auto-completion → release the maker's bond (idempotent; no-op when off).
+      await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+        logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM auto-complete'),
+      )
+
       notify(trade.buyerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
       notify(trade.sellerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed after buyer's confirmation deadline passed.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
 
