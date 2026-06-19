@@ -462,12 +462,25 @@ export default function TradePage() {
     setActionError(null)
     try {
       await tradesApi.openDispute(id, { reason: disputeReason, description: disputeDescription.trim() })
-      await fetchTrade()
+      // Submission succeeded. Refreshing the trade afterwards is best-effort —
+      // a transient blip on the refresh must NOT surface as a "dispute failed"
+      // error, because the dispute is already created server-side.
       setShowDisputeForm(false)
       setDisputeReason('')
       setDisputeDescription('')
+      try { await fetchTrade() } catch { /* refresh will retry via polling */ }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Dispute failed')
+      // If the dispute already exists (e.g. a prior submit went through but the
+      // response was lost on the network), treat it as success rather than an error.
+      const msg = err instanceof Error ? err.message : 'Dispute failed'
+      if (/already exists/i.test(msg)) {
+        setShowDisputeForm(false)
+        setDisputeReason('')
+        setDisputeDescription('')
+        try { await fetchTrade() } catch { /* polling will catch up */ }
+      } else {
+        setActionError(msg)
+      }
     } finally {
       setActionLoading(false)
     }

@@ -382,8 +382,10 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       if (pm) sellerPaymentSnapshot = buildPaymentAccountSnapshot(pm)
     }
 
-    // Create the trade
-    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000)
+    // Create the trade. Honor the ad's advertised trade window (shown to users
+    // on the listing as "30 min window" etc.) instead of a fixed long window.
+    const windowMins = adRows.tradeWindow && adRows.tradeWindow > 0 ? adRows.tradeWindow : 30
+    const expiresAt = new Date(Date.now() + windowMins * 60 * 1000)
     const orderRef = generateOrderRef('TRD')
 
     const newTrade = await tx.trade.create({

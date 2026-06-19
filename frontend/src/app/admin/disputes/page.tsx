@@ -170,7 +170,10 @@ export default function DisputesPage() {
       await adminApi.resolveDispute(selected.id, { winner, resolution, resolutionNote })
       setConfirmOpen(false)
       setModalOpen(false)
-      fetchDisputes()
+      // Resolved disputes are retained, not deleted — switch to the Resolved tab
+      // so the admin sees where it went instead of it appearing to vanish.
+      setStatusFilter('resolved')
+      setPage(1)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to resolve dispute')
     }
@@ -183,7 +186,9 @@ export default function DisputesPage() {
       await adminApi.closeDispute(selected.id, { note: closeNote.trim() })
       setConfirmClose(false)
       setModalOpen(false)
-      fetchDisputes()
+      // Closed disputes are retained under Resolved — show them there.
+      setStatusFilter('resolved')
+      setPage(1)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to close dispute')
     }

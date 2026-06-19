@@ -27,13 +27,18 @@ export function useCountdown(expiresAt: string): CountdownResult {
   }, [expiresAt])
 
   const totalSeconds = Math.floor(remainingMs / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor(totalSeconds / 60)
+  const dispMinutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
   const isExpired = remainingMs === 0
 
+  // Show H:MM:SS once we cross an hour so a long window doesn't read as "239:08".
   const formatted = isExpired
     ? '00:00'
-    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : hours > 0
+      ? `${hours}:${String(dispMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 
   return { minutes, seconds, isExpired, formatted }
 }
