@@ -66,7 +66,12 @@ export async function getDepositAddress(userId: string, coin: string, network: s
   }
 
   // Non-EVM fallback — shared platform address.
-  const key = `deposit_address_${coin}_${network}`
+  // The key MUST be lowercased: admin saves under `deposit_address_<coin>_<network>`
+  // lowercased (admin.routes.ts), and instant-buy + webhooks read it lowercased too.
+  // The deposit route uppercases the path params, so without this lowercase the
+  // lookup for e.g. Aptos became `deposit_address_USDT_APTOS` and never matched the
+  // stored `deposit_address_usdt_aptos` — surfacing as "temporarily unavailable".
+  const key = `deposit_address_${coin.toLowerCase()}_${network.toLowerCase()}`
   const config = await db.platformConfig.findUnique({ where: { key } })
   if (!config || !config.value) {
     throw new AppError(
