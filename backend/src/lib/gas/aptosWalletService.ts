@@ -35,13 +35,23 @@ export function validateAptosAddress(addr: string): boolean {
 
 // ── Address derivation ────────────────────────────────────────────────────────
 
+/**
+ * Compute an Aptos account address from a 32-byte ed25519 private-key seed.
+ * Single source of truth for the address format (sha3-256 of pubkey || scheme
+ * byte) so the gas hot wallet and per-user deposit addresses are derived
+ * identically. Does NOT zero the input — the caller owns the seed's lifetime.
+ */
+export function aptosAddressFromPrivateKeySeed(privateKeySeed: Buffer): string {
+  const pubKey  = ed25519PublicKeyFromSeed(privateKeySeed)
+  const payload = Buffer.concat([pubKey, SINGLE_KEY_SCHEME])
+  const hash    = Buffer.from(createHash('sha3-256').update(payload).digest())
+  return '0x' + hash.toString('hex')
+}
+
 function deriveAptosAddress(seed: Buffer): string {
   const { privateKey } = deriveSlip10Ed25519(seed, APTOS_SLIP10_PATH)
   try {
-    const pubKey  = ed25519PublicKeyFromSeed(privateKey)
-    const payload = Buffer.concat([pubKey, SINGLE_KEY_SCHEME])
-    const hash    = Buffer.from(createHash('sha3-256').update(payload).digest())
-    return '0x' + hash.toString('hex')
+    return aptosAddressFromPrivateKeySeed(privateKey)
   } finally {
     privateKey.fill(0)
   }

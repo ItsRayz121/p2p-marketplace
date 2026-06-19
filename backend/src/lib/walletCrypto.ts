@@ -1,8 +1,10 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto'
 import { HDKey } from 'viem/accounts'
 import { privateKeyToAccount } from 'viem/accounts'
 import { getAddress, type Address } from 'viem'
 import { env } from './env'
+import { deriveSlip10Ed25519 } from './gas/nonEvmDerivation'
+import { aptosAddressFromPrivateKeySeed, validateAptosAddress } from './gas/aptosWalletService'
 
 const IV_LEN = 12
 const TAG_LEN = 16
@@ -76,6 +78,58 @@ export function deriveEvmAddress(index: number): Address {
 
 export function walletCustodyIsConfigured(): boolean {
   return !!env.WALLET_MASTER_KEY && !!env.WALLET_MASTER_SEED_CIPHERTEXT
+}
+
+// ── Aptos (non-EVM) per-user deposit address derivation ─────────────────────────
+// Aptos coin type 637, SLIP-0010 ed25519 (hardened-only). The per-user index is
+// the final hardened segment, mirroring the EVM scheme (one address per user)
+// but on Aptos' Ed25519 curve. The address is sha3-256(pubkey || 0x00) — see
+// aptosAddressFromPrivateKeySeed (shared with the gas hot wallet so the format
+// can never drift between the two).
+const APTOS_COIN_TYPE = 637
+
+/**
+ * Derive the Aptos deposit address for a given per-user HD index from the same
+ * master seed used for EVM. Pure function of (master seed, index); deterministic
+ * so the matching private key can be re-derived later for sweeping. The
+ * intermediate private-key buffer and the decrypted seed are both zeroed before
+ * returning.
+ */
+export function deriveAptosDepositAddress(index: number): string {
+  if (!Number.isInteger(index) || index < 0 || index >= 2 ** 31) {
+    throw new Error('Invalid derivation index')
+  }
+  const seed = decryptMasterSeed()
+  try {
+    const path = `m/44'/${APTOS_COIN_TYPE}'/0'/0'/${index}'`
+    const { privateKey } = deriveSlip10Ed25519(seed, path)
+    try {
+      const address = aptosAddressFromPrivateKeySeed(privateKey)
+      if (!validateAptosAddress(address)) {
+        throw new Error('Derived Aptos address has an unexpected format')
+      }
+      return address
+    } finally {
+      privateKey.fill(0)
+    }
+  } finally {
+    seed.fill(0)
+  }
+}
+
+/**
+ * True when custody is configured AND this Node build can compute sha3-256
+ * (required for the Aptos address format). Mirrors validateAptosAtStartup's
+ * sha3 guard so we never hand out an unspendable address.
+ */
+export function walletAptosCustodyIsConfigured(): boolean {
+  if (!walletCustodyIsConfigured()) return false
+  try {
+    createHash('sha3-256').update(Buffer.from('probe')).digest()
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

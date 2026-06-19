@@ -20,6 +20,7 @@ import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
+import { runAptosDepositPoller } from '../jobs/aptosDepositPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
 import { runModerationExpiry } from '../jobs/moderationExpiry.job'
@@ -252,6 +253,15 @@ export function startWorkers() {
     .catch((err) => logger.error({ err }, 'Failed to schedule gas payment poller'))
 
   createWorker(QUEUE_NAMES.GAS_PAYMENT_POLLER, async () => { await runGasPaymentPoller() }, { max: 1, duration: 60_000 })
+
+  // Aptos USER deposit poller — credits inbound USDT to per-user Aptos deposit
+  // addresses (the Aptos analogue of the EVM Moralis stream + reconciler).
+  // Idempotent crediting makes the cadence safe; default 60s.
+  queues.aptosDepositPoller
+    .add('poll', {}, { repeat: { every: env.POLLER_INTERVAL_SECONDS * 1000 }, jobId: 'aptos-deposit-poller-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule Aptos deposit poller'))
+
+  createWorker(QUEUE_NAMES.APTOS_DEPOSIT_POLLER, async () => { await runAptosDepositPoller() }, { max: 1, duration: 60_000 })
 
   // Hot-wallet deposit poller — runs every 2 minutes, detects direct balance
   // increases (top-ups) even when Moralis webhooks don't fire.

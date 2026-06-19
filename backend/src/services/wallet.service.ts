@@ -4,7 +4,7 @@ import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { generateOrderRef } from '../lib/hash'
 import { getChainByNetworkLabel, isEvmNetwork } from './chainRegistry.service'
-import { getOrCreateEvmDepositAddress } from './depositAddress.service'
+import { getOrCreateEvmDepositAddress, getOrCreateAptosDepositAddress } from './depositAddress.service'
 import { recordAuditLog } from '../lib/audit'
 import { assessWithdrawalRisk, getWithdrawalTierConfig } from './withdrawal-risk.service'
 import { sendWithdrawalEmail, sendWithdrawalConfirmationEmail } from './email.service'
@@ -65,12 +65,28 @@ export async function getDepositAddress(userId: string, coin: string, network: s
     }
   }
 
-  // Non-EVM fallback — shared platform address.
+  // Aptos — per-user HD-derived address, exactly like EVM (NEVER a shared
+  // platform address). A dedicated indexer poller credits inbound USDT.
+  if (network.toUpperCase() === 'APTOS') {
+    if (coin.toUpperCase() !== 'USDT') {
+      throw new AppError('UNSUPPORTED_ASSET', `${coin} is not supported on Aptos`, 400)
+    }
+    const { address } = await getOrCreateAptosDepositAddress(userId)
+    return {
+      address,
+      coin,
+      network,
+      chainName: 'Aptos',
+      // Aptos has deterministic BFT finality — a committed, successful tx is
+      // final, so deposits credit at 1 confirmation.
+      minConfirmations: 1,
+      family: 'APTOS' as const,
+    }
+  }
+
+  // Non-EVM fallback — shared platform address (legacy; TRC20 etc.).
   // The key MUST be lowercased: admin saves under `deposit_address_<coin>_<network>`
   // lowercased (admin.routes.ts), and instant-buy + webhooks read it lowercased too.
-  // The deposit route uppercases the path params, so without this lowercase the
-  // lookup for e.g. Aptos became `deposit_address_USDT_APTOS` and never matched the
-  // stored `deposit_address_usdt_aptos` — surfacing as "temporarily unavailable".
   const key = `deposit_address_${coin.toLowerCase()}_${network.toLowerCase()}`
   const config = await db.platformConfig.findUnique({ where: { key } })
   if (!config || !config.value) {

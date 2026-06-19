@@ -40,6 +40,7 @@ export const QUEUE_NAMES = {
   CTM_BID_EXPIRY:           'ctm-bid-expiry',
   GAS_PAYMENT_POLLER:               'gas-payment-poller',
   GAS_HOT_WALLET_DEPOSIT_POLL:      'gas-hot-wallet-deposit-poll',
+  APTOS_DEPOSIT_POLLER:             'aptos-deposit-poller',
   WITHDRAWAL_CONFIRMATION_WATCHER:  'withdrawal-confirmation-watcher',
   MODERATION_EXPIRY:                'moderation-expiry',
   ANNOUNCEMENT_BROADCAST:           'announcement-broadcast',
@@ -112,6 +113,10 @@ export const queues = {
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
   gasHotWalletDepositPoll: new Queue(QUEUE_NAMES.GAS_HOT_WALLET_DEPOSIT_POLL, {
+    connection,
+    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
+  }),
+  aptosDepositPoller: new Queue(QUEUE_NAMES.APTOS_DEPOSIT_POLLER, {
     connection,
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),

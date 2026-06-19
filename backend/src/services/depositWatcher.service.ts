@@ -484,10 +484,18 @@ export type CreditDepositOutcome =
 export async function creditDetectedDeposit(
   depositId: string,
   opts: {
-    source: 'webhook' | 'reconciler' | 'admin-force' | 'admin-refresh'
+    source: 'webhook' | 'reconciler' | 'admin-force' | 'admin-refresh' | 'aptos-poller'
     allowFromRejected?: boolean
     /** Extra metadata stamped into the Transaction record (admin reason, RPC info, …). */
     extraMetadata?: Record<string, unknown>
+    /**
+     * Force the Wallet.network label instead of deriving it from the EVM chain
+     * registry. Required for non-EVM chains (Aptos) whose deposit.chain has no
+     * EVM registry entry — without it the fallback would uppercase to 'APTOS'
+     * and the credited balance would not match the 'Aptos' label the balance
+     * view and withdrawal flow look up, stranding the funds.
+     */
+    networkOverride?: string
   },
 ): Promise<CreditDepositOutcome> {
   const deposit = await db.deposit.findUnique({ where: { id: depositId } })
@@ -512,7 +520,9 @@ export async function creditDetectedDeposit(
   }
 
   const chain = (await getAllChains()).find((c) => c.id === deposit.chain)
-  const network = chain?.networkLabel ?? deposit.chain.toUpperCase()
+  // networkOverride pins the exact Wallet.network label for non-EVM chains
+  // (Aptos) where there is no EVM registry entry to derive it from.
+  const network = opts.networkOverride ?? chain?.networkLabel ?? deposit.chain.toUpperCase()
   const symbol = deposit.symbol
   const amountStr = deposit.amount.toString()
   const userId = deposit.userId
