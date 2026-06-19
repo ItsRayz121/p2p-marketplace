@@ -8,6 +8,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { ConfirmRemoveModal } from '@/components/ui/ConfirmRemoveModal'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -603,6 +604,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
   const [formError, setFormError] = useState<string | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<TrustedAddress | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -636,6 +638,8 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
       await load()
     } catch (err) {
       setRemoveError(err instanceof Error ? err.message : 'Failed to remove address')
+    } finally {
+      setRemoveTarget(null)
     }
   }
 
@@ -744,13 +748,26 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
                   </div>
                   <p className="font-mono text-xs text-text-muted truncate">{a.address}</p>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => handleRemove(a.id)} className="text-danger hover:text-danger flex-shrink-0">
+                <Button size="sm" variant="ghost" onClick={() => setRemoveTarget(a)} className="text-danger hover:text-danger flex-shrink-0">
                   Remove
                 </Button>
               </div>
             )
           })}
         </div>
+      )}
+
+      {removeTarget && (
+        <ConfirmRemoveModal
+          isOpen
+          title="Remove trusted address?"
+          itemLabel={`${removeTarget.label} (${removeTarget.coin} · ${removeTarget.network})`}
+          confirmValue={removeTarget.address}
+          warning="Withdrawals to this address will lose their whitelisted status and a re-added address restarts the 24h activation delay."
+          confirmLabel="Remove address"
+          onConfirm={() => handleRemove(removeTarget.id)}
+          onClose={() => setRemoveTarget(null)}
+        />
       )}
     </section>
   )
@@ -799,7 +816,7 @@ function PaymentMethodsSection() {
   const [pmLoading, setPmLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [removeId, setRemoveId] = useState<string | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<UserPaymentMethod | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   // Step 1: category, Step 2: selected method within category, Step 3: fields
@@ -877,7 +894,7 @@ function PaymentMethodsSection() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove payment method')
     } finally {
-      setRemoveId(null)
+      setRemoveTarget(null)
     }
   }
 
@@ -1067,7 +1084,7 @@ function PaymentMethodsSection() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setRemoveId(m.id)}
+                onClick={() => setRemoveTarget(m)}
                 className="text-danger hover:text-danger flex-shrink-0"
               >
                 Remove
@@ -1077,15 +1094,16 @@ function PaymentMethodsSection() {
         </div>
       )}
 
-      {removeId && (
-        <ConfirmModal
+      {removeTarget && (
+        <ConfirmRemoveModal
           isOpen
-          title="Remove payment method"
-          description="This will remove the payment method from your profile. Active trades using it are unaffected."
-          confirmLabel="Remove"
-          confirmVariant="danger"
-          onConfirm={() => handleRemove(removeId)}
-          onClose={() => setRemoveId(null)}
+          title="Remove payment method?"
+          itemLabel={`${pmTypeLabel(removeTarget.type, removeTarget.bankName)} — ${removeTarget.accountName}`}
+          confirmValue={removeTarget.mobileNumber ?? removeTarget.ibanNumber ?? removeTarget.accountNumber ?? removeTarget.accountName}
+          warning="It will be removed from your profile. Active trades using it are unaffected."
+          confirmLabel="Remove method"
+          onConfirm={() => handleRemove(removeTarget.id)}
+          onClose={() => setRemoveTarget(null)}
         />
       )}
     </section>
@@ -1119,6 +1137,7 @@ function SavedDeliveryAddressesSection() {
   const [category, setCategory] = useState<'crypto' | 'ctm'>('crypto')
   const [form, setForm] = useState({ network: 'BEP20', tokenSymbol: '', address: '', label: '' })
   const [ctmTokens, setCtmTokens] = useState<CtmTokenOption[]>([])
+  const [removeTarget, setRemoveTarget] = useState<SavedDeliveryAddress | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -1173,6 +1192,8 @@ function SavedDeliveryAddressesSection() {
       toast.success('Address removed')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove address')
+    } finally {
+      setRemoveTarget(null)
     }
   }
 
@@ -1193,7 +1214,7 @@ function SavedDeliveryAddressesSection() {
             </div>
             <p className="font-mono text-xs text-text-muted truncate mt-0.5">{a.address}</p>
           </div>
-          <Button size="sm" variant="ghost" onClick={() => handleRemove(a.id)} className="text-danger hover:text-danger flex-shrink-0">
+          <Button size="sm" variant="ghost" onClick={() => setRemoveTarget(a)} className="text-danger hover:text-danger flex-shrink-0">
             Remove
           </Button>
         </div>
@@ -1331,6 +1352,19 @@ function SavedDeliveryAddressesSection() {
             )}
           </div>
         </div>
+      )}
+
+      {removeTarget && (
+        <ConfirmRemoveModal
+          isOpen
+          title="Remove saved address?"
+          itemLabel={`${removeTarget.label} (${removeTarget.network === CTM_NETWORK ? removeTarget.coin : removeTarget.network})`}
+          confirmValue={removeTarget.address}
+          warning="It will no longer auto-fill when you start a trade."
+          confirmLabel="Remove address"
+          onConfirm={() => handleRemove(removeTarget.id)}
+          onClose={() => setRemoveTarget(null)}
+        />
       )}
     </section>
   )
