@@ -18,6 +18,13 @@ export const FLAGS = {
    * dispute for protection instead. OFF (default) = current custodial escrow.
    */
   NONCUSTODIAL_P2P: 'noncustodial_p2p_enabled',
+  /**
+   * Maker collateral bond (non-custodial Phase 5). When ON, opening a trade
+   * locks a USDT bond (default 10% of trade size) from the maker's deposited
+   * balance; it is released on a clean close and seized to the victim if the
+   * maker loses a dispute. OFF (default) = no bond, current behavior.
+   */
+  MAKER_BOND: 'maker_bond_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

@@ -123,6 +123,8 @@ enum TransactionType {
   fee
   referral_reward
   gas_fee_payment
+  bond_seized
+  bond_received
 }
 
 enum ReferralRewardStatus {
@@ -489,6 +491,7 @@ model User {
   merchantApiKeys        MerchantApiKey[]
   depositAddresses       DepositAddress[]
   deposits               Deposit[]
+  bondHolds              BondHold[]                 @relation("BondHoldMaker")
   trustedAddresses       TrustedWithdrawalAddress[]
   trustedDevices         TrustedDevice[]
   ctmTokenRequests       CtmTokenRequest[]
@@ -1616,6 +1619,29 @@ model Deposit {
   @@unique([txHash, chain, asset])
   @@index([toAddress])
   @@index([userId])
+  @@index([status])
+}
+
+// Maker collateral bond hold (non-custodial Phase 5). One row per trade records
+// the USDT bond locked from the maker's deposited balance while a trade is open.
+// status gate (held → released | seized) makes lock/release/seize idempotent and
+// exactly-once, mirroring the Deposit detected→credited pattern. walletId pins
+// the exact USDT wallet the bond is locked in, so release/seize are unambiguous.
+model BondHold {
+  id          String    @id @default(cuid())
+  tradeType   String    // 'usdt' | 'ctm'
+  tradeId     String
+  makerId     String
+  maker       User      @relation("BondHoldMaker", fields: [makerId], references: [id], onDelete: Restrict)
+  walletId    String
+  amount      Decimal   @db.Decimal(18, 8) // USDT bond amount
+  status      String    @default("held")   // held | released | seized
+  victimId    String?                       // counterparty credited on seize
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@unique([tradeType, tradeId])
+  @@index([makerId])
   @@index([status])
 }
 
