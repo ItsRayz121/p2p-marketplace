@@ -27,6 +27,22 @@ function fmtDt(iso: string) {
   return new Date(iso).toLocaleString('en-PK', { dateStyle: 'short', timeStyle: 'short' })
 }
 
+// Quick-pick resolution notes for CTM disputes, split by ruling. CTM settlement
+// is manual (platform moves no tokens), so these read as rulings/guidance.
+const CTM_RESOLUTION_TEMPLATES: Record<'buyer' | 'seller' | 'split', string[]> = {
+  buyer: [
+    'Buyer paid the agreed PKR but the seller did not deliver the tokens. Ruling in the buyer’s favour — seller to deliver the tokens or refund. Settle manually.',
+    'Tokens delivered did not match the agreed amount/token. Ruling in the buyer’s favour based on the evidence.',
+  ],
+  seller: [
+    'Buyer did not complete the PKR payment, or proof was invalid. Ruling in the seller’s favour — no tokens are owed.',
+    'Buyer’s claim is unsupported by the evidence; tokens were delivered as agreed. Ruling in the seller’s favour.',
+  ],
+  split: [
+    'Both parties share responsibility (e.g. partial delivery / partial payment). Recommend a proportional settlement to be arranged manually.',
+  ],
+}
+
 export default function AdminCtmDisputesPage() {
   const [disputes, setDisputes] = useState<Dispute[]>([])
   const [loading, setLoading] = useState(true)
@@ -333,8 +349,16 @@ export default function AdminCtmDisputesPage() {
 
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1.5">Resolution note *</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {CTM_RESOLUTION_TEMPLATES[winner].map((tpl, i) => (
+                    <button key={i} type="button" onClick={() => setResolution(tpl)} title={tpl}
+                      className="px-2.5 py-1 rounded-full text-xs border border-border text-text-secondary hover:bg-primary/10 hover:border-primary/40 transition-colors text-left max-w-full truncate">
+                      {tpl.length > 48 ? `${tpl.slice(0, 48)}…` : tpl}
+                    </button>
+                  ))}
+                </div>
                 <textarea rows={3} value={resolution} onChange={(e) => setResolution(e.target.value)}
-                  placeholder="Explain the decision and what settlement was performed (min 10 chars)…"
+                  placeholder="Explain the decision and what settlement was performed (min 10 chars)… or pick a template above"
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
               </div>
 

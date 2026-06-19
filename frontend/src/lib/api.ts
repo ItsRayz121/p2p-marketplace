@@ -474,6 +474,10 @@ export interface Trade {
   buyerRated?: boolean
   sellerRated?: boolean
   expiresAt: string
+  /** Set when the buyer uploads payment proof (anchor for the dispute-unlock delay). */
+  paymentUploadedAt?: string | null
+  /** Set when the seller confirms payment received. */
+  paymentConfirmedAt?: string | null
   createdAt: string
   updatedAt: string
   buyer?: Partial<AuthUser>

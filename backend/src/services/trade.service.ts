@@ -28,6 +28,10 @@ import { logger } from '../lib/logger'
 // it to (a) a clean display label and (b) the seller's account details, so the
 // buyer can see exactly where to send PKR instead of asking in chat.
 
+// Cooldown before either party can open a dispute, measured from when the buyer
+// uploads payment proof. Keep this in sync with the frontend trade page.
+export const DISPUTE_DELAY_MINUTES = 10
+
 const PM_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay',
   nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
@@ -874,6 +878,22 @@ export async function openDispute(
   const disputeStatuses = ['payment_uploaded', 'payment_confirmed', 'crypto_sent']
   if (!disputeStatuses.includes(trade.status)) {
     throw new AppError('INVALID_STATUS', `Cannot open dispute for trade in status: ${trade.status}`, 400)
+  }
+
+  // Cooldown: a dispute can only be opened DISPUTE_DELAY_MINUTES after the buyer
+  // uploads payment proof. This stops instant rage-disputes and gives both sides
+  // a window to confirm/communicate first. Legacy trades without an upload
+  // timestamp are exempt so they never get stuck.
+  if (trade.paymentUploadedAt) {
+    const unlockAt = trade.paymentUploadedAt.getTime() + DISPUTE_DELAY_MINUTES * 60_000
+    if (Date.now() < unlockAt) {
+      const waitMin = Math.ceil((unlockAt - Date.now()) / 60_000)
+      throw new AppError(
+        'DISPUTE_TOO_EARLY',
+        `You can open a dispute ${DISPUTE_DELAY_MINUTES} minutes after payment proof is uploaded. Please try again in about ${waitMin} minute${waitMin === 1 ? '' : 's'}.`,
+        400,
+      )
+    }
   }
 
   let dispute: Awaited<ReturnType<typeof db.dispute.create>>

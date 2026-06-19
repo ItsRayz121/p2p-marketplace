@@ -101,6 +101,21 @@ const disputeStatusLabel = (s: string) => DISPUTE_STATUS_LABELS[s] ?? s.replace(
 
 const DIRECTION_LABELS: Record<string, string> = { buy: 'Buyer listing', sell: 'Seller listing' }
 
+// Quick-pick resolution summaries for USDT/P2P disputes, split by who wins.
+// Platform is non-custodial: rulings are guidance, parties settle off-platform.
+const RESOLUTION_TEMPLATES: Record<'buyer' | 'seller', string[]> = {
+  buyer: [
+    'Buyer provided valid proof of PKR payment to the seller’s account. Ruling in the buyer’s favour — the seller must deliver the agreed USDT to the buyer’s wallet.',
+    'Seller failed to deliver USDT after payment was confirmed. Ruling in the buyer’s favour — seller to complete the USDT transfer without further delay.',
+    'Seller became unresponsive after receiving payment. Ruling in the buyer’s favour based on the evidence provided.',
+  ],
+  seller: [
+    'Buyer did not send the PKR payment within the trade window, or the payment could not be verified. Ruling in the seller’s favour — no USDT is owed.',
+    'The submitted payment proof was found to be invalid/fabricated. Ruling in the seller’s favour — the buyer’s claim is dismissed.',
+    'Buyer became unresponsive and provided no valid evidence of payment. Ruling in the seller’s favour.',
+  ],
+}
+
 export default function DisputesPage() {
   const [disputes, setDisputes] = useState<DisputeRecord[]>([])
   const [total, setTotal] = useState(0)
@@ -482,11 +497,24 @@ export default function DisputesPage() {
                       Seller — {selected.trade?.seller?.username}
                     </button>
                   </div>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {RESOLUTION_TEMPLATES[winner].map((tpl, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setResolution(tpl)}
+                        title={tpl}
+                        className="px-2.5 py-1 rounded-full text-xs border border-border text-text-secondary hover:bg-primary/10 hover:border-primary/40 transition-colors text-left max-w-full truncate"
+                      >
+                        {tpl.length > 48 ? `${tpl.slice(0, 48)}…` : tpl}
+                      </button>
+                    ))}
+                  </div>
                   <textarea
                     value={resolution}
                     onChange={(e) => setResolution(e.target.value)}
-                    rows={2}
-                    placeholder="Resolution summary (required)..."
+                    rows={3}
+                    placeholder="Resolution summary (required)... or pick a template above"
                     className="w-full px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                   />
                   <textarea

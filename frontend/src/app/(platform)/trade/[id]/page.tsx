@@ -55,6 +55,10 @@ interface ChatMessage {
 
 const AUTO_RELEASE_HOURS = 2
 
+// Cooldown before "Open Dispute" unlocks, measured from when the buyer uploaded
+// payment proof. Keep in sync with DISPUTE_DELAY_MINUTES in trade.service.ts.
+const DISPUTE_DELAY_MINUTES = 10
+
 
 interface SellerPaymentAccount {
   type: string
@@ -593,6 +597,11 @@ export default function TradePage() {
   // crypto_sent included: buyer may need to dispute non-receipt or a tx stuck
   // in admin verification (matches backend disputeStatuses in trade.service.ts)
   const canDispute = ['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(trade.status)
+  // Dispute unlocks DISPUTE_DELAY_MINUTES after payment proof was uploaded.
+  // Legacy trades without the timestamp are unlocked immediately (null = no gate).
+  const disputeUnlockAt = trade.paymentUploadedAt
+    ? new Date(trade.paymentUploadedAt).getTime() + DISPUTE_DELAY_MINUTES * 60_000
+    : null
   const counterpartyUser = isUserBuyer ? trade.seller : trade.buyer
   const counterparty = counterpartyUser?.fullName || counterpartyUser?.username || (isUserBuyer ? 'Seller' : 'Buyer')
   const counterpartyBadge = (counterpartyUser?.tradeStats?.badge ?? 'new') as TraderBadge
@@ -1062,11 +1071,10 @@ export default function TradePage() {
               )
             })()}
 
-            {/* Dispute */}
+            {/* Dispute — gated behind a short cooldown after proof upload so
+                neither party can fire off an instant rage-dispute. */}
             {canDispute && !showDisputeForm && (
-              <Button variant="danger" fullWidth onClick={() => setShowDisputeForm(true)}>
-                Open Dispute
-              </Button>
+              <DisputeUnlockGate unlockAt={disputeUnlockAt} onOpen={() => setShowDisputeForm(true)} />
             )}
 
             {showDisputeForm && (
@@ -1280,6 +1288,47 @@ function PayToRow({ label, value, copy }: { label: string; value: string; copy?:
         <span className="font-medium text-text-primary text-right break-all">{value}</span>
         {copy && <CopyButton text={value} size="sm" className="flex-shrink-0 -mt-0.5" />}
       </span>
+    </div>
+  )
+}
+
+function DisputeUnlockGate({ unlockAt, onOpen }: { unlockAt: number | null; onOpen: () => void }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  const locked = unlockAt !== null && now < unlockAt
+
+  useEffect(() => {
+    if (!locked) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [locked])
+
+  if (!locked) {
+    return (
+      <Button variant="danger" fullWidth onClick={onOpen}>
+        Open Dispute
+      </Button>
+    )
+  }
+
+  const diff = Math.max(0, (unlockAt as number) - now)
+  const m = Math.floor(diff / 60_000)
+  const s = Math.floor((diff % 60_000) / 1_000)
+  const formatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+
+  return (
+    <div className="rounded-lg border border-border bg-surface px-3 py-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-text-secondary">Dispute available in</span>
+        <span className="font-mono font-semibold text-sm text-text-primary">{formatted}</span>
+      </div>
+      <p className="text-xs text-text-muted leading-snug">
+        Give your counterparty a moment to send or confirm. If the issue isn&apos;t
+        resolved, you&apos;ll be able to open a dispute once the timer ends.
+      </p>
+      <Button variant="danger" fullWidth disabled>
+        Open Dispute
+      </Button>
     </div>
   )
 }
