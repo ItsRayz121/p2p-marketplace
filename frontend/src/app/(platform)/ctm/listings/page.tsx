@@ -18,6 +18,7 @@ interface Listing {
   maxOrderTokens: string
   paymentMethods: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
+  makerBondInsufficient?: boolean
   token: { id: string; slug: string; name: string; symbol: string; logoUrl?: string; riskTier: string }
   merchantProfile: {
     tier: string
@@ -240,9 +241,18 @@ export default function BrowseListingsPage() {
                   </div>
 
                   {/* CTA */}
-                  <Link href={`/ctm/listings/${l.id}`} className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${l.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-                    {l.side === 'sell' ? `Buy ${l.token.symbol}` : `Sell ${l.token.symbol}`}
-                  </Link>
+                  {l.makerBondInsufficient ? (
+                    <span
+                      className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/20"
+                      title="This trader's collateral bond is fully committed right now, so new trades can't start. Check back shortly."
+                    >
+                      Maker unavailable
+                    </span>
+                  ) : (
+                    <Link href={`/ctm/listings/${l.id}`} className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${l.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                      {l.side === 'sell' ? `Buy ${l.token.symbol}` : `Sell ${l.token.symbol}`}
+                    </Link>
+                  )}
                 </div>
               </div>
             )

@@ -3,6 +3,7 @@ import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prisma/client'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
+import { getBondConfig, computeBondUsdt } from '../services/makerBond.service'
 
 type Tx = Prisma.TransactionClient
 
@@ -209,7 +210,7 @@ export async function getListings(filters: ListingsFilter = {}) {
     where: { id: { in: allIds } },
     select: { id: true, type: true, accountName: true, bankName: true },
   })
-  const resolvedListings = listings.map((l) => ({
+  const resolvedListings: Array<Record<string, unknown>> = listings.map((l) => ({
     ...l,
     resolvedPaymentMethods: l.paymentMethods.map((id) => {
       const m = allMethods.find((x) => x.id === id)
@@ -218,6 +219,35 @@ export async function getListings(filters: ListingsFilter = {}) {
       return { id, type: m.type as string, label }
     }),
   }))
+
+  // Maker-bond availability annotation (flag-gated). Marks listings whose maker
+  // (listing creator) can't cover the USDT bond for even their min order, so the
+  // UI can show "maker unavailable". Needs the USDT/PKR rate to convert the PKR
+  // order to USDT-equivalent; if the rate is missing we skip (fail-open), matching
+  // the bond-lock behavior. One batched balance query for the page (no N+1).
+  const bondCfg = await getBondConfig()
+  if (bondCfg.enabled && resolvedListings.length > 0) {
+    const usdtPkr = await getNumberConfig('rate_USDT_PKR', 0)
+    if (usdtPkr > 0) {
+      const makerIds = [...new Set(listings.map((l) => l.merchantProfile.user.id))]
+      const balRows = await db.$queryRaw<Array<{ userId: string; avail: string }>>`
+        SELECT "userId", COALESCE(SUM(balance - "lockedBalance"), 0)::text AS avail
+        FROM "Wallet"
+        WHERE "userId" IN (${Prisma.join(makerIds)}) AND coin = 'USDT'
+        GROUP BY "userId"
+      `
+      const availByMaker = new Map<string, Prisma.Decimal>()
+      for (const r of balRows) availByMaker.set(r.userId, new Prisma.Decimal(r.avail))
+      for (let i = 0; i < resolvedListings.length; i++) {
+        const l = listings[i]!
+        const minOrderPkr = l.minOrderTokens.mul(l.pricePerUnit)
+        const minOrderUsdt = minOrderPkr.toNumber() / usdtPkr
+        const bondForMin = computeBondUsdt(minOrderUsdt, bondCfg)
+        const avail = availByMaker.get(l.merchantProfile.user.id) ?? new Prisma.Decimal(0)
+        resolvedListings[i]!.makerBondInsufficient = avail.lt(bondForMin)
+      }
+    }
+  }
 
   return { listings: resolvedListings, total, page, limit, totalPages: Math.ceil(total / limit) }
 }

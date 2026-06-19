@@ -548,6 +548,9 @@ export interface MarketplaceAd {
   terms: string
   status: string
   createdAt: string
+  /** True when the maker-bond feature is ON and this maker can't cover the bond
+   *  for even their min order — the trade would be rejected. Undefined when off. */
+  makerBondInsufficient?: boolean
   seller: {
     id: string
     username: string

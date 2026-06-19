@@ -35,6 +35,7 @@ interface Listing {
   createdAt?: string
   paymentMethods: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
+  makerBondInsufficient?: boolean
   token: {
     id: string
     slug: string
@@ -405,14 +406,23 @@ function ListingRow({
         </div>
 
         {/* ── 5. CTA ── */}
-        <Link
-          href={`/ctm/listings/${listing.id}`}
-          className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            isSell ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'
-          }`}
-        >
-          {isSell ? `Buy ${sym}` : `Sell ${sym}`}
-        </Link>
+        {listing.makerBondInsufficient ? (
+          <span
+            className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/20"
+            title="This trader's collateral bond is fully committed right now, so new trades can't start. Check back shortly."
+          >
+            Maker unavailable
+          </span>
+        ) : (
+          <Link
+            href={`/ctm/listings/${listing.id}`}
+            className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              isSell ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            {isSell ? `Buy ${sym}` : `Sell ${sym}`}
+          </Link>
+        )}
       </div>
     </div>
   )

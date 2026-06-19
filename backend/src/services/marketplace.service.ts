@@ -3,6 +3,7 @@ import { redis } from '../lib/redis'
 import { Errors } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { isPubliclyVisible, type ChainReadinessState } from '../lib/gas/chainMeta'
+import { getBondConfig, computeBondUsdt } from './makerBond.service'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,12 @@ export interface AdWithSeller {
   status: string
   createdAt: Date
   seller: SellerInfo
+  /**
+   * True when the maker-bond feature is ON and this ad's maker does not have
+   * enough available USDT to post the bond for even their minimum order — so a
+   * trade would be rejected. Undefined when the bond feature is off.
+   */
+  makerBondInsufficient?: boolean
 }
 
 export interface PublicConfig {
@@ -653,6 +660,28 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       },
     }
   })
+
+  // Maker-bond availability annotation (flag-gated). When the bond is ON, mark
+  // ads whose maker can't cover the bond for even their min order, so the UI can
+  // show "maker unavailable" instead of letting the buyer hit a trade-time
+  // rejection. One batched balance query for the whole page (no N+1).
+  const bondCfg = await getBondConfig()
+  if (bondCfg.enabled && items.length > 0) {
+    const makerIds = [...new Set(items.map((it) => it.seller.id))]
+    const balRows = await db.$queryRaw<Array<{ userId: string; avail: string }>>`
+      SELECT "userId", COALESCE(SUM(balance - "lockedBalance"), 0)::text AS avail
+      FROM "Wallet"
+      WHERE "userId" IN (${Prisma.join(makerIds)}) AND coin = 'USDT'
+      GROUP BY "userId"
+    `
+    const availByMaker = new Map<string, Prisma.Decimal>()
+    for (const r of balRows) availByMaker.set(r.userId, new Prisma.Decimal(r.avail))
+    for (const it of items) {
+      const avail = availByMaker.get(it.seller.id) ?? new Prisma.Decimal(0)
+      const bondForMin = computeBondUsdt(it.minOrder, bondCfg)
+      it.makerBondInsufficient = avail.lt(bondForMin)
+    }
+  }
 
   return {
     ads: items,

@@ -255,7 +255,14 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
         </div>
 
         {/* ── 5. CTA ── */}
-        {parseFloat(ad.availableAmount) > 0 ? (
+        {ad.makerBondInsufficient ? (
+          <span
+            className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/20"
+            title="This trader's collateral bond is fully committed right now, so new trades can't start. Check back shortly."
+          >
+            Maker unavailable
+          </span>
+        ) : parseFloat(ad.availableAmount) > 0 ? (
           <Link
             href={`/marketplace/listings/${ad.id}`}
             className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
