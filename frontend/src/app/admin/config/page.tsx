@@ -45,6 +45,7 @@ const STRUCTURED_KEYS = new Set([
   'home_offers_mode', 'home_pinned_ad_ids',
   'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt_l1', 'noncustodial_max_order_usdt_l2',
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
+  'maker_bond_enabled', 'maker_bond_ratio_pct', 'maker_bond_min_usdt',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -215,6 +216,10 @@ export default function ConfigPage() {
   const [ncL1AdsUsdt, setNcL1AdsUsdt] = useState('1')
   const [ncL1AdsCtm, setNcL1AdsCtm] = useState('2')
   const [ncSaving, setNcSaving] = useState(false)
+  // Maker collateral bond (Phase 5)
+  const [bondEnabled, setBondEnabled] = useState(false)
+  const [bondRatioPct, setBondRatioPct] = useState('10')
+  const [bondMinUsdt, setBondMinUsdt] = useState('0')
 
   // ── Homepage Top Offers ─────────────────────────────────────────────────────
   const [offersMode, setOffersMode] = useState<'top' | 'latest' | 'pinned'>('top')
@@ -312,6 +317,9 @@ export default function ConfigPage() {
       setNcMaxOrderL2(m['noncustodial_max_order_usdt_l2'] ?? '500')
       setNcL1AdsUsdt(m['noncustodial_l1_max_ads'] ?? '1')
       setNcL1AdsCtm(m['noncustodial_l1_max_ads_ctm'] ?? '2')
+      setBondEnabled(m['maker_bond_enabled'] === 'true')
+      setBondRatioPct(m['maker_bond_ratio_pct'] ?? '10')
+      setBondMinUsdt(m['maker_bond_min_usdt'] ?? '0')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -440,6 +448,9 @@ export default function ConfigPage() {
         { key: 'noncustodial_max_order_usdt_l2', value: String(Math.max(parseFloat(ncMaxOrderL2) || 0, 0)) },
         { key: 'noncustodial_l1_max_ads', value: String(parseInt(ncL1AdsUsdt, 10) || 1) },
         { key: 'noncustodial_l1_max_ads_ctm', value: String(parseInt(ncL1AdsCtm, 10) || 2) },
+        { key: 'maker_bond_enabled', value: bondEnabled ? 'true' : 'false' },
+        { key: 'maker_bond_ratio_pct', value: String(Math.max(parseFloat(bondRatioPct) || 0, 0)) },
+        { key: 'maker_bond_min_usdt', value: String(Math.max(parseFloat(bondMinUsdt) || 0, 0)) },
       ])
       showToast(ncEnabled ? 'Non-custodial mode is ON.' : 'Non-custodial mode is OFF.')
     } catch { showToast('Failed to save non-custodial settings.', false) }
@@ -523,6 +534,29 @@ export default function ConfigPage() {
 
           <Field label="Level-1 ads — CTM" hint="Active CTM listings a Level-1 user may keep">
             <input className={inputCls} type="number" min="0" value={ncL1AdsCtm} onChange={(e) => setNcL1AdsCtm(e.target.value)} placeholder="2" />
+          </Field>
+
+          {/* ── Maker collateral bond (Phase 5) ── */}
+          <div className="border-t border-border pt-3 mt-1">
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={bondEnabled} onChange={(e) => setBondEnabled(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+              <div>
+                <span className="text-sm font-medium text-text-primary">Maker collateral bond</span>
+                <p className="text-xs text-text-muted mt-0.5">
+                  When ON, opening a trade locks a USDT bond from the maker&apos;s deposited
+                  balance. It releases on a clean close and is seized 100% to the victim if
+                  the maker loses a dispute. Requires deposits to be funded.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <Field label="Bond ratio (%)" hint="Bond locked per trade as % of trade size (10 = $1 bond per $10 trade)">
+            <input className={inputCls} type="number" min="0" step="0.1" value={bondRatioPct} onChange={(e) => setBondRatioPct(e.target.value)} placeholder="10" />
+          </Field>
+
+          <Field label="Bond minimum (USDT)" hint="Floor per bond regardless of ratio. 0 = no minimum">
+            <input className={inputCls} type="number" min="0" step="0.01" value={bondMinUsdt} onChange={(e) => setBondMinUsdt(e.target.value)} placeholder="0" />
           </Field>
 
           <div className="flex justify-end">

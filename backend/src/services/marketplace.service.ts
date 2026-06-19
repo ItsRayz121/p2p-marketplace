@@ -80,6 +80,8 @@ export interface PublicConfig {
   nonCustodialP2p: boolean
   nonCustodialMaxOrderUsdtL1: number
   nonCustodialMaxOrderUsdtL2: number
+  makerBondEnabled: boolean
+  makerBondRatioPct: number
 }
 
 export interface GetAdsParams {
@@ -462,6 +464,8 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     'noncustodial_p2p_enabled',
     'noncustodial_max_order_usdt_l1',
     'noncustodial_max_order_usdt_l2',
+    'maker_bond_enabled',
+    'maker_bond_ratio_pct',
   ]
 
   const rows = await db.platformConfig.findMany({
@@ -491,6 +495,8 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     nonCustodialP2p: map['noncustodial_p2p_enabled'] === 'true',
     nonCustodialMaxOrderUsdtL1: parseFloat(map['noncustodial_max_order_usdt_l1'] ?? '50'),
     nonCustodialMaxOrderUsdtL2: parseFloat(map['noncustodial_max_order_usdt_l2'] ?? '500'),
+    makerBondEnabled: map['maker_bond_enabled'] === 'true',
+    makerBondRatioPct: parseFloat(map['maker_bond_ratio_pct'] ?? '10'),
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 60)
