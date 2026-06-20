@@ -33,16 +33,10 @@ import {
   CheckCheck,
   ArrowUpRight,
   CheckCircle2,
-  CreditCard,
-  Package,
   ShieldCheck,
   WifiOff,
   BadgeCheck,
 } from 'lucide-react'
-
-// localStorage key for the trade panel collapse/expand preference (global so the
-// choice persists across trades and page refreshes).
-const OPEN_SECTIONS_KEY = 'rupchain:trade:openSections'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -236,6 +230,71 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
   )
 }
 
+// ─── Step Card (CTM-style guided flow) ─────────────────────────────────────────
+
+type StepState = 'completed' | 'active' | 'future'
+
+// 4-step flow mapped onto USDT statuses (idx: 0 pending, 1 uploaded, 2 confirmed,
+// 3 crypto_sent, 4 released). Steps 1–2 are the payment phase, step 3 the crypto
+// delivery + release phase, step 4 completion.
+function getStepState(stepNum: 1 | 2 | 3 | 4, idx: number): StepState {
+  if (stepNum === 1) return idx >= 1 ? 'completed' : 'active'
+  if (stepNum === 2) return idx >= 2 ? 'completed' : idx >= 1 ? 'active' : 'future'
+  if (stepNum === 3) return idx >= 4 ? 'completed' : idx >= 2 ? 'active' : 'future'
+  return idx >= 4 ? 'active' : 'future'
+}
+
+function StepCard({ stepNum, title, state, summary, expanded, onToggle, children }: {
+  stepNum: number; title: string; state: StepState; summary?: string
+  expanded: boolean; onToggle: () => void; children?: React.ReactNode
+}) {
+  // Active step is always open; completed steps collapse to a summary line but
+  // stay re-openable; future steps are locked shut.
+  const isExpanded = state === 'active' || (state === 'completed' && expanded)
+  return (
+    <div className={`border rounded-xl overflow-hidden transition-colors ${
+      state === 'active' ? 'border-primary bg-surface shadow-card ring-1 ring-primary/10'
+        : state === 'completed' ? 'border-success/30 bg-surface'
+        : 'border-border bg-surface/50'
+    }`}>
+      <div
+        className={`flex items-center gap-3 p-4 ${state === 'completed' ? 'cursor-pointer hover:bg-surface-alt/40 transition-colors' : ''}`}
+        onClick={state === 'completed' ? onToggle : undefined}
+      >
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+          state === 'completed' ? 'bg-success text-white' : state === 'active' ? 'bg-primary text-white' : 'bg-surface-alt text-text-muted'
+        }`}>
+          {state === 'completed' ? '✓' : stepNum}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={`font-semibold text-sm ${state === 'active' ? 'text-primary' : state === 'completed' ? 'text-text-primary' : 'text-text-muted'}`}>
+            {state === 'active' && <span className="mr-1">→</span>}
+            {title}
+          </p>
+          {state === 'completed' && !isExpanded && summary && (
+            <p className="text-xs text-text-muted mt-0.5 truncate">{summary}</p>
+          )}
+        </div>
+        {state === 'completed' && (
+          <svg className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        )}
+        {state === 'future' && (
+          <svg className="w-4 h-4 text-text-muted/50 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+            <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+          </svg>
+        )}
+      </div>
+      {isExpanded && children && (
+        <div className={`px-4 pb-4 border-t ${state === 'active' ? 'border-primary/10' : 'border-success/15'}`}>
+          <div className="pt-3 space-y-3">{children}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TradePage() {
@@ -267,45 +326,14 @@ export default function TradePage() {
   // transfers the screenshot IS the proof; for on-chain transfers it's supplemental.
   const [deliveryShot, setDeliveryShot] = useState<File | null>(null)
 
-  const [openSections, setOpenSections] = useState({ timeline: true, payment: true, delivery: true })
-  const toggleSection = (key: keyof typeof openSections) =>
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
-
-  // Persist the collapsed/expanded state of the trade panels so a refresh keeps
-  // whatever the user last set. Restored on mount (client-only, to avoid an SSR
-  // hydration mismatch) and re-saved on every toggle.
-  const openSectionsHydrated = useRef(false)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(OPEN_SECTIONS_KEY)
-      if (raw) {
-        const saved = JSON.parse(raw) as Partial<typeof openSections>
-        setOpenSections((prev) => ({
-          timeline: typeof saved.timeline === 'boolean' ? saved.timeline : prev.timeline,
-          payment: typeof saved.payment === 'boolean' ? saved.payment : prev.payment,
-          delivery: typeof saved.delivery === 'boolean' ? saved.delivery : prev.delivery,
-        }))
-      }
-    } catch { /* ignore corrupt/unavailable storage */ }
-    openSectionsHydrated.current = true
-  }, [])
-  useEffect(() => {
-    if (!openSectionsHydrated.current) return
-    try { localStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify(openSections)) } catch { /* ignore */ }
-  }, [openSections])
-
-  const paymentSectionRef = useRef<HTMLDivElement>(null)
-  const deliverySectionRef = useRef<HTMLDivElement>(null)
-
-  const handleStepClick = (stepKey: string) => {
-    if (stepKey === 'payment_uploaded' || stepKey === 'payment_confirmed') {
-      setOpenSections((prev) => ({ ...prev, payment: true }))
-      setTimeout(() => paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
-    } else if (stepKey === 'crypto_sent' || stepKey === 'crypto_released') {
-      setOpenSections((prev) => ({ ...prev, delivery: true }))
-      setTimeout(() => deliverySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
-    }
-  }
+  // Completed step cards collapse to a summary; this tracks which ones the user
+  // has manually re-opened.
+  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set())
+  const toggleStep = (n: number) => setExpandedSteps((prev) => {
+    const next = new Set(prev)
+    if (next.has(n)) next.delete(n); else next.add(n)
+    return next
+  })
 
   // Mobile-only tab: at <lg the trade panel and chat stack vertically and the
   // page becomes a long scroll. Segmented control lets the user swap views.
@@ -342,9 +370,14 @@ export default function TradePage() {
           ? (messagesData as ChatMessage[])
           : ((messagesData as { messages: ChatMessage[] }).messages ?? [])
         const serverKeys = new Set(serverMessages.map((m) => `${m.senderId}::${m.message}`))
-        const optimistic = prev.filter(
-          (m) => m.id.startsWith('tmp-') && !serverKeys.has(`${m.senderId}::${m.message}`),
-        )
+        const optimistic = prev.filter((m) => {
+          if (!m.id.startsWith('tmp-')) return false
+          // Drop a "failed" bubble whose content already landed on the server —
+          // that's the phantom (the send actually went through). In-flight
+          // ("sending") bubbles are always kept until their own ack/next poll.
+          if (m.sendStatus === 'failed' && serverKeys.has(`${m.senderId}::${m.message}`)) return false
+          return true
+        })
         return optimistic.length ? [...serverMessages, ...optimistic] : serverMessages
       })
     } catch (err) {
@@ -770,132 +803,78 @@ export default function TradePage() {
             </div>
           )}
 
-          {/* Timeline */}
-          <div className="bg-surface rounded-xl border border-border shadow-card">
-            <button
-              onClick={() => toggleSection('timeline')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-alt/50 transition-colors rounded-xl"
-            >
-              <h2 className="text-sm font-semibold text-text-primary">Trade Progress</h2>
-              <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 ${openSections.timeline ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {openSections.timeline && (
-              <div className="px-5 pb-5">
-                {TIMELINE_STEPS.map((step, idx) => {
-                  const done    = idx < currentStep
-                  const active  = idx === currentStep
-                  const last    = idx === TIMELINE_STEPS.length - 1
-                  const clickable = done && (
-                    step.key === 'payment_uploaded' ||
-                    step.key === 'payment_confirmed' ||
-                    step.key === 'crypto_sent' ||
-                    step.key === 'crypto_released'
-                  )
+          {/* Progress bar */}
+          <div className="bg-surface rounded-xl border border-border shadow-card p-4">
+            <div className="overflow-x-auto pb-1">
+              <div className="flex items-start min-w-max">
+                {TIMELINE_STEPS.map((step, i) => {
                   const { Icon } = step
                   return (
-                    <div
-                      key={step.key}
-                      onClick={() => done && handleStepClick(step.key)}
-                      {...(clickable
-                        ? {
-                            role: 'button',
-                            tabIndex: 0,
-                            'aria-label': `View ${step.label}`,
-                            onKeyDown: (e: React.KeyboardEvent) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                handleStepClick(step.key)
-                              }
-                            },
-                          }
-                        : {})}
-                      className={`flex gap-3 rounded-lg ${clickable ? 'cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40' : ''}`}
-                    >
-                      {/* Spine column */}
-                      <div className="flex flex-col items-center flex-shrink-0">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                          done
-                            ? 'bg-success text-white'
-                            : active
-                            ? 'bg-primary text-white ring-4 ring-primary/15'
+                    <div key={step.key} className="flex items-start">
+                      <div className="flex flex-col items-center">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          i < currentStep ? 'bg-success text-white'
+                            : i === currentStep ? 'bg-primary text-white ring-4 ring-primary/15'
                             : 'bg-surface-alt text-text-muted border border-border'
-                        } ${clickable ? 'group-hover:scale-105' : ''}`}>
-                          <Icon size={14} aria-hidden />
-                        </div>
-                        {!last && (
-                          <div className={`w-px flex-1 my-1 min-h-[20px] ${
-                            done ? 'bg-success/40' : 'bg-border'
-                          }`} />
-                        )}
-                      </div>
-
-                      {/* Label */}
-                      <div className={`flex-1 flex items-center justify-between min-h-[32px] ${last ? 'pb-0' : 'pb-4'}`}>
-                        <span className={`text-sm ${
-                          active ? 'font-semibold text-text-primary'
-                          : done  ? 'text-success font-medium'
-                          :         'text-text-muted'
                         }`}>
-                          {step.label}
-                        </span>
-                        {active && (
-                          <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                            Current
-                          </span>
-                        )}
-                        {done && clickable && (
-                          <svg className="w-3.5 h-3.5 text-success/40 group-hover:text-success transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        )}
+                          {i < currentStep ? <CheckCircle2 size={14} aria-hidden /> : <Icon size={14} aria-hidden />}
+                        </div>
+                        <p className={`mt-1.5 w-16 text-center text-[10px] leading-tight ${
+                          i === currentStep ? 'text-primary font-semibold'
+                            : i < currentStep ? 'text-success font-medium'
+                            : 'text-text-muted'
+                        }`}>{step.label}</p>
                       </div>
+                      {i < TIMELINE_STEPS.length - 1 && (
+                        <div className={`h-0.5 w-8 mt-4 flex-shrink-0 ${i < currentStep ? 'bg-success' : 'bg-border'}`} />
+                      )}
                     </div>
                   )
                 })}
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Payment Settlement */}
-          <div ref={paymentSectionRef} className="bg-surface rounded-xl border border-border shadow-card">
-            <button
-              onClick={() => toggleSection('payment')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-alt/50 transition-colors rounded-xl"
-            >
-              <div className="flex items-center gap-2">
-                <CreditCard size={16} className="text-text-muted flex-shrink-0" aria-hidden />
-                <h2 className="text-sm font-semibold text-text-primary">
-                  {isUserBuyer ? 'You are sending PKR payment' : 'Awaiting PKR payment from buyer'}
-                </h2>
-              </div>
-              <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 flex-shrink-0 ml-2 ${openSections.payment ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {openSections.payment && (
-              <div className="px-5 pb-5 space-y-2 text-sm">
-                <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
-                <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
-                <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} />
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Pay via</span>
-                  <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
-                    <EntityLogo
-                      type={PK_MOBILE_METHODS.includes(pmLabel) ? 'payment_method' : 'bank'}
-                      slug={pmLabel}
-                      size="xs"
-                      className="flex-shrink-0"
-                    />
-                    {pmLabel}
-                  </span>
-                </div>
+          {trade.status === 'disputed' && (
+            <div className="bg-danger/10 border border-danger/30 rounded-xl p-4 text-sm">
+              <p className="font-semibold text-danger mb-1">Dispute in progress</p>
+              <p className="text-text-muted text-xs">Our team is reviewing this trade. Please respond in the chat with any evidence you have.</p>
+            </div>
+          )}
 
-                {/* Seller's receiving account — so the buyer knows exactly where
-                    to send PKR (previously only obtainable by asking in chat). */}
+          {['cancelled', 'expired'].includes(trade.status) && (
+            <div className="bg-surface-alt border border-border rounded-xl p-4 text-sm text-center text-text-muted">
+              This trade was <span className="font-medium text-text-primary">{trade.status}</span>.
+            </div>
+          )}
+
+          {/* Guided step flow (CTM-style) — active step auto-expands; completed
+              steps collapse to a summary line and stay re-openable. */}
+          {!['cancelled', 'expired'].includes(trade.status) && (
+            <>
+              {/* Step 1 — Payment */}
+              <StepCard
+                stepNum={1}
+                title={isUserBuyer ? 'Send Payment' : 'Receive PKR Payment'}
+                state={getStepState(1, currentStep)}
+                summary={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} · ${pmLabel}`}
+                expanded={expandedSteps.has(1)}
+                onToggle={() => toggleStep(1)}
+              >
+                <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
+                  <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
+                  <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
+                  <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} />
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Pay via</span>
+                    <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                      <EntityLogo type={PK_MOBILE_METHODS.includes(pmLabel) ? 'payment_method' : 'bank'} slug={pmLabel} size="xs" className="flex-shrink-0" />
+                      {pmLabel}
+                    </span>
+                  </div>
+                </div>
                 {sellerAccount && (
-                  <div className="pt-3 mt-1 border-t border-border space-y-2">
+                  <div className="space-y-2">
                     <p className="text-xs font-semibold text-text-primary">
                       {isUserBuyer ? 'Send your PKR payment to' : 'Your receiving account'}
                     </p>
@@ -904,327 +883,257 @@ export default function TradePage() {
                     {sellerAccount.accountNumber && <PayToRow label="Account number" value={sellerAccount.accountNumber} copy />}
                     {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
                     {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
-                    {isUserBuyer && (
+                    {isUserBuyer && trade.status === 'payment_pending' && (
                       <p className="text-xs text-text-muted leading-snug pt-1">
-                        Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof below.
+                        Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof.
                       </p>
                     )}
                   </div>
                 )}
+                {isUserBuyer && trade.status === 'payment_pending' && (
+                  <>
+                    <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }} />
+                    <Button fullWidth loading={uploading} disabled={uploading || actionLoading} onClick={() => fileInputRef.current?.click()}>
+                      Upload Payment Proof
+                    </Button>
+                    {canCancel && (
+                      <Button variant="ghost" fullWidth onClick={() => setShowCancelModal(true)}>Cancel Trade</Button>
+                    )}
+                  </>
+                )}
+                {!isUserBuyer && trade.status === 'payment_pending' && (
+                  <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">
+                    Waiting for the buyer to send PKR and upload payment proof.
+                  </div>
+                )}
+              </StepCard>
+
+              {/* Step 2 — Confirm Payment */}
+              <StepCard
+                stepNum={2}
+                title="Confirm Payment"
+                state={getStepState(2, currentStep)}
+                summary="Payment confirmed by seller"
+                expanded={expandedSteps.has(2)}
+                onToggle={() => toggleStep(2)}
+              >
                 {trade.paymentProofUrl && (
-                  <div className="pt-3 border-t border-border">
+                  <div>
                     <p className="text-xs text-text-muted mb-2">Payment Proof</p>
                     {isTrustedImageUrl(trade.paymentProofUrl) ? (
                       <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-                        <NextImage
-                          src={trade.paymentProofUrl}
-                          alt="Payment proof"
-                          width={320}
-                          height={240}
-                          className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover"
-                          referrerPolicy="no-referrer"
-                          unoptimized
-                        />
+                        <NextImage src={trade.paymentProofUrl} alt="Payment proof" width={320} height={240} className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover" referrerPolicy="no-referrer" unoptimized />
                       </a>
                     ) : (
-                      <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">
-                        Payment proof URL is from an untrusted source and cannot be displayed.
-                      </div>
+                      <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">Payment proof URL is from an untrusted source and cannot be displayed.</div>
                     )}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
-
-          {/* Token Delivery */}
-          <div ref={deliverySectionRef} className="bg-surface rounded-xl border border-border shadow-card">
-            <button
-              onClick={() => toggleSection('delivery')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-alt/50 transition-colors rounded-xl"
-            >
-              <div className="flex items-center gap-2">
-                <Package size={16} className="text-text-muted flex-shrink-0" aria-hidden />
-                <h2 className="text-sm font-semibold text-text-primary">Token Delivery</h2>
-              </div>
-              <svg className={`w-4 h-4 text-text-muted transition-transform duration-200 flex-shrink-0 ml-2 ${openSections.delivery ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {openSections.delivery && (
-              <div className="px-5 pb-5 space-y-2 text-sm">
-                <DetailRow label="Network" value={trade.network ?? trade.coin} />
-                {trade.buyerDeliveryMethod ? (
+                {!isUserBuyer && trade.status === 'payment_uploaded' && (
                   <>
-                    <DetailRow
-                      label="Method"
-                      value={
-                        trade.buyerDeliveryMethod === 'blockchain' ? 'Wallet Address'
-                        : trade.buyerDeliveryMethod === 'email' ? 'Email Transfer'
-                        : trade.buyerDeliveryMethod === 'username' ? 'Username Transfer'
-                        : 'Internal Wallet'
-                      }
-                    />
-                    {trade.buyerDeliveryAddress && (
-                      <div className="flex justify-between items-start gap-2">
-                        <span className="text-text-muted flex-shrink-0">
-                          {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
-                        </span>
-                        <span className="inline-flex items-start gap-1 min-w-0">
-                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
-                          <CopyButton text={trade.buyerDeliveryAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
-                        </span>
-                      </div>
-                    )}
+                    <p className="text-xs text-text-muted">Confirm only after the PKR has actually arrived in your account — a screenshot alone is not proof of funds.</p>
+                    <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>Confirm Payment Received</Button>
                   </>
-                ) : (
-                  trade.buyerWalletAddress ? (
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="text-text-muted flex-shrink-0">
-                        {isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}
-                      </span>
-                      <span className="inline-flex items-start gap-1 min-w-0">
-                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
-                        <CopyButton text={trade.buyerWalletAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-text-muted">Delivery details not specified.</p>
-                  )
                 )}
-                {trade.sellerTxHash && (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
-                      <div className="flex flex-col items-end gap-1">
+                {isUserBuyer && trade.status === 'payment_uploaded' && (
+                  <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">Waiting for the seller to confirm they received your payment.</div>
+                )}
+                {currentStep >= 2 && (
+                  <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-xs text-success">✓ Payment confirmed.</div>
+                )}
+              </StepCard>
+
+              {/* Step 3 — Crypto delivery & release */}
+              <StepCard
+                stepNum={3}
+                title={isUserBuyer ? 'Receive & Release Crypto' : 'Send Crypto'}
+                state={getStepState(3, currentStep)}
+                summary={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin} delivered`}
+                expanded={expandedSteps.has(3)}
+                onToggle={() => toggleStep(3)}
+              >
+                <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
+                  <DetailRow label="Network" value={trade.network ?? trade.coin} />
+                  {trade.buyerDeliveryMethod ? (
+                    <>
+                      <DetailRow label="Method" value={ trade.buyerDeliveryMethod === 'blockchain' ? 'Wallet Address' : trade.buyerDeliveryMethod === 'email' ? 'Email Transfer' : trade.buyerDeliveryMethod === 'username' ? 'Username Transfer' : 'Internal Wallet' } />
+                      {trade.buyerDeliveryAddress && (
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="text-text-muted flex-shrink-0">{isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}</span>
+                          <span className="inline-flex items-start gap-1 min-w-0">
+                            <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
+                            <CopyButton text={trade.buyerDeliveryAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    trade.buyerWalletAddress ? (
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-text-muted flex-shrink-0">{isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}</span>
                         <span className="inline-flex items-start gap-1 min-w-0">
-                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
-                          <CopyButton text={trade.sellerTxHash} size="sm" className="flex-shrink-0 -mt-0.5" />
+                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
+                          <CopyButton text={trade.buyerWalletAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
                         </span>
-                        {trade.txVerificationStatus === 'verified' && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-500/10 border border-green-500/30 rounded px-2 py-0.5">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                            On-chain verified
-                          </span>
-                        )}
-                        {trade.txVerificationStatus === 'pending' && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-700 dark:text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded px-2 py-0.5">
-                            ⏳ Confirming on-chain
-                          </span>
-                        )}
-                        {(trade.txVerificationStatus === 'skipped' || trade.txVerificationStatus === 'rpc_error') && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-text-muted bg-surface border border-border rounded px-2 py-0.5">
-                            ⚠ Verify manually on explorer
-                          </span>
-                        )}
-                        {trade.txVerificationStatus === 'not_found' && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 dark:text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded px-2 py-0.5">
-                            ⚠ Tx not found — pending or invalid
-                          </span>
-                        )}
                       </div>
+                    ) : (
+                      <p className="text-xs text-text-muted">Delivery details not specified.</p>
+                    )
+                  )}
+                </div>
+
+                {trade.sellerTxHash && (
+                  <div className="flex justify-between items-start gap-2 text-sm">
+                    <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="inline-flex items-start gap-1 min-w-0">
+                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
+                        <CopyButton text={trade.sellerTxHash} size="sm" className="flex-shrink-0 -mt-0.5" />
+                      </span>
+                      {trade.txVerificationStatus === 'verified' && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-500/10 border border-green-500/30 rounded px-2 py-0.5">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                          On-chain verified
+                        </span>
+                      )}
+                      {trade.txVerificationStatus === 'pending' && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-700 dark:text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded px-2 py-0.5">⏳ Confirming on-chain</span>
+                      )}
+                      {(trade.txVerificationStatus === 'skipped' || trade.txVerificationStatus === 'rpc_error') && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-text-muted bg-surface border border-border rounded px-2 py-0.5">⚠ Verify manually on explorer</span>
+                      )}
+                      {trade.txVerificationStatus === 'not_found' && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 dark:text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded px-2 py-0.5">⚠ Tx not found — pending or invalid</span>
+                      )}
                     </div>
                   </div>
                 )}
                 {trade.sellerDeliveryProofUrl && (
-                  <div className="pt-3 border-t border-border">
+                  <div>
                     <p className="text-xs text-text-muted mb-2">Transfer Screenshot</p>
                     {isTrustedImageUrl(trade.sellerDeliveryProofUrl) ? (
                       <a href={trade.sellerDeliveryProofUrl} target="_blank" rel="noopener noreferrer">
-                        <NextImage
-                          src={trade.sellerDeliveryProofUrl}
-                          alt="Transfer screenshot"
-                          width={320}
-                          height={240}
-                          className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover"
-                          referrerPolicy="no-referrer"
-                          unoptimized
-                        />
+                        <NextImage src={trade.sellerDeliveryProofUrl} alt="Transfer screenshot" width={320} height={240} className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover" referrerPolicy="no-referrer" unoptimized />
                       </a>
                     ) : (
-                      <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">
-                        Screenshot URL is from an untrusted source and cannot be displayed.
-                      </div>
+                      <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">Screenshot URL is from an untrusted source and cannot be displayed.</div>
                     )}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
 
-          {/* Actions — hidden for completed trades */}
-          {trade.status !== 'crypto_released' && (
-          <div className="bg-surface rounded-xl border border-border shadow-card p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-text-primary mb-1">Actions</h2>
+                {/* Seller: send crypto (dual proof) */}
+                {!isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
+                  <Button fullWidth onClick={() => setShowCryptoSentForm(true)}>I&apos;ve Sent the Crypto</Button>
+                )}
+                {showCryptoSentForm && !isUserBuyer && (() => {
+                  const dm = trade.buyerDeliveryMethod ?? ''
+                  const isWalletDelivery = dm === 'blockchain' || dm === 'wallet_blockchain' || dm === ''
+                  const canSubmit = !!txHash.trim() || !!deliveryShot
+                  return (
+                    <div className="space-y-3">
+                      <p className="text-xs text-text-muted">
+                        {isWalletDelivery
+                          ? 'Enter the blockchain transaction hash for the transfer you sent to the buyer. You can also attach a screenshot as extra proof.'
+                          : 'Attach a screenshot of the transfer you sent (e.g. the exchange / app confirmation). A reference or hash is optional for this delivery method.'}
+                      </p>
+                      <div>
+                        <label className="block text-xs font-medium text-text-primary mb-1">Transaction Hash {isWalletDelivery ? '' : <span className="text-text-muted">(optional)</span>}</label>
+                        <input type="text" value={txHash} onChange={(e) => setTxHash(e.target.value)} placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)" className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-text-primary mb-1">Transfer Screenshot {isWalletDelivery ? <span className="text-text-muted">(optional)</span> : ''}</label>
+                        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setDeliveryShot(e.target.files?.[0] ?? null)} className="w-full text-xs border border-border rounded-lg p-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary" />
+                        {deliveryShot && <p className="text-xs text-text-muted mt-1 truncate">Attached: {deliveryShot.name}</p>}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="secondary" fullWidth onClick={() => { setShowCryptoSentForm(false); setDeliveryShot(null) }}>Cancel</Button>
+                        <Button fullWidth loading={actionLoading || uploading} disabled={!canSubmit || actionLoading || uploading} onClick={handleMarkCryptoSent}>Confirm Sent</Button>
+                      </div>
+                    </div>
+                  )
+                })()}
+                {isUserBuyer && trade.status === 'payment_confirmed' && (
+                  <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">The seller is preparing to send your {trade.coin}. You&apos;ll be able to release once it arrives in your wallet.</div>
+                )}
 
-            {/* Buyer: upload payment proof (payment_pending) */}
-            {isUserBuyer && trade.status === 'payment_pending' && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }}
-                />
-                <Button
-                  fullWidth
-                  loading={uploading}
-                  disabled={uploading || actionLoading}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Upload Payment Proof
-                </Button>
-              </>
-            )}
+                {/* Buyer: confirm receipt & release — no verification gate. The
+                    buyer is the authority on their own wallet; admin only via dispute. */}
+                {isUserBuyer && trade.status === 'crypto_sent' && (() => {
+                  const vs = trade.txVerificationStatus
+                  const unverified = vs === 'skipped' || vs === 'rpc_error' || vs === 'pending' || vs === 'not_found'
+                  return (
+                    <>
+                      <ReleaseReminder />
+                      {vs === 'verified' && (
+                        <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-800 dark:text-green-300">
+                          <p className="font-semibold">✓ On-chain verified</p>
+                          <p className="text-xs">The transaction was independently verified on the blockchain. Release once you have confirmed receipt.</p>
+                        </div>
+                      )}
+                      {unverified && (
+                        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
+                          <p className="font-semibold">Confirm receipt in your own wallet first</p>
+                          <p className="text-xs">We couldn&apos;t auto-verify this transfer — that&apos;s normal for {trade.network ?? 'this network'}, exchange-UID/email delivery, or a momentarily busy node. Check your wallet or account and confirm the crypto actually arrived before you release. If it never arrives, open a dispute instead of releasing.</p>
+                        </div>
+                      )}
+                      <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>I Received the Crypto — Release</Button>
+                    </>
+                  )
+                })()}
+                {!isUserBuyer && trade.status === 'crypto_sent' && (
+                  <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">Waiting for the buyer to confirm receipt and release the trade.</div>
+                )}
+              </StepCard>
 
-            {/* Seller: confirm payment received (payment_uploaded) */}
-            {!isUserBuyer && trade.status === 'payment_uploaded' && (
-              <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>
-                Confirm Payment Received
-              </Button>
-            )}
+              {/* Step 4 — Complete */}
+              <StepCard
+                stepNum={4}
+                title="Complete"
+                state={getStepState(4, currentStep)}
+                summary="Trade complete"
+                expanded={expandedSteps.has(4)}
+                onToggle={() => toggleStep(4)}
+              >
+                {trade.status === 'crypto_released' ? (
+                  <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-sm text-success">✓ Trade complete.{ratedAlready ? ' Thanks for your rating!' : ' You can rate your counterparty above.'}</div>
+                ) : (
+                  <p className="text-xs text-text-muted">Once the buyer confirms receipt and releases, the trade is complete and you can rate each other.</p>
+                )}
+              </StepCard>
 
-            {/* Seller: mark crypto sent (payment_confirmed) */}
-            {!isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
-              <Button fullWidth onClick={() => setShowCryptoSentForm(true)}>
-                I&apos;ve Sent the Crypto
-              </Button>
-            )}
-
-            {showCryptoSentForm && !isUserBuyer && (() => {
-              const dm = trade.buyerDeliveryMethod ?? ''
-              const isWalletDelivery = dm === 'blockchain' || dm === 'wallet_blockchain' || dm === ''
-              const canSubmit = !!txHash.trim() || !!deliveryShot
-              return (
-                <div className="space-y-3">
-                  <p className="text-xs text-text-muted">
-                    {isWalletDelivery
-                      ? 'Enter the blockchain transaction hash for the transfer you sent to the buyer. You can also attach a screenshot as extra proof.'
-                      : 'Attach a screenshot of the transfer you sent (e.g. the exchange / app confirmation). A reference or hash is optional for this delivery method.'}
-                  </p>
+              {/* Dispute */}
+              {canDispute && trade.status !== 'disputed' && !showDisputeForm && (
+                <DisputeUnlockGate unlockAt={disputeUnlockAt} onOpen={() => setShowDisputeForm(true)} />
+              )}
+              {showDisputeForm && (
+                <div className="bg-surface rounded-xl border border-border shadow-card p-5 space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-text-primary mb-1">
-                      Transaction Hash {isWalletDelivery ? '' : <span className="text-text-muted">(optional)</span>}
-                    </label>
-                    <input
-                      type="text"
-                      value={txHash}
-                      onChange={(e) => setTxHash(e.target.value)}
-                      placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)"
-                      className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
-                    />
+                    <label className="block text-xs font-medium text-text-primary mb-1">Reason</label>
+                    <select value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-danger">
+                      <option value="">Select a reason…</option>
+                      <option value="payment_not_received">Payment not received</option>
+                      <option value="crypto_not_sent">Crypto not sent</option>
+                      <option value="wrong_amount">Wrong amount</option>
+                      <option value="fake_proof">Fake payment proof</option>
+                      <option value="counterparty_unresponsive">Counterparty unresponsive</option>
+                      <option value="other">Other</option>
+                    </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-text-primary mb-1">
-                      Transfer Screenshot {isWalletDelivery ? <span className="text-text-muted">(optional)</span> : ''}
-                    </label>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={(e) => setDeliveryShot(e.target.files?.[0] ?? null)}
-                      className="w-full text-xs border border-border rounded-lg p-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
-                    />
-                    {deliveryShot && <p className="text-xs text-text-muted mt-1 truncate">Attached: {deliveryShot.name}</p>}
+                    <label className="block text-xs font-medium text-text-primary mb-1">Details <span className="text-text-muted">(min 10 characters)</span></label>
+                    <textarea value={disputeDescription} onChange={(e) => setDisputeDescription(e.target.value)} placeholder="Explain what happened in detail. Include any evidence or timeline of events..." rows={4} className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-danger" />
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="secondary" fullWidth onClick={() => { setShowCryptoSentForm(false); setDeliveryShot(null) }}>Cancel</Button>
-                    <Button fullWidth loading={actionLoading || uploading} disabled={!canSubmit || actionLoading || uploading} onClick={handleMarkCryptoSent}>
-                      Confirm Sent
-                    </Button>
+                    <Button variant="secondary" fullWidth onClick={() => { setShowDisputeForm(false); setDisputeReason(''); setDisputeDescription('') }}>Cancel</Button>
+                    <Button variant="danger" fullWidth loading={actionLoading} disabled={!disputeReason || disputeDescription.trim().length < 10} onClick={handleOpenDispute}>Submit Dispute</Button>
                   </div>
                 </div>
-              )
-            })()}
+              )}
+            </>
+          )}
 
-            {/* Buyer: confirm receipt & release (crypto_sent). No verification
-                gate — the buyer is the authority on whether the crypto landed in
-                their own wallet. Verification status is shown only as guidance.
-                Admin gets involved exclusively through a dispute. */}
-            {isUserBuyer && trade.status === 'crypto_sent' && (() => {
-              const vs = trade.txVerificationStatus
-              const unverified = vs === 'skipped' || vs === 'rpc_error' || vs === 'pending' || vs === 'not_found'
-              return (
-                <>
-                  <ReleaseReminder />
-                  {vs === 'verified' && (
-                    <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-800 dark:text-green-300">
-                      <p className="font-semibold">✓ On-chain verified</p>
-                      <p className="text-xs">The transaction was independently verified on the blockchain. Release once you have confirmed receipt.</p>
-                    </div>
-                  )}
-                  {unverified && (
-                    <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
-                      <p className="font-semibold">Confirm receipt in your own wallet first</p>
-                      <p className="text-xs">We couldn&apos;t auto-verify this transfer — that&apos;s normal for {trade.network ?? 'this network'}, exchange-UID/email delivery, or a momentarily busy node. Check your wallet or account and confirm the crypto actually arrived before you release. If it never arrives, open a dispute instead of releasing.</p>
-                    </div>
-                  )}
-                  <Button
-                    fullWidth
-                    loading={actionLoading}
-                    disabled={actionLoading}
-                    onClick={() => setShowReleaseModal(true)}
-                  >
-                    I Received the Crypto — Release
-                  </Button>
-                </>
-              )
-            })()}
-
-            {/* Dispute — gated behind a short cooldown after proof upload so
-                neither party can fire off an instant rage-dispute. */}
-            {canDispute && !showDisputeForm && (
-              <DisputeUnlockGate unlockAt={disputeUnlockAt} onOpen={() => setShowDisputeForm(true)} />
-            )}
-
-            {showDisputeForm && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-text-primary mb-1">Reason</label>
-                  <select
-                    value={disputeReason}
-                    onChange={(e) => setDisputeReason(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-danger"
-                  >
-                    <option value="">Select a reason…</option>
-                    <option value="payment_not_received">Payment not received</option>
-                    <option value="crypto_not_sent">Crypto not sent</option>
-                    <option value="wrong_amount">Wrong amount</option>
-                    <option value="fake_proof">Fake payment proof</option>
-                    <option value="counterparty_unresponsive">Counterparty unresponsive</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-text-primary mb-1">Details <span className="text-text-muted">(min 10 characters)</span></label>
-                  <textarea
-                    value={disputeDescription}
-                    onChange={(e) => setDisputeDescription(e.target.value)}
-                    placeholder="Explain what happened in detail. Include any evidence or timeline of events..."
-                    rows={4}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-danger"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="secondary" fullWidth onClick={() => { setShowDisputeForm(false); setDisputeReason(''); setDisputeDescription('') }}>Cancel</Button>
-                  <Button variant="danger" fullWidth loading={actionLoading} disabled={!disputeReason || disputeDescription.trim().length < 10} onClick={handleOpenDispute}>
-                    Submit Dispute
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Cancel */}
-            {canCancel && (
-              <Button variant="ghost" fullWidth onClick={() => setShowCancelModal(true)}>
-                Cancel Trade
-              </Button>
-            )}
-
-            {actionError && (
-              <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{actionError}</p>
-            )}
-          </div>
+          {actionError && (
+            <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{actionError}</p>
           )}
         </div>
 
