@@ -946,7 +946,7 @@ export default function TradePage() {
               {/* Step 3 — Crypto delivery & release */}
               <StepCard
                 stepNum={3}
-                title={isUserBuyer ? 'Receive & Release Crypto' : 'Send Crypto'}
+                title={isUserBuyer ? 'Receive & Confirm Crypto' : 'Send Crypto'}
                 state={getStepState(3, currentStep)}
                 summary={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin} delivered`}
                 expanded={expandedSteps.has(3)}
@@ -954,32 +954,28 @@ export default function TradePage() {
               >
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
                   <DetailRow label="Network" value={trade.network ?? trade.coin} />
-                  {trade.buyerDeliveryMethod ? (
-                    <>
-                      <DetailRow label="Method" value={ trade.buyerDeliveryMethod === 'blockchain' ? 'Wallet Address' : trade.buyerDeliveryMethod === 'email' ? 'Email Transfer' : trade.buyerDeliveryMethod === 'username' ? 'Username Transfer' : 'Internal Wallet' } />
-                      {trade.buyerDeliveryAddress && (
-                        <div className="flex justify-between items-start gap-2">
-                          <span className="text-text-muted flex-shrink-0">{isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}</span>
-                          <span className="inline-flex items-start gap-1 min-w-0">
-                            <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerDeliveryAddress}</span>
-                            <CopyButton text={trade.buyerDeliveryAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    trade.buyerWalletAddress ? (
+                  <DetailRow label="Method" value={deliveryMethodLabel(trade.buyerDeliveryMethod, trade.buyerWalletAddress)} />
+                  {(() => {
+                    const dest = trade.buyerDeliveryAddress || trade.buyerWalletAddress
+                    if (!dest) {
+                      return (
+                        <p className="text-xs text-warning leading-snug">
+                          {isUserBuyer
+                            ? 'No receiving address on file. Tell the seller in chat exactly where to send your crypto.'
+                            : 'No receiving address on file — ask the buyer in chat where to send the crypto before sending.'}
+                        </p>
+                      )
+                    }
+                    return (
                       <div className="flex justify-between items-start gap-2">
-                        <span className="text-text-muted flex-shrink-0">{isUserBuyer ? 'Your token receiving address' : "Buyer's token receiving address"}</span>
+                        <span className="text-text-muted flex-shrink-0">{deliveryDestinationLabel(trade.buyerDeliveryMethod, isUserBuyer)}</span>
                         <span className="inline-flex items-start gap-1 min-w-0">
-                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.buyerWalletAddress}</span>
-                          <CopyButton text={trade.buyerWalletAddress} size="sm" className="flex-shrink-0 -mt-0.5" />
+                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{dest}</span>
+                          <CopyButton text={dest} size="sm" className="flex-shrink-0 -mt-0.5" />
                         </span>
                       </div>
-                    ) : (
-                      <p className="text-xs text-text-muted">Delivery details not specified.</p>
                     )
-                  )}
+                  })()}
                 </div>
 
                 {trade.sellerTxHash && (
@@ -1023,7 +1019,12 @@ export default function TradePage() {
 
                 {/* Seller: send crypto (dual proof) */}
                 {!isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
-                  <Button fullWidth onClick={() => setShowCryptoSentForm(true)}>I&apos;ve Sent the Crypto</Button>
+                  <>
+                    <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">
+                      Send the {trade.coin} to the buyer using the details above, then tap below to submit your transfer proof.
+                    </div>
+                    <Button fullWidth onClick={() => setShowCryptoSentForm(true)}>Send Crypto Now →</Button>
+                  </>
                 )}
                 {showCryptoSentForm && !isUserBuyer && (() => {
                   const dm = trade.buyerDeliveryMethod ?? ''
@@ -1047,13 +1048,13 @@ export default function TradePage() {
                       </div>
                       <div className="flex gap-2">
                         <Button variant="secondary" fullWidth onClick={() => { setShowCryptoSentForm(false); setDeliveryShot(null) }}>Cancel</Button>
-                        <Button fullWidth loading={actionLoading || uploading} disabled={!canSubmit || actionLoading || uploading} onClick={handleMarkCryptoSent}>Confirm Sent</Button>
+                        <Button fullWidth loading={actionLoading || uploading} disabled={!canSubmit || actionLoading || uploading} onClick={handleMarkCryptoSent}>I&apos;ve Sent the Crypto</Button>
                       </div>
                     </div>
                   )
                 })()}
                 {isUserBuyer && trade.status === 'payment_confirmed' && (
-                  <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">The seller is preparing to send your {trade.coin}. You&apos;ll be able to release once it arrives in your wallet.</div>
+                  <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">The seller is sending your {trade.coin} now. Once it arrives in your wallet, confirm receipt below to complete the trade.</div>
                 )}
 
                 {/* Buyer: confirm receipt & release — no verification gate. The
@@ -1067,16 +1068,16 @@ export default function TradePage() {
                       {vs === 'verified' && (
                         <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-800 dark:text-green-300">
                           <p className="font-semibold">✓ On-chain verified</p>
-                          <p className="text-xs">The transaction was independently verified on the blockchain. Release once you have confirmed receipt.</p>
+                          <p className="text-xs">The transaction was independently verified on the blockchain. Confirm once you have checked it arrived in your wallet.</p>
                         </div>
                       )}
                       {unverified && (
                         <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
                           <p className="font-semibold">Confirm receipt in your own wallet first</p>
-                          <p className="text-xs">We couldn&apos;t auto-verify this transfer — that&apos;s normal for {trade.network ?? 'this network'}, exchange-UID/email delivery, or a momentarily busy node. Check your wallet or account and confirm the crypto actually arrived before you release. If it never arrives, open a dispute instead of releasing.</p>
+                          <p className="text-xs">We couldn&apos;t auto-verify this transfer — that&apos;s normal for {trade.network ?? 'this network'}, exchange-UID/email delivery, or a momentarily busy node. Check your wallet or account and make sure the crypto actually arrived before you confirm. If it never arrives, open a dispute instead of confirming.</p>
                         </div>
                       )}
-                      <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>I Received the Crypto — Release</Button>
+                      <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>I&apos;ve Received the Crypto — Confirm</Button>
                     </>
                   )
                 })()}
@@ -1270,14 +1271,40 @@ export default function TradePage() {
         isOpen={showReleaseModal}
         onClose={() => setShowReleaseModal(false)}
         onConfirm={handleRelease}
-        title="Release Crypto"
-        description="Confirm that you have received the payment. Once released, crypto will be sent to the buyer and this action cannot be reversed."
-        confirmLabel="Release Crypto"
+        title="Confirm Crypto Received"
+        description="Confirm that the crypto has arrived in your wallet. This marks the trade complete and cannot be reversed. If it hasn't arrived yet, don't confirm — open a dispute instead."
+        confirmLabel="Confirm Received"
         confirmVariant="primary"
       />
 
     </div>
   )
+}
+
+// Resolves the buyer's chosen crypto-delivery method into a human label.
+// Wallet/email/username have fixed labels; anything else is an exchange name
+// (Binance / Bitget / Gate …) where the destination is a UID / deposit address.
+function deliveryMethodLabel(method?: string, walletAddress?: string): string {
+  const m = (method ?? '').toLowerCase()
+  if (m === 'blockchain' || m === 'wallet_blockchain') return 'Wallet Address'
+  if (m === 'email') return 'Email Transfer'
+  if (m === 'username') return 'Username Transfer'
+  if (method) return `${method} (UID / deposit address)`
+  // Legacy trades stored no method but may carry a wallet address.
+  return walletAddress ? 'Wallet Address' : 'Internal Wallet'
+}
+
+// Label for the destination row — makes clear, from each side's POV, where the
+// crypto is going.
+function deliveryDestinationLabel(method: string | undefined, isUserBuyer: boolean): string {
+  const m = (method ?? '').toLowerCase()
+  if (m === 'email') return isUserBuyer ? 'Your receiving email' : "Send to buyer's email"
+  if (m === 'username') return isUserBuyer ? 'Your username' : "Send to buyer's username"
+  const isExchange = !!method && !['blockchain', 'wallet_blockchain', 'email', 'username'].includes(m)
+  if (isExchange) {
+    return isUserBuyer ? `Your ${method} UID / deposit address` : `Send to buyer's ${method} UID / deposit address`
+  }
+  return isUserBuyer ? 'Your token receiving address' : "Send to buyer's wallet address"
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -1352,9 +1379,9 @@ function ReleaseReminder() {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
       <span className="text-text-secondary leading-snug">
-        The seller is waiting for you to confirm. Only release{' '}
+        The seller is waiting for you to confirm. Only confirm{' '}
         <span className="font-semibold text-primary">after</span> you have verified the
-        crypto arrived in your wallet. If it doesn&apos;t arrive, open a dispute instead of releasing.
+        crypto arrived in your wallet. If it doesn&apos;t arrive, open a dispute instead of confirming.
       </span>
     </div>
   )

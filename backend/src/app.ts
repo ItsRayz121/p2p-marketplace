@@ -58,7 +58,12 @@ export async function buildApp() {
     redis: rateLimitRedis,
     skipOnError: true, // fail open if Redis is unavailable — never block a request with 500
     global: true,
-    max: 200,
+    // Per-IP ceiling across ALL routes. A single active user racks up requests
+    // fast (30s/60s polling on listing + trade pages, SSE reconnects, opening
+    // modals), so a tight cap starved the budget for the actual write actions
+    // (creating a trade, placing a bid) and surfaced "Too many requests" mid-flow.
+    // Sensitive routes keep their own much tighter per-route limits.
+    max: 400,
     timeWindow: '1 minute',
     errorResponseBuilder: (_req, context) => ({
       success: false,
