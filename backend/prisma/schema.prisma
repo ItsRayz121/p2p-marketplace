@@ -481,6 +481,7 @@ model User {
   merchant               Merchant?
   fraudFlags             FraudFlag[]
   rateAlerts             RateAlert[]
+  savedTerms             SavedTerms[]
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
   moderationActions      ModerationAction[]  @relation("ModerationActionTarget")
   moderatorActions       ModerationAction[]  @relation("ModerationActionModerator")
@@ -1358,6 +1359,19 @@ model RateAlert {
 
   @@index([userId, status])
   @@index([coin, status])
+}
+
+/// A reusable terms-and-conditions template a maker can save and re-insert when
+/// creating future ads, so they don't retype the same terms every time.
+model SavedTerms {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

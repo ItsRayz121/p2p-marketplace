@@ -1040,6 +1040,25 @@ export const userPaymentMethodsApi = {
     apiRequest<void>(`/users/me/payment-methods/${id}`, { method: 'DELETE' }),
 }
 
+export interface SavedTerms {
+  id: string
+  label: string
+  body: string
+  createdAt: string
+}
+
+export const savedTermsApi = {
+  getAll: () =>
+    apiRequest<SavedTerms[]>('/saved-terms'),
+  add: (data: { label: string; body: string }) =>
+    apiRequest<SavedTerms>('/saved-terms', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  remove: (id: string) =>
+    apiRequest<void>(`/saved-terms/${id}`, { method: 'DELETE' }),
+}
+
 export interface SavedDeliveryAddress {
   id: string
   coin: string

@@ -776,18 +776,6 @@ export default function TradePage() {
         </div>
       )}
 
-      {/* Listing terms — the maker's terms carried over from the ad, shown here so
-          both parties can see them during the trade (not just on the listing page). */}
-      {trade.ad?.terms?.trim() && (
-        <div className="mb-4 rounded-xl bg-surface border border-border shadow-card p-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <FileText size={15} className="text-text-muted flex-shrink-0" aria-hidden />
-            <h2 className="text-sm font-semibold text-text-primary">Listing Terms</h2>
-          </div>
-          <p className="text-sm text-text-muted whitespace-pre-wrap">{trade.ad.terms}</p>
-        </div>
-      )}
-
       {/* Completed card */}
       {trade.status === 'crypto_released' && (
         <CompletedTradeCard
@@ -1188,6 +1176,17 @@ export default function TradePage() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Listing terms — the maker's terms carried over from the ad, pinned at
+                the top of the chat so both parties see them in the conversation. */}
+            {trade.ad?.terms?.trim() && (
+              <div className="rounded-xl bg-primary/5 border border-primary/15 p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <FileText size={14} className="text-primary flex-shrink-0" aria-hidden />
+                  <h3 className="text-xs font-semibold text-primary">Listing Terms</h3>
+                </div>
+                <p className="text-xs text-text-secondary whitespace-pre-wrap leading-relaxed">{trade.ad.terms}</p>
+              </div>
+            )}
             {messages.length === 0 && (
               <p className="text-xs text-text-muted text-center py-4">No messages yet. Start chatting!</p>
             )}

@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { adsApi, marketplaceApi, apiRequest } from '@/lib/api'
-import type { CreateAdPayload, UpdateAdPayload } from '@/lib/api'
+import { adsApi, marketplaceApi, apiRequest, savedTermsApi } from '@/lib/api'
+import type { CreateAdPayload, UpdateAdPayload, SavedTerms } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 
@@ -129,6 +129,11 @@ function CreateListingPageContent() {
   // the per-exchange checkboxes. Derived from whether any exchange is selected.
   const [exchangeOpen, setExchangeOpen] = useState(false)
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
+  // Reusable terms templates the maker has saved; used to insert into the Terms box.
+  const [savedTerms, setSavedTerms] = useState<SavedTerms[]>([])
+  const [showSaveTerms, setShowSaveTerms] = useState(false)
+  const [termsLabel, setTermsLabel] = useState('')
+  const [savingTerms, setSavingTerms] = useState(false)
   const [loadingInit, setLoadingInit] = useState(true)
   const [marketRate, setMarketRate] = useState(0)
   const [marketRateSource, setMarketRateSource] = useState('')
@@ -139,8 +144,9 @@ function CreateListingPageContent() {
 
   useEffect(() => {
     const init = async () => {
-      const [methodsRes] = await Promise.all([
+      const [methodsRes, termsRes] = await Promise.all([
         apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods').catch(() => [] as SavedPaymentMethod[]),
+        savedTermsApi.getAll().catch(() => [] as SavedTerms[]),
         editId
           ? adsApi.getAd(editId).then((ad) => {
               const deliveryTypes = ad.tokenDeliveryTypes ?? []
@@ -164,6 +170,7 @@ function CreateListingPageContent() {
           : Promise.resolve(),
       ])
       setSavedMethods(Array.isArray(methodsRes) ? methodsRes : [])
+      setSavedTerms(Array.isArray(termsRes) ? termsRes : [])
       setLoadingInit(false)
     }
     init()
@@ -189,6 +196,37 @@ function CreateListingPageContent() {
     set('paymentMethods', form.paymentMethods.includes(id)
       ? form.paymentMethods.filter((x) => x !== id)
       : [...form.paymentMethods, id])
+  }
+
+  function insertSavedTerms(id: string) {
+    const t = savedTerms.find((x) => x.id === id)
+    if (t) set('terms', t.body)
+  }
+
+  async function handleSaveTerms() {
+    const body = form.terms.trim()
+    const label = termsLabel.trim()
+    if (!body || !label) return
+    setSavingTerms(true)
+    try {
+      const created = await savedTermsApi.add({ label, body })
+      setSavedTerms((prev) => [created, ...prev])
+      setShowSaveTerms(false)
+      setTermsLabel('')
+    } catch {
+      /* surfaced via the inline button staying open; non-blocking for ad creation */
+    } finally {
+      setSavingTerms(false)
+    }
+  }
+
+  async function handleDeleteSavedTerms(id: string) {
+    setSavedTerms((prev) => prev.filter((x) => x.id !== id))
+    try {
+      await savedTermsApi.remove(id)
+    } catch {
+      /* best-effort; list refreshes on next load */
+    }
   }
 
   const calculatedPrice = marketRate > 0 && form.priceType === 'float'
@@ -275,16 +313,6 @@ function CreateListingPageContent() {
                 {s === 'sell' ? 'Sell USDT' : 'Buy USDT'}
               </button>
             ))}
-          </div>
-        </div>
-
-        {/* Asset & Network */}
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Asset</label>
-          <div className="flex items-center gap-2 mb-4">
-            <EntityLogo type="token" slug="USDT" size="sm" />
-            <span className="px-3 py-1.5 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-semibold">USDT</span>
-            <span className="text-xs text-text-muted">Tether USD — only supported stablecoin</span>
           </div>
         </div>
 
@@ -561,11 +589,67 @@ function CreateListingPageContent() {
 
         {/* Terms */}
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Terms (optional)</label>
+          <div className="flex items-center justify-between mb-1.5 gap-2">
+            <label className="block text-sm font-medium text-text-primary">Terms (optional)</label>
+            {savedTerms.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => { if (e.target.value) insertSavedTerms(e.target.value) }}
+                className="text-xs border border-border rounded-lg px-2 py-1 bg-surface text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 max-w-[55%]"
+              >
+                <option value="">Insert saved terms…</option>
+                {savedTerms.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
           <textarea rows={3}
             placeholder="Any additional terms, e.g. Only transfer from your own account. No third-party payments."
             value={form.terms} onChange={(e) => set('terms', e.target.value)}
             className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+
+          {/* Save-as-template control */}
+          {form.terms.trim() && !showSaveTerms && (
+            <button type="button" onClick={() => setShowSaveTerms(true)}
+              className="mt-1.5 text-xs font-medium text-primary hover:underline">
+              + Save these terms for reuse
+            </button>
+          )}
+          {showSaveTerms && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                value={termsLabel}
+                onChange={(e) => setTermsLabel(e.target.value)}
+                placeholder="Template name (e.g. My standard terms)"
+                maxLength={60}
+                className="flex-1 border border-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button type="button" onClick={handleSaveTerms} disabled={savingTerms || !termsLabel.trim()}
+                className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
+                {savingTerms ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" onClick={() => { setShowSaveTerms(false); setTermsLabel('') }}
+                className="px-2 py-1.5 text-xs text-text-muted hover:text-text-primary">
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Manage saved templates */}
+          {savedTerms.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {savedTerms.map((t) => (
+                <span key={t.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-text-secondary">
+                  {t.label}
+                  <button type="button" onClick={() => handleDeleteSavedTerms(t.id)}
+                    aria-label={`Delete ${t.label}`}
+                    className="text-text-muted hover:text-danger leading-none">×</button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 pt-1">
