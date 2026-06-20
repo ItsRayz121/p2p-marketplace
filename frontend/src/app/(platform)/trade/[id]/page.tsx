@@ -776,6 +776,18 @@ export default function TradePage() {
         </div>
       )}
 
+      {/* Listing terms — the maker's terms carried over from the ad, shown here so
+          both parties can see them during the trade (not just on the listing page). */}
+      {trade.ad?.terms?.trim() && (
+        <div className="mb-4 rounded-xl bg-surface border border-border shadow-card p-4">
+          <div className="flex items-center gap-2 mb-1.5">
+            <FileText size={15} className="text-text-muted flex-shrink-0" aria-hidden />
+            <h2 className="text-sm font-semibold text-text-primary">Listing Terms</h2>
+          </div>
+          <p className="text-sm text-text-muted whitespace-pre-wrap">{trade.ad.terms}</p>
+        </div>
+      )}
+
       {/* Completed card */}
       {trade.status === 'crypto_released' && (
         <CompletedTradeCard
@@ -970,7 +982,16 @@ export default function TradePage() {
                 onToggle={() => toggleStep(3)}
               >
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
-                  <DetailRow label="Network" value={trade.network ?? trade.coin} />
+                  {(() => {
+                    // Network only applies to on-chain wallet delivery. For exchange /
+                    // internal transfers the funds move off-chain, so show the transfer
+                    // type instead of a (misleading) blockchain network.
+                    const dm = (trade.buyerDeliveryMethod ?? '').toLowerCase()
+                    const isWalletDelivery = dm === 'blockchain' || dm === 'wallet_blockchain' || dm === ''
+                    return isWalletDelivery
+                      ? <DetailRow label="Network" value={trade.network ?? trade.coin} />
+                      : <DetailRow label="Transfer type" value="Internal / Exchange transfer" />
+                  })()}
                   <DetailRow label="Method" value={deliveryMethodLabel(trade.buyerDeliveryMethod, trade.buyerWalletAddress)} />
                   {(() => {
                     const dest = trade.buyerDeliveryAddress || trade.buyerWalletAddress

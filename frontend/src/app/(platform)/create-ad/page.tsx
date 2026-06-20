@@ -13,12 +13,19 @@ const NETWORKS = [
   { value: 'Aptos', label: 'Aptos' },
 ]
 
-const DELIVERY_OPTIONS = [
-  { value: 'wallet_blockchain', label: 'Wallet / Blockchain' },
-  { value: 'Binance', label: 'Binance' },
-  { value: 'Bitget', label: 'Bitget' },
-  { value: 'Gate', label: 'Gate' },
+// Delivery is grouped into two kinds: an on-chain wallet transfer (where the
+// blockchain network matters) and an off-chain exchange/internal transfer (where
+// the network is irrelevant — funds move account-to-account on the same venue).
+const WALLET_DELIVERY = 'wallet_blockchain'
+
+const EXCHANGE_OPTIONS = [
+  { value: 'Binance', label: 'Binance → Binance' },
+  { value: 'OKX', label: 'OKX → OKX' },
+  { value: 'Bitget', label: 'Bitget → Bitget' },
+  { value: 'Gate', label: 'Gate → Gate' },
+  { value: 'MEXC', label: 'MEXC → MEXC' },
 ]
+const EXCHANGE_VALUES = EXCHANGE_OPTIONS.map((o) => o.value)
 
 const SOURCE_LABELS: Record<string, string> = {
   coingecko: 'CoinGecko', kraken: 'Kraken', bybit: 'Bybit', binance: 'Binance',
@@ -92,7 +99,9 @@ function methodLabel(m: SavedPaymentMethod): string {
 
 function validate(form: FormState): Record<string, string> {
   const e: Record<string, string> = {}
-  if (!form.network) e.network = 'Select a network'
+  // Network only matters for on-chain wallet delivery; exchange/internal transfers
+  // move off-chain so no blockchain network applies.
+  if (form.tokenDeliveryTypes.includes(WALLET_DELIVERY) && !form.network) e.network = 'Select a network'
   if (form.priceType === 'fixed' && !form.fixedPrice) e.fixedPrice = 'Enter a price'
   if (form.priceType === 'fixed' && form.fixedPrice && parseFloat(form.fixedPrice) <= 0) e.fixedPrice = 'Price must be positive'
   if (!form.minAmount) e.minAmount = 'Enter minimum order'
@@ -116,6 +125,9 @@ function CreateListingPageContent() {
   const { user } = useAuth()
 
   const [form, setForm] = useState<FormState>(defaultForm)
+  // UI-only: whether the "Internal / Exchange Transfer" group is expanded to show
+  // the per-exchange checkboxes. Derived from whether any exchange is selected.
+  const [exchangeOpen, setExchangeOpen] = useState(false)
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
   const [loadingInit, setLoadingInit] = useState(true)
   const [marketRate, setMarketRate] = useState(0)
@@ -131,6 +143,8 @@ function CreateListingPageContent() {
         apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods').catch(() => [] as SavedPaymentMethod[]),
         editId
           ? adsApi.getAd(editId).then((ad) => {
+              const deliveryTypes = ad.tokenDeliveryTypes ?? []
+              setExchangeOpen(deliveryTypes.some((v) => EXCHANGE_VALUES.includes(v)))
               setForm({
                 side: ad.side as 'buy' | 'sell',
                 network: ad.network ?? 'BEP20',
@@ -141,8 +155,8 @@ function CreateListingPageContent() {
                 maxAmount: ad.maxOrder,
                 availableAmount: '',
                 paymentMethods: ad.paymentMethods,
-                tokenDeliveryTypes: [],
-                settlementMethod: '',
+                tokenDeliveryTypes: deliveryTypes,
+                settlementMethod: ad.settlementMethod ?? '',
                 tradeWindow: ad.tradeWindow ?? 45,
                 terms: ad.terms ?? '',
               })
@@ -272,16 +286,6 @@ function CreateListingPageContent() {
             <span className="px-3 py-1.5 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-semibold">USDT</span>
             <span className="text-xs text-text-muted">Tether USD — only supported stablecoin</span>
           </div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Network *</label>
-          <div className="flex flex-wrap gap-2">
-            {NETWORKS.map((n) => (
-              <button type="button" key={n.value} onClick={() => set('network', n.value)}
-                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${form.network === n.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
-                {n.label}
-              </button>
-            ))}
-          </div>
-          {errors.network && <p className="text-sm text-danger mt-1">{errors.network}</p>}
         </div>
 
         {/* Price */}
@@ -369,65 +373,130 @@ function CreateListingPageContent() {
           {errors.availableAmount && <p className="text-sm text-danger mt-1">{errors.availableAmount}</p>}
         </div>
 
-        {/* Token Delivery Method — multi-select */}
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-0.5">Token Delivery Method *</label>
-          <p className="text-xs text-text-muted mb-2">
-            {form.side === 'sell'
-              ? 'Select all methods you can use to send USDT after payment. You can pick multiple.'
-              : 'Select how sellers should send USDT to you. You can pick multiple.'}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {DELIVERY_OPTIONS.map((opt) => {
-              const selected = form.tokenDeliveryTypes.includes(opt.value)
-              return (
+        {/* Token Delivery Method — two kinds: on-chain wallet (network applies) or
+            off-chain exchange/internal transfer (pick one or more venues). */}
+        {(() => {
+          const walletSelected = form.tokenDeliveryTypes.includes(WALLET_DELIVERY)
+          const selectedExchanges = form.tokenDeliveryTypes.filter((v) => EXCHANGE_VALUES.includes(v))
+          const toggleWallet = () => setForm((f) => ({
+            ...f,
+            tokenDeliveryTypes: walletSelected
+              ? f.tokenDeliveryTypes.filter((v) => v !== WALLET_DELIVERY)
+              : [...f.tokenDeliveryTypes, WALLET_DELIVERY],
+            settlementMethod: '',
+          }))
+          const toggleExchangeGroup = () => {
+            if (exchangeOpen) {
+              // Collapsing clears any exchange picks so state stays consistent.
+              setForm((f) => ({ ...f, tokenDeliveryTypes: f.tokenDeliveryTypes.filter((v) => !EXCHANGE_VALUES.includes(v)), settlementMethod: '' }))
+              setExchangeOpen(false)
+            } else {
+              setExchangeOpen(true)
+            }
+          }
+          const toggleExchange = (val: string) => setForm((f) => {
+            const has = f.tokenDeliveryTypes.includes(val)
+            return {
+              ...f,
+              tokenDeliveryTypes: has ? f.tokenDeliveryTypes.filter((v) => v !== val) : [...f.tokenDeliveryTypes, val],
+              settlementMethod: '',
+            }
+          })
+          return (
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-0.5">Token Delivery Method *</label>
+              <p className="text-xs text-text-muted mb-2">
+                {form.side === 'sell'
+                  ? 'How will you send USDT after payment? Pick one or both.'
+                  : 'How should sellers send USDT to you? Pick one or both.'}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  key={opt.value}
-                  onClick={() => setForm((f) => ({
-                    ...f,
-                    tokenDeliveryTypes: selected
-                      ? f.tokenDeliveryTypes.filter((v) => v !== opt.value)
-                      : [...f.tokenDeliveryTypes, opt.value],
-                    settlementMethod: '',
-                  }))}
-                  className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${selected ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
+                  onClick={toggleWallet}
+                  className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${walletSelected ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
                 >
-                  {opt.label}
+                  Wallet / Blockchain
                 </button>
-              )
-            })}
-          </div>
-          {errors.tokenDeliveryTypes && <p className="text-sm text-danger mt-1">{errors.tokenDeliveryTypes}</p>}
+                <button
+                  type="button"
+                  onClick={toggleExchangeGroup}
+                  className={`py-2.5 text-sm rounded-xl border font-semibold transition-colors ${exchangeOpen || selectedExchanges.length > 0 ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
+                >
+                  Internal / Exchange Transfer
+                </button>
+              </div>
+              {errors.tokenDeliveryTypes && <p className="text-sm text-danger mt-1">{errors.tokenDeliveryTypes}</p>}
 
-          {/* Buy: show receiving address (single input since lister can review which to use) */}
-          {form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && (
-            <div className="mt-3">
-              <label className="block text-xs font-medium text-text-muted mb-1">
-                Your receiving address / account — sellers will send USDT here
-              </label>
-              <input
-                type="text"
-                placeholder={
-                  form.tokenDeliveryTypes.includes('wallet_blockchain')
-                    ? '0x… wallet address or exchange deposit address'
-                    : 'Your exchange UID or deposit address'
-                }
-                value={form.settlementMethod}
-                onChange={(e) => set('settlementMethod', e.target.value)}
-                className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
-              <p className="mt-1 text-xs text-text-muted">Sellers will send USDT here when they take your listing.</p>
+              {/* Wallet sub-options: blockchain network (only relevant on-chain) */}
+              {walletSelected && (
+                <div className="mt-3 rounded-xl border border-border bg-surface-alt/40 p-3">
+                  <label className="block text-xs font-medium text-text-primary mb-1.5">Network *</label>
+                  <div className="flex flex-wrap gap-2">
+                    {NETWORKS.map((n) => (
+                      <button type="button" key={n.value} onClick={() => set('network', n.value)}
+                        className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${form.network === n.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
+                        {n.label}
+                      </button>
+                    ))}
+                  </div>
+                  {errors.network && <p className="text-sm text-danger mt-1">{errors.network}</p>}
+                </div>
+              )}
+
+              {/* Exchange sub-options: pick the venue(s). Network does not apply —
+                  funds move account-to-account on the same exchange. */}
+              {exchangeOpen && (
+                <div className="mt-3 rounded-xl border border-border bg-surface-alt/40 p-3">
+                  <label className="block text-xs font-medium text-text-primary mb-1.5">Select exchange(s)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {EXCHANGE_OPTIONS.map((opt) => {
+                      const sel = form.tokenDeliveryTypes.includes(opt.value)
+                      return (
+                        <button
+                          type="button"
+                          key={opt.value}
+                          onClick={() => toggleExchange(opt.value)}
+                          className={`flex items-center gap-2 py-2 px-3 text-sm rounded-lg border font-medium transition-colors ${sel ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
+                        >
+                          <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${sel ? 'border-primary bg-primary' : 'border-border'}`}>
+                            {sel && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                          </span>
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-2 text-xs text-text-muted">No blockchain network needed — this is an off-chain transfer within the same exchange.</p>
+                </div>
+              )}
+
+              {/* Buy: receiving address (single field; the lister picks which to use) */}
+              {form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && (
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-text-muted mb-1">
+                    Your receiving address / account — sellers will send USDT here
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={walletSelected ? '0x… wallet address' : 'Your exchange UID or deposit address'}
+                    value={form.settlementMethod}
+                    onChange={(e) => set('settlementMethod', e.target.value)}
+                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
+                  <p className="mt-1 text-xs text-text-muted">Sellers will send USDT here when they take your listing.</p>
+                </div>
+              )}
+
+              {form.side === 'sell' && form.tokenDeliveryTypes.length > 0 && (
+                <p className="mt-2 text-xs text-primary bg-primary/5 rounded-lg px-3 py-2">
+                  Buyers will pick one of these methods and provide their address at trade start — you do not need to enter it here.
+                </p>
+              )}
             </div>
-          )}
-
-          {form.side === 'sell' && form.tokenDeliveryTypes.length > 0 && (
-            <p className="mt-2 text-xs text-primary bg-primary/5 rounded-lg px-3 py-2">
-              Buyers will pick one of these methods and provide their address at trade start — you do not need to enter it here.
-            </p>
-          )}
-        </div>
+          )
+        })()}
 
         {/* Payment methods — sell only */}
         {form.side === 'sell' && (

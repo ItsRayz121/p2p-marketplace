@@ -23,8 +23,10 @@ const MOBILE_TYPES = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay']
 const DELIVERY_LABELS: Record<string, string> = {
   wallet_blockchain: 'Wallet / Blockchain',
   Binance: 'Binance',
+  OKX: 'OKX',
   Bitget: 'Bitget',
   Gate: 'Gate',
+  MEXC: 'MEXC',
 }
 
 interface ResolvedPaymentMethod { id: string; type: string; label: string }
@@ -383,7 +385,9 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                   </span>
                 ))}
               </div>
-              <p className="text-xs text-text-muted mt-2">Network: {ad.network}</p>
+              {deliveryTypes.includes('wallet_blockchain') && (
+                <p className="text-xs text-text-muted mt-2">Network: {ad.network}</p>
+              )}
             </div>
           )}
         </div>

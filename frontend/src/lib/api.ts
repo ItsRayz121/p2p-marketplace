@@ -499,6 +499,8 @@ export interface Ad {
   minOrder: string
   maxOrder: string
   paymentMethods: string[]
+  tokenDeliveryTypes?: string[]
+  settlementMethod?: string
   tradeWindow: number
   terms?: string
   status: 'active' | 'paused' | 'completed'
