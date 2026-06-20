@@ -946,14 +946,14 @@ export interface AdBid {
   status: string
   expiresAt: string
   createdAt: string
-  bidder?: { id: string; username: string }
-  trade?: { orderRef: string; status: string } | null
+  bidder?: { id: string; username: string; fullName?: string | null }
+  trade?: { id?: string; orderRef: string; status: string } | null
   ad?: Ad & { user: { id: string; username: string } }
 }
 
 export interface AdActivity {
   myBid?: { id: string; status: string; expiresAt: string; pricePerUnit: string; usdtAmount: string; fiatAmount: string } | null
-  bids: { pendingCount: number; minPrice: string | null; maxPrice: string | null; items?: AdBid[] }
+  bids: { pendingCount: number; totalCount?: number; minPrice: string | null; maxPrice: string | null; items?: AdBid[] }
   trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: Array<{ id: string; orderRef: string; status: string; amount: string; price: string; fiatAmount: string; createdAt: string; buyer: { username: string; fullName?: string | null }; seller: { username: string; fullName?: string | null } }> }
 }
 

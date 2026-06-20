@@ -403,8 +403,8 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
           <h2 className="font-semibold text-text-primary mb-3">Listing Activity</h2>
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <p className="text-lg font-bold text-text-primary">{activity.bids.pendingCount}</p>
-              <p className="text-xs text-text-muted">Pending Bids</p>
+              <p className="text-lg font-bold text-text-primary">{activity.bids.totalCount ?? activity.bids.pendingCount}</p>
+              <p className="text-xs text-text-muted">Bids</p>
             </div>
             <div>
               <p className="text-lg font-bold text-text-primary">{activity.trades.activeCount}</p>
@@ -426,7 +426,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-surface-alt text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
                 {t === 'bids'
-                  ? `Pending Bids (${activity.bids.pendingCount})`
+                  ? `Bids (${activity.bids.totalCount ?? activity.bids.pendingCount})`
                   : `Trades (${activity.trades.activeCount + activity.trades.completedCount})`}
               </button>
             ))}
@@ -434,35 +434,61 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
           {activeTab === 'bids' && (
             !activity.bids.items || activity.bids.items.length === 0
-              ? <p className="text-sm text-text-muted text-center py-6">No pending bids.</p>
+              ? <p className="text-sm text-text-muted text-center py-6">No bids yet.</p>
               : <div className="space-y-3">
-                  {activity.bids.items.map((bid) => (
-                    <div key={bid.id} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-text-primary">PKR {Number(bid.pricePerUnit).toLocaleString()} / {ad.coin}</p>
-                        <p className="text-xs text-text-muted mt-0.5">
-                          {bid.bidder?.username} · {Number(bid.usdtAmount).toLocaleString()} {ad.coin} · PKR {Number(bid.fiatAmount).toLocaleString()} total
-                        </p>
-                        {bid.message && <p className="text-xs text-text-muted italic mt-0.5">&ldquo;{bid.message}&rdquo;</p>}
+                  {activity.bids.items.map((bid) => {
+                    const bidderName = traderDisplayName({ fullName: bid.bidder?.fullName, username: bid.bidder?.username })
+                    // No bid-expiry job: an accepted bid past its window where the
+                    // buyer never confirmed is effectively "timed out".
+                    const expired = bid.status === 'accepted_pending_buyer' && new Date(bid.expiresAt).getTime() < Date.now()
+                    return (
+                      <div key={bid.id} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3 border border-border">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-text-primary">PKR {Number(bid.pricePerUnit).toLocaleString()} / {ad.coin}</p>
+                          <p className="text-xs text-text-muted mt-0.5">
+                            {bid.bidder?.username
+                              ? <Link href={`/profile/${bid.bidder.username}`} className="text-primary hover:underline font-medium">{bidderName}</Link>
+                              : <span className="font-medium text-text-primary">{bidderName}</span>}
+                            {' · '}{Number(bid.usdtAmount).toLocaleString()} {ad.coin} · PKR {Number(bid.fiatAmount).toLocaleString()} total
+                          </p>
+                          <p className="text-[11px] text-text-muted mt-0.5">{new Date(bid.createdAt).toLocaleString()}</p>
+                          {bid.message && <p className="text-xs text-text-muted italic mt-0.5">&ldquo;{bid.message}&rdquo;</p>}
+                        </div>
+                        <div className="flex flex-col gap-1.5 flex-shrink-0 items-end">
+                          {bid.status === 'pending' && (
+                            <div className="flex gap-2">
+                              <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
+                                className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors">
+                                {bidActionId === bid.id ? '…' : 'Accept'}
+                              </button>
+                              <button onClick={() => handleRejectBid(bid.id)} disabled={bidActionId === bid.id}
+                                className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-surface-alt disabled:opacity-60 transition-colors">
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                          {bid.status === 'accepted_pending_buyer' && !expired && (
+                            <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-medium">Awaiting buyer</span>
+                          )}
+                          {bid.status === 'accepted_pending_buyer' && expired && (
+                            <span className="text-xs px-2.5 py-1 rounded-full bg-surface-alt text-text-secondary font-medium">Expired — buyer didn&apos;t confirm</span>
+                          )}
+                          {bid.status === 'accepted' && (
+                            <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/15 text-green-700 dark:text-green-300 font-medium">Accepted</span>
+                          )}
+                          {bid.status === 'rejected' && (
+                            <span className="text-xs px-2.5 py-1 rounded-full bg-red-500/15 text-red-700 dark:text-red-300 font-medium">Rejected</span>
+                          )}
+                          {bid.status === 'cancelled' && (
+                            <span className="text-xs px-2.5 py-1 rounded-full bg-surface-alt text-text-secondary font-medium">Cancelled by bidder</span>
+                          )}
+                          {bid.trade?.id && (
+                            <a href={`/trade/${bid.trade.id}`} className="text-xs text-primary hover:underline">View trade →</a>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex gap-2 flex-shrink-0 items-start">
-                        {bid.status === 'accepted_pending_buyer' ? (
-                          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-medium">Awaiting buyer</span>
-                        ) : (
-                          <>
-                            <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
-                              className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors">
-                              {bidActionId === bid.id ? '…' : 'Accept'}
-                            </button>
-                            <button onClick={() => handleRejectBid(bid.id)} disabled={bidActionId === bid.id}
-                              className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-surface-alt disabled:opacity-60 transition-colors">
-                              Reject
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
           )}
 

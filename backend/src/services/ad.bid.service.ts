@@ -205,13 +205,14 @@ export async function getAdActivity(adId: string, requestingUserId?: string) {
 
   const isOwner = !!requestingUserId && requestingUserId === ad.userId
 
-  const [bidAgg, activeTradeCount, completedTradeCount, lastTrade] = await Promise.all([
+  const [bidAgg, bidTotalCount, activeTradeCount, completedTradeCount, lastTrade] = await Promise.all([
     db.adBid.aggregate({
       where: { adId, status: 'pending' },
       _count: { id: true },
       _min: { pricePerUnit: true },
       _max: { pricePerUnit: true },
     }),
+    db.adBid.count({ where: { adId } }),
     db.trade.count({ where: { adId, status: { in: ACTIVE_TRADE_STATUSES as TradeStatusLiteral[] } } }),
     db.trade.count({ where: { adId, status: 'crypto_released' as TradeStatusLiteral } }),
     db.trade.findFirst({
@@ -224,6 +225,7 @@ export async function getAdActivity(adId: string, requestingUserId?: string) {
   const base = {
     bids: {
       pendingCount: bidAgg._count.id ?? 0,
+      totalCount: bidTotalCount,
       minPrice: bidAgg._min.pricePerUnit?.toString() ?? null,
       maxPrice: bidAgg._max.pricePerUnit?.toString() ?? null,
     },
@@ -248,15 +250,17 @@ export async function getAdActivity(adId: string, requestingUserId?: string) {
   }
 
   const [bidItems, tradeItems] = await Promise.all([
+    // All bids (every status) so the owner sees the full history — pending,
+    // accepted, rejected, cancelled, and accepted-then-converted-to-trade.
     db.adBid.findMany({
-      where: { adId, status: { in: ['pending', 'accepted_pending_buyer'] } },
+      where: { adId },
       orderBy: { createdAt: 'desc' },
-      take: 30,
+      take: 50,
       select: {
         id: true, pricePerUnit: true, usdtAmount: true, fiatAmount: true,
         message: true, status: true, expiresAt: true, createdAt: true,
-        bidder: { select: { id: true, username: true } },
-        trade: { select: { orderRef: true, status: true } },
+        bidder: { select: { id: true, username: true, fullName: true } },
+        trade: { select: { id: true, orderRef: true, status: true } },
       },
     }),
     db.trade.findMany({
