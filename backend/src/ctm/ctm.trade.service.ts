@@ -155,7 +155,12 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
   let txVerificationStatus: string | undefined
   let txVerificationDetails: Record<string, unknown> | undefined
 
-  if (proofData.proofType === 'txhash' && proofData.txHash && trade.token.network) {
+  // Only on-chain-capable settlements verify the hash against a wallet. MANUAL
+  // (exchange-UID / off-chain) settlements have no on-chain wallet to match —
+  // verifying a "reference" against a UID would falsely reject the proof.
+  const onChainCapable = trade.settlementType === 'ON_CHAIN' || trade.settlementType === 'HYBRID'
+
+  if (proofData.proofType === 'txhash' && proofData.txHash && trade.token.network && onChainCapable) {
     const txHashNorm = proofData.txHash.trim().toLowerCase()
 
     // Duplicate guard across CTM proofs

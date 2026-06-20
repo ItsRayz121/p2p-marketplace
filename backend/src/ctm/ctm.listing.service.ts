@@ -275,7 +275,7 @@ export async function getListingById(id: string) {
       token: true,
       merchantProfile: {
         include: {
-          user: { select: { id: true, username: true } },
+          user: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
         },
       },
     },

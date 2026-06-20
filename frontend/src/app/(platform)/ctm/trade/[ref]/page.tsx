@@ -76,6 +76,14 @@ function isHashRequired(settlementType?: string): boolean {
   return settlementType === 'ON_CHAIN'
 }
 
+// For MANUAL (exchange-UID / off-chain) settlements there is no verifiable
+// on-chain hash, so a screenshot of the transfer is the real proof and is
+// required; the reference / ID stays optional. Blockchain settlements are the
+// inverse (hash required, screenshot optional).
+function isScreenshotRequired(settlementType?: string): boolean {
+  return settlementType === 'MANUAL'
+}
+
 interface SellerPaymentAccount {
   type: string; label: string; accountName: string
   mobileNumber?: string; bankName?: string; ibanNumber?: string; accountNumber?: string
@@ -216,6 +224,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [platformComment, setPlatformComment] = useState('')
   const [platformRatingDone, setPlatformRatingDone] = useState(false)
   const [traderRatingDone, setTraderRatingDone] = useState(false)
+  // "Complete & Rate" auto-collapses once the user finishes rating (or skips),
+  // mirroring how the other step cards collapse when their work is done. Starts
+  // expanded so the rating prompt is visible; the header toggle re-opens it.
+  const [step4Collapsed, setStep4Collapsed] = useState(false)
   const [error, setError] = useState('')
   const [selectingPayment, setSelectingPayment] = useState(false)
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set())
@@ -301,14 +313,21 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const handleUploadTokenProof = async () => {
     const hashRequired = isHashRequired(trade.settlementType)
+    const screenshotRequired = isScreenshotRequired(trade.settlementType)
     if (hashRequired && !txHash.trim()) { setError('Transaction hash is required for blockchain token transfers'); return }
+    if (screenshotRequired && !proofFile) { setError('A transfer screenshot is required for this token. The reference / ID is optional.'); return }
     if (!txHash.trim() && !proofFile) { setError('Enter a transfer reference or upload a screenshot'); return }
     setError(''); setActionLoading(true)
+    // Only on-chain-capable settlements treat the value as a verifiable tx hash.
+    // For MANUAL (UID/off-chain) settlements the value is a plain reference, so
+    // the proof is the screenshot — never send proofType 'txhash' there or the
+    // backend would try to verify a reference against a non-wallet UID.
+    const treatAsHash = !screenshotRequired && !!txHash.trim()
     try {
       if (proofFile) {
         const fd = new FormData()
         if (txHash.trim()) fd.append('txHash', txHash.trim())
-        fd.append('proofType', txHash.trim() ? 'txhash' : 'screenshot')
+        fd.append('proofType', treatAsHash ? 'txhash' : 'screenshot')
         fd.append('file', proofFile)
         await ctmApi.uploadTokenProof(ref, fd)
       } else {
@@ -350,6 +369,15 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   }
 
   const handlePlatformRate = () => { setPlatformRatingDone(true) }
+
+  // Once both the trader rating and platform feedback are submitted, collapse the
+  // Complete & Rate card automatically (and close the rating panel).
+  useEffect(() => {
+    if (traderRatingDone && platformRatingDone) {
+      setRatingOpen(false)
+      setStep4Collapsed(true)
+    }
+  }, [traderRatingDone, platformRatingDone])
 
   const handleSelectAccount = async (idx: number) => {
     setSelectingPayment(true)
@@ -517,7 +545,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             </div>
             <textarea rows={2} placeholder="Trader feedback (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
             <div className="flex gap-2">
-              <button onClick={() => setRatingOpen(false)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
+              <button onClick={() => { setRatingOpen(false); setStep4Collapsed(true) }} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
               <button onClick={handleRate} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold">Submit Trader Rating</button>
             </div>
           </>
@@ -542,7 +570,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           </>
         )}
       </div>
-      <button onClick={() => setRatingOpen(false)} className="w-full border border-border py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors">Close</button>
+      <button onClick={() => { setRatingOpen(false); setStep4Collapsed(true) }} className="w-full border border-border py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors">Close</button>
     </div>
   )
 
@@ -823,11 +851,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 {disputeBtn}
               </StepCard>
 
-              <StepCard stepNum={4} title="Complete & Rate" state={s4}
+              <StepCard stepNum={4} title="Complete & Rate"
+                state={trade.status === 'completed' ? 'completed' : s4}
                 summary="Trade complete"
-                expanded={expandedSteps.has(4)} onToggle={() => toggleStep(4)}>
+                expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {ratingOpen ? ratingPanel(trade.seller.fullName || trade.seller.username) : (
-                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.seller.fullName || trade.seller.username} ratingError={ratingError} onOpenRating={() => setRatingOpen(true)} />
+                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.seller.fullName || trade.seller.username} ratingError={ratingError} onOpenRating={() => { setStep4Collapsed(false); setRatingOpen(true) }} />
                 )}
               </StepCard>
             </>
@@ -931,12 +960,22 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-text-primary mb-1.5">
-                        Screenshot<span className="text-text-muted font-normal ml-1">(optional)</span>
+                        Screenshot
+                        {isScreenshotRequired(trade.settlementType)
+                          ? <span className="text-primary font-semibold ml-1">(required)</span>
+                          : <span className="text-text-muted font-normal ml-1">(optional)</span>}
                       </label>
                       <input type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} className="w-full border border-border rounded-xl p-2 text-sm" />
+                      {isScreenshotRequired(trade.settlementType) && (
+                        <p className="text-xs text-text-muted mt-1">Upload a screenshot of the transfer confirmation. The reference / ID above is optional.</p>
+                      )}
                     </div>
                     <button onClick={handleUploadTokenProof}
-                      disabled={actionLoading || (isHashRequired(trade.settlementType) ? !txHash.trim() : (!txHash.trim() && !proofFile))}
+                      disabled={actionLoading || (
+                        isHashRequired(trade.settlementType) ? !txHash.trim()
+                        : isScreenshotRequired(trade.settlementType) ? !proofFile
+                        : (!txHash.trim() && !proofFile)
+                      )}
                       className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
                       {actionLoading ? 'Uploading…' : 'Submit Transfer Proof'}
                     </button>
@@ -946,9 +985,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 {disputeBtn}
               </StepCard>
 
-              <StepCard stepNum={4} title="Complete & Rate" state={s4}
+              <StepCard stepNum={4} title="Complete & Rate"
+                state={trade.status === 'completed' ? 'completed' : s4}
                 summary="Trade complete"
-                expanded={expandedSteps.has(4)} onToggle={() => toggleStep(4)}>
+                expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'proof_submitted' && !ratingOpen && (
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Waiting for buyer confirmation</p>
@@ -956,7 +996,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 )}
                 {trade.status === 'completed' && !ratingOpen && (
-                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.buyer.fullName || trade.buyer.username} ratingError={ratingError} onOpenRating={() => setRatingOpen(true)} />
+                  <CompletedSummary trade={trade} userId={user?.id ?? ''} counterparty={trade.buyer.fullName || trade.buyer.username} ratingError={ratingError} onOpenRating={() => { setStep4Collapsed(false); setRatingOpen(true) }} />
                 )}
                 {ratingOpen && ratingPanel(trade.buyer.fullName || trade.buyer.username)}
               </StepCard>
