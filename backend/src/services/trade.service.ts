@@ -469,7 +469,10 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
       // bond in the SAME transaction so the trade and the lock commit together;
       // if the maker can't cover it, lockMakerBondTx throws and the whole trade
       // creation rolls back (no orphaned lock, no half-created trade).
-      if (bondCfg.enabled) {
+      // Only on SELL ads: there the maker is the seller who must deliver USDT, so a
+      // USDT bond is meaningful. On a BUY ad the maker is the buyer (may hold no
+      // USDT), so we skip it — consistent with the bid path, which posts no bond.
+      if (bondCfg.enabled && !isBuyAd) {
         const lock = await lockMakerBondTx(
           tx,
           { tradeType: 'usdt', tradeId: newTrade.id, makerId: adRows.userId, tradeUsdt: amount.toString() },
