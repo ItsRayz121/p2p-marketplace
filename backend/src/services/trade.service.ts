@@ -18,6 +18,7 @@ import {
   HARD_REJECT_STATUSES,
   ADMIN_REVIEW_STATUSES,
   RELEASE_ALLOWED_STATUSES,
+  type TxVerificationResult,
 } from './blockchainVerification.service'
 import { logger } from '../lib/logger'
 
@@ -578,26 +579,60 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
   await assertNoDuplicateTradeTxHash(txHashNorm, tradeId)
 
   // ── On-chain verification ─────────────────────────────────────────────────────
-  // Resolve the buyer's destination address: blockchain delivery takes priority
-  // over the generic buyerWalletAddress field (which may hold a legacy value).
+  // We can only auto-verify the on-chain receiver when the buyer asked to receive
+  // tokens at a real blockchain wallet. Exchange-UID deliveries (Binance / Bitget /
+  // Gate) and email / username transfers have NO on-chain wallet address: the
+  // seller sends to an exchange deposit address we cannot know in advance, so there
+  // is nothing to match the transaction receiver against. Running EVM/TRON receiver
+  // verification on those produced a false "transaction does not send tokens to the
+  // buyer's wallet" rejection (the "Transfers found to: 0x…" address in that error
+  // is simply the real on-chain receiver of the seller's tx — it is NOT hard-coded).
+  //
+  // NOTE: the wallet delivery method is stored as either 'blockchain' (legacy
+  // trade/new flow) or 'wallet_blockchain' (marketplace flow) — accept both.
+  const deliveryMethod = tradeForVerify.buyerDeliveryMethod ?? ''
+  const WALLET_DELIVERY_METHODS = ['blockchain', 'wallet_blockchain']
+  const isWalletDelivery = WALLET_DELIVERY_METHODS.includes(deliveryMethod)
+
+  // Resolve the buyer's destination wallet: blockchain delivery address takes
+  // priority over the generic buyerWalletAddress field (which may hold a legacy
+  // value or, for bid-path trades, the same wallet).
   const buyerWallet =
-    (tradeForVerify.buyerDeliveryMethod === 'blockchain' && tradeForVerify.buyerDeliveryAddress)
+    (isWalletDelivery && tradeForVerify.buyerDeliveryAddress)
       ? tradeForVerify.buyerDeliveryAddress
       : tradeForVerify.buyerWalletAddress
 
-  let verificationResult
-  try {
-    verificationResult = await verifyTradeTx(
-      txHashNorm,
-      tradeForVerify.coin,
-      tradeForVerify.network,
-      tradeForVerify.amount,
-      buyerWallet,
+  let verificationResult: TxVerificationResult
+  if (!isWalletDelivery || !buyerWallet || !buyerWallet.trim()) {
+    // No verifiable on-chain wallet → store the hash and route to admin review.
+    // Same hold as non-EVM chains: the trade advances to crypto_sent, but the
+    // buyer cannot release until an admin manually confirms the transfer.
+    const reason = !isWalletDelivery
+      ? `Delivery is via "${deliveryMethod || 'a non-wallet method'}", which has no on-chain wallet address to verify against`
+      : 'No buyer wallet address on record to verify against'
+    verificationResult = {
+      status: 'skipped',
+      message: `${reason}. Admin must verify the transfer manually before the buyer can release.`,
+      details: { rpcChecked: false },
+    }
+    logger.info(
+      { tradeId, deliveryMethod },
+      'markCryptoSent: non-wallet delivery — skipping on-chain receiver verification',
     )
-  } catch (err) {
-    // Unexpected errors from the verifier must not silently swallow — if it's
-    // an AppError we already threw a user-visible error; rethrow anything else.
-    throw err
+  } else {
+    try {
+      verificationResult = await verifyTradeTx(
+        txHashNorm,
+        tradeForVerify.coin,
+        tradeForVerify.network,
+        tradeForVerify.amount,
+        buyerWallet,
+      )
+    } catch (err) {
+      // Unexpected errors from the verifier must not silently swallow — if it's
+      // an AppError we already threw a user-visible error; rethrow anything else.
+      throw err
+    }
   }
 
   logger.info(

@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
-import { getPaymentMethodColor, PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { getPaymentMethodColor, isMobileMethod, canonicalPaymentLabel, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Clock, Zap, Heart } from 'lucide-react'
@@ -338,24 +338,30 @@ export default function TraderProfilePage() {
           <h2 className="text-sm font-semibold text-text-primary mb-4">Active Listings</h2>
           <div className="space-y-3">
             {profile.activeAds.map((ad) => (
-              <div key={ad.id} className="flex flex-wrap items-center gap-3 py-3 border-b border-border last:border-0">
-                <Badge variant={ad.side === 'sell' ? 'success' : 'warning'} size="sm">
+              <div key={ad.id} className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-3 border-b border-border last:border-0">
+                <Badge variant={ad.side === 'sell' ? 'success' : 'warning'} size="sm" className="w-16 justify-center flex-shrink-0">
                   {ad.side === 'sell' ? 'Selling' : 'Buying'}
                 </Badge>
-                <span className="text-sm font-semibold text-text-primary">{ad.coin}</span>
-                <span className="text-sm text-text-secondary">PKR {Number(ad.price).toLocaleString()}</span>
-                <span className="text-xs text-text-muted">
+                <span className="w-12 text-sm font-semibold text-text-primary flex-shrink-0">{ad.coin}</span>
+                <span className="w-28 text-sm text-text-secondary flex-shrink-0">PKR {Number(ad.price).toLocaleString()}</span>
+                <span className="w-32 text-xs text-text-muted flex-shrink-0">
                   {Number(ad.minOrder).toLocaleString()} – {Number(ad.maxOrder).toLocaleString()} PKR
                 </span>
-                <div className="flex flex-wrap gap-1">
-                  {(ad.paymentMethods ?? []).slice(0, 2).map((pm) => (
-                    <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm)}`}>
-                      <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
-                      {pm}
-                    </span>
-                  ))}
+                <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+                  {(ad.paymentMethods ?? [])
+                    .filter((pm) => pm && !isOpaqueId(pm))
+                    .slice(0, 2)
+                    .map((pm) => {
+                      const label = canonicalPaymentLabel(pm)
+                      return (
+                        <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(label)}`}>
+                          <EntityLogo type={isMobileMethod(label) ? 'payment_method' : 'bank'} slug={label} size="xs" className="flex-shrink-0" />
+                          {label}
+                        </span>
+                      )
+                    })}
                 </div>
-                <Link href={`/trade/new?adId=${ad.id}`} className="ml-auto">
+                <Link href={`/trade/new?adId=${ad.id}`} className="ml-auto flex-shrink-0">
                   <Button size="sm" variant="secondary">{ad.side === 'sell' ? 'Buy' : 'Sell'}</Button>
                 </Link>
               </div>
@@ -389,9 +395,16 @@ export default function TraderProfilePage() {
               <div key={r.id} className="border-b border-border last:border-0 pb-4 last:pb-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2">
-                    <UserAvatar name={r.reviewerFullName || r.reviewerUsername} avatarUrl={r.reviewerAvatarUrl} size="xs" />
+                    <Link
+                      href={`/profile/${encodeURIComponent(r.reviewerUsername)}`}
+                      className="flex items-center gap-2 group"
+                    >
+                      <UserAvatar name={r.reviewerFullName || r.reviewerUsername} avatarUrl={r.reviewerAvatarUrl} size="xs" />
+                      <span className="text-xs font-medium text-text-secondary group-hover:text-primary group-hover:underline transition-colors">
+                        {r.reviewerFullName || r.reviewerUsername}
+                      </span>
+                    </Link>
                     <StarRow rating={r.rating} />
-                    <span className="text-xs text-text-muted font-medium">{r.reviewerFullName || r.reviewerUsername}</span>
                   </div>
                   <span className="text-xs text-text-muted">{timeAgo(r.createdAt)}</span>
                 </div>

@@ -140,9 +140,10 @@ export async function userRoutes(app: FastifyInstance) {
       verifiedEmail: user.isEmailVerified,
       isFavorited,
       socialLinks: user.socialLinksPublic ? user.socialLinks : null,
-      ratings: maskLegalNames
-        ? enrichedRatings.map((r) => ({ ...r, reviewerFullName: maskName(r.reviewerFullName) }))
-        : enrichedRatings,
+      // Reviews display the reviewer's full name and link to their public profile,
+      // so the reviewer name is intentionally NOT masked (the trader's own header
+      // name above still follows the non-custodial masking rule).
+      ratings: enrichedRatings,
       activeAds: user.ads.map((ad) => ({
         ...ad,
         price: ad.price.toString(),

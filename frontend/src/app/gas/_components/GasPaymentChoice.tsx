@@ -1,5 +1,6 @@
 'use client'
 import { LoadingState } from '@/components/ui/LoadingState'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useGasCtx, PHASE } from './GasContext'
 import { ChainLogo, CardHeader } from './GasPrimitives'
 
@@ -33,7 +34,7 @@ export function GasPaymentChoice() {
             className="flex flex-col gap-3 p-5 rounded-xl border-2 border-border bg-surface hover:border-green-500/50 hover:shadow-card transition-all text-left group"
           >
             <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-xl shadow-card">₨</div>
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold text-2xl shadow-card ring-1 ring-black/5">₨</div>
               <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 font-semibold px-2.5 py-1 rounded-full">Easy & Fast</span>
             </div>
             <div>
@@ -51,7 +52,7 @@ export function GasPaymentChoice() {
             className="flex flex-col gap-3 p-5 rounded-xl border-2 border-border bg-surface hover:border-blue-500/50 hover:shadow-card transition-all text-left group"
           >
             <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-card">₮</div>
+              <EntityLogo type="token" slug="USDT" size="2xl" className="w-12 h-12 shadow-card" />
               <span className="text-xs bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold px-2.5 py-1 rounded-full">Low Fees</span>
             </div>
             <div>

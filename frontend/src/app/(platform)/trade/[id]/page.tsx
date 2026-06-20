@@ -40,6 +40,10 @@ import {
   BadgeCheck,
 } from 'lucide-react'
 
+// localStorage key for the trade panel collapse/expand preference (global so the
+// choice persists across trades and page refreshes).
+const OPEN_SECTIONS_KEY = 'rupchain:trade:openSections'
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ChatMessage {
@@ -264,6 +268,29 @@ export default function TradePage() {
   const [openSections, setOpenSections] = useState({ timeline: true, payment: true, delivery: true })
   const toggleSection = (key: keyof typeof openSections) =>
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
+
+  // Persist the collapsed/expanded state of the trade panels so a refresh keeps
+  // whatever the user last set. Restored on mount (client-only, to avoid an SSR
+  // hydration mismatch) and re-saved on every toggle.
+  const openSectionsHydrated = useRef(false)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(OPEN_SECTIONS_KEY)
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<typeof openSections>
+        setOpenSections((prev) => ({
+          timeline: typeof saved.timeline === 'boolean' ? saved.timeline : prev.timeline,
+          payment: typeof saved.payment === 'boolean' ? saved.payment : prev.payment,
+          delivery: typeof saved.delivery === 'boolean' ? saved.delivery : prev.delivery,
+        }))
+      }
+    } catch { /* ignore corrupt/unavailable storage */ }
+    openSectionsHydrated.current = true
+  }, [])
+  useEffect(() => {
+    if (!openSectionsHydrated.current) return
+    try { localStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify(openSections)) } catch { /* ignore */ }
+  }, [openSections])
 
   const paymentSectionRef = useRef<HTMLDivElement>(null)
   const deliverySectionRef = useRef<HTMLDivElement>(null)
