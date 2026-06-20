@@ -668,6 +668,7 @@ model Trade {
   buyerDeliveryMethod  String?     // 'blockchain' | 'email' | 'username' | 'internal'
   buyerDeliveryAddress String?     // the receiving address / email / username
   sellerTxHash         String?   @unique
+  sellerDeliveryProofUrl String? // optional screenshot of the crypto transfer (manual/exchange-UID delivery, or supplemental proof alongside a tx hash)
   txVerificationStatus String?   // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
   txVerificationDetails Json?    // { chain, rpcChecked, txStatus, expectedReceiver, actualReceiver, expectedAmount, actualAmount, confirmations, tokenContract, verifiedAt }
   sellerPaymentSnapshot Json?    // { type, label, accountName, mobileNumber?, bankName?, ibanNumber?, accountNumber? } — locked at trade creation so the buyer's pay-to account is immutable for disputes

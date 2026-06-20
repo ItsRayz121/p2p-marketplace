@@ -29,8 +29,14 @@ const createTradeSchema = z.object({
   buyerDeliveryAddress: z.string().max(500).optional(),
 })
 
+// Either a tx hash or a transfer screenshot (or both) constitutes valid proof.
+// Manual / exchange-UID deliveries have no on-chain hash, so the screenshot is
+// the proof; on-chain wallet deliveries use the hash.
 const cryptoSentSchema = z.object({
-  txHash: z.string().min(1),
+  txHash: z.string().optional().default(''),
+  screenshotUrl: z.string().url().optional(),
+}).refine((d) => d.txHash.trim().length > 0 || !!d.screenshotUrl, {
+  message: 'Provide a transaction hash or a transfer screenshot as proof.',
 })
 
 const cancelSchema = z.object({
@@ -138,7 +144,7 @@ export async function tradeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const trade = await markCryptoSent(id, userId, parsed.data.txHash)
+    const trade = await markCryptoSent(id, userId, parsed.data.txHash, parsed.data.screenshotUrl)
     return reply.send({ success: true, data: trade })
   })
 

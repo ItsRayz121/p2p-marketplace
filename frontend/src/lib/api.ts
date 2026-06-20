@@ -916,8 +916,8 @@ export const tradesApi = {
   confirmPayment: (id: string, confirmedReceipt = true) =>
     apiRequest<Trade>(`/trades/${id}/confirm-payment`, { method: 'POST', body: JSON.stringify({ confirmedReceipt }) }),
   // Seller: mark crypto sent with txHash (transitions payment_confirmed → crypto_sent)
-  markCryptoSent: (id: string, txHash: string) =>
-    apiRequest<Trade>(`/trades/${id}/crypto-sent`, { method: 'POST', body: JSON.stringify({ txHash }) }),
+  markCryptoSent: (id: string, txHash: string, screenshotUrl?: string) =>
+    apiRequest<Trade>(`/trades/${id}/crypto-sent`, { method: 'POST', body: JSON.stringify({ txHash, ...(screenshotUrl ? { screenshotUrl } : {}) }) }),
   // Buyer: release escrow (transitions crypto_sent → crypto_released)
   releaseCrypto: (id: string) =>
     apiRequest<Trade>(`/trades/${id}/release`, { method: 'POST' }),

@@ -57,8 +57,6 @@ interface ChatMessage {
   sendStatus?: 'sending' | 'failed'
 }
 
-const AUTO_RELEASE_HOURS = 2
-
 // Cooldown before "Open Dispute" unlocks, measured from when the buyer uploaded
 // payment proof. Keep in sync with DISPUTE_DELAY_MINUTES in trade.service.ts.
 const DISPUTE_DELAY_MINUTES = 10
@@ -83,6 +81,7 @@ interface ExtendedTrade extends Trade {
   buyerDeliveryAddress?: string
   ratedByMe?: boolean
   txVerificationStatus?: string
+  sellerDeliveryProofUrl?: string
   /** Clean display label for the payment method (resolves stored PaymentMethod id). */
   paymentMethodLabel?: string
   /** Seller's receiving account, resolved server-side for trade participants. */
@@ -264,6 +263,9 @@ export default function TradePage() {
   const [disputeDescription, setDisputeDescription] = useState('')
   const [showCryptoSentForm, setShowCryptoSentForm] = useState(false)
   const [txHash, setTxHash] = useState('')
+  // Optional delivery screenshot (CTM-style dual proof). For manual / exchange-UID
+  // transfers the screenshot IS the proof; for on-chain transfers it's supplemental.
+  const [deliveryShot, setDeliveryShot] = useState<File | null>(null)
 
   const [openSections, setOpenSections] = useState({ timeline: true, payment: true, delivery: true })
   const toggleSection = (key: keyof typeof openSections) =>
@@ -331,12 +333,18 @@ export default function TradePage() {
       if (extended.ratedByMe) setRatedAlready(true)
       // Preserve any in-flight optimistic messages (id prefix tmp-) so a
       // poll/SSE refresh between user-send and server-ack doesn't make the
-      // user's bubble briefly vanish.
+      // user's bubble briefly vanish. BUT drop any optimistic bubble whose
+      // content already landed on the server — otherwise a send that actually
+      // succeeded (response lost on the network, so it was marked "failed")
+      // would show forever as a phantom "Failed" duplicate next to the real one.
       setMessages((prev) => {
-        const optimistic = prev.filter((m) => m.id.startsWith('tmp-'))
         const serverMessages: ChatMessage[] = Array.isArray(messagesData)
           ? (messagesData as ChatMessage[])
           : ((messagesData as { messages: ChatMessage[] }).messages ?? [])
+        const serverKeys = new Set(serverMessages.map((m) => `${m.senderId}::${m.message}`))
+        const optimistic = prev.filter(
+          (m) => m.id.startsWith('tmp-') && !serverKeys.has(`${m.senderId}::${m.message}`),
+        )
         return optimistic.length ? [...serverMessages, ...optimistic] : serverMessages
       })
     } catch (err) {
@@ -431,14 +439,26 @@ export default function TradePage() {
 
   // Seller: mark crypto sent (payment_confirmed → crypto_sent)
   const handleMarkCryptoSent = async () => {
-    if (!txHash.trim()) return
+    // Dual proof: a tx hash OR a transfer screenshot (or both). On-chain wallet
+    // delivery needs the hash; manual / exchange-UID delivery needs the screenshot.
+    const dm = trade?.buyerDeliveryMethod ?? ''
+    const isWalletDelivery = dm === 'blockchain' || dm === 'wallet_blockchain' || dm === ''
+    if (!txHash.trim() && !deliveryShot) {
+      setActionError(isWalletDelivery
+        ? 'Enter the transaction hash (or attach a transfer screenshot) for this transfer.'
+        : 'Attach a screenshot of the transfer (a reference / hash is optional for this delivery method).')
+      return
+    }
     setActionLoading(true)
     setActionError(null)
     try {
-      await tradesApi.markCryptoSent(id, txHash.trim())
+      let screenshotUrl: string | undefined
+      if (deliveryShot) screenshotUrl = await upload(deliveryShot)
+      await tradesApi.markCryptoSent(id, txHash.trim(), screenshotUrl)
       await fetchTrade()
       setShowCryptoSentForm(false)
       setTxHash('')
+      setDeliveryShot(null)
       hapticNotify('success')
     } catch (err) {
       hapticNotify('error')
@@ -554,12 +574,24 @@ export default function TradePage() {
   const handleRetryMessage = async (failedId: string) => {
     const failed = messages.find((m) => m.id === failedId)
     if (!failed) return
+    // Reconstruct the payload before resending. Image messages historically
+    // stored an empty `message` with the URL in `imageUrl`, so a naive retry
+    // sent "" and the backend rejected it ("String must contain at least 1
+    // character"). Rebuild the [image]<url> body from imageUrl when needed.
+    const payload = failed.message?.trim()
+      ? failed.message
+      : failed.imageUrl ? `[image]${failed.imageUrl}` : ''
+    if (!payload.trim()) {
+      setActionError('Cannot retry an empty message')
+      return
+    }
+    setActionError(null)
     setMessages((prev) => prev.map((m) => m.id === failedId ? { ...m, sendStatus: 'sending' } : m))
     try {
-      const msg = await tradesApi.sendMessage(id, failed.message)
+      const msg = await tradesApi.sendMessage(id, payload)
       setMessages((prev) =>
         prev.map((m) => m.id === failedId
-          ? { id: msg.id, senderId: user?.id ?? '', message: failed.message, createdAt: msg.createdAt }
+          ? { id: msg.id, senderId: user?.id ?? '', message: payload, imageUrl: failed.imageUrl, createdAt: msg.createdAt }
           : m),
       )
     } catch (err) {
@@ -572,12 +604,15 @@ export default function TradePage() {
     setActionError(null)
     try {
       const url = await uploadChatImage(file)
-      // Send the image URL as a chat message with a special prefix so the UI can render it
+      // Send the image URL as a chat message with a special prefix so the UI can
+      // render it. Store the full [image]<url> payload as the message (not "")
+      // so retry/dedupe logic always has valid, non-empty content to resend.
       const tempId = `tmp-img-${Date.now()}`
+      const payload = `[image]${url}`
       const optimistic: ChatMessage = {
         id: tempId,
         senderId: user?.id ?? '',
-        message: '',
+        message: payload,
         imageUrl: url,
         createdAt: new Date().toISOString(),
         sendStatus: 'sending',
@@ -585,11 +620,11 @@ export default function TradePage() {
       setMessages((prev) => [...prev, optimistic])
       setSendingMsg(true)
       try {
-        const msg = await tradesApi.sendMessage(id, `[image]${url}`)
+        const msg = await tradesApi.sendMessage(id, payload)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId
-              ? { id: msg.id, senderId: user?.id ?? '', message: `[image]${url}`, imageUrl: url, createdAt: msg.createdAt }
+              ? { id: msg.id, senderId: user?.id ?? '', message: payload, imageUrl: url, createdAt: msg.createdAt }
               : m,
           ),
         )
@@ -991,6 +1026,28 @@ export default function TradePage() {
                     </div>
                   </div>
                 )}
+                {trade.sellerDeliveryProofUrl && (
+                  <div className="pt-3 border-t border-border">
+                    <p className="text-xs text-text-muted mb-2">Transfer Screenshot</p>
+                    {isTrustedImageUrl(trade.sellerDeliveryProofUrl) ? (
+                      <a href={trade.sellerDeliveryProofUrl} target="_blank" rel="noopener noreferrer">
+                        <NextImage
+                          src={trade.sellerDeliveryProofUrl}
+                          alt="Transfer screenshot"
+                          width={320}
+                          height={240}
+                          className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover"
+                          referrerPolicy="no-referrer"
+                          unoptimized
+                        />
+                      </a>
+                    ) : (
+                      <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">
+                        Screenshot URL is from an untrusted source and cannot be displayed.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1035,64 +1092,80 @@ export default function TradePage() {
               </Button>
             )}
 
-            {showCryptoSentForm && !isUserBuyer && (
-              <div className="space-y-3">
-                <p className="text-xs text-text-muted">Enter the exact blockchain transaction hash for the transfer you sent to the buyer&apos;s wallet. The system will verify the transaction on-chain.</p>
-                <input
-                  type="text"
-                  value={txHash}
-                  onChange={(e) => setTxHash(e.target.value)}
-                  placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)"
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
-                />
-                <div className="flex gap-2">
-                  <Button variant="secondary" fullWidth onClick={() => setShowCryptoSentForm(false)}>Cancel</Button>
-                  <Button fullWidth loading={actionLoading} disabled={!txHash.trim() || actionLoading} onClick={handleMarkCryptoSent}>
-                    Confirm Sent
-                  </Button>
+            {showCryptoSentForm && !isUserBuyer && (() => {
+              const dm = trade.buyerDeliveryMethod ?? ''
+              const isWalletDelivery = dm === 'blockchain' || dm === 'wallet_blockchain' || dm === ''
+              const canSubmit = !!txHash.trim() || !!deliveryShot
+              return (
+                <div className="space-y-3">
+                  <p className="text-xs text-text-muted">
+                    {isWalletDelivery
+                      ? 'Enter the blockchain transaction hash for the transfer you sent to the buyer. You can also attach a screenshot as extra proof.'
+                      : 'Attach a screenshot of the transfer you sent (e.g. the exchange / app confirmation). A reference or hash is optional for this delivery method.'}
+                  </p>
+                  <div>
+                    <label className="block text-xs font-medium text-text-primary mb-1">
+                      Transaction Hash {isWalletDelivery ? '' : <span className="text-text-muted">(optional)</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={txHash}
+                      onChange={(e) => setTxHash(e.target.value)}
+                      placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)"
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-primary mb-1">
+                      Transfer Screenshot {isWalletDelivery ? <span className="text-text-muted">(optional)</span> : ''}
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => setDeliveryShot(e.target.files?.[0] ?? null)}
+                      className="w-full text-xs border border-border rounded-lg p-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
+                    />
+                    {deliveryShot && <p className="text-xs text-text-muted mt-1 truncate">Attached: {deliveryShot.name}</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" fullWidth onClick={() => { setShowCryptoSentForm(false); setDeliveryShot(null) }}>Cancel</Button>
+                    <Button fullWidth loading={actionLoading || uploading} disabled={!canSubmit || actionLoading || uploading} onClick={handleMarkCryptoSent}>
+                      Confirm Sent
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
-            {/* Buyer: release escrow (crypto_sent) */}
+            {/* Buyer: confirm receipt & release (crypto_sent). No verification
+                gate — the buyer is the authority on whether the crypto landed in
+                their own wallet. Verification status is shown only as guidance.
+                Admin gets involved exclusively through a dispute. */}
             {isUserBuyer && trade.status === 'crypto_sent' && (() => {
               const vs = trade.txVerificationStatus
-              // null/undefined = legacy trade (pre-verification) → allow
-              const canRelease = !vs || vs === 'verified' || vs === 'admin_verified'
-              const isAdminReview = vs === 'skipped' || vs === 'rpc_error'
-              const isPending = vs === 'pending' || vs === 'not_found'
+              const unverified = vs === 'skipped' || vs === 'rpc_error' || vs === 'pending' || vs === 'not_found'
               return (
                 <>
-                  <AutoReleaseCountdown updatedAt={trade.updatedAt} hoursWindow={AUTO_RELEASE_HOURS} />
-                  {isAdminReview && (
-                    <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
-                      <p className="font-semibold">⏳ Pending admin verification</p>
-                      {trade.network === 'Aptos' ? (
-                        <p className="text-xs">Aptos transactions are verified manually by our team (automatic on-chain checks aren’t available for this network yet). This is normal — an admin will review the transaction shortly, after which you can release. You can always confirm the transfer yourself on an Aptos explorer in the meantime.</p>
-                      ) : (
-                        <p className="text-xs">The transaction hash could not be verified automatically (chain not supported or RPC unavailable). An admin must review and approve it before you can release.</p>
-                      )}
-                    </div>
-                  )}
-                  {isPending && (
-                    <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm text-orange-800 dark:text-orange-300 space-y-1">
-                      <p className="font-semibold">⚠ Transaction not confirmed</p>
-                      <p className="text-xs">The submitted transaction hash was not found or is still pending on-chain. The seller must resubmit a confirmed transaction hash. Do not release until you see the funds in your wallet.</p>
-                    </div>
-                  )}
+                  <ReleaseReminder />
                   {vs === 'verified' && (
                     <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-800 dark:text-green-300">
                       <p className="font-semibold">✓ On-chain verified</p>
-                      <p className="text-xs">The transaction was independently verified on the blockchain. You may release once you have confirmed receipt.</p>
+                      <p className="text-xs">The transaction was independently verified on the blockchain. Release once you have confirmed receipt.</p>
+                    </div>
+                  )}
+                  {unverified && (
+                    <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-800 dark:text-yellow-300 space-y-1">
+                      <p className="font-semibold">Confirm receipt in your own wallet first</p>
+                      <p className="text-xs">We couldn&apos;t auto-verify this transfer — that&apos;s normal for {trade.network ?? 'this network'}, exchange-UID/email delivery, or a momentarily busy node. Check your wallet or account and confirm the crypto actually arrived before you release. If it never arrives, open a dispute instead of releasing.</p>
                     </div>
                   )}
                   <Button
                     fullWidth
                     loading={actionLoading}
-                    disabled={!canRelease || actionLoading}
+                    disabled={actionLoading}
                     onClick={() => setShowReleaseModal(true)}
                   >
-                    {canRelease ? 'I Received the Crypto — Release' : 'Release Locked — Pending Verification'}
+                    I Received the Crypto — Release
                   </Button>
                 </>
               )
@@ -1360,39 +1433,19 @@ function DisputeUnlockGate({ unlockAt, onOpen }: { unlockAt: number | null; onOp
   )
 }
 
-function AutoReleaseCountdown({ updatedAt, hoursWindow }: { updatedAt: string; hoursWindow: number }) {
-  const [remaining, setRemaining] = useState('')
-
-  useEffect(() => {
-    const releaseAt = new Date(updatedAt).getTime() + hoursWindow * 3_600_000
-
-    function tick() {
-      const diff = releaseAt - Date.now()
-      if (diff <= 0) {
-        setRemaining('shortly')
-        return
-      }
-      const h = Math.floor(diff / 3_600_000)
-      const m = Math.floor((diff % 3_600_000) / 60_000)
-      const s = Math.floor((diff % 60_000) / 1_000)
-      setRemaining(h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`)
-    }
-
-    tick()
-    const t = setInterval(tick, 1000)
-    return () => clearInterval(t)
-  }, [updatedAt, hoursWindow])
-
+// Honest release reminder. (There is intentionally no automatic auto-release of
+// crypto_sent trades on the backend — only the buyer's confirmation or a dispute
+// moves the trade forward — so we no longer promise a misleading auto-release.)
+function ReleaseReminder() {
   return (
     <div className="bg-primary/5 border border-primary/20 rounded-lg px-3 py-2.5 flex items-start gap-2.5 text-xs">
       <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
       <span className="text-text-secondary leading-snug">
-        If you don&apos;t confirm or dispute within{' '}
-        <span className="font-bold text-primary">{remaining}</span>, the escrow
-        will auto-release to the seller.
-        Only confirm after verifying you received the crypto.
+        The seller is waiting for you to confirm. Only release{' '}
+        <span className="font-semibold text-primary">after</span> you have verified the
+        crypto arrived in your wallet. If it doesn&apos;t arrive, open a dispute instead of releasing.
       </span>
     </div>
   )

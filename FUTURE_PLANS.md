@@ -102,6 +102,39 @@ live-chain access per token; pricing-governance policy.
 
 ---
 
+## USDT trade — verification removed (2026-06-20) — follow-ups
+
+The on-chain tx-verification **gate** was removed from the USDT marketplace trade
+flow (commit on 2026-06-20). Background + open follow-ups:
+
+- **What changed:** the buyer can now confirm receipt / release at *any*
+  verification status — they are the authority on their own wallet. Admin only
+  gets involved through a **dispute** (previously `skipped` / `rpc_error` — e.g.
+  Aptos, exchange-UID delivery, or RPC down — hard-locked release behind admin
+  approval). `markCryptoSent` still **hard-rejects** definitively fake/reverted/
+  not-found hashes (bounced to the seller to resubmit — not admin), and still
+  records `txVerificationStatus` as an informational badge only.
+- **Dual proof added:** seller delivery proof is now a **tx hash + optional
+  screenshot** (manual / exchange-UID delivery can use the screenshot as the
+  proof), mirroring CTM. New nullable column `Trade.sellerDeliveryProofUrl`
+  (migration `20260620120000_trade_delivery_screenshot`).
+- **FUTURE — re-add verification as an optional, NON-blocking signal:** when we
+  want it back, surface it as guidance (green "verified" / amber "verify
+  manually"), never a release lock. Consider an admin config toggle.
+- **FUTURE — gateless auto-release worker (decision pending):** there is currently
+  **no** backend worker that auto-releases `crypto_sent` trades; the old
+  "escrow auto-release to seller" countdown was cosmetic and has been replaced
+  with honest copy. If we want a real auto-release (seller protection when the
+  buyer ghosts), build a worker that moves `crypto_sent → crypto_released` after a
+  window — but note that without verification this can finalize a fake delivery in
+  the seller's favor if the buyer never disputes. Weigh before building.
+- **FUTURE — full CTM step-card visual restructure of the USDT trade page:** the
+  functional CTM parity (dual proof, gate-free release, clean copy) shipped, but
+  the *visual* unification (each step is its own action card that auto-expands when
+  active and collapses to a summary when done, like
+  `ctm/trade/[ref]/page.tsx`) is intentionally deferred — it's a large rewrite of a
+  working 67KB page and should be done as a focused, live-verified pass.
+
 ## How to operate what's already live
 - Toggle + tune everything at **Admin → Config → Non-Custodial P2P**:
   enable on/off, L1 max order (USDT, default 50), L2 max order (USDT, default 500),

@@ -16,8 +16,6 @@ import {
   verifyTradeTx,
   assertNoDuplicateTradeTxHash,
   HARD_REJECT_STATUSES,
-  ADMIN_REVIEW_STATUSES,
-  RELEASE_ALLOWED_STATUSES,
   type TxVerificationResult,
 } from './blockchainVerification.service'
 import { logger } from '../lib/logger'
@@ -559,8 +557,18 @@ export async function confirmPayment(
   return updated
 }
 
-export async function markCryptoSent(tradeId: string, sellerId: string, txHash: string) {
+export async function markCryptoSent(
+  tradeId: string,
+  sellerId: string,
+  txHash: string,
+  screenshotUrl?: string,
+) {
   const txHashNorm = txHash.trim().toLowerCase()
+  const hasHash = txHashNorm.length > 0
+  const screenshot = screenshotUrl?.trim() || null
+  if (!hasHash && !screenshot) {
+    throw new AppError('VALIDATION_ERROR', 'Provide a transaction hash or a transfer screenshot as proof.', 400)
+  }
 
   // Load trade outside the transaction so we can run async blockchain RPC calls
   // before acquiring the DB lock — RPC calls can take several seconds.
@@ -576,7 +584,8 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
 
   // ── Duplicate hash guard ──────────────────────────────────────────────────────
   // The same on-chain tx can only prove one trade. Block replay before RPC calls.
-  await assertNoDuplicateTradeTxHash(txHashNorm, tradeId)
+  // Only when a hash was actually provided (screenshot-only delivery has none).
+  if (hasHash) await assertNoDuplicateTradeTxHash(txHashNorm, tradeId)
 
   // ── On-chain verification ─────────────────────────────────────────────────────
   // We can only auto-verify the on-chain receiver when the buyer asked to receive
@@ -603,16 +612,25 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
       : tradeForVerify.buyerWalletAddress
 
   let verificationResult: TxVerificationResult
-  if (!isWalletDelivery || !buyerWallet || !buyerWallet.trim()) {
-    // No verifiable on-chain wallet → store the hash and route to admin review.
-    // Same hold as non-EVM chains: the trade advances to crypto_sent, but the
-    // buyer cannot release until an admin manually confirms the transfer.
+  if (!hasHash) {
+    // Screenshot-only delivery (manual / exchange-UID). There is no on-chain
+    // hash to verify — the screenshot is the proof. Non-blocking: the buyer
+    // confirms receipt from their own wallet/account.
+    verificationResult = {
+      status: 'skipped',
+      message: 'Delivery proof is a transfer screenshot; no on-chain hash to verify.',
+      details: { rpcChecked: false },
+    }
+  } else if (!isWalletDelivery || !buyerWallet || !buyerWallet.trim()) {
+    // Hash given but no verifiable on-chain wallet (exchange-UID / email /
+    // username delivery, or non-EVM chain). Record it as informational only —
+    // it does NOT block release (the buyer is the authority on receipt).
     const reason = !isWalletDelivery
       ? `Delivery is via "${deliveryMethod || 'a non-wallet method'}", which has no on-chain wallet address to verify against`
       : 'No buyer wallet address on record to verify against'
     verificationResult = {
       status: 'skipped',
-      message: `${reason}. Admin must verify the transfer manually before the buyer can release.`,
+      message: `${reason}.`,
       details: { rpcChecked: false },
     }
     logger.info(
@@ -620,19 +638,13 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
       'markCryptoSent: non-wallet delivery — skipping on-chain receiver verification',
     )
   } else {
-    try {
-      verificationResult = await verifyTradeTx(
-        txHashNorm,
-        tradeForVerify.coin,
-        tradeForVerify.network,
-        tradeForVerify.amount,
-        buyerWallet,
-      )
-    } catch (err) {
-      // Unexpected errors from the verifier must not silently swallow — if it's
-      // an AppError we already threw a user-visible error; rethrow anything else.
-      throw err
-    }
+    verificationResult = await verifyTradeTx(
+      txHashNorm,
+      tradeForVerify.coin,
+      tradeForVerify.network,
+      tradeForVerify.amount,
+      buyerWallet,
+    )
   }
 
   logger.info(
@@ -642,8 +654,11 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
 
   // ── Rejection gate ────────────────────────────────────────────────────────────
   // Hard-reject any status that is definitively wrong or unconfirmed.
-  // A fake/wrong/unconfirmed hash must NEVER move the trade forward.
-  if (HARD_REJECT_STATUSES.includes(verificationResult.status)) {
+  // A fake/wrong/unconfirmed hash must NEVER move the trade forward. This bounces
+  // straight back to the seller to resubmit — it is NOT admin involvement, and it
+  // protects the buyer from a non-existent transaction. Only applies when a hash
+  // was actually provided; screenshot-only delivery skips this entirely.
+  if (hasHash && HARD_REJECT_STATUSES.includes(verificationResult.status)) {
     const userMessages: Record<string, string> = {
       reverted: 'The transaction was reverted on-chain — no tokens were transferred. Check the explorer and resubmit a successful transaction.',
       mismatch_receiver: `The transaction does not send tokens to the buyer's wallet. ${verificationResult.message}`,
@@ -659,16 +674,10 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
     )
   }
 
-  // Admin-review path: tx hash is stored, trade moves to crypto_sent, but buyer
-  // is BLOCKED from releasing until an admin calls approve-tx-verification.
-  // Applies to: skipped (non-EVM chain) and rpc_error (our node was down).
-  const requiresAdminReview = ADMIN_REVIEW_STATUSES.includes(verificationResult.status)
-  if (requiresAdminReview) {
-    logger.warn(
-      { tradeId, txHash: txHashNorm, status: verificationResult.status },
-      'markCryptoSent: tx requires admin review before buyer can release',
-    )
-  }
+  // NOTE: statuses 'skipped' / 'rpc_error' no longer block the buyer's release.
+  // Release is gate-free (the buyer confirms from their own wallet); admin only
+  // gets involved via a dispute. The status is still recorded below as an
+  // informational signal (e.g. to show an "on-chain verified ✓" badge).
 
   // ── Commit to DB ──────────────────────────────────────────────────────────────
   const updated = await db.$transaction(async (tx: Tx) => {
@@ -686,23 +695,20 @@ export async function markCryptoSent(tradeId: string, sellerId: string, txHash: 
       where: { id: tradeId },
       data: {
         status: 'crypto_sent',
-        sellerTxHash: txHashNorm,
+        ...(hasHash ? { sellerTxHash: txHashNorm } : {}),
+        ...(screenshot ? { sellerDeliveryProofUrl: screenshot } : {}),
         txVerificationStatus: verificationResult.status,
         txVerificationDetails: verificationResult.details as Prisma.InputJsonValue,
       },
     })
   })
 
-  const verifiedLabel = verificationResult.status === 'verified'
-    ? ' (on-chain verified ✓)'
-    : requiresAdminReview
-      ? ' — awaiting admin verification before you can release'
-      : ''
-  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', `The seller has sent the crypto${verifiedLabel}.`, { tradeId, txVerificationStatus: verificationResult.status }, tradeId)
+  const verifiedLabel = verificationResult.status === 'verified' ? ' (on-chain verified ✓)' : ''
+  notify(updated.buyerId, 'trade', 'Crypto Is on the Way', `The seller has sent the crypto${verifiedLabel}. Check your wallet and release once you have received it.`, { tradeId, txVerificationStatus: verificationResult.status }, tradeId)
   createAdminNotif({
     category: 'TRADE',
-    title: `Tx Proof Submitted — ${verificationResult.status.toUpperCase()}${requiresAdminReview ? ' ⚠ NEEDS REVIEW' : ''}`,
-    body: `Trade #${updated.orderRef} — seller tx hash. Verification: ${verificationResult.status}. ${verificationResult.message}${requiresAdminReview ? ' Admin must approve before buyer can release.' : ''}`,
+    title: `Tx Proof Submitted — ${verificationResult.status.toUpperCase()}`,
+    body: `Trade #${updated.orderRef} — seller submitted transfer proof. Verification: ${verificationResult.status}. ${verificationResult.message}`,
     href: `/admin/trades/${tradeId}`,
   })
   return updated
@@ -719,26 +725,19 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
   })
   if (!tradeDetails) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
-  // ── Verification gate ─────────────────────────────────────────────────────────
-  // txVerificationStatus = null means a legacy trade created before the
-  // verification system was deployed — allow it through for backward compat,
-  // BUT only if a real on-chain seller tx hash exists. A null status with no
-  // sellerTxHash is an inconsistent state that must never release funds.
-  const vs = tradeDetails.txVerificationStatus
-  if ((vs === null || vs === undefined) && !tradeDetails.sellerTxHash) {
+  // ── Sanity check (no verification gate) ───────────────────────────────────────
+  // The buyer is the authority on whether they received their crypto — they can
+  // see it in their own wallet. We deliberately do NOT gate release on automatic
+  // on-chain verification: the status is frequently "skipped"/"rpc_error" for
+  // Aptos, exchange-UID delivery, or when our RPC is down, and locking those
+  // forced an admin into every such trade. Admin now only steps in via a dispute.
+  // The only thing we still guard is the inconsistent state of a crypto_sent
+  // trade that somehow carries no transfer proof at all (tx hash or screenshot).
+  // (Verification may be re-introduced later as an optional, non-blocking signal.)
+  if (!tradeDetails.sellerTxHash && !tradeDetails.sellerDeliveryProofUrl) {
     throw new AppError(
-      'TX_NOT_VERIFIED',
-      'Cannot release — this trade has no verified transaction on record. Please contact support.',
-      400,
-    )
-  }
-  if (vs !== null && vs !== undefined && !RELEASE_ALLOWED_STATUSES.includes(vs as never)) {
-    const isAdminReview = ADMIN_REVIEW_STATUSES.includes(vs as never)
-    throw new AppError(
-      'TX_NOT_VERIFIED',
-      isAdminReview
-        ? 'This trade is pending admin verification of the transaction hash. Release will be available once an admin approves the transaction.'
-        : `Cannot release — transaction verification status is "${vs}". Please contact support.`,
+      'NO_DELIVERY_PROOF',
+      'Cannot release — the seller has not submitted any transfer proof yet.',
       400,
     )
   }
