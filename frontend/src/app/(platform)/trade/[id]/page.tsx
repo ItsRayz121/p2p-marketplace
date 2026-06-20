@@ -110,9 +110,11 @@ function stepIndex(status: string): number {
 
 const RATING_TAGS = ['Fast Payment', 'Good Communication', 'Smooth Trade', 'Trustworthy', 'Patient']
 
-function InlineRatingForm({ onSubmit, actionError }: {
+function InlineRatingForm({ onSubmit, actionError, disabled, disabledNote }: {
   onSubmit: (rating: number, comment: string, tags: string[]) => Promise<void>
   actionError: string | null
+  disabled?: boolean
+  disabledNote?: string
 }) {
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState('')
@@ -175,7 +177,10 @@ function InlineRatingForm({ onSubmit, actionError }: {
       {actionError && (
         <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{actionError}</p>
       )}
-      <Button fullWidth loading={submitting} onClick={handleSubmit}>Submit Rating</Button>
+      {disabled && disabledNote && (
+        <p className="text-xs text-text-muted bg-surface-alt/60 rounded-lg px-3 py-2">{disabledNote}</p>
+      )}
+      <Button fullWidth loading={submitting} onClick={handleSubmit} disabled={disabled}>Submit Rating</Button>
     </div>
   )
 }
@@ -268,17 +273,24 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
           <div className="border-t border-border pt-4">
             {ratedAlready ? (
               <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
-            ) : windowClosed ? (
-              <p className="text-sm text-text-muted text-center">The rating window for this trade has closed.</p>
             ) : (
               <>
                 <div className="flex items-center justify-between mb-3 gap-2">
                   <p className="text-sm font-semibold text-text-primary">Rate your experience with {counterparty}</p>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gold flex-shrink-0" title="Time left to submit your rating">
-                    <Clock size={11} aria-hidden /> {countdown} left
-                  </span>
+                  {ratingOpen && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gold flex-shrink-0" title="Time left to submit your rating">
+                      <Clock size={11} aria-hidden /> {countdown} left
+                    </span>
+                  )}
                 </div>
-                <InlineRatingForm onSubmit={onRatingSubmit} actionError={actionError} />
+                {/* When the window closes the form stays visible — only submission is
+                    blocked (button disabled), so the trade record/details remain. */}
+                <InlineRatingForm
+                  onSubmit={onRatingSubmit}
+                  actionError={actionError}
+                  disabled={windowClosed}
+                  disabledNote={windowClosed ? `The ${RATING_WINDOW_MINUTES}-minute rating window has closed — this trade can no longer be rated.` : undefined}
+                />
               </>
             )}
           </div>
