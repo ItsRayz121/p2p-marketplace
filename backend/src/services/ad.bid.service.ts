@@ -105,6 +105,29 @@ export async function confirmBidDetails(
 
   const buyerId = isSellAd ? bid.bidderId : ad.userId
   const sellerId = isSellAd ? ad.userId : bid.bidderId
+
+  // Resolve the buyer's USDT receiving destination so the Send-Crypto step always
+  // knows where to deliver.
+  //  • SELL ad: the bidder IS the buyer and supplied "method:address" above.
+  //  • BUY ad : the ad owner is the buyer; their receiving address was captured at
+  //    ad-creation time (Ad.settlementMethod) with the accepted methods in
+  //    Ad.tokenDeliveryTypes. Without this, buy-ad trades were born with an empty
+  //    address → "Delivery details not specified" on the trade screen.
+  let buyerWalletAddress: string
+  let buyerDeliveryMethod: string | null
+  let buyerDeliveryAddress: string | null
+  if (isSellAd) {
+    const raw = data.buyerUsdtAddress ?? ''
+    const hasPrefix = raw.includes(':')
+    buyerWalletAddress = raw
+    buyerDeliveryMethod = raw ? (hasPrefix ? (raw.split(':')[0] || 'wallet_blockchain') : 'wallet_blockchain') : null
+    buyerDeliveryAddress = raw ? (hasPrefix ? raw.slice(raw.indexOf(':') + 1) : raw) : null
+  } else {
+    const addr = (ad.settlementMethod ?? '').trim()
+    buyerWalletAddress = addr
+    buyerDeliveryMethod = ad.tokenDeliveryTypes?.[0] ?? 'wallet_blockchain'
+    buyerDeliveryAddress = addr || null
+  }
   const expiresAt = new Date(Date.now() + (ad.tradeWindow ?? 30) * 60 * 1000)
   const orderRef = generateOrderRef('TRD')
 
@@ -151,10 +174,9 @@ export async function confirmBidDetails(
         price: bid.pricePerUnit,
         fiatAmount: bid.fiatAmount,
         paymentMethod: data.paymentMethod,
-        buyerWalletAddress: data.buyerUsdtAddress ?? '',
-        buyerDeliveryMethod: data.buyerUsdtAddress
-          ? (data.buyerUsdtAddress.includes(':') ? (data.buyerUsdtAddress.split(':')[0] ?? 'wallet_blockchain') : 'wallet_blockchain')
-          : null,
+        buyerWalletAddress,
+        buyerDeliveryMethod,
+        buyerDeliveryAddress,
         status: 'payment_pending',
         expiresAt,
       },

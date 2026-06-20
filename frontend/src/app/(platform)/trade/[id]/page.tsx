@@ -344,6 +344,9 @@ export default function TradePage() {
   const [unreadChat, setUnreadChat] = useState(false)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
+  // Guards the one-time "I'm sending the crypto" ping so re-opening the proof
+  // form doesn't spam the buyer with duplicate messages.
+  const announcedSendingRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatImageInputRef = useRef<HTMLInputElement>(null)
   const prevMsgCountRef = useRef(0)
@@ -499,6 +502,20 @@ export default function TradePage() {
     } finally {
       setActionLoading(false)
     }
+  }
+
+  // Seller stage 1: announce "I'm sending the crypto now". Opens the proof form
+  // and pings the buyer once so they know the transfer is on its way before the
+  // hash/screenshot lands. Non-blocking — the form opens regardless.
+  const handleStartSending = async () => {
+    setShowCryptoSentForm(true)
+    if (announcedSendingRef.current) return
+    announcedSendingRef.current = true
+    try {
+      const coin = trade?.coin ?? 'USDT'
+      await tradesApi.sendMessage(id, `🔔 I'm sending your ${coin} now — please wait for it to arrive in your wallet/account, then confirm receipt to complete the trade.`)
+      await fetchTrade()
+    } catch { /* non-blocking: the proof form is already open */ }
   }
 
   // Buyer: release escrow (crypto_sent → crypto_released)
@@ -1021,9 +1038,9 @@ export default function TradePage() {
                 {!isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
                   <>
                     <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">
-                      Send the {trade.coin} to the buyer using the details above, then tap below to submit your transfer proof.
+                      Tap below to let the buyer know you&apos;re sending now, then send the {trade.coin} to the address above and submit your transfer proof.
                     </div>
-                    <Button fullWidth onClick={() => setShowCryptoSentForm(true)}>Send Crypto Now →</Button>
+                    <Button fullWidth onClick={handleStartSending}>I&apos;m Sending the Crypto Now →</Button>
                   </>
                 )}
                 {showCryptoSentForm && !isUserBuyer && (() => {

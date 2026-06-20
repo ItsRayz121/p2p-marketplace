@@ -215,10 +215,22 @@ async function upsertTradeStats(
 
 // ─── Service Functions ────────────────────────────────────────────────────────
 
-export async function createTrade(buyerId: string, adId: string, data: CreateTradeInput) {
+export async function createTrade(initiatorId: string, adId: string, data: CreateTradeInput) {
+  // Resolve trade roles from the ad side. On a SELL ad the initiator is buying
+  // USDT (initiator = buyer). On a BUY ad the initiator is selling USDT to the ad
+  // owner, so the ad owner is the buyer and the initiator is the seller. We read
+  // side + owner up front (cheap) so role-dependent guards below are correct.
+  const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true } })
+  if (!adSide) throw new AppError('NOT_FOUND', 'Ad not found', 404)
+  if (adSide.userId === initiatorId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
+  const isBuyAd = adSide.side === 'buy'
+  const buyerId = isBuyAd ? adSide.userId : initiatorId
+  const sellerId = isBuyAd ? initiatorId : adSide.userId
+
   // Idempotency: claim the key with SET NX BEFORE the transaction so two
   // concurrent submissions (double-click / retry) can't both create a trade.
-  const idempKey = `idempotency:trade:${buyerId}:${adId}:${data.amount}:${data.paymentMethod}`
+  // Keyed to the actor (initiator) so a buy-ad seller's retry maps to the same key.
+  const idempKey = `idempotency:trade:${initiatorId}:${adId}:${data.amount}:${data.paymentMethod}`
   const existing = await redis.get(idempKey)
   if (existing && existing !== 'pending') {
     const prior = await db.trade.findUnique({ where: { id: existing } })
@@ -230,14 +242,15 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     throw new AppError('DUPLICATE_REQUEST', 'A matching trade is already being created. Please wait a moment.', 409)
   }
 
-  // ── Non-custodial concurrency + anti-griefing (taker = buyer here) ──────────
+  // ── Non-custodial concurrency + anti-griefing (taker = the initiator) ───────
   // Flag OFF (default) skips all of this, so production is unchanged. This only
-  // ever caps the TAKER (the buyer initiating the trade), never the maker (the
-  // ad owner / seller), whose seller-side trades are not counted.
+  // ever caps the TAKER (the user initiating the trade — buyer on a sell ad,
+  // seller on a buy ad), never the maker (the ad owner), whose ad-side trades
+  // are not counted against this.
   if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
     try {
       const u = await db.user.findUnique({
-        where: { id: buyerId },
+        where: { id: initiatorId },
         select: { kycLevel: true, tradeCooldownUntil: true, tradeStats: { select: { completedTrades: true } } },
       })
       // Anti-griefing cooldown: blocks users who recently abandoned a trade.
@@ -263,7 +276,7 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
         const maxOpen = 1 + Math.floor(completed / 10)
         const openCount = await db.trade.count({
           where: {
-            buyerId,
+            OR: [{ buyerId: initiatorId }, { sellerId: initiatorId }],
             status: { in: ['payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent'] },
           },
         })
@@ -304,6 +317,19 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     if (buyerRows.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Account is suspended', 403)
     if (buyerRows.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
 
+    // On a BUY ad the seller is the initiator (not the ad owner / buyer checked
+    // above), so verify the seller's standing too — they must be approved and in
+    // good standing to sell USDT into someone's buy ad.
+    if (isBuyAd) {
+      const [sellerRows] = await tx.$queryRaw<Array<{ isBanned: boolean; isSuspended: boolean; kycStatus: string }>>`
+        SELECT "isBanned", "isSuspended", "kycStatus" FROM "User" WHERE id = ${sellerId} FOR UPDATE
+      `
+      if (!sellerRows) throw new AppError('NOT_FOUND', 'Seller not found', 404)
+      if (sellerRows.isBanned) throw new AppError('ACCOUNT_BANNED', 'Account is banned', 403)
+      if (sellerRows.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Account is suspended', 403)
+      if (sellerRows.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
+    }
+
     // SELECT FOR UPDATE on ad
     const [adRows] = await tx.$queryRaw<Array<{
       id: string
@@ -318,8 +344,10 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
       status: string
       tradeWindow: number
       paymentMethods: string[]
+      settlementMethod: string | null
+      tokenDeliveryTypes: string[]
     }>>`
-      SELECT id, "userId", side, coin, network, price, "availableAmount", "minOrder", "maxOrder", status, "tradeWindow", "paymentMethods"
+      SELECT id, "userId", side, coin, network, price, "availableAmount", "minOrder", "maxOrder", status, "tradeWindow", "paymentMethods", "settlementMethod", "tokenDeliveryTypes"
       FROM "Ad"
       WHERE id = ${adId}
       FOR UPDATE
@@ -329,8 +357,13 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     if (adRows.status !== 'active') throw new AppError('AD_INACTIVE', 'This ad is not active', 400)
     if (adRows.coin !== 'USDT') throw new AppError('UNSUPPORTED_ASSET', 'Only USDT ads are supported on this marketplace', 400)
     if (!['BEP20', 'Aptos'].includes(adRows.network)) throw new AppError('UNSUPPORTED_NETWORK', 'Only BEP20 and Aptos networks are supported', 400)
-    if (adRows.side !== 'sell') throw new AppError('INVALID_AD', 'Can only trade on sell ads', 400)
-    if (adRows.userId === buyerId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
+    if (!['sell', 'buy'].includes(adRows.side)) throw new AppError('INVALID_AD', 'Unsupported ad type', 400)
+    // A buy ad must carry the owner's receiving address (captured at ad creation)
+    // so the seller knows where to deliver the USDT.
+    if (adRows.side === 'buy' && !(adRows.settlementMethod ?? '').trim()) {
+      throw new AppError('INVALID_AD', 'This buy listing has no receiving address on file', 400)
+    }
+    if (adRows.userId === initiatorId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
 
     const amount = new Prisma.Decimal(data.amount)
     if (amount.lt(adRows.minOrder)) {
@@ -378,12 +411,23 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
     // a PaymentMethod id for current trades; scope the lookup to the ad owner.
     let sellerPaymentSnapshot: Prisma.InputJsonValue | undefined
     if (isOpaquePaymentId(data.paymentMethod)) {
+      // The PKR is always received by the SELLER, so the account belongs to the
+      // seller (the ad owner on a sell ad, the initiator on a buy ad).
       const pm = await tx.paymentMethod.findFirst({
-        where: { id: data.paymentMethod, userId: adRows.userId },
+        where: { id: data.paymentMethod, userId: sellerId },
         select: { type: true, accountName: true, mobileNumber: true, bankName: true, ibanNumber: true, accountNumber: true },
       })
       if (pm) sellerPaymentSnapshot = buildPaymentAccountSnapshot(pm)
     }
+
+    // Resolve the buyer's USDT receiving destination. On a SELL ad the initiator
+    // (buyer) supplied it at trade start; on a BUY ad it comes from the ad owner's
+    // settlementMethod captured at ad creation.
+    const buyerWalletAddress = isBuyAd ? (adRows.settlementMethod ?? '') : data.buyerWalletAddress
+    const buyerDeliveryMethod = isBuyAd
+      ? (adRows.tokenDeliveryTypes?.[0] ?? 'wallet_blockchain')
+      : data.buyerDeliveryMethod
+    const buyerDeliveryAddress = isBuyAd ? (adRows.settlementMethod ?? '') : data.buyerDeliveryAddress
 
     // Create the trade. Honor the ad's advertised trade window (shown to users
     // on the listing as "30 min window" etc.) instead of a fixed long window.
@@ -396,7 +440,7 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
         orderRef,
         adId,
         buyerId,
-        sellerId: adRows.userId,
+        sellerId,
         coin: adRows.coin,
         network: adRows.network,
         amount,
@@ -404,9 +448,9 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
         fiatAmount,
         paymentMethod: data.paymentMethod,
         ...(sellerPaymentSnapshot ? { sellerPaymentSnapshot } : {}),
-        buyerWalletAddress: data.buyerWalletAddress,
-        ...(data.buyerDeliveryMethod ? { buyerDeliveryMethod: data.buyerDeliveryMethod } : {}),
-        ...(data.buyerDeliveryAddress ? { buyerDeliveryAddress: data.buyerDeliveryAddress } : {}),
+        buyerWalletAddress,
+        ...(buyerDeliveryMethod ? { buyerDeliveryMethod } : {}),
+        ...(buyerDeliveryAddress ? { buyerDeliveryAddress } : {}),
         status: 'payment_pending',
         expiresAt,
       },
@@ -446,12 +490,27 @@ export async function createTrade(buyerId: string, adId: string, data: CreateTra
   // sequential retry returns the same trade instead of creating a new one.
   await redis.set(idempKey, trade.id, 'EX', 300)
 
-  // Audit the bond lock after the transaction has committed.
+  // On a BUY ad the buyer is the ad owner — they did NOT initiate this trade (the
+  // seller filled their listing), so ping them to pay within the trade window.
+  if (isBuyAd) {
+    notify(
+      buyerId,
+      'trade',
+      'A seller filled your buy listing',
+      `Trade ${trade.orderRef} is open — send the PKR payment and upload proof within the trade window.`,
+      { tradeId: trade.id },
+      trade.id,
+    )
+  }
+
+  // Audit the bond lock after the transaction has committed. The maker is the ad
+  // owner (the seller on a sell ad, the buyer on a buy ad).
   if (bondHeldAmount) {
-    void recordAuditLog(trade.sellerId, 'BOND_LOCKED', 'BondHold', `usdt:${trade.id}`, {
+    const makerId = adSide.userId
+    void recordAuditLog(makerId, 'BOND_LOCKED', 'BondHold', `usdt:${trade.id}`, {
       tradeType: 'usdt', tradeId: trade.id, amountUsdt: bondHeldAmount,
     })
-    logger.info({ tradeId: trade.id, makerId: trade.sellerId, amount: bondHeldAmount }, 'Maker bond locked')
+    logger.info({ tradeId: trade.id, makerId, amount: bondHeldAmount }, 'Maker bond locked')
   }
 
   return trade

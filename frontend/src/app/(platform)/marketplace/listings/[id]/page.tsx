@@ -550,22 +550,22 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
 
-      {/* CTA buttons — instant trade only available on sell ads */}
+      {/* CTA buttons — instant trade (at the listed price) + negotiate via bid.
+          Both sell and buy ads get both options: "Buy USDT"/"Sell USDT" opens an
+          instant trade, "Place Bid" negotiates a price. */}
       {!isMine && ad.status === 'active' && !myActiveBid && (
-        <div className={`grid gap-3 ${isSellAd ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          {isSellAd && (
-            <button
-              onClick={() => { setShowInstantModal(true); setInstantAmount(''); setInstantPaymentMethod(''); setInstantDeliveryMethod(''); setInstantDeliveryAddress(''); setInstantError('') }}
-              className="py-3.5 rounded-xl font-bold text-white transition-colors bg-green-600 hover:bg-green-700"
-            >
-              {`Buy ${ad.coin}`}
-            </button>
-          )}
+        <div className="grid gap-3 grid-cols-2">
+          <button
+            onClick={() => { setShowInstantModal(true); setInstantAmount(''); setInstantPaymentMethod(''); setInstantDeliveryMethod(''); setInstantDeliveryAddress(''); setInstantError('') }}
+            className="py-3.5 rounded-xl font-bold text-white transition-colors bg-green-600 hover:bg-green-700"
+          >
+            {isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
+          </button>
           <button
             onClick={() => { setShowBidModal(true); setBidPrice(''); setBidAmount(''); setError('') }}
             className="py-3.5 rounded-xl font-bold border-2 border-primary text-primary hover:bg-primary/5 transition-colors"
           >
-            {isSellAd ? 'Place Bid' : `Sell ${ad.coin} (Place Bid)`}
+            Place Bid
           </button>
         </div>
       )}
