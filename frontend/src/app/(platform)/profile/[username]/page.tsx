@@ -191,7 +191,9 @@ export default function TraderProfilePage() {
   function fmtVolume(n: number): string {
     if (n >= 1_00_00_000) return `₨${(n / 1_00_00_000).toFixed(1)}Cr`
     if (n >= 1_00_000)   return `₨${(n / 1_00_000).toFixed(1)}L`
-    return `₨${Math.round(n / 1_000)}K`
+    if (n >= 10_000)     return `₨${Math.round(n / 1_000)}K`
+    if (n >= 1_000)      return `₨${(n / 1_000).toFixed(1)}K`
+    return `₨${Math.round(n).toLocaleString()}`
   }
 
   function fmtResponseTime(mins: number): string {
@@ -304,7 +306,7 @@ export default function TraderProfilePage() {
           { label: 'Reviews', value: totalReviews > 0 ? totalReviews : '—' },
           { label: 'Avg Response', value: responseMinutes != null ? fmtResponseTime(responseMinutes) : '—' },
           { label: 'Avg Release', value: releaseMinutes != null ? fmtResponseTime(releaseMinutes) : '—' },
-          { label: 'Volume', value: volumePKR != null && volumePKR >= 10_000 ? fmtVolume(volumePKR) : '—' },
+          { label: 'Volume', value: volumePKR != null && volumePKR > 0 ? fmtVolume(volumePKR) : '—' },
         ] as Array<{ label: string; value: string | number }>).map(({ label, value }) => (
           <div key={label} className="bg-surface shadow-card rounded-xl border border-border p-4 text-center">
             <p className="text-xl font-bold text-text-primary">{value}</p>
