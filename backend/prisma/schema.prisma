@@ -680,6 +680,7 @@ model Trade {
   expiresAt          DateTime
   paymentUploadedAt  DateTime?   // set when buyer uploads payment proof
   paymentConfirmedAt DateTime?   // set when seller confirms payment received
+  releasedAt         DateTime?   // set when trade completes (crypto_released) — anchor for the rating window
   // Non-custodial release window: when the seller confirms payment, they must
   // release within this deadline or the trade auto-escalates to a dispute.
   // Only set when noncustodial_p2p_enabled is ON.

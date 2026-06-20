@@ -31,6 +31,11 @@ import { logger } from '../lib/logger'
 // uploads payment proof. Keep this in sync with the frontend trade page.
 export const DISPUTE_DELAY_MINUTES = 10
 
+// Window during which a participant may rate a completed trade. After this many
+// minutes from completion (releasedAt), ratings are rejected. Keep in sync with
+// RATING_WINDOW_MINUTES on the trade detail page.
+export const RATING_WINDOW_MINUTES = 15
+
 const PM_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay',
   nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
@@ -822,7 +827,7 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
 
     await tx.trade.update({
       where: { id: tradeId },
-      data: { status: 'crypto_released', escrowReleased: true },
+      data: { status: 'crypto_released', escrowReleased: true, releasedAt: new Date() },
     })
 
     // Increment completedSellTrades for seller
@@ -1120,6 +1125,16 @@ export async function rateTrade(
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.status !== 'crypto_released') {
     throw new AppError('INVALID_STATUS', 'Trade must be completed before rating', 400)
+  }
+
+  // Ratings are only accepted within RATING_WINDOW_MINUTES of completion.
+  const ratingAnchor = trade.releasedAt ?? trade.updatedAt
+  if (Date.now() - ratingAnchor.getTime() > RATING_WINDOW_MINUTES * 60_000) {
+    throw new AppError(
+      'RATING_WINDOW_CLOSED',
+      `The ${RATING_WINDOW_MINUTES}-minute rating window for this trade has closed.`,
+      400,
+    )
   }
 
   const isBuyer = trade.buyerId === raterId

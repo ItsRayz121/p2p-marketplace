@@ -478,6 +478,8 @@ export interface Trade {
   paymentUploadedAt?: string | null
   /** Set when the seller confirms payment received. */
   paymentConfirmedAt?: string | null
+  /** Set when the trade completes (crypto_released) — anchor for the rating window. */
+  releasedAt?: string | null
   createdAt: string
   updatedAt: string
   buyer?: Partial<AuthUser>

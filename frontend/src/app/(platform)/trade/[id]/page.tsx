@@ -36,6 +36,7 @@ import {
   ShieldCheck,
   WifiOff,
   BadgeCheck,
+  Clock,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,6 +55,10 @@ interface ChatMessage {
 // Cooldown before "Open Dispute" unlocks, measured from when the buyer uploaded
 // payment proof. Keep in sync with DISPUTE_DELAY_MINUTES in trade.service.ts.
 const DISPUTE_DELAY_MINUTES = 10
+
+// Window during which a participant may rate a completed trade, measured from
+// completion (releasedAt). Keep in sync with RATING_WINDOW_MINUTES in trade.service.ts.
+const RATING_WINDOW_MINUTES = 15
 
 
 interface SellerPaymentAccount {
@@ -185,47 +190,100 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
   onRatingSubmit: (rating: number, comment: string, tags: string[]) => Promise<void>
   actionError: string | null
 }) {
+  // Rating window: opens at completion (releasedAt) and lasts RATING_WINDOW_MINUTES.
+  const anchor = trade.releasedAt ?? trade.updatedAt
+  const windowEndsAt = anchor ? new Date(anchor).getTime() + RATING_WINDOW_MINUTES * 60_000 : 0
+
+  // Live clock so the countdown ticks and the form auto-closes when time runs out.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const msLeft = windowEndsAt - now
+  const ratingOpen = !ratedAlready && msLeft > 0
+  const windowClosed = !ratedAlready && msLeft <= 0
+
+  // Default open while the user can still act (rate); collapse once rated or closed.
+  const [expanded, setExpanded] = useState(ratingOpen)
+
+  const mm = Math.max(0, Math.floor(msLeft / 60_000))
+  const ss = Math.max(0, Math.floor((msLeft % 60_000) / 1000))
+  const countdown = `${mm}:${ss.toString().padStart(2, '0')}`
+
   return (
-    <div className="bg-success/5 border border-success/20 rounded-xl p-6 mb-6 space-y-5">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
-          <CheckCircle2 size={22} className="text-success" aria-hidden />
+    <div className="bg-success/5 border border-success/20 rounded-xl mb-6 overflow-hidden">
+      {/* Collapsible header */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-3 p-4 text-left hover:bg-success/[0.07] transition-colors"
+      >
+        <div className="w-9 h-9 rounded-full bg-success/10 flex items-center justify-center flex-shrink-0">
+          <CheckCircle2 size={20} className="text-success" aria-hidden />
         </div>
-        <div>
-          <h2 className="text-lg font-bold text-success">Trade Completed</h2>
-          <p className="text-sm text-text-muted">Thank you for using RupChain.</p>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-bold text-success">Trade Completed</h2>
+          {!expanded && (
+            <p className="text-xs text-text-muted truncate">
+              {parseFloat(trade.amount).toFixed(2)} {trade.coin} · PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} · {counterparty}
+            </p>
+          )}
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div className="bg-surface rounded-lg border border-border p-3">
-          <p className="text-text-muted text-xs mb-0.5">Token</p>
-          <p className="font-semibold text-text-primary">{parseFloat(trade.amount).toFixed(4)} {trade.coin}</p>
-        </div>
-        <div className="bg-surface rounded-lg border border-border p-3">
-          <p className="text-text-muted text-xs mb-0.5">Total PKR</p>
-          <p className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</p>
-        </div>
-        <div className="bg-surface rounded-lg border border-border p-3">
-          <p className="text-text-muted text-xs mb-0.5">Payment Method</p>
-          <p className="font-semibold text-text-primary">{trade.paymentMethodLabel ?? trade.paymentMethod}</p>
-        </div>
-        <div className="bg-surface rounded-lg border border-border p-3">
-          <p className="text-text-muted text-xs mb-0.5">{isUserBuyer ? 'Seller' : 'Buyer'}</p>
-          <p className="font-semibold text-text-primary">{counterparty}</p>
-        </div>
-      </div>
-
-      <div className="border-t border-border pt-4">
-        {ratedAlready ? (
-          <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
-        ) : (
-          <>
-            <p className="text-sm font-semibold text-text-primary mb-3">Rate your experience with {counterparty}</p>
-            <InlineRatingForm onSubmit={onRatingSubmit} actionError={actionError} />
-          </>
+        {/* Small rating-window indicator (no big banner) */}
+        {ratingOpen && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gold bg-gold/10 rounded-full px-2 py-0.5 flex-shrink-0" title={`${countdown} left to rate this trade`}>
+            <Clock size={11} aria-hidden /> {countdown}
+          </span>
         )}
-      </div>
+        <svg className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+        </svg>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-5">
+          <p className="text-sm text-text-muted -mt-1">Thank you for using RupChain.</p>
+
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="bg-surface rounded-lg border border-border p-3">
+              <p className="text-text-muted text-xs mb-0.5">Token</p>
+              <p className="font-semibold text-text-primary">{parseFloat(trade.amount).toFixed(4)} {trade.coin}</p>
+            </div>
+            <div className="bg-surface rounded-lg border border-border p-3">
+              <p className="text-text-muted text-xs mb-0.5">Total PKR</p>
+              <p className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</p>
+            </div>
+            <div className="bg-surface rounded-lg border border-border p-3">
+              <p className="text-text-muted text-xs mb-0.5">Payment Method</p>
+              <p className="font-semibold text-text-primary">{trade.paymentMethodLabel ?? trade.paymentMethod}</p>
+            </div>
+            <div className="bg-surface rounded-lg border border-border p-3">
+              <p className="text-text-muted text-xs mb-0.5">{isUserBuyer ? 'Seller' : 'Buyer'}</p>
+              <p className="font-semibold text-text-primary">{counterparty}</p>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            {ratedAlready ? (
+              <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
+            ) : windowClosed ? (
+              <p className="text-sm text-text-muted text-center">The rating window for this trade has closed.</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <p className="text-sm font-semibold text-text-primary">Rate your experience with {counterparty}</p>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gold flex-shrink-0" title="Time left to submit your rating">
+                    <Clock size={11} aria-hidden /> {countdown} left
+                  </span>
+                </div>
+                <InlineRatingForm onSubmit={onRatingSubmit} actionError={actionError} />
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1176,15 +1234,17 @@ export default function TradePage() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {/* Listing terms — the maker's terms carried over from the ad, pinned at
-                the top of the chat so both parties see them in the conversation. */}
+            {/* Seller's terms carried over from the ad, shown as the first message
+                in the thread (left-aligned, like a message from the counterparty). */}
             {trade.ad?.terms?.trim() && (
-              <div className="rounded-xl bg-primary/5 border border-primary/15 p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <FileText size={14} className="text-primary flex-shrink-0" aria-hidden />
-                  <h3 className="text-xs font-semibold text-primary">Listing Terms</h3>
+              <div className="flex justify-start">
+                <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-bl-sm bg-surface border border-border shadow-sm">
+                  <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
+                    <FileText size={12} className="flex-shrink-0" aria-hidden />
+                    {(trade.seller?.fullName || trade.seller?.username || 'Seller')}&apos;s terms &amp; conditions
+                  </p>
+                  <p className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed">{trade.ad.terms}</p>
                 </div>
-                <p className="text-xs text-text-secondary whitespace-pre-wrap leading-relaxed">{trade.ad.terms}</p>
               </div>
             )}
             {messages.length === 0 && (
