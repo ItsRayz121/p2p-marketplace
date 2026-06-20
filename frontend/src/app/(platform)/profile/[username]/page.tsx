@@ -395,15 +395,22 @@ export default function TraderProfilePage() {
               <div key={r.id} className="border-b border-border last:border-0 pb-4 last:pb-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={`/profile/${encodeURIComponent(r.reviewerUsername)}`}
-                      className="flex items-center gap-2 group"
-                    >
-                      <UserAvatar name={r.reviewerFullName || r.reviewerUsername} avatarUrl={r.reviewerAvatarUrl} size="xs" />
-                      <span className="text-xs font-medium text-text-secondary group-hover:text-primary group-hover:underline transition-colors">
-                        {r.reviewerFullName || r.reviewerUsername}
-                      </span>
-                    </Link>
+                    {r.reviewerUsername && r.reviewerUsername !== 'Unknown' ? (
+                      <Link
+                        href={`/profile/${encodeURIComponent(r.reviewerUsername)}`}
+                        className="flex items-center gap-2 group"
+                      >
+                        <UserAvatar name={r.reviewerFullName || r.reviewerUsername} avatarUrl={r.reviewerAvatarUrl} size="xs" />
+                        <span className="text-xs font-medium text-text-secondary group-hover:text-primary group-hover:underline transition-colors">
+                          {r.reviewerFullName || r.reviewerUsername}
+                        </span>
+                      </Link>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <UserAvatar name={r.reviewerFullName || r.reviewerUsername} avatarUrl={r.reviewerAvatarUrl} size="xs" />
+                        <span className="text-xs font-medium text-text-muted">{r.reviewerFullName || r.reviewerUsername}</span>
+                      </div>
+                    )}
                     <StarRow rating={r.rating} />
                   </div>
                   <span className="text-xs text-text-muted">{timeAgo(r.createdAt)}</span>
