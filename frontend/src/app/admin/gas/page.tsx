@@ -1369,7 +1369,7 @@ export default function GasAdminPage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Order Ref</th>
@@ -1404,7 +1404,7 @@ export default function GasAdminPage() {
                       <span className="text-text-muted text-xs ml-1">/ ${parseFloat(String(o.paymentAmount)).toFixed(2)}</span>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-text-secondary">
-                      {o.toAddress.slice(0, 8)}...{o.toAddress.slice(-6)}
+                      {o.toAddress.slice(0, 6)}…{o.toAddress.slice(-4)}
                     </td>
                     <td className="px-4 py-3">
                       <div>

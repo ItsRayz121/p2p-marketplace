@@ -257,28 +257,35 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           )}
         </div>
 
-        {/* ── 5. CTA ── */}
-        {ad.makerBondInsufficient ? (
-          <span
-            className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/20"
-            title="This trader's collateral bond is fully committed right now, so new trades can't start. Check back shortly."
-          >
-            Maker unavailable
-          </span>
-        ) : parseFloat(ad.availableAmount) > 0 ? (
-          <Link
-            href={`/marketplace/listings/${ad.id}`}
-            className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-              ad.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            {ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
-          </Link>
-        ) : (
-          <span className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold rounded-full bg-surface-alt text-text-muted border border-border">
-            Sold Out
-          </span>
-        )}
+        {/* ── 5. CTA ──
+            Fixed-width slot (sm:w-36) so the Order-Limit / Payment columns stay
+            vertically aligned across cards no matter which CTA variant renders
+            ("Buy USDT", "Sold Out" and "Maker unavailable" have different
+            intrinsic widths; without a fixed slot they'd shift the flex-1 price
+            column and knock the right-hand columns out of line). */}
+        <div className="sm:w-36 flex-shrink-0 flex sm:justify-end">
+          {ad.makerBondInsufficient ? (
+            <span
+              className="px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/20 whitespace-nowrap"
+              title="This trader's collateral bond is fully committed right now, so new trades can't start. Check back shortly."
+            >
+              Maker unavailable
+            </span>
+          ) : parseFloat(ad.availableAmount) > 0 ? (
+            <Link
+              href={`/marketplace/listings/${ad.id}`}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
+                ad.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
+            </Link>
+          ) : (
+            <span className="px-3 py-1.5 text-xs font-semibold rounded-full bg-surface-alt text-text-muted border border-border whitespace-nowrap">
+              Sold Out
+            </span>
+          )}
+        </div>
 
       </div>
     </div>

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prisma/client'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 import { getBondConfig, computeBondUsdt } from '../services/makerBond.service'
+import { notify } from '../lib/notify'
 
 type Tx = Prisma.TransactionClient
 
@@ -125,7 +126,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
     throw new AppError('VALIDATION_ERROR', 'One or more payment methods not found or not yours', 400)
   }
 
-  return db.ctmListing.create({
+  const listing = await db.ctmListing.create({
     data: {
       merchantProfileId: merchantProfile.id,
       tokenId: data.tokenId,
@@ -148,6 +149,21 @@ export async function createListing(userId: string, data: CreateListingInput) {
       ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
     },
   })
+
+  // Confirmation notification (bell + push, no Telegram) so the maker sees their
+  // token listing went live — previously creating a listing produced no notification.
+  const sideLabel = data.side === 'sell' ? 'Sell' : 'Buy'
+  notify(
+    userId,
+    'listing_created',
+    'Listing created ✓',
+    `Your ${sideLabel} ${token.symbol} listing is now live in Community Tokens.`,
+    { listingId: listing.id, side: data.side, tokenSymbol: token.symbol },
+    undefined,
+    '/ctm/my-listings',
+  )
+
+  return listing
 }
 
 export async function getListings(filters: ListingsFilter = {}) {

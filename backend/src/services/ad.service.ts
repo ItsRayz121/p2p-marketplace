@@ -2,6 +2,7 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
+import { notify } from '../lib/notify'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,6 +130,19 @@ export async function createAd(userId: string, data: CreateAdInput) {
       status: 'active',
     },
   })
+
+  // Confirmation notification (bell + push, no Telegram) so the maker sees their
+  // listing went live — previously creating an ad produced no notification.
+  const sideLabel = ad.side === 'sell' ? 'Sell' : 'Buy'
+  notify(
+    userId,
+    'listing_created',
+    'Listing created ✓',
+    `Your ${sideLabel} ${ad.coin} listing is now live on the marketplace.`,
+    { adId: ad.id, side: ad.side, coin: ad.coin },
+    undefined,
+    '/my-ads',
+  )
 
   return ad
 }

@@ -101,6 +101,9 @@ function getNavTarget(notif: Notification): string | null {
   if (t === 'AD_BID_ACCEPTED' && meta?.tradeId) return `/trade/${meta.tradeId}`
   if (t === 'AD_TRADE_READY' && meta?.tradeId) return `/trade/${meta.tradeId}`
 
+  // Listing created confirmation — deep-link to the maker's listings page.
+  if (t === 'listing_created') return meta?.listingId ? '/ctm/my-listings' : '/my-ads'
+
   // Profile & account
   if (t === 'kyc') return '/kyc'
   if (t === 'badge') return '/dashboard'
