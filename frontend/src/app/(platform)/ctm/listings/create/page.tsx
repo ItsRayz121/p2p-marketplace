@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ctmApi, apiRequest } from '@/lib/api'
+import { ctmApi, apiRequest, savedTermsApi } from '@/lib/api'
+import type { SavedTerms } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
@@ -40,6 +41,10 @@ export default function CreateListingPage() {
   const { user } = useAuth()
   const [tokens, setTokens] = useState<CtmToken[]>([])
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
+  const [savedTerms, setSavedTerms] = useState<SavedTerms[]>([])
+  const [showSaveTerms, setShowSaveTerms] = useState(false)
+  const [termsLabel, setTermsLabel] = useState('')
+  const [savingTerms, setSavingTerms] = useState(false)
   const [loadingInit, setLoadingInit] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -53,7 +58,6 @@ export default function CreateListingPage() {
     maxOrderTokens: '',
     tokenDeliveryType: '' as 'blockchain' | 'email' | 'username' | '',
     settlementMethod: '',
-    settlementNote: '',
     paymentMethods: [] as string[],
     tradeWindowMins: 45,
     terms: '',
@@ -63,12 +67,14 @@ export default function CreateListingPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [tokensRes, methodsRes] = await Promise.all([
+        const [tokensRes, methodsRes, termsRes] = await Promise.all([
           ctmApi.getTokens({ limit: 100 }),
           apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods'),
+          savedTermsApi.getAll().catch(() => [] as SavedTerms[]),
         ])
         setTokens((tokensRes as { tokens: CtmToken[] }).tokens ?? [])
         setSavedMethods(Array.isArray(methodsRes) ? methodsRes : [])
+        setSavedTerms(Array.isArray(termsRes) ? termsRes : [])
       } finally {
         setLoadingInit(false)
       }
@@ -83,6 +89,37 @@ export default function CreateListingPage() {
         ? f.paymentMethods.filter((x) => x !== id)
         : [...f.paymentMethods, id],
     }))
+  }
+
+  function insertSavedTerms(id: string) {
+    const t = savedTerms.find((x) => x.id === id)
+    if (t) setForm((f) => ({ ...f, terms: t.body }))
+  }
+
+  async function handleSaveTerms() {
+    const body = form.terms.trim()
+    const label = termsLabel.trim()
+    if (!body || !label) return
+    setSavingTerms(true)
+    try {
+      const created = await savedTermsApi.add({ label, body })
+      setSavedTerms((prev) => [created, ...prev])
+      setShowSaveTerms(false)
+      setTermsLabel('')
+    } catch {
+      /* non-blocking for listing creation */
+    } finally {
+      setSavingTerms(false)
+    }
+  }
+
+  async function handleDeleteSavedTerms(id: string) {
+    setSavedTerms((prev) => prev.filter((x) => x.id !== id))
+    try {
+      await savedTermsApi.remove(id)
+    } catch {
+      /* best-effort; list refreshes on next load */
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -115,7 +152,6 @@ export default function CreateListingPage() {
     try {
       const res = await ctmApi.createListing({
         ...form,
-        settlementNote: form.settlementNote.trim() || undefined,
         settlementType: 'MANUAL',
         tokenDeliveryType: form.tokenDeliveryType as 'blockchain' | 'email' | 'username',
         pricePerUnit: parseFloat(form.pricePerUnit),
@@ -270,12 +306,6 @@ export default function CreateListingPage() {
           )}
         </div>
 
-        {/* Transfer instructions */}
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Transfer instructions (optional)</label>
-          <textarea rows={3} placeholder="Step-by-step instructions shown to the buyer at trade start" value={form.settlementNote} onChange={(e) => setForm((f) => ({ ...f, settlementNote: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
-        </div>
-
         {/* Payment methods — sell: accounts buyers pay TO; buy: accounts you'll pay FROM */}
         <div>
             <label className="block text-sm font-medium text-text-primary mb-0.5">
@@ -345,10 +375,68 @@ export default function CreateListingPage() {
           </select>
         </div>
 
-        {/* Terms */}
+        {/* Terms — saveable & reusable templates (same as USDT marketplace) */}
         <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Terms (optional)</label>
-          <textarea rows={2} placeholder="Any additional terms for this listing" value={form.terms} onChange={(e) => setForm((f) => ({ ...f, terms: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+          <div className="flex items-center justify-between mb-1.5 gap-2">
+            <label className="block text-sm font-medium text-text-primary">Terms (optional)</label>
+            {savedTerms.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => { if (e.target.value) insertSavedTerms(e.target.value) }}
+                className="text-xs border border-border rounded-lg px-2 py-1 bg-surface text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 max-w-[55%]"
+              >
+                <option value="">Insert saved terms…</option>
+                {savedTerms.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <textarea rows={3} placeholder="Any additional terms for this listing, e.g. Only transfer from your own account."
+            value={form.terms} onChange={(e) => setForm((f) => ({ ...f, terms: e.target.value }))}
+            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+
+          {/* Save-as-template control */}
+          {form.terms.trim() && !showSaveTerms && (
+            <button type="button" onClick={() => setShowSaveTerms(true)}
+              className="mt-1.5 text-xs font-medium text-primary hover:underline">
+              + Save these terms for reuse
+            </button>
+          )}
+          {showSaveTerms && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                value={termsLabel}
+                onChange={(e) => setTermsLabel(e.target.value)}
+                placeholder="Template name (e.g. My standard terms)"
+                maxLength={60}
+                className="flex-1 border border-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button type="button" onClick={handleSaveTerms} disabled={savingTerms || !termsLabel.trim()}
+                className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
+                {savingTerms ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" onClick={() => { setShowSaveTerms(false); setTermsLabel('') }}
+                className="px-2 py-1.5 text-xs text-text-muted hover:text-text-primary">
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Manage saved templates */}
+          {savedTerms.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {savedTerms.map((t) => (
+                <span key={t.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-text-secondary">
+                  {t.label}
+                  <button type="button" onClick={() => handleDeleteSavedTerms(t.id)}
+                    aria-label={`Delete ${t.label}`}
+                    className="text-text-muted hover:text-danger leading-none">×</button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <button type="submit" disabled={submitting} className="w-full bg-primary text-white py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-60">
