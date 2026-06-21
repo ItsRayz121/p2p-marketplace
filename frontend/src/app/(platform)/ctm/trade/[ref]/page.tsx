@@ -53,6 +53,9 @@ const DISPUTE_REASONS = ['proof_fake', 'not_received', 'amount_mismatch', 'wrong
 // marketplace dispute gate (DISPUTE_DELAY_MINUTES in trade.service.ts).
 const DISPUTE_DELAY_MINUTES = 10
 
+// Quick-feedback chips — same set as the USDT marketplace rating box.
+const RATING_TAGS = ['Fast Payment', 'Good Communication', 'Smooth Trade', 'Trustworthy', 'Patient']
+
 // Supports {hash} template (e.g. https://explorer.example.com/tx/{hash}).
 function buildExplorerUrl(baseUrl: string, txHash: string): string {
   if (baseUrl.includes('{hash}')) return baseUrl.replace('{hash}', txHash)
@@ -224,6 +227,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [ratingOpen, setRatingOpen] = useState(false)
   const [rating, setRating] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
+  const [ratingTags, setRatingTags] = useState<string[]>([])
   const [ratingError, setRatingError] = useState('')
   const [platformRating, setPlatformRating] = useState(5)
   const [platformComment, setPlatformComment] = useState('')
@@ -378,7 +382,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const handleRate = async () => {
     setRatingError('')
     try {
-      await ctmApi.rateTrade(ref, { rating, comment: ratingComment || undefined })
+      await ctmApi.rateTrade(ref, { rating, comment: ratingComment.trim() || undefined, tags: ratingTags.length ? ratingTags : undefined })
       setTraderRatingDone(true)
     } catch (e: unknown) {
       setRatingError((e as Error).message ?? 'Failed to submit rating')
@@ -541,25 +545,54 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const ratingPanel = (counterparty: string) => (
     <div className="space-y-5">
+      {/* Trade summary — mirrors the USDT marketplace rating box */}
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="bg-surface rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">Token</p>
+          <p className="font-semibold text-text-primary">{trade.tokenAmount} {trade.token.symbol}</p>
+        </div>
+        <div className="bg-surface rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">Total PKR</p>
+          <p className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount).toLocaleString()}</p>
+        </div>
+        <div className="bg-surface rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">Payment</p>
+          <p className="font-semibold text-text-primary">{paymentMethodLabel}</p>
+        </div>
+        <div className="bg-surface rounded-lg border border-border p-3">
+          <p className="text-text-muted text-xs mb-0.5">Counterparty</p>
+          <p className="font-semibold text-text-primary">@{counterparty}</p>
+        </div>
+      </div>
       <div className="space-y-3">
         <div>
-          <p className="text-sm font-semibold text-text-primary">Rate this trader</p>
-          <p className="text-xs text-text-muted">How was your experience with @{counterparty}?</p>
+          <p className="text-sm font-semibold text-text-primary">Rate your experience with @{counterparty}</p>
+          <p className="text-xs text-text-muted">How was your experience?</p>
         </div>
         {traderRatingDone ? (
           <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Trader rating submitted.</div>
         ) : (
           <>
             {ratingError && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300">{ratingError}</div>}
-            <div className="flex gap-2">
+            <div className="flex gap-2" role="group" aria-label="Star rating">
               {[1, 2, 3, 4, 5].map((s) => (
-                <button key={s} onClick={() => setRating(s)} className={`text-2xl ${s <= rating ? 'text-yellow-400' : 'text-text-disabled'}`}>★</button>
+                <button key={s} onClick={() => setRating(s)} aria-label={`Rate ${s} out of 5`} aria-pressed={s <= rating}
+                  className={`text-2xl transition-transform hover:scale-110 ${s <= rating ? 'text-yellow-400' : 'text-text-disabled'}`}>★</button>
               ))}
             </div>
-            <textarea rows={2} placeholder="Trader feedback (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
+            <div className="flex flex-wrap gap-2">
+              {RATING_TAGS.map((tag) => (
+                <button key={tag} type="button"
+                  onClick={() => setRatingTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag])}
+                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${ratingTags.includes(tag) ? 'bg-primary text-white border-primary' : 'border-border text-text-secondary hover:border-primary/40'}`}>
+                  {tag}
+                </button>
+              ))}
+            </div>
+            <textarea rows={3} placeholder="Add a comment (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
             <div className="flex gap-2">
               <button onClick={() => { setRatingOpen(false); setStep4Collapsed(true) }} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
-              <button onClick={handleRate} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold">Submit Trader Rating</button>
+              <button onClick={handleRate} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">Submit Rating</button>
             </div>
           </>
         )}
