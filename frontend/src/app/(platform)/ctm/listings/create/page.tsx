@@ -90,6 +90,7 @@ export default function CreateListingPage() {
     setError('')
     if (!form.tokenId) { setError('Please select a token'); return }
     if (form.side === 'sell' && form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
+    if (form.side === 'buy' && form.paymentMethods.length === 0) { setError('Select at least one account you will pay from'); return }
     if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
     if (form.side === 'buy' && !form.settlementMethod.trim()) {
       setError('Enter your token receiving address so sellers know where to send tokens'); return
@@ -121,7 +122,7 @@ export default function CreateListingPage() {
         totalAmount: parseFloat(form.totalAmount),
         minOrderTokens: parseFloat(form.minOrderTokens),
         maxOrderTokens: parseFloat(form.maxOrderTokens),
-        ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod, paymentMethods: [] } : {}),
+        ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod, paymentMethods: form.paymentMethods } : {}),
       })
       router.push(`/ctm/listings/${(res as { id: string }).id}`)
     } catch (err: unknown) {
@@ -275,11 +276,16 @@ export default function CreateListingPage() {
           <textarea rows={3} placeholder="Step-by-step instructions shown to the buyer at trade start" value={form.settlementNote} onChange={(e) => setForm((f) => ({ ...f, settlementNote: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
         </div>
 
-        {/* Payment methods — only required for sell listings */}
-        {form.side === 'sell' && (
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-0.5">Payment methods *</label>
-            <p className="text-xs text-text-muted mb-2">Select which of your saved payment accounts buyers can use to pay you.</p>
+        {/* Payment methods — sell: accounts buyers pay TO; buy: accounts you'll pay FROM */}
+        <div>
+            <label className="block text-sm font-medium text-text-primary mb-0.5">
+              {form.side === 'sell' ? 'Payment methods *' : 'Which account(s) will you pay from? *'}
+            </label>
+            <p className="text-xs text-text-muted mb-2">
+              {form.side === 'sell'
+                ? 'Select which of your saved payment accounts buyers can use to pay you.'
+                : 'Select the account(s) you will send payment from — the seller sees this in the trade so they know where your payment comes from.'}
+            </p>
 
             {savedMethods.length === 0 ? (
               <div className="border border-border rounded-xl p-4 text-center">
@@ -323,12 +329,11 @@ export default function CreateListingPage() {
               </div>
             )}
           </div>
-        )}
 
-        {/* Buy listing info note — seller provides payment details when accepting */}
+        {/* Buy listing info note — seller provides their receiving account when accepting */}
         {form.side === 'buy' && (
           <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-sm text-blue-800 dark:text-blue-300">
-            Payment details are not required on a buy listing. The seller will provide their payment receiving account when they accept your trade.
+            The seller will provide their payment receiving account when they accept your trade. The account(s) you selected above are shown to them as where your payment will come from.
           </div>
         )}
 

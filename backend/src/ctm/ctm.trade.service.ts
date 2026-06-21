@@ -645,13 +645,24 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     sellerPaymentSnapshot = buildAccountSnapshot(sellerPaymentMethod)
   }
 
-  // SELL listings only: snapshot the buyer's "pay from" account so the seller can see it in the trade room.
+  // Snapshot the buyer's "pay from" account(s) so the seller can see where PKR
+  // will come from in the trade room.
+  //   SELL listings: the taker (buyer) picks one account at trade start (buyerPaymentMethodId).
+  //   BUY listings: the lister (buyer) declared their pay-from account(s) at listing
+  //     creation, stored on listing.paymentMethods — snapshot them here so the trade
+  //     no longer shows "account details not provided".
   let buyerPaymentSnapshot: Record<string, unknown> | null = null
   if (!isBuyListing && data.buyerPaymentMethodId) {
     const buyerPm = await db.paymentMethod.findFirst({
       where: { id: data.buyerPaymentMethodId, userId: buyerId },
     })
     if (buyerPm) buyerPaymentSnapshot = buildAccountSnapshot(buyerPm)
+  } else if (isBuyListing && listing.paymentMethods.length > 0) {
+    const buyerPms = await db.paymentMethod.findMany({
+      where: { id: { in: listing.paymentMethods }, userId: actualBuyerId },
+    })
+    if (buyerPms.length === 1) buyerPaymentSnapshot = buildAccountSnapshot(buyerPms[0]!)
+    else if (buyerPms.length > 1) buyerPaymentSnapshot = { accounts: buyerPms.map(buildAccountSnapshot) }
   }
 
   // Buyer's token receiving address:

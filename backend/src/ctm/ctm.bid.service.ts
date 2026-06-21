@@ -173,13 +173,21 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
     sellerPaymentSnapshot = buildAccountSnapshot(sellerPm)
   }
 
-  // Build buyer payment snapshot (SELL listings only)
+  // Build buyer payment snapshot.
+  //   SELL listings: bidder (buyer) supplied their pay-from account on the bid.
+  //   BUY listings: the lister (buyer) declared pay-from account(s) at listing creation.
   let buyerPaymentSnapshot: Record<string, unknown> | null = null
   if (!isBuyListing && bid.buyerPaymentMethodId) {
     const buyerPm = await db.paymentMethod.findFirst({
       where: { id: bid.buyerPaymentMethodId, userId: bid.bidderId },
     })
     if (buyerPm) buyerPaymentSnapshot = buildAccountSnapshot(buyerPm)
+  } else if (isBuyListing && listing.paymentMethods.length > 0) {
+    const buyerPms = await db.paymentMethod.findMany({
+      where: { id: { in: listing.paymentMethods }, userId: actualBuyerId },
+    })
+    if (buyerPms.length === 1) buyerPaymentSnapshot = buildAccountSnapshot(buyerPms[0]!)
+    else if (buyerPms.length > 1) buyerPaymentSnapshot = { accounts: buyerPms.map(buildAccountSnapshot) }
   }
 
   const actualBuyerSettlementId = isBuyListing
@@ -380,6 +388,12 @@ export async function confirmBidDetails(
       where: { id: data.buyerPaymentMethodId, userId: bid.bidderId },
     })
     if (buyerPm) buyerPaymentSnapshot = buildAccountSnapshot(buyerPm)
+  } else if (isBuyListing && listing.paymentMethods.length > 0) {
+    const buyerPms = await db.paymentMethod.findMany({
+      where: { id: { in: listing.paymentMethods }, userId: actualBuyerId },
+    })
+    if (buyerPms.length === 1) buyerPaymentSnapshot = buildAccountSnapshot(buyerPms[0]!)
+    else if (buyerPms.length > 1) buyerPaymentSnapshot = { accounts: buyerPms.map(buildAccountSnapshot) }
   }
 
   const actualBuyerSettlementId = isBuyListing

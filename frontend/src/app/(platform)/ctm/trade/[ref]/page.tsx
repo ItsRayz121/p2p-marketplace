@@ -93,7 +93,7 @@ interface SellerPaymentSnapshot extends SellerPaymentAccount {
   selectedIdx?: number
 }
 
-type BuyerPaymentSnapshot = SellerPaymentAccount
+type BuyerPaymentSnapshot = SellerPaymentAccount & { accounts?: SellerPaymentAccount[] }
 
 interface Trade {
   id: string; tradeRef: string; displayRef?: string | null; status: string
@@ -473,8 +473,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   }
 
   const renderBuyerAccountBlock = () => {
-    if (trade.buyerPaymentSnapshot) {
-      const b = trade.buyerPaymentSnapshot
+    const b = trade.buyerPaymentSnapshot
+    // BUY listings can record more than one pay-from account (lister picked several).
+    if (b?.accounts && b.accounts.length > 0) {
+      return <div className="space-y-2">{b.accounts.map((acc, i) => <div key={i}>{renderSingleAccount(acc)}</div>)}</div>
+    }
+    if (b) {
       return (
         <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
           <Row label="Method" value={b.label} />
