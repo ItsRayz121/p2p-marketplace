@@ -721,7 +721,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 <p className="text-xs text-text-muted mb-1">Choose one from the seller's available methods.</p>
                 <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={(v) => { setInstantDeliveryMethod(v); setInstantDeliveryAddress('') }} />
                 {instantDeliveryMethod && (() => {
-                  const matchNetwork = instantDeliveryMethod === 'wallet_blockchain' ? ['BEP20', 'Aptos'] : [instantDeliveryMethod]
+                  const matchNetwork = instantDeliveryMethod === 'wallet_blockchain' ? [ad.network] : [instantDeliveryMethod]
                   const matching = mySavedAddresses.filter((a) => matchNetwork.includes(a.network))
                   return (
                     <div className="mt-2 space-y-2">
@@ -888,9 +888,27 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">How will you receive {ad.coin}?</label>
                 <p className="text-xs text-text-muted mb-1">Choose one from the seller's available methods.</p>
-                <DeliveryMethodPicker selected={confirmDeliveryMethod} onSelect={setConfirmDeliveryMethod} />
+                <DeliveryMethodPicker selected={confirmDeliveryMethod} onSelect={(v) => { setConfirmDeliveryMethod(v); setConfirmDeliveryAddress('') }} />
                 {confirmDeliveryMethod && (
                   <div className="mt-2">
+                    {(() => {
+                      const matchNetwork = confirmDeliveryMethod === 'wallet_blockchain' ? [ad.network] : [confirmDeliveryMethod]
+                      const matching = mySavedAddresses.filter((a) => matchNetwork.includes(a.network))
+                      if (matching.length === 0) return null
+                      return (
+                        <div className="mb-2">
+                          <p className="text-xs text-text-muted mb-1.5">Your saved addresses — tap to fill:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {matching.map((a) => (
+                              <button key={a.id} type="button" onClick={() => setConfirmDeliveryAddress(a.address)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${confirmDeliveryAddress === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                                {a.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
                     <input type="text"
                       placeholder={confirmDeliveryMethod === 'wallet_blockchain' ? `${ad.network} address (0x…)` : `Your ${confirmDeliveryMethod} UID`}
                       value={confirmDeliveryAddress} onChange={(e) => setConfirmDeliveryAddress(e.target.value)}

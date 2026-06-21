@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { adsApi, marketplaceApi, apiRequest, savedTermsApi } from '@/lib/api'
-import type { CreateAdPayload, UpdateAdPayload, SavedTerms } from '@/lib/api'
+import { adsApi, marketplaceApi, apiRequest, savedTermsApi, walletApi } from '@/lib/api'
+import type { CreateAdPayload, UpdateAdPayload, SavedTerms, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { validateAddressForNetwork } from '@/lib/addressValidation'
@@ -140,6 +140,9 @@ function CreateListingPageContent() {
   // the per-exchange checkboxes. Derived from whether any exchange is selected.
   const [exchangeOpen, setExchangeOpen] = useState(false)
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
+  // Saved delivery addresses (wallets + exchange UIDs) the maker can reuse as the
+  // buy-ad receiving address instead of re-typing.
+  const [savedAddresses, setSavedAddresses] = useState<SavedDeliveryAddress[]>([])
   // Reusable terms templates the maker has saved; used to insert into the Terms box.
   const [savedTerms, setSavedTerms] = useState<SavedTerms[]>([])
   const [showSaveTerms, setShowSaveTerms] = useState(false)
@@ -155,9 +158,10 @@ function CreateListingPageContent() {
 
   useEffect(() => {
     const init = async () => {
-      const [methodsRes, termsRes] = await Promise.all([
+      const [methodsRes, termsRes, addrRes] = await Promise.all([
         apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods').catch(() => [] as SavedPaymentMethod[]),
         savedTermsApi.getAll().catch(() => [] as SavedTerms[]),
+        walletApi.getSavedAddresses().catch(() => [] as SavedDeliveryAddress[]),
         editId
           ? adsApi.getAd(editId).then((ad) => {
               const deliveryTypes = ad.tokenDeliveryTypes ?? []
@@ -182,6 +186,7 @@ function CreateListingPageContent() {
       ])
       setSavedMethods(Array.isArray(methodsRes) ? methodsRes : [])
       setSavedTerms(Array.isArray(termsRes) ? termsRes : [])
+      setSavedAddresses(Array.isArray(addrRes) ? addrRes : [])
       setLoadingInit(false)
     }
     init()
@@ -515,11 +520,33 @@ function CreateListingPageContent() {
                 const validationLabel = walletSelected ? form.network : (selectedExchanges[0] ?? '')
                 const addrTrimmed = form.settlementMethod.trim()
                 const addrResult = addrTrimmed && validationLabel ? validateAddressForNetwork(addrTrimmed, validationLabel) : null
+                const matchingSaved = savedAddresses.filter((a) => a.network === validationLabel)
                 return (
                   <div className="mt-3">
                     <label className="block text-xs font-medium text-text-muted mb-1">
                       Your receiving address / account — sellers will send USDT here
                     </label>
+                    {matchingSaved.length > 0 && (
+                      <div className="mb-2">
+                        <p className="text-xs text-text-muted mb-1.5">Your saved addresses — tap to fill:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {matchingSaved.map((a) => (
+                            <button
+                              type="button"
+                              key={a.id}
+                              onClick={() => set('settlementMethod', a.address)}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                                form.settlementMethod === a.address
+                                  ? 'border-primary bg-primary text-white'
+                                  : 'border-border bg-surface text-text-primary hover:border-primary/50'
+                              }`}
+                            >
+                              {a.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <input
                       type="text"
                       placeholder={walletSelected ? `${form.network} address (0x…)` : 'Your exchange UID'}

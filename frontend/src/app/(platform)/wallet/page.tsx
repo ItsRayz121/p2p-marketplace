@@ -1114,12 +1114,16 @@ function PaymentMethodsSection() {
 // ─── Saved Delivery Addresses Section ────────────────────────────────────────
 
 const DELIVERY_NETWORKS = [
-  { value: 'BEP20',   label: 'BEP20 Wallet',  placeholder: '0x… wallet address' },
-  { value: 'Aptos',   label: 'Aptos Wallet',   placeholder: '0x… Aptos address' },
-  { value: 'Binance', label: 'Binance UID',    placeholder: 'Your Binance UID (8 digits)' },
-  { value: 'Bitget',  label: 'Bitget UID',     placeholder: 'Your Bitget UID' },
-  { value: 'Gate',    label: 'Gate UID',       placeholder: 'Your Gate.io UID' },
-]
+  { value: 'BEP20',   kind: 'wallet',   label: 'USDT BEP20',  placeholder: '0x… wallet address' },
+  { value: 'Aptos',   kind: 'wallet',   label: 'USDT Aptos',  placeholder: '0x… Aptos address' },
+  { value: 'Binance', kind: 'exchange', label: 'Binance UID', placeholder: 'Your Binance UID (8 digits)' },
+  { value: 'OKX',     kind: 'exchange', label: 'OKX UID',     placeholder: 'Your OKX UID' },
+  { value: 'Bitget',  kind: 'exchange', label: 'Bitget UID',  placeholder: 'Your Bitget UID' },
+  { value: 'Gate',    kind: 'exchange', label: 'Gate UID',    placeholder: 'Your Gate.io UID' },
+  { value: 'MEXC',    kind: 'exchange', label: 'MEXC UID',    placeholder: 'Your MEXC UID' },
+] as const
+
+type DeliveryKind = 'wallet' | 'exchange'
 
 // Network value used to tag CTM-token delivery addresses; the token symbol is
 // stored in `coin` so each token's address is distinct.
@@ -1136,6 +1140,9 @@ function SavedDeliveryAddressesSection() {
 
   // category: 'crypto' (wallets / exchange UIDs) | 'ctm' (community tokens)
   const [category, setCategory] = useState<'crypto' | 'ctm'>('crypto')
+  // Within 'crypto', split delivery into on-chain wallet vs off-chain exchange UID
+  // (mirrors the ad-creation Token Delivery Method grouping).
+  const [deliveryKind, setDeliveryKind] = useState<DeliveryKind>('wallet')
   const [form, setForm] = useState({ network: 'BEP20', tokenSymbol: '', address: '', label: '' })
   const [ctmTokens, setCtmTokens] = useState<CtmTokenOption[]>([])
   const [removeTarget, setRemoveTarget] = useState<SavedDeliveryAddress | null>(null)
@@ -1164,8 +1171,17 @@ function SavedDeliveryAddressesSection() {
   const resetForm = () => {
     setForm({ network: 'BEP20', tokenSymbol: ctmTokens[0]?.symbol ?? '', address: '', label: '' })
     setCategory('crypto')
+    setDeliveryKind('wallet')
     setFormError(null)
     setShowForm(false)
+  }
+
+  // Switch the wallet/exchange sub-group and default to its first option.
+  const selectDeliveryKind = (kind: DeliveryKind) => {
+    setDeliveryKind(kind)
+    const first = DELIVERY_NETWORKS.find((n) => n.kind === kind)
+    if (first) setForm((f) => ({ ...f, network: first.value }))
+    setFormError(null)
   }
 
   const handleAdd = async () => {
@@ -1270,24 +1286,46 @@ function SavedDeliveryAddressesSection() {
           </div>
 
           {category === 'crypto' ? (
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-2">Type</label>
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                {DELIVERY_NETWORKS.map((n) => (
-                  <button
-                    key={n.value}
-                    onClick={() => setForm((f) => ({ ...f, network: n.value }))}
-                    className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
-                      form.network === n.value
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-border bg-surface text-text-primary hover:border-primary/50'
-                    }`}
-                  >
-                    {n.label}
-                  </button>
-                ))}
+            <>
+              {/* Delivery kind: on-chain wallet vs off-chain exchange transfer */}
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-2">Delivery method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { key: 'wallet', label: 'Wallet / Blockchain' },
+                    { key: 'exchange', label: 'Internal / Exchange Transfer' },
+                  ] as const).map((k) => (
+                    <button
+                      key={k.key}
+                      onClick={() => selectDeliveryKind(k.key)}
+                      className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                        deliveryKind === k.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'
+                      }`}
+                    >
+                      {k.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-2">{deliveryKind === 'wallet' ? 'Network' : 'Exchange'}</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {DELIVERY_NETWORKS.filter((n) => n.kind === deliveryKind).map((n) => (
+                    <button
+                      key={n.value}
+                      onClick={() => setForm((f) => ({ ...f, network: n.value }))}
+                      className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                        form.network === n.value
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-border bg-surface text-text-primary hover:border-primary/50'
+                      }`}
+                    >
+                      {n.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           ) : (
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Token</label>
