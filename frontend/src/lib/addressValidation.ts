@@ -1,22 +1,26 @@
 /**
- * Shared address-format validation for P2P delivery destinations (client mirror of
- * backend/src/lib/addressValidation.ts). Format/shape check only — gives buyers and
- * sellers instant green/red feedback before they submit an address. The backend
- * re-validates on every write; this is purely UX.
+ * Address-format validation for ON-CHAIN P2P delivery destinations only (client
+ * mirror of backend/src/lib/addressValidation.ts). Shape check for real blockchain
+ * addresses (BEP20/EVM, Aptos, TRC20) — gives instant green/red feedback before
+ * submit. Backend re-validates on every write; this is purely UX.
+ *
+ * It deliberately does NOT enforce a format on internal / exchange transfers
+ * (Binance, OKX, Bitget, Gate, MEXC): those have no canonical address, no tx hash,
+ * and are justified by the transfer screenshot — so they resolve to 'unknown' and
+ * any non-empty value is accepted. Use isValidatableNetwork() to decide whether to
+ * show a validation indicator at all.
  */
 
-export type AddressKind = 'evm' | 'aptos' | 'tron' | 'exchange_uid' | 'unknown'
+export type AddressKind = 'evm' | 'aptos' | 'tron' | 'unknown'
 
 const EVM_RE = /^0x[0-9a-fA-F]{40}$/
 const APTOS_RE = /^0x[0-9a-fA-F]{1,64}$/
 const TRON_RE = /^T[A-Za-z1-9]{33}$/
-const EXCHANGE_UID_RE = /^[0-9]{5,20}$/
 
 const KIND_BY_LABEL: Record<string, AddressKind> = {
   BEP20: 'evm', ERC20: 'evm', POLYGON: 'evm', ARBITRUM: 'evm', OPTIMISM: 'evm', BASE: 'evm',
   APTOS: 'aptos',
   TRC20: 'tron',
-  BINANCE: 'exchange_uid', OKX: 'exchange_uid', BITGET: 'exchange_uid', GATE: 'exchange_uid', MEXC: 'exchange_uid',
 }
 
 export function addressKindForNetwork(network: string): AddressKind {
@@ -45,16 +49,13 @@ export function validateAddressForNetwork(address: string, network: string): Add
       return TRON_RE.test(addr)
         ? { valid: true }
         : { valid: false, reason: 'Enter a valid TRC20 address — starts with T, 34 characters.' }
-    case 'exchange_uid':
-      return EXCHANGE_UID_RE.test(addr)
-        ? { valid: true }
-        : { valid: false, reason: `Enter a valid ${network} UID (numeric account id, 5–20 digits).` }
     default:
+      // Exchange / internal transfer (or unknown): no on-chain format to enforce.
       return { valid: true }
   }
 }
 
-/** Is this label one we can format-check (vs an unknown/free-form destination)? */
+/** True only for real blockchain networks we can shape-check. Exchange/internal → false. */
 export function isValidatableNetwork(network: string): boolean {
   return addressKindForNetwork(network) !== 'unknown'
 }

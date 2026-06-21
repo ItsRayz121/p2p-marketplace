@@ -586,16 +586,23 @@ function CreateListingPageContent() {
                       className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                     {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
-                    {!errors.settlementMethod && addrResult?.valid && (
+                    {/* Validation feedback only for real blockchain addresses. Exchange /
+                        internal transfers are justified by the transfer screenshot, so we
+                        don't enforce or assert a format on them. */}
+                    {walletSelected && !errors.settlementMethod && addrResult?.valid && (
                       <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                        Valid {walletSelected ? `address for ${walletLabel}` : `${exchangeVenue} UID`}
+                        Valid address for {walletLabel}
                       </p>
                     )}
-                    {!errors.settlementMethod && addrResult && !addrResult.valid && (
+                    {walletSelected && !errors.settlementMethod && addrResult && !addrResult.valid && (
                       <p className="text-sm text-danger mt-1">{addrResult.reason}</p>
                     )}
-                    <p className="mt-1 text-xs text-text-muted">Sellers will send USDT here when they take your listing.</p>
+                    <p className="mt-1 text-xs text-text-muted">
+                      {walletSelected
+                        ? 'Sellers will send USDT here when they take your listing.'
+                        : 'Sellers will send USDT to this account and attach a transfer screenshot as proof.'}
+                    </p>
                   </div>
                 )
               })()}

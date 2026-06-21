@@ -1187,7 +1187,9 @@ function SavedDeliveryAddressesSection() {
   const handleAdd = async () => {
     if (category === 'ctm' && !form.tokenSymbol) { setFormError('Select a token'); return }
     if (!form.address.trim()) { setFormError('Address / UID is required'); return }
-    if (category === 'crypto') {
+    // Only blockchain (wallet) addresses are format-checked. Exchange UIDs have no
+    // canonical format (numeric id / email / phone) — accept as entered.
+    if (category === 'crypto' && deliveryKind === 'wallet') {
       const r = validateAddressForNetwork(form.address.trim(), form.network)
       if (!r.valid) { setFormError(r.reason ?? 'Invalid address for this network'); return }
     }
@@ -1356,7 +1358,8 @@ function SavedDeliveryAddressesSection() {
               placeholder={category === 'ctm' ? 'Your deposit address or account ID for this token' : (selectedNetwork?.placeholder ?? 'Address or UID')}
               className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            {category === 'crypto' && form.address.trim() && (() => {
+            {/* Format feedback only for blockchain wallets; exchange UIDs aren't enforced. */}
+            {category === 'crypto' && deliveryKind === 'wallet' && form.address.trim() && (() => {
               const r = validateAddressForNetwork(form.address.trim(), form.network)
               return r.valid
                 ? <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Valid {selectedNetwork?.label ?? form.network}</p>
