@@ -27,6 +27,7 @@ import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { getTradeStatus } from '@/lib/tradeStatus'
 import { promptPushOptIn } from '@/lib/pushPrompt'
 import { isTrustedImageUrl } from '@/lib/utils'
+import { explorerTxUrl, explorerName } from '@/lib/explorers'
 import {
   FileText,
   Upload,
@@ -1097,6 +1098,16 @@ export default function TradePage() {
                       {trade.txVerificationStatus === 'not_found' && (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 dark:text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded px-2 py-0.5">⚠ Tx not found — pending or invalid</span>
                       )}
+                      {(() => {
+                        const url = explorerTxUrl(trade.network ?? '', trade.sellerTxHash!)
+                        if (!url) return null
+                        return (
+                          <a href={url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                            View on {explorerName(trade.network ?? '')} ↗
+                          </a>
+                        )
+                      })()}
                     </div>
                   </div>
                 )}
@@ -1136,6 +1147,16 @@ export default function TradePage() {
                       <div>
                         <label className="block text-xs font-medium text-text-primary mb-1">Transaction Hash {isWalletDelivery ? '' : <span className="text-text-muted">(optional)</span>}</label>
                         <input type="text" value={txHash} onChange={(e) => setTxHash(e.target.value)} placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)" className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono" />
+                        {isWalletDelivery && txHash.trim() && (() => {
+                          const url = explorerTxUrl(trade.network ?? '', txHash.trim())
+                          if (!url) return null
+                          return (
+                            <a href={url} target="_blank" rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline mt-1">
+                              Check this hash on {explorerName(trade.network ?? '')} ↗
+                            </a>
+                          )
+                        })()}
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-text-primary mb-1">Transfer Screenshot {isWalletDelivery ? <span className="text-text-muted">(optional)</span> : ''}</label>
