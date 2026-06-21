@@ -2,7 +2,8 @@
 import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ctmApi, apiRequest, ApiError } from '@/lib/api'
+import { ctmApi, apiRequest, ApiError, walletApi } from '@/lib/api'
+import type { SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
@@ -127,6 +128,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [error, setError] = useState('')
   // Seller's own payment methods — needed when taking a BUY listing
   const [myMethods, setMyMethods] = useState<ResolvedPaymentMethod[]>([])
+  // Saved CTM-token receiving addresses the buyer can reuse instead of re-typing.
+  const [savedAddresses, setSavedAddresses] = useState<SavedDeliveryAddress[]>([])
   // Activity hub
   const [activity, setActivity] = useState<ListingActivity | null>(null)
   const [myActiveBid, setMyActiveBid] = useState<MyActiveBid | null>(null)
@@ -210,6 +213,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
         }))
         setMyMethods(resolved)
+      }).catch(() => {})
+      walletApi.getSavedAddresses().then((addrs) => {
+        setSavedAddresses(Array.isArray(addrs) ? addrs : [])
       }).catch(() => {})
     }
   }, [user])
@@ -780,6 +786,23 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 <label className="block text-sm font-medium text-text-primary mb-1.5">
                   {buyerAddressLabel(listing.tokenDeliveryType, listing.token.name)}
                 </label>
+                {(() => {
+                  const matching = savedAddresses.filter((a) => a.network === 'CTM' && a.coin === listing.token.symbol)
+                  if (matching.length === 0) return null
+                  return (
+                    <div className="mb-2">
+                      <p className="text-xs text-text-muted mb-1.5">Your saved {listing.token.symbol} addresses — tap to fill:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {matching.map((a) => (
+                          <button key={a.id} type="button" onClick={() => setBuyerSettlementId(a.address)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${buyerSettlementId === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
                 <input
                   type={listing.tokenDeliveryType === 'email' ? 'email' : 'text'}
                   placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol)}
@@ -787,7 +810,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   onChange={(e) => setBuyerSettlementId(e.target.value)}
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
-                <p className="mt-1 text-xs text-text-muted">The seller will send tokens here after your payment is confirmed.</p>
+                <p className="mt-1 text-xs text-text-muted">The seller will send tokens here after your payment is confirmed. <Link href="/wallet#payment-methods" className="text-primary hover:underline">Save an address →</Link></p>
               </div>
             )}
 
@@ -984,6 +1007,23 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 <label className="block text-sm font-medium text-text-primary mb-1.5">
                   {buyerAddressLabel(listing.tokenDeliveryType, listing.token.name)}
                 </label>
+                {(() => {
+                  const matching = savedAddresses.filter((a) => a.network === 'CTM' && a.coin === listing.token.symbol)
+                  if (matching.length === 0) return null
+                  return (
+                    <div className="mb-2">
+                      <p className="text-xs text-text-muted mb-1.5">Your saved {listing.token.symbol} addresses — tap to fill:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {matching.map((a) => (
+                          <button key={a.id} type="button" onClick={() => setConfirmBuyerSettlementId(a.address)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${confirmBuyerSettlementId === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
                 <input
                   type={listing.tokenDeliveryType === 'email' ? 'email' : 'text'}
                   placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol)}
