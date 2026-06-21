@@ -48,6 +48,11 @@ const STEP_INFO = [
 
 const DISPUTE_REASONS = ['proof_fake', 'not_received', 'amount_mismatch', 'wrong_token', 'seller_unresponsive', 'buyer_unresponsive', 'other']
 
+// Cooldown before "Open Dispute" unlocks, measured from the trade's last status
+// change — gives the counterparty a moment to act first. Mirrors the USDT
+// marketplace dispute gate (DISPUTE_DELAY_MINUTES in trade.service.ts).
+const DISPUTE_DELAY_MINUTES = 10
+
 // Supports {hash} template (e.g. https://explorer.example.com/tx/{hash}).
 function buildExplorerUrl(baseUrl: string, txHash: string): string {
   if (baseUrl.includes('{hash}')) return baseUrl.replace('{hash}', txHash)
@@ -102,7 +107,7 @@ interface Trade {
   sellerPaymentSnapshot?: SellerPaymentSnapshot
   buyerPaymentSnapshot?: BuyerPaymentSnapshot
   tokenDeliveryType?: string; settlementType: string
-  expiresAt: string; confirmDeadlineAt?: string; proofDeadlineAt?: string
+  expiresAt: string; confirmDeadlineAt?: string; proofDeadlineAt?: string; updatedAt?: string
   escrowAddress?: string; escrowAmount?: string; escrowCurrency?: string
   escrowTxHash?: string; escrowConfirmedAt?: string
   token: { name: string; symbol: string; logoUrl?: string; riskTier: string; explorerUrl?: string }
@@ -364,8 +369,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   }
 
   const handleOpenDispute = async () => {
-    if (!disputeReason || !disputeDesc) { setError('Fill in dispute reason and description'); return }
-    await doAction(() => ctmApi.openDispute(ref, { reason: disputeReason, description: disputeDesc }))
+    if (!disputeReason) { setError('Select a dispute reason'); return }
+    if (disputeDesc.trim().length < 10) { setError('Add at least 10 characters describing the issue'); return }
+    await doAction(() => ctmApi.openDispute(ref, { reason: disputeReason, description: disputeDesc.trim() }))
     setDisputeOpen(false)
   }
 
@@ -528,8 +534,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
       </div>
     ) : null
 
+  const disputeUnlockAt = trade.updatedAt ? new Date(trade.updatedAt).getTime() + DISPUTE_DELAY_MINUTES * 60_000 : null
   const disputeBtn = (isBuyer || isSeller) && ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'].includes(trade.status) && !trade.dispute
-    ? <button onClick={() => setDisputeOpen(true)} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Open Dispute</button>
+    ? <DisputeUnlockGate unlockAt={disputeUnlockAt} onOpen={() => setDisputeOpen(true)} />
     : null
 
   const ratingPanel = (counterparty: string) => (
@@ -1090,14 +1097,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Description</label>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">Description <span className="text-text-muted font-normal">(min 10 characters)</span></label>
               <textarea rows={4} value={disputeDesc} onChange={(e) => setDisputeDesc(e.target.value)}
                 className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none"
                 placeholder="Describe the issue in detail. Include any evidence from the chat." />
             </div>
             <div className="flex gap-3">
               <button onClick={() => setDisputeOpen(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium">Cancel</button>
-              <button onClick={handleOpenDispute} disabled={actionLoading} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">Open Dispute</button>
+              <button onClick={handleOpenDispute} disabled={actionLoading || !disputeReason || disputeDesc.trim().length < 10} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">Open Dispute</button>
             </div>
           </div>
         </div>
@@ -1166,6 +1173,46 @@ function CopyableText({ value, mono }: { value: string; mono?: boolean }) {
         ) : (
           <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" /><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" /></svg>
         )}
+      </button>
+    </div>
+  )
+}
+
+// Dispute cooldown gate — shows a live countdown until disputes unlock, then the
+// "Open Dispute" button. Mirrors the USDT marketplace DisputeUnlockGate.
+function DisputeUnlockGate({ unlockAt, onOpen }: { unlockAt: number | null; onOpen: () => void }) {
+  const [now, setNow] = useState(() => Date.now())
+  const locked = unlockAt !== null && now < unlockAt
+  useEffect(() => {
+    if (!locked) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [locked])
+
+  if (!locked) {
+    return (
+      <button onClick={onOpen} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10 transition-colors">
+        Open Dispute
+      </button>
+    )
+  }
+
+  const diff = Math.max(0, (unlockAt as number) - now)
+  const m = Math.floor(diff / 60_000)
+  const s = Math.floor((diff % 60_000) / 1_000)
+  const formatted = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+
+  return (
+    <div className="rounded-xl border border-border bg-surface px-3 py-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-text-secondary">Dispute available in</span>
+        <span className="font-mono font-semibold text-sm text-text-primary">{formatted}</span>
+      </div>
+      <p className="text-xs text-text-muted leading-snug">
+        Give your counterparty a moment to send or confirm. If the issue isn&apos;t resolved, you&apos;ll be able to open a dispute once the timer ends.
+      </p>
+      <button disabled className="w-full border border-red-500/20 text-red-400/60 py-2 rounded-xl text-sm cursor-not-allowed">
+        Open Dispute
       </button>
     </div>
   )
