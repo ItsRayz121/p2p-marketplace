@@ -282,6 +282,17 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     return () => { clearTimeout(timer); clearTimeout(clear) }
   }, [focusDispute, trade])
 
+  // Once both the trader rating and platform feedback are submitted, collapse the
+  // Complete & Rate card automatically (and close the rating panel). MUST stay
+  // above the early returns below — a hook after a conditional return changes the
+  // hook count between renders (React error #310).
+  useEffect(() => {
+    if (traderRatingDone && platformRatingDone) {
+      setRatingOpen(false)
+      setStep4Collapsed(true)
+    }
+  }, [traderRatingDone, platformRatingDone])
+
   if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-96 border border-border" /></div>
   if (!trade) return <div className="max-w-5xl mx-auto px-4 py-12 text-center text-text-muted">Trade not found.</div>
 
@@ -369,15 +380,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   }
 
   const handlePlatformRate = () => { setPlatformRatingDone(true) }
-
-  // Once both the trader rating and platform feedback are submitted, collapse the
-  // Complete & Rate card automatically (and close the rating panel).
-  useEffect(() => {
-    if (traderRatingDone && platformRatingDone) {
-      setRatingOpen(false)
-      setStep4Collapsed(true)
-    }
-  }, [traderRatingDone, platformRatingDone])
 
   const handleSelectAccount = async (idx: number) => {
     setSelectingPayment(true)
