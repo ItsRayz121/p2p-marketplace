@@ -12,10 +12,21 @@ import { ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { explorerTxUrl, explorerName } from '@/lib/explorers'
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
 interface TradeMessage { id: string; senderId: string; message: string; createdAt: string }
+
+interface PaymentSnapshot {
+  type?: string
+  label?: string
+  accountName?: string
+  mobileNumber?: string
+  bankName?: string
+  ibanNumber?: string
+  accountNumber?: string
+}
 
 interface DisputeTrade {
   id: string
@@ -23,12 +34,20 @@ interface DisputeTrade {
   buyerId: string
   sellerId: string
   coin: string
+  network?: string
   amount: string
+  price?: string
   fiatAmount: string
   totalPkr?: string
   paymentMethod: string
+  sellerPaymentSnapshot?: PaymentSnapshot | null
   paymentProofUrl?: string
   sellerTxHash?: string
+  txVerificationStatus?: string
+  buyerWalletAddress?: string
+  buyerDeliveryMethod?: string
+  buyerDeliveryAddress?: string
+  sellerDeliveryProofUrl?: string
   status: string
   disputeReason?: string
   disputeDescription?: string
@@ -63,6 +82,20 @@ interface DisputesResponse {
   disputes: DisputeRecord[]
   total?: number
   pagination?: { total: number }
+}
+
+// A raw PaymentMethod id (cuid) — never show this to the admin as the method.
+function isOpaqueId(v: string): boolean {
+  return /^c[a-z0-9]{20,}$/i.test(v.trim())
+}
+
+const DELIVERY_METHOD_LABELS: Record<string, string> = {
+  wallet_blockchain: 'Wallet / Blockchain', blockchain: 'Wallet / Blockchain',
+  Binance: 'Binance', OKX: 'OKX', Bitget: 'Bitget', Gate: 'Gate', MEXC: 'MEXC',
+}
+function deliveryMethodLabel(m?: string): string {
+  if (!m) return '—'
+  return DELIVERY_METHOD_LABELS[m] ?? m
 }
 
 function daysAgo(date: string) {
@@ -320,11 +353,11 @@ export default function DisputesPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-surface rounded-xl text-sm">
               <div>
                 <p className="text-text-muted text-xs">Trade ID</p>
-                <p className="font-mono text-xs text-text-primary break-all">{selected.tradeId}</p>
+                <p className="font-mono text-xs text-text-primary break-all">{selected.trade?.orderRef ?? selected.tradeId}</p>
               </div>
               <div>
                 <p className="text-text-muted text-xs">Token / Amount</p>
-                <p className="font-semibold text-text-primary">{selected.trade?.amount} {selected.trade?.coin}</p>
+                <p className="font-semibold text-text-primary">{selected.trade?.amount} {selected.trade?.coin}{selected.trade?.network ? ` · ${selected.trade.network}` : ''}</p>
               </div>
               <div>
                 <p className="text-text-muted text-xs">PKR Amount</p>
@@ -335,12 +368,39 @@ export default function DisputesPage() {
                 <p className="text-text-primary">{DIRECTION_LABELS[selected.trade?.ad?.side ?? ''] ?? selected.trade?.ad?.side ?? '—'}</p>
               </div>
               <div>
-                <p className="text-text-muted text-xs">Payment Method</p>
-                <p className="text-text-primary">{selected.trade?.paymentMethod || '—'}</p>
+                <p className="text-text-muted text-xs">Trade Status</p>
+                <p className="text-text-primary">{(selected.trade?.status ?? '—').replace(/_/g, ' ')}</p>
               </div>
               <div>
                 <p className="text-text-muted text-xs">Dispute Status</p>
                 <Badge variant={statusVariant(selected.status)} size="sm">{disputeStatusLabel(selected.status)}</Badge>
+              </div>
+              <div className="col-span-2 sm:col-span-3 border-t border-border pt-2 mt-1">
+                <p className="text-text-muted text-xs">Opened / Last update</p>
+                <p className="text-text-primary text-xs">{fmtDateTime(selected.createdAt)}{selected.trade?.updatedAt ? ` · updated ${fmtDateTime(selected.trade.updatedAt)}` : ''}</p>
+              </div>
+            </div>
+
+            {/* Settlement details — how PKR was to be paid and where USDT was to be delivered */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="p-3 bg-surface shadow-card border border-border rounded-xl text-sm">
+                <p className="text-text-muted text-xs mb-1">PKR paid to (seller&apos;s account)</p>
+                {selected.trade?.sellerPaymentSnapshot?.label ? (
+                  <>
+                    <p className="font-semibold text-text-primary">{selected.trade.sellerPaymentSnapshot.label}</p>
+                    {selected.trade.sellerPaymentSnapshot.accountName && <p className="text-xs text-text-secondary">{selected.trade.sellerPaymentSnapshot.accountName}</p>}
+                    <p className="font-mono text-xs text-text-muted break-all">
+                      {selected.trade.sellerPaymentSnapshot.mobileNumber ?? selected.trade.sellerPaymentSnapshot.accountNumber ?? selected.trade.sellerPaymentSnapshot.ibanNumber ?? ''}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-text-secondary text-xs">{isOpaqueId(selected.trade?.paymentMethod ?? '') ? 'Account snapshot unavailable' : (selected.trade?.paymentMethod || '—')}</p>
+                )}
+              </div>
+              <div className="p-3 bg-surface shadow-card border border-border rounded-xl text-sm">
+                <p className="text-text-muted text-xs mb-1">USDT delivery destination (buyer)</p>
+                <p className="font-semibold text-text-primary">{deliveryMethodLabel(selected.trade?.buyerDeliveryMethod)}</p>
+                <p className="font-mono text-xs text-text-muted break-all">{selected.trade?.buyerDeliveryAddress || selected.trade?.buyerWalletAddress || '—'}</p>
               </div>
             </div>
 
@@ -403,13 +463,38 @@ export default function DisputesPage() {
               </div>
             )}
 
-            {/* Token Transfer Hash */}
+            {/* Token Transfer Hash + on-chain verification (wallet deliveries only) */}
             {selected.trade?.sellerTxHash && (
               <div>
                 <p className="text-sm font-medium text-text-primary mb-1">Token Transfer Hash</p>
                 <p className="font-mono text-xs text-primary break-all bg-surface border border-border rounded-lg px-3 py-2">
                   {selected.trade.sellerTxHash}
                 </p>
+                <div className="flex items-center gap-3 mt-1.5">
+                  {selected.trade.txVerificationStatus && (
+                    <span className="text-xs text-text-muted">
+                      Verification: <span className="font-medium text-text-secondary">{selected.trade.txVerificationStatus.replace(/_/g, ' ')}</span>
+                    </span>
+                  )}
+                  {(() => {
+                    const url = explorerTxUrl(selected.trade?.network ?? '', selected.trade?.sellerTxHash ?? '')
+                    return url
+                      ? <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-primary hover:underline">View on {explorerName(selected.trade?.network ?? '')} ↗</a>
+                      : null
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Seller's token-transfer screenshot (for exchange/internal deliveries the
+                screenshot is the proof, since there is no verifiable on-chain hash). */}
+            {selected.trade?.sellerDeliveryProofUrl && (
+              <div>
+                <p className="text-sm font-medium text-text-primary mb-2">Token Transfer Screenshot (seller)</p>
+                <a href={selected.trade.sellerDeliveryProofUrl} target="_blank" rel="noopener noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={selected.trade.sellerDeliveryProofUrl} alt="Token transfer proof" className="max-w-xs rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer" />
+                </a>
               </div>
             )}
 
