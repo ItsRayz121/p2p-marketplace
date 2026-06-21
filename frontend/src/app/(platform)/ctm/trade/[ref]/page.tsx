@@ -1177,9 +1177,13 @@ function Row({ label, value, mono, breakAll, copyable }: { label: string; value:
     try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* ignore */ }
   }
   return (
-    <div className={`flex items-center ${breakAll ? 'gap-4' : 'justify-between'}`}>
+    // Label pinned to the left border, value block pinned to the right border so
+    // every row (incl. a long break-all address and the amount beneath it) lines
+    // up on the same left/right edges. items-start keeps the label top-aligned
+    // against a wrapped multi-line value instead of floating to its centre.
+    <div className="flex items-start justify-between gap-4">
       <span className="text-text-muted flex-shrink-0">{label}</span>
-      <div className={`flex items-center gap-1.5 ${breakAll ? 'text-right' : ''}`}>
+      <div className={`flex items-center gap-1.5 min-w-0 justify-end ${breakAll ? 'text-right' : ''}`}>
         <span className={`text-text-primary font-medium ${mono ? 'font-mono' : ''} ${breakAll ? 'break-all' : ''}`}>{value}</span>
         {copyable && (
           <button onClick={handleCopy} title="Copy" className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors">
