@@ -183,9 +183,6 @@ export default function TraderProfilePage() {
   const totalReviews = stats?.totalReviews ?? 0
   const responseMinutes = stats?.avgResponseMinutes ?? null
   const releaseMinutes = stats?.avgReleaseMinutes ?? null
-  const disputesWon = stats?.disputesWon ?? 0
-  const disputesLost = stats?.disputesLost ?? 0
-  const hasDisputeData = disputesWon > 0 || disputesLost > 0
   const volumePKR = stats?.totalVolumePKR ? parseFloat(stats.totalVolumePKR) : null
 
   function fmtVolume(n: number): string {
@@ -315,24 +312,10 @@ export default function TraderProfilePage() {
         ))}
       </div>
 
-      {/* Dispute record */}
-      {hasDisputeData && (
-        <div className="bg-surface shadow-card rounded-xl border border-border px-5 py-3 flex items-center gap-6 text-xs">
-          <span className="text-text-muted font-medium">Disputes:</span>
-          <span className="flex items-center gap-1 text-success font-semibold">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-            Won {disputesWon}
-          </span>
-          <span className="flex items-center gap-1 text-danger font-semibold">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            Lost {disputesLost}
-          </span>
-        </div>
-      )}
+      {/* Dispute record is intentionally NOT shown publicly — a public win/loss
+          count is a harassment vector and discourages legitimate disputes. The
+          full record stays in the admin panel; the public success rate above is
+          the user-facing trust signal. */}
 
       {/* Active Ads */}
       {profile.activeAds.length > 0 && (
