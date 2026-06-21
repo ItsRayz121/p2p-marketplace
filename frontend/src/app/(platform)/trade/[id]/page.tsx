@@ -86,6 +86,8 @@ interface ExtendedTrade extends Trade {
   paymentMethodLabel?: string
   /** Seller's receiving account, resolved server-side for trade participants. */
   sellerPaymentAccount?: SellerPaymentAccount | null
+  /** Buy ads only: the buyer/lister's pay-FROM account(s). Single or { accounts: [...] }. */
+  buyerPaymentSnapshot?: (SellerPaymentAccount & { accounts?: SellerPaymentAccount[] }) | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -978,6 +980,27 @@ export default function TradePage() {
                     )}
                   </div>
                 )}
+                {/* Seller view: where the buyer's PKR payment will come from (buy ads) */}
+                {!isUserBuyer && trade.buyerPaymentSnapshot && (() => {
+                  const b = trade.buyerPaymentSnapshot!
+                  const accounts = b.accounts && b.accounts.length > 0 ? b.accounts : [b]
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-text-primary">Buyer will pay from</p>
+                      {accounts.map((acc, i) => (
+                        <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2">
+                          <PayToRow label="Method" value={acc.label} />
+                          <PayToRow label="Account name" value={acc.accountName} />
+                          {acc.mobileNumber && <PayToRow label="Mobile number" value={acc.mobileNumber} copy />}
+                          {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
+                          {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
+                          {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
+                        </div>
+                      ))}
+                      <p className="text-xs text-text-muted leading-snug">The buyer indicated they'll pay from {accounts.length > 1 ? 'one of these accounts' : 'this account'}. Match it against your incoming payment.</p>
+                    </div>
+                  )
+                })()}
                 {isUserBuyer && trade.status === 'payment_pending' && (
                   <>
                     <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }} />

@@ -677,6 +677,7 @@ model Trade {
   txVerificationStatus String?   // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
   txVerificationDetails Json?    // { chain, rpcChecked, txStatus, expectedReceiver, actualReceiver, expectedAmount, actualAmount, confirmations, tokenContract, verifiedAt }
   sellerPaymentSnapshot Json?    // { type, label, accountName, mobileNumber?, bankName?, ibanNumber?, accountNumber? } — locked at trade creation so the buyer's pay-to account is immutable for disputes
+  buyerPaymentSnapshot  Json?    // buy ads only: the buyer/lister's pay-FROM account(s) declared at ad creation, so the seller sees where PKR will arrive from. Single account or { accounts: [...] }.
   escrowReleased     Boolean     @default(false)
   cancelledBy        String?
   cancelReason       String?

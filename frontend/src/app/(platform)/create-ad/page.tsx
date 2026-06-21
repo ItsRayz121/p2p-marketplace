@@ -114,6 +114,7 @@ function validate(form: FormState): Record<string, string> {
     e.maxAmount = 'Max must be greater than min'
   if (!form.availableAmount) e.availableAmount = form.side === 'sell' ? 'Enter total amount' : 'Enter total amount you want to buy'
   if (form.side === 'sell' && form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one payment method'
+  if (form.side === 'buy' && form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one account you will pay from'
   if (form.tokenDeliveryTypes.length === 0) e.tokenDeliveryTypes = 'Select at least one delivery method'
   if (form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && !form.settlementMethod.trim())
     e.settlementMethod = 'Enter your receiving address so sellers know where to send USDT'
@@ -297,7 +298,7 @@ function CreateListingPageContent() {
           ...(form.availableAmount ? { totalAmount: parseFloat(form.availableAmount) } : {}),
           minOrder: parseFloat(form.minAmount),
           maxOrder: parseFloat(form.maxAmount),
-          paymentMethods: form.side === 'sell' ? form.paymentMethods : [],
+          paymentMethods: form.paymentMethods,
           tokenDeliveryTypes: form.tokenDeliveryTypes,
           ...(form.settlementMethod.trim() ? { settlementMethod: form.settlementMethod.trim() } : {}),
           tradeWindow: form.tradeWindow,
@@ -616,11 +617,16 @@ function CreateListingPageContent() {
           )
         })()}
 
-        {/* Payment methods — sell only */}
-        {form.side === 'sell' && (
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-0.5">Payment methods *</label>
-            <p className="text-xs text-text-muted mb-2">Select which of your saved payment accounts buyers can use to pay you.</p>
+        {/* Payment methods — sell: accounts buyers pay TO; buy: accounts you'll pay FROM */}
+        <div>
+            <label className="block text-sm font-medium text-text-primary mb-0.5">
+              {form.side === 'sell' ? 'Payment methods *' : 'Which account(s) will you pay from? *'}
+            </label>
+            <p className="text-xs text-text-muted mb-2">
+              {form.side === 'sell'
+                ? 'Select which of your saved payment accounts buyers can use to pay you.'
+                : 'Select the account(s) you will send payment from — the seller sees this in the trade so they know where your payment comes from.'}
+            </p>
             {errors.paymentMethods && <p className="text-sm text-danger mb-2">{errors.paymentMethods}</p>}
 
             {savedMethods.length === 0 ? (
@@ -659,12 +665,11 @@ function CreateListingPageContent() {
               </div>
             )}
           </div>
-        )}
 
         {/* Buy listing info note */}
         {form.side === 'buy' && (
           <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-sm text-blue-800 dark:text-blue-300">
-            Payment details are not required on a buy listing. The seller will provide their payment receiving account when they accept your trade.
+            The seller will provide their payment receiving account when they accept your trade. The account(s) you selected above are shown to them as where your payment will come from.
           </div>
         )}
 

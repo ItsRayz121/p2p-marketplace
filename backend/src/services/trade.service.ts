@@ -452,6 +452,19 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
       if (pm) sellerPaymentSnapshot = buildPaymentAccountSnapshot(pm)
     }
 
+    // Buy ads: snapshot the buyer/lister's pay-FROM account(s) (declared at ad
+    // creation in paymentMethods) so the seller sees where PKR will arrive from.
+    // On a buy ad the buyer is the ad owner (buyerId). Single account or {accounts:[]}.
+    let buyerPaymentSnapshot: Prisma.InputJsonValue | undefined
+    if (isBuyAd && adRows.paymentMethods.length > 0) {
+      const pms = await tx.paymentMethod.findMany({
+        where: { id: { in: adRows.paymentMethods }, userId: buyerId },
+        select: { type: true, accountName: true, mobileNumber: true, bankName: true, ibanNumber: true, accountNumber: true },
+      })
+      if (pms.length === 1) buyerPaymentSnapshot = buildPaymentAccountSnapshot(pms[0]!)
+      else if (pms.length > 1) buyerPaymentSnapshot = { accounts: pms.map(buildPaymentAccountSnapshot) }
+    }
+
     // Resolve the buyer's USDT receiving destination. On a SELL ad the initiator
     // (buyer) supplied it at trade start; on a BUY ad it comes from the ad owner's
     // settlementMethod captured at ad creation.
@@ -480,6 +493,7 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
         fiatAmount,
         paymentMethod: data.paymentMethod,
         ...(sellerPaymentSnapshot ? { sellerPaymentSnapshot } : {}),
+        ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot } : {}),
         buyerWalletAddress,
         ...(buyerDeliveryMethod ? { buyerDeliveryMethod } : {}),
         ...(buyerDeliveryAddress ? { buyerDeliveryAddress } : {}),
