@@ -11,6 +11,7 @@ export interface CreateAdInput {
   side: 'buy' | 'sell'
   coin: string
   network: string
+  networks?: string[]
   priceType: 'fixed' | 'float'
   price: number
   floatOffset?: number
@@ -77,20 +78,34 @@ export async function createAd(userId: string, data: CreateAdInput) {
     throw new AppError('VALIDATION_ERROR', 'Amounts must be positive', 400)
   }
 
+  // Resolve the full network set. A wallet-delivery ad may offer several on-chain
+  // networks (BEP20 + Aptos); `network` is kept as the primary (first) for
+  // back-compat. Falls back to [network] when no explicit set is given.
+  const effectiveNetworks = data.networks?.length ? data.networks : [data.network]
+  const primaryNetwork = effectiveNetworks[0] ?? data.network
+
   // Validate the maker's receiving address (buy ads) against the network/venue
   // it will be used with, so a malformed destination can never be persisted.
-  // Wallet delivery → validate against the on-chain network (BEP20/Aptos);
+  // Wallet delivery → must be valid for EVERY on-chain network offered;
   // exchange-only delivery → validate against the selected venue's UID format.
   if (data.settlementMethod && data.settlementMethod.trim()) {
+    const settlement = data.settlementMethod.trim()
     const deliveryTypes = data.tokenDeliveryTypes ?? []
     const usesWallet = deliveryTypes.includes('wallet_blockchain')
-    const validationLabel = usesWallet
-      ? data.network
-      : deliveryTypes.find((t) => t !== 'wallet_blockchain') ?? ''
-    if (validationLabel) {
-      const res = validateAddressForNetwork(data.settlementMethod.trim(), validationLabel)
-      if (!res.valid) {
-        throw new AppError('VALIDATION_ERROR', res.reason ?? 'Invalid receiving address', 400)
+    if (usesWallet) {
+      for (const net of effectiveNetworks) {
+        const res = validateAddressForNetwork(settlement, net)
+        if (!res.valid) {
+          throw new AppError('VALIDATION_ERROR', res.reason ?? 'Invalid receiving address', 400)
+        }
+      }
+    } else {
+      const venue = deliveryTypes.find((t) => t !== 'wallet_blockchain') ?? ''
+      if (venue) {
+        const res = validateAddressForNetwork(settlement, venue)
+        if (!res.valid) {
+          throw new AppError('VALIDATION_ERROR', res.reason ?? 'Invalid receiving address', 400)
+        }
       }
     }
   }
@@ -133,7 +148,8 @@ export async function createAd(userId: string, data: CreateAdInput) {
       userId,
       side: data.side as 'buy' | 'sell',
       coin: data.coin,
-      network: data.network,
+      network: primaryNetwork,
+      networks: effectiveNetworks,
       priceType: data.priceType as 'fixed' | 'float',
       price: new Prisma.Decimal(data.price),
       floatOffset: data.floatOffset != null ? new Prisma.Decimal(data.floatOffset) : new Prisma.Decimal(0),

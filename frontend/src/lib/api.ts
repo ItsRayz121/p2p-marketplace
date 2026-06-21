@@ -493,6 +493,7 @@ export interface Ad {
   side: 'buy' | 'sell'
   coin: string
   network: string
+  networks?: string[]
   priceType: 'fixed' | 'float'
   price: string
   floatOffset: string
@@ -515,6 +516,7 @@ export interface CreateAdPayload {
   side: 'buy' | 'sell'
   coin: string
   network: string
+  networks?: string[]
   priceType: 'fixed' | 'float'
   price: number
   floatOffset?: number
@@ -897,7 +899,7 @@ export const walletApi = {
 }
 
 export const tradesApi = {
-  createTrade: (data: { adId: string; amount: number | string; paymentMethod: string; buyerDeliveryMethod?: string; buyerDeliveryAddress?: string }) =>
+  createTrade: (data: { adId: string; amount: number | string; paymentMethod: string; buyerDeliveryMethod?: string; buyerDeliveryAddress?: string; network?: string }) =>
     apiRequest<Trade>('/trades', { method: 'POST', body: JSON.stringify({ ...data, amount: typeof data.amount === 'string' ? parseFloat(data.amount) : data.amount }) }),
   getTrade: (id: string) =>
     apiRequest<Trade>(`/trades/${id}`),

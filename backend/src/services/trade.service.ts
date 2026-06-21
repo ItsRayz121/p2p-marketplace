@@ -102,6 +102,8 @@ export interface CreateTradeInput {
   buyerWalletAddress: string
   buyerDeliveryMethod?: string
   buyerDeliveryAddress?: string
+  /** Buyer's chosen on-chain network when the ad offers more than one (wallet delivery). */
+  network?: string
 }
 
 export interface GetTradesParams {
@@ -226,21 +228,29 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
   // USDT (initiator = buyer). On a BUY ad the initiator is selling USDT to the ad
   // owner, so the ad owner is the buyer and the initiator is the seller. We read
   // side + owner up front (cheap) so role-dependent guards below are correct.
-  const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true, network: true } })
+  const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true, network: true, networks: true } })
   if (!adSide) throw new AppError('NOT_FOUND', 'Ad not found', 404)
   if (adSide.userId === initiatorId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
   const isBuyAd = adSide.side === 'buy'
   const buyerId = isBuyAd ? adSide.userId : initiatorId
   const sellerId = isBuyAd ? initiatorId : adSide.userId
 
+  // Resolve the trade's on-chain network. A wallet-delivery ad may offer several
+  // networks; the taker picks ONE at trade start. Fall back to the ad's primary
+  // network for legacy ads / when the chosen network isn't one the ad offers.
+  const offeredNetworks = adSide.networks?.length ? adSide.networks : [adSide.network]
+  const chosenNetwork = data.network && offeredNetworks.includes(data.network)
+    ? data.network
+    : adSide.network
+
   // Validate the buyer's USDT receiving destination at trade start (sell ads only;
   // on buy ads the destination is the maker's pre-validated settlementMethod).
-  // Wallet delivery → check against the ad's on-chain network; exchange delivery →
+  // Wallet delivery → check against the chosen on-chain network; exchange delivery →
   // check the venue's UID format. Blocks malformed addresses before a trade opens.
   if (!isBuyAd) {
     const deliveryMethod = data.buyerDeliveryMethod ?? 'wallet_blockchain'
     const destination = (data.buyerDeliveryAddress ?? data.buyerWalletAddress ?? '').trim()
-    const validationLabel = deliveryMethod === 'wallet_blockchain' ? adSide.network : deliveryMethod
+    const validationLabel = deliveryMethod === 'wallet_blockchain' ? chosenNetwork : deliveryMethod
     if (destination) {
       const res = validateAddressForNetwork(destination, validationLabel)
       if (!res.valid) {
@@ -464,7 +474,7 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
         buyerId,
         sellerId,
         coin: adRows.coin,
-        network: adRows.network,
+        network: chosenNetwork,
         amount,
         price: adRows.price,
         fiatAmount,

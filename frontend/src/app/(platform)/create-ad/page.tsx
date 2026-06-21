@@ -56,6 +56,7 @@ interface SavedPaymentMethod {
 interface FormState {
   side: 'buy' | 'sell'
   network: string
+  networks: string[]
   priceType: 'fixed' | 'float'
   fixedPrice: string
   floatOffset: string
@@ -72,6 +73,7 @@ interface FormState {
 const defaultForm: FormState = {
   side: 'sell',
   network: 'BEP20',
+  networks: ['BEP20'],
   priceType: 'fixed',
   fixedPrice: '',
   floatOffset: '0',
@@ -101,8 +103,9 @@ function methodLabel(m: SavedPaymentMethod): string {
 function validate(form: FormState): Record<string, string> {
   const e: Record<string, string> = {}
   // Network only matters for on-chain wallet delivery; exchange/internal transfers
-  // move off-chain so no blockchain network applies.
-  if (form.tokenDeliveryTypes.includes(WALLET_DELIVERY) && !form.network) e.network = 'Select a network'
+  // move off-chain so no blockchain network applies. A wallet ad may offer one or
+  // more networks (buyer picks one at trade start) — require at least one.
+  if (form.tokenDeliveryTypes.includes(WALLET_DELIVERY) && form.networks.length === 0) e.network = 'Select at least one network'
   if (form.priceType === 'fixed' && !form.fixedPrice) e.fixedPrice = 'Enter a price'
   if (form.priceType === 'fixed' && form.fixedPrice && parseFloat(form.fixedPrice) <= 0) e.fixedPrice = 'Price must be positive'
   if (!form.minAmount) e.minAmount = 'Enter minimum order'
@@ -118,10 +121,18 @@ function validate(form: FormState): Record<string, string> {
   // with, so a malformed address can't be saved on the ad.
   if (form.side === 'buy' && form.settlementMethod.trim()) {
     const usesWallet = form.tokenDeliveryTypes.includes(WALLET_DELIVERY)
-    const label = usesWallet ? form.network : (form.tokenDeliveryTypes.find((t) => EXCHANGE_VALUES.includes(t)) ?? '')
-    if (label) {
-      const r = validateAddressForNetwork(form.settlementMethod.trim(), label)
-      if (!r.valid) e.settlementMethod = r.reason ?? 'Invalid receiving address'
+    if (usesWallet) {
+      // Must be a valid address on every on-chain network offered.
+      for (const net of form.networks) {
+        const r = validateAddressForNetwork(form.settlementMethod.trim(), net)
+        if (!r.valid) { e.settlementMethod = r.reason ?? 'Invalid receiving address'; break }
+      }
+    } else {
+      const venue = form.tokenDeliveryTypes.find((t) => EXCHANGE_VALUES.includes(t)) ?? ''
+      if (venue) {
+        const r = validateAddressForNetwork(form.settlementMethod.trim(), venue)
+        if (!r.valid) e.settlementMethod = r.reason ?? 'Invalid receiving address'
+      }
     }
   }
   return e
@@ -169,6 +180,7 @@ function CreateListingPageContent() {
               setForm({
                 side: ad.side as 'buy' | 'sell',
                 network: ad.network ?? 'BEP20',
+                networks: ad.networks?.length ? ad.networks : [ad.network ?? 'BEP20'],
                 priceType: (ad.priceType ?? 'fixed') as 'fixed' | 'float',
                 fixedPrice: ad.price,
                 floatOffset: ad.floatOffset ?? '0',
@@ -277,7 +289,8 @@ function CreateListingPageContent() {
         const payload: CreateAdPayload = {
           side: form.side,
           coin: 'USDT',
-          network: form.network,
+          network: form.networks[0] ?? form.network,
+          networks: form.networks,
           priceType: form.priceType,
           price,
           floatOffset: parseFloat(form.floatOffset || '0'),
@@ -472,17 +485,25 @@ function CreateListingPageContent() {
               </div>
               {errors.tokenDeliveryTypes && <p className="text-sm text-danger mt-1">{errors.tokenDeliveryTypes}</p>}
 
-              {/* Wallet sub-options: blockchain network (only relevant on-chain) */}
+              {/* Wallet sub-options: blockchain network(s). Multi-select — the ad
+                  can offer more than one network; the buyer picks one at trade start. */}
               {walletSelected && (
                 <div className="mt-3 rounded-xl border border-border bg-surface-alt/40 p-3">
-                  <label className="block text-xs font-medium text-text-primary mb-1.5">Network *</label>
+                  <label className="block text-xs font-medium text-text-primary mb-1.5">Network(s) * <span className="font-normal text-text-muted">— select one or more</span></label>
                   <div className="flex flex-wrap gap-2">
-                    {NETWORKS.map((n) => (
-                      <button type="button" key={n.value} onClick={() => set('network', n.value)}
-                        className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${form.network === n.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
-                        {n.label}
-                      </button>
-                    ))}
+                    {NETWORKS.map((n) => {
+                      const sel = form.networks.includes(n.value)
+                      return (
+                        <button type="button" key={n.value}
+                          onClick={() => setForm((f) => {
+                            const next = sel ? f.networks.filter((x) => x !== n.value) : [...f.networks, n.value]
+                            return { ...f, networks: next, network: next[0] ?? '', settlementMethod: '' }
+                          })}
+                          className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${sel ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
+                          {n.label}
+                        </button>
+                      )
+                    })}
                   </div>
                   {errors.network && <p className="text-sm text-danger mt-1">{errors.network}</p>}
                 </div>
@@ -517,17 +538,23 @@ function CreateListingPageContent() {
 
               {/* Buy: receiving address (single field; the lister picks which to use) */}
               {form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && (() => {
-                const validationLabel = walletSelected ? form.network : (selectedExchanges[0] ?? '')
+                const exchangeVenue = selectedExchanges[0] ?? ''
+                // Networks this single receiving address is validated against:
+                // every wallet network offered, or the chosen exchange venue.
+                const checkLabels = walletSelected ? form.networks : (exchangeVenue ? [exchangeVenue] : [])
+                const walletLabel = form.networks.join(' + ')
                 const addrTrimmed = form.settlementMethod.trim()
-                const addrResult = addrTrimmed && validationLabel ? validateAddressForNetwork(addrTrimmed, validationLabel) : null
-                const matchingSaved = savedAddresses.filter((a) => a.network === validationLabel)
+                const addrResult = addrTrimmed && checkLabels.length > 0
+                  ? (checkLabels.map((l) => validateAddressForNetwork(addrTrimmed, l)).find((r) => !r.valid) ?? { valid: true as const })
+                  : null
+                const matchingSaved = savedAddresses.filter((a) => checkLabels.includes(a.network))
                 return (
                   <div className="mt-3">
                     <label className="block text-xs font-medium text-text-muted mb-1">
                       {walletSelected
-                        ? `Your ${form.network} wallet address — sellers will send USDT here`
-                        : validationLabel
-                          ? `Your ${validationLabel} UID — sellers will send USDT here`
+                        ? `Your wallet address (${walletLabel}) — sellers will send USDT here`
+                        : exchangeVenue
+                          ? `Your ${exchangeVenue} UID — sellers will send USDT here`
                           : 'Your receiving address / account — sellers will send USDT here'}
                     </label>
                     {matchingSaved.length > 0 && (
@@ -553,7 +580,7 @@ function CreateListingPageContent() {
                     )}
                     <input
                       type="text"
-                      placeholder={walletSelected ? `${form.network} address (0x…)` : 'Your exchange UID'}
+                      placeholder={walletSelected ? 'Wallet address (0x…)' : 'Your exchange UID'}
                       value={form.settlementMethod}
                       onChange={(e) => set('settlementMethod', e.target.value)}
                       className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -562,7 +589,7 @@ function CreateListingPageContent() {
                     {!errors.settlementMethod && addrResult?.valid && (
                       <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                        Valid {walletSelected ? `${form.network} address` : `${validationLabel} UID`}
+                        Valid {walletSelected ? `address for ${walletLabel}` : `${exchangeVenue} UID`}
                       </p>
                     )}
                     {!errors.settlementMethod && addrResult && !addrResult.valid && (

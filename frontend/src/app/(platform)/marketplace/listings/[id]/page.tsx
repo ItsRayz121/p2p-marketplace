@@ -48,6 +48,7 @@ interface AdDetail {
   side: string
   coin: string
   network: string
+  networks?: string[]
   price: string
   availableAmount: string
   minOrder: string
@@ -88,6 +89,8 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   const [instantPaymentMethod, setInstantPaymentMethod] = useState('')
   const [instantDeliveryMethod, setInstantDeliveryMethod] = useState('')
   const [instantDeliveryAddress, setInstantDeliveryAddress] = useState('')
+  // Buyer's chosen on-chain network when the ad offers more than one (wallet delivery).
+  const [instantNetwork, setInstantNetwork] = useState('')
   const [instantSubmitting, setInstantSubmitting] = useState(false)
   const [instantError, setInstantError] = useState('')
 
@@ -185,8 +188,12 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     if (!instantPaymentMethod) { setInstantError('Select a payment method'); return }
     if (ad?.side === 'sell' && !instantDeliveryMethod) { setInstantError('Select your receiving method'); return }
     if (ad?.side === 'sell' && instantDeliveryMethod && !instantDeliveryAddress.trim()) { setInstantError('Enter your receiving address'); return }
+    const offered = ad?.networks?.length ? ad.networks : (ad?.network ? [ad.network] : [])
+    const isWallet = instantDeliveryMethod === 'wallet_blockchain'
+    const chosenNet = isWallet ? (instantNetwork || offered[0] || '') : ''
+    if (ad?.side === 'sell' && isWallet && offered.length > 1 && !instantNetwork) { setInstantError('Select which network you want to receive on'); return }
     if (ad?.side === 'sell' && instantDeliveryMethod && instantDeliveryAddress.trim()) {
-      const label = instantDeliveryMethod === 'wallet_blockchain' ? (ad.network ?? '') : instantDeliveryMethod
+      const label = isWallet ? chosenNet : instantDeliveryMethod
       const r = validateAddressForNetwork(instantDeliveryAddress.trim(), label)
       if (!r.valid) { setInstantError(r.reason ?? 'Invalid receiving address'); return }
     }
@@ -196,6 +203,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       const trade = await tradesApi.createTrade({
         adId: id,
         amount: parseFloat(instantAmount),
+        ...(isWallet && chosenNet ? { network: chosenNet } : {}),
         paymentMethod: instantPaymentMethod,
         buyerDeliveryMethod: instantDeliveryMethod || undefined,
         buyerDeliveryAddress: instantDeliveryAddress.trim() || undefined,
@@ -239,6 +247,9 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   const isSellAd = ad.side === 'sell'
   const resolvedMethods = ad.resolvedPaymentMethods ?? []
   const deliveryTypes = ad.tokenDeliveryTypes ?? []
+  // Networks the ad offers for wallet delivery (multi-network). Legacy ads fall
+  // back to their single network. The taker picks one at trade start.
+  const offeredNetworks = ad.networks?.length ? ad.networks : [ad.network]
 
   // For the confirm/instant modal: if buying from sell ad, show seller's accepted payment methods
   // If selling to buy ad, show our own payment methods
@@ -250,12 +261,14 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
       }))
 
-  // Network-aware delivery label. Wallet delivery shows the on-chain asset+network
-  // ("Wallet · USDT BEP20") so the buyer always sees which network they'll receive
-  // on; exchange venues move off-chain so they show the venue name only.
+  // Network-aware delivery label. Wallet delivery shows the on-chain asset+network(s)
+  // ("Wallet · USDT BEP20" or "Wallet · USDT BEP20 / Aptos") so the buyer always
+  // sees which network(s) they can receive on; exchange venues move off-chain so
+  // they show the venue name only.
+  const walletNetworksLabel = `${ad.coin} ${offeredNetworks.join(' / ')}`
   const deliveryLabelFull = (dt: string) =>
     dt === 'wallet_blockchain'
-      ? `Wallet · ${networkAssetLabel(ad.network, ad.coin)}`
+      ? `Wallet · ${walletNetworksLabel}`
       : (DELIVERY_LABELS[dt] ?? dt)
 
   const DeliveryMethodPicker = ({ selected, onSelect }: { selected: string; onSelect: (v: string) => void }) => (
@@ -287,7 +300,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                   ? (isSellAd ? 'Sell' : 'Buy')
                   : (isSellAd ? 'Buy' : 'Sell')} {ad.coin}
               </h1>
-              <p className="text-text-muted text-sm">{networkAssetLabel(ad.network, ad.coin)}</p>
+              <p className="text-text-muted text-sm">{offeredNetworks.map((n) => networkAssetLabel(n, ad.coin)).join(' · ')}</p>
             </div>
           </div>
           <span className={`text-xs px-2 py-1 rounded-full font-medium ${ad.status === 'active' ? 'bg-success/10 text-success' : 'bg-surface-alt text-text-muted'}`}>{ad.status.charAt(0).toUpperCase() + ad.status.slice(1)}</span>
@@ -406,7 +419,8 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               </div>
               {deliveryTypes.includes('wallet_blockchain') && (
                 <p className="text-xs text-text-muted mt-2">
-                  {isSellAd ? 'You will receive' : 'Send'} on-chain as <span className="font-semibold text-text-secondary">{networkAssetLabel(ad.network, ad.coin)}</span> ({ad.network} network).
+                  {isSellAd ? 'You will receive' : 'Send'} on-chain as <span className="font-semibold text-text-secondary">{walletNetworksLabel}</span>
+                  {offeredNetworks.length > 1 ? ' — pick one network when starting the trade.' : ` (${offeredNetworks[0]} network).`}
                 </p>
               )}
             </div>
@@ -730,12 +744,26 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">How will you receive {ad.coin}?</label>
                 <p className="text-xs text-text-muted mb-1">Choose one from the seller's available methods.</p>
-                <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={(v) => { setInstantDeliveryMethod(v); setInstantDeliveryAddress('') }} />
+                <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={(v) => { setInstantDeliveryMethod(v); setInstantDeliveryAddress(''); setInstantNetwork('') }} />
                 {instantDeliveryMethod && (() => {
-                  const matchNetwork = instantDeliveryMethod === 'wallet_blockchain' ? [ad.network] : [instantDeliveryMethod]
-                  const matching = mySavedAddresses.filter((a) => matchNetwork.includes(a.network))
+                  const isWallet = instantDeliveryMethod === 'wallet_blockchain'
+                  const effNet = isWallet ? (instantNetwork || offeredNetworks[0]) : instantDeliveryMethod
+                  const matching = mySavedAddresses.filter((a) => a.network === effNet)
                   return (
                     <div className="mt-2 space-y-2">
+                      {isWallet && offeredNetworks.length > 1 && (
+                        <div>
+                          <p className="text-xs text-text-muted mb-1.5">Which network do you want to receive on?</p>
+                          <div className="flex flex-wrap gap-2">
+                            {offeredNetworks.map((n) => (
+                              <button key={n} type="button" onClick={() => { setInstantNetwork(n); setInstantDeliveryAddress('') }}
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${instantNetwork === n ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
+                                {networkAssetLabel(n, ad.coin)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {matching.length > 0 && (
                         <div>
                           <p className="text-xs text-text-muted mb-1.5">Your saved addresses — tap to fill:</p>
@@ -758,17 +786,16 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                         </div>
                       )}
                       <input type="text"
-                        placeholder={instantDeliveryMethod === 'wallet_blockchain' ? `${ad.network} address (0x…)` : `Your ${instantDeliveryMethod} UID`}
+                        placeholder={isWallet ? `${effNet} address (0x…)` : `Your ${instantDeliveryMethod} UID`}
                         value={instantDeliveryAddress} onChange={(e) => setInstantDeliveryAddress(e.target.value)}
                         className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                       />
                       {(() => {
-                        const label = instantDeliveryMethod === 'wallet_blockchain' ? (ad.network ?? '') : instantDeliveryMethod
                         const t = instantDeliveryAddress.trim()
-                        if (!t || !label) return null
-                        const r = validateAddressForNetwork(t, label)
+                        if (!t || !effNet) return null
+                        const r = validateAddressForNetwork(t, effNet)
                         return r.valid
-                          ? <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Valid {instantDeliveryMethod === 'wallet_blockchain' ? `${ad.network} address` : `${label} UID`}</p>
+                          ? <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Valid {isWallet ? `${effNet} address` : `${effNet} UID`}</p>
                           : <p className="text-xs text-danger">{r.reason}</p>
                       })()}
                     </div>

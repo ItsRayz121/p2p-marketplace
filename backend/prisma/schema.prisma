@@ -623,6 +623,10 @@ model Ad {
   side            AdSide
   coin            String
   network         String
+  // Multi-network support: a wallet-delivery ad may offer more than one on-chain
+  // network (e.g. BEP20 + Aptos). `network` stays as the primary/first network for
+  // back-compat; `networks` holds the full set. Empty = legacy ad → treat as [network].
+  networks        String[]  @default([])
   priceType       PriceType @default(fixed)
   price           Decimal   @db.Decimal(14, 2)
   floatOffset     Decimal   @default(0) @db.Decimal(6, 4)

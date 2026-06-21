@@ -25,6 +25,7 @@ const createAdSchema = z.object({
   side: z.enum(['buy', 'sell']),
   coin: z.literal('USDT'),
   network: z.enum(ALLOWED_NETWORKS),
+  networks: z.array(z.enum(ALLOWED_NETWORKS)).min(1).optional(),
   priceType: z.enum(['fixed', 'float']),
   price: z.number().positive(),
   floatOffset: z.number().optional(),
