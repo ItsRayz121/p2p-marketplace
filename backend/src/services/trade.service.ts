@@ -19,6 +19,7 @@ import {
   type TxVerificationResult,
 } from './blockchainVerification.service'
 import { logger } from '../lib/logger'
+import { validateAddressForNetwork } from '../lib/addressValidation'
 
 // ─── Payment-method resolution ──────────────────────────────────────────────
 // A trade stores `paymentMethod` as the buyer's selection. For current trades
@@ -225,12 +226,28 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
   // USDT (initiator = buyer). On a BUY ad the initiator is selling USDT to the ad
   // owner, so the ad owner is the buyer and the initiator is the seller. We read
   // side + owner up front (cheap) so role-dependent guards below are correct.
-  const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true } })
+  const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true, network: true } })
   if (!adSide) throw new AppError('NOT_FOUND', 'Ad not found', 404)
   if (adSide.userId === initiatorId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
   const isBuyAd = adSide.side === 'buy'
   const buyerId = isBuyAd ? adSide.userId : initiatorId
   const sellerId = isBuyAd ? initiatorId : adSide.userId
+
+  // Validate the buyer's USDT receiving destination at trade start (sell ads only;
+  // on buy ads the destination is the maker's pre-validated settlementMethod).
+  // Wallet delivery → check against the ad's on-chain network; exchange delivery →
+  // check the venue's UID format. Blocks malformed addresses before a trade opens.
+  if (!isBuyAd) {
+    const deliveryMethod = data.buyerDeliveryMethod ?? 'wallet_blockchain'
+    const destination = (data.buyerDeliveryAddress ?? data.buyerWalletAddress ?? '').trim()
+    const validationLabel = deliveryMethod === 'wallet_blockchain' ? adSide.network : deliveryMethod
+    if (destination) {
+      const res = validateAddressForNetwork(destination, validationLabel)
+      if (!res.valid) {
+        throw new AppError('VALIDATION_ERROR', res.reason ?? 'Invalid receiving address', 400)
+      }
+    }
+  }
 
   // Idempotency: claim the key with SET NX BEFORE the transaction so two
   // concurrent submissions (double-click / retry) can't both create a trade.

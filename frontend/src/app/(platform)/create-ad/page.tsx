@@ -5,6 +5,7 @@ import { adsApi, marketplaceApi, apiRequest, savedTermsApi } from '@/lib/api'
 import type { CreateAdPayload, UpdateAdPayload, SavedTerms } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { validateAddressForNetwork } from '@/lib/addressValidation'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -113,6 +114,16 @@ function validate(form: FormState): Record<string, string> {
   if (form.tokenDeliveryTypes.length === 0) e.tokenDeliveryTypes = 'Select at least one delivery method'
   if (form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && !form.settlementMethod.trim())
     e.settlementMethod = 'Enter your receiving address so sellers know where to send USDT'
+  // Format-validate the receiving address against the network/venue it'll be used
+  // with, so a malformed address can't be saved on the ad.
+  if (form.side === 'buy' && form.settlementMethod.trim()) {
+    const usesWallet = form.tokenDeliveryTypes.includes(WALLET_DELIVERY)
+    const label = usesWallet ? form.network : (form.tokenDeliveryTypes.find((t) => EXCHANGE_VALUES.includes(t)) ?? '')
+    if (label) {
+      const r = validateAddressForNetwork(form.settlementMethod.trim(), label)
+      if (!r.valid) e.settlementMethod = r.reason ?? 'Invalid receiving address'
+    }
+  }
   return e
 }
 
@@ -500,22 +511,36 @@ function CreateListingPageContent() {
               )}
 
               {/* Buy: receiving address (single field; the lister picks which to use) */}
-              {form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && (
-                <div className="mt-3">
-                  <label className="block text-xs font-medium text-text-muted mb-1">
-                    Your receiving address / account — sellers will send USDT here
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={walletSelected ? '0x… wallet address' : 'Your exchange UID or deposit address'}
-                    value={form.settlementMethod}
-                    onChange={(e) => set('settlementMethod', e.target.value)}
-                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                  {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
-                  <p className="mt-1 text-xs text-text-muted">Sellers will send USDT here when they take your listing.</p>
-                </div>
-              )}
+              {form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && (() => {
+                const validationLabel = walletSelected ? form.network : (selectedExchanges[0] ?? '')
+                const addrTrimmed = form.settlementMethod.trim()
+                const addrResult = addrTrimmed && validationLabel ? validateAddressForNetwork(addrTrimmed, validationLabel) : null
+                return (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-text-muted mb-1">
+                      Your receiving address / account — sellers will send USDT here
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={walletSelected ? `${form.network} address (0x…)` : 'Your exchange UID'}
+                      value={form.settlementMethod}
+                      onChange={(e) => set('settlementMethod', e.target.value)}
+                      className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
+                    {!errors.settlementMethod && addrResult?.valid && (
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        Valid {walletSelected ? `${form.network} address` : `${validationLabel} UID`}
+                      </p>
+                    )}
+                    {!errors.settlementMethod && addrResult && !addrResult.valid && (
+                      <p className="text-sm text-danger mt-1">{addrResult.reason}</p>
+                    )}
+                    <p className="mt-1 text-xs text-text-muted">Sellers will send USDT here when they take your listing.</p>
+                  </div>
+                )
+              })()}
 
               {form.side === 'sell' && form.tokenDeliveryTypes.length > 0 && (
                 <p className="mt-2 text-xs text-primary bg-primary/5 rounded-lg px-3 py-2">

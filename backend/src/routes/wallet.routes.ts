@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, requireTotpIfEnabled } from '../middleware/auth.middleware'
+import { validateAddressForNetwork } from '../lib/addressValidation'
 import { createAdminNotif } from '../services/adminNotification.service'
 import {
   getUserWallets,
@@ -475,6 +476,12 @@ export async function walletRoutes(app: FastifyInstance) {
     const parsed = savedAddressSchema.safeParse(req.body)
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    // CTM-token addresses (network 'CTM') are free-form per token; only validate
+    // the known wallet networks and exchange venues against their address format.
+    const addrCheck = validateAddressForNetwork(parsed.data.address, parsed.data.network)
+    if (!addrCheck.valid) {
+      throw new AppError('VALIDATION_ERROR', addrCheck.reason ?? 'Invalid address for this network', 400)
     }
     const address = await addSavedAddress(userId, parsed.data)
     return reply.code(201).send({ success: true, data: address })

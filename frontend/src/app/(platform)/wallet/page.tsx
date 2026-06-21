@@ -23,6 +23,7 @@ import { COIN_NETWORKS, networksFor } from '@/lib/wallet/coinNetworks'
 import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { validateAddressForNetwork } from '@/lib/addressValidation'
 import { useAccount } from 'wagmi'
 import { ArrowUpDown, Lock, Clock, AlertTriangle } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -1170,6 +1171,10 @@ function SavedDeliveryAddressesSection() {
   const handleAdd = async () => {
     if (category === 'ctm' && !form.tokenSymbol) { setFormError('Select a token'); return }
     if (!form.address.trim()) { setFormError('Address / UID is required'); return }
+    if (category === 'crypto') {
+      const r = validateAddressForNetwork(form.address.trim(), form.network)
+      if (!r.valid) { setFormError(r.reason ?? 'Invalid address for this network'); return }
+    }
     if (!form.label.trim()) { setFormError('Label is required'); return }
     setAdding(true)
     setFormError(null)
@@ -1313,6 +1318,12 @@ function SavedDeliveryAddressesSection() {
               placeholder={category === 'ctm' ? 'Your deposit address or account ID for this token' : (selectedNetwork?.placeholder ?? 'Address or UID')}
               className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />
+            {category === 'crypto' && form.address.trim() && (() => {
+              const r = validateAddressForNetwork(form.address.trim(), form.network)
+              return r.valid
+                ? <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Valid {selectedNetwork?.label ?? form.network}</p>
+                : <p className="text-xs text-danger mt-1">{r.reason}</p>
+            })()}
           </div>
 
           <div>

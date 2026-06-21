@@ -3,6 +3,7 @@ import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
 import { notify } from '../lib/notify'
+import { validateAddressForNetwork } from '../lib/addressValidation'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,24 @@ export async function createAd(userId: string, data: CreateAdInput) {
   }
   if (data.minOrder <= 0 || data.maxOrder <= 0) {
     throw new AppError('VALIDATION_ERROR', 'Amounts must be positive', 400)
+  }
+
+  // Validate the maker's receiving address (buy ads) against the network/venue
+  // it will be used with, so a malformed destination can never be persisted.
+  // Wallet delivery → validate against the on-chain network (BEP20/Aptos);
+  // exchange-only delivery → validate against the selected venue's UID format.
+  if (data.settlementMethod && data.settlementMethod.trim()) {
+    const deliveryTypes = data.tokenDeliveryTypes ?? []
+    const usesWallet = deliveryTypes.includes('wallet_blockchain')
+    const validationLabel = usesWallet
+      ? data.network
+      : deliveryTypes.find((t) => t !== 'wallet_blockchain') ?? ''
+    if (validationLabel) {
+      const res = validateAddressForNetwork(data.settlementMethod.trim(), validationLabel)
+      if (!res.valid) {
+        throw new AppError('VALIDATION_ERROR', res.reason ?? 'Invalid receiving address', 400)
+      }
+    }
   }
 
   const totalAmount = data.totalAmount ?? 0

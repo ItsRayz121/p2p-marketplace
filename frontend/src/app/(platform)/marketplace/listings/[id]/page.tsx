@@ -9,6 +9,7 @@ import type { AdActivity, SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuth } from '@/hooks/useAuth'
+import { validateAddressForNetwork } from '@/lib/addressValidation'
 
 const METHOD_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -184,6 +185,11 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     if (!instantPaymentMethod) { setInstantError('Select a payment method'); return }
     if (ad?.side === 'sell' && !instantDeliveryMethod) { setInstantError('Select your receiving method'); return }
     if (ad?.side === 'sell' && instantDeliveryMethod && !instantDeliveryAddress.trim()) { setInstantError('Enter your receiving address'); return }
+    if (ad?.side === 'sell' && instantDeliveryMethod && instantDeliveryAddress.trim()) {
+      const label = instantDeliveryMethod === 'wallet_blockchain' ? (ad.network ?? '') : instantDeliveryMethod
+      const r = validateAddressForNetwork(instantDeliveryAddress.trim(), label)
+      if (!r.valid) { setInstantError(r.reason ?? 'Invalid receiving address'); return }
+    }
     setInstantError('')
     setInstantSubmitting(true)
     try {
@@ -206,6 +212,11 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     if (!confirmPaymentMethod) { setConfirmError('Select a payment method'); return }
     if (ad?.side === 'sell' && !confirmDeliveryMethod) { setConfirmError('Select your receiving method'); return }
     if (ad?.side === 'sell' && confirmDeliveryMethod && !confirmDeliveryAddress.trim()) { setConfirmError('Enter your receiving address'); return }
+    if (ad?.side === 'sell' && confirmDeliveryMethod && confirmDeliveryAddress.trim()) {
+      const label = confirmDeliveryMethod === 'wallet_blockchain' ? (ad.network ?? '') : confirmDeliveryMethod
+      const r = validateAddressForNetwork(confirmDeliveryAddress.trim(), label)
+      if (!r.valid) { setConfirmError(r.reason ?? 'Invalid receiving address'); return }
+    }
     setConfirmError('')
     setConfirmSubmitting(true)
     try {
@@ -726,10 +737,19 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                         </div>
                       )}
                       <input type="text"
-                        placeholder={instantDeliveryMethod === 'wallet_blockchain' ? '0x… wallet address' : `Your ${instantDeliveryMethod} deposit address or UID`}
+                        placeholder={instantDeliveryMethod === 'wallet_blockchain' ? `${ad.network} address (0x…)` : `Your ${instantDeliveryMethod} UID`}
                         value={instantDeliveryAddress} onChange={(e) => setInstantDeliveryAddress(e.target.value)}
                         className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                       />
+                      {(() => {
+                        const label = instantDeliveryMethod === 'wallet_blockchain' ? (ad.network ?? '') : instantDeliveryMethod
+                        const t = instantDeliveryAddress.trim()
+                        if (!t || !label) return null
+                        const r = validateAddressForNetwork(t, label)
+                        return r.valid
+                          ? <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Valid {instantDeliveryMethod === 'wallet_blockchain' ? `${ad.network} address` : `${label} UID`}</p>
+                          : <p className="text-xs text-danger">{r.reason}</p>
+                      })()}
                     </div>
                   )
                 })()}
@@ -862,10 +882,19 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 {confirmDeliveryMethod && (
                   <div className="mt-2">
                     <input type="text"
-                      placeholder={confirmDeliveryMethod === 'wallet_blockchain' ? '0x… wallet address' : `Your ${confirmDeliveryMethod} deposit address or UID`}
+                      placeholder={confirmDeliveryMethod === 'wallet_blockchain' ? `${ad.network} address (0x…)` : `Your ${confirmDeliveryMethod} UID`}
                       value={confirmDeliveryAddress} onChange={(e) => setConfirmDeliveryAddress(e.target.value)}
                       className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
+                    {(() => {
+                      const label = confirmDeliveryMethod === 'wallet_blockchain' ? (ad.network ?? '') : confirmDeliveryMethod
+                      const t = confirmDeliveryAddress.trim()
+                      if (!t || !label) return null
+                      const r = validateAddressForNetwork(t, label)
+                      return r.valid
+                        ? <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Valid {confirmDeliveryMethod === 'wallet_blockchain' ? `${ad.network} address` : `${label} UID`}</p>
+                        : <p className="text-xs text-danger mt-1">{r.reason}</p>
+                    })()}
                   </div>
                 )}
               </div>
