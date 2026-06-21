@@ -646,7 +646,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Trade modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
             {error && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{error}</div>}
 
