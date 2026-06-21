@@ -1,5 +1,6 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
+import { assertTokenAddressFormat } from './ctm.address'
 import { Prisma } from '@prisma/client'
 import { decrementLockedAmount } from './ctm.listing.service'
 import { queues } from '../queues/definitions'
@@ -661,21 +662,14 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
 
   // Guardrail: if the admin configured an address pattern for this token, the
   // buyer's receiving address must match it — so a wrong-chain address (e.g. an
-  // EVM 0x… where a Sidra address is expected) can't be used. Only enforced when a
-  // pattern is set and an address was provided; a bad pattern fails open (skip).
-  const tokenAddrRegex = (listing.token as { addressRegex?: string | null }).addressRegex
-  if (tokenAddrRegex && actualBuyerSettlementId && String(actualBuyerSettlementId).trim()) {
-    let re: RegExp | null = null
-    try { re = new RegExp(tokenAddrRegex) } catch { re = null }
-    if (re && !re.test(String(actualBuyerSettlementId).trim())) {
-      const ex = (listing.token as { addressExample?: string | null }).addressExample
-      throw new AppError(
-        'VALIDATION_ERROR',
-        `That doesn't look like a valid ${listing.token.symbol} address.${ex ? ` Example: ${ex}` : ''}`,
-        400,
-      )
-    }
-  }
+  // EVM 0x… where a Sidra address is expected) can't be used. Shared with
+  // createListing so an ad that passes creation also passes trade start. Only
+  // applied to blockchain deliveries (email/username carry a different value).
+  assertTokenAddressFormat(
+    listing.token,
+    actualBuyerSettlementId ? String(actualBuyerSettlementId) : null,
+    (listing as { tokenDeliveryType?: string | null }).tokenDeliveryType,
+  )
 
   const expiresAt = new Date(Date.now() + (listing.tradeWindowMins ?? 45) * 60 * 1000)
 

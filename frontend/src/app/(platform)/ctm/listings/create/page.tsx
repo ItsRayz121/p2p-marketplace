@@ -7,7 +7,7 @@ import { EntityLogo } from '@/components/ui/EntityLogo'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 
-interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string; settlementType: string }
+interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string; settlementType: string; addressExample?: string; addressRegex?: string }
 
 interface SavedPaymentMethod {
   id: string
@@ -93,6 +93,21 @@ export default function CreateListingPage() {
     if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
     if (form.side === 'buy' && !form.settlementMethod.trim()) {
       setError('Enter your token receiving address so sellers know where to send tokens'); return
+    }
+    // Validate the receiving address format up-front for blockchain delivery, so an
+    // invalid address (e.g. a phone number) can't create the ad. Mirrors the backend
+    // guardrail; a malformed/absent pattern fails open (backend re-checks anyway).
+    if (form.side === 'buy' && form.tokenDeliveryType === 'blockchain') {
+      const tok = tokens.find((t) => t.id === form.tokenId)
+      const addr = form.settlementMethod.trim()
+      if (tok?.addressRegex) {
+        let re: RegExp | null = null
+        try { re = new RegExp(tok.addressRegex) } catch { re = null }
+        if (re && !re.test(addr)) {
+          setError(`That doesn't look like a valid ${tok.symbol} address.${tok.addressExample ? ` Example: ${tok.addressExample}` : ''}`)
+          return
+        }
+      }
     }
 
     setSubmitting(true)
@@ -227,16 +242,23 @@ export default function CreateListingPage() {
               </label>
               <input
                 type={form.tokenDeliveryType === 'email' ? 'email' : 'text'}
-                placeholder={
-                  form.tokenDeliveryType === 'blockchain' ? '0x… or your token wallet address' :
-                  form.tokenDeliveryType === 'email' ? 'you@example.com' :
-                  'Your username'
-                }
+                placeholder={(() => {
+                  const tok = tokens.find((t) => t.id === form.tokenId)
+                  if (form.tokenDeliveryType === 'blockchain') return tok?.addressExample ? `e.g. ${tok.addressExample}` : '0x… or your token wallet address'
+                  if (form.tokenDeliveryType === 'email') return 'you@example.com'
+                  return 'Your username'
+                })()}
                 value={form.settlementMethod}
                 onChange={(e) => setForm((f) => ({ ...f, settlementMethod: e.target.value }))}
                 className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
-              <p className="mt-1 text-xs text-text-muted">Sellers will send tokens here when they take your listing.</p>
+              <p className="mt-1 text-xs text-text-muted">
+                Sellers will send tokens here when they take your listing.
+                {form.tokenDeliveryType === 'blockchain' && (() => {
+                  const tok = tokens.find((t) => t.id === form.tokenId)
+                  return tok?.addressExample ? <> Format example: <span className="font-mono">{tok.addressExample}</span></> : null
+                })()}
+              </p>
             </div>
           )}
 

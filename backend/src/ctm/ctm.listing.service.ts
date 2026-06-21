@@ -1,5 +1,6 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
+import { assertTokenAddressFormat } from './ctm.address'
 import { Prisma } from '@prisma/client'
 import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prisma/client'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
@@ -102,6 +103,13 @@ export async function createListing(userId: string, data: CreateListingInput) {
   if (!token) throw new AppError('NOT_FOUND', 'Token not found', 404)
   if (token.status !== 'approved') throw new AppError('FORBIDDEN', 'Token is not approved for listing', 403)
   if (!token.isListingEnabled) throw new AppError('FORBIDDEN', 'Listings are disabled for this token', 403)
+
+  // BUY listings carry the lister's own token receiving address (`settlementMethod`).
+  // Validate its format up-front so an invalid address (e.g. a phone number) can't be
+  // saved — previously this was only caught later when a seller tried to take the trade.
+  if (data.side === 'buy') {
+    assertTokenAddressFormat(token, data.settlementMethod, data.tokenDeliveryType)
+  }
 
   if (data.minOrderTokens <= 0) throw new AppError('VALIDATION_ERROR', 'Minimum tokens per order must be greater than 0', 400)
   if (data.maxOrderTokens < data.minOrderTokens) throw new AppError('VALIDATION_ERROR', 'Maximum tokens per order must be greater than or equal to minimum', 400)
