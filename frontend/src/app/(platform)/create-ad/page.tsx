@@ -524,7 +524,11 @@ function CreateListingPageContent() {
                 return (
                   <div className="mt-3">
                     <label className="block text-xs font-medium text-text-muted mb-1">
-                      Your receiving address / account — sellers will send USDT here
+                      {walletSelected
+                        ? `Your ${form.network} wallet address — sellers will send USDT here`
+                        : validationLabel
+                          ? `Your ${validationLabel} UID — sellers will send USDT here`
+                          : 'Your receiving address / account — sellers will send USDT here'}
                     </label>
                     {matchingSaved.length > 0 && (
                       <div className="mb-2">

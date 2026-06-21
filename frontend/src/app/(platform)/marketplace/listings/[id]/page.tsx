@@ -699,6 +699,16 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <label className="block text-sm font-medium text-text-primary mb-1.5">
                 {isSellAd ? "Pay via (seller's accepted methods)" : 'Receive payment via (your account)'}
               </label>
+              {tradePaymentMethods.length === 0 ? (
+                <div className="border border-border rounded-xl p-4 text-center">
+                  <p className="text-sm text-text-muted mb-2">
+                    {isSellAd ? "This seller hasn't listed a payment method." : "You haven't set up a payment account to receive PKR yet."}
+                  </p>
+                  {!isSellAd && (
+                    <Link href="/wallet#payment-methods" className="text-sm text-primary font-medium hover:underline">Set up a payment method →</Link>
+                  )}
+                </div>
+              ) : (
               <div className="space-y-2">
                 {tradePaymentMethods.map((m) => (
                   <button type="button" key={m.id}
@@ -712,6 +722,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                   </button>
                 ))}
               </div>
+              )}
             </div>
 
             {/* Delivery method — only for buying (receiving USDT) */}
@@ -868,6 +879,16 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <label className="block text-sm font-medium text-text-primary mb-1.5">
                 {isSellAd ? "Select seller's payment account to send PKR to" : 'Choose where you receive PKR'}
               </label>
+              {tradePaymentMethods.length === 0 ? (
+                <div className="border border-border rounded-xl p-4 text-center">
+                  <p className="text-sm text-text-muted mb-2">
+                    {isSellAd ? "This seller hasn't listed a payment method." : "You haven't set up a payment account to receive PKR yet."}
+                  </p>
+                  {!isSellAd && (
+                    <Link href="/wallet#payment-methods" className="text-sm text-primary font-medium hover:underline">Set up a payment method →</Link>
+                  )}
+                </div>
+              ) : (
               <div className="space-y-2">
                 {tradePaymentMethods.map((m) => (
                   <button type="button" key={m.id}
@@ -881,6 +902,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                   </button>
                 ))}
               </div>
+              )}
             </div>
 
             {/* Delivery method — only when buying (receiving USDT) */}
