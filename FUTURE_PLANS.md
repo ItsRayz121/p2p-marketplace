@@ -107,3 +107,34 @@ live-chain access per token; pricing-governance policy.
   enable on/off, L1 max order (USDT, default 50), L2 max order (USDT, default 500),
   L1 ads — USDT (default 1), L1 ads — CTM (default 2).
 - Fully reversible: untick Enable + Save returns to pre-launch behavior instantly.
+
+---
+
+## Deferred from the 2026-06-21 delivery-integrity + dispute sprint
+
+These were consciously left out during that sprint (the rest shipped — address
+validation, network labels, tx-hash explorer links, saved-address reuse,
+multi-network ads, dispute overview/strikes, CTM token address guardrails). None
+are blocking.
+
+1. **Optional escrow / custody mode.** Owner raised it; deferred by recommendation
+   — a real USDT escrow means custody (hot wallets, key security, regulatory
+   exposure) and contradicts the shipped non-custodial design. If ever built, make
+   it a clearly-flagged **optional** mode for high-value trades only, not the
+   default. Decision pending from owner.
+
+2. **Bid → confirm path multi-network picker.** Multi-network USDT ads are fully
+   wired on the **instant-buy** path (taker picks BEP20/Aptos in the modal, drives
+   validation + the trade's `network`). The **bid → confirm-details** path
+   (`confirmBidDetails`) still locks to the ad's *primary* network — no per-network
+   picker. To finish: thread a chosen `network` through `confirmBidDetails`
+   (backend) and add the picker to the confirm modal in
+   `marketplace/listings/[id]/page.tsx` (mirror the instant-buy block).
+
+3. **Automated on-chain verification for Aptos & CTM/Sidra.** `verifyTradeTx`
+   auto-verifies EVM + TRON only; Aptos returns `skipped` and CTM/Sidra has no
+   verifier. Both fall back to the explorer link + manual review (owner confirmed
+   manual is acceptable). CTM got a per-token **address-format regex guardrail**
+   (`CtmToken.addressRegex`/`addressExample`) instead of on-chain checking. To
+   close: add an Aptos verifier (fullnode REST) and, if a CTM chain exposes a
+   public API, a CTM verifier — wire both into `verifyTradeTx`.
