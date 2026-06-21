@@ -9,7 +9,7 @@ import type { AdActivity, SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useAuth } from '@/hooks/useAuth'
-import { validateAddressForNetwork } from '@/lib/addressValidation'
+import { validateAddressForNetwork, networkAssetLabel } from '@/lib/addressValidation'
 
 const METHOD_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -250,6 +250,14 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
       }))
 
+  // Network-aware delivery label. Wallet delivery shows the on-chain asset+network
+  // ("Wallet · USDT BEP20") so the buyer always sees which network they'll receive
+  // on; exchange venues move off-chain so they show the venue name only.
+  const deliveryLabelFull = (dt: string) =>
+    dt === 'wallet_blockchain'
+      ? `Wallet · ${networkAssetLabel(ad.network, ad.coin)}`
+      : (DELIVERY_LABELS[dt] ?? dt)
+
   const DeliveryMethodPicker = ({ selected, onSelect }: { selected: string; onSelect: (v: string) => void }) => (
     <div className="grid grid-cols-2 gap-2 mt-1.5">
       {deliveryTypes.map((dt) => (
@@ -259,7 +267,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
           onClick={() => onSelect(selected === dt ? '' : dt)}
           className={`py-2 text-sm rounded-xl border font-semibold transition-colors ${selected === dt ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
         >
-          {DELIVERY_LABELS[dt] ?? dt}
+          {deliveryLabelFull(dt)}
         </button>
       ))}
     </div>
@@ -279,7 +287,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                   ? (isSellAd ? 'Sell' : 'Buy')
                   : (isSellAd ? 'Buy' : 'Sell')} {ad.coin}
               </h1>
-              <p className="text-text-muted text-sm">{ad.coin} · {ad.network}</p>
+              <p className="text-text-muted text-sm">{networkAssetLabel(ad.network, ad.coin)}</p>
             </div>
           </div>
           <span className={`text-xs px-2 py-1 rounded-full font-medium ${ad.status === 'active' ? 'bg-success/10 text-success' : 'bg-surface-alt text-text-muted'}`}>{ad.status.charAt(0).toUpperCase() + ad.status.slice(1)}</span>
@@ -392,12 +400,14 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <div className="flex flex-wrap gap-2">
                 {deliveryTypes.map((dt) => (
                   <span key={dt} className="bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium text-text-primary">
-                    {DELIVERY_LABELS[dt] ?? dt}
+                    {deliveryLabelFull(dt)}
                   </span>
                 ))}
               </div>
               {deliveryTypes.includes('wallet_blockchain') && (
-                <p className="text-xs text-text-muted mt-2">Network: {ad.network}</p>
+                <p className="text-xs text-text-muted mt-2">
+                  {isSellAd ? 'You will receive' : 'Send'} on-chain as <span className="font-semibold text-text-secondary">{networkAssetLabel(ad.network, ad.coin)}</span> ({ad.network} network).
+                </p>
               )}
             </div>
           )}
