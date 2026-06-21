@@ -1596,8 +1596,8 @@ export async function adminRoutes(app: FastifyInstance) {
         include: {
           trade: {
             include: {
-              buyer: { select: { id: true, username: true, email: true } },
-              seller: { select: { id: true, username: true, email: true } },
+              buyer: { select: { id: true, username: true, email: true, tradeStats: { select: { disputesWon: true, disputesLost: true } } } },
+              seller: { select: { id: true, username: true, email: true, tradeStats: { select: { disputesWon: true, disputesLost: true } } } },
               messages: { orderBy: { createdAt: 'asc' }, select: { id: true, senderId: true, message: true, createdAt: true } },
               ad: { select: { side: true } },
             },
@@ -1634,8 +1634,8 @@ export async function adminRoutes(app: FastifyInstance) {
       include: {
         trade: {
           include: {
-            buyer: { select: { id: true, username: true, email: true } },
-            seller: { select: { id: true, username: true, email: true } },
+            buyer: { select: { id: true, username: true, email: true, tradeStats: { select: { disputesWon: true, disputesLost: true } } } },
+            seller: { select: { id: true, username: true, email: true, tradeStats: { select: { disputesWon: true, disputesLost: true } } } },
             messages: { orderBy: { createdAt: 'asc' }, select: { id: true, senderId: true, message: true, createdAt: true } },
             ad: { select: { side: true } },
           },
@@ -1724,6 +1724,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const winnerId = parsed.data.winner === 'buyer' ? dispute.trade.buyer.id : dispute.trade.seller.id
     const loserId  = parsed.data.winner === 'buyer' ? dispute.trade.seller.id : dispute.trade.buyer.id
+    let loserLossCount = 0
 
     await db.$transaction(async (tx) => {
       await tx.dispute.update({
@@ -1742,11 +1743,12 @@ export async function adminRoutes(app: FastifyInstance) {
         create: { userId: winnerId, disputesWon: 1 },
         update: { disputesWon: { increment: 1 } },
       })
-      await tx.tradeStats.upsert({
+      const loserStats = await tx.tradeStats.upsert({
         where: { userId: loserId },
         create: { userId: loserId, disputesLost: 1 },
         update: { disputesLost: { increment: 1 } },
       })
+      loserLossCount = loserStats.disputesLost
     })
 
     await createAuditLog(req.user!.id, 'DISPUTE_RESOLVED', 'Dispute', id, {
@@ -1780,6 +1782,45 @@ export async function adminRoutes(app: FastifyInstance) {
         }
         await createAuditLog(req.user!.id, 'DISPUTE_LOSER_PENALTY', 'User', loserId, { penalty: parsed.data.loserPenalty, disputeId: id }, clientIp(req), req.headers['user-agent'] as string | undefined)
       }
+    }
+
+    // ── Automatic dispute-loss strike escalation ─────────────────────────────────
+    // Graduated, NON-destructive consequence based on how many disputes the loser
+    // has now lost. We only ever apply a trading cooldown (blocks STARTING new
+    // trades — does not lock the account) and an under-review flag. Permanent /
+    // temporary bans stay an explicit admin decision (loserPenalty:'ban' above), so
+    // a single bad ruling can never auto-lock someone out. Skipped when the admin
+    // already chose to ban the loser.
+    if (parsed.data.loserPenalty !== 'ban' && loserLossCount > 0) {
+      let cooldownHours = 0
+      let flagReview = false
+      let tierMsg = ''
+      if (loserLossCount === 1) {
+        tierMsg = 'This is your first dispute loss — consider it a formal warning.'
+      } else if (loserLossCount === 2) {
+        cooldownHours = 48
+        tierMsg = 'Second dispute loss — a 48-hour trading cooldown has been applied.'
+      } else if (loserLossCount === 3) {
+        cooldownHours = 168
+        flagReview = true
+        tierMsg = 'Third dispute loss — a 7-day trading cooldown has been applied and your account is under review.'
+      } else {
+        cooldownHours = 168
+        flagReview = true
+        tierMsg = `You have now lost ${loserLossCount} disputes — your account is under review and may be suspended.`
+      }
+
+      if (cooldownHours > 0 || flagReview) {
+        await db.user.update({
+          where: { id: loserId },
+          data: {
+            ...(cooldownHours > 0 ? { tradeCooldownUntil: new Date(Date.now() + cooldownHours * 3600 * 1000) } : {}),
+            ...(flagReview ? { underReview: true } : {}),
+          },
+        }).catch((err) => log.error({ err, loserId }, 'Failed to apply dispute-loss strike escalation'))
+        await createAuditLog(req.user!.id, 'DISPUTE_LOSS_STRIKE', 'User', loserId, { lossCount: loserLossCount, cooldownHours, flagReview, disputeId: id }, clientIp(req), req.headers['user-agent'] as string | undefined)
+      }
+      notify(loserId, 'dispute', `Dispute strike #${loserLossCount}`, tierMsg, { tradeId: dispute.tradeId }, dispute.tradeId)
     }
 
     // Notify both parties of the ruling. Non-custodial: the platform never moves

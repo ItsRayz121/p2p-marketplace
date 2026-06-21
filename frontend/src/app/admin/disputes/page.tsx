@@ -53,8 +53,8 @@ interface DisputeTrade {
   disputeDescription?: string
   disputeMessages?: TradeMessage[]
   messages?: TradeMessage[]
-  buyer?: { id: string; email: string; username: string }
-  seller?: { id: string; email: string; username: string }
+  buyer?: { id: string; email: string; username: string; tradeStats?: { disputesWon: number; disputesLost: number } | null }
+  seller?: { id: string; email: string; username: string; tradeStats?: { disputesWon: number; disputesLost: number } | null }
   ad?: { side: string }
   createdAt: string
   updatedAt: string
@@ -412,6 +412,9 @@ export default function DisputesPage() {
                   {selected.trade?.buyer?.username || 'Unknown'}
                 </Link>
                 <p className="text-xs text-text-muted">{selected.trade?.buyer?.email}</p>
+                {(selected.trade?.buyer?.tradeStats?.disputesLost ?? 0) > 0 && (
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 font-medium">⚠ {selected.trade!.buyer!.tradeStats!.disputesLost} prior dispute loss(es)</p>
+                )}
               </div>
               <div className="p-3 bg-surface shadow-card border border-border rounded-xl text-sm">
                 <p className="text-text-muted text-xs mb-1">Seller</p>
@@ -419,6 +422,9 @@ export default function DisputesPage() {
                   {selected.trade?.seller?.username || 'Unknown'}
                 </Link>
                 <p className="text-xs text-text-muted">{selected.trade?.seller?.email}</p>
+                {(selected.trade?.seller?.tradeStats?.disputesLost ?? 0) > 0 && (
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 font-medium">⚠ {selected.trade!.seller!.tradeStats!.disputesLost} prior dispute loss(es)</p>
+                )}
               </div>
             </div>
 
@@ -609,6 +615,11 @@ export default function DisputesPage() {
                     placeholder="Internal note (optional)..."
                     className="w-full mt-1.5 px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                   />
+                  <p className="text-xs text-text-muted mt-2">
+                    On resolve, the losing party automatically receives a graduated strike:
+                    1st = warning, 2nd = 48h trading cooldown, 3rd+ = 7-day cooldown + under review.
+                    Account bans remain a manual action.
+                  </p>
                   <Button
                     variant="primary"
                     fullWidth
