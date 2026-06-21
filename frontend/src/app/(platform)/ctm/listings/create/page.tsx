@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ctmApi, apiRequest } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string; settlementType: string }
@@ -137,10 +138,7 @@ export default function CreateListingPage() {
         {/* Token */}
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Token *</label>
-          <select value={form.tokenId} onChange={(e) => setForm((f) => ({ ...f, tokenId: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30" required>
-            <option value="">Select a token</option>
-            {tokens.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>)}
-          </select>
+          <TokenSelect tokens={tokens} value={form.tokenId} onChange={(id) => setForm((f) => ({ ...f, tokenId: id }))} placeholder="Select a token" />
         </div>
 
         {/* Side */}

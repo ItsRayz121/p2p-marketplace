@@ -11,6 +11,7 @@ import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPaymentLabels } from '@/lib/pkPaymentMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
+import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck } from 'lucide-react'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
@@ -567,19 +568,14 @@ export default function CtmHomePage() {
         </div>
 
         {/* All Tokens */}
-        <div className="relative">
-          <select
-            value={tokenId}
-            onChange={(e) => { setTokenId(e.target.value); setPage(1) }}
-            className="appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
-          >
-            <option value="">All Tokens</option>
-            {tokens.map((t) => (
-              <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>
-            ))}
-          </select>
-          <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
-        </div>
+        <TokenSelect
+          tokens={tokens}
+          value={tokenId}
+          onChange={(id) => { setTokenId(id); setPage(1) }}
+          allLabel="All Tokens"
+          compact
+          className="min-w-44"
+        />
 
         {/* Payment methods */}
         <div className="relative">

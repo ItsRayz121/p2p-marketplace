@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
 import { PaymentMethodPicker } from '@/components/ui/PaymentMethodPicker'
+import { TokenSelect } from '@/components/ctm/TokenSelect'
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string }
 
@@ -67,10 +68,7 @@ export default function CreateRequestPage() {
 
         <div>
           <label className="block text-sm font-medium text-text-primary mb-1.5">Token *</label>
-          <select value={form.tokenId} onChange={(e) => setForm((f) => ({ ...f, tokenId: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30" required>
-            <option value="">Select a token</option>
-            {tokens.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>)}
-          </select>
+          <TokenSelect tokens={tokens} value={form.tokenId} onChange={(id) => setForm((f) => ({ ...f, tokenId: id }))} placeholder="Select a token" />
         </div>
 
         <div>
