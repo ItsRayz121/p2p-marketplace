@@ -268,7 +268,43 @@ export async function getAdActivity(adId: string, requestingUserId?: string) {
         select: { id: true, status: true, expiresAt: true, pricePerUnit: true, usdtAmount: true, fiatAmount: true },
       })
     }
-    return { ...base, myBid: myBid ?? null }
+
+    // Public, read-only activity feed (privacy-filtered trust signal):
+    //  - Bids: only ACCEPTED bids — never broadcast pending/rejected/cancelled
+    //    (that would shame sellers who ignore bids and expose bidders' failed attempts).
+    //    No private bid message.
+    //  - Trades: only completed + disputed outcomes; never reveal the dispute winner
+    //    (keeping it confidential avoids harassment + dispute-gaming).
+    const [publicBids, publicTrades] = await Promise.all([
+      db.adBid.findMany({
+        where: { adId, status: 'accepted' },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          id: true, pricePerUnit: true, usdtAmount: true, fiatAmount: true,
+          status: true, createdAt: true,
+          bidder: { select: { username: true, fullName: true } },
+        },
+      }),
+      db.trade.findMany({
+        where: { adId, status: { in: ['crypto_released', 'disputed'] as TradeStatusLiteral[] } },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          orderRef: true, status: true, amount: true, price: true, fiatAmount: true,
+          createdAt: true,
+          buyer: { select: { username: true } },
+          seller: { select: { username: true } },
+        },
+      }),
+    ])
+
+    return {
+      ...base,
+      myBid: myBid ?? null,
+      bids: { ...base.bids, publicItems: publicBids },
+      trades: { ...base.trades, publicItems: publicTrades },
+    }
   }
 
   const [bidItems, tradeItems] = await Promise.all([

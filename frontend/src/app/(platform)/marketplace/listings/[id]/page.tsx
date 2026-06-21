@@ -528,6 +528,76 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
+      {/* Public activity feed (read-only, privacy-filtered) — visible to non-owners */}
+      {!isMine && activity && ((activity.bids.publicItems?.length ?? 0) > 0 || (activity.trades.publicItems?.length ?? 0) > 0) && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+          <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
+            {(['bids', 'trades'] as const).map((t) => (
+              <button key={t} onClick={() => setActiveTab(t)}
+                className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-surface-alt text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+                {t === 'bids'
+                  ? `Bids (${activity.bids.publicItems?.length ?? 0})`
+                  : `Trades (${activity.trades.publicItems?.length ?? 0})`}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'bids' && (
+            !activity.bids.publicItems || activity.bids.publicItems.length === 0
+              ? <p className="text-sm text-text-muted text-center py-6">No accepted bids yet.</p>
+              : <div className="space-y-3">
+                  {activity.bids.publicItems.map((bid) => {
+                    const bidderName = traderDisplayName({ fullName: bid.bidder?.fullName, username: bid.bidder?.username })
+                    return (
+                      <div key={bid.id} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3 border border-border">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-text-primary">PKR {Number(bid.pricePerUnit).toLocaleString()} / {ad.coin}</p>
+                          <p className="text-xs text-text-muted mt-0.5">
+                            {bid.bidder?.username
+                              ? <Link href={`/profile/${bid.bidder.username}`} className="text-primary hover:underline font-medium">{bidderName}</Link>
+                              : <span className="font-medium text-text-primary">{bidderName}</span>}
+                            {' · '}{Number(bid.usdtAmount).toLocaleString()} {ad.coin} · PKR {Number(bid.fiatAmount).toLocaleString()} total
+                          </p>
+                          <p className="text-[11px] text-text-muted mt-0.5">{new Date(bid.createdAt).toLocaleString()}</p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/15 text-green-700 dark:text-green-300 font-medium">Accepted</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+          )}
+
+          {activeTab === 'trades' && (
+            !activity.trades.publicItems || activity.trades.publicItems.length === 0
+              ? <p className="text-sm text-text-muted text-center py-6">No completed trades yet.</p>
+              : <div className="space-y-3">
+                  {activity.trades.publicItems.map((t) => (
+                    <div key={t.orderRef} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3 border border-border">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-text-primary">
+                          {Number(t.amount).toLocaleString()} {ad.coin} · PKR {Number(t.fiatAmount).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          {t.buyer.username} → {t.seller.username} · PKR {Number(t.price).toLocaleString()}/{ad.coin}
+                        </p>
+                        <p className="text-[11px] text-text-muted mt-0.5">{new Date(t.createdAt).toLocaleString()}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          t.status === 'crypto_released'
+                            ? 'bg-green-500/15 text-green-700 dark:text-green-300'
+                            : 'bg-red-500/15 text-red-700 dark:text-red-300'
+                        }`}>{t.status === 'crypto_released' ? 'completed' : 'disputed'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+          )}
+        </div>
+      )}
+
       {/* Accepted bid banner */}
       {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
         <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">

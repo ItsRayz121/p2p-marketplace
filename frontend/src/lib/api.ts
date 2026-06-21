@@ -957,8 +957,8 @@ export interface AdBid {
 
 export interface AdActivity {
   myBid?: { id: string; status: string; expiresAt: string; pricePerUnit: string; usdtAmount: string; fiatAmount: string } | null
-  bids: { pendingCount: number; totalCount?: number; minPrice: string | null; maxPrice: string | null; items?: AdBid[] }
-  trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: Array<{ id: string; orderRef: string; status: string; amount: string; price: string; fiatAmount: string; createdAt: string; buyer: { username: string; fullName?: string | null }; seller: { username: string; fullName?: string | null } }> }
+  bids: { pendingCount: number; totalCount?: number; minPrice: string | null; maxPrice: string | null; items?: AdBid[]; publicItems?: Array<{ id: string; pricePerUnit: string; usdtAmount: string; fiatAmount: string; status: string; createdAt: string; bidder?: { username: string; fullName?: string | null } | null }> }
+  trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: Array<{ id: string; orderRef: string; status: string; amount: string; price: string; fiatAmount: string; createdAt: string; buyer: { username: string; fullName?: string | null }; seller: { username: string; fullName?: string | null } }>; publicItems?: Array<{ orderRef: string; status: string; amount: string; price: string; fiatAmount: string; createdAt: string; buyer: { username: string }; seller: { username: string } }> }
 }
 
 export const adsApi = {
