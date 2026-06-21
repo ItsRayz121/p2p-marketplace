@@ -659,6 +659,24 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const actualBuyerSettlementId = isBuyListing ? ((listing as any).settlementMethod ?? null) : (data.buyerSettlementId ?? null)
 
+  // Guardrail: if the admin configured an address pattern for this token, the
+  // buyer's receiving address must match it — so a wrong-chain address (e.g. an
+  // EVM 0x… where a Sidra address is expected) can't be used. Only enforced when a
+  // pattern is set and an address was provided; a bad pattern fails open (skip).
+  const tokenAddrRegex = (listing.token as { addressRegex?: string | null }).addressRegex
+  if (tokenAddrRegex && actualBuyerSettlementId && String(actualBuyerSettlementId).trim()) {
+    let re: RegExp | null = null
+    try { re = new RegExp(tokenAddrRegex) } catch { re = null }
+    if (re && !re.test(String(actualBuyerSettlementId).trim())) {
+      const ex = (listing.token as { addressExample?: string | null }).addressExample
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `That doesn't look like a valid ${listing.token.symbol} address.${ex ? ` Example: ${ex}` : ''}`,
+        400,
+      )
+    }
+  }
+
   const expiresAt = new Date(Date.now() + (listing.tradeWindowMins ?? 45) * 60 * 1000)
 
   // Maker collateral bond (non-custodial Phase 5): the LISTING CREATOR (maker)

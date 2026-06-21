@@ -65,6 +65,8 @@ export async function adminCreateToken(adminId: string, data: {
   network?: string
   contractAddress?: string
   explorerUrl?: string
+  addressExample?: string
+  addressRegex?: string
   officialWebsite?: string
   officialTwitter?: string
   officialTelegram?: string
@@ -98,6 +100,8 @@ export async function adminUpdateToken(adminId: string, tokenId: string, data: {
   network?: string
   contractAddress?: string
   explorerUrl?: string
+  addressExample?: string
+  addressRegex?: string
   officialWebsite?: string
   officialTwitter?: string
   officialTelegram?: string

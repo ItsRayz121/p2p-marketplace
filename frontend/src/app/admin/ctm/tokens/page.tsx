@@ -31,7 +31,7 @@ const RISK_COLORS: Record<string, string> = {
 interface Token {
   id: string; slug: string; name: string; symbol: string; logoUrl?: string
   bannerUrl?: string; description?: string; settlementType?: string; network?: string
-  contractAddress?: string; explorerUrl?: string; officialWebsite?: string
+  contractAddress?: string; explorerUrl?: string; addressExample?: string; addressRegex?: string; officialWebsite?: string
   officialTwitter?: string; officialTelegram?: string; whitePaperUrl?: string
   riskNotes?: string; maxListingAmount?: string | null; minTradeAmountPkr?: string | null
   status: string; riskTier: string; isListingEnabled: boolean; totalTrades: number; totalVolumePkr: string
@@ -40,7 +40,7 @@ interface Token {
 const EMPTY_ADD = {
   slug: '', symbol: '', name: '', description: '',
   logoUrl: '', bannerUrl: '', settlementType: 'MANUAL' as 'MANUAL' | 'ON_CHAIN' | 'HYBRID',
-  network: '', contractAddress: '', explorerUrl: '',
+  network: '', contractAddress: '', explorerUrl: '', addressExample: '', addressRegex: '',
   officialWebsite: '', officialTwitter: '', officialTelegram: '', whitePaperUrl: '',
   riskTier: 'medium' as 'low' | 'medium' | 'high' | 'extreme',
   riskNotes: '', maxListingAmount: '', minTradeAmountPkr: '',
@@ -165,6 +165,8 @@ export default function AdminCtmTokensPage() {
       if (editForm.network) payload.network = editForm.network
       if (editForm.contractAddress) payload.contractAddress = editForm.contractAddress
       if (editForm.explorerUrl) payload.explorerUrl = editForm.explorerUrl
+      if (editForm.addressExample) payload.addressExample = editForm.addressExample
+      if (editForm.addressRegex) payload.addressRegex = editForm.addressRegex
       if (editForm.officialWebsite) payload.officialWebsite = editForm.officialWebsite
       if (editForm.officialTwitter) payload.officialTwitter = editForm.officialTwitter
       if (editForm.officialTelegram) payload.officialTelegram = editForm.officialTelegram
@@ -217,6 +219,8 @@ export default function AdminCtmTokensPage() {
       if (addForm.network) payload.network = addForm.network
       if (addForm.contractAddress) payload.contractAddress = addForm.contractAddress
       if (addForm.explorerUrl) payload.explorerUrl = addForm.explorerUrl
+      if (addForm.addressExample) payload.addressExample = addForm.addressExample
+      if (addForm.addressRegex) payload.addressRegex = addForm.addressRegex
       if (addForm.officialWebsite) payload.officialWebsite = addForm.officialWebsite
       if (addForm.officialTwitter) payload.officialTwitter = addForm.officialTwitter
       if (addForm.officialTelegram) payload.officialTelegram = addForm.officialTelegram
@@ -338,6 +342,8 @@ export default function AdminCtmTokensPage() {
                           network: t.network ?? '',
                           contractAddress: t.contractAddress ?? '',
                           explorerUrl: t.explorerUrl ?? '',
+                          addressExample: t.addressExample ?? '',
+                          addressRegex: t.addressRegex ?? '',
                           officialWebsite: t.officialWebsite ?? '',
                           officialTwitter: t.officialTwitter ?? '',
                           officialTelegram: t.officialTelegram ?? '',
@@ -497,6 +503,16 @@ export default function AdminCtmTokensPage() {
                   Use <code className="bg-surface px-1 py-0.5 rounded text-text-primary">{'{hash}'}</code> as placeholder, e.g. <span className="font-mono">https://tronscan.org/#/transaction/{'{hash}'}</span>. If omitted, hash is appended automatically.
                 </p>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Address Example</label>
+                <input type="text" placeholder="e.g. 0x9aF… (a real-looking sample)" value={editForm.addressExample} onChange={(e) => setEditForm((f) => ({ ...f, addressExample: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                <p className="text-xs text-text-muted mt-1">Shown to traders so they know what a valid {editForm.symbol || 'token'} address looks like.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Address Pattern (regex)</label>
+                <input type="text" placeholder="e.g. ^0x[0-9a-fA-F]{40}$" value={editForm.addressRegex} onChange={(e) => setEditForm((f) => ({ ...f, addressRegex: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm font-mono bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                <p className="text-xs text-text-muted mt-1">Optional. If set, a buyer&apos;s receiving address must match this pattern at trade start (blocks wrong-chain addresses). No slashes.</p>
+              </div>
             </div>
           </div>
 
@@ -647,6 +663,11 @@ export default function AdminCtmTokensPage() {
                   Use <code className="bg-surface px-1 py-0.5 rounded text-text-primary">{'{hash}'}</code> as placeholder, e.g. <span className="font-mono">https://tronscan.org/#/transaction/{'{hash}'}</span>. If omitted, hash is appended automatically.
                 </p>
               </div>
+              {field('Address Example', 'addressExample', { placeholder: 'e.g. 0x9aF… (a real-looking sample)' })}
+              {field('Address Pattern (regex)', 'addressRegex', { placeholder: '^0x[0-9a-fA-F]{40}$' })}
+              <p className="sm:col-span-2 text-xs text-text-muted -mt-2">
+                Address Example is shown to traders; the optional regex (no slashes) blocks wrong-chain receiving addresses at trade start.
+              </p>
             </div>
           </div>
 

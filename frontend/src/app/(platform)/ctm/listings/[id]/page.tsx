@@ -86,7 +86,7 @@ interface Listing {
   tradeWindowMins: number
   terms: string
   status: string
-  token: { id: string; name: string; symbol: string; logoUrl?: string; riskTier: string; settlementType: string; description: string }
+  token: { id: string; name: string; symbol: string; logoUrl?: string; riskTier: string; settlementType: string; description: string; addressExample?: string }
   merchantProfile: { id: string; tier: string; totalCtmTrades: number; completedCtmTrades: number; ctmAvgRating: string; user: { id: string; username: string; fullName: string | null; avatarUrl: string | null } }
 }
 
@@ -103,11 +103,13 @@ function buyerAddressLabel(tokenDeliveryType: string | undefined, tokenName: str
   return 'Your receiving address / identifier'
 }
 
-function buyerAddressPlaceholder(tokenDeliveryType: string | undefined, tokenSymbol: string): string {
-  if (tokenDeliveryType === 'blockchain') return `0x… or your ${tokenSymbol} wallet address`
+function buyerAddressPlaceholder(tokenDeliveryType: string | undefined, tokenSymbol: string, addressExample?: string): string {
+  // Prefer the admin-configured example so the user sees exactly what a valid
+  // address for this token looks like.
+  if (tokenDeliveryType === 'blockchain') return addressExample ? `e.g. ${addressExample}` : `0x… or your ${tokenSymbol} wallet address`
   if (tokenDeliveryType === 'email') return 'you@example.com'
   if (tokenDeliveryType === 'username') return `Your ${tokenSymbol} username`
-  return 'Your receiving address'
+  return addressExample ? `e.g. ${addressExample}` : 'Your receiving address'
 }
 
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -805,7 +807,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 })()}
                 <input
                   type={listing.tokenDeliveryType === 'email' ? 'email' : 'text'}
-                  placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol)}
+                  placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol, listing.token.addressExample)}
                   value={buyerSettlementId}
                   onChange={(e) => setBuyerSettlementId(e.target.value)}
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -1026,7 +1028,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 })()}
                 <input
                   type={listing.tokenDeliveryType === 'email' ? 'email' : 'text'}
-                  placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol)}
+                  placeholder={buyerAddressPlaceholder(listing.tokenDeliveryType, listing.token.symbol, listing.token.addressExample)}
                   value={confirmBuyerSettlementId}
                   onChange={(e) => setConfirmBuyerSettlementId(e.target.value)}
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"

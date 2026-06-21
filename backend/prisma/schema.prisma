@@ -1943,6 +1943,11 @@ model CtmToken {
   network           String?
   contractAddress   String?
   explorerUrl       String?
+  // Optional receiving-address guardrails so a wrong-chain address can't be used.
+  // addressExample is shown to users; addressRegex (JS source, no slashes) is
+  // validated against submitted addresses at CTM trade start.
+  addressExample    String?
+  addressRegex      String?
   officialWebsite   String?
   officialTwitter   String?
   officialTelegram  String?
