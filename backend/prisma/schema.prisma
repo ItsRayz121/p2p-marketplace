@@ -2101,6 +2101,14 @@ model CtmBid {
   pricePerUnit Decimal    @db.Decimal(14, 2)
   totalPkr     Decimal    @db.Decimal(14, 2)
   message      String?    @db.VarChar(300)
+  // Payment details captured at bid time so a request→trade has real account info
+  // (previously a request trade had none → "account details not provided").
+  // paymentMethods: the bidder's saved PaymentMethod id(s) — their PKR receiving
+  //   account when the bidder is the seller. buyerSettlementId / buyerPaymentMethodId
+  //   are set when the bidder is the BUYER (token receiving address + pay-from account).
+  paymentMethods       String[]
+  buyerSettlementId    String?   @db.VarChar(500)
+  buyerPaymentMethodId String?   @db.VarChar(100)
   status       String     @default("pending")
   expiresAt    DateTime
   createdAt    DateTime   @default(now())

@@ -2488,7 +2488,7 @@ export const ctmApi = {
   cancelRequest: (id: string) => apiRequest<void>(`/ctm/requests/${id}`, { method: 'DELETE' }),
   submitBid: (requestId: string, data: object) => apiRequest<unknown>(`/ctm/requests/${requestId}/bids`, { method: 'POST', body: JSON.stringify(data) }),
   withdrawBid: (requestId: string, bidId: string) => apiRequest<void>(`/ctm/requests/${requestId}/bids/${bidId}`, { method: 'DELETE' }),
-  acceptBid: (requestId: string, bidId: string) => apiRequest<unknown>(`/ctm/requests/${requestId}/accept/${bidId}`, { method: 'POST' }),
+  acceptBid: (requestId: string, bidId: string, data: object = {}) => apiRequest<unknown>(`/ctm/requests/${requestId}/accept/${bidId}`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Trades
   getMyTrades: (params?: Record<string, string | number | undefined>) =>

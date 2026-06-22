@@ -1,10 +1,23 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ctmApi } from '@/lib/api'
+import { ctmApi, apiRequest } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+
+const METHOD_LABELS: Record<string, string> = {
+  jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
+}
+interface SavedPaymentMethod {
+  id: string; type: string; accountName: string
+  mobileNumber?: string; bankName?: string; ibanNumber?: string; accountNumber?: string
+}
+function pmLabel(m: SavedPaymentMethod): string {
+  const name = m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type)
+  const sub = m.mobileNumber ?? m.ibanNumber ?? m.accountNumber ?? m.accountName
+  return `${name} · ${sub}`
+}
 
 function timeLeft(expiresAt: string): string {
   const diff = new Date(expiresAt).getTime() - Date.now()
@@ -33,6 +46,18 @@ export default function MyRequestsPage() {
   const [actionError, setActionError] = useState('')
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null)
   const [confirmWithdraw, setConfirmWithdraw] = useState<{ requestId: string; bidId: string } | null>(null)
+  const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
+  const [acceptModal, setAcceptModal] = useState<{ requestId: string; bidId: string; side: string; symbol: string } | null>(null)
+  const [acceptPaymentMethodId, setAcceptPaymentMethodId] = useState('')
+  const [acceptAddress, setAcceptAddress] = useState('')
+  const [acceptSubmitting, setAcceptSubmitting] = useState(false)
+  const [acceptError, setAcceptError] = useState('')
+
+  useEffect(() => {
+    apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods')
+      .then((m) => setSavedMethods(Array.isArray(m) ? m : []))
+      .catch(() => {})
+  }, [])
 
   const fetchData = async () => {
     try {
@@ -49,14 +74,28 @@ export default function MyRequestsPage() {
 
   usePolling(fetchData, 15000)
 
-  const handleAcceptBid = async (requestId: string, bidId: string) => {
-    setActionError('')
+  const openAcceptModal = (r: Request, bidId: string) => {
+    setAcceptError(''); setAcceptPaymentMethodId(''); setAcceptAddress('')
+    setAcceptModal({ requestId: r.id, bidId, side: r.side, symbol: r.token.symbol })
+  }
+
+  const handleConfirmAccept = async () => {
+    if (!acceptModal) return
+    const requesterIsBuyer = acceptModal.side === 'buy'
+    if (!acceptPaymentMethodId) { setAcceptError(requesterIsBuyer ? 'Select the account you will pay from' : 'Select the account to receive payment'); return }
+    if (requesterIsBuyer && !acceptAddress.trim()) { setAcceptError('Enter your token receiving address'); return }
+    setAcceptError(''); setAcceptSubmitting(true)
     try {
-      const res = await ctmApi.acceptBid(requestId, bidId)
+      const res = await ctmApi.acceptBid(acceptModal.requestId, acceptModal.bidId, {
+        paymentMethodId: acceptPaymentMethodId,
+        ...(requesterIsBuyer ? { settlementId: acceptAddress.trim() } : {}),
+      })
       const trade = res as { tradeRef: string }
       window.location.href = `/ctm/trade/${trade.tradeRef}`
     } catch (err: unknown) {
-      setActionError((err as Error).message ?? 'Failed to accept bid')
+      setAcceptError((err as Error).message ?? 'Failed to accept bid')
+    } finally {
+      setAcceptSubmitting(false)
     }
   }
 
@@ -160,7 +199,7 @@ export default function MyRequestsPage() {
                           <p className="text-xs text-text-muted">PKR {Number(b.pricePerUnit).toLocaleString()}/token{b.message ? ` · ${b.message}` : ''} · {b.status}</p>
                         </div>
                         {b.status === 'pending' && r.status === 'open' && (
-                          <button onClick={() => handleAcceptBid(r.id, b.id)} className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700">Accept</button>
+                          <button onClick={() => openAcceptModal(r, b.id)} className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700">Accept</button>
                         )}
                       </div>
                     ))}
@@ -190,6 +229,43 @@ export default function MyRequestsPage() {
             ))}
           </div>
         )
+      )}
+
+      {/* Accept-bid modal — requester confirms their own account before the trade opens */}
+      {acceptModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="font-bold text-lg text-text-primary">Accept Bid</h3>
+            <p className="text-sm text-text-muted">Confirm the account you&apos;ll use so the trade has full payment details.</p>
+            {acceptError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{acceptError}</div>}
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                {acceptModal.side === 'buy' ? 'Account you’ll pay from *' : 'Account to receive payment *'}
+              </label>
+              {savedMethods.length === 0 ? (
+                <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">No saved payment accounts. <a href="/payment-methods" className="text-primary underline">Add one →</a></p>
+              ) : (
+                <select value={acceptPaymentMethodId} onChange={(e) => setAcceptPaymentMethodId(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value="">Select an account…</option>
+                  {savedMethods.map((m) => <option key={m.id} value={m.id}>{pmLabel(m)}</option>)}
+                </select>
+              )}
+            </div>
+            {acceptModal.side === 'buy' && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">Your {acceptModal.symbol} receiving address *</label>
+                <input type="text" value={acceptAddress} onChange={(e) => setAcceptAddress(e.target.value)} placeholder={`Your ${acceptModal.symbol} wallet address`} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                <p className="mt-1 text-xs text-text-muted">The seller will send tokens here after you pay.</p>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setAcceptModal(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary">Cancel</button>
+              <button onClick={handleConfirmAccept} disabled={acceptSubmitting} className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-60">
+                {acceptSubmitting ? 'Accepting…' : 'Accept & Open Trade'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

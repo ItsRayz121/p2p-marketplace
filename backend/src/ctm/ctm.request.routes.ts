@@ -27,6 +27,13 @@ const bidSchema = z.object({
   pricePerUnit: z.number().positive(),
   message: z.string().max(300).optional(),
   bidExpiryHours: z.number().int().min(1).max(12).optional(),
+  paymentMethodId: z.string().min(1),
+  buyerSettlementId: z.string().max(500).optional(),
+})
+
+const acceptBidSchema = z.object({
+  paymentMethodId: z.string().min(1),
+  settlementId: z.string().max(500).optional(),
 })
 
 export async function ctmRequestRoutes(app: FastifyInstance) {
@@ -92,7 +99,12 @@ export async function ctmRequestRoutes(app: FastifyInstance) {
   // POST /ctm/requests/:id/accept/:bidId — accept bid → create trade
   app.post('/ctm/requests/:id/accept/:bidId', { preHandler: [authenticate] }, async (req, reply) => {
     const { id, bidId } = req.params as { id: string; bidId: string }
-    const trade = await acceptBid(req.user!.id, id, bidId)
+    const parsed = acceptBidSchema.safeParse(req.body ?? {})
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const trade = await acceptBid(req.user!.id, id, bidId, {
+      paymentMethodId: parsed.data.paymentMethodId,
+      ...(parsed.data.settlementId !== undefined ? { settlementId: parsed.data.settlementId } : {}),
+    })
     return reply.code(201).send({ success: true, data: trade })
   })
 }

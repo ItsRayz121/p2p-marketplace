@@ -2,7 +2,25 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { generateCtmDisplayRef } from './ctm.ref'
+import { assertTokenAddressFormat } from './ctm.address'
 import { notify as centralNotify } from '../lib/notify'
+
+const PM_LABELS: Record<string, string> = {
+  jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
+}
+
+// Immutable account snapshot stored on the trade (same shape as the listing flow).
+function buildAccountSnapshot(pm: { type: string; accountName: string; bankName: string | null; mobileNumber: string | null; ibanNumber: string | null; accountNumber: string | null }) {
+  return {
+    type: pm.type,
+    label: pm.type === 'bank_transfer' ? (pm.bankName ?? 'Bank Transfer') : (PM_LABELS[pm.type] ?? pm.type),
+    accountName: pm.accountName,
+    ...(pm.mobileNumber ? { mobileNumber: pm.mobileNumber } : {}),
+    ...(pm.bankName ? { bankName: pm.bankName } : {}),
+    ...(pm.ibanNumber ? { ibanNumber: pm.ibanNumber } : {}),
+    ...(pm.accountNumber ? { accountNumber: pm.accountNumber } : {}),
+  }
+}
 
 // Delegate to the central notifier so CTM request events fire SSE + web-push.
 function notify(userId: string, type: string, title: string, body: string, metadata: Record<string, unknown>) {
@@ -134,8 +152,10 @@ export async function submitBid(bidderId: string, requestId: string, data: {
   pricePerUnit: number
   message?: string
   bidExpiryHours?: number
+  paymentMethodId?: string     // bidder's account (PKR receiving if seller; pay-FROM if buyer)
+  buyerSettlementId?: string   // bidder's token receiving address (only when bidder is the buyer)
 }) {
-  const request = await db.ctmRequest.findUnique({ where: { id: requestId } })
+  const request = await db.ctmRequest.findUnique({ where: { id: requestId }, include: { token: true } })
   if (!request) throw new AppError('NOT_FOUND', 'Request not found', 404)
   if (request.status !== 'open') throw new AppError('CONFLICT', 'Request is not open', 409)
   if (request.userId === bidderId) throw new AppError('FORBIDDEN', 'Cannot bid on your own request', 403)
@@ -145,6 +165,22 @@ export async function submitBid(bidderId: string, requestId: string, data: {
     where: { requestId, bidderId, status: 'pending' },
   })
   if (existingBid) throw new AppError('CONFLICT', 'You already have a pending bid on this request', 409)
+
+  // On a SELL request the requester sells tokens, so the BIDDER is the buyer (pays
+  // PKR + receives tokens). On a BUY request the bidder is the seller (receives PKR).
+  const bidderIsBuyer = request.side === 'sell'
+
+  // The bidder must declare the account they'll use, so the trade has real details.
+  if (!data.paymentMethodId) {
+    throw new AppError('VALIDATION_ERROR', bidderIsBuyer ? 'Select the account you will pay from' : 'Select the account where you want to receive payment', 400)
+  }
+  const bidderPm = await db.paymentMethod.findFirst({ where: { id: data.paymentMethodId, userId: bidderId } })
+  if (!bidderPm) throw new AppError('VALIDATION_ERROR', 'Payment method not found or not yours', 400)
+
+  if (bidderIsBuyer) {
+    if (!data.buyerSettlementId?.trim()) throw new AppError('VALIDATION_ERROR', 'Enter your token receiving address', 400)
+    assertTokenAddressFormat(request.token, data.buyerSettlementId, undefined)
+  }
 
   const expiryHours = data.bidExpiryHours ?? 1
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000)
@@ -157,6 +193,10 @@ export async function submitBid(bidderId: string, requestId: string, data: {
       pricePerUnit: new Prisma.Decimal(data.pricePerUnit),
       totalPkr,
       message: data.message ?? null,
+      // Seller-bidder: their PKR receiving account. Buyer-bidder: pay-from + address.
+      paymentMethods: bidderIsBuyer ? [] : [data.paymentMethodId],
+      buyerPaymentMethodId: bidderIsBuyer ? data.paymentMethodId : null,
+      buyerSettlementId: bidderIsBuyer ? data.buyerSettlementId!.trim() : null,
       expiresAt,
     },
   })
@@ -176,7 +216,10 @@ export async function withdrawBid(bidderId: string, requestId: string, bidId: st
   return db.ctmBid.update({ where: { id: bidId }, data: { status: 'withdrawn' } })
 }
 
-export async function acceptBid(userId: string, requestId: string, bidId: string) {
+export async function acceptBid(userId: string, requestId: string, bidId: string, data?: {
+  paymentMethodId?: string   // requester's account (PKR receiving if seller; pay-FROM if buyer)
+  settlementId?: string      // requester's token receiving address (only when requester is the buyer)
+}) {
   return db.$transaction(async (tx) => {
     const request = await tx.ctmRequest.findUnique({
       where: { id: requestId },
@@ -196,6 +239,31 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
     const buyerId = isBuy ? request.userId : bid.bidderId
     const sellerId = isBuy ? bid.bidderId : request.userId
 
+    // The requester confirms the account they'll use, so the trade has real details
+    // for BOTH sides (the bidder's came in on the bid).
+    if (!data?.paymentMethodId) {
+      throw new AppError('VALIDATION_ERROR', isBuy ? 'Select the account you will pay from' : 'Select the account where you want to receive payment', 400)
+    }
+    const requesterPm = await tx.paymentMethod.findFirst({ where: { id: data.paymentMethodId, userId } })
+    if (!requesterPm) throw new AppError('VALIDATION_ERROR', 'Payment method not found or not yours', 400)
+    if (isBuy) {
+      if (!data.settlementId?.trim()) throw new AppError('VALIDATION_ERROR', 'Enter your token receiving address', 400)
+      assertTokenAddressFormat(request.token, data.settlementId, undefined)
+    }
+
+    // Resolve each role's account:
+    //   seller PKR account  → buy request: the bidder's (bid.paymentMethods[0]); sell request: the requester's
+    //   buyer pay-from      → buy request: the requester's; sell request: the bidder's (bid.buyerPaymentMethodId)
+    //   buyer receiving addr→ buy request: the requester's (data.settlementId); sell request: the bidder's (bid.buyerSettlementId)
+    const sellerPmId = isBuy ? bid.paymentMethods[0] : data.paymentMethodId
+    const buyerPmId  = isBuy ? data.paymentMethodId : bid.buyerPaymentMethodId
+    const buyerAddr  = (isBuy ? data.settlementId?.trim() : bid.buyerSettlementId) ?? null
+
+    const sellerPm = sellerPmId ? await tx.paymentMethod.findFirst({ where: { id: sellerPmId, userId: sellerId } }) : null
+    const buyerPm  = buyerPmId ? await tx.paymentMethod.findFirst({ where: { id: buyerPmId, userId: buyerId } }) : null
+    const sellerPaymentSnapshot = sellerPm ? buildAccountSnapshot(sellerPm) : undefined
+    const buyerPaymentSnapshot  = buyerPm ? buildAccountSnapshot(buyerPm) : undefined
+
     const expiresAt = new Date(Date.now() + 45 * 60 * 1000)
 
     const trade = await tx.ctmTrade.create({
@@ -209,8 +277,11 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
         tokenAmount: request.amount,
         pricePerUnit: bid.pricePerUnit,
         fiatAmount: bid.totalPkr,
-        paymentMethod: request.paymentMethods[0] ?? 'JazzCash',
-        settlementMethod: request.token.name,
+        paymentMethod: sellerPmId ?? '',
+        settlementMethod: buyerAddr ?? '',
+        buyerSettlementId: buyerAddr,
+        ...(sellerPaymentSnapshot ? { sellerPaymentSnapshot: sellerPaymentSnapshot as never } : {}),
+        ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot: buyerPaymentSnapshot as never } : {}),
         expiresAt,
       },
     })
