@@ -153,6 +153,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   // Collapsible cards
   const [merchantOpen, setMerchantOpen] = useState(true)
   const [paymentOpen, setPaymentOpen] = useState(true)
+  const [payFromOpen, setPayFromOpen] = useState(true)
   const [deliveryOpen, setDeliveryOpen] = useState(true)
 
   const fetchListing = async () => {
@@ -407,7 +408,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Payment / receiving info section */}
       {isBuyListing ? (
-        // BUY listing: lister is BUYER — most important info is buyer's token receiving address
+        // BUY listing: lister is BUYER — show buyer's token receiving address + the
+        // accounts the buyer will pay FROM (so the seller-taker knows what to expect)
+        <>
         <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
             <h2 className="font-semibold text-text-primary">
@@ -434,6 +437,39 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
         </div>
+
+        {/* Accounts the buyer will pay FROM — shown to the seller-taker so they know
+            where the incoming payment will originate. */}
+        {resolvedMethods.length > 0 && (
+          <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+            <button onClick={() => setPayFromOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+              <h2 className="font-semibold text-text-primary">
+                {isMine ? 'Accounts You Pay From' : "Buyer's Payment Accounts"}
+              </h2>
+              <svg className={`w-4 h-4 text-text-muted transition-transform ${payFromOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {payFromOpen && (
+              <div className="mt-3">
+                <p className="text-xs text-text-muted mb-3">
+                  {isMine
+                    ? 'These are the accounts you said you will send payment from. Sellers see them so they know where your payment will come from.'
+                    : 'The buyer will send your payment from one of these accounts.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {resolvedMethods.map((m) => (
+                    <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                      {m.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        </>
       ) : (
         // SELL listing: lister is SELLER — show their accepted payment methods
         <div className="bg-surface shadow-card border border-border rounded-xl p-5">
