@@ -2463,13 +2463,13 @@ export const ctmApi = {
   pauseListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/pause`, { method: 'POST' }),
   activateListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/activate`, { method: 'POST' }),
   deleteListing: (id: string) => apiRequest<void>(`/ctm/listings/${id}`, { method: 'DELETE' }),
-  startListingTrade: (id: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; tokenAmount: number }) =>
+  startListingTrade: (id: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; acceptedBuyerPaymentMethodIds?: string[]; tokenAmount: number }) =>
     apiRequest<{ tradeRef: string }>(`/ctm/listings/${id}/trade`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Listing bids
   placeListingBid: (listingId: string, data: { pricePerUnit: number; tokenAmount: number }) =>
     apiRequest<unknown>(`/ctm/listings/${listingId}/bids`, { method: 'POST', body: JSON.stringify(data) }),
-  confirmBidDetails: (bidId: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; message?: string }) =>
+  confirmBidDetails: (bidId: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; acceptedBuyerPaymentMethodIds?: string[]; message?: string }) =>
     apiRequest<{ tradeRef: string }>(`/ctm/bids/${bidId}/confirm-details`, { method: 'POST', body: JSON.stringify(data) }),
   getListingBids: (listingId: string) => apiRequest<unknown[]>(`/ctm/listings/${listingId}/bids`),
   getMyListingBids: (params?: Record<string, string | number | undefined>) =>

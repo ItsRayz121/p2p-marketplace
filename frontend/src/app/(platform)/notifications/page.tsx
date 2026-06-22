@@ -90,6 +90,9 @@ function getNavTarget(notif: Notification): string | null {
 
   // CTM bids
   if (t === 'CTM_BID_ACCEPTED' && meta?.tradeRef) return `/ctm/trade/${meta.tradeRef}`
+  // Bid accepted but buyer still owes payment details — deep-link to the listing,
+  // where the "Complete Trade Details" banner lets them open the trade.
+  if (t === 'CTM_BID_ACCEPTED_PENDING' && meta?.listingId) return `/ctm/listings/${meta.listingId}`
   if (t === 'CTM_BID_RECEIVED') {
     if (meta?.listingId) return `/ctm/listings/${meta.listingId}`
     return '/ctm/my-requests'

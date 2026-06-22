@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ctmApi, apiRequest, savedTermsApi } from '@/lib/api'
-import type { SavedTerms } from '@/lib/api'
+import { ctmApi, apiRequest, savedTermsApi, walletApi } from '@/lib/api'
+import type { SavedTerms, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { SaveAddressInline } from '@/components/ctm/SaveAddressInline'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 
@@ -41,6 +42,7 @@ export default function CreateListingPage() {
   const { user } = useAuth()
   const [tokens, setTokens] = useState<CtmToken[]>([])
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
+  const [savedAddresses, setSavedAddresses] = useState<SavedDeliveryAddress[]>([])
   const [savedTerms, setSavedTerms] = useState<SavedTerms[]>([])
   const [showSaveTerms, setShowSaveTerms] = useState(false)
   const [termsLabel, setTermsLabel] = useState('')
@@ -67,14 +69,16 @@ export default function CreateListingPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [tokensRes, methodsRes, termsRes] = await Promise.all([
+        const [tokensRes, methodsRes, termsRes, addrRes] = await Promise.all([
           ctmApi.getTokens({ limit: 100 }),
           apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods'),
           savedTermsApi.getAll().catch(() => [] as SavedTerms[]),
+          walletApi.getSavedAddresses().catch(() => [] as SavedDeliveryAddress[]),
         ])
         setTokens((tokensRes as { tokens: CtmToken[] }).tokens ?? [])
         setSavedMethods(Array.isArray(methodsRes) ? methodsRes : [])
         setSavedTerms(Array.isArray(termsRes) ? termsRes : [])
+        setSavedAddresses(Array.isArray(addrRes) ? addrRes : [])
       } finally {
         setLoadingInit(false)
       }
@@ -252,22 +256,53 @@ export default function CreateListingPage() {
               ? 'How will you send tokens to buyers after payment is confirmed?'
               : 'How should sellers send tokens to you?'}
           </p>
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              { value: 'blockchain', label: 'Wallet / Blockchain' },
-              { value: 'email', label: 'Email' },
-              { value: 'username', label: 'Username' },
-            ] as const).map((m) => (
-              <button
-                type="button"
-                key={m.value}
-                onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: m.value, settlementMethod: '' }))}
-                className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === m.value ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const isInternal = form.tokenDeliveryType === 'email' || form.tokenDeliveryType === 'username'
+            return (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: 'blockchain', settlementMethod: '' }))}
+                    className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${form.tokenDeliveryType === 'blockchain' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}
+                  >
+                    Wallet / Blockchain
+                  </button>
+                  <button
+                    type="button"
+                    // Internal Transfer groups Email + Username — pick a default sub-type
+                    // (email) when first selected; the sub-toggle below switches between them.
+                    onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: isInternal ? f.tokenDeliveryType : 'email', settlementMethod: isInternal ? f.settlementMethod : '' }))}
+                    className={`py-2.5 text-xs rounded-xl border font-semibold transition-colors ${isInternal ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}
+                  >
+                    Internal Transfer
+                  </button>
+                </div>
+
+                {/* Internal Transfer sub-type: Email vs Username */}
+                {isInternal && (
+                  <div className="mt-2">
+                    <p className="text-xs text-text-muted mb-1.5">How should tokens reach you?</p>
+                    <div className="inline-flex rounded-lg border border-border bg-surface p-1 gap-1">
+                      {([
+                        { value: 'email', label: 'Email' },
+                        { value: 'username', label: 'Username' },
+                      ] as const).map((s) => (
+                        <button
+                          type="button"
+                          key={s.value}
+                          onClick={() => setForm((f) => ({ ...f, tokenDeliveryType: s.value, settlementMethod: '' }))}
+                          className={`px-4 py-1.5 text-xs rounded-md font-semibold transition-colors ${form.tokenDeliveryType === s.value ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
 
           {/* Only BUY listings need the seller's own receiving address */}
           {form.side === 'buy' && form.tokenDeliveryType && (
@@ -277,6 +312,26 @@ export default function CreateListingPage() {
                  form.tokenDeliveryType === 'email' ? 'Your email address (where tokens will be sent)' :
                  'Your username on the token platform'}
               </label>
+              {/* Tap-to-fill saved addresses (blockchain delivery only) */}
+              {form.tokenDeliveryType === 'blockchain' && (() => {
+                const tok = tokens.find((t) => t.id === form.tokenId)
+                if (!tok) return null
+                const matching = savedAddresses.filter((a) => a.network === 'CTM' && a.coin === tok.symbol)
+                if (matching.length === 0) return null
+                return (
+                  <div className="mb-2">
+                    <p className="text-xs text-text-muted mb-1.5">Your saved {tok.symbol} addresses — tap to fill:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {matching.map((a) => (
+                        <button key={a.id} type="button" onClick={() => setForm((f) => ({ ...f, settlementMethod: a.address }))}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${form.settlementMethod === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                          {a.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
               <input
                 type={form.tokenDeliveryType === 'email' ? 'email' : 'text'}
                 placeholder={(() => {
@@ -296,6 +351,13 @@ export default function CreateListingPage() {
                   return tok?.addressExample ? <> Format example: <span className="font-mono">{tok.addressExample}</span></> : null
                 })()}
               </p>
+              {form.tokenDeliveryType === 'blockchain' && (() => {
+                const tok = tokens.find((t) => t.id === form.tokenId)
+                if (!tok) return null
+                return (
+                  <SaveAddressInline address={form.settlementMethod} coin={tok.symbol} saved={savedAddresses} onSaved={(a) => setSavedAddresses((prev) => [a, ...prev])} />
+                )
+              })()}
             </div>
           )}
 

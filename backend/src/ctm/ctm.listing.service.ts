@@ -443,9 +443,12 @@ export async function getListingActivity(listingId: string, requestingUserId?: s
     let myBid = null
     if (requestingUserId) {
       myBid = await db.ctmListingBid.findFirst({
-        where: { listingId, bidderId: requestingUserId, status: { in: ['pending', 'accepted_pending_buyer'] } },
+        where: { listingId, bidderId: requestingUserId, status: { in: ['pending', 'accepted_pending_buyer', 'accepted'] } },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, status: true, expiresAt: true, pricePerUnit: true, tokenAmount: true, fiatAmount: true },
+        select: {
+          id: true, status: true, expiresAt: true, pricePerUnit: true, tokenAmount: true, fiatAmount: true,
+          trade: { select: { tradeRef: true, status: true } },
+        },
       })
     }
     return { ...base, myBid: myBid ?? null }
@@ -453,7 +456,9 @@ export async function getListingActivity(listingId: string, requestingUserId?: s
 
   const [bidItems, tradeItems] = await Promise.all([
     db.ctmListingBid.findMany({
-      where: { listingId, status: { in: ['pending', 'accepted_pending_buyer'] } },
+      // Keep accepted bids visible (not just pending) so the owner can see a bid was
+      // accepted and follow it through to its trade, mirroring the USDT marketplace.
+      where: { listingId, status: { in: ['pending', 'accepted_pending_buyer', 'accepted'] } },
       orderBy: { createdAt: 'desc' },
       take: 30,
       select: {

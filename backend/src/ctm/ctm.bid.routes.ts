@@ -9,6 +9,8 @@ const confirmBidDetailsSchema = z.object({
   paymentMethods: z.array(z.string().min(1)).optional(),
   buyerSettlementId: z.string().max(500).optional(),
   buyerPaymentMethodId: z.string().min(1).optional(),
+  // BUY listings: seller restricts which of the buyer's declared pay-from accounts they'll accept.
+  acceptedBuyerPaymentMethodIds: z.array(z.string().min(1)).optional(),
   message: z.string().max(300).optional(),
 })
 

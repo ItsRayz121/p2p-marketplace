@@ -6,6 +6,7 @@ import { ctmApi, apiRequest, ApiError, walletApi } from '@/lib/api'
 import type { SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { SaveAddressInline } from '@/components/ctm/SaveAddressInline'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
@@ -64,6 +65,7 @@ interface MyActiveBid {
   pricePerUnit: string
   tokenAmount: string
   fiatAmount: string
+  trade?: { tradeRef: string; status: string } | null
 }
 interface ListingActivity {
   myBid?: MyActiveBid | null
@@ -123,6 +125,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [paymentMethodId, setPaymentMethodId] = useState('')            // SELL listing: which seller account to pay TO
   const [buyerFromMethodId, setBuyerFromMethodId] = useState('')         // SELL listing: which buyer account to pay FROM (informational)
   const [paymentMethodIds, setPaymentMethodIds] = useState<string[]>([]) // BUY listing: seller picks multiple own accounts
+  const [acceptedBuyerMethodIds, setAcceptedBuyerMethodIds] = useState<string[]>([]) // BUY listing: which of the buyer's pay-from accounts the seller accepts
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [tokenAmount, setTokenAmount] = useState('')
   const [bidPrice, setBidPrice] = useState('')
@@ -142,6 +145,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [confirmPaymentMethodId, setConfirmPaymentMethodId] = useState('')
   const [confirmBuyerFromMethodId, setConfirmBuyerFromMethodId] = useState('')
   const [confirmPaymentMethodIds, setConfirmPaymentMethodIds] = useState<string[]>([])
+  const [confirmAcceptedBuyerMethodIds, setConfirmAcceptedBuyerMethodIds] = useState<string[]>([])
   const [confirmBuyerSettlementId, setConfirmBuyerSettlementId] = useState('')
   const [confirmMessage, setConfirmMessage] = useState('')
   const [confirmSubmitting, setConfirmSubmitting] = useState(false)
@@ -224,6 +228,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   const handleStartTrade = async () => {
     if (isBuyListing && paymentMethodIds.length === 0) { setError('Select at least one payment receiving account'); return }
+    if (isBuyListing && acceptedBuyerMethodIds.length === 0) { setError("Select at least one of the buyer's accounts you'll accept payment from"); return }
     if (!isBuyListing && !paymentMethodId) { setError('Select a payment method'); return }
     if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setError('Enter a token amount'); return }
     // SELL listings: buyer must provide their token receiving address
@@ -242,6 +247,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         buyerSettlementId: listing.side === 'sell' ? (buyerSettlementId.trim() || undefined) : undefined,
         // For SELL listings: snapshot which of the buyer's accounts they'll pay FROM
         buyerPaymentMethodId: !isBuyListing && buyerFromMethodId ? buyerFromMethodId : undefined,
+        // For BUY listings: restrict which of the buyer's pay-from accounts the seller accepts
+        acceptedBuyerPaymentMethodIds: isBuyListing ? acceptedBuyerMethodIds : undefined,
         tokenAmount: parseFloat(tokenAmount),
       })
       router.push(`/ctm/trade/${res.tradeRef}`)
@@ -284,6 +291,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     if (!myActiveBid || !listing) return
     const isBuy = listing.side === 'buy'
     if (isBuy && confirmPaymentMethodIds.length === 0) { setConfirmError('Select at least one payment receiving account'); return }
+    if (isBuy && confirmAcceptedBuyerMethodIds.length === 0) { setConfirmError("Select at least one of the buyer's accounts you'll accept payment from"); return }
     if (!isBuy && !confirmPaymentMethodId) { setConfirmError('Select a payment method'); return }
     if (!isBuy && !confirmBuyerSettlementId.trim()) { setConfirmError('Enter your token receiving address'); return }
     setConfirmError('')
@@ -294,6 +302,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         paymentMethods: isBuy ? confirmPaymentMethodIds : undefined,
         buyerSettlementId: !isBuy ? (confirmBuyerSettlementId.trim() || undefined) : undefined,
         buyerPaymentMethodId: !isBuy && confirmBuyerFromMethodId ? confirmBuyerFromMethodId : undefined,
+        acceptedBuyerPaymentMethodIds: isBuy ? confirmAcceptedBuyerMethodIds : undefined,
         message: confirmMessage.trim() || undefined,
       })
       router.push(`/ctm/trade/${trade.tradeRef}`)
@@ -530,7 +539,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-surface text-primary shadow-card' : 'text-text-muted hover:text-text-primary'}`}>
                 {t === 'bids'
-                  ? `Pending Bids (${activity.bids.pendingCount})`
+                  ? `Bids (${activity.bids.items?.length ?? activity.bids.pendingCount})`
                   : `Trades (${activity.trades.activeCount + activity.trades.completedCount})`}
               </button>
             ))}
@@ -538,7 +547,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
           {activeTab === 'bids' && (
             !activity.bids.items || activity.bids.items.length === 0
-              ? <p className="text-sm text-text-muted text-center py-6">No pending bids.</p>
+              ? <p className="text-sm text-text-muted text-center py-6">No bids yet.</p>
               : <div className="space-y-3">
                   {activity.bids.items.map((bid) => (
                     <div key={bid.id} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3">
@@ -549,11 +558,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         </p>
                         {bid.message && <p className="text-xs text-text-muted italic mt-0.5">&ldquo;{bid.message}&rdquo;</p>}
                       </div>
-                      <div className="flex gap-2 flex-shrink-0 items-start">
+                      <div className="flex flex-col gap-1.5 flex-shrink-0 items-end">
                         {bid.status === 'accepted_pending_buyer' ? (
                           <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-medium">Awaiting buyer</span>
-                        ) : (
+                        ) : bid.status === 'accepted' ? (
                           <>
+                            <span className="text-xs px-3 py-1.5 rounded-lg bg-green-500/15 text-green-700 dark:text-green-300 font-medium">Accepted ✓</span>
+                            {bid.trade?.tradeRef && (
+                              <a href={`/ctm/trade/${bid.trade.tradeRef}`} className="text-xs text-primary hover:underline">View trade →</a>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex gap-2">
                             <button onClick={() => handleAcceptBid(bid.id)} disabled={bidActionId === bid.id}
                               className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors">
                               {bidActionId === bid.id ? '…' : 'Accept'}
@@ -562,7 +578,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                               className="border border-border text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-surface disabled:opacity-60 transition-colors">
                               Reject
                             </button>
-                          </>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -611,7 +627,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </p>
           <button
-            onClick={() => { setShowConfirmBidModal(true); setConfirmPaymentMethodId(''); setConfirmBuyerFromMethodId(''); setConfirmPaymentMethodIds([]); setConfirmBuyerSettlementId(''); setConfirmMessage(''); setConfirmError('') }}
+            onClick={() => { setShowConfirmBidModal(true); setConfirmPaymentMethodId(''); setConfirmBuyerFromMethodId(''); setConfirmPaymentMethodIds([]); setConfirmAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setConfirmBuyerSettlementId(''); setConfirmMessage(''); setConfirmError('') }}
             className="mt-3 bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-amber-700 transition-colors"
           >
             Complete Trade Details
@@ -623,7 +639,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {!isMine && listing.status === 'active' && !myActiveBid && (
         <div className="flex gap-3">
           <button
-            onClick={() => { setShowModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setTokenAmount(''); setError('') }}
+            onClick={() => { setShowModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setTokenAmount(''); setError('') }}
             className={`flex-1 py-3.5 rounded-xl font-bold text-white transition-colors ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
           >
             {listing.side === 'sell' ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
@@ -640,6 +656,13 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {!isMine && myActiveBid?.status === 'pending' && (
         <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
           You have a pending bid on this listing. Waiting for the merchant to respond.
+        </div>
+      )}
+      {/* Accepted bid → trade open notice */}
+      {!isMine && myActiveBid?.status === 'accepted' && myActiveBid.trade?.tradeRef && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-sm text-green-800 dark:text-green-300 flex items-center justify-between gap-3">
+          <span>Your bid was accepted and the trade is open.</span>
+          <a href={`/ctm/trade/${myActiveBid.trade.tradeRef}`} className="font-semibold text-primary hover:underline whitespace-nowrap">Go to trade →</a>
         </div>
       )}
 
@@ -741,6 +764,31 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
 
+            {/* BUY listing: show the buyer's declared pay-from accounts so the seller
+                can pick which one(s) they'll accept payment from. */}
+            {isBuyListing && resolvedMethods.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-0.5">
+                  Which of the buyer&apos;s accounts will you accept payment from?
+                </label>
+                <p className="text-xs text-text-muted mb-2">Select one or more — the buyer will only be able to pay you from an account you accept.</p>
+                <div className="flex flex-wrap gap-2">
+                  {resolvedMethods.map((m) => {
+                    const sel = acceptedBuyerMethodIds.includes(m.id)
+                    return (
+                      <button type="button" key={m.id}
+                        onClick={() => setAcceptedBuyerMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${sel ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
+                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                        {m.label}
+                        {sel && <span className="ml-0.5 text-xs">✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* SELL listing: show buyer's own methods so seller knows which account payment will come from */}
             {!isBuyListing && myMethods.length > 0 && (
               <div>
@@ -812,7 +860,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   onChange={(e) => setBuyerSettlementId(e.target.value)}
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
-                <p className="mt-1 text-xs text-text-muted">The seller will send tokens here after your payment is confirmed. <Link href="/wallet#payment-methods" className="text-primary hover:underline">Save an address →</Link></p>
+                <SaveAddressInline address={buyerSettlementId} coin={listing.token.symbol} saved={savedAddresses} onSaved={(a) => setSavedAddresses((prev) => [a, ...prev])} />
+                <p className="mt-1 text-xs text-text-muted">The seller will send tokens here after your payment is confirmed.{savedAddresses.some((a) => a.network === 'CTM' && a.coin === listing.token.symbol) ? '' : ' Save it above to reuse it next time.'}</p>
               </div>
             )}
 
@@ -984,6 +1033,30 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
 
+            {/* BUY listing: seller picks which of the buyer's pay-from accounts to accept */}
+            {isBuyListing && resolvedMethods.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-0.5">
+                  Which of the buyer&apos;s accounts will you accept payment from?
+                </label>
+                <p className="text-xs text-text-muted mb-2">Select one or more — the buyer will only be able to pay you from an account you accept.</p>
+                <div className="flex flex-wrap gap-2">
+                  {resolvedMethods.map((m) => {
+                    const sel = confirmAcceptedBuyerMethodIds.includes(m.id)
+                    return (
+                      <button type="button" key={m.id}
+                        onClick={() => setConfirmAcceptedBuyerMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${sel ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
+                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                        {m.label}
+                        {sel && <span className="ml-0.5 text-xs">✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* SELL listing: buyer's "pay from" account */}
             {!isBuyListing && myMethods.length > 0 && (
               <div>
@@ -1033,6 +1106,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   onChange={(e) => setConfirmBuyerSettlementId(e.target.value)}
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
+                <SaveAddressInline address={confirmBuyerSettlementId} coin={listing.token.symbol} saved={savedAddresses} onSaved={(a) => setSavedAddresses((prev) => [a, ...prev])} />
               </div>
             )}
 

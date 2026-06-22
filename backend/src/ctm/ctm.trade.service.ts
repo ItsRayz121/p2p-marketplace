@@ -573,6 +573,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   paymentMethods?: string[]  // BUY listings: seller selects multiple receiving accounts
   buyerSettlementId?: string
   buyerPaymentMethodId?: string  // SELL listings: buyer's own account they'll pay FROM
+  acceptedBuyerPaymentMethodIds?: string[]  // BUY listings: subset of buyer's pay-from accounts the seller accepts
   tokenAmount?: number
 }) {
   const listing = await db.ctmListing.findUnique({
@@ -688,8 +689,14 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     })
     if (buyerPm) buyerPaymentSnapshot = buildAccountSnapshot(buyerPm)
   } else if (isBuyListing && listing.paymentMethods.length > 0) {
+    // Seller (taker) may restrict which of the buyer's declared pay-from accounts
+    // they accept — fall back to all if none/invalid selection was sent.
+    const accepted = data.acceptedBuyerPaymentMethodIds?.length
+      ? listing.paymentMethods.filter((mid) => data.acceptedBuyerPaymentMethodIds!.includes(mid))
+      : listing.paymentMethods
+    const idsToUse = accepted.length > 0 ? accepted : listing.paymentMethods
     const buyerPms = await db.paymentMethod.findMany({
-      where: { id: { in: listing.paymentMethods }, userId: actualBuyerId },
+      where: { id: { in: idsToUse }, userId: actualBuyerId },
     })
     if (buyerPms.length === 1) buyerPaymentSnapshot = buildAccountSnapshot(buyerPms[0]!)
     else if (buyerPms.length > 1) buyerPaymentSnapshot = { accounts: buyerPms.map(buildAccountSnapshot) }

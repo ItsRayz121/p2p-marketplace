@@ -330,6 +330,7 @@ export async function confirmBidDetails(
     paymentMethods?: string[]
     buyerSettlementId?: string
     buyerPaymentMethodId?: string
+    acceptedBuyerPaymentMethodIds?: string[]  // BUY listings: subset of buyer's pay-from accounts the seller accepts
     message?: string
   },
 ) {
@@ -389,8 +390,14 @@ export async function confirmBidDetails(
     })
     if (buyerPm) buyerPaymentSnapshot = buildAccountSnapshot(buyerPm)
   } else if (isBuyListing && listing.paymentMethods.length > 0) {
+    // Seller (bidder) may restrict which of the buyer's declared pay-from accounts
+    // they accept — fall back to all if none/invalid selection was sent.
+    const accepted = data.acceptedBuyerPaymentMethodIds?.length
+      ? listing.paymentMethods.filter((mid) => data.acceptedBuyerPaymentMethodIds!.includes(mid))
+      : listing.paymentMethods
+    const idsToUse = accepted.length > 0 ? accepted : listing.paymentMethods
     const buyerPms = await db.paymentMethod.findMany({
-      where: { id: { in: listing.paymentMethods }, userId: actualBuyerId },
+      where: { id: { in: idsToUse }, userId: actualBuyerId },
     })
     if (buyerPms.length === 1) buyerPaymentSnapshot = buildAccountSnapshot(buyerPms[0]!)
     else if (buyerPms.length > 1) buyerPaymentSnapshot = { accounts: buyerPms.map(buildAccountSnapshot) }
