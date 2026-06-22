@@ -451,7 +451,43 @@ export async function getListingActivity(listingId: string, requestingUserId?: s
         },
       })
     }
-    return { ...base, myBid: myBid ?? null }
+
+    // Public, read-only activity feed (privacy-filtered trust signal), mirroring the
+    // USDT marketplace:
+    //  - Bids: only ACCEPTED bids — never broadcast pending/rejected/cancelled
+    //    (that would shame merchants who ignore bids and expose bidders' failed attempts).
+    //    No private bid message.
+    //  - Trades: only completed + disputed outcomes; never reveal the dispute winner.
+    const [publicBids, publicTrades] = await Promise.all([
+      db.ctmListingBid.findMany({
+        where: { listingId, status: 'accepted' },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          id: true, pricePerUnit: true, tokenAmount: true, fiatAmount: true,
+          status: true, createdAt: true,
+          bidder: { select: { username: true } },
+        },
+      }),
+      db.ctmTrade.findMany({
+        where: { listingId, status: { in: ['completed', 'disputed'] } },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          tradeRef: true, status: true, tokenAmount: true, pricePerUnit: true, fiatAmount: true,
+          createdAt: true,
+          buyer:  { select: { username: true } },
+          seller: { select: { username: true } },
+        },
+      }),
+    ])
+
+    return {
+      ...base,
+      myBid: myBid ?? null,
+      bids:   { ...base.bids,   publicItems: publicBids },
+      trades: { ...base.trades, publicItems: publicTrades },
+    }
   }
 
   const [bidItems, tradeItems] = await Promise.all([

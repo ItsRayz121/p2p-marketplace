@@ -69,8 +69,8 @@ interface MyActiveBid {
 }
 interface ListingActivity {
   myBid?: MyActiveBid | null
-  bids:   { pendingCount: number; minPrice: string | null; maxPrice: string | null; items?: ActivityBid[] }
-  trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: ActivityTrade[] }
+  bids:   { pendingCount: number; minPrice: string | null; maxPrice: string | null; items?: ActivityBid[]; publicItems?: ActivityBid[] }
+  trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: ActivityTrade[]; publicItems?: ActivityTrade[] }
 }
 
 interface Listing {
@@ -646,6 +646,73 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         <p className="text-xs text-text-muted mt-1">
                           <a href={`/ctm/trade/${t.tradeRef}`} className="text-primary hover:underline">View →</a>
                         </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+          )}
+        </div>
+      )}
+
+      {/* Public activity feed (read-only, privacy-filtered) — visible to non-owners */}
+      {!isMine && activity && ((activity.bids.publicItems?.length ?? 0) > 0 || (activity.trades.publicItems?.length ?? 0) > 0) && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+          <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit mb-4">
+            {(['bids', 'trades'] as const).map((t) => (
+              <button key={t} onClick={() => setActiveTab(t)}
+                className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${activeTab === t ? 'bg-surface text-primary shadow-card' : 'text-text-muted hover:text-text-primary'}`}>
+                {t === 'bids'
+                  ? `Bids (${activity.bids.publicItems?.length ?? 0})`
+                  : `Trades (${activity.trades.publicItems?.length ?? 0})`}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'bids' && (
+            !activity.bids.publicItems || activity.bids.publicItems.length === 0
+              ? <p className="text-sm text-text-muted text-center py-6">No accepted bids yet.</p>
+              : <div className="space-y-3">
+                  {activity.bids.publicItems.map((bid) => (
+                    <div key={bid.id} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3 border border-border">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-text-primary">PKR {Number(bid.pricePerUnit).toLocaleString()} / {listing.token.symbol}</p>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          {bid.bidder?.username
+                            ? <Link href={`/profile/${bid.bidder.username}`} className="text-primary hover:underline font-medium">{bid.bidder.username}</Link>
+                            : <span className="font-medium text-text-primary">Trader</span>}
+                          {' · '}{Number(bid.tokenAmount).toLocaleString()} {listing.token.symbol} · PKR {Number(bid.fiatAmount).toLocaleString()} total
+                        </p>
+                        <p className="text-[11px] text-text-muted mt-0.5">{new Date(bid.createdAt).toLocaleString()}</p>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/15 text-green-700 dark:text-green-300 font-medium">Accepted</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+          )}
+
+          {activeTab === 'trades' && (
+            !activity.trades.publicItems || activity.trades.publicItems.length === 0
+              ? <p className="text-sm text-text-muted text-center py-6">No completed trades yet.</p>
+              : <div className="space-y-3">
+                  {activity.trades.publicItems.map((t) => (
+                    <div key={t.tradeRef} className="flex items-start justify-between gap-3 bg-surface rounded-xl px-4 py-3 border border-border">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-text-primary">
+                          {Number(t.tokenAmount).toLocaleString()} {listing.token.symbol} · PKR {Number(t.fiatAmount).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          {t.buyer.username} → {t.seller.username} · PKR {Number(t.pricePerUnit).toLocaleString()}/{listing.token.symbol}
+                        </p>
+                        <p className="text-[11px] text-text-muted mt-0.5">{new Date(t.createdAt).toLocaleString()}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          t.status === 'completed'
+                            ? 'bg-green-500/15 text-green-700 dark:text-green-300'
+                            : 'bg-red-500/15 text-red-700 dark:text-red-300'
+                        }`}>{t.status === 'completed' ? 'completed' : 'disputed'}</span>
                       </div>
                     </div>
                   ))}
