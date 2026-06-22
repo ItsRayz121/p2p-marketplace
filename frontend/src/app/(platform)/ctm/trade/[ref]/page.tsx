@@ -56,6 +56,11 @@ const DISPUTE_DELAY_MINUTES = 10
 // Quick-feedback chips — same set as the USDT marketplace rating box.
 const RATING_TAGS = ['Fast Payment', 'Good Communication', 'Smooth Trade', 'Trustworthy', 'Patient']
 
+// Rating window: opens at completion and stays open for this many minutes, after
+// which the trade can no longer be rated. Mirrors RATING_WINDOW_MINUTES in the
+// USDT marketplace trade room (anchored to the trade's completion timestamp).
+const RATING_WINDOW_MINUTES = 15
+
 // Supports {hash} template (e.g. https://explorer.example.com/tx/{hash}).
 function buildExplorerUrl(baseUrl: string, txHash: string): string {
   if (baseUrl.includes('{hash}')) return baseUrl.replace('{hash}', txHash)
@@ -311,12 +316,34 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     }
   }, [trade, user])
 
+  // Live 1-second clock that drives the rating-window countdown (only runs once
+  // the trade is completed). Mirrors the USDT marketplace rating timer.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (trade?.status !== 'completed') return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [trade?.status])
+
   if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-96 border border-border" /></div>
   if (!trade) return <div className="max-w-5xl mx-auto px-4 py-12 text-center text-text-muted">Trade not found.</div>
 
   const isBuyer = user?.id === trade.buyer.id
   const isSeller = user?.id === trade.seller.id
   const stepIndex = STATUS_STEPS.indexOf(trade.status)
+
+  // Rating window — opens at completion (anchored to updatedAt, consistent with
+  // the CTM dispute timer) and lasts RATING_WINDOW_MINUTES. Once it closes the
+  // form stays visible but submission is blocked, mirroring the USDT marketplace.
+  const ratingWindowEndsAt = trade.status === 'completed' && trade.updatedAt
+    ? new Date(trade.updatedAt).getTime() + RATING_WINDOW_MINUTES * 60_000
+    : 0
+  const ratingMsLeft = ratingWindowEndsAt - now
+  const ratingWindowOpen = !traderRatingDone && ratingMsLeft > 0
+  const ratingWindowClosed = !traderRatingDone && ratingWindowEndsAt > 0 && ratingMsLeft <= 0
+  const ratingMM = Math.max(0, Math.floor(ratingMsLeft / 60_000))
+  const ratingSS = Math.max(0, Math.floor((ratingMsLeft % 60_000) / 1000))
+  const ratingCountdown = `${ratingMM}:${String(ratingSS).padStart(2, '0')}`
 
   const paymentProofs = trade.proofs.filter((p) => p.proofType === 'screenshot' && p.uploadedBy === trade.buyer.id)
   const tokenProofs = trade.proofs.filter((p) => p.uploadedBy === trade.seller.id)
@@ -390,6 +417,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const handleRate = async () => {
     setRatingError('')
+    if (ratingWindowClosed) {
+      setRatingError(`The ${RATING_WINDOW_MINUTES}-minute rating window has closed — this trade can no longer be rated.`)
+      return
+    }
     try {
       await ctmApi.rateTrade(ref, { rating, comment: ratingComment.trim() || undefined, tags: ratingTags.length ? ratingTags : undefined })
       setTraderRatingDone(true)
@@ -554,8 +585,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const ratingPanel = (counterparty: string) => (
     <div className="space-y-5">
-      {/* Trade summary — mirrors the USDT marketplace rating box */}
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      {/* Trade summary — mirrors the USDT marketplace rating box. Full-width so the
+          four tiles sit on one horizontal row on larger screens. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Token</p>
           <p className="font-semibold text-text-primary">{trade.tokenAmount} {trade.token.symbol}</p>
@@ -574,9 +606,17 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         </div>
       </div>
       <div className="space-y-3">
-        <div>
-          <p className="text-sm font-semibold text-text-primary">Rate your experience with @{counterparty}</p>
-          <p className="text-xs text-text-muted">How was your experience?</p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-text-primary">Rate your experience with @{counterparty}</p>
+            <p className="text-xs text-text-muted">How was your experience?</p>
+          </div>
+          {ratingWindowOpen && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-full px-2 py-0.5 flex-shrink-0" title="Time left to submit your rating">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              {ratingCountdown} left
+            </span>
+          )}
         </div>
         {traderRatingDone ? (
           <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Trader rating submitted.</div>
@@ -599,9 +639,16 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               ))}
             </div>
             <textarea rows={3} placeholder="Add a comment (optional)" value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+            {/* When the window closes the form stays visible — only submission is
+                blocked — so the trade record/details remain readable. */}
+            {ratingWindowClosed && (
+              <p className="text-xs text-text-muted bg-surface-alt/60 rounded-lg px-3 py-2">
+                The {RATING_WINDOW_MINUTES}-minute rating window has closed — this trade can no longer be rated.
+              </p>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setCompletedBannerOpen(false)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
-              <button onClick={handleRate} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">Submit Rating</button>
+              <button onClick={handleRate} disabled={ratingWindowClosed} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Submit Rating</button>
             </div>
           </>
         )}
@@ -640,41 +687,49 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
+
+      {/* Completed-trade banner — full-width across the top (mirrors USDT
+          marketplace). Sits above the two-column grid so the summary tiles and
+          rating lay out horizontally instead of being cramped in the side panel. */}
+      {trade.status === 'completed' && (isBuyer || isSeller) && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl overflow-hidden mb-6">
+          <button
+            type="button"
+            onClick={() => setCompletedBannerOpen((v) => !v)}
+            className="w-full flex items-center gap-3 p-4 text-left hover:bg-green-500/[0.06] transition-colors"
+          >
+            <span className="w-9 h-9 rounded-full bg-green-500/15 flex items-center justify-center flex-shrink-0 text-green-600 dark:text-green-400 text-lg">✓</span>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-bold text-green-800 dark:text-green-300">Trade Completed!</h2>
+              {!completedBannerOpen && (
+                <p className="text-xs text-text-muted truncate">
+                  {trade.tokenAmount} {trade.token.symbol} · PKR {Number(trade.fiatAmount).toLocaleString()} · @{completedCounterparty}
+                </p>
+              )}
+            </div>
+            {/* Compact rating-window indicator in the header (mirrors USDT). */}
+            {ratingWindowOpen && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-full px-2 py-0.5 flex-shrink-0" title={`${ratingCountdown} left to rate this trade`}>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                {ratingCountdown}
+              </span>
+            )}
+            <svg className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform ${completedBannerOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+          {completedBannerOpen && (
+            <div className="px-4 pb-4">
+              {ratingPanel(completedCounterparty)}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
         {/* Left: Trade panel */}
         <div className="lg:col-span-3 space-y-4">
-
-          {/* Completed-trade banner — pinned to the top (mirrors USDT marketplace).
-              Holds the trade summary + trader/platform rating instead of burying it
-              in the bottom step card. */}
-          {trade.status === 'completed' && (isBuyer || isSeller) && (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-xl overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setCompletedBannerOpen((v) => !v)}
-                className="w-full flex items-center gap-3 p-4 text-left hover:bg-green-500/[0.06] transition-colors"
-              >
-                <span className="w-9 h-9 rounded-full bg-green-500/15 flex items-center justify-center flex-shrink-0 text-green-600 dark:text-green-400 text-lg">✓</span>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-base font-bold text-green-800 dark:text-green-300">Trade Completed!</h2>
-                  {!completedBannerOpen && (
-                    <p className="text-xs text-text-muted truncate">
-                      {trade.tokenAmount} {trade.token.symbol} · PKR {Number(trade.fiatAmount).toLocaleString()} · @{completedCounterparty}
-                    </p>
-                  )}
-                </div>
-                <svg className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform ${completedBannerOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-              </button>
-              {completedBannerOpen && (
-                <div className="px-4 pb-4">
-                  {ratingPanel(completedCounterparty)}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Header + Progress */}
           <div className="bg-surface shadow-card border border-border rounded-xl p-5">
