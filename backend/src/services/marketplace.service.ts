@@ -4,6 +4,7 @@ import { Errors } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { isPubliclyVisible, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { getBondConfig, computeBondUsdt } from './makerBond.service'
+import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -525,14 +526,12 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
 
   const ALLOWED_NETWORKS = ['BEP20', 'Aptos']
 
-  // Resolve payment method type filter to matching IDs
+  // Resolve payment method label filter to matching IDs. The dropdown sends a
+  // human label ("JazzCash", "HBL"), not the lowercase enum — casting it raw to
+  // `type` throws a Prisma enum error, so map it via the shared resolver.
   let paymentMethodIdFilter: string[] | undefined
   if (params.paymentMethod) {
-    const matchingPms = await db.paymentMethod.findMany({
-      where: { type: params.paymentMethod as any },
-      select: { id: true },
-    })
-    paymentMethodIdFilter = matchingPms.map((pm) => pm.id)
+    paymentMethodIdFilter = await resolvePaymentMethodIdsByLabel(params.paymentMethod)
   }
 
   const where: Prisma.AdWhereInput = {

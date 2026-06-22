@@ -7,6 +7,7 @@ import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prism
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 import { getBondConfig, computeBondUsdt } from '../services/makerBond.service'
 import { notify } from '../lib/notify'
+import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
 
 type Tx = Prisma.TransactionClient
 
@@ -178,7 +179,12 @@ export async function getListings(filters: ListingsFilter = {}) {
   if (side) where.side = side
   if (merchantProfileId) where.merchantProfileId = merchantProfileId
   if (status) where.status = status
-  if (paymentMethod) where.paymentMethods = { has: paymentMethod }
+  if (paymentMethod) {
+    // The dropdown sends a human label ("JazzCash"), but paymentMethods holds
+    // PaymentMethod IDs (cuids) — match the label to its IDs before filtering.
+    const pmIds = await resolvePaymentMethodIdsByLabel(paymentMethod)
+    where.paymentMethods = pmIds.length > 0 ? { hasSome: pmIds } : { has: '__no-match__' }
+  }
   if (tier) where.merchantProfile = { is: { tier: tier as never } }
 
   const ALLOWED_SORT_FIELDS: Record<string, object> = {

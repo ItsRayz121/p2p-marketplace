@@ -12,6 +12,18 @@ import {
 } from 'lucide-react'
 
 type Stats = Awaited<ReturnType<typeof adminApi.getStats>>
+type StatsRange = 'today' | '7d' | '30d' | '1y' | 'all'
+
+// Time-frame tabs for the period KPIs. `label` is the tab text; `prefix` is
+// woven into each card title so "Today's Trade Volume" becomes "7-Day Trade
+// Volume" etc. when the range changes.
+const RANGE_TABS: { value: StatsRange; label: string; prefix: string }[] = [
+  { value: 'today', label: 'Today',    prefix: "Today's" },
+  { value: '7d',    label: '7 Days',   prefix: '7-Day' },
+  { value: '30d',   label: '1 Month',  prefix: '30-Day' },
+  { value: '1y',    label: '1 Year',   prefix: '1-Year' },
+  { value: 'all',   label: 'All Time', prefix: 'All-Time' },
+]
 
 const CATEGORY_COLORS: Record<AdminNotifCategory, string> = {
   KYC:     'bg-blue-500/15 text-blue-700 dark:text-blue-300',
@@ -38,10 +50,11 @@ export default function AdminDashboardPage() {
   const [error, setError]   = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  const [range, setRange] = useState<StatsRange>('today')
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (r: StatsRange = range) => {
     try {
-      const data = await adminApi.getStats()
+      const data = await adminApi.getStats(r)
       setStats(data)
       setError(null)
       setLastRefresh(new Date())
@@ -50,9 +63,17 @@ export default function AdminDashboardPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [range])
 
   usePolling(fetchStats, 30_000)
+
+  const changeRange = (r: StatsRange) => {
+    if (r === range) return
+    setRange(r)
+    fetchStats(r)
+  }
+
+  const rangePrefix = RANGE_TABS.find((t) => t.value === range)?.prefix ?? "Today's"
 
   if (loading) return <LoadingState message="Loading dashboard…" />
   if (error && !stats) return <ErrorState title={error} onRetry={fetchStats} />
@@ -66,14 +87,14 @@ export default function AdminDashboardPage() {
   ]
 
   const todayCards = [
-    { label: "Today's Trade Volume",     value: `PKR ${fmt(stats?.todayVolumePkr ?? 0)}`,                       sub: 'PKR settled in completed trades', color: 'text-text-primary',  icon: <BarChart2 className="w-5 h-5 text-text-muted" /> },
-    { label: "Today's Trades",           value: fmt(stats?.todayTrades ?? 0),                                   sub: 'trades started today',         color: 'text-primary',       icon: <BarChart2 className="w-5 h-5 text-primary" /> },
-    { label: 'New Users Today',          value: fmt(stats?.newUsersToday ?? 0),                                  sub: 'registered today',             color: 'text-violet-600 dark:text-violet-400',    icon: <Users className="w-5 h-5 text-violet-600 dark:text-violet-400" /> },
-    { label: "Today's Gas Orders",       value: fmt(stats?.todayGasOrders ?? 0),                                 sub: 'gas fee orders today',         color: 'text-orange-600 dark:text-orange-400',    icon: <Fuel className="w-5 h-5 text-orange-500" /> },
-    { label: "Today's Gas Volume",       value: `$${stats?.todayGasVolumeUsdt ?? '0.00'} USDT`,                 sub: 'gross paid by users (cost + fee)', color: 'text-orange-600 dark:text-orange-400',  icon: <Fuel className="w-5 h-5 text-orange-500" /> },
-    { label: "Today's Gas Revenue",      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,                sub: 'platform margin (fee only)',   color: 'text-success',       icon: <TrendingUp className="w-5 h-5 text-success" /> },
-    { label: "Today's Withdrawals Sent", value: fmt((stats as any)?.todaySentWithdrawals ?? 0),                  sub: 'withdrawals completed today',  color: 'text-primary',       icon: <PackageCheck className="w-5 h-5 text-primary" /> },
-    { label: "Today's Withdrawal Fees",  value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,sub: 'fee revenue from withdrawals', color: 'text-success',       icon: <ArrowDownToLine className="w-5 h-5 text-success" /> },
+    { label: `${rangePrefix} Trade Volume`,     value: `PKR ${fmt(stats?.todayVolumePkr ?? 0)}`,                       sub: 'PKR settled in completed trades', color: 'text-text-primary',  icon: <BarChart2 className="w-5 h-5 text-text-muted" /> },
+    { label: `${rangePrefix} Trades`,           value: fmt(stats?.todayTrades ?? 0),                                   sub: 'trades started',         color: 'text-primary',       icon: <BarChart2 className="w-5 h-5 text-primary" /> },
+    { label: `${rangePrefix} New Users`,        value: fmt(stats?.newUsersToday ?? 0),                                  sub: 'users registered',             color: 'text-violet-600 dark:text-violet-400',    icon: <Users className="w-5 h-5 text-violet-600 dark:text-violet-400" /> },
+    { label: `${rangePrefix} Gas Orders`,       value: fmt(stats?.todayGasOrders ?? 0),                                 sub: 'gas fee orders',         color: 'text-orange-600 dark:text-orange-400',    icon: <Fuel className="w-5 h-5 text-orange-500" /> },
+    { label: `${rangePrefix} Gas Volume`,       value: `$${stats?.todayGasVolumeUsdt ?? '0.00'} USDT`,                 sub: 'gross paid by users (cost + fee)', color: 'text-orange-600 dark:text-orange-400',  icon: <Fuel className="w-5 h-5 text-orange-500" /> },
+    { label: `${rangePrefix} Gas Revenue`,      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,                sub: 'platform margin (fee only)',   color: 'text-success',       icon: <TrendingUp className="w-5 h-5 text-success" /> },
+    { label: `${rangePrefix} Withdrawals Sent`, value: fmt((stats as any)?.todaySentWithdrawals ?? 0),                  sub: 'withdrawals completed',  color: 'text-primary',       icon: <PackageCheck className="w-5 h-5 text-primary" /> },
+    { label: `${rangePrefix} Withdrawal Fees`,  value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,sub: 'fee revenue from withdrawals', color: 'text-success',       icon: <ArrowDownToLine className="w-5 h-5 text-success" /> },
   ]
 
   const totalCards = [
@@ -158,9 +179,27 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
-      {/* Today at a Glance */}
+      {/* Period KPIs — time-frame selectable */}
       <section>
-        <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Today</h2>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">At a Glance</h2>
+          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+            {RANGE_TABS.map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => changeRange(tab.value)}
+                className={cn(
+                  'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                  range === tab.value
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-text-muted hover:text-text-primary',
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2">
           {todayCards.map((card) => (
             <div key={card.label} className="bg-surface shadow-card rounded-lg border border-border p-3">

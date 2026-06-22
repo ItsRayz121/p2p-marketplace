@@ -1678,8 +1678,9 @@ export interface AdminGasToken {
 
 export const adminApi = {
   // Dashboard
-  getStats: () =>
+  getStats: (range?: 'today' | '7d' | '30d' | '1y' | 'all') =>
     apiRequest<{
+      range: 'today' | '7d' | '30d' | '1y' | 'all'
       pendingKyc: number
       openDisputes: number
       pendingWithdrawals: number
@@ -1723,7 +1724,7 @@ export const adminApi = {
         updatedAt: string
         deliveredAt: string | null
       }>
-    }>('/admin/dashboard/stats'),
+    }>('/admin/dashboard/stats' + (range ? `?range=${range}` : '')),
 
   // Users
   getUsers: (params?: Record<string, string | number | undefined>) =>

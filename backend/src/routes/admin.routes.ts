@@ -146,9 +146,37 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get(
     '/admin/dashboard/stats',
     { preHandler: [authenticate, adminOrSuperOrKyc] },
-    async (_req, reply) => {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
+    async (req, reply) => {
+      // Time-frame selector for the period-scoped KPIs (volume, trades, new
+      // users, gas, withdrawals). 'all' drops the date boundary entirely. The
+      // "Action Required" and "All Time" cards are point-in-time / cumulative
+      // and intentionally ignore this filter.
+      const RANGES = ['today', '7d', '30d', '1y', 'all'] as const
+      type Range = (typeof RANGES)[number]
+      const q = req.query as Record<string, string>
+      const range: Range = (RANGES as readonly string[]).includes(q.range ?? '') ? (q.range as Range) : 'today'
+
+      const DAY_MS = 86_400_000
+      const now = new Date()
+      let since: Date | undefined
+      if (range === 'today') {
+        const d = new Date(now)
+        d.setHours(0, 0, 0, 0)
+        since = d
+      } else if (range === '7d') {
+        since = new Date(now.getTime() - 7 * DAY_MS)
+      } else if (range === '30d') {
+        since = new Date(now.getTime() - 30 * DAY_MS)
+      } else if (range === '1y') {
+        since = new Date(now.getTime() - 365 * DAY_MS)
+      } else {
+        since = undefined // 'all' — no lower bound
+      }
+      // Spread helpers: apply the period boundary only when one exists.
+      const createdSince   = since ? { createdAt: { gte: since } } : {}
+      const updatedSince   = since ? { updatedAt: { gte: since } } : {}
+      const deliveredSince = since ? { deliveredAt: { gte: since } } : {}
+      const completedSince = since ? { completedAt: { gte: since } } : {}
 
       const [
         pendingKyc,
@@ -181,7 +209,7 @@ export async function adminRoutes(app: FastifyInstance) {
         db.withdrawal.count({ where: { status: { in: ['pending', 'first_approved'] } } }),
         db.instantBuyOrder.count({ where: { status: 'admin_review' } }),
         db.trade.aggregate({
-          where: { status: 'crypto_released', updatedAt: { gte: today } },
+          where: { status: 'crypto_released', ...updatedSince },
           _sum: { fiatAmount: true },
         }),
         db.trade.aggregate({
@@ -189,9 +217,9 @@ export async function adminRoutes(app: FastifyInstance) {
           _sum: { fiatAmount: true },
         }),
         db.user.count(),
-        db.user.count({ where: { createdAt: { gte: today } } }),
+        db.user.count({ where: { ...createdSince } }),
         db.trade.count(),
-        db.trade.count({ where: { createdAt: { gte: today } } }),
+        db.trade.count({ where: { ...createdSince } }),
         db.adminNotification.count({ where: { isRead: false } }),
         db.adminNotification.findMany({
           orderBy: { createdAt: 'desc' },
@@ -201,9 +229,9 @@ export async function adminRoutes(app: FastifyInstance) {
         // Gas fee stats
         db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] } } }),
         db.gasFeeOrder.count({ where: { status: 'payment_uploaded', paymentCoin: 'PKR' } }),
-        db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
+        db.gasFeeOrder.count({ where: { ...createdSince } }),
         db.gasFeeOrder.aggregate({
-          where: { status: 'delivered', deliveredAt: { gte: today } },
+          where: { status: 'delivered', ...deliveredSince },
           // paymentAmount = what the user paid (gross, in USD); gasAmountUSD = the
           // USD cost of the gas we actually delivered. Revenue = gross − cost.
           _sum: { paymentAmount: true, gasAmountUSD: true },
@@ -214,10 +242,10 @@ export async function adminRoutes(app: FastifyInstance) {
           _sum: { paymentAmount: true, gasAmountUSD: true },
         }),
         // Withdrawal accounting stats — fees collected and sends completed
-        db.withdrawal.count({ where: { status: { in: ['sent', 'completed'] }, completedAt: { gte: today } } }),
+        db.withdrawal.count({ where: { status: { in: ['sent', 'completed'] }, ...completedSince } }),
         db.withdrawal.count({ where: { status: { in: ['sent', 'completed'] } } }),
         db.withdrawal.aggregate({
-          where: { status: { in: ['sent', 'completed'] }, completedAt: { gte: today } },
+          where: { status: { in: ['sent', 'completed'] }, ...completedSince },
           _sum: { fee: true },
         }),
         db.withdrawal.aggregate({
@@ -257,6 +285,8 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.send({
         success: true,
         data: {
+          // Echo the active time-frame so the UI can label the period cards.
+          range,
           pendingKyc,
           openDisputes,
           pendingWithdrawals,
