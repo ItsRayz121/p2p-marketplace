@@ -1,6 +1,7 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { assertTokenAddressFormat } from './ctm.address'
+import { computeMerchantTier } from './ctm.tier'
 import { Prisma } from '@prisma/client'
 import { decrementLockedAmount } from './ctm.listing.service'
 import { queues } from '../queues/definitions'
@@ -276,6 +277,10 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
     }
   }
 
+  // Set inside the tx if the seller's merchant tier is auto-promoted on completion;
+  // used after commit to notify them.
+  let promotedTo: string | null = null
+
   await db.$transaction(async (tx: Tx) => {
     await tx.ctmTrade.update({
       where: { id: trade.id },
@@ -311,6 +316,27 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
         completedCtmTrades: { increment: 1 },
       },
     })
+
+    // Auto-promote the seller's merchant tier based on their (now-updated) clean
+    // track record — climbing tiers raises their per-trade cap. Promotion only;
+    // never demotes (admins can still set tiers manually). Skipped silently if the
+    // user isn't a registered CTM merchant.
+    const sellerProfile = await tx.ctmMerchantProfile.findUnique({
+      where: { userId: trade.sellerId },
+      select: { id: true, tier: true, completedCtmTrades: true, disputedCtmTrades: true, totalCtmTrades: true },
+    })
+    if (sellerProfile) {
+      const nextTier = computeMerchantTier({
+        completedCtmTrades: sellerProfile.completedCtmTrades,
+        disputedCtmTrades: sellerProfile.disputedCtmTrades,
+        totalCtmTrades: sellerProfile.totalCtmTrades,
+        currentTier: sellerProfile.tier,
+      })
+      if (nextTier !== sellerProfile.tier) {
+        await tx.ctmMerchantProfile.update({ where: { id: sellerProfile.id }, data: { tier: nextTier } })
+        promotedTo = nextTier
+      }
+    }
 
     // Update global TradeStats for buyer and seller so leaderboard reflects CTM trades
     for (const userId of [buyerId, trade.sellerId]) {
@@ -351,6 +377,10 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
 
   notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
   notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
+
+  if (promotedTo) {
+    notify(trade.sellerId, 'CTM_TIER_PROMOTED', 'Merchant tier upgraded 🎉', `Your clean track record promoted you to the ${promotedTo} tier — your per-trade limit just went up.`, { tier: promotedTo })
+  }
 }
 
 export async function openDispute(tradeRef: string, userId: string, reason: string, description: string) {

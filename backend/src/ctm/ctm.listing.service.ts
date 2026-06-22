@@ -1,6 +1,7 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { assertTokenAddressFormat } from './ctm.address'
+import { effectiveCapForTier } from './ctm.tier'
 import { Prisma } from '@prisma/client'
 import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prisma/client'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
@@ -8,13 +9,6 @@ import { getBondConfig, computeBondUsdt } from '../services/makerBond.service'
 import { notify } from '../lib/notify'
 
 type Tx = Prisma.TransactionClient
-
-const TIER_CAPS: Record<string, number> = {
-  new: 5_000,
-  basic: 25_000,
-  verified: 100_000,
-  elite: 1_000_000,
-}
 
 export interface CreateListingInput {
   tokenId: string
@@ -79,12 +73,13 @@ export async function createListing(userId: string, data: CreateListingInput) {
   if (!merchantProfile) throw new AppError('FORBIDDEN', 'You must be a registered CTM merchant to create listings', 403)
   if (!merchantProfile.isActive) throw new AppError('FORBIDDEN', 'Your CTM merchant profile is suspended', 403)
 
+  const user = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
+
   // Non-custodial trust model: Level 2 (enhanced) makers list freely; Level 1
   // (basic) makers may keep a limited number of active listings (default 1).
   // Flag OFF preserves the original behavior.
   if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
-    const u = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
-    if (u?.kycLevel !== 'enhanced') {
+    if (user?.kycLevel !== 'enhanced') {
       const l1Max = Math.floor(await getNumberConfig('noncustodial_l1_max_ads_ctm', 2))
       const activeCount = await db.ctmListing.count({
         where: { merchantProfileId: merchantProfile.id, status: { in: ['active', 'paused'] } },
@@ -115,7 +110,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
   if (data.maxOrderTokens < data.minOrderTokens) throw new AppError('VALIDATION_ERROR', 'Maximum tokens per order must be greater than or equal to minimum', 400)
   if (data.maxOrderTokens > data.totalAmount) throw new AppError('VALIDATION_ERROR', 'Maximum tokens per order cannot exceed total listing amount', 400)
 
-  const maxPkrPerTrade = TIER_CAPS[merchantProfile.tier] ?? 5_000
+  const maxPkrPerTrade = effectiveCapForTier(merchantProfile.tier, user?.kycLevel)
   const maxOrderPkrComputed = data.maxOrderTokens * data.pricePerUnit
   if (maxOrderPkrComputed > maxPkrPerTrade) {
     throw new AppError('FORBIDDEN', `Your merchant tier (${merchantProfile.tier}) allows max PKR ${maxPkrPerTrade} per trade (max tokens × price = ${maxOrderPkrComputed.toFixed(2)})`, 403)
@@ -311,7 +306,8 @@ export async function updateListing(userId: string, listingId: string, data: {
 
   const effectivePrice = data.pricePerUnit ?? Number(listing.pricePerUnit)
   if (data.maxOrderTokens) {
-    const maxPkrPerTrade = TIER_CAPS[listing.merchantProfile.tier] ?? 5_000
+    const editor = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
+    const maxPkrPerTrade = effectiveCapForTier(listing.merchantProfile.tier, editor?.kycLevel)
     if (data.maxOrderTokens * effectivePrice > maxPkrPerTrade) {
       throw new AppError('FORBIDDEN', `Your merchant tier allows max PKR ${maxPkrPerTrade} per trade`, 403)
     }
