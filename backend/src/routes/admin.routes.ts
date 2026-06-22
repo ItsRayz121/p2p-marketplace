@@ -204,12 +204,14 @@ export async function adminRoutes(app: FastifyInstance) {
         db.gasFeeOrder.count({ where: { createdAt: { gte: today } } }),
         db.gasFeeOrder.aggregate({
           where: { status: 'delivered', deliveredAt: { gte: today } },
-          _sum: { paymentAmount: true },
+          // paymentAmount = what the user paid (gross, in USD); gasAmountUSD = the
+          // USD cost of the gas we actually delivered. Revenue = gross − cost.
+          _sum: { paymentAmount: true, gasAmountUSD: true },
         }),
         db.gasFeeOrder.count(),
         db.gasFeeOrder.aggregate({
           where: { status: 'delivered' },
-          _sum: { paymentAmount: true },
+          _sum: { paymentAmount: true, gasAmountUSD: true },
         }),
         // Withdrawal accounting stats — fees collected and sends completed
         db.withdrawal.count({ where: { status: { in: ['sent', 'completed'] }, completedAt: { gte: today } } }),
@@ -242,6 +244,16 @@ export async function adminRoutes(app: FastifyInstance) {
         }),
       ])
 
+      // Gas economics: gross = what users paid; cost = USD value of gas delivered;
+      // revenue = the platform margin (gross − cost). Never let revenue go negative
+      // (rounding/price drift on a delivered order) — floor at 0 for display.
+      const todayGasGross   = Number(todayGasRevenueResult._sum.paymentAmount ?? 0)
+      const todayGasCost    = Number(todayGasRevenueResult._sum.gasAmountUSD ?? 0)
+      const totalGasGross   = Number(totalGasRevenueResult._sum.paymentAmount ?? 0)
+      const totalGasCost    = Number(totalGasRevenueResult._sum.gasAmountUSD ?? 0)
+      const todayGasRevenue = Math.max(0, todayGasGross - todayGasCost)
+      const totalGasRevenue = Math.max(0, totalGasGross - totalGasCost)
+
       return reply.send({
         success: true,
         data: {
@@ -249,7 +261,8 @@ export async function adminRoutes(app: FastifyInstance) {
           openDisputes,
           pendingWithdrawals,
           pendingInstantBuy,
-          todayRevenuePkr:   (todayRevenueResult._sum.fiatAmount ?? 0).toString(),
+          // Trades carry no platform fee (non-custodial), so this is settled VOLUME, not revenue.
+          todayVolumePkr:    (todayRevenueResult._sum.fiatAmount ?? 0).toString(),
           totalVolumePkr:    (totalVolumePkrResult._sum.fiatAmount ?? 0).toString(),
           totalUsers,
           newUsersToday,
@@ -260,9 +273,12 @@ export async function adminRoutes(app: FastifyInstance) {
           pendingGasOrders,
           pkrGasProofsPending,
           todayGasOrders,
-          todayGasRevenueUsdt: Number(todayGasRevenueResult._sum.paymentAmount ?? 0).toFixed(2),
+          // Gross gas payment (cost + fee) vs actual platform margin (fee only).
+          todayGasVolumeUsdt:  todayGasGross.toFixed(2),
+          todayGasRevenueUsdt: todayGasRevenue.toFixed(2),
           totalGasOrders,
-          totalGasRevenueUsdt: Number(totalGasRevenueResult._sum.paymentAmount ?? 0).toFixed(2),
+          totalGasVolumeUsdt:  totalGasGross.toFixed(2),
+          totalGasRevenueUsdt: totalGasRevenue.toFixed(2),
           recentGasActivity,
           // Withdrawal accounting
           todaySentWithdrawals,

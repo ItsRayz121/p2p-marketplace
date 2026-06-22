@@ -66,13 +66,14 @@ export default function AdminDashboardPage() {
   ]
 
   const todayCards = [
-    { label: "Today's Revenue",          value: `PKR ${fmt(stats?.todayRevenuePkr ?? 0)}`,                      sub: 'from completed trades',        color: 'text-success',       icon: <DollarSign className="w-5 h-5 text-success" /> },
+    { label: "Today's Trade Volume",     value: `PKR ${fmt(stats?.todayVolumePkr ?? 0)}`,                       sub: 'PKR settled in completed trades', color: 'text-text-primary',  icon: <BarChart2 className="w-5 h-5 text-text-muted" /> },
     { label: "Today's Trades",           value: fmt(stats?.todayTrades ?? 0),                                   sub: 'trades started today',         color: 'text-primary',       icon: <BarChart2 className="w-5 h-5 text-primary" /> },
     { label: 'New Users Today',          value: fmt(stats?.newUsersToday ?? 0),                                  sub: 'registered today',             color: 'text-violet-600 dark:text-violet-400',    icon: <Users className="w-5 h-5 text-violet-600 dark:text-violet-400" /> },
     { label: "Today's Gas Orders",       value: fmt(stats?.todayGasOrders ?? 0),                                 sub: 'gas fee orders today',         color: 'text-orange-600 dark:text-orange-400',    icon: <Fuel className="w-5 h-5 text-orange-500" /> },
-    { label: "Today's Gas Revenue",      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,                sub: 'from delivered gas orders',    color: 'text-orange-600 dark:text-orange-400',    icon: <TrendingUp className="w-5 h-5 text-orange-500" /> },
+    { label: "Today's Gas Volume",       value: `$${stats?.todayGasVolumeUsdt ?? '0.00'} USDT`,                 sub: 'gross paid by users (cost + fee)', color: 'text-orange-600 dark:text-orange-400',  icon: <Fuel className="w-5 h-5 text-orange-500" /> },
+    { label: "Today's Gas Revenue",      value: `$${stats?.todayGasRevenueUsdt ?? '0.00'} USDT`,                sub: 'platform margin (fee only)',   color: 'text-success',       icon: <TrendingUp className="w-5 h-5 text-success" /> },
     { label: "Today's Withdrawals Sent", value: fmt((stats as any)?.todaySentWithdrawals ?? 0),                  sub: 'withdrawals completed today',  color: 'text-primary',       icon: <PackageCheck className="w-5 h-5 text-primary" /> },
-    { label: "Today's Withdrawal Fees",  value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,sub: 'fees collected from withdrawals',color: 'text-success',      icon: <ArrowDownToLine className="w-5 h-5 text-success" /> },
+    { label: "Today's Withdrawal Fees",  value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,sub: 'fee revenue from withdrawals', color: 'text-success',       icon: <ArrowDownToLine className="w-5 h-5 text-success" /> },
   ]
 
   const totalCards = [
@@ -80,6 +81,7 @@ export default function AdminDashboardPage() {
     { label: 'Total Trades',             value: fmt(stats?.totalTrades ?? 0) },
     { label: 'Total Volume PKR',          value: `PKR ${fmt(stats?.totalVolumePkr ?? 0)}` },
     { label: 'Total Gas Orders',          value: fmt(stats?.totalGasOrders ?? 0) },
+    { label: 'Total Gas Volume',          value: `$${stats?.totalGasVolumeUsdt ?? '0.00'} USDT` },
     { label: 'Total Gas Revenue',         value: `$${stats?.totalGasRevenueUsdt ?? '0.00'} USDT` },
     { label: 'Total Withdrawals Sent',    value: fmt((stats as any)?.totalSentWithdrawals ?? 0) },
     { label: 'Total Withdrawal Fees',     value: `${(stats as any)?.totalWithdrawalFeesUsdt ?? '0.000000'} USDT` },

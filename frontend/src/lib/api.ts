@@ -1684,7 +1684,7 @@ export const adminApi = {
       openDisputes: number
       pendingWithdrawals: number
       pendingInstantBuy: number
-      todayRevenuePkr: string
+      todayVolumePkr: string
       totalVolumePkr: string
       totalUsers: number
       newUsersToday: number
@@ -1703,8 +1703,10 @@ export const adminApi = {
       pendingGasOrders: number
       pkrGasProofsPending: number
       todayGasOrders: number
+      todayGasVolumeUsdt: string
       todayGasRevenueUsdt: string
       totalGasOrders: number
+      totalGasVolumeUsdt: string
       totalGasRevenueUsdt: string
       recentGasActivity: Array<{
         id: string
