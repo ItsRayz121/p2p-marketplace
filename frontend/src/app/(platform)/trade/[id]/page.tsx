@@ -28,6 +28,7 @@ import { getTradeStatus } from '@/lib/tradeStatus'
 import { promptPushOptIn } from '@/lib/pushPrompt'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
+import { supportMailto } from '@/lib/contact'
 import {
   FileText,
   Upload,
@@ -779,9 +780,14 @@ export default function TradePage() {
   const pmLabel = trade.paymentMethodLabel ?? trade.paymentMethod
   const sellerAccount = trade.sellerPaymentAccount
   const canCancel = isUserBuyer && trade.status === 'payment_pending'
+  // Once the seller confirms payment, only the buyer may dispute — the seller's
+  // sole remaining job is to deliver crypto, so a seller "dispute" would just be a
+  // stall lever (mirrors backend sellerLockedStatuses in trade.service.ts). The
+  // locked seller gets a "Contact support" path instead.
+  const sellerDisputeLocked = !isUserBuyer && ['payment_confirmed', 'crypto_sent'].includes(trade.status)
   // crypto_sent included: buyer may need to dispute non-receipt or a tx stuck
   // in admin verification (matches backend disputeStatuses in trade.service.ts)
-  const canDispute = ['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(trade.status)
+  const canDispute = ['payment_uploaded', 'payment_confirmed', 'crypto_sent'].includes(trade.status) && !sellerDisputeLocked
   // Dispute unlocks DISPUTE_DELAY_MINUTES after payment proof was uploaded.
   // Legacy trades without the timestamp are unlocked immediately (null = no gate).
   const disputeUnlockAt = trade.paymentUploadedAt
@@ -1245,6 +1251,12 @@ export default function TradePage() {
               {/* Dispute */}
               {canDispute && trade.status !== 'disputed' && !showDisputeForm && (
                 <DisputeUnlockGate unlockAt={disputeUnlockAt} onOpen={() => setShowDisputeForm(true)} />
+              )}
+              {sellerDisputeLocked && trade.status !== 'disputed' && (
+                <div className="bg-surface rounded-xl border border-border shadow-card p-4 text-sm text-text-secondary">
+                  <p className="mb-2">You confirmed the payment was received, so the only remaining step is to <span className="font-medium text-text-primary">send the crypto</span>. You can&apos;t open a dispute against the buyer at this stage.</p>
+                  <p>If something is genuinely wrong (e.g. the payment was reversed after you confirmed), <a href={supportMailto(`Trade ${trade.orderRef} — issue after payment confirmed`)} className="text-primary underline">contact support</a>.</p>
+                </div>
               )}
               {showDisputeForm && (
                 <div className="bg-surface rounded-xl border border-border shadow-card p-5 space-y-3">

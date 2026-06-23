@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { isOpaqueId } from '@/lib/pkPaymentMethods'
+import { supportMailto } from '@/lib/contact'
 
 /** Never surface an opaque payment-method ID to users — fall back to a label. */
 function prettyMethod(value?: string | null): string {
@@ -579,7 +580,18 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     ) : null
 
   const disputeUnlockAt = trade.updatedAt ? new Date(trade.updatedAt).getTime() + DISPUTE_DELAY_MINUTES * 60_000 : null
-  const disputeBtn = (isBuyer || isSeller) && ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'].includes(trade.status) && !trade.dispute
+  // Once the seller confirms payment, only the buyer may dispute — the seller's
+  // only remaining job is to deliver tokens (mirrors backend sellerLockedStatuses
+  // in ctm.trade.service.ts). Locked seller sees a "Contact support" path instead.
+  const sellerDisputeLocked = isSeller && ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'].includes(trade.status) && !trade.dispute
+  const disputeBtn = sellerDisputeLocked
+    ? (
+      <div className="bg-surface rounded-xl border border-border p-4 text-sm text-text-secondary">
+        <p className="mb-2">You confirmed the payment was received, so the only remaining step is to <span className="font-medium text-text-primary">send the tokens</span>. You can&apos;t open a dispute against the buyer at this stage.</p>
+        <p>If something is genuinely wrong, <a href={supportMailto(`CTM trade ${trade.displayRef ?? trade.tradeRef} — issue after payment confirmed`)} className="text-primary underline">contact support</a>.</p>
+      </div>
+    )
+    : (isBuyer || isSeller) && ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'].includes(trade.status) && !trade.dispute
     ? <DisputeUnlockGate unlockAt={disputeUnlockAt} onOpen={() => setDisputeOpen(true)} />
     : null
 

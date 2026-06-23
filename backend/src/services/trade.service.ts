@@ -1022,6 +1022,25 @@ export async function openDispute(
     throw new AppError('INVALID_STATUS', `Cannot open dispute for trade in status: ${trade.status}`, 400)
   }
 
+  // Seller dispute is locked once they confirm the PKR payment was received. By
+  // confirming, the seller has acknowledged the buyer met their fiat obligation —
+  // the only remaining step is for the seller to send the crypto. Letting the
+  // seller ALSO dispute at that point is a pure stall/grief lever (confirm
+  // payment, then "dispute" instead of delivering). So from payment_confirmed
+  // onward only the BUYER (who paid and is owed crypto) may open a dispute. The
+  // seller's recourse for the rare genuine edge case (e.g. fiat reversed after
+  // confirmation) is human support, not a self-serve dispute. Before confirmation
+  // (payment_uploaded) BOTH sides may dispute — that's the seller's window to
+  // contest a fake/incorrect payment proof.
+  const sellerLockedStatuses = ['payment_confirmed', 'crypto_sent']
+  if (sellerLockedStatuses.includes(trade.status) && openedById === trade.sellerId) {
+    throw new AppError(
+      'DISPUTE_SELLER_LOCKED',
+      'You confirmed the payment was received, so the only remaining step is to send the crypto — you cannot open a dispute against the buyer at this stage. If something is genuinely wrong, contact support.',
+      403,
+    )
+  }
+
   // Cooldown: a dispute can only be opened DISPUTE_DELAY_MINUTES after the buyer
   // uploads payment proof. This stops instant rage-disputes and gives both sides
   // a window to confirm/communicate first. Legacy trades without an upload

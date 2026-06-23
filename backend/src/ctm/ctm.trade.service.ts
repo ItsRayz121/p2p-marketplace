@@ -392,6 +392,20 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
   }
   if (trade.dispute) throw new AppError('CONFLICT', 'Dispute already open for this trade', 409)
 
+  // Mirror of the USDT rule (see trade.service.ts): once the seller confirms the
+  // payment was received, they have acknowledged the buyer's obligation is met and
+  // their only remaining job is to send the tokens. From payment_confirmed onward
+  // only the BUYER may open a dispute; the seller's recourse is human support. This
+  // closes the confirm-then-dispute-instead-of-delivering stall vector.
+  const sellerLockedStatuses = ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming']
+  if (sellerLockedStatuses.includes(trade.status) && trade.sellerId === userId) {
+    throw new AppError(
+      'DISPUTE_SELLER_LOCKED',
+      'You confirmed the payment was received, so the only remaining step is to send the tokens — you cannot open a dispute against the buyer at this stage. If something is genuinely wrong, contact support.',
+      403,
+    )
+  }
+
   await db.$transaction([
     db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'disputed' } }),
     db.ctmDispute.create({
