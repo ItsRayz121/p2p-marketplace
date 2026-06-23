@@ -68,6 +68,47 @@ function buildExplorerUrl(baseUrl: string, txHash: string): string {
   return `${baseUrl.replace(/\/$/, '')}/tx/${txHash}`
 }
 
+// Derive a human explorer name from the token's configured explorer URL so the
+// "View on …" link reads e.g. "View on Mecscan" / "View on Sidrascan" instead of
+// a generic "Explorer". Each CTM token sets its own explorerUrl in the admin
+// panel, so we have no fixed registry — we pretty-print the hostname.
+function explorerNameFromUrl(baseUrl?: string | null): string {
+  if (!baseUrl) return 'Explorer'
+  try {
+    const host = new URL(baseUrl.includes('{hash}') ? baseUrl.replace('{hash}', '') : baseUrl).hostname
+    const core = host.replace(/^www\./, '').split('.')[0] ?? host
+    if (!core) return 'Explorer'
+    return core.charAt(0).toUpperCase() + core.slice(1)
+  } catch {
+    return 'Explorer'
+  }
+}
+
+// Small badge that mirrors the USDT marketplace's on-chain verification chip.
+// CTM stores the verifier's result on each token proof (txVerificationStatus);
+// surfacing it tells the buyer whether the transfer was independently confirmed.
+function TxVerificationBadge({ status }: { status?: string | null }) {
+  if (!status) return null
+  if (status === 'verified' || status === 'admin_verified') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-500/10 border border-green-500/30 rounded px-2 py-0.5">
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+        On-chain verified
+      </span>
+    )
+  }
+  if (status === 'pending') {
+    return <span className="inline-flex items-center gap-1 text-xs font-medium text-yellow-700 dark:text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded px-2 py-0.5">⏳ Confirming on-chain</span>
+  }
+  if (status === 'not_found') {
+    return <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 dark:text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded px-2 py-0.5">⚠ Tx not found — pending or invalid</span>
+  }
+  if (status === 'skipped' || status === 'rpc_error') {
+    return <span className="inline-flex items-center gap-1 text-xs font-medium text-text-muted bg-surface border border-border rounded px-2 py-0.5">⚠ Verify manually on explorer</span>
+  }
+  return null
+}
+
 function settlementLabel(type?: string): string {
   if (type === 'ON_CHAIN') return 'Blockchain Transfer'
   if (type === 'HYBRID') return 'Blockchain / Manual'
@@ -123,7 +164,7 @@ interface Trade {
   buyer: { id: string; username: string; fullName: string | null }
   seller: { id: string; username: string; fullName: string | null }
   listing?: { side: string }
-  proofs: Array<{ id: string; proofType: string; fileUrl?: string; txHash?: string; uploadedBy: string; description?: string; createdAt: string }>
+  proofs: Array<{ id: string; proofType: string; fileUrl?: string; txHash?: string; txVerificationStatus?: string | null; uploadedBy: string; description?: string; createdAt: string }>
   dispute?: { id: string; reason: string; description: string; status: string; resolution?: string; winner?: string; messages?: Array<{ id: string; senderId: string; message: string; createdAt: string }> }
   ratings: Array<{ ratedByUserId: string; ratedUserId: string; rating: number; comment?: string | null }>
   ratedByMe?: boolean
@@ -560,10 +601,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               <div className="bg-surface rounded-lg p-2.5 space-y-1.5">
                 <p className="text-xs text-text-muted font-medium">{proofHashLabel(trade.settlementType)}</p>
                 <CopyableText value={p.txHash} mono />
+                <TxVerificationBadge status={p.txVerificationStatus} />
                 {trade.token.explorerUrl && (
                   <a href={buildExplorerUrl(trade.token.explorerUrl, p.txHash)} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline">
-                    View on Explorer →
+                    View on {explorerNameFromUrl(trade.token.explorerUrl)} →
                   </a>
                 )}
               </div>
@@ -981,10 +1023,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                             <div className="space-y-1">
                               <p className="text-xs text-text-muted">{proofHashLabel(trade.settlementType)}</p>
                               <p className="text-xs font-mono text-text-primary break-all">{latestTokenProof.txHash}</p>
+                              <TxVerificationBadge status={latestTokenProof.txVerificationStatus} />
                               {trade.token.explorerUrl && (
                                 <a href={buildExplorerUrl(trade.token.explorerUrl, latestTokenProof.txHash)} target="_blank" rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1 text-xs text-primary font-semibold hover:underline">
-                                  Verify on Blockchain Explorer →
+                                  Verify on {explorerNameFromUrl(trade.token.explorerUrl)} →
                                 </a>
                               )}
                             </div>
@@ -1028,6 +1071,16 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               <StepCard stepNum={1} title="Awaiting Buyer Payment" state={s1}
                 summary="Buyer submitted payment proof"
                 expanded={expandedSteps.has(1)} onToggle={() => toggleStep(1)}>
+                {/* Order summary so the seller can see the price, token quantity and
+                    the PKR they will receive (mirrors the buyer's Send-Payment card). */}
+                <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                  <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
+                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
+                  <Row label="Payment method" value={paymentMethodLabel} />
+                  <div className="border-t border-border pt-1.5 mt-1">
+                    <Row label="Total to receive" value={`PKR ${Number(trade.fiatAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                  </div>
+                </div>
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
@@ -1058,6 +1111,19 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 expanded={expandedSteps.has(2)} onToggle={() => toggleStep(2)}>
                 {trade.status === 'payment_uploaded' ? (
                   <div className="space-y-3">
+                    {/* Amount summary so the seller knows exactly how much they are
+                        confirming receipt of (and for how many tokens) before tapping. */}
+                    <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                      <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
+                      <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
+                      <Row label="Payment method" value={paymentMethodLabel} />
+                      <div className="border-t border-border pt-1.5 mt-1">
+                        <Row label="Amount to confirm" value={`PKR ${Number(trade.fiatAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                      </div>
+                    </div>
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-sm text-amber-800 dark:text-amber-300">
+                      Only confirm after <span className="font-semibold">PKR {Number(trade.fiatAmount).toLocaleString()}</span> has actually arrived in your account. Once confirmed, you must send the tokens.
+                    </div>
                     <div className="bg-surface rounded-xl p-3 text-sm">
                       <p className="text-text-muted text-xs mb-2">Buyer has uploaded payment proof. Review then confirm.</p>
                       {paymentProofs[0]?.fileUrl && (
@@ -1113,6 +1179,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         className="w-full border border-border rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30" />
                       {(trade.settlementType === 'ON_CHAIN' || trade.token.explorerUrl) && (
                         <p className="text-xs text-text-muted mt-1">Paste the blockchain transaction hash so the buyer can verify it on the explorer.</p>
+                      )}
+                      {trade.token.explorerUrl && txHash.trim() && trade.settlementType !== 'MANUAL' && (
+                        <a href={buildExplorerUrl(trade.token.explorerUrl, txHash.trim())} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline mt-1">
+                          Check this hash on {explorerNameFromUrl(trade.token.explorerUrl)} ↗
+                        </a>
                       )}
                       {trade.settlementType === 'MANUAL' && (
                         <p className="text-xs text-text-muted mt-1">Enter the transfer reference number from your payment app or bank.</p>

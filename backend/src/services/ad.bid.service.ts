@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client'
 import { notify } from '../lib/notify'
 import { generateOrderRef } from '../lib/hash'
 import { assertCanOpenTrade } from './tradeConcurrency.service'
+import { checkPriceMargin } from '../lib/priceGuardrail'
+import { getNumberConfig } from './platformFlags.service'
 
 type Tx = Prisma.TransactionClient
 
@@ -28,6 +30,21 @@ export async function placeBid(
 
   const pricePerUnit = new Prisma.Decimal(data.pricePerUnit)
   if (pricePerUnit.lte(0)) throw new AppError('VALIDATION_ERROR', 'Bid price must be greater than 0', 400)
+
+  // Anti-scam bid-price band: a bid must stay within ±usdt_bid_margin_pct of the
+  // ad's listed price, so a wildly off bid can't be used to bait/scam the maker.
+  // Disabled when the admin sets the margin to 0.
+  {
+    const bidMarginPct = await getNumberConfig('usdt_bid_margin_pct', 10)
+    const check = checkPriceMargin(data.pricePerUnit, ad.price.toNumber(), bidMarginPct)
+    if (!check.ok && check.min != null && check.max != null) {
+      throw new AppError(
+        'BID_OUT_OF_RANGE',
+        `Your bid is too far from the listed price of PKR ${ad.price.toNumber().toLocaleString()}. Bids must be within ±${bidMarginPct}% — between PKR ${check.min.toFixed(2)} and PKR ${check.max.toFixed(2)} per USDT.`,
+        400,
+      )
+    }
+  }
 
   const fiatAmount = pricePerUnit.mul(usdtAmount)
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000)

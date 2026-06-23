@@ -4,6 +4,9 @@ import { Prisma } from '@prisma/client'
 import { notify as centralNotify } from '../lib/notify'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
+import { postCtmOpeningMessages } from './ctm.trade.service'
+import { checkPriceMargin } from '../lib/priceGuardrail'
+import { getNumberConfig } from '../services/platformFlags.service'
 
 // CTM bid notifications deep-link the web-push into the CTM trade room when a
 // trade ref is present (falls back to the notifications list otherwise).
@@ -66,6 +69,21 @@ export async function placeBid(
 
   const pricePerUnit = new Prisma.Decimal(data.pricePerUnit)
   if (pricePerUnit.lte(0)) throw new AppError('VALIDATION_ERROR', 'Bid price must be greater than 0', 400)
+
+  // Anti-scam bid-price band: a bid must stay within ±ctm_bid_margin_pct of the
+  // listed price, so a wildly off bid (e.g. 10× the listed price) can't be used
+  // to bait/scam the merchant. Disabled when the admin sets the margin to 0.
+  {
+    const bidMarginPct = await getNumberConfig('ctm_bid_margin_pct', 10)
+    const check = checkPriceMargin(data.pricePerUnit, listing.pricePerUnit.toNumber(), bidMarginPct)
+    if (!check.ok && check.min != null && check.max != null) {
+      throw new AppError(
+        'BID_OUT_OF_RANGE',
+        `Your bid is too far from the listed price of PKR ${listing.pricePerUnit.toNumber().toLocaleString()}. Bids must be within ±${bidMarginPct}% — between PKR ${check.min.toFixed(2)} and PKR ${check.max.toFixed(2)} per ${listing.token.symbol}.`,
+        400,
+      )
+    }
+  }
 
   const fiatAmount = pricePerUnit.mul(tradeTokenAmount)
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 min
@@ -209,7 +227,7 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
   const escrowCurrency = isOnChain ? (process.env.PLATFORM_ESCROW_CURRENCY ?? 'USDT_TRC20') : null
   const escrowAmount = isOnChain ? fiatAmount : null
 
-  return db.$transaction(async (tx: Tx) => {
+  const trade = await db.$transaction(async (tx: Tx) => {
     // Atomic availability check
     const updated = await tx.ctmListing.updateMany({
       where: { id: listing.id, availableAmount: { gte: bid.tokenAmount } },
@@ -226,7 +244,7 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
       data: { status: 'rejected' },
     })
 
-    const trade = await tx.ctmTrade.create({
+    const newTrade = await tx.ctmTrade.create({
       data: {
         displayRef: await generateCtmDisplayRef(tx),
         listingBidId: bid.id,
@@ -255,10 +273,14 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
       data: { status: 'accepted' },
     })
 
-    notify(bid.bidderId, 'CTM_BID_ACCEPTED', 'Your bid was accepted!', `Your bid on ${listing.token.symbol} was accepted. Trade is now open.`, { tradeRef: trade.tradeRef })
+    notify(bid.bidderId, 'CTM_BID_ACCEPTED', 'Your bid was accepted!', `Your bid on ${listing.token.symbol} was accepted. Trade is now open.`, { tradeRef: newTrade.tradeRef })
 
-    return trade
+    return newTrade
   })
+
+  await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms)
+
+  return trade
 }
 
 export async function rejectListingBid(merchantUserId: string, bidId: string) {
@@ -426,8 +448,8 @@ export async function confirmBidDetails(
   const escrowCurrency = isOnChain ? (process.env.PLATFORM_ESCROW_CURRENCY ?? 'USDT_TRC20') : null
   const escrowAmount = isOnChain ? fiatAmount : null
 
-  return db.$transaction(async (tx: Tx) => {
-    const trade = await tx.ctmTrade.create({
+  const trade = await db.$transaction(async (tx: Tx) => {
+    const newTrade = await tx.ctmTrade.create({
       data: {
         displayRef: await generateCtmDisplayRef(tx),
         listingBidId: bid.id,
@@ -452,8 +474,12 @@ export async function confirmBidDetails(
     })
     await tx.ctmListingBid.update({ where: { id: bidId }, data: { status: 'accepted' } })
     notify(listing.merchantProfile.userId, 'CTM_TRADE_READY', 'Trade is now open!',
-      `Buyer completed their details. Trade ${trade.tradeRef} is open.`,
-      { tradeRef: trade.tradeRef })
-    return trade
+      `Buyer completed their details. Trade ${newTrade.tradeRef} is open.`,
+      { tradeRef: newTrade.tradeRef })
+    return newTrade
   })
+
+  await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms)
+
+  return trade
 }

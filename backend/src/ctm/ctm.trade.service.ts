@@ -31,6 +31,22 @@ function refLabel(displayRef: string | null | undefined): string {
   return displayRef ?? 'your CTM trade'
 }
 
+/**
+ * Opening system message posted into a freshly-created CTM trade chat — mirrors
+ * the USDT marketplace's "Trade created…" message and adds the off-platform
+ * safety basics (CTM settles peer-to-peer, so the platform holds no funds). If
+ * the listing carries custom terms they are posted as a second line.
+ */
+export async function postCtmOpeningMessages(tradeId: string, senderId: string, terms?: string | null) {
+  await postCtmSystemMessage(
+    tradeId,
+    senderId,
+    'Trade started. Buyer: send the PKR payment to the seller’s account from your OWN account, then upload payment proof within the trade window. Seller: only confirm after the payment has actually arrived, then send the tokens. Keep all communication in this chat.',
+  )
+  const t = terms?.trim()
+  if (t) await postCtmSystemMessage(tradeId, senderId, `Merchant’s terms: ${t}`)
+}
+
 function isParticipant(trade: { buyerId: string; sellerId: string }, userId: string, role: string) {
   return trade.buyerId === userId || trade.sellerId === userId || role === 'admin' || role === 'super_admin'
 }
@@ -834,6 +850,9 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     })
     logger.info({ tradeId: created.id, makerId, amountUsdt: bondUsdtEquiv }, 'Maker bond locked (CTM)')
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await postCtmOpeningMessages(created.id, created.buyerId, (listing as any).terms)
 
   return created
 }

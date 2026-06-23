@@ -47,6 +47,7 @@ const STRUCTURED_KEYS = new Set([
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
   'maker_bond_enabled', 'maker_bond_ratio_pct', 'maker_bond_min_usdt',
   'usdt_price_margin_pct', 'ctm_price_margin_pct',
+  'usdt_bid_margin_pct', 'ctm_bid_margin_pct',
   'max_concurrent_trades', 'max_concurrent_trades_with_dispute',
 ])
 
@@ -215,6 +216,8 @@ export default function ConfigPage() {
   // ── Pricing guardrails ───────────────────────────────────────────────────────
   const [usdtMargin, setUsdtMargin] = useState('5')
   const [ctmMargin, setCtmMargin] = useState('5')
+  const [usdtBidMargin, setUsdtBidMargin] = useState('10')
+  const [ctmBidMargin, setCtmBidMargin] = useState('10')
   const [marginSaving, setMarginSaving] = useState(false)
 
   // ── Trade limits (concurrency) ────────────────────────────────────────────────
@@ -336,6 +339,8 @@ export default function ConfigPage() {
       setBondMinUsdt(m['maker_bond_min_usdt'] ?? '0')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
+      setUsdtBidMargin(m['usdt_bid_margin_pct'] ?? '10')
+      setCtmBidMargin(m['ctm_bid_margin_pct'] ?? '10')
       setMaxConcurrent(m['max_concurrent_trades'] ?? '3')
       setMaxConcurrentDispute(m['max_concurrent_trades_with_dispute'] ?? '1')
       setError(null)
@@ -481,6 +486,8 @@ export default function ConfigPage() {
       await saveKeys([
         { key: 'usdt_price_margin_pct', value: String(Math.max(parseFloat(usdtMargin) || 0, 0)) },
         { key: 'ctm_price_margin_pct', value: String(Math.max(parseFloat(ctmMargin) || 0, 0)) },
+        { key: 'usdt_bid_margin_pct', value: String(Math.max(parseFloat(usdtBidMargin) || 0, 0)) },
+        { key: 'ctm_bid_margin_pct', value: String(Math.max(parseFloat(ctmBidMargin) || 0, 0)) },
       ])
       showToast('Pricing guardrails saved.')
     } catch { showToast('Failed to save pricing guardrails.', false) }
@@ -627,6 +634,16 @@ export default function ConfigPage() {
           </Field>
           <Field label="CTM token margin (%)" hint="e.g. 5 = a token listing must be within ±5% of that token's average. 0 = off.">
             <input className={inputCls} type="number" min="0" step="0.5" value={ctmMargin} onChange={(e) => setCtmMargin(e.target.value)} placeholder="5" />
+          </Field>
+          <p className="text-xs text-text-muted pt-1">
+            <strong>Bid bands (anti-scam):</strong> a bid must price within ±X% of the <strong>listed price</strong> of the
+            ad/listing it targets, so a wildly off bid can&apos;t be used to bait a maker. Set to <strong>0</strong> to disable.
+          </p>
+          <Field label="USDT bid margin (%)" hint="e.g. 10 = a USDT bid must be within ±10% of the ad's listed price. 0 = off.">
+            <input className={inputCls} type="number" min="0" step="0.5" value={usdtBidMargin} onChange={(e) => setUsdtBidMargin(e.target.value)} placeholder="10" />
+          </Field>
+          <Field label="CTM bid margin (%)" hint="e.g. 10 = a token bid must be within ±10% of the listing's price. 0 = off.">
+            <input className={inputCls} type="number" min="0" step="0.5" value={ctmBidMargin} onChange={(e) => setCtmBidMargin(e.target.value)} placeholder="10" />
           </Field>
           <div className="flex justify-end">
             <Button size="sm" loading={marginSaving} onClick={savePricing}>Save Pricing Guardrails</Button>
