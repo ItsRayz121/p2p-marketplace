@@ -46,6 +46,7 @@ const STRUCTURED_KEYS = new Set([
   'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt_l1', 'noncustodial_max_order_usdt_l2',
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
   'maker_bond_enabled', 'maker_bond_ratio_pct', 'maker_bond_min_usdt',
+  'usdt_price_margin_pct', 'ctm_price_margin_pct',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -208,6 +209,12 @@ export default function ConfigPage() {
   const [offersOpen, setOffersOpen] = useState(false)
   const [advOpen, setAdvOpen] = useState(false)
   const [ncOpen, setNcOpen] = useState(false)
+  const [pricingOpen, setPricingOpen] = useState(false)
+
+  // ── Pricing guardrails ───────────────────────────────────────────────────────
+  const [usdtMargin, setUsdtMargin] = useState('5')
+  const [ctmMargin, setCtmMargin] = useState('5')
+  const [marginSaving, setMarginSaving] = useState(false)
 
   // ── Non-Custodial P2P ────────────────────────────────────────────────────────
   const [ncEnabled, setNcEnabled] = useState(false)
@@ -320,6 +327,8 @@ export default function ConfigPage() {
       setBondEnabled(m['maker_bond_enabled'] === 'true')
       setBondRatioPct(m['maker_bond_ratio_pct'] ?? '10')
       setBondMinUsdt(m['maker_bond_min_usdt'] ?? '0')
+      setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
+      setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -457,6 +466,18 @@ export default function ConfigPage() {
     finally { setNcSaving(false) }
   }
 
+  async function savePricing() {
+    setMarginSaving(true)
+    try {
+      await saveKeys([
+        { key: 'usdt_price_margin_pct', value: String(Math.max(parseFloat(usdtMargin) || 0, 0)) },
+        { key: 'ctm_price_margin_pct', value: String(Math.max(parseFloat(ctmMargin) || 0, 0)) },
+      ])
+      showToast('Pricing guardrails saved.')
+    } catch { showToast('Failed to save pricing guardrails.', false) }
+    finally { setMarginSaving(false) }
+  }
+
   async function saveEdit(key: string) {
     setEditSaving(true)
     try {
@@ -561,6 +582,33 @@ export default function ConfigPage() {
 
           <div className="flex justify-end">
             <Button size="sm" loading={ncSaving} onClick={saveNonCustodial}>Save Non-Custodial Settings</Button>
+          </div>
+        </div>
+      </Accordion>
+
+      {/* ══ Pricing Guardrails ════════════════════════════════════════════════ */}
+      <Accordion
+        title="Pricing Guardrails"
+        subtitle="Max % a listing's price may deviate from the marketplace average (anti-scam)"
+        open={pricingOpen}
+        onToggle={() => setPricingOpen((v) => !v)}
+        badge={<Badge variant="success" size="sm">±{usdtMargin || '5'}% / ±{ctmMargin || '5'}%</Badge>}
+      >
+        <div className="p-5 space-y-5">
+          <p className="text-xs text-text-muted">
+            New / edited listings must price within ±X% of <strong>our own marketplace</strong> average
+            (USDT: average of active USDT ads · CTM: average of that token&apos;s listings). This blocks
+            deceptive off-market prices. Set to <strong>0</strong> to disable a guardrail. When a coin/token
+            has no listings yet, the first listings set the market and are not restricted.
+          </p>
+          <Field label="USDT margin (%)" hint="e.g. 5 = a USDT ad must be within ±5% of the marketplace average. 0 = off.">
+            <input className={inputCls} type="number" min="0" step="0.5" value={usdtMargin} onChange={(e) => setUsdtMargin(e.target.value)} placeholder="5" />
+          </Field>
+          <Field label="CTM token margin (%)" hint="e.g. 5 = a token listing must be within ±5% of that token's average. 0 = off.">
+            <input className={inputCls} type="number" min="0" step="0.5" value={ctmMargin} onChange={(e) => setCtmMargin(e.target.value)} placeholder="5" />
+          </Field>
+          <div className="flex justify-end">
+            <Button size="sm" loading={marginSaving} onClick={savePricing}>Save Pricing Guardrails</Button>
           </div>
         </div>
       </Accordion>

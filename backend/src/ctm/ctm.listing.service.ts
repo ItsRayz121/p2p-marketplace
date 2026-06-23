@@ -8,6 +8,8 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags
 import { getBondConfig, computeBondUsdt } from '../services/makerBond.service'
 import { notify } from '../lib/notify'
 import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
+import { checkPriceMargin, marginRejectionMessage } from '../lib/priceGuardrail'
+import { getTokenMarketInsight } from './ctm.token.service'
 
 type Tx = Prisma.TransactionClient
 
@@ -119,6 +121,19 @@ export async function createListing(userId: string, data: CreateListingInput) {
 
   if (token.maxListingAmount && new Prisma.Decimal(data.totalAmount).gt(token.maxListingAmount)) {
     throw new AppError('VALIDATION_ERROR', `Total amount exceeds token max listing amount of ${token.maxListingAmount}`, 400)
+  }
+
+  // Price-margin guardrail: keep the per-token price within ±ctm_price_margin_pct
+  // of THIS token's marketplace average, so a token can't be listed at a deceptive
+  // off-market price (e.g. 20 PKR when it trades at 10). Disabled when the token
+  // has no market reference yet (the first listings set the price) or margin = 0.
+  {
+    const marginPct = await getNumberConfig('ctm_price_margin_pct', 5)
+    const insight = await getTokenMarketInsight(data.tokenId)
+    const check = checkPriceMargin(data.pricePerUnit, insight.avg12h, marginPct)
+    if (!check.ok && check.min != null && check.max != null) {
+      throw new AppError('PRICE_OUT_OF_RANGE', marginRejectionMessage({ unitLabel: token.symbol, marginPct, min: check.min, max: check.max }), 400)
+    }
   }
 
   // Validate payment method IDs — all must belong to this seller

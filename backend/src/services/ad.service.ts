@@ -1,9 +1,11 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
-import { FLAGS, isFlagEnabled } from './platformFlags.service'
+import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
 import { notify } from '../lib/notify'
 import { validateAddressForNetwork } from '../lib/addressValidation'
+import { checkPriceMargin, marginRejectionMessage } from '../lib/priceGuardrail'
+import { getUsdtMarketInsight } from './marketplace.service'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +109,19 @@ export async function createAd(userId: string, data: CreateAdInput) {
           throw new AppError('VALIDATION_ERROR', res.reason ?? 'Invalid receiving address', 400)
         }
       }
+    }
+  }
+
+  // Price-margin guardrail (fixed-price USDT ads): the price must stay within
+  // ±usdt_price_margin_pct of OUR marketplace average. Disabled when there's no
+  // reference yet (bootstrapping) or the admin sets the margin to 0. Float ads are
+  // inherently bounded by the market rate + offset, so they're exempt here.
+  if (data.priceType === 'fixed' && data.coin.toUpperCase() === 'USDT') {
+    const marginPct = await getNumberConfig('usdt_price_margin_pct', 5)
+    const insight = await getUsdtMarketInsight()
+    const check = checkPriceMargin(data.price, insight.avg, marginPct)
+    if (!check.ok && check.min != null && check.max != null) {
+      throw new AppError('PRICE_OUT_OF_RANGE', marginRejectionMessage({ unitLabel: 'USDT', marginPct, min: check.min, max: check.max }), 400)
     }
   }
 
@@ -220,6 +235,17 @@ export async function updateAd(userId: string, adId: string, data: UpdateAdInput
   const maxOrder = data.maxOrder ?? Number(ad.maxOrder)
   if (minOrder > maxOrder) {
     throw new AppError('VALIDATION_ERROR', 'minOrder must be less than or equal to maxOrder', 400)
+  }
+
+  // Re-apply the price-margin guardrail on a price edit (fixed-price USDT ads),
+  // so an ad can't be edited to a deceptive off-market price after creation.
+  if (data.price != null && ad.priceType === 'fixed' && ad.coin.toUpperCase() === 'USDT') {
+    const marginPct = await getNumberConfig('usdt_price_margin_pct', 5)
+    const insight = await getUsdtMarketInsight()
+    const check = checkPriceMargin(data.price, insight.avg, marginPct)
+    if (!check.ok && check.min != null && check.max != null) {
+      throw new AppError('PRICE_OUT_OF_RANGE', marginRejectionMessage({ unitLabel: 'USDT', marginPct, min: check.min, max: check.max }), 400)
+    }
   }
 
   return db.ad.update({ where: { id: adId }, data: updateData })

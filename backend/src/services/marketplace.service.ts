@@ -741,6 +741,48 @@ async function readUsdPrice(symbol: string): Promise<number> {
   }
 }
 
+export interface UsdtMarketInsight {
+  avg: number | null
+  buyAvg: number | null
+  sellAvg: number | null
+  sampleSize: number
+  lowData: boolean
+  dataSource: 'active_listings' | 'none'
+}
+
+/**
+ * USDT marketplace price snapshot derived from OUR OWN active listings (latest N
+ * by recency). Mirrors the CTM market-insight box ("from listings") and serves
+ * two purposes: (1) the reference for the price-margin guardrail, and (2) the
+ * create-ad insight box. The new listing being created is NOT yet persisted, so
+ * the average reflects current peers.
+ */
+export async function getUsdtMarketInsight(): Promise<UsdtMarketInsight> {
+  const SAMPLE = 30
+  const listings = await db.ad.findMany({
+    where: { status: 'active', coin: 'USDT' },
+    orderBy: { updatedAt: 'desc' },
+    take: SAMPLE,
+    select: { price: true, side: true },
+  })
+  if (listings.length === 0) {
+    return { avg: null, buyAvg: null, sellAvg: null, sampleSize: 0, lowData: true, dataSource: 'none' }
+  }
+  const round2 = (n: number) => parseFloat(n.toFixed(2))
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+  const all = listings.map((l) => Number(l.price))
+  const buy = listings.filter((l) => l.side === 'buy').map((l) => Number(l.price))
+  const sell = listings.filter((l) => l.side === 'sell').map((l) => Number(l.price))
+  return {
+    avg: round2(mean(all)),
+    buyAvg: buy.length ? round2(mean(buy)) : null,
+    sellAvg: sell.length ? round2(mean(sell)) : null,
+    sampleSize: listings.length,
+    lowData: listings.length < 3,
+    dataSource: 'active_listings',
+  }
+}
+
 export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
   const cacheKey = 'market-rates-summary'
   const cached = await redis.get(cacheKey)
