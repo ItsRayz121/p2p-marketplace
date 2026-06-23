@@ -5,6 +5,9 @@ import { generateCtmDisplayRef } from './ctm.ref'
 import { assertTokenAddressFormat } from './ctm.address'
 import { notify as centralNotify } from '../lib/notify'
 import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
+import { postCtmOpeningMessages } from './ctm.trade.service'
+import { checkPriceMargin } from '../lib/priceGuardrail'
+import { getNumberConfig } from '../services/platformFlags.service'
 
 const PM_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
@@ -183,6 +186,23 @@ export async function submitBid(bidderId: string, requestId: string, data: {
     assertTokenAddressFormat(request.token, data.buyerSettlementId, undefined)
   }
 
+  if (!(data.pricePerUnit > 0)) throw new AppError('VALIDATION_ERROR', 'Bid price must be greater than 0', 400)
+
+  // Anti-scam bid-price band: when the requester set a target price, the bid must
+  // stay within ±ctm_bid_margin_pct of it so a wildly off bid can't bait them.
+  // Skipped when no target was set (nothing to band against) or margin = 0.
+  if (request.targetPricePkr) {
+    const bidMarginPct = await getNumberConfig('ctm_bid_margin_pct', 10)
+    const check = checkPriceMargin(data.pricePerUnit, request.targetPricePkr.toNumber(), bidMarginPct)
+    if (!check.ok && check.min != null && check.max != null) {
+      throw new AppError(
+        'BID_OUT_OF_RANGE',
+        `Your bid is too far from the requested price of PKR ${request.targetPricePkr.toNumber().toLocaleString()}. Bids must be within ±${bidMarginPct}% — between PKR ${check.min.toFixed(2)} and PKR ${check.max.toFixed(2)} per ${request.token.symbol}.`,
+        400,
+      )
+    }
+  }
+
   const expiryHours = data.bidExpiryHours ?? 1
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000)
   const totalPkr = new Prisma.Decimal(data.pricePerUnit).mul(request.amount)
@@ -232,7 +252,7 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
     }
   }
 
-  return db.$transaction(async (tx) => {
+  const created = await db.$transaction(async (tx) => {
     const request = await tx.ctmRequest.findUnique({
       where: { id: requestId },
       include: { token: true },
@@ -313,6 +333,10 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
 
     return trade
   })
+
+  await postCtmOpeningMessages(created.id, created.buyerId)
+
+  return created
 }
 
 export async function cancelRequest(userId: string, requestId: string) {
