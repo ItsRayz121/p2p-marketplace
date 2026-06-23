@@ -164,6 +164,7 @@ function CreateListingPageContent() {
   const [marketRate, setMarketRate] = useState(0)
   const [marketRateSource, setMarketRateSource] = useState('')
   const [rateLoading, setRateLoading] = useState(false)
+  const [usdtInsight, setUsdtInsight] = useState<{ avg: number | null; buyAvg: number | null; sellAvg: number | null; marginPct: number; sampleSize: number } | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -212,6 +213,7 @@ function CreateListingPageContent() {
       setMarketRate(r.rate)
       setMarketRateSource(r.source ?? '')
     } catch { setMarketRate(0) } finally { setRateLoading(false) }
+    try { setUsdtInsight(await marketplaceApi.getUsdtInsight()) } catch { /* non-critical */ }
   }, [])
 
   useEffect(() => { fetchRate() }, [fetchRate])
@@ -360,6 +362,36 @@ function CreateListingPageContent() {
               </button>
             ))}
           </div>
+
+          {/* Market insight (our own USDT marketplace) — mirrors the CTM box so
+              makers price competitively and inside the allowed margin band. */}
+          {usdtInsight && usdtInsight.avg != null && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Market Insight · USDT</span>
+                <span className="text-[11px] text-text-muted">from listings</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-[10px] text-text-muted">Avg</p>
+                  <p className="text-sm font-bold text-text-primary">PKR {usdtInsight.avg.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-text-muted">Buy avg</p>
+                  <p className="text-sm font-bold text-green-600 dark:text-green-400">{usdtInsight.buyAvg != null ? `PKR ${usdtInsight.buyAvg.toLocaleString()}` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-text-muted">Sell avg</p>
+                  <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{usdtInsight.sellAvg != null ? `PKR ${usdtInsight.sellAvg.toLocaleString()}` : '—'}</p>
+                </div>
+              </div>
+              {usdtInsight.marginPct > 0 && (
+                <p className="mt-2 text-[11px] text-text-muted text-center">
+                  Allowed price range: PKR {(usdtInsight.avg * (1 - usdtInsight.marginPct / 100)).toFixed(2)}–{(usdtInsight.avg * (1 + usdtInsight.marginPct / 100)).toFixed(2)} per USDT (±{usdtInsight.marginPct}%)
+                </p>
+              )}
+            </div>
+          )}
 
           {form.priceType === 'fixed' && (
             <div>

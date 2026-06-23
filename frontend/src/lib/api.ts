@@ -779,6 +779,8 @@ export const marketplaceApi = {
     apiRequest<RecentTrade[]>('/marketplace/recent-trades'),
   getMarketRatesSummary: () =>
     apiRequest<MarketRatesSummary>('/marketplace/rates/summary'),
+  getUsdtInsight: () =>
+    apiRequest<{ avg: number | null; buyAvg: number | null; sellAvg: number | null; sampleSize: number; lowData: boolean; dataSource: string; marginPct: number }>('/marketplace/rates/usdt-insight'),
   getAds: (params?: Record<string, string | number | undefined>) => {
     const qs = params
       ? '?' + new URLSearchParams(

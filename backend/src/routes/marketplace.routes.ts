@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import * as marketplaceService from '../services/marketplace.service'
 import { getRecentTrades } from '../services/marketplace.service'
+import { getNumberConfig } from '../services/platformFlags.service'
 
 export async function marketplaceRoutes(app: FastifyInstance) {
   // All routes are public (no auth required)
@@ -20,6 +21,16 @@ export async function marketplaceRoutes(app: FastifyInstance) {
   app.get('/rates/summary', async (_req, reply) => {
     const data = await marketplaceService.getMarketRatesSummary()
     return reply.send({ success: true, data })
+  })
+
+  // USDT market insight (our own active listings) + the configured price-margin
+  // band — powers the create-ad insight box. Public, no auth.
+  app.get('/rates/usdt-insight', async (_req, reply) => {
+    const [insight, marginPct] = await Promise.all([
+      marketplaceService.getUsdtMarketInsight(),
+      getNumberConfig('usdt_price_margin_pct', 5),
+    ])
+    return reply.send({ success: true, data: { ...insight, marginPct } })
   })
 
   app.get('/stats', async (_req, reply) => {
