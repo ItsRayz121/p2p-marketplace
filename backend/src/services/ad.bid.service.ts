@@ -129,11 +129,24 @@ export async function confirmBidDetails(
     buyerDeliveryMethod = raw ? (hasPrefix ? (raw.split(':')[0] || 'wallet_blockchain') : 'wallet_blockchain') : null
     buyerDeliveryAddress = raw ? (hasPrefix ? raw.slice(raw.indexOf(':') + 1) : raw) : null
   } else {
-    const addr = (ad.settlementMethod ?? '').trim()
+    // BUY ad: use the maker's PRIMARY destination so method+network+address stay
+    // consistent (a mixed wallet+exchange ad must not pair an exchange method with a
+    // wallet address). Bids always settle to the primary; the instant-trade flow lets
+    // the seller pick a specific destination. Falls back to legacy settlementMethod.
+    const dests = (ad.settlementDestinations as Array<{ method: string; network: string | null; address: string }> | null) ?? []
+    const primary = dests[0]
+    const addr = (primary?.address ?? ad.settlementMethod ?? '').trim()
     buyerWalletAddress = addr
-    buyerDeliveryMethod = ad.tokenDeliveryTypes?.[0] ?? 'wallet_blockchain'
+    buyerDeliveryMethod = primary?.method ?? ad.tokenDeliveryTypes?.[0] ?? 'wallet_blockchain'
     buyerDeliveryAddress = addr || null
   }
+  // Trade network follows the chosen on-chain destination for buy ads (primary).
+  const bidPrimaryDest = !isSellAd
+    ? ((ad.settlementDestinations as Array<{ method: string; network: string | null; address: string }> | null) ?? [])[0]
+    : undefined
+  const bidTradeNetwork = (bidPrimaryDest?.method === 'wallet_blockchain' && bidPrimaryDest.network)
+    ? bidPrimaryDest.network
+    : ad.network
   const expiresAt = new Date(Date.now() + (ad.tradeWindow ?? 30) * 60 * 1000)
   const orderRef = generateOrderRef('TRD')
 
@@ -175,7 +188,7 @@ export async function confirmBidDetails(
         buyerId,
         sellerId,
         coin: ad.coin,
-        network: ad.network,
+        network: bidTradeNetwork,
         amount: bid.usdtAmount,
         price: bid.pricePerUnit,
         fiatAmount: bid.fiatAmount,
