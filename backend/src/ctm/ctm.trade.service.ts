@@ -113,6 +113,7 @@ export async function uploadPaymentProof(tradeRef: string, buyerId: string, file
     }),
   ])
 
+  await postCtmSystemMessage(trade.id, buyerId, 'Payment proof uploaded. Waiting for the seller to confirm the payment was received.')
   notify(trade.sellerId, 'CTM_PAYMENT_UPLOADED', 'Payment proof uploaded', 'Buyer has uploaded payment proof. Please confirm receipt.', { tradeRef })
 }
 
@@ -123,6 +124,7 @@ export async function confirmPayment(tradeRef: string, sellerId: string) {
   if (trade.status !== 'payment_uploaded') throw new AppError('CONFLICT', `Cannot confirm payment in status: ${trade.status}`, 409)
 
   await db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'payment_confirmed', proofDeadlineAt: null } })
+  await postCtmSystemMessage(trade.id, sellerId, 'Seller confirmed the payment was received. The seller will now send the tokens.')
   notify(trade.buyerId, 'CTM_PAYMENT_CONFIRMED', 'Payment confirmed', 'Seller confirmed your payment. They will now send the tokens.', { tradeRef })
 }
 
@@ -135,6 +137,7 @@ export async function markSellerTransferring(tradeRef: string, sellerId: string)
   const proofDeadlineAt = new Date(Date.now() + 2 * 60 * 60 * 1000) // 2h to submit token proof
 
   await db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'seller_transferring', proofDeadlineAt } })
+  await postCtmSystemMessage(trade.id, sellerId, 'Seller has started sending the tokens.')
   notify(trade.buyerId, 'CTM_SELLER_TRANSFERRING', 'Seller is transferring tokens', 'Seller has started the token transfer. Watch for incoming tokens.', { tradeRef })
 }
 
@@ -242,6 +245,7 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
     }),
   ])
 
+  await postCtmSystemMessage(trade.id, sellerId, `Seller submitted transfer proof for ${trade.tokenAmount} tokens. Buyer, check your wallet and confirm receipt within 30 minutes.`)
   notify(trade.buyerId, 'CTM_TOKEN_PROOF_SUBMITTED', 'Seller submitted transfer proof', 'Check your wallet and confirm receipt within 30 minutes.', { tradeRef })
 }
 
@@ -375,6 +379,7 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   queues.badgeRecalculate.add('recalc', { userId: buyerId }).catch(() => {})
   queues.badgeRecalculate.add('recalc', { userId: trade.sellerId }).catch(() => {})
 
+  await postCtmSystemMessage(trade.id, buyerId, 'Trade complete — the buyer confirmed receipt of the tokens. 🎉')
   notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
   notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
 
@@ -419,6 +424,7 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
   ])
 
   const otherId = trade.buyerId === userId ? trade.sellerId : trade.buyerId
+  await postCtmSystemMessage(trade.id, userId, `A dispute was opened. Reason: ${String(reason).replace(/_/g, ' ')}. An admin will review.`)
   notify(otherId, 'CTM_DISPUTE_OPENED', 'Dispute opened on trade', `A dispute has been opened on trade ${refLabel(trade.displayRef)}. An admin will review.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
 }
 
@@ -445,6 +451,7 @@ export async function cancelTrade(tradeRef: string, userId: string, reason: stri
   )
 
   const otherId = trade.buyerId === userId ? trade.sellerId : trade.buyerId
+  await postCtmSystemMessage(trade.id, userId, `Trade cancelled. Reason: ${reason}`)
   notify(otherId, 'CTM_TRADE_CANCELLED', 'Trade cancelled', `Trade ${refLabel(trade.displayRef)} has been cancelled.`, { tradeRef, displayRef: trade.displayRef, reason })
 }
 
@@ -823,6 +830,19 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   }
 
   return created
+}
+
+/**
+ * Post a system (auto) message into a CTM trade's chat thread on a step
+ * transition. Best-effort — never breaks the trade action. Takes the internal
+ * trade id (not tradeRef). isSystem renders it as a centered status line.
+ */
+export async function postCtmSystemMessage(tradeId: string, senderId: string, message: string) {
+  try {
+    await db.ctmTradeMessage.create({ data: { tradeId, senderId, message, isSystem: true } })
+  } catch (err) {
+    logger.error({ err, tradeId }, 'Failed to post CTM system message')
+  }
 }
 
 export async function sendMessage(tradeRef: string, senderId: string, message: string, attachmentUrl?: string) {

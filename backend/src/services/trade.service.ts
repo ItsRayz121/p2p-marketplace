@@ -508,6 +508,7 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
         tradeId: newTrade.id,
         senderId: buyerId,
         message: 'Trade created. Please upload payment proof within the trade window.',
+        isSystem: true,
       },
     })
 
@@ -591,6 +592,8 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
 
   const updated = await db.trade.findUniqueOrThrow({ where: { id: tradeId } })
 
+  await postTradeSystemMessage(tradeId, buyerId, 'Payment proof uploaded. Waiting for the seller to confirm the payment was received.')
+
   notify(tradeForEmail.sellerId, 'trade', 'Payment Proof Uploaded', 'The buyer has uploaded payment proof. Please review and confirm.', { tradeId }, tradeId)
   createAdminNotif({ category: 'TRADE', title: 'Payment Proof Uploaded', body: `Trade #${tradeForEmail.orderRef} — buyer uploaded payment proof.`, href: `/admin/trades/${tradeId}` })
 
@@ -660,6 +663,8 @@ export async function confirmPayment(
       },
     })
   })
+
+  await postTradeSystemMessage(tradeId, actorId, 'Seller confirmed the PKR payment was received. The seller will now send the crypto.')
 
   notify(updated.buyerId, 'trade', 'Payment Confirmed', 'The seller has confirmed your payment. Crypto will be sent soon.', { tradeId }, tradeId)
   return updated
@@ -812,6 +817,7 @@ export async function markCryptoSent(
   })
 
   const verifiedLabel = verificationResult.status === 'verified' ? ' (on-chain verified ✓)' : ''
+  await postTradeSystemMessage(tradeId, sellerId, `Seller marked ${Number(updated.amount)} ${updated.coin} as sent. Buyer, confirm receipt once it arrives in your wallet/account.`)
   notify(updated.buyerId, 'trade', 'Crypto Is on the Way', `The seller has sent the crypto${verifiedLabel}. Check your wallet and release once you have received it.`, { tradeId, txVerificationStatus: verificationResult.status }, tradeId)
   createAdminNotif({
     category: 'TRADE',
@@ -900,6 +906,8 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
   if (!tradeDetails.buyer.firstTradeBonusPaid) {
     await queues.referralPayout.add('first-trade', { userId: buyerId, tradeId })
   }
+
+  await postTradeSystemMessage(tradeId, buyerId, 'Trade complete — the buyer confirmed receipt and released the trade. 🎉')
 
   notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId }, tradeId)
   createAdminNotif({ category: 'TRADE', title: 'Trade Completed', body: `Trade #${tradeDetails.orderRef} has been completed.`, href: `/admin/trades/${tradeId}` })
@@ -996,6 +1004,7 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
   )
 
   const otherPartyId = actorId === buyerId! ? sellerId! : buyerId!
+  await postTradeSystemMessage(tradeId, actorId, `Trade cancelled. Reason: ${reason}`)
   notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId }, tradeId)
 
   return db.trade.findUnique({ where: { id: tradeId } })
@@ -1079,11 +1088,27 @@ export async function openDispute(
   }
 
   const otherPartyId = openedById === trade.buyerId ? trade.sellerId : trade.buyerId
+  await postTradeSystemMessage(tradeId, openedById, `A dispute was opened. Reason: ${reason}. An admin will review.`)
   notify(otherPartyId, 'dispute', 'Dispute Opened', `A dispute has been opened on your trade. Reason: ${reason}`, { tradeId, disputeId: dispute.id }, tradeId)
   notify(openedById, 'dispute', 'Dispute Submitted', 'Your dispute has been submitted and will be reviewed by an admin.', { tradeId, disputeId: dispute.id }, tradeId)
   createAdminNotif({ category: 'DISPUTE', title: 'New Dispute Opened', body: `Dispute on Trade #${trade.orderRef}: ${reason}`, href: `/admin/disputes` })
 
   return dispute
+}
+
+/**
+ * Post a system (auto) message into a trade's chat thread on a step transition.
+ * Best-effort: a failure here must never break the trade action, so we swallow
+ * errors. senderId is the actor who triggered the step (the isSystem flag is what
+ * makes it render as a centered status line, not a party's bubble). No push/bell
+ * notification is fired — step notifications are already sent separately.
+ */
+export async function postTradeSystemMessage(tradeId: string, senderId: string, message: string) {
+  try {
+    await db.tradeMessage.create({ data: { tradeId, senderId, message, isSystem: true } })
+  } catch (err) {
+    logger.error({ err, tradeId }, 'Failed to post trade system message')
+  }
 }
 
 export async function sendMessage(

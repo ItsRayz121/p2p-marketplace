@@ -1070,6 +1070,12 @@ export default function TradePage() {
                 onToggle={() => toggleStep(3)}
               >
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
+                  {/* Amount is shown front-and-centre so the seller knows exactly how
+                      much to send without scrolling back up to the order summary. */}
+                  <div className="flex justify-between items-center gap-2 pb-2 mb-1 border-b border-border">
+                    <span className="text-text-muted flex-shrink-0">{isUserBuyer ? 'Amount to receive' : 'Amount to send'}</span>
+                    <span className="font-bold text-text-primary text-base">{parseFloat(trade.amount).toFixed(4)} {trade.coin}</span>
+                  </div>
                   {(() => {
                     // Network only applies to on-chain wallet delivery. For exchange /
                     // internal transfers the funds move off-chain, so show the transfer

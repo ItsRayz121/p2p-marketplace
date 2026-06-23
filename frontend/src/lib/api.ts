@@ -936,7 +936,7 @@ export const tradesApi = {
   sendMessage: (id: string, message: string) =>
     apiRequest<{ id: string; message: string; createdAt: string }>(`/trades/${id}/messages`, { method: 'POST', body: JSON.stringify({ message }) }),
   getMessages: (id: string) =>
-    apiRequest<{ messages: Array<{ id: string; senderId: string; message: string; createdAt: string }> }>(`/trades/${id}/messages`),
+    apiRequest<{ messages: Array<{ id: string; senderId: string; message: string; isSystem?: boolean; createdAt: string }> }>(`/trades/${id}/messages`),
 }
 
 export interface AdBid {

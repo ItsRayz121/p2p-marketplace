@@ -129,7 +129,7 @@ interface Trade {
   ratedByMe?: boolean
 }
 
-interface Message { id: string; senderId: string; message: string; createdAt: string }
+interface Message { id: string; senderId: string; message: string; isSystem?: boolean; createdAt: string }
 
 function Countdown({ deadline }: { deadline: string }) {
   const [diff, setDiff] = useState(new Date(deadline).getTime() - Date.now())
@@ -1212,6 +1212,16 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((m) => {
               const isMe = m.senderId === user?.id
+              if (m.isSystem) {
+                return (
+                  <div key={m.id} className="flex justify-center my-1">
+                    <div className="bg-surface border border-border rounded-xl px-3 py-1.5 text-center max-w-[85%]">
+                      <p className="text-xs text-text-muted italic">{m.message}</p>
+                      <p className="text-[10px] text-text-muted/60 mt-0.5">{new Date(m.createdAt).toLocaleTimeString()}</p>
+                    </div>
+                  </div>
+                )
+              }
               return (
                 <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] px-3 py-2 rounded-xl text-sm ${isMe ? 'bg-primary text-white' : 'bg-surface text-text-primary'}`}>

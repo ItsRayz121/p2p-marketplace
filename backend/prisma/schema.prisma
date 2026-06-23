@@ -734,6 +734,9 @@ model TradeMessage {
   senderId      String
   message       String   @db.VarChar(500)
   attachmentUrl String?
+  // System (auto) messages posted by the platform on each step transition. Rendered
+  // as centered status lines in chat rather than as a party's bubble.
+  isSystem      Boolean  @default(false)
   createdAt     DateTime @default(now())
 
   @@index([tradeId])
@@ -2223,6 +2226,8 @@ model CtmTradeMessage {
   senderId      String
   message       String   @db.VarChar(1000)
   attachmentUrl String?
+  // System (auto) messages posted by the platform on each step transition.
+  isSystem      Boolean  @default(false)
   createdAt     DateTime @default(now())
 
   @@index([tradeId])
