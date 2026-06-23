@@ -3,6 +3,7 @@ import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { notify as centralNotify } from '../lib/notify'
 import { generateCtmDisplayRef } from './ctm.ref'
+import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
 
 // CTM bid notifications deep-link the web-push into the CTM trade room when a
 // trade ref is present (falls back to the notifications list otherwise).
@@ -146,6 +147,11 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
       { bidId, listingId: listing.id })
     return { status: 'accepted_pending_buyer', bidId, expiresAt: newExpiry }
   }
+
+  // A trade WILL be created below → enforce the concurrency cap on both parties
+  // (anti-scam; USDT + CTM combined, lower while a party has an open dispute).
+  await assertCanOpenTrade(bid.bidderId, 'self')
+  await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty')
 
   // Resolve payment method IDs
   const primaryPaymentMethodId = isBuyListing
@@ -358,6 +364,10 @@ export async function confirmBidDetails(
 
   const actualBuyerId = isBuyListing ? listing.merchantProfile.userId : bid.bidderId
   const actualSellerId = isBuyListing ? bid.bidderId : listing.merchantProfile.userId
+
+  // Concurrency cap (anti-scam): both parties under their active-trade limit.
+  await assertCanOpenTrade(bid.bidderId, 'self')
+  await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty')
 
   const primaryPaymentMethodId = isBuyListing
     ? ((data.paymentMethods?.[0]) ?? data.paymentMethod ?? '')

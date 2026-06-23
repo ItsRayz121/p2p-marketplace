@@ -3,6 +3,7 @@ import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
 import { notify } from '../lib/notify'
 import { generateOrderRef } from '../lib/hash'
+import { assertCanOpenTrade } from './tradeConcurrency.service'
 
 type Tx = Prisma.TransactionClient
 
@@ -106,6 +107,11 @@ export async function confirmBidDetails(
   const buyerId = isSellAd ? bid.bidderId : ad.userId
   const sellerId = isSellAd ? ad.userId : bid.bidderId
 
+  // Concurrency cap (anti-scam): both parties must be under their active-trade
+  // limit (USDT + CTM combined, lower while a party has an open dispute).
+  await assertCanOpenTrade(bid.bidderId, 'self')      // the bidder confirming (taker)
+  await assertCanOpenTrade(ad.userId, 'counterparty') // the ad owner (maker)
+
   // Resolve the buyer's USDT receiving destination so the Send-Crypto step always
   // knows where to deliver.
   //  • SELL ad: the bidder IS the buyer and supplied "method:address" above.
@@ -183,7 +189,7 @@ export async function confirmBidDetails(
     })
 
     await tx.tradeMessage.create({
-      data: { tradeId: trade.id, senderId: buyerId, message: 'Trade opened via bid. Please upload payment proof within the trade window.' },
+      data: { tradeId: trade.id, senderId: buyerId, message: 'Trade opened via bid. Please upload payment proof within the trade window.', isSystem: true },
     })
 
     await tx.adBid.update({ where: { id: bidId }, data: { status: 'accepted', paymentMethod: data.paymentMethod, buyerUsdtAddress: data.buyerUsdtAddress ?? null } })

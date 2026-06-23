@@ -10,6 +10,7 @@ import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
 import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
+import { assertCanOpenTrade } from './tradeConcurrency.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
@@ -274,16 +275,22 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     throw new AppError('DUPLICATE_REQUEST', 'A matching trade is already being created. Please wait a moment.', 409)
   }
 
-  // ── Non-custodial concurrency + anti-griefing (taker = the initiator) ───────
-  // Flag OFF (default) skips all of this, so production is unchanged. This only
-  // ever caps the TAKER (the user initiating the trade — buyer on a sell ad,
-  // seller on a buy ad), never the maker (the ad owner), whose ad-side trades
-  // are not counted against this.
-  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
-    try {
+  try {
+    // ── Concurrency cap (anti-scam, always on) ──────────────────────────────────
+    // Both parties must be under their active-trade limit (USDT + CTM combined,
+    // lower while a party has an open dispute). This stops one user from holding
+    // many in-progress trades at once and collecting from several victims without
+    // delivering. Checks the taker (initiator) AND the maker (ad owner).
+    await assertCanOpenTrade(initiatorId, 'self')
+    await assertCanOpenTrade(adSide.userId, 'counterparty')
+
+    // ── Non-custodial anti-griefing (taker = the initiator) ───────────────────
+    // Flag OFF (default) skips this, so production is unchanged. Caps only the
+    // TAKER. (General concurrency is handled above, regardless of this flag.)
+    if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
       const u = await db.user.findUnique({
         where: { id: initiatorId },
-        select: { kycLevel: true, tradeCooldownUntil: true, tradeStats: { select: { completedTrades: true } } },
+        select: { kycLevel: true, tradeCooldownUntil: true },
       })
       // Anti-griefing cooldown: blocks users who recently abandoned a trade.
       if (u?.tradeCooldownUntil && u.tradeCooldownUntil > new Date()) {
@@ -302,29 +309,11 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
       if (maxOrderUsdt > 0 && new Prisma.Decimal(data.amount).gt(maxOrderUsdt)) {
         throw new AppError('ORDER_TOO_LARGE', `During early access, your maximum order is ${maxOrderUsdt} USDT.`, 400)
       }
-      // Concurrency cap for Level-1 takers; enhanced (L2) users are uncapped.
-      if (u?.kycLevel !== 'enhanced') {
-        const completed = u?.tradeStats?.completedTrades ?? 0
-        const maxOpen = 1 + Math.floor(completed / 10)
-        const openCount = await db.trade.count({
-          where: {
-            OR: [{ buyerId: initiatorId }, { sellerId: initiatorId }],
-            status: { in: ['payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent'] },
-          },
-        })
-        if (openCount >= maxOpen) {
-          throw new AppError(
-            'TOO_MANY_OPEN_TRADES',
-            `You can have ${maxOpen} open trade${maxOpen === 1 ? '' : 's'} at a time. Finish your current trade first.`,
-            429,
-          )
-        }
-      }
-    } catch (err) {
-      // Release the idempotency claim so the user can retry once unblocked.
-      if (err instanceof AppError) await redis.del(idempKey).catch(() => {})
-      throw err
     }
+  } catch (err) {
+    // Release the idempotency claim so the user can retry once unblocked.
+    if (err instanceof AppError) await redis.del(idempKey).catch(() => {})
+    throw err
   }
 
   // Maker bond config read once, outside the transaction (cheap, cached).

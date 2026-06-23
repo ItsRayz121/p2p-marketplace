@@ -47,6 +47,7 @@ const STRUCTURED_KEYS = new Set([
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
   'maker_bond_enabled', 'maker_bond_ratio_pct', 'maker_bond_min_usdt',
   'usdt_price_margin_pct', 'ctm_price_margin_pct',
+  'max_concurrent_trades', 'max_concurrent_trades_with_dispute',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -216,6 +217,12 @@ export default function ConfigPage() {
   const [ctmMargin, setCtmMargin] = useState('5')
   const [marginSaving, setMarginSaving] = useState(false)
 
+  // ── Trade limits (concurrency) ────────────────────────────────────────────────
+  const [limitsOpen, setLimitsOpen] = useState(false)
+  const [maxConcurrent, setMaxConcurrent] = useState('3')
+  const [maxConcurrentDispute, setMaxConcurrentDispute] = useState('1')
+  const [limitsSaving, setLimitsSaving] = useState(false)
+
   // ── Non-Custodial P2P ────────────────────────────────────────────────────────
   const [ncEnabled, setNcEnabled] = useState(false)
   const [ncMaxOrderL1, setNcMaxOrderL1] = useState('50')
@@ -329,6 +336,8 @@ export default function ConfigPage() {
       setBondMinUsdt(m['maker_bond_min_usdt'] ?? '0')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
+      setMaxConcurrent(m['max_concurrent_trades'] ?? '3')
+      setMaxConcurrentDispute(m['max_concurrent_trades_with_dispute'] ?? '1')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -478,6 +487,18 @@ export default function ConfigPage() {
     finally { setMarginSaving(false) }
   }
 
+  async function saveLimits() {
+    setLimitsSaving(true)
+    try {
+      await saveKeys([
+        { key: 'max_concurrent_trades', value: String(Math.max(parseInt(maxConcurrent, 10) || 0, 0)) },
+        { key: 'max_concurrent_trades_with_dispute', value: String(Math.max(parseInt(maxConcurrentDispute, 10) || 0, 0)) },
+      ])
+      showToast('Trade limits saved.')
+    } catch { showToast('Failed to save trade limits.', false) }
+    finally { setLimitsSaving(false) }
+  }
+
   async function saveEdit(key: string) {
     setEditSaving(true)
     try {
@@ -609,6 +630,33 @@ export default function ConfigPage() {
           </Field>
           <div className="flex justify-end">
             <Button size="sm" loading={marginSaving} onClick={savePricing}>Save Pricing Guardrails</Button>
+          </div>
+        </div>
+      </Accordion>
+
+      {/* ══ Trade Limits ══════════════════════════════════════════════════════ */}
+      <Accordion
+        title="Trade Limits"
+        subtitle="Max simultaneous active trades per user (anti-scam concurrency cap)"
+        open={limitsOpen}
+        onToggle={() => setLimitsOpen((v) => !v)}
+        badge={<Badge variant="success" size="sm">{maxConcurrent || '3'} / {maxConcurrentDispute || '1'}</Badge>}
+      >
+        <div className="p-5 space-y-5">
+          <p className="text-xs text-text-muted">
+            Caps how many in-progress trades a user can be part of at once (buyer OR seller,
+            USDT + CTM combined). This stops one person collecting payment from several
+            counterparties without delivering. Checked for <strong>both</strong> parties when a
+            trade opens. Set to <strong>0</strong> for unlimited.
+          </p>
+          <Field label="Max active trades" hint="Normal cap per user (recommended 3). 0 = unlimited.">
+            <input className={inputCls} type="number" min="0" value={maxConcurrent} onChange={(e) => setMaxConcurrent(e.target.value)} placeholder="3" />
+          </Field>
+          <Field label="Max with open dispute" hint="Reduced cap while a user has an unresolved dispute (recommended 1). 0 = unlimited.">
+            <input className={inputCls} type="number" min="0" value={maxConcurrentDispute} onChange={(e) => setMaxConcurrentDispute(e.target.value)} placeholder="1" />
+          </Field>
+          <div className="flex justify-end">
+            <Button size="sm" loading={limitsSaving} onClick={saveLimits}>Save Trade Limits</Button>
           </div>
         </div>
       </Accordion>

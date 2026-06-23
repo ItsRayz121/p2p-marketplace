@@ -12,6 +12,7 @@ import { notify as centralNotify } from '../lib/notify'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
+import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -613,6 +614,11 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   const isBuyListing = (listing as any).side === 'buy'
   const actualBuyerId = isBuyListing ? listing.merchantProfile.userId : buyerId
   const actualSellerId = isBuyListing ? buyerId : listing.merchantProfile.userId
+
+  // Concurrency cap (anti-scam): both parties must be under their active-trade
+  // limit (USDT + CTM combined, lower while a party has an open dispute).
+  await assertCanOpenTrade(buyerId, 'self')                          // taker (initiator)
+  await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty') // maker (ad owner)
 
   // SELL listings: taker (buyer) picks one of the listing's accepted payment methods.
   // BUY listings: taker (seller) provides one or more of their own receiving accounts.

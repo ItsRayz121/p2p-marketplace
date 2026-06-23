@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { assertTokenAddressFormat } from './ctm.address'
 import { notify as centralNotify } from '../lib/notify'
+import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
 
 const PM_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
@@ -220,6 +221,17 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
   paymentMethodId?: string   // requester's account (PKR receiving if seller; pay-FROM if buyer)
   settlementId?: string      // requester's token receiving address (only when requester is the buyer)
 }) {
+  // Concurrency cap (anti-scam): pre-check BOTH parties before opening the
+  // transaction (avoids nested DB reads inside the tx). Existence/status are
+  // re-validated inside the tx below.
+  {
+    const preBid = await db.ctmBid.findUnique({ where: { id: bidId }, select: { bidderId: true } })
+    if (preBid) {
+      await assertCanOpenTrade(userId, 'self')               // the requester accepting
+      await assertCanOpenTrade(preBid.bidderId, 'counterparty') // the bidder
+    }
+  }
+
   return db.$transaction(async (tx) => {
     const request = await tx.ctmRequest.findUnique({
       where: { id: requestId },
