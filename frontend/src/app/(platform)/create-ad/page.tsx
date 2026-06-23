@@ -587,16 +587,17 @@ function CreateListingPageContent() {
                       className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                     {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
-                    {/* Validation feedback only for real blockchain addresses. Exchange /
-                        internal transfers are justified by the transfer screenshot, so we
-                        don't enforce or assert a format on them. */}
+                    {/* Green "valid" badge is wallet-only — we positively assert a real
+                        blockchain address format there. For exchange / internal transfers
+                        there's no canonical format, so we only surface the red error from
+                        the sanity guard (e.g. a wallet address pasted as a UID). */}
                     {walletSelected && !errors.settlementMethod && addrResult?.valid && (
                       <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                         Valid address for {walletLabel}
                       </p>
                     )}
-                    {walletSelected && !errors.settlementMethod && addrResult && !addrResult.valid && (
+                    {!errors.settlementMethod && addrResult && !addrResult.valid && (
                       <p className="text-sm text-danger mt-1">{addrResult.reason}</p>
                     )}
                     <p className="mt-1 text-xs text-text-muted">

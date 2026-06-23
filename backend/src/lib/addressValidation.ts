@@ -18,8 +18,20 @@
 export type AddressKind = 'evm' | 'aptos' | 'tron' | 'unknown'
 
 const EVM_RE = /^0x[0-9a-fA-F]{40}$/
-const APTOS_RE = /^0x[0-9a-fA-F]{1,64}$/
+// Aptos account addresses are 32 bytes = exactly 64 hex chars. We REQUIRE the full
+// 64-char form so a 40-char EVM/BEP20 address (which would otherwise fall inside a
+// 1..64 range) can never masquerade as a valid Aptos address. Real Aptos wallet /
+// deposit addresses are emitted in full 64-hex form (leading zeros preserved).
+const APTOS_RE = /^0x[0-9a-fA-F]{64}$/
 const TRON_RE = /^T[A-Za-z1-9]{33}$/
+
+// Anything that looks like a real blockchain wallet address — used to reject a
+// wallet address pasted into an EXCHANGE account/UID field (an exchange UID is a
+// short account identifier, never a 0x… / T… on-chain address).
+const LOOKS_LIKE_WALLET_RE = /^(0x[0-9a-fA-F]{20,}|T[A-Za-z1-9]{33})$/
+// Generous upper bound for an exchange account/UID (covers numeric UIDs, emails,
+// Pay-IDs) while still rejecting pasted on-chain addresses / junk.
+const EXCHANGE_ACCOUNT_MAX = 64
 
 // Only real on-chain networks are format-checked. Exchange venues are deliberately
 // absent → they resolve to 'unknown' and are never enforced.
@@ -56,14 +68,33 @@ export function validateAddressForNetwork(address: string, network: string): Add
     case 'aptos':
       return APTOS_RE.test(addr)
         ? { valid: true }
-        : { valid: false, reason: 'Enter a valid Aptos address — 0x followed by up to 64 hex characters.' }
+        : { valid: false, reason: 'Enter a valid Aptos address — 0x followed by exactly 64 hex characters.' }
     case 'tron':
       return TRON_RE.test(addr)
         ? { valid: true }
         : { valid: false, reason: 'Enter a valid TRC20 address — starts with T, 34 characters.' }
     default:
-      // Exchange / internal transfer (or unknown): no on-chain format to enforce —
-      // the transfer screenshot is the proof. Accept any non-empty value.
-      return { valid: true }
+      // Exchange / internal transfer (or unknown): there's no on-chain format to
+      // enforce — the transfer screenshot is the proof. We still apply a light
+      // sanity guard so a blockchain wallet address can't be pasted as a UID.
+      return validateExchangeAccount(addr)
   }
+}
+
+/**
+ * Sanity-check an exchange / internal-transfer account identifier (Binance UID,
+ * OKX/Bitget/Gate/MEXC account, email, Pay-ID). There is no canonical format, so
+ * this only rejects the two things that are clearly wrong: a value shaped like an
+ * on-chain wallet address, and an absurdly long value.
+ */
+export function validateExchangeAccount(account: string): AddressValidationResult {
+  const v = (account ?? '').trim()
+  if (!v) return { valid: false, reason: 'Account / UID is required' }
+  if (LOOKS_LIKE_WALLET_RE.test(v)) {
+    return { valid: false, reason: 'That looks like a blockchain wallet address. Enter your exchange account ID / UID instead.' }
+  }
+  if (v.length > EXCHANGE_ACCOUNT_MAX) {
+    return { valid: false, reason: `Exchange account / UID is too long (max ${EXCHANGE_ACCOUNT_MAX} characters).` }
+  }
+  return { valid: true }
 }
