@@ -23,6 +23,8 @@ export interface CreateAdInput {
   paymentMethods: string[]
   tokenDeliveryTypes?: string[]
   settlementMethod?: string
+  /** BUY ads: one receiving destination per offered network/exchange. */
+  settlementDestinations?: Array<{ method: string; network?: string | null; address: string }>
   tradeWindow?: number
   terms?: string
 }
@@ -86,11 +88,29 @@ export async function createAd(userId: string, data: CreateAdInput) {
   const effectiveNetworks = data.networks?.length ? data.networks : [data.network]
   const primaryNetwork = effectiveNetworks[0] ?? data.network
 
-  // Validate the maker's receiving address (buy ads) against the network/venue
-  // it will be used with, so a malformed destination can never be persisted.
-  // Wallet delivery → must be valid for EVERY on-chain network offered;
-  // exchange-only delivery → validate against the selected venue's UID format.
-  if (data.settlementMethod && data.settlementMethod.trim()) {
+  // Resolve & validate the maker's receiving destination(s) (BUY ads). New clients
+  // send settlementDestinations (one per offered network/exchange); legacy clients
+  // send a single settlementMethod. Either way every destination is shape-checked so
+  // a malformed address can never be persisted (the seller delivers the crypto here).
+  const rawDestinations = (data.settlementDestinations ?? [])
+    .map((d) => ({ method: d.method, network: d.network ?? null, address: (d.address ?? '').trim() }))
+    .filter((d) => d.address.length > 0)
+  let resolvedDestinations: Array<{ method: string; network: string | null; address: string }> = []
+  if (rawDestinations.length > 0) {
+    for (const d of rawDestinations) {
+      const label = d.method === 'wallet_blockchain' ? (d.network ?? '') : d.method
+      const res = validateAddressForNetwork(d.address, label)
+      if (!res.valid) throw new AppError('VALIDATION_ERROR', res.reason ?? 'Invalid receiving address', 400)
+    }
+    resolvedDestinations = rawDestinations
+  }
+  // Primary address kept on settlementMethod for back-compat (first destination, or
+  // the legacy single field).
+  const effectiveSettlement = resolvedDestinations[0]?.address ?? (data.settlementMethod?.trim() ?? '')
+
+  // Legacy single-field validation (only when no destinations array was sent):
+  // wallet delivery → valid for EVERY network offered; exchange-only → venue UID format.
+  if (resolvedDestinations.length === 0 && data.settlementMethod && data.settlementMethod.trim()) {
     const settlement = data.settlementMethod.trim()
     const deliveryTypes = data.tokenDeliveryTypes ?? []
     const usesWallet = deliveryTypes.includes('wallet_blockchain')
@@ -174,7 +194,8 @@ export async function createAd(userId: string, data: CreateAdInput) {
       maxOrder: new Prisma.Decimal(data.maxOrder),
       paymentMethods: data.paymentMethods,
       tokenDeliveryTypes: data.tokenDeliveryTypes ?? [],
-      settlementMethod: data.settlementMethod ?? null,
+      settlementMethod: effectiveSettlement || (data.settlementMethod ?? null),
+      settlementDestinations: resolvedDestinations.length ? (resolvedDestinations as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
       tradeWindow: data.tradeWindow ?? 30,
       terms: data.terms ?? '',
       status: 'active',

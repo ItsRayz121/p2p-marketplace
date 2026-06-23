@@ -526,6 +526,7 @@ export interface CreateAdPayload {
   paymentMethods: string[]
   tokenDeliveryTypes?: string[]
   settlementMethod?: string
+  settlementDestinations?: Array<{ method: string; network?: string | null; address: string }>
   tradeWindow?: number
   terms?: string
 }
@@ -901,7 +902,7 @@ export const walletApi = {
 }
 
 export const tradesApi = {
-  createTrade: (data: { adId: string; amount: number | string; paymentMethod: string; buyerDeliveryMethod?: string; buyerDeliveryAddress?: string; network?: string }) =>
+  createTrade: (data: { adId: string; amount: number | string; paymentMethod: string; buyerDeliveryMethod?: string; buyerDeliveryAddress?: string; network?: string; buyerPayFromMethodId?: string }) =>
     apiRequest<Trade>('/trades', { method: 'POST', body: JSON.stringify({ ...data, amount: typeof data.amount === 'string' ? parseFloat(data.amount) : data.amount }) }),
   getTrade: (id: string) =>
     apiRequest<Trade>(`/trades/${id}`),

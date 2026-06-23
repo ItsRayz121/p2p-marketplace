@@ -28,6 +28,7 @@ const createTradeSchema = z.object({
   buyerDeliveryMethod: z.string().max(30).optional(),
   buyerDeliveryAddress: z.string().max(500).optional(),
   network: z.string().max(30).optional(),
+  buyerPayFromMethodId: z.string().max(60).optional(),
 })
 
 // Either a tx hash or a transfer screenshot (or both) constitutes valid proof.
@@ -70,7 +71,7 @@ export async function tradeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { adId, amount, paymentMethod, buyerWalletAddress, buyerDeliveryMethod, buyerDeliveryAddress, network } = parsed.data
+    const { adId, amount, paymentMethod, buyerWalletAddress, buyerDeliveryMethod, buyerDeliveryAddress, network, buyerPayFromMethodId } = parsed.data
     const trade = await createTrade(userId, adId, {
       amount,
       paymentMethod,
@@ -78,6 +79,7 @@ export async function tradeRoutes(app: FastifyInstance) {
       ...(buyerDeliveryMethod !== undefined ? { buyerDeliveryMethod } : {}),
       ...(buyerDeliveryAddress !== undefined ? { buyerDeliveryAddress } : {}),
       ...(network !== undefined ? { network } : {}),
+      ...(buyerPayFromMethodId !== undefined ? { buyerPayFromMethodId } : {}),
     })
     return reply.code(201).send({ success: true, data: trade })
   })

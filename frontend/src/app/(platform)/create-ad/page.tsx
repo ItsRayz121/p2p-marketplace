@@ -28,6 +28,19 @@ const EXCHANGE_OPTIONS = [
 ]
 const EXCHANGE_VALUES = EXCHANGE_OPTIONS.map((o) => o.value)
 
+// One receiving destination per offered network (wallet) + per selected exchange.
+// Key is stable so the maker's typed address survives re-renders.
+function destinationSpecs(tokenDeliveryTypes: string[], networks: string[]): Array<{ key: string; method: string; network: string | null; label: string; placeholder: string }> {
+  const specs: Array<{ key: string; method: string; network: string | null; label: string; placeholder: string }> = []
+  if (tokenDeliveryTypes.includes('wallet_blockchain')) {
+    for (const net of networks) specs.push({ key: `wallet_blockchain:${net}`, method: 'wallet_blockchain', network: net, label: `Your ${net} wallet address`, placeholder: `${net} address (0x…)` })
+  }
+  for (const t of tokenDeliveryTypes) {
+    if (EXCHANGE_VALUES.includes(t)) specs.push({ key: t, method: t, network: null, label: `Your ${t} UID`, placeholder: `Your ${t} UID` })
+  }
+  return specs
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   coingecko: 'CoinGecko', kraken: 'Kraken', bybit: 'Bybit', binance: 'Binance',
 }
@@ -100,7 +113,7 @@ function methodLabel(m: SavedPaymentMethod): string {
   return m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type)
 }
 
-function validate(form: FormState): Record<string, string> {
+function validate(form: FormState, settlementByKey: Record<string, string> = {}): Record<string, string> {
   const e: Record<string, string> = {}
   // Network only matters for on-chain wallet delivery; exchange/internal transfers
   // move off-chain so no blockchain network applies. A wallet ad may offer one or
@@ -116,24 +129,17 @@ function validate(form: FormState): Record<string, string> {
   if (form.side === 'sell' && form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one payment method'
   if (form.side === 'buy' && form.paymentMethods.length === 0) e.paymentMethods = 'Select at least one account you will pay from'
   if (form.tokenDeliveryTypes.length === 0) e.tokenDeliveryTypes = 'Select at least one delivery method'
-  if (form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && !form.settlementMethod.trim())
-    e.settlementMethod = 'Enter your receiving address so sellers know where to send USDT'
-  // Format-validate the receiving address against the network/venue it'll be used
-  // with, so a malformed address can't be saved on the ad.
-  if (form.side === 'buy' && form.settlementMethod.trim()) {
-    const usesWallet = form.tokenDeliveryTypes.includes(WALLET_DELIVERY)
-    if (usesWallet) {
-      // Must be a valid address on every on-chain network offered.
-      for (const net of form.networks) {
-        const r = validateAddressForNetwork(form.settlementMethod.trim(), net)
-        if (!r.valid) { e.settlementMethod = r.reason ?? 'Invalid receiving address'; break }
-      }
-    } else {
-      const venue = form.tokenDeliveryTypes.find((t) => EXCHANGE_VALUES.includes(t)) ?? ''
-      if (venue) {
-        const r = validateAddressForNetwork(form.settlementMethod.trim(), venue)
-        if (!r.valid) e.settlementMethod = r.reason ?? 'Invalid receiving address'
-      }
+  // Buy ads: require AND format-validate a receiving address for EVERY selected
+  // delivery method (one per offered network + one per exchange), so a multi-method
+  // ad has a real destination for each option the seller can pick.
+  if (form.side === 'buy' && form.tokenDeliveryTypes.length > 0) {
+    const specs = destinationSpecs(form.tokenDeliveryTypes, form.networks)
+    for (const s of specs) {
+      const val = (settlementByKey[s.key] ?? '').trim()
+      if (!val) { e.settlementMethod = 'Enter your receiving address / UID for every selected delivery method'; break }
+      const label = s.method === WALLET_DELIVERY ? (s.network ?? '') : s.method
+      const r = validateAddressForNetwork(val, label)
+      if (!r.valid) { e.settlementMethod = r.reason ?? 'Invalid receiving address'; break }
     }
   }
   return e
@@ -165,6 +171,8 @@ function CreateListingPageContent() {
   const [marketRateSource, setMarketRateSource] = useState('')
   const [rateLoading, setRateLoading] = useState(false)
   const [usdtInsight, setUsdtInsight] = useState<{ avg: number | null; buyAvg: number | null; sellAvg: number | null; marginPct: number; sampleSize: number } | null>(null)
+  // BUY ads: one receiving address per delivery destination, keyed by destinationSpecs key.
+  const [settlementByKey, setSettlementByKey] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -195,6 +203,19 @@ function CreateListingPageContent() {
                 tradeWindow: ad.tradeWindow ?? 45,
                 terms: ad.terms ?? '',
               })
+              // Populate per-destination addresses from the ad's stored destinations,
+              // falling back to the legacy single settlementMethod across all keys.
+              const dests = ((ad as { settlementDestinations?: Array<{ method: string; network: string | null; address: string }> | null }).settlementDestinations) ?? []
+              const byKey: Record<string, string> = {}
+              for (const d of dests) {
+                const key = d.method === 'wallet_blockchain' ? `wallet_blockchain:${d.network}` : d.method
+                byKey[key] = d.address
+              }
+              if (Object.keys(byKey).length === 0 && ad.settlementMethod) {
+                const nets = ad.networks?.length ? ad.networks : [ad.network ?? 'BEP20']
+                for (const s of destinationSpecs(deliveryTypes, nets)) byKey[s.key] = ad.settlementMethod
+              }
+              setSettlementByKey(byKey)
             }).catch(() => {})
           : Promise.resolve(),
       ])
@@ -266,7 +287,7 @@ function CreateListingPageContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const errs = validate(form)
+    const errs = validate(form, settlementByKey)
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
     setSubmitting(true)
     setSubmitError('')
@@ -289,6 +310,13 @@ function CreateListingPageContent() {
         }
         await adsApi.updateAd(editId, payload)
       } else {
+        // Build one destination per selected method (buy ads). Primary = first.
+        const destinations = form.side === 'buy'
+          ? destinationSpecs(form.tokenDeliveryTypes, form.networks)
+              .map((s) => ({ method: s.method, network: s.network, address: (settlementByKey[s.key] ?? '').trim() }))
+              .filter((d) => d.address)
+          : []
+        const primaryAddress = destinations[0]?.address ?? form.settlementMethod.trim()
         const payload: CreateAdPayload = {
           side: form.side,
           coin: 'USDT',
@@ -302,7 +330,8 @@ function CreateListingPageContent() {
           maxOrder: parseFloat(form.maxAmount),
           paymentMethods: form.paymentMethods,
           tokenDeliveryTypes: form.tokenDeliveryTypes,
-          ...(form.settlementMethod.trim() ? { settlementMethod: form.settlementMethod.trim() } : {}),
+          ...(primaryAddress ? { settlementMethod: primaryAddress } : {}),
+          ...(destinations.length ? { settlementDestinations: destinations } : {}),
           tradeWindow: form.tradeWindow,
           terms: form.terms,
         }
@@ -569,73 +598,59 @@ function CreateListingPageContent() {
                 </div>
               )}
 
-              {/* Buy: receiving address (single field; the lister picks which to use) */}
+              {/* Buy: one receiving destination per selected method (network/exchange).
+                  The seller picks which one to send to at trade start. */}
               {form.side === 'buy' && form.tokenDeliveryTypes.length > 0 && (() => {
-                const exchangeVenue = selectedExchanges[0] ?? ''
-                // Networks this single receiving address is validated against:
-                // every wallet network offered, or the chosen exchange venue.
-                const checkLabels = walletSelected ? form.networks : (exchangeVenue ? [exchangeVenue] : [])
-                const walletLabel = form.networks.join(' + ')
-                const addrTrimmed = form.settlementMethod.trim()
-                const addrResult = addrTrimmed && checkLabels.length > 0
-                  ? (checkLabels.map((l) => validateAddressForNetwork(addrTrimmed, l)).find((r) => !r.valid) ?? { valid: true as const })
-                  : null
-                const matchingSaved = savedAddresses.filter((a) => checkLabels.includes(a.network))
+                const specs = destinationSpecs(form.tokenDeliveryTypes, form.networks)
+                if (specs.length === 0) return null
+                const setDest = (key: string, val: string) => {
+                  setSettlementByKey((m) => ({ ...m, [key]: val }))
+                  setErrors((e) => ({ ...e, settlementMethod: '' }))
+                }
                 return (
-                  <div className="mt-3">
-                    <label className="block text-xs font-medium text-text-muted mb-1">
-                      {walletSelected
-                        ? `Your wallet address (${walletLabel}) — sellers will send USDT here`
-                        : exchangeVenue
-                          ? `Your ${exchangeVenue} UID — sellers will send USDT here`
-                          : 'Your receiving address / account — sellers will send USDT here'}
-                    </label>
-                    {matchingSaved.length > 0 && (
-                      <div className="mb-2">
-                        <p className="text-xs text-text-muted mb-1.5">Your saved addresses — tap to fill:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {matchingSaved.map((a) => (
-                            <button
-                              type="button"
-                              key={a.id}
-                              onClick={() => set('settlementMethod', a.address)}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
-                                form.settlementMethod === a.address
-                                  ? 'border-primary bg-primary text-white'
-                                  : 'border-border bg-surface text-text-primary hover:border-primary/50'
-                              }`}
-                            >
-                              {a.label}
-                            </button>
-                          ))}
+                  <div className="mt-3 space-y-3">
+                    {specs.length > 1 && (
+                      <p className="text-xs text-text-muted">Enter a receiving address for each method you offer — the seller picks one at trade start.</p>
+                    )}
+                    {specs.map((s) => {
+                      const isWallet = s.method === 'wallet_blockchain'
+                      const val = settlementByKey[s.key] ?? ''
+                      const trimmed = val.trim()
+                      const res = trimmed ? validateAddressForNetwork(trimmed, isWallet ? (s.network ?? '') : s.method) : null
+                      const matchingSaved = savedAddresses.filter((a) => a.network === (isWallet ? s.network : s.method))
+                      return (
+                        <div key={s.key}>
+                          <label className="block text-xs font-medium text-text-muted mb-1">{s.label} — sellers will send USDT here</label>
+                          {matchingSaved.length > 0 && (
+                            <div className="mb-2 flex flex-wrap gap-2">
+                              {matchingSaved.map((a) => (
+                                <button type="button" key={a.id} onClick={() => setDest(s.key, a.address)}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${val === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                                  {a.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <input
+                            type="text"
+                            placeholder={s.placeholder}
+                            value={val}
+                            onChange={(e) => setDest(s.key, e.target.value)}
+                            className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                          {isWallet && trimmed && res?.valid && (
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              Valid {s.network} address
+                            </p>
+                          )}
+                          {trimmed && res && !res.valid && <p className="text-sm text-danger mt-1">{res.reason}</p>}
                         </div>
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      placeholder={walletSelected ? 'Wallet address (0x…)' : 'Your exchange UID'}
-                      value={form.settlementMethod}
-                      onChange={(e) => set('settlementMethod', e.target.value)}
-                      className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
+                      )
+                    })}
                     {errors.settlementMethod && <p className="text-sm text-danger mt-1">{errors.settlementMethod}</p>}
-                    {/* Green "valid" badge is wallet-only — we positively assert a real
-                        blockchain address format there. For exchange / internal transfers
-                        there's no canonical format, so we only surface the red error from
-                        the sanity guard (e.g. a wallet address pasted as a UID). */}
-                    {walletSelected && !errors.settlementMethod && addrResult?.valid && (
-                      <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                        Valid address for {walletLabel}
-                      </p>
-                    )}
-                    {!errors.settlementMethod && addrResult && !addrResult.valid && (
-                      <p className="text-sm text-danger mt-1">{addrResult.reason}</p>
-                    )}
-                    <p className="mt-1 text-xs text-text-muted">
-                      {walletSelected
-                        ? 'Sellers will send USDT here when they take your listing.'
-                        : 'Sellers will send USDT to this account and attach a transfer screenshot as proof.'}
+                    <p className="text-xs text-text-muted">
+                      {walletSelected ? 'Sellers send USDT to the address matching the network they choose.' : 'Sellers send USDT to this account and attach a transfer screenshot as proof.'}
                     </p>
                   </div>
                 )

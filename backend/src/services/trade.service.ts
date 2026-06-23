@@ -105,6 +105,8 @@ export interface CreateTradeInput {
   buyerDeliveryAddress?: string
   /** Buyer's chosen on-chain network when the ad offers more than one (wallet delivery). */
   network?: string
+  /** BUY ads: the taker (seller) may pick ONE of the buyer's pay-FROM accounts. */
+  buyerPayFromMethodId?: string
 }
 
 export interface GetTradesParams {
@@ -366,9 +368,10 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
       tradeWindow: number
       paymentMethods: string[]
       settlementMethod: string | null
+      settlementDestinations: Array<{ method: string; network: string | null; address: string }> | null
       tokenDeliveryTypes: string[]
     }>>`
-      SELECT id, "userId", side, coin, network, price, "availableAmount", "minOrder", "maxOrder", status, "tradeWindow", "paymentMethods", "settlementMethod", "tokenDeliveryTypes"
+      SELECT id, "userId", side, coin, network, price, "availableAmount", "minOrder", "maxOrder", status, "tradeWindow", "paymentMethods", "settlementMethod", "settlementDestinations", "tokenDeliveryTypes"
       FROM "Ad"
       WHERE id = ${adId}
       FOR UPDATE
@@ -443,11 +446,17 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
 
     // Buy ads: snapshot the buyer/lister's pay-FROM account(s) (declared at ad
     // creation in paymentMethods) so the seller sees where PKR will arrive from.
-    // On a buy ad the buyer is the ad owner (buyerId). Single account or {accounts:[]}.
+    // On a buy ad the buyer is the ad owner (buyerId). The taker (seller) may pick
+    // ONE of those accounts (data.buyerPayFromMethodId) — then we snapshot only that
+    // one so the agreed rail is unambiguous; otherwise we snapshot all of them.
     let buyerPaymentSnapshot: Prisma.InputJsonValue | undefined
     if (isBuyAd && adRows.paymentMethods.length > 0) {
+      const wantId = data.buyerPayFromMethodId && adRows.paymentMethods.includes(data.buyerPayFromMethodId)
+        ? data.buyerPayFromMethodId
+        : null
+      const ids = wantId ? [wantId] : adRows.paymentMethods
       const pms = await tx.paymentMethod.findMany({
-        where: { id: { in: adRows.paymentMethods }, userId: buyerId },
+        where: { id: { in: ids }, userId: buyerId },
         select: { type: true, accountName: true, mobileNumber: true, bankName: true, ibanNumber: true, accountNumber: true },
       })
       if (pms.length === 1) buyerPaymentSnapshot = buildPaymentAccountSnapshot(pms[0]!)
@@ -456,12 +465,34 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
 
     // Resolve the buyer's USDT receiving destination. On a SELL ad the initiator
     // (buyer) supplied it at trade start; on a BUY ad it comes from the ad owner's
-    // settlementMethod captured at ad creation.
-    const buyerWalletAddress = isBuyAd ? (adRows.settlementMethod ?? '') : data.buyerWalletAddress
+    // declared destination(s). When the ad has multiple destinations, the taker
+    // (seller) picks one by (method, network); we then use the ad's STORED address
+    // for that destination — never an address from the taker — so funds can't be
+    // redirected. Falls back to the legacy single settlementMethod.
+    let chosenDestination: { method: string; network: string | null; address: string } | null = null
+    if (isBuyAd) {
+      const dests = adRows.settlementDestinations ?? []
+      if (dests.length > 0) {
+        const wantMethod = data.buyerDeliveryMethod ?? dests[0]!.method
+        const wantNetwork = data.network ?? dests[0]!.network
+        chosenDestination =
+          dests.find((d) => d.method === wantMethod && (d.method !== 'wallet_blockchain' || d.network === wantNetwork))
+          ?? dests[0]!
+      }
+    }
+    const buyerWalletAddress = isBuyAd
+      ? (chosenDestination?.address ?? adRows.settlementMethod ?? '')
+      : data.buyerWalletAddress
     const buyerDeliveryMethod = isBuyAd
-      ? (adRows.tokenDeliveryTypes?.[0] ?? 'wallet_blockchain')
+      ? (chosenDestination?.method ?? adRows.tokenDeliveryTypes?.[0] ?? 'wallet_blockchain')
       : data.buyerDeliveryMethod
-    const buyerDeliveryAddress = isBuyAd ? (adRows.settlementMethod ?? '') : data.buyerDeliveryAddress
+    const buyerDeliveryAddress = isBuyAd
+      ? (chosenDestination?.address ?? adRows.settlementMethod ?? '')
+      : data.buyerDeliveryAddress
+    // For a chosen on-chain destination, the trade's network must match it.
+    const tradeNetwork = (isBuyAd && chosenDestination?.method === 'wallet_blockchain' && chosenDestination.network)
+      ? chosenDestination.network
+      : chosenNetwork
 
     // Create the trade. Honor the ad's advertised trade window (shown to users
     // on the listing as "30 min window" etc.) instead of a fixed long window.
@@ -476,7 +507,7 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
         buyerId,
         sellerId,
         coin: adRows.coin,
-        network: chosenNetwork,
+        network: tradeNetwork,
         amount,
         price: adRows.price,
         fiatAmount,

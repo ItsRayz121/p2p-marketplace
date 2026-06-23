@@ -638,6 +638,12 @@ model Ad {
   paymentMethods     String[]
   tokenDeliveryTypes String[]
   settlementMethod   String?   @db.VarChar(500)
+  // Multi-method receiving (BUY ads): one destination per offered network/exchange,
+  // e.g. [{ method:'wallet_blockchain', network:'BEP20', address:'0x…' },
+  //       { method:'binance', network:null, address:'12345678' }]. `settlementMethod`
+  // stays as the primary (first) destination's address for back-compat. Empty/null =
+  // legacy single-destination ad → use settlementMethod.
+  settlementDestinations Json?
   tradeWindow       Int       @default(30)
   terms             String    @default("") @db.VarChar(2000)
   status            AdStatus  @default(active)

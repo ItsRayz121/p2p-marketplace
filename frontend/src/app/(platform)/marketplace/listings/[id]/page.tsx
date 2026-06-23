@@ -56,6 +56,8 @@ interface AdDetail {
   paymentMethods: string[]
   resolvedPaymentMethods: ResolvedPaymentMethod[]
   tokenDeliveryTypes?: string[]
+  settlementMethod?: string | null
+  settlementDestinations?: Array<{ method: string; network: string | null; address: string }> | null
   tradeWindow: number
   terms: string
   status: string
@@ -63,6 +65,24 @@ interface AdDetail {
 }
 
 type MyActiveBid = NonNullable<AdActivity['myBid']>
+
+type BuyDestination = { method: string; network: string | null; address: string }
+
+/** The receiving destinations a BUY ad's maker accepts (one per network/exchange).
+ *  Falls back to the legacy single settlementMethod for older ads. */
+function adBuyDestinations(ad: AdDetail): BuyDestination[] {
+  if (ad.settlementDestinations?.length) return ad.settlementDestinations
+  if (ad.settlementMethod) {
+    const dts = ad.tokenDeliveryTypes ?? []
+    const method = dts.find((t) => t !== 'wallet_blockchain') ?? 'wallet_blockchain'
+    const network = method === 'wallet_blockchain' ? (ad.networks?.[0] ?? ad.network) : null
+    return [{ method, network, address: ad.settlementMethod }]
+  }
+  return []
+}
+
+const destKeyOf = (d: BuyDestination) => (d.method === 'wallet_blockchain' ? `wallet_blockchain:${d.network}` : d.method)
+const destLabelOf = (d: BuyDestination) => (d.method === 'wallet_blockchain' ? `Wallet · USDT ${d.network}` : d.method)
 
 export default function AdListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -91,6 +111,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   const [instantDeliveryAddress, setInstantDeliveryAddress] = useState('')
   // Buyer's chosen on-chain network when the ad offers more than one (wallet delivery).
   const [instantNetwork, setInstantNetwork] = useState('')
+  // BUY ads (taker = seller): which of the maker's receiving destinations to send to,
+  // and which of the maker's pay-FROM accounts will be used (shown to both).
+  const [instantSendDestKey, setInstantSendDestKey] = useState('')
+  const [instantBuyerPayFrom, setInstantBuyerPayFrom] = useState('')
   const [instantSubmitting, setInstantSubmitting] = useState(false)
   const [instantError, setInstantError] = useState('')
 
@@ -197,16 +221,36 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       const r = validateAddressForNetwork(instantDeliveryAddress.trim(), label)
       if (!r.valid) { setInstantError(r.reason ?? 'Invalid receiving address'); return }
     }
+    // BUY ad (taker = seller): pick which of the maker's destinations to send to,
+    // and which of the maker's pay-FROM accounts will be used.
+    let buyPayload: Record<string, unknown> = {}
+    if (ad?.side === 'buy') {
+      const dests = adBuyDestinations(ad)
+      if (dests.length === 0) { setInstantError('This listing has no receiving destination on file'); return }
+      if (dests.length > 1 && !instantSendDestKey) { setInstantError('Select where to send the USDT'); return }
+      const chosen = dests.find((d) => destKeyOf(d) === instantSendDestKey) ?? dests[0]!
+      const payFroms = ad.resolvedPaymentMethods ?? []
+      if (payFroms.length > 1 && !instantBuyerPayFrom) { setInstantError("Select the buyer's payment method") ; return }
+      buyPayload = {
+        buyerDeliveryMethod: chosen.method,
+        ...(chosen.method === 'wallet_blockchain' && chosen.network ? { network: chosen.network } : {}),
+        ...((instantBuyerPayFrom || payFroms[0]?.id) ? { buyerPayFromMethodId: instantBuyerPayFrom || payFroms[0]!.id } : {}),
+      }
+    }
     setInstantError('')
     setInstantSubmitting(true)
     try {
       const trade = await tradesApi.createTrade({
         adId: id,
         amount: parseFloat(instantAmount),
-        ...(isWallet && chosenNet ? { network: chosenNet } : {}),
         paymentMethod: instantPaymentMethod,
-        buyerDeliveryMethod: instantDeliveryMethod || undefined,
-        buyerDeliveryAddress: instantDeliveryAddress.trim() || undefined,
+        ...(ad?.side === 'buy'
+          ? buyPayload
+          : {
+              ...(isWallet && chosenNet ? { network: chosenNet } : {}),
+              buyerDeliveryMethod: instantDeliveryMethod || undefined,
+              buyerDeliveryAddress: instantDeliveryAddress.trim() || undefined,
+            }),
       })
       router.push(`/trade/${(trade as { id: string }).id}`)
     } catch (err: unknown) {
@@ -738,6 +782,54 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               </div>
               )}
             </div>
+
+            {/* BUY ad (taker = seller): where to send USDT (4a) + which buyer account pays (4b) */}
+            {!isSellAd && (() => {
+              const dests = adBuyDestinations(ad)
+              const payFroms = ad.resolvedPaymentMethods ?? []
+              return (
+                <>
+                  {dests.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-0.5">Where will you send {ad.coin}?</label>
+                      <p className="text-xs text-text-muted mb-1.5">{dests.length > 1 ? "Choose one of the buyer's receiving methods." : "The buyer's receiving method."}</p>
+                      <div className="space-y-2">
+                        {dests.map((d) => {
+                          const key = destKeyOf(d)
+                          const selected = dests.length === 1 || instantSendDestKey === key
+                          return (
+                            <button type="button" key={key} onClick={() => setInstantSendDestKey(key)}
+                              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-text-primary">{destLabelOf(d)}</p>
+                                <p className="text-xs text-text-muted font-mono break-all">{d.address}</p>
+                              </div>
+                              {dests.length > 1 && <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>{selected && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {payFroms.length > 1 && (
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-0.5">Buyer will pay you via</label>
+                      <p className="text-xs text-text-muted mb-1.5">Pick one of the buyer&apos;s accounts — they&apos;ll send PKR from it.</p>
+                      <div className="space-y-2">
+                        {payFroms.map((m) => (
+                          <button type="button" key={m.id} onClick={() => setInstantBuyerPayFrom(instantBuyerPayFrom === m.id ? '' : m.id)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
+                            <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
+                            <span className="text-sm font-medium text-text-primary">{m.label}</span>
+                            <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary' : 'border-border'}`}>{instantBuyerPayFrom === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
 
             {/* Delivery method — only for buying (receiving USDT) */}
             {isSellAd && deliveryTypes.length > 0 && (

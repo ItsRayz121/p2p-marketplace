@@ -35,6 +35,11 @@ const createAdSchema = z.object({
   paymentMethods: z.array(z.string()),
   tokenDeliveryTypes: z.array(z.string().max(30)).optional(),
   settlementMethod: z.string().max(500).optional(),
+  settlementDestinations: z.array(z.object({
+    method: z.string().max(30),
+    network: z.string().max(30).nullable().optional(),
+    address: z.string().max(500),
+  })).max(12).optional(),
   tradeWindow: z.number().int().min(5).max(720).optional(),
   terms: z.string().max(2000).optional(),
 })
