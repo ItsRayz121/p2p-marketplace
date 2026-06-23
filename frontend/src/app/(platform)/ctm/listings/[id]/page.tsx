@@ -761,13 +761,35 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           You have a pending bid on this listing. Waiting for the merchant to respond.
         </div>
       )}
-      {/* Accepted bid → trade open notice */}
-      {!isMine && myActiveBid?.status === 'accepted' && myActiveBid.trade?.tradeRef && (
-        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-sm text-green-800 dark:text-green-300 flex items-center justify-between gap-3">
-          <span>Your bid was accepted and the trade is open.</span>
-          <a href={`/ctm/trade/${myActiveBid.trade.tradeRef}`} className="font-semibold text-primary hover:underline whitespace-nowrap">Go to trade →</a>
-        </div>
-      )}
+      {/* Accepted bid → trade status notice (wording follows the live trade status,
+          so a completed/cancelled/disputed trade is never shown as "open") */}
+      {!isMine && myActiveBid?.status === 'accepted' && myActiveBid.trade?.tradeRef && (() => {
+        const ts = myActiveBid.trade.status
+        const done = ts === 'completed'
+        const cancelled = ts === 'cancelled'
+        const disputed = ts === 'disputed'
+        const tone = done
+          ? 'bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300'
+          : cancelled
+            ? 'bg-surface-alt border-border text-text-secondary'
+            : disputed
+              ? 'bg-red-500/10 border-red-500/30 text-red-800 dark:text-red-300'
+              : 'bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300'
+        const message = done
+          ? 'Your bid was accepted and this trade is complete.'
+          : cancelled
+            ? 'Your bid was accepted but this trade was cancelled.'
+            : disputed
+              ? 'Your bid was accepted and this trade is under dispute.'
+              : 'Your bid was accepted and the trade is open.'
+        const cta = done || cancelled || disputed ? 'View trade →' : 'Go to trade →'
+        return (
+          <div className={`border rounded-xl p-4 text-sm flex items-center justify-between gap-3 ${tone}`}>
+            <span>{message}</span>
+            <a href={`/ctm/trade/${myActiveBid.trade.tradeRef}`} className="font-semibold text-primary hover:underline whitespace-nowrap">{cta}</a>
+          </div>
+        )
+      })()}
 
       {/* Trade modal */}
       {showModal && (

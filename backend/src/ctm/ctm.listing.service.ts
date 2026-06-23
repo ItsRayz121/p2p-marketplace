@@ -471,6 +471,13 @@ export async function getListingActivity(listingId: string, requestingUserId?: s
           trade: { select: { tradeRef: true, status: true } },
         },
       })
+      // An accepted bid only "owns" the listing while its trade is still in flight.
+      // Once that trade is completed or cancelled, the bid is effectively closed —
+      // stop returning it as the active bid so the stale "trade is open" banner clears
+      // and the Buy/Bid CTA reappears, letting the buyer trade on this listing again.
+      if (myBid?.status === 'accepted' && myBid.trade && ['completed', 'cancelled'].includes(myBid.trade.status)) {
+        myBid = null
+      }
     }
 
     // Public, read-only activity feed (privacy-filtered trust signal), mirroring the
