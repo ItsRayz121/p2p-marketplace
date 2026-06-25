@@ -761,21 +761,39 @@ function ConnectionsTab() {
   )
 }
 
-// ─── Affiliate Tab (gas referral earnings) ─────────────────────────────────────
+// ─── Affiliate Tab (gas affiliate program + referral earnings) ─────────────────
 
-type ReferralSummary = Awaited<ReturnType<typeof gasApi.getReferralSummary>>
+type AffiliateOverview = Awaited<ReturnType<typeof gasApi.getAffiliateOverview>>
+type AffiliateLink = AffiliateOverview['links'][number]
+
+const SOCIAL_FIELDS: { key: string; label: string; placeholder: string }[] = [
+  { key: 'twitter',  label: 'X / Twitter', placeholder: '@handle or link' },
+  { key: 'telegram', label: 'Telegram',    placeholder: '@handle or channel link' },
+  { key: 'youtube',  label: 'YouTube',     placeholder: 'channel link' },
+  { key: 'instagram',label: 'Instagram',   placeholder: '@handle or link' },
+  { key: 'website',  label: 'Website',     placeholder: 'https://…' },
+]
+
+function refLink(code: string): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}/gas/referral?ref=${code}`
+}
 
 function AffiliateTab() {
-  const [summary, setSummary] = useState<ReferralSummary | null>(null)
+  const [data, setData] = useState<AffiliateOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [withdrawing, setWithdrawing] = useState(false)
   const [applyCode, setApplyCode] = useState('')
   const [applying, setApplying] = useState(false)
+  const [socials, setSocials] = useState<Record<string, string>>({})
+  const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [busyLink, setBusyLink] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
-    try { setSummary(await gasApi.getReferralSummary()) }
+    try { setData(await gasApi.getAffiliateOverview()) }
     catch (e) { setError(e instanceof Error ? e.message : 'Failed to load affiliate info') }
     finally { setLoading(false) }
   }, [])
@@ -788,9 +806,8 @@ function AffiliateTab() {
       const r = await gasApi.withdrawReferral()
       toast.success(`Withdrew $${r.withdrawnUsdt.toFixed(2)} to your USDT balance`)
       await load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Withdrawal failed')
-    } finally { setWithdrawing(false) }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Withdrawal failed') }
+    finally { setWithdrawing(false) }
   }
 
   const handleApply = async () => {
@@ -802,16 +819,62 @@ function AffiliateTab() {
       else toast.error('Code could not be applied (already linked, or invalid)')
       setApplyCode('')
       await load()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to apply code')
-    } finally { setApplying(false) }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to apply code') }
+    finally { setApplying(false) }
+  }
+
+  const handleApplyAffiliate = async () => {
+    const filled = Object.fromEntries(Object.entries(socials).filter(([, v]) => v.trim()))
+    if (Object.keys(filled).length === 0) { toast.error('Add at least one social profile'); return }
+    setSubmitting(true)
+    try {
+      await gasApi.applyAffiliate({ socials: filled, ...(note.trim() ? { note: note.trim() } : {}) })
+      toast.success('Application submitted — an admin will review it')
+      await load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to submit application') }
+    finally { setSubmitting(false) }
+  }
+
+  const caps = data?.caps
+
+  const handleCreateLink = async () => {
+    if (!caps) return
+    const label = window.prompt('Name this link (optional)', '') ?? ''
+    const userDiscountPct = Number(window.prompt(`Buyer discount % (min ${caps.minUserDiscountPct}, your allowance is ${caps.maxMarginPct}% total)`, String(caps.minUserDiscountPct)))
+    if (!(userDiscountPct >= 0)) { toast.error('Invalid discount'); return }
+    const commissionPct = Number(window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(Math.max(0, caps.maxMarginPct - userDiscountPct))))
+    if (!(commissionPct >= 0)) { toast.error('Invalid commission'); return }
+    setBusyLink('new')
+    try {
+      await gasApi.createAffiliateLink({ ...(label.trim() ? { label: label.trim() } : {}), userDiscountPct, commissionPct })
+      toast.success('Affiliate link created')
+      await load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to create link') }
+    finally { setBusyLink(null) }
+  }
+
+  const handleEditLink = async (link: AffiliateLink) => {
+    if (!caps) return
+    const userDiscountPct = Number(window.prompt(`Buyer discount % for ${link.code} (min ${caps.minUserDiscountPct})`, String(link.userDiscountPct)))
+    if (!(userDiscountPct >= 0)) { toast.error('Invalid discount'); return }
+    const commissionPct = Number(window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(link.commissionPct)))
+    if (!(commissionPct >= 0)) { toast.error('Invalid commission'); return }
+    setBusyLink(link.id)
+    try {
+      await gasApi.updateAffiliateLink(link.id, { userDiscountPct, commissionPct })
+      toast.success(`${link.code} updated`)
+      await load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to update link') }
+    finally { setBusyLink(null) }
   }
 
   if (loading) return <LoadingState message="Loading affiliate info..." />
   if (error) return <p className="text-sm text-danger">{error}</p>
-  if (!summary) return null
+  if (!data) return null
 
-  if (!summary.enabled) {
+  const sum = data.earnings
+  // Nothing is live if neither the affiliate program nor the underlying referral earnings are on.
+  if (!data.enabled && !sum.enabled) {
     return (
       <div className="bg-surface shadow-card border border-border rounded-xl p-6 text-center">
         <Gift className="w-8 h-8 mx-auto text-text-muted mb-2" />
@@ -821,81 +884,149 @@ function AffiliateTab() {
     )
   }
 
-  const canWithdraw = summary.kycOk && summary.withdrawableUsdt > 0 && summary.withdrawableUsdt >= summary.minWithdrawUsdt
+  const canWithdraw = sum.kycOk && sum.withdrawableUsdt > 0 && sum.withdrawableUsdt >= sum.minWithdrawUsdt
 
   return (
     <div className="space-y-6">
-      {/* Your code */}
-      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <Gift size={16} className="text-primary" />
-          <h3 className="text-sm font-bold text-text-primary">Your affiliate code</h3>
-        </div>
-        <p className="text-sm text-text-muted">
-          Earn <strong>{summary.referralPct ?? 0}%</strong> of the platform gas fee from every person you refer — paid into your USDT balance.
-        </p>
-        {summary.code && (
-          <div className="bg-surface-alt rounded-xl p-3 flex items-center justify-between gap-2 border border-border">
-            <span className="text-lg font-mono font-bold tracking-wider text-text-primary">{summary.code}</span>
-            <CopyButton text={summary.code} />
-          </div>
-        )}
-        <p className="text-xs text-text-muted">
-          Share this code. New users enter it here under <strong>Settings → Affiliate</strong> to link to you. Earnings accrue automatically when they pay gas fees.
-        </p>
-      </div>
-
-      {/* Earnings */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-          <p className="text-xs text-text-muted">People referred</p>
-          <p className="text-lg font-bold text-text-primary">{summary.referredCount}</p>
-        </div>
-        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-          <p className="text-xs text-text-muted">Total earned</p>
-          <p className="text-lg font-bold text-text-primary">${summary.totalAccruedUsdt.toFixed(2)}</p>
-        </div>
-        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-          <p className="text-xs text-text-muted">Available now</p>
-          <p className="text-lg font-bold text-success">${summary.withdrawableUsdt.toFixed(2)}</p>
-        </div>
-        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
-          <p className="text-xs text-text-muted">Withdrawn</p>
-          <p className="text-lg font-bold text-text-primary">${summary.withdrawnUsdt.toFixed(2)}</p>
-        </div>
-      </div>
-
-      {/* Withdraw */}
-      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-        <h3 className="text-sm font-bold text-text-primary">Withdraw earnings</h3>
-        {summary.availableUsdt > summary.withdrawableUsdt && (
-          <p className="text-xs text-text-muted">
-            ${(summary.availableUsdt - summary.withdrawableUsdt).toFixed(2)} is still in the fraud-hold window and will become withdrawable shortly.
-          </p>
-        )}
-        {!summary.kycOk && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">Complete identity verification (KYC) to withdraw your earnings.</p>
-        )}
-        {summary.kycOk && summary.withdrawableUsdt < summary.minWithdrawUsdt && (
-          <p className="text-xs text-text-muted">Minimum withdrawal is ${summary.minWithdrawUsdt.toFixed(2)}. Keep referring to reach it.</p>
-        )}
-        <Button onClick={handleWithdraw} disabled={!canWithdraw || withdrawing}>
-          {withdrawing ? <Spinner size="sm" /> : `Withdraw $${summary.withdrawableUsdt.toFixed(2)} to USDT balance`}
-        </Button>
-      </div>
-
-      {/* Apply a referrer's code */}
-      {!summary.boundToReferrer && (
+      {/* Affiliate program — application / status / links (gas_affiliate_enabled) */}
+      {data.enabled && data.status !== 'approved' && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-          <h3 className="text-sm font-bold text-text-primary">Were you referred?</h3>
-          <p className="text-xs text-text-muted">Enter the code of whoever invited you. This can only be set once.</p>
-          <div className="flex gap-2">
-            <Input value={applyCode} onChange={(e) => setApplyCode(e.target.value.toUpperCase())} placeholder="REFERRAL CODE" className="uppercase" />
-            <Button variant="secondary" onClick={handleApply} disabled={applying || !applyCode.trim()}>
-              {applying ? <Spinner size="sm" /> : 'Apply'}
+          <div className="flex items-center gap-2">
+            <Gift size={16} className="text-primary" />
+            <h3 className="text-sm font-bold text-text-primary">Become an affiliate</h3>
+          </div>
+          {data.status === 'pending' ? (
+            <p className="text-sm text-amber-600 dark:text-amber-400">Your application is under review. We&apos;ll notify you once it&apos;s approved.</p>
+          ) : (
+            <>
+              {data.status === 'rejected' && data.rejectionReason && (
+                <p className="text-xs text-red-500">Previous application rejected: {data.rejectionReason}</p>
+              )}
+              <p className="text-sm text-text-muted">
+                Approved affiliates get a margin allowance to split between a discount for your audience and your own commission — all paid from our platform fee, never extra cost to your users.
+              </p>
+              <div className="space-y-2">
+                {SOCIAL_FIELDS.map((f) => (
+                  <div key={f.key}>
+                    <label className="text-xs font-semibold text-text-secondary">{f.label}</label>
+                    <Input
+                      value={socials[f.key] ?? ''}
+                      onChange={(e) => setSocials((s) => ({ ...s, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder}
+                    />
+                  </div>
+                ))}
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary">Anything else? (optional)</label>
+                  <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Audience size, niche, etc." />
+                </div>
+              </div>
+              <Button onClick={handleApplyAffiliate} disabled={submitting}>
+                {submitting ? <Spinner size="sm" /> : data.status === 'rejected' ? 'Re-apply' : 'Apply as affiliate'}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Approved affiliate — manage links */}
+      {data.enabled && data.status === 'approved' && caps && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Gift size={16} className="text-primary" />
+              <h3 className="text-sm font-bold text-text-primary">Your affiliate links</h3>
+            </div>
+            <span className="text-xs text-text-muted">Allowance {caps.maxMarginPct}% · min discount {caps.minUserDiscountPct}%</span>
+          </div>
+          <p className="text-xs text-text-muted">
+            Each link splits your {caps.maxMarginPct}% margin allowance between a buyer discount and your commission. Buyers bound to your link get the discount automatically.
+          </p>
+          {data.links.map((link) => (
+            <div key={link.id} className="bg-surface-alt rounded-xl p-3 border border-border space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-base font-mono font-bold tracking-wider text-text-primary">{link.code}</span>
+                  {link.label && <span className="text-xs text-text-muted ml-2">{link.label}</span>}
+                </div>
+                <CopyButton text={refLink(link.code)} />
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div><p className="text-text-muted">Buyer discount</p><p className="font-semibold text-success">{link.userDiscountPct}%</p></div>
+                <div><p className="text-text-muted">Your commission</p><p className="font-semibold text-primary">{link.commissionPct}%</p></div>
+                <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{link.referredCount}</p></div>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => handleEditLink(link)} disabled={busyLink === link.id}>Edit split</Button>
+            </div>
+          ))}
+          {data.links.length < caps.maxLinks && (
+            <Button variant="secondary" onClick={handleCreateLink} disabled={busyLink === 'new'}>
+              {busyLink === 'new' ? <Spinner size="sm" /> : `Create link (${data.links.length}/${caps.maxLinks})`}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Referral earnings + withdraw (gas_referral_enabled) */}
+      {sum.enabled && (
+        <>
+          {sum.code && data.status !== 'approved' && (
+            <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+              <h3 className="text-sm font-bold text-text-primary">Your referral code</h3>
+              <p className="text-sm text-text-muted">Earn <strong>{sum.referralPct ?? 0}%</strong> of the platform gas fee from everyone you refer — paid into your USDT balance.</p>
+              <div className="bg-surface-alt rounded-xl p-3 flex items-center justify-between gap-2 border border-border">
+                <span className="text-lg font-mono font-bold tracking-wider text-text-primary">{sum.code}</span>
+                <CopyButton text={refLink(sum.code)} />
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+              <p className="text-xs text-text-muted">People referred</p>
+              <p className="text-lg font-bold text-text-primary">{sum.referredCount}</p>
+            </div>
+            <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+              <p className="text-xs text-text-muted">Total earned</p>
+              <p className="text-lg font-bold text-text-primary">${sum.totalAccruedUsdt.toFixed(2)}</p>
+            </div>
+            <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+              <p className="text-xs text-text-muted">Available now</p>
+              <p className="text-lg font-bold text-success">${sum.withdrawableUsdt.toFixed(2)}</p>
+            </div>
+            <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+              <p className="text-xs text-text-muted">Withdrawn</p>
+              <p className="text-lg font-bold text-text-primary">${sum.withdrawnUsdt.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+            <h3 className="text-sm font-bold text-text-primary">Withdraw earnings</h3>
+            {sum.availableUsdt > sum.withdrawableUsdt && (
+              <p className="text-xs text-text-muted">${(sum.availableUsdt - sum.withdrawableUsdt).toFixed(2)} is still in the fraud-hold window and will become withdrawable shortly.</p>
+            )}
+            {!sum.kycOk && <p className="text-xs text-amber-600 dark:text-amber-400">Complete identity verification (KYC) to withdraw your earnings.</p>}
+            {sum.kycOk && sum.withdrawableUsdt < sum.minWithdrawUsdt && (
+              <p className="text-xs text-text-muted">Minimum withdrawal is ${sum.minWithdrawUsdt.toFixed(2)}. Keep referring to reach it.</p>
+            )}
+            <Button onClick={handleWithdraw} disabled={!canWithdraw || withdrawing}>
+              {withdrawing ? <Spinner size="sm" /> : `Withdraw $${sum.withdrawableUsdt.toFixed(2)} to USDT balance`}
             </Button>
           </div>
-        </div>
+
+          {!sum.boundToReferrer && (
+            <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+              <h3 className="text-sm font-bold text-text-primary">Were you referred?</h3>
+              <p className="text-xs text-text-muted">Enter the code of whoever invited you. This can only be set once.</p>
+              <div className="flex gap-2">
+                <Input value={applyCode} onChange={(e) => setApplyCode(e.target.value.toUpperCase())} placeholder="REFERRAL CODE" className="uppercase" />
+                <Button variant="secondary" onClick={handleApply} disabled={applying || !applyCode.trim()}>
+                  {applying ? <Spinner size="sm" /> : 'Apply'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
