@@ -512,6 +512,7 @@ model User {
   gasReferralAsReferred  GasReferral?            @relation("GasReferredUser")
   gasReferralsAsReferrer GasReferral[]           @relation("GasReferrerUser")
   gasReferralAccruals    GasReferralAccrual[]    @relation("GasReferrerAccrual")
+  gasAffiliate           GasAffiliate?           @relation("GasAffiliateUser")
   tradeStreaksAsA        TradeStreak[]           @relation("StreakUserA")
   tradeStreaksAsB        TradeStreak[]           @relation("StreakUserB")
 
@@ -1583,18 +1584,48 @@ model GasPromoRedemption {
 // See lib/gas/gas.referral.ts. Display-only until Phase 5 adds withdrawal.
 // ────────────────────────────────────────────────────────────────────────────
 model GasReferralCode {
-  id          String   @id @default(cuid())
-  code        String   @unique          // stored UPPERCASE
-  ownerId     String
-  owner       User     @relation("GasRefCodeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  referralPct Float    @default(5)       // % of realized margin paid to the owner (admin-tunable)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  code            String   @unique          // stored UPPERCASE
+  ownerId         String
+  owner           User     @relation("GasRefCodeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  referralPct     Float    @default(5)       // commission %: % of gross margin paid to the owner
+  // Affiliate split (Phase 5). When the owner is an approved affiliate, a buyer bound to
+  // this code gets userDiscountPct% of the margin off automatically, and the owner earns
+  // referralPct% of the margin. Invariant enforced at write time:
+  // userDiscountPct + referralPct <= GasAffiliate.maxMarginPct <= 100.
+  userDiscountPct Float    @default(0)       // % of margin auto-discounted to the bound buyer
+  label           String?                    // affiliate-facing nickname for this link
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  referrals   GasReferral[]
+  referrals       GasReferral[]
 
   @@index([ownerId])
+}
+
+// Affiliate profile (Phase 5): a user APPLIES to become an affiliate (submitting their
+// social profiles); a super-admin approves and sets the margin caps. Approval turns the
+// user's referral codes into affiliate links that BOTH discount the bound buyer and pay
+// the affiliate a commission — always margin-only, never below the base gas cost.
+// Inert unless gas_affiliate_enabled is ON.
+model GasAffiliate {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  user               User      @relation("GasAffiliateUser", fields: [userId], references: [id], onDelete: Cascade)
+  status             String    @default("pending") // pending | approved | rejected
+  socials            Json?                          // submitted social-media handles/links
+  applicantNote      String?                        // optional message from the applicant
+  rejectionReason    String?
+  maxMarginPct       Float     @default(20)         // admin cap: total margin % the affiliate may allocate (discount + commission)
+  minUserDiscountPct Float     @default(0)          // admin floor: minimum buyer discount % per link
+  maxLinks           Int       @default(2)          // admin cap: how many affiliate links the user may create
+  reviewedById       String?                        // admin who approved/rejected (no FK; audit only)
+  reviewedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status])
 }
 
 // First-touch binding: a referred user maps to exactly one referrer, permanently.

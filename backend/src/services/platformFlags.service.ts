@@ -54,6 +54,15 @@ export const FLAGS = {
    * OFF (default) = entry + draw endpoints are rejected; nothing is sent.
    */
   GAS_GIVEAWAY: 'gas_giveaway_enabled',
+  /**
+   * Self-service affiliate program (Phase 5, extends gas referrals). When ON, a user
+   * can apply to become an affiliate (submitting social profiles); a super-admin
+   * approves and sets margin caps. Approved affiliates' referral links BOTH auto-
+   * discount the bound buyer AND pay the affiliate a commission — both drawn from the
+   * platform margin only, never below base gas cost. OFF (default) = no application,
+   * approval, or buyer auto-discount runs; referral codes behave exactly as today.
+   */
+  GAS_AFFILIATE: 'gas_affiliate_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]
