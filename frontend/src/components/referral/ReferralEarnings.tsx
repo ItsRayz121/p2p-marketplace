@@ -42,9 +42,14 @@ export function ReferralEarnings() {
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [busyLink, setBusyLink] = useState<string | null>(null)
-  const [newLabel, setNewLabel] = useState('')
+  const [newCode, setNewCode] = useState('')
+  const [newDiscount, setNewDiscount] = useState('')   // affiliate-only: audience discount %
+  const [newCommission, setNewCommission] = useState('') // affiliate-only: own commission %
   const [creating, setCreating] = useState(false)
   const [showWasReferred, setShowWasReferred] = useState(false)
+  const [showAffiliate, setShowAffiliate] = useState(false)
+  // Inline split editor for an existing affiliate link (replaces window.prompt).
+  const [editSplit, setEditSplit] = useState<{ id: string; userDiscountPct: string; commissionPct: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -90,51 +95,60 @@ export function ReferralEarnings() {
     finally { setSubmitting(false) }
   }
 
-  // Standard (self-service) link: name only, fixed split from policy.
+  // Standard (self-service) link: the user picks their own code (their name); fixed split.
   const handleCreateCustom = async () => {
+    const code = newCode.trim()
+    if (code && (code.length < 3 || code.length > 20)) { toast.error('Code must be 3–20 letters or numbers'); return }
     setCreating(true)
     try {
-      await gasApi.createCustomLink(newLabel.trim() || null)
+      await gasApi.createCustomLink(code ? { code } : undefined)
       toast.success('Custom link created')
-      setNewLabel('')
+      setNewCode('')
       await load()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to create link') }
     finally { setCreating(false) }
   }
 
-  // Approved-affiliate link: choose the discount/commission split.
+  // Validate an affiliate split against the granted caps. Returns an error string or null.
+  const splitError = (userDiscountPct: number, commissionPct: number): string | null => {
+    if (!caps) return null
+    if (!(userDiscountPct >= 0) || !(commissionPct >= 0)) return 'Enter valid percentages'
+    if (userDiscountPct < caps.minUserDiscountPct) return `Audience discount must be at least ${caps.minUserDiscountPct}%`
+    if (userDiscountPct + commissionPct > caps.maxMarginPct) return `Discount + commission cannot exceed ${caps.maxMarginPct}%`
+    return null
+  }
+
+  // Approved-affiliate link: pick your own code + the audience-discount / own-commission split (inline).
   const handleCreateAffiliate = async () => {
     if (!caps) return
-    const discountRaw = window.prompt(`Buyer discount % (min ${caps.minUserDiscountPct}, allowance ${caps.maxMarginPct}% total)`, String(caps.minUserDiscountPct))
-    if (discountRaw === null) return
-    const userDiscountPct = Number(discountRaw)
-    const commissionRaw = window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(Math.max(0, caps.maxMarginPct - userDiscountPct)))
-    if (commissionRaw === null) return
-    const commissionPct = Number(commissionRaw)
-    if (!(userDiscountPct >= 0) || !(commissionPct >= 0)) { toast.error('Invalid split'); return }
+    const code = newCode.trim()
+    if (code && (code.length < 3 || code.length > 20)) { toast.error('Code must be 3–20 letters or numbers'); return }
+    const userDiscountPct = Number(newDiscount || caps.minUserDiscountPct)
+    const commissionPct = Number(newCommission || Math.max(0, caps.maxMarginPct - userDiscountPct))
+    const err = splitError(userDiscountPct, commissionPct)
+    if (err) { toast.error(err); return }
     setCreating(true)
     try {
-      await gasApi.createAffiliateLink({ ...(newLabel.trim() ? { label: newLabel.trim() } : {}), userDiscountPct, commissionPct })
+      await gasApi.createAffiliateLink({ ...(code ? { code } : {}), userDiscountPct, commissionPct })
       toast.success('Affiliate link created')
-      setNewLabel('')
+      setNewCode(''); setNewDiscount(''); setNewCommission('')
       await load()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to create link') }
     finally { setCreating(false) }
   }
 
-  const handleEditLink = async (link: AffiliateLink) => {
-    if (!caps) return
-    const discountRaw = window.prompt(`Buyer discount % for ${link.code} (min ${caps.minUserDiscountPct})`, String(link.userDiscountPct))
-    if (discountRaw === null) return
-    const userDiscountPct = Number(discountRaw)
-    const commissionRaw = window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(link.commissionPct))
-    if (commissionRaw === null) return
-    const commissionPct = Number(commissionRaw)
-    if (!(userDiscountPct >= 0) || !(commissionPct >= 0)) { toast.error('Invalid split'); return }
+  // Save an inline split edit for an existing affiliate link.
+  const handleSaveSplit = async (link: AffiliateLink) => {
+    if (!editSplit) return
+    const userDiscountPct = Number(editSplit.userDiscountPct)
+    const commissionPct = Number(editSplit.commissionPct)
+    const err = splitError(userDiscountPct, commissionPct)
+    if (err) { toast.error(err); return }
     setBusyLink(link.id)
     try {
       await gasApi.updateAffiliateLink(link.id, { userDiscountPct, commissionPct })
       toast.success(`${link.code} updated`)
+      setEditSplit(null)
       await load()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to update link') }
     finally { setBusyLink(null) }
@@ -194,22 +208,30 @@ export function ReferralEarnings() {
       {/* Custom referral links — open to every user */}
       {data.enabled && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link2 size={16} className="text-primary" />
             <h3 className="text-sm font-bold text-text-primary">Your custom links</h3>
+            {caps && (
+              <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success">
+                Affiliate
+              </span>
+            )}
           </div>
           <p className="text-xs text-text-muted">
             {caps
-              ? `Each link splits your ${caps.maxMarginPct}% margin allowance between a buyer discount and your commission.`
+              ? `You're an approved affiliate. Each link splits your ${caps.maxMarginPct}% margin allowance between an audience discount (min ${caps.minUserDiscountPct}%) and your own commission.`
               : `Create up to ${policy.maxLinks} named links — each gives your friend ${policy.userDiscountPct}% off their gas fee and earns you ${policy.commissionPct}%, paid in USDT.`}
           </p>
 
           {data.links.map((link) => (
             <div key={link.id} className="bg-surface-alt rounded-xl p-3 border border-border space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <span className="text-base font-mono font-bold tracking-wider text-text-primary">{link.code}</span>
-                  {link.label && <span className="text-xs text-text-muted ml-2">{link.label}</span>}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-mono font-bold tracking-wider text-text-primary">{link.code}</span>
+                    {link.label && <span className="text-xs text-text-muted">{link.label}</span>}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-text-muted" title={shareUrl(link.code)}>{shareUrl(link.code)}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <CopyButton text={shareUrl(link.code)} />
@@ -228,17 +250,58 @@ export function ReferralEarnings() {
                 <div><p className="text-text-muted">You earn</p><p className="font-semibold text-primary">{link.commissionPct}%</p></div>
                 <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{link.referredCount}</p></div>
               </div>
-              {caps && (
-                <Button size="sm" variant="ghost" onClick={() => handleEditLink(link)} disabled={busyLink === link.id}>Edit split</Button>
+              {caps && editSplit?.id !== link.id && (
+                <Button size="sm" variant="ghost" onClick={() => setEditSplit({ id: link.id, userDiscountPct: String(link.userDiscountPct), commissionPct: String(link.commissionPct) })} disabled={busyLink === link.id}>Edit split</Button>
+              )}
+              {caps && editSplit?.id === link.id && (
+                <div className="rounded-lg border border-border bg-surface p-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <SplitField label="Audience discount %" value={editSplit.userDiscountPct} onChange={(v) => setEditSplit({ ...editSplit, userDiscountPct: v })} />
+                    <SplitField label="Your commission %" value={editSplit.commissionPct} onChange={(v) => setEditSplit({ ...editSplit, commissionPct: v })} />
+                  </div>
+                  <p className="text-[11px] text-text-muted">Discount + commission must be ≤ {caps.maxMarginPct}% (your allowance).</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="primary" onClick={() => handleSaveSplit(link)} disabled={busyLink === link.id}>{busyLink === link.id ? <Spinner size="sm" /> : 'Save'}</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditSplit(null)} disabled={busyLink === link.id}>Cancel</Button>
+                  </div>
+                </div>
               )}
             </div>
           ))}
 
           {policy.canCreate ? (
-            <div className="flex gap-2">
-              <Input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Name this link (e.g. My Twitter drop)" maxLength={60} />
-              <Button variant="secondary" onClick={caps ? handleCreateAffiliate : handleCreateCustom} disabled={creating}>
-                {creating ? <Spinner size="sm" /> : `Create (${policy.used}/${policy.maxLinks})`}
+            <div className="space-y-2">
+              <label className="block text-[11px] font-semibold text-text-secondary">Your link name (this becomes the shareable link)</label>
+              <Input
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20))}
+                placeholder="e.g. CWFTRADER"
+                className="uppercase font-mono tracking-wider"
+                maxLength={20}
+              />
+              {newCode.trim().length >= 3 ? (
+                <p className="truncate text-[11px] text-text-muted" title={shareUrl(newCode.trim())}>
+                  Your link: <span className="text-text-secondary">{shareUrl(newCode.trim())}</span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-text-muted">3–20 letters or numbers — whatever you type here is your link. Leave blank for a random code.</p>
+              )}
+              {caps && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <SplitField label="Audience discount %" hint={`min ${caps.minUserDiscountPct}%`} value={newDiscount} onChange={setNewDiscount} placeholder={String(caps.minUserDiscountPct)} />
+                    <SplitField label="Your commission %" value={newCommission} onChange={setNewCommission} placeholder={String(Math.max(0, caps.maxMarginPct - (Number(newDiscount) || caps.minUserDiscountPct)))} />
+                  </div>
+                  <p className="text-[11px] text-text-muted">Discount + commission must be ≤ {caps.maxMarginPct}% (your allowance). Both come from the platform margin only.</p>
+                </>
+              )}
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={caps ? handleCreateAffiliate : handleCreateCustom}
+                disabled={creating || (newCode.trim().length > 0 && newCode.trim().length < 3)}
+              >
+                {creating ? <Spinner size="sm" /> : `Create link (${policy.used}/${policy.maxLinks})`}
               </Button>
             </div>
           ) : policy.cooldownUntil ? (
@@ -249,43 +312,56 @@ export function ReferralEarnings() {
         </div>
       )}
 
-      {/* Affiliate program — application / status (for higher commission tiers) */}
+      {/* Affiliate program — application / status (for higher commission tiers), collapsible */}
       {data.enabled && data.status !== 'approved' && (
-        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Gift size={16} className="text-primary" />
-            <h3 className="text-sm font-bold text-text-primary">Become an affiliate</h3>
-          </div>
-          {data.status === 'pending' ? (
-            <p className="text-sm text-amber-600 dark:text-amber-400">Your application is under review. We&apos;ll notify you once it&apos;s approved.</p>
-          ) : (
-            <>
-              {data.status === 'rejected' && data.rejectionReason && (
-                <p className="text-xs text-red-500">Previous application rejected: {data.rejectionReason}</p>
-              )}
-              <p className="text-sm text-text-muted">
-                Approved affiliates get a much larger margin allowance (typically 20–30%) to split between a bigger discount for your audience and your own commission — all paid from our platform fee, never extra cost to your users.
-              </p>
-              <div className="space-y-2">
-                {SOCIAL_FIELDS.map((f) => (
-                  <div key={f.key}>
-                    <label className="text-xs font-semibold text-text-secondary">{f.label}</label>
-                    <Input
-                      value={socials[f.key] ?? ''}
-                      onChange={(e) => setSocials((s) => ({ ...s, [f.key]: e.target.value }))}
-                      placeholder={f.placeholder}
-                    />
+        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowAffiliate((v) => !v)}
+            className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-alt transition-colors"
+            aria-expanded={showAffiliate}
+          >
+            <span className="flex items-center gap-2 text-sm font-bold text-text-primary">
+              <Gift size={16} className="text-primary" />
+              Become an affiliate
+              {data.status === 'pending' && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Under review</span>}
+            </span>
+            <ChevronDown size={18} className={`text-text-muted transition-transform ${showAffiliate ? 'rotate-180' : ''}`} />
+          </button>
+          {showAffiliate && (
+            <div className="px-5 pb-5 pt-1 space-y-3 border-t border-border">
+              {data.status === 'pending' ? (
+                <p className="text-sm text-amber-600 dark:text-amber-400">Your application is under review. We&apos;ll notify you once it&apos;s approved.</p>
+              ) : (
+                <>
+                  {data.status === 'rejected' && data.rejectionReason && (
+                    <p className="text-xs text-red-500">Previous application rejected: {data.rejectionReason}</p>
+                  )}
+                  <p className="text-sm text-text-muted">
+                    Approved affiliates get a much larger margin allowance (typically 20–30%) to split between a bigger discount for your audience and your own commission — all paid from our platform fee, never extra cost to your users.
+                  </p>
+                  <div className="space-y-2">
+                    {SOCIAL_FIELDS.map((f) => (
+                      <div key={f.key}>
+                        <label className="text-xs font-semibold text-text-secondary">{f.label}</label>
+                        <Input
+                          value={socials[f.key] ?? ''}
+                          onChange={(e) => setSocials((s) => ({ ...s, [f.key]: e.target.value }))}
+                          placeholder={f.placeholder}
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="text-xs font-semibold text-text-secondary">Anything else? (optional)</label>
+                      <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Audience size, niche, etc." />
+                    </div>
                   </div>
-                ))}
-                <div>
-                  <label className="text-xs font-semibold text-text-secondary">Anything else? (optional)</label>
-                  <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Audience size, niche, etc." />
-                </div>
-              </div>
-              <Button onClick={handleApplyAffiliate} disabled={submitting}>
-                {submitting ? <Spinner size="sm" /> : data.status === 'rejected' ? 'Re-apply' : 'Apply as affiliate'}
-              </Button>
-            </>
+                  <Button onClick={handleApplyAffiliate} disabled={submitting}>
+                    {submitting ? <Spinner size="sm" /> : data.status === 'rejected' ? 'Re-apply' : 'Apply as affiliate'}
+                  </Button>
+                </>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -324,6 +400,25 @@ function Stat({ label, value, accent = false }: { label: string; value: string; 
     <div className="bg-surface shadow-card border border-border rounded-xl p-4">
       <p className="text-xs text-text-muted">{label}</p>
       <p className={`text-lg font-bold ${accent ? 'text-success' : 'text-text-primary'}`}>{value}</p>
+    </div>
+  )
+}
+
+/** Small labelled percent input used by the affiliate split editor (create + edit). */
+function SplitField({ label, hint, value, placeholder, onChange }: { label: string; hint?: string; value: string; placeholder?: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="block text-[11px] font-semibold text-text-secondary">{label}{hint ? <span className="text-text-muted font-normal"> ({hint})</span> : null}</label>
+      <input
+        type="number"
+        inputMode="decimal"
+        min={0}
+        max={100}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+      />
     </div>
   )
 }

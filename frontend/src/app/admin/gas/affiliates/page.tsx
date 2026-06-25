@@ -33,6 +33,16 @@ export default function GasAffiliatesAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  // Inline editor (replaces window.prompt): which affiliate + which form is open, plus its
+  // working values. `mode` is 'caps' (approve / edit caps) or 'reject' (capture a reason).
+  const [edit, setEdit] = useState<{
+    userId: string
+    mode: 'caps' | 'reject'
+    maxMarginPct: string
+    minUserDiscountPct: string
+    maxLinks: string
+    rejectionReason: string
+  } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -46,35 +56,39 @@ export default function GasAffiliatesAdminPage() {
 
   useEffect(() => { void load() }, [load])
 
-  async function approve(a: Affiliate) {
-    const marginRaw = window.prompt(`Margin allowance % for ${a.email ?? a.userId}\n(total margin the affiliate may split between buyer discount + commission)`, String(a.maxMarginPct))
-    if (marginRaw === null) return
-    const maxMarginPct = Number(marginRaw)
+  // Open the inline caps editor (approve a pending app, or edit an approved one's caps).
+  function startCaps(a: Affiliate) {
+    setEdit({ userId: a.userId, mode: 'caps', maxMarginPct: String(a.maxMarginPct), minUserDiscountPct: String(a.minUserDiscountPct), maxLinks: String(a.maxLinks), rejectionReason: '' })
+  }
+  function startReject(a: Affiliate) {
+    setEdit({ userId: a.userId, mode: 'reject', maxMarginPct: String(a.maxMarginPct), minUserDiscountPct: String(a.minUserDiscountPct), maxLinks: String(a.maxLinks), rejectionReason: '' })
+  }
+
+  async function saveCaps(a: Affiliate) {
+    if (!edit) return
+    const maxMarginPct = Number(edit.maxMarginPct)
+    const minUserDiscountPct = Number(edit.minUserDiscountPct)
+    const maxLinks = Number(edit.maxLinks)
     if (!(maxMarginPct >= 0 && maxMarginPct <= 100)) { toast.error('Margin % must be 0–100'); return }
-    const minRaw = window.prompt(`Minimum buyer discount % (0–${maxMarginPct})`, String(a.minUserDiscountPct))
-    if (minRaw === null) return
-    const minUserDiscountPct = Number(minRaw)
     if (!(minUserDiscountPct >= 0 && minUserDiscountPct <= maxMarginPct)) { toast.error(`Min discount must be 0–${maxMarginPct}`); return }
-    const linksRaw = window.prompt('Max number of affiliate links (1–50)', String(a.maxLinks))
-    if (linksRaw === null) return
-    const maxLinks = Number(linksRaw)
     if (!(Number.isInteger(maxLinks) && maxLinks >= 1 && maxLinks <= 50)) { toast.error('Max links must be 1–50'); return }
     setBusyId(a.userId)
     try {
       await adminApi.reviewGasAffiliate(a.userId, { decision: 'approve', maxMarginPct, minUserDiscountPct, maxLinks })
-      toast.success(`${a.email ?? 'Affiliate'} approved`)
+      toast.success(`${a.email ?? 'Affiliate'} ${a.status === 'approved' ? 'updated' : 'approved'}`)
+      setEdit(null)
       void load()
-    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Failed to approve') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Failed to save') }
     finally { setBusyId(null) }
   }
 
-  async function reject(a: Affiliate) {
-    const reason = window.prompt(`Reject ${a.email ?? a.userId}? Optional reason shown to the applicant:`, '')
-    if (reason == null) return
+  async function saveReject(a: Affiliate) {
+    if (!edit) return
     setBusyId(a.userId)
     try {
-      await adminApi.reviewGasAffiliate(a.userId, { decision: 'reject', rejectionReason: reason || null })
+      await adminApi.reviewGasAffiliate(a.userId, { decision: 'reject', rejectionReason: edit.rejectionReason.trim() || null })
       toast.success('Application rejected')
+      setEdit(null)
       void load()
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Failed to reject') }
     finally { setBusyId(null) }
@@ -151,20 +165,54 @@ export default function GasAffiliatesAdminPage() {
                   </div>
                   {isSuperAdmin && (
                     <div className="flex gap-2">
-                      <Button size="sm" variant="primary" onClick={() => approve(a)} disabled={busyId === a.userId}>
+                      <Button size="sm" variant="primary" onClick={() => startCaps(a)} disabled={busyId === a.userId}>
                         {a.status === 'approved' ? 'Edit caps' : 'Approve'}
                       </Button>
                       {a.status !== 'rejected' && (
-                        <Button size="sm" variant="secondary" onClick={() => reject(a)} disabled={busyId === a.userId}>Reject</Button>
+                        <Button size="sm" variant="secondary" onClick={() => startReject(a)} disabled={busyId === a.userId}>Reject</Button>
                       )}
                     </div>
                   )}
                 </div>
-                {a.status === 'approved' && (
+                {a.status === 'approved' && !(edit?.userId === a.userId && edit.mode === 'caps') && (
                   <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div><p className="text-text-muted">Margin allowance</p><p className="font-semibold text-text-primary">{a.maxMarginPct}%</p></div>
                     <div><p className="text-text-muted">Min buyer discount</p><p className="font-semibold text-text-primary">{a.minUserDiscountPct}%</p></div>
                     <div><p className="text-text-muted">Links</p><p className="font-semibold text-text-primary">{a.linkCount} / {a.maxLinks}</p></div>
+                  </div>
+                )}
+
+                {/* Inline caps editor — approve a pending app or edit an approved one's caps */}
+                {edit?.userId === a.userId && edit.mode === 'caps' && (
+                  <div className="mt-3 rounded-lg border border-border bg-surface-alt p-3 space-y-3">
+                    <p className="text-xs font-bold text-text-primary">{a.status === 'approved' ? 'Edit caps' : 'Approve affiliate'}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <NumberField label="Margin allowance %" hint="Total margin to split (discount + commission)" value={edit.maxMarginPct} onChange={(v) => setEdit({ ...edit, maxMarginPct: v })} />
+                      <NumberField label="Min buyer discount %" hint={`0–${edit.maxMarginPct || 0}`} value={edit.minUserDiscountPct} onChange={(v) => setEdit({ ...edit, minUserDiscountPct: v })} />
+                      <NumberField label="Max links" hint="1–50" value={edit.maxLinks} onChange={(v) => setEdit({ ...edit, maxLinks: v })} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="primary" onClick={() => saveCaps(a)} disabled={busyId === a.userId}>{a.status === 'approved' ? 'Save' : 'Approve'}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEdit(null)} disabled={busyId === a.userId}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inline reject — capture an optional reason shown to the applicant */}
+                {edit?.userId === a.userId && edit.mode === 'reject' && (
+                  <div className="mt-3 rounded-lg border border-border bg-surface-alt p-3 space-y-3">
+                    <label className="block text-xs font-bold text-text-primary">Reject application</label>
+                    <textarea
+                      value={edit.rejectionReason}
+                      onChange={(e) => setEdit({ ...edit, rejectionReason: e.target.value })}
+                      rows={2}
+                      placeholder="Optional reason shown to the applicant (e.g. not enough audience reach)"
+                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="danger" onClick={() => saveReject(a)} disabled={busyId === a.userId}>Reject application</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEdit(null)} disabled={busyId === a.userId}>Cancel</Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -196,6 +244,23 @@ export default function GasAffiliatesAdminPage() {
           </section>
         </>
       )}
+    </div>
+  )
+}
+
+/** Compact labelled numeric input used by the inline caps editor. */
+function NumberField({ label, hint, value, onChange }: { label: string; hint: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-text-secondary">{label}</label>
+      <input
+        type="number"
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+      />
+      <p className="mt-0.5 text-[11px] text-text-muted">{hint}</p>
     </div>
   )
 }

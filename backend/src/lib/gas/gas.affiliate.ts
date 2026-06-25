@@ -21,9 +21,10 @@
 import { db } from '../prisma'
 import { AppError } from '../errors'
 import { logger } from '../logger'
+import { notify } from '../notify'
 import { isFlagEnabled, FLAGS, getNumberConfig } from '../../services/platformFlags.service'
 import {
-  generateUniqueCode, getReferralSummary, getOrCreateOwnCode,
+  generateUniqueCode, normalizeAndAssertVanityCode, getReferralSummary, getOrCreateOwnCode,
   USER_DISCOUNT_CONFIG, DEFAULT_USER_DISCOUNT, type ReferralSummary,
 } from './gas.referral'
 import type { Prisma } from '@prisma/client'
@@ -85,6 +86,27 @@ async function listCustomCodes(userId: string) {
     orderBy: { createdAt: 'asc' },
   })
   return codes.slice(1) // drop the base (oldest) code
+}
+
+/**
+ * Block a user from giving two of their OWN active links the same nickname/label
+ * (case-insensitive). The label is purely cosmetic, but duplicates make the link list
+ * ambiguous ("which CWF is which?"), so we reject them at write time. No-op for a blank
+ * label. Soft-deleted links are ignored — a freed nickname can be reused.
+ */
+async function assertLabelNotDuplicated(userId: string, label: string | null, excludeCodeId?: string): Promise<void> {
+  const trimmed = label?.trim()
+  if (!trimmed) return
+  const clash = await db.gasReferralCode.findFirst({
+    where: {
+      ownerId: userId,
+      deletedAt: null,
+      label: { equals: trimmed, mode: 'insensitive' },
+      ...(excludeCodeId ? { id: { not: excludeCodeId } } : {}),
+    },
+    select: { id: true },
+  })
+  if (clash) throw new AppError('LABEL_TAKEN', `You already have a link nicknamed "${trimmed}". Pick a different name.`, 409)
 }
 
 /** Ensure a split is legal for the affiliate's admin-granted caps. Throws on violation. */
@@ -194,24 +216,39 @@ async function requireApprovedAffiliate(userId: string) {
   return aff
 }
 
-/** Create a new affiliate link with a chosen split (respecting caps + maxLinks). */
+/** Create a new affiliate link with a chosen split (respecting caps + maxLinks). The
+ * affiliate may pick a vanity code (their own name) or let one be auto-generated. */
 export async function createAffiliateLink(
   userId: string,
-  args: { label: string | null; userDiscountPct: number; commissionPct: number },
+  args: { label: string | null; userDiscountPct: number; commissionPct: number; code?: string | null },
 ): Promise<AffiliateLink> {
   const aff = await requireApprovedAffiliate(userId)
   assertSplit(aff, args.userDiscountPct, args.commissionPct)
+  await assertLabelNotDuplicated(userId, args.label)
   await getOrCreateOwnCode(userId) // ensure the base code exists so "custom" is well-defined
   const customs = await listCustomCodes(userId)
   if (customs.length >= aff.maxLinks) {
     throw new AppError('AFFILIATE_MAX_LINKS', `You can have at most ${aff.maxLinks} affiliate links.`, 400)
   }
-  const code = await generateUniqueCode()
-  const created = await db.gasReferralCode.create({
-    data: { code, ownerId: userId, referralPct: args.commissionPct, userDiscountPct: args.userDiscountPct, label: args.label },
-  })
+  const code = args.code?.trim() ? await normalizeAndAssertVanityCode(args.code) : await generateUniqueCode()
+  const created = await createCodeRow(userId, code, args.commissionPct, args.userDiscountPct, args.label)
   logger.info({ userId, codeId: created.id }, 'gas affiliate link created')
   return { id: created.id, code: created.code, label: created.label, userDiscountPct: created.userDiscountPct, commissionPct: created.referralPct, isActive: created.isActive, referredCount: 0 }
+}
+
+/** Insert a referral code row, mapping a unique-collision (a vanity code claimed in a race)
+ * to a friendly CODE_TAKEN instead of a 500. */
+async function createCodeRow(ownerId: string, code: string, referralPct: number, userDiscountPct: number, label: string | null) {
+  try {
+    return await db.gasReferralCode.create({
+      data: { code, ownerId, referralPct, userDiscountPct, label: label?.trim().slice(0, 60) || null },
+    })
+  } catch (e) {
+    if ((e as { code?: string })?.code === 'P2002') {
+      throw new AppError('CODE_TAKEN', 'That code was just taken — try another.', 409)
+    }
+    throw e
+  }
 }
 
 /** Update an existing affiliate link's split/label/active state (ownership enforced). */
@@ -227,6 +264,7 @@ export async function updateAffiliateLink(
   const nextDiscount = args.userDiscountPct ?? code.userDiscountPct
   const nextCommission = args.commissionPct ?? code.referralPct
   assertSplit(aff, nextDiscount, nextCommission)
+  if (args.label !== undefined) await assertLabelNotDuplicated(userId, args.label, codeId)
 
   const updated = await db.gasReferralCode.update({
     where: { id: codeId },
@@ -248,7 +286,7 @@ export async function updateAffiliateLink(
  * (friend discount + commission from config). Approved affiliates use createAffiliateLink
  * instead (chosen split). Enforces the per-user link cap and the post-delete cooldown.
  */
-export async function createOwnCustomLink(userId: string, label: string | null): Promise<AffiliateLink> {
+export async function createOwnCustomLink(userId: string, label: string | null, rawCode?: string | null): Promise<AffiliateLink> {
   if (!(await isFlagEnabled(FLAGS.GAS_AFFILIATE))) {
     throw new AppError('AFFILIATE_DISABLED', 'Custom referral links are not available right now.', 400)
   }
@@ -258,6 +296,7 @@ export async function createOwnCustomLink(userId: string, label: string | null):
   if (aff?.status === 'approved') {
     throw new AppError('AFFILIATE_USE_SPLIT', 'Approved affiliates create links with a custom split.', 400)
   }
+  await assertLabelNotDuplicated(userId, label)
 
   const [max, cooldownDays, discount, commission, lastDeleted, customs] = await Promise.all([
     getNumberConfig(CUSTOM_LINK_MAX_CONFIG, DEFAULT_CUSTOM_LINK_MAX),
@@ -276,10 +315,8 @@ export async function createOwnCustomLink(userId: string, label: string | null):
     throw new AppError('CUSTOM_LINK_COOLDOWN', `You can add a new link after ${cooldownAt.toISOString().slice(0, 10)}.`, 400)
   }
 
-  const code = await generateUniqueCode()
-  const created = await db.gasReferralCode.create({
-    data: { code, ownerId: userId, referralPct: commission, userDiscountPct: discount, label: label?.trim().slice(0, 60) || null },
-  })
+  const code = rawCode?.trim() ? await normalizeAndAssertVanityCode(rawCode) : await generateUniqueCode()
+  const created = await createCodeRow(userId, code, commission, discount, label)
   logger.info({ userId, codeId: created.id }, 'self-service custom link created')
   return { id: created.id, code: created.code, label: created.label, userDiscountPct: created.userDiscountPct, commissionPct: created.referralPct, isActive: created.isActive, referredCount: 0 }
 }
@@ -412,6 +449,17 @@ export async function adminReviewAffiliate(
       where: { userId },
       data: { status: 'rejected', rejectionReason: args.rejectionReason ?? null, reviewedById: adminId, reviewedAt: new Date() },
     })
+    notify(
+      userId,
+      'affiliate',
+      'Affiliate application update',
+      args.rejectionReason
+        ? `Your affiliate application wasn't approved this time: ${args.rejectionReason}`
+        : `Your affiliate application wasn't approved this time. You can update your details and re-apply.`,
+      { status: 'rejected' },
+      undefined,
+      '/referral',
+    )
     return { status: row.status as AffiliateStatus }
   }
 
@@ -423,10 +471,25 @@ export async function adminReviewAffiliate(
   if (minUserDiscountPct < 0 || minUserDiscountPct > maxMarginPct) throw new AppError('VALIDATION_ERROR', 'minUserDiscountPct must be between 0 and maxMarginPct.', 400)
   if (maxLinks < 1 || maxLinks > 50) throw new AppError('VALIDATION_ERROR', 'maxLinks must be between 1 and 50.', 400)
 
+  const wasApproved = existing.status === 'approved'
   const row = await db.gasAffiliate.update({
     where: { userId },
     data: { status: 'approved', maxMarginPct, minUserDiscountPct, maxLinks, rejectionReason: null, reviewedById: adminId, reviewedAt: new Date() },
   })
   logger.info({ userId, adminId, maxMarginPct, minUserDiscountPct, maxLinks }, 'gas affiliate approved')
+  // Notify the user only on the first approval (not when an admin merely tweaks caps later).
+  // This is a positive, user-initiated milestone → also DM on Telegram.
+  if (!wasApproved) {
+    notify(
+      userId,
+      'affiliate',
+      "You're an approved affiliate 🎉",
+      `You've been accepted into the affiliate program. You can now create custom referral links and set your own audience discount and commission split (up to a ${maxMarginPct}% margin allowance). Open the Referral page to create your first link.`,
+      { status: 'approved', maxMarginPct, minUserDiscountPct, maxLinks },
+      undefined,
+      '/referral',
+      { telegram: true },
+    )
+  }
   return { status: row.status as AffiliateStatus }
 }

@@ -37,6 +37,26 @@ const DEFAULT_MIN_WITHDRAW   = 5
 function round2(n: number): number { return Math.round(n * 100) / 100 }
 export function normalizeReferralCode(code: string): string { return code.trim().toUpperCase() }
 
+/**
+ * Validate + normalize a user-chosen ("vanity") referral code and ensure it is not already
+ * taken in EITHER namespace — gas/affiliate codes (`GasReferralCode`, including soft-deleted
+ * ones, which still attribute) or signup codes (`User.referralCode`). This keeps a code's
+ * attribution unambiguous no matter which surface it is typed into (see resolveReferralOwner).
+ * Returns the upper-cased code. Throws CODE_INVALID / CODE_TAKEN.
+ */
+export async function normalizeAndAssertVanityCode(raw: string): Promise<string> {
+  const code = raw.trim().toUpperCase()
+  if (!/^[A-Z0-9]{3,20}$/.test(code)) {
+    throw new AppError('CODE_INVALID', 'Your link code must be 3–20 letters or numbers (no spaces or symbols).', 400)
+  }
+  const [gas, signup] = await Promise.all([
+    db.gasReferralCode.findUnique({ where: { code }, select: { id: true } }),
+    db.user.findFirst({ where: { referralCode: { equals: code, mode: 'insensitive' } }, select: { id: true } }),
+  ])
+  if (gas || signup) throw new AppError('CODE_TAKEN', 'That code is already taken — try another.', 409)
+  return code
+}
+
 /** Generate a short, human-friendly, unique referral code. */
 export async function generateUniqueCode(): Promise<string> {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no ambiguous 0/O/1/I

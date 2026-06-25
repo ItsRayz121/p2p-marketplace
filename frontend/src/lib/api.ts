@@ -1472,13 +1472,13 @@ export const gasApi = {
     apiRequest<{ discountUsdt: number; discountPct: number; referrerLabel: string } | null>(`/gas-fee/affiliate/quote?tokenConfigId=${encodeURIComponent(tokenConfigId)}`),
   applyAffiliate: (data: { socials: Record<string, string>; note?: string }) =>
     apiRequest<{ status: string }>('/gas-fee/affiliate/apply', { method: 'POST', body: JSON.stringify(data) }),
-  createAffiliateLink: (data: { label?: string; userDiscountPct: number; commissionPct: number }) =>
+  createAffiliateLink: (data: { code?: string; label?: string; userDiscountPct: number; commissionPct: number }) =>
     apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>('/gas-fee/affiliate/links', { method: 'POST', body: JSON.stringify(data) }),
   updateAffiliateLink: (codeId: string, data: { label?: string | null; userDiscountPct?: number; commissionPct?: number; isActive?: boolean }) =>
     apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>(`/gas-fee/affiliate/links/${codeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Self-service custom links (any user; standard split, capped + cooldown)
-  createCustomLink: (label?: string | null) =>
-    apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>('/gas-fee/referral/custom-links', { method: 'POST', body: JSON.stringify({ label: label ?? null }) }),
+  createCustomLink: (data?: { code?: string | null; label?: string | null }) =>
+    apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>('/gas-fee/referral/custom-links', { method: 'POST', body: JSON.stringify({ code: data?.code ?? null, label: data?.label ?? null }) }),
   deleteCustomLink: (codeId: string) =>
     apiRequest<{ deleted: true }>(`/gas-fee/referral/custom-links/${codeId}`, { method: 'DELETE' }),
 

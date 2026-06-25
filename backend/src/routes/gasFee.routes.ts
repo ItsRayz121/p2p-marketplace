@@ -1527,11 +1527,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   // ── Self-service custom links (any user; standard split, capped + cooldown) ──
 
   // POST /gas-fee/referral/custom-links — mint a named custom link (standard 5/5 split).
-  const customLinkCreateSchema = z.object({ label: z.string().trim().max(60).nullable().optional() })
+  const customLinkCreateSchema = z.object({
+    label: z.string().trim().max(60).nullable().optional(),
+    code:  z.string().trim().max(20).optional(),
+  })
   app.post('/gas-fee/referral/custom-links', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = customLinkCreateSchema.safeParse(req.body ?? {})
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-    const data = await createOwnCustomLink(req.user!.id, parsed.data.label ?? null)
+    const data = await createOwnCustomLink(req.user!.id, parsed.data.label ?? null, parsed.data.code ?? null)
     return reply.code(201).send({ success: true, data })
   })
 
@@ -1578,6 +1581,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   // POST /gas-fee/affiliate/links — create a new affiliate link with a chosen split.
   const affiliateLinkCreateSchema = z.object({
     label:           z.string().trim().max(60).optional(),
+    code:            z.string().trim().max(20).optional(),
     userDiscountPct: z.number().min(0).max(100),
     commissionPct:   z.number().min(0).max(100),
   })
@@ -1586,6 +1590,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     const data = await createAffiliateLink(req.user!.id, {
       label: parsed.data.label ?? null,
+      code: parsed.data.code ?? null,
       userDiscountPct: parsed.data.userDiscountPct,
       commissionPct: parsed.data.commissionPct,
     })
