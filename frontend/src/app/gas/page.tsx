@@ -157,13 +157,15 @@ export default function GasPage() {
   // Fetch the logged-in buyer's affiliate auto-discount for the selected token so the
   // checkout breakdown can surface it. No-op for guests / unbound users (returns null).
   useEffect(() => {
-    if (!user || !selectedToken) { setAffiliateQuote(null); return }
+    // The affiliate program rides on the referral engine — skip the lookup entirely when
+    // referrals are off (the whole program is then inert), for guests, or with no token.
+    if (!user || !selectedToken || !referralEnabled) { setAffiliateQuote(null); return }
     let cancelled = false
     gasApi.getAffiliateQuote(selectedToken.id)
       .then((q) => { if (!cancelled) setAffiliateQuote(q) })
       .catch(() => { if (!cancelled) setAffiliateQuote(null) })
     return () => { cancelled = true }
-  }, [user, selectedToken?.id])
+  }, [user, selectedToken?.id, referralEnabled])
 
   useEffect(() => {
     if (phase !== PHASE.PAY_METHOD || pkrMethods || cryptoMethods) return
