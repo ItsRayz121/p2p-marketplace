@@ -672,7 +672,7 @@ export default function ConfigPage() {
             <input type="checkbox" checked={referralFlag} onChange={(e) => setReferralFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
             <div>
               <p className="text-sm font-medium text-text-primary">Referrals / affiliate <span className="font-mono text-xs text-text-muted">gas_referral_enabled</span></p>
-              <p className="text-xs text-text-muted mt-0.5">Activates the user Settings → Affiliate tab: referral codes, binding, margin-share accrual and withdrawals.</p>
+              <p className="text-xs text-text-muted mt-0.5">Activates the user Referral page: referral codes, binding, margin-share accrual and withdrawals.</p>
             </div>
           </label>
 
