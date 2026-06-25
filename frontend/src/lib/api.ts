@@ -1354,6 +1354,9 @@ export interface GasOrder {
   refundTxHash?: string | null
   failureReason?: string | null
   refundEligibleAt?: string | null
+  platformMarginUsdt?: string | null
+  affiliateDiscountUsdt?: string | null
+  affiliateReferrer?: string | null
   expiresAt: string
   createdAt?: string
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null

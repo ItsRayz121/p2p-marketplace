@@ -34,7 +34,6 @@ import {
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings } from '../lib/gas/gas.referral'
 import {
-  resolveAffiliateDiscount,
   getAffiliateQuote,
   applyForAffiliate,
   getAffiliateOverview,
@@ -67,13 +66,15 @@ async function affiliateOrderDiscount(
   buyerUserId: string | null,
   marginUsdt: number,
   promoDiscountUsdt: number,
-): Promise<number> {
-  if (!buyerUserId) return 0
+): Promise<{ discountUsdt: number; referrer: string | null }> {
+  if (!buyerUserId) return { discountUsdt: 0, referrer: null }
   const room = Math.max(0, Math.round((marginUsdt - promoDiscountUsdt) * 100) / 100)
-  if (room <= 0) return 0
-  const aff = await resolveAffiliateDiscount(buyerUserId, marginUsdt)
-  if (!aff) return 0
-  return Math.min(aff.discountUsdt, room)
+  if (room <= 0) return { discountUsdt: 0, referrer: null }
+  // getAffiliateQuote resolves the same discount AND the referrer's display name, so we
+  // can snapshot the label onto the order for the post-refresh banner.
+  const quote = await getAffiliateQuote(buyerUserId, marginUsdt)
+  if (!quote) return { discountUsdt: 0, referrer: null }
+  return { discountUsdt: Math.min(quote.discountUsdt, room), referrer: quote.referrerLabel }
 }
 
 // ── Guest tracking token validator ────────────────────────────────────────────
@@ -644,7 +645,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoIdent = promoIdentity(userId, clientIp)
     const promoRes = await reserveOrderPromo(promoCode, paymentAmount, platformFeeUsdt, promoIdent)
     const promoDisc = promoRes?.discountUsdt ?? 0
-    const affDisc = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const affDisc = aff.discountUsdt
     const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
     const finalPaymentAmount = Math.round((paymentAmount - totalDiscount) * 100) / 100
 
@@ -667,6 +669,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             paymentAmount:   finalPaymentAmount,
             platformMarginUsdt: platformFeeUsdt,
             discountUsdt:    totalDiscount,
+            affiliateDiscountUsdt: affDisc,
+            affiliateReferrer:     aff.referrer,
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             toAddress,
             fromHotWallet:  hotWallet.address,
@@ -1132,7 +1136,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoIdent = promoIdentity(userId, req.ip ?? 'unknown')
     const promoRes = await reserveOrderPromo(promoCode, paymentAmountUsd, platformFeeUsdt, promoIdent)
     const promoDisc = promoRes?.discountUsdt ?? 0
-    const affDisc = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const affDisc = aff.discountUsdt
     const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
     const finalPkrAmount = finalPaymentUsd * usdPkrRate
@@ -1155,6 +1160,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             paymentAmount:    finalPaymentUsd,
             platformMarginUsdt: platformFeeUsdt,
             discountUsdt:     totalDiscount,
+            affiliateDiscountUsdt: affDisc,
+            affiliateReferrer:     aff.referrer,
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             pkrAmount:        finalPkrAmount,
             pkrPaymentMethod,
@@ -1351,7 +1358,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoIdent = promoIdentity(userId, clientIp)
     const promoRes = await reserveOrderPromo(promoCode, baseCharge, platformFeeUsdt, promoIdent)
     const promoDisc = promoRes?.discountUsdt ?? 0
-    const affDisc = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const affDisc = aff.discountUsdt
     const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
     const discountedBase = Math.round((baseCharge - totalDiscount) * 100) / 100
     // Assign the unique amount AND create the order inside the same guarded block, so
@@ -1375,6 +1383,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             paymentAmount,
             platformMarginUsdt: platformFeeUsdt,
             discountUsdt:     totalDiscount,
+            affiliateDiscountUsdt: affDisc,
+            affiliateReferrer:     aff.referrer,
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             fromHotWallet:    hotWallet.address,
             toAddress,
