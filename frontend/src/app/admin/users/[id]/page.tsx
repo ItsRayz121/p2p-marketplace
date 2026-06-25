@@ -173,6 +173,14 @@ export default function AdminUserProfilePage() {
               ) : (
                 <span className="text-xs text-text-muted">Last seen {p.lastSeenAt ? fmtDateTime(p.lastSeenAt) : 'never'}</span>
               )}
+              {p.country && (
+                <span className="inline-flex items-center gap-1 text-xs text-text-secondary bg-surface-alt border border-border rounded-full px-2 py-0.5" title="Signup country (from IP)">
+                  {p.countryCode && p.countryCode.length === 2 && (
+                    <span className="text-sm leading-none">{String.fromCodePoint(0x1f1e6 + (p.countryCode.toUpperCase().charCodeAt(0) - 65), 0x1f1e6 + (p.countryCode.toUpperCase().charCodeAt(1) - 65))}</span>
+                  )}
+                  {p.country}
+                </span>
+              )}
             </div>
             <p className="text-sm text-text-secondary">{p.email}</p>
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -189,6 +197,7 @@ export default function AdminUserProfilePage() {
           <div className="text-right text-xs text-text-muted space-y-0.5">
             <p>Joined {fmtDate(p.createdAt)}</p>
             <p>Reg IP: <span className="font-mono">{p.registrationIp ?? 'Not captured'}</span></p>
+            <p>Country: {p.country ?? 'Unknown'}</p>
             <p className="font-mono">Ref: {p.referralCode}</p>
           </div>
         </div>

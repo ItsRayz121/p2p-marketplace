@@ -40,6 +40,7 @@ import { sendOtpEmail } from './email.service'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
 import { resolveReferralOwner, bindReferral } from '../lib/gas/gas.referral'
+import { resolveAndStoreCountry } from '../lib/geoip'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -378,6 +379,8 @@ export async function register(input: RegisterInput): Promise<{ message: string 
   if (newUserId && referredById) {
     bindReferral(newUserId).catch((err) => logger.error({ err, userId: newUserId }, 'gas referral heal on register failed'))
   }
+  // Resolve the signup country from the IP (fire-and-forget; display/analytics only).
+  if (newUserId) resolveAndStoreCountry(newUserId, ip)
 
   // Send OTP email (non-blocking on failure)
   sendOtpEmail(email, otpCode, 'verify').catch((err) =>
@@ -962,6 +965,8 @@ export async function loginOrRegisterWithTelegram(
   if (referredById) {
     bindReferral(created.id).catch((err) => logger.error({ err, userId: created.id }, 'gas referral heal on telegram register failed'))
   }
+  // Resolve the signup country from the IP (fire-and-forget; display/analytics only).
+  resolveAndStoreCountry(created.id, ip)
 
   const { accessToken, refreshToken } = await createSession(created.id, created.email, created.role, userAgent, ip)
   return { isNew: true, requiresTwoFa: false, accessToken, refreshToken, user: toSafeUser(created) }

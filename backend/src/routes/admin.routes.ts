@@ -629,6 +629,8 @@ export async function adminRoutes(app: FastifyInstance) {
           lastSeenAt: user.lastSeenAt,
           isOnline,
           registrationIp: user.registrationIp,
+          country: user.country,
+          countryCode: user.countryCode,
           isBanned: user.isBanned,
           isSuspended: user.isSuspended,
           suspendReason: user.suspendReason,
@@ -1169,6 +1171,20 @@ export async function adminRoutes(app: FastifyInstance) {
       .filter((u) => u.referredById && ids.has(u.referredById))
       .map((u) => ({ source: u.referredById as string, target: u.id }))
     return reply.send({ success: true, data: { nodes, edges } })
+  })
+
+  // GET /admin/referrals/by-country — user distribution by geo-IP country (for the
+  // country-wise panel next to the network map). Includes an "Unknown" bucket for users
+  // whose country hasn't been resolved yet.
+  app.get('/admin/referrals/by-country', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const [grouped, total] = await Promise.all([
+      db.user.groupBy({ by: ['countryCode', 'country'], _count: { _all: true } }),
+      db.user.count(),
+    ])
+    const countries = grouped
+      .map((g) => ({ country: g.country ?? 'Unknown', countryCode: g.countryCode ?? null, count: g._count._all }))
+      .sort((a, b) => b.count - a.count)
+    return reply.send({ success: true, data: { countries, total } })
   })
 
   // GET /admin/referrals/:userId — full chain for one user

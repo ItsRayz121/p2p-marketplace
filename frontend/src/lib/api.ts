@@ -1852,6 +1852,8 @@ export const adminApi = {
       nodes: Array<{ id: string; username: string; kycStatus: string; referrals: number; referredById: string | null }>
       edges: Array<{ source: string; target: string }>
     }>('/admin/referrals/graph'),
+  getReferralsByCountry: () =>
+    apiRequest<{ countries: Array<{ country: string; countryCode: string | null; count: number }>; total: number }>('/admin/referrals/by-country'),
   getReferralChain: (userId: string) =>
     apiRequest<unknown>(`/admin/referrals/${userId}`),
   getSuspiciousReferrals: () =>
