@@ -508,6 +508,10 @@ model User {
   supportConversations   SupportConversation[]
   announcementsSent      Announcement[]          @relation("AnnouncementsSent")
   announcementDismissals AnnouncementDismissal[]
+  gasReferralCodes       GasReferralCode[]       @relation("GasRefCodeOwner")
+  gasReferralAsReferred  GasReferral?            @relation("GasReferredUser")
+  gasReferralsAsReferrer GasReferral[]           @relation("GasReferrerUser")
+  gasReferralAccruals    GasReferralAccrual[]    @relation("GasReferrerAccrual")
 
   @@index([email])
   @@index([username])
@@ -1467,6 +1471,7 @@ model GasFeeOrder {
   flaggedOrder        GasFlaggedOrder?
   promoCode           GasPromoCode?       @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   promoRedemption     GasPromoRedemption?
+  referralAccrual     GasReferralAccrual?
 
   @@index([status, expiresAt])
   @@index([userId])
@@ -1541,6 +1546,62 @@ model GasPromoRedemption {
 
   @@index([promoCodeId])
   @@index([identity])
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// GAS REFERRALS (KOL income — share of the platform margin, paid from margin only)
+// A referrer (any user) gets a code; a referred user is bound first-touch and stays
+// bound for life. Each delivered, paid gas order by a referred user accrues
+// referralPct × the REALIZED margin (margin after any promo discount) to the
+// referrer's internal balance. Free-grant orders (platform-funded) never accrue.
+// See lib/gas/gas.referral.ts. Display-only until Phase 5 adds withdrawal.
+// ────────────────────────────────────────────────────────────────────────────
+model GasReferralCode {
+  id          String   @id @default(cuid())
+  code        String   @unique          // stored UPPERCASE
+  ownerId     String
+  owner       User     @relation("GasRefCodeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  referralPct Float    @default(5)       // % of realized margin paid to the owner (admin-tunable)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  referrals   GasReferral[]
+
+  @@index([ownerId])
+}
+
+// First-touch binding: a referred user maps to exactly one referrer, permanently.
+model GasReferral {
+  id          String          @id @default(cuid())
+  referredId  String          @unique
+  referred    User            @relation("GasReferredUser", fields: [referredId], references: [id], onDelete: Cascade)
+  referrerId  String
+  referrer    User            @relation("GasReferrerUser", fields: [referrerId], references: [id], onDelete: Cascade)
+  codeId      String
+  code        GasReferralCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+
+  @@index([referrerId])
+}
+
+// One accrual per delivered order (orderId unique → idempotent). Recorded after the
+// order reaches 'delivered' (terminal success; delivered orders are never refunded),
+// so a failed/refunded order never pays commission.
+model GasReferralAccrual {
+  id          String      @id @default(cuid())
+  referrerId  String
+  referrer    User        @relation("GasReferrerAccrual", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId  String
+  orderId     String      @unique
+  order       GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  marginUsdt  Decimal     @db.Decimal(10, 4)  // realized margin the % was taken on
+  amountUsdt  Decimal     @db.Decimal(10, 4)
+  pct         Float
+  status      String      @default("available") // available | withdrawn | reversed
+  createdAt   DateTime    @default(now())
+
+  @@index([referrerId, status])
 }
 
 model GasHotWallet {

@@ -39,6 +39,14 @@ export const FLAGS = {
    * can be sent even by an admin until this is deliberately enabled.
    */
   GAS_FREE_GRANT: 'gas_free_grant_enabled',
+  /**
+   * Gas referral program. When ON, a user can get a referral code, a referred user
+   * is bound first-touch, and each delivered paid gas order by a referred user
+   * accrues referralPct × the realized platform margin to the referrer's balance
+   * (paid FROM margin, never base cost; free-grant orders never accrue). OFF
+   * (default) = no binding, no accrual; gas orders behave exactly as today.
+   */
+  GAS_REFERRAL: 'gas_referral_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

@@ -1425,7 +1425,7 @@ export interface GasNetworkFee {
 
 export const gasApi = {
   getChains: () =>
-    apiRequest<{ chains: GasChain[]; promoEnabled?: boolean }>('/gas-fee/chains'),
+    apiRequest<{ chains: GasChain[]; promoEnabled?: boolean; referralEnabled?: boolean }>('/gas-fee/chains'),
 
   getChainTokens: (chainSlug: string) =>
     apiRequest<GasTokensResponse>(`/gas-fee/chains/${chainSlug}/tokens`),
@@ -1441,6 +1441,11 @@ export const gasApi = {
 
   previewPromo: (data: { promoCode: string; tokenConfigId: string; amount: number }) =>
     apiRequest<{ valid: boolean; code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string }>('/gas-fee/promo/preview', { method: 'POST', body: JSON.stringify(data) }),
+
+  getReferralSummary: () =>
+    apiRequest<{ enabled: boolean; code: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawnUsdt: number; boundToReferrer: boolean }>('/gas-fee/referral/me'),
+  applyReferral: (code: string) =>
+    apiRequest<{ bound: boolean; referrerId: string }>('/gas-fee/referral/apply', { method: 'POST', body: JSON.stringify({ code }) }),
 
   submitProof: (orderRef: string, proofUrl: string) =>
     apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/proof`, { method: 'POST', body: JSON.stringify({ proofUrl }) }),

@@ -32,6 +32,7 @@ import {
   type PromoResolution,
 } from '../lib/gas/gas.promo'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
+import { bindReferral, getReferralSummary } from '../lib/gas/gas.referral'
 
 // Reserve a promo slot for an order about to be created. Returns null when no code
 // was supplied or the promo system is off. Throws AppError (clear message) on an
@@ -247,11 +248,14 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // Public endpoint: filter to only visible chains (admin sees all via /admin/gas/chains)
     const visibleChains = chains.filter((c) => c.publiclyVisible)
 
-    // Surface the promo master switch so the checkout only renders the promo-code box
-    // when the feature is live (default OFF = box hidden, production unchanged).
-    const promoEnabled = await isFlagEnabled(FLAGS.GAS_PROMO)
+    // Surface the promo/referral master switches so the UI only renders those
+    // entry points when live (default OFF = hidden, production unchanged).
+    const [promoEnabled, referralEnabled] = await Promise.all([
+      isFlagEnabled(FLAGS.GAS_PROMO),
+      isFlagEnabled(FLAGS.GAS_REFERRAL),
+    ])
 
-    return reply.send({ success: true, data: { chains: visibleChains, promoEnabled } })
+    return reply.send({ success: true, data: { chains: visibleChains, promoEnabled, referralEnabled } })
   })
 
   // ── GET /api/gas-fee/chains/:chainSlug/tokens — tokens with live pricing ───
@@ -1420,6 +1424,24 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const identity = promoIdentity(req.user?.id ?? null, req.ip ?? 'unknown')
     const preview = await previewPromo({ code: promoCode, orderUsd, marginUsdt, identity })
     return reply.send({ success: true, data: preview })
+  })
+
+  // ── GET /gas-fee/referral/me — referral dashboard summary (own code + earnings) ──
+  app.get('/gas-fee/referral/me', { preHandler: [authenticate] }, async (req, reply) => {
+    const summary = await getReferralSummary(req.user!.id)
+    return reply.send({ success: true, data: summary })
+  })
+
+  // ── POST /gas-fee/referral/apply — bind the caller to a referrer (first-touch) ──
+  const referralApplySchema = z.object({ code: z.string().trim().min(2).max(40) })
+  app.post('/gas-fee/referral/apply', { preHandler: [authenticate] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_REFERRAL))) {
+      throw new AppError('REFERRAL_DISABLED', 'Referrals are not available right now.', 400)
+    }
+    const parsed = referralApplySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const result = await bindReferral(req.user!.id, parsed.data.code)
+    return reply.send({ success: true, data: result })
   })
 
   // ── POST /gas-fee/admin/free-deliver — admin-issued, platform-funded free gas ──
