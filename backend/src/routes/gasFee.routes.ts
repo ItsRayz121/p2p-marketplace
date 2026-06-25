@@ -209,6 +209,27 @@ const createOrderLegacySchema = z.object({
   idempotencyKey: z.string().optional(),
 })
 
+// One unpaid order at a time: a user may not open a new gas order while they still
+// have an abandonable `payment_pending` one. They must pay it (→ advances) or cancel
+// it first. This stops the "awaiting payment" pileup from clicking New Order repeatedly.
+// `payment_pending` is the only blocking state — it's the one the user can resolve
+// themselves (uploaded/detected orders are already past their control).
+async function assertNoUnpaidGasOrder(userId: string | null | undefined): Promise<void> {
+  if (!userId) return
+  const existing = await db.gasFeeOrder.findFirst({
+    where: { userId, status: 'payment_pending' },
+    orderBy: { createdAt: 'desc' },
+    select: { orderRef: true },
+  })
+  if (existing) {
+    throw new AppError(
+      'UNPAID_ORDER_EXISTS',
+      `You already have an unpaid gas order (${existing.orderRef}). Please pay or cancel it before starting a new one.`,
+      409,
+    )
+  }
+}
+
 export async function gasFeeRoutes(app: FastifyInstance) {
 
   // ── GET /api/gas-fee/chains — DB-driven list ───────────────────────────────
@@ -491,6 +512,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
   app.post('/gas-fee/orders', { preHandler: [optionalAuth] }, async (req, reply) => {
     await assertNotInGasCooldown(gasCancelIdentity(req.user?.id ?? null, req.ip))
+    await assertNoUnpaidGasOrder(req.user?.id ?? null)
     const body = req.body as Record<string, unknown>
 
     // Detect new vs legacy format
@@ -1074,6 +1096,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const { tokenConfigId, amount, toAddress, pkrPaymentMethod, idempotencyKey, promoCode } = parsed.data
     const userId = req.user!.id
     await assertNotInGasCooldown(gasCancelIdentity(userId, req.ip))
+    await assertNoUnpaidGasOrder(userId)
 
     const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
     if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
@@ -1255,6 +1278,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
     const { tokenConfigId, amount, toAddress, paymentNetwork, idempotencyKey, promoCode } = parsed.data
     await assertNotInGasCooldown(gasCancelIdentity(req.user?.id ?? null, req.ip))
+    await assertNoUnpaidGasOrder(req.user?.id ?? null)
 
     const configKeyMap: Record<string, string> = {
       TRC20:  'gas_usdt_trc20_address',

@@ -12,6 +12,7 @@ import { CopyButton } from '@/components/ui/CopyButton'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { GasOrderActions } from './GasOrderActions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -308,6 +309,9 @@ function GasOrderTrackingPageInner() {
             })}
           </div>
         </div>
+
+        {/* Resume payment / cancel — only for unpaid orders */}
+        <GasOrderActions order={order} trackingToken={trackingToken} onChanged={fetchOrder} />
 
         {/* Order Details */}
         <div className="bg-surface shadow-card rounded-xl border border-border p-5">
