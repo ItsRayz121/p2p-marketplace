@@ -1,6 +1,6 @@
 ﻿'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { authApi, accountApi } from '@/lib/api'
+import { authApi, accountApi, gasApi } from '@/lib/api'
 import type { Session, TrustedDevice } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/auth.store'
@@ -9,15 +9,17 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
+import { CopyButton } from '@/components/ui/CopyButton'
 import { PushToggle } from '@/components/ui/PushToggle'
 import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
 import { useFileUpload } from '@/hooks/useFileUpload'
-import { Lock, Camera, Mail, Send, Check } from 'lucide-react'
+import { toast } from '@/lib/toast'
+import { Lock, Camera, Mail, Send, Check, Gift } from 'lucide-react'
 import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
-type Tab = 'profile' | 'security' | 'connections' | 'sessions' | 'danger'
+type Tab = 'profile' | 'security' | 'connections' | 'affiliate' | 'sessions' | 'danger'
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -759,6 +761,146 @@ function ConnectionsTab() {
   )
 }
 
+// ─── Affiliate Tab (gas referral earnings) ─────────────────────────────────────
+
+type ReferralSummary = Awaited<ReturnType<typeof gasApi.getReferralSummary>>
+
+function AffiliateTab() {
+  const [summary, setSummary] = useState<ReferralSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [applyCode, setApplyCode] = useState('')
+  const [applying, setApplying] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try { setSummary(await gasApi.getReferralSummary()) }
+    catch (e) { setError(e instanceof Error ? e.message : 'Failed to load affiliate info') }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  const handleWithdraw = async () => {
+    setWithdrawing(true)
+    try {
+      const r = await gasApi.withdrawReferral()
+      toast.success(`Withdrew $${r.withdrawnUsdt.toFixed(2)} to your USDT balance`)
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Withdrawal failed')
+    } finally { setWithdrawing(false) }
+  }
+
+  const handleApply = async () => {
+    if (!applyCode.trim()) return
+    setApplying(true)
+    try {
+      const r = await gasApi.applyReferral(applyCode.trim())
+      if (r.bound) toast.success('Referral code applied')
+      else toast.error('Code could not be applied (already linked, or invalid)')
+      setApplyCode('')
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to apply code')
+    } finally { setApplying(false) }
+  }
+
+  if (loading) return <LoadingState message="Loading affiliate info..." />
+  if (error) return <p className="text-sm text-danger">{error}</p>
+  if (!summary) return null
+
+  if (!summary.enabled) {
+    return (
+      <div className="bg-surface shadow-card border border-border rounded-xl p-6 text-center">
+        <Gift className="w-8 h-8 mx-auto text-text-muted mb-2" />
+        <p className="text-sm font-semibold text-text-primary">Affiliate program isn&apos;t active right now</p>
+        <p className="text-xs text-text-muted mt-1">Check back later — when it&apos;s live, you&apos;ll earn a share of the gas fee from everyone you refer.</p>
+      </div>
+    )
+  }
+
+  const canWithdraw = summary.kycOk && summary.withdrawableUsdt > 0 && summary.withdrawableUsdt >= summary.minWithdrawUsdt
+
+  return (
+    <div className="space-y-6">
+      {/* Your code */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <Gift size={16} className="text-primary" />
+          <h3 className="text-sm font-bold text-text-primary">Your affiliate code</h3>
+        </div>
+        <p className="text-sm text-text-muted">
+          Earn <strong>{summary.referralPct ?? 0}%</strong> of the platform gas fee from every person you refer — paid into your USDT balance.
+        </p>
+        {summary.code && (
+          <div className="bg-surface-alt rounded-xl p-3 flex items-center justify-between gap-2 border border-border">
+            <span className="text-lg font-mono font-bold tracking-wider text-text-primary">{summary.code}</span>
+            <CopyButton text={summary.code} />
+          </div>
+        )}
+        <p className="text-xs text-text-muted">
+          Share this code. New users enter it here under <strong>Settings → Affiliate</strong> to link to you. Earnings accrue automatically when they pay gas fees.
+        </p>
+      </div>
+
+      {/* Earnings */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-xs text-text-muted">People referred</p>
+          <p className="text-lg font-bold text-text-primary">{summary.referredCount}</p>
+        </div>
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-xs text-text-muted">Total earned</p>
+          <p className="text-lg font-bold text-text-primary">${summary.totalAccruedUsdt.toFixed(2)}</p>
+        </div>
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-xs text-text-muted">Available now</p>
+          <p className="text-lg font-bold text-success">${summary.withdrawableUsdt.toFixed(2)}</p>
+        </div>
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-xs text-text-muted">Withdrawn</p>
+          <p className="text-lg font-bold text-text-primary">${summary.withdrawnUsdt.toFixed(2)}</p>
+        </div>
+      </div>
+
+      {/* Withdraw */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+        <h3 className="text-sm font-bold text-text-primary">Withdraw earnings</h3>
+        {summary.availableUsdt > summary.withdrawableUsdt && (
+          <p className="text-xs text-text-muted">
+            ${(summary.availableUsdt - summary.withdrawableUsdt).toFixed(2)} is still in the fraud-hold window and will become withdrawable shortly.
+          </p>
+        )}
+        {!summary.kycOk && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">Complete identity verification (KYC) to withdraw your earnings.</p>
+        )}
+        {summary.kycOk && summary.withdrawableUsdt < summary.minWithdrawUsdt && (
+          <p className="text-xs text-text-muted">Minimum withdrawal is ${summary.minWithdrawUsdt.toFixed(2)}. Keep referring to reach it.</p>
+        )}
+        <Button onClick={handleWithdraw} disabled={!canWithdraw || withdrawing}>
+          {withdrawing ? <Spinner size="sm" /> : `Withdraw $${summary.withdrawableUsdt.toFixed(2)} to USDT balance`}
+        </Button>
+      </div>
+
+      {/* Apply a referrer's code */}
+      {!summary.boundToReferrer && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="text-sm font-bold text-text-primary">Were you referred?</h3>
+          <p className="text-xs text-text-muted">Enter the code of whoever invited you. This can only be set once.</p>
+          <div className="flex gap-2">
+            <Input value={applyCode} onChange={(e) => setApplyCode(e.target.value.toUpperCase())} placeholder="REFERRAL CODE" className="uppercase" />
+            <Button variant="secondary" onClick={handleApply} disabled={applying || !applyCode.trim()}>
+              {applying ? <Spinner size="sm" /> : 'Apply'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -768,6 +910,7 @@ export default function SettingsPage() {
     { id: 'profile', label: 'Profile' },
     { id: 'security', label: 'Security' },
     { id: 'connections', label: 'Connections' },
+    { id: 'affiliate', label: 'Affiliate' },
     { id: 'sessions', label: 'Sessions' },
     { id: 'danger', label: 'Danger Zone' },
   ]
@@ -796,6 +939,7 @@ export default function SettingsPage() {
       {activeTab === 'profile' && <ProfileTab />}
       {activeTab === 'security' && <SecurityTab />}
       {activeTab === 'connections' && <ConnectionsTab />}
+      {activeTab === 'affiliate' && <AffiliateTab />}
       {activeTab === 'sessions' && <SessionsTab />}
       {activeTab === 'danger' && (
         <div className="bg-danger/5 border border-danger/30 rounded-xl p-5 space-y-4">
