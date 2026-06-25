@@ -1761,9 +1761,19 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   // GET /gas-fee/admin/giveaways — list campaigns with entry counts (admin)
   app.get('/gas-fee/admin/giveaways', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (_req, reply) => {
     const campaigns = await db.gasGiveawayCampaign.findMany({ orderBy: { createdAt: 'desc' }, include: { _count: { select: { entries: true } } } })
+    // Per-campaign entry-status counts so the UI can show "selected (awaiting send)"
+    // vs "delivered" without loading the full entry list for every card.
+    const byStatus = await db.gasGiveawayEntry.groupBy({ by: ['campaignId', 'status'], _count: { _all: true } })
+    const selectedCounts = new Map<string, number>()
+    const sentCounts = new Map<string, number>()
+    for (const row of byStatus) {
+      if (row.status === 'selected') selectedCounts.set(row.campaignId, row._count._all)
+      else if (row.status === 'won') sentCounts.set(row.campaignId, row._count._all)
+    }
     return reply.send({ success: true, data: campaigns.map((c) => ({
       id: c.id, code: c.code, kolLabel: c.kolLabel, gasTokenConfigId: c.gasTokenConfigId,
       amountNative: c.amountNative.toString(), winnerCount: c.winnerCount, drawnCount: c.drawnCount,
+      selectedCount: selectedCounts.get(c.id) ?? 0, sentCount: sentCounts.get(c.id) ?? 0,
       entryCount: c._count.entries, entryDeadline: c.entryDeadline, requireKyc: c.requireKyc,
       status: c.status, isActive: c.isActive, createdAt: c.createdAt,
     })) })
@@ -1789,7 +1799,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }) })
   })
 
-  // POST /gas-fee/admin/giveaways/:id/draw — randomly pick winners and deliver free gas.
+  // POST /gas-fee/admin/giveaways/:id/draw — randomly SELECT winners (no funds move yet).
+  // Selection and delivery are split into two steps: draw picks winners into the
+  // `selected` state, then POST .../send delivers free gas to them. This gives the
+  // admin a chance to review who won before real on-chain funds are released.
   const giveawayDrawSchema = z.object({ count: z.number().int().positive().max(10000).optional() })
   app.post('/gas-fee/admin/giveaways/:id/draw', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
     if (!(await isFlagEnabled(FLAGS.GAS_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not enabled.', 400)
@@ -1802,7 +1815,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const remainingSlots = campaign.winnerCount - campaign.drawnCount
     if (remainingSlots <= 0) throw new AppError('GIVEAWAY_FULL', 'All winners for this campaign have already been drawn.', 400)
 
-    const pool = await db.gasGiveawayEntry.findMany({ where: { campaignId: id, status: 'entered' }, select: { id: true, userId: true, receivingAddress: true } })
+    const pool = await db.gasGiveawayEntry.findMany({ where: { campaignId: id, status: 'entered' }, select: { id: true } })
     const drawCount = Math.min(parsed.data.count ?? remainingSlots, remainingSlots, pool.length)
     if (drawCount <= 0) throw new AppError('NO_ENTRIES', 'There are no eligible entries to draw.', 400)
 
@@ -1813,29 +1826,59 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
     const winners = pool.slice(0, drawCount)
 
-    const results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> = []
+    // CAS-claim each winner `entered → selected` so a concurrent draw can't double-select.
+    let selected = 0
     for (const w of winners) {
-      // CAS-claim so a concurrent draw can't double-pay the same entry.
-      const claimed = await db.gasGiveawayEntry.updateMany({ where: { id: w.id, status: 'entered' }, data: { status: 'won' } })
+      const claimed = await db.gasGiveawayEntry.updateMany({ where: { id: w.id, status: 'entered' }, data: { status: 'selected' } })
+      if (claimed.count > 0) selected++
+    }
+    const newDrawn = campaign.drawnCount + selected
+    await db.gasGiveawayCampaign.update({
+      where: { id },
+      data: { drawnCount: newDrawn, ...(newDrawn >= campaign.winnerCount ? { status: 'drawn' } : {}) },
+    })
+    await db.auditLog.create({ data: { actorId: req.user!.id, action: 'GAS_GIVEAWAY_DRAW', targetType: 'GasGiveawayCampaign', targetId: id, metadata: { requested: drawCount, selected } as never, ipAddress: req.ip ?? null, userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null } })
+    return reply.send({ success: true, data: { selected, attempted: drawCount } })
+  })
+
+  // POST /gas-fee/admin/giveaways/:id/send — deliver free gas to all `selected` winners.
+  // Step 2 of the draw→send flow. Each winner that delivers moves `selected → won`;
+  // failures stay `selected` so the admin can press Send again to retry just those.
+  app.post('/gas-fee/admin/giveaways/:id/send', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not enabled.', 400)
+    const { id } = req.params as { id: string }
+
+    const campaign = await db.gasGiveawayCampaign.findUnique({ where: { id } })
+    if (!campaign) throw Errors.NOT_FOUND('Giveaway')
+
+    const pending = await db.gasGiveawayEntry.findMany({ where: { campaignId: id, status: 'selected' }, select: { id: true, userId: true, receivingAddress: true } })
+    if (pending.length === 0) throw new AppError('NOTHING_TO_SEND', 'There are no selected winners awaiting delivery.', 400)
+
+    const results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> = []
+    for (const w of pending) {
+      // CAS-claim `selected → won` so a concurrent send can't double-pay the same entry.
+      const claimed = await db.gasGiveawayEntry.updateMany({ where: { id: w.id, status: 'selected' }, data: { status: 'won' } })
       if (claimed.count === 0) continue
       try {
         const res = await issueFreeGasOrder({ tokenConfigId: campaign.gasTokenConfigId, amount: Number(campaign.amountNative), toAddress: w.receivingAddress, userId: w.userId })
         await db.gasGiveawayEntry.update({ where: { id: w.id }, data: { orderId: res.orderId } })
         results.push({ entryId: w.id, ok: true, orderRef: res.orderRef })
       } catch (e) {
-        // Revert the claim so this entry can be redrawn after the issue is fixed.
-        await db.gasGiveawayEntry.updateMany({ where: { id: w.id, status: 'won' }, data: { status: 'entered' } })
+        // Revert so this winner stays selected and can be retried on the next Send.
+        await db.gasGiveawayEntry.updateMany({ where: { id: w.id, status: 'won' }, data: { status: 'selected' } })
         results.push({ entryId: w.id, ok: false, error: e instanceof Error ? e.message : 'delivery failed' })
       }
     }
     const successful = results.filter((r) => r.ok).length
-    const newDrawn = campaign.drawnCount + successful
-    await db.gasGiveawayCampaign.update({
-      where: { id },
-      data: { drawnCount: newDrawn, ...(newDrawn >= campaign.winnerCount ? { status: 'drawn' } : {}) },
-    })
-    await db.auditLog.create({ data: { actorId: req.user!.id, action: 'GAS_GIVEAWAY_DRAW', targetType: 'GasGiveawayCampaign', targetId: id, metadata: { requested: drawCount, successful, results } as never, ipAddress: req.ip ?? null, userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null } })
-    return reply.send({ success: true, data: { drawn: successful, attempted: drawCount, results } })
+
+    // Mark the campaign `sent` once every selected winner has been delivered and the
+    // full winner slate has been drawn (nothing left selected, drawn quota reached).
+    const stillSelected = await db.gasGiveawayEntry.count({ where: { campaignId: id, status: 'selected' } })
+    if (stillSelected === 0 && campaign.drawnCount >= campaign.winnerCount) {
+      await db.gasGiveawayCampaign.update({ where: { id }, data: { status: 'sent' } })
+    }
+    await db.auditLog.create({ data: { actorId: req.user!.id, action: 'GAS_GIVEAWAY_SEND', targetType: 'GasGiveawayCampaign', targetId: id, metadata: { attempted: pending.length, successful, results } as never, ipAddress: req.ip ?? null, userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null } })
+    return reply.send({ success: true, data: { sent: successful, attempted: pending.length, results } })
   })
 
   // ── POST /gas-fee/orders/:orderRef/proof — submit PKR payment proof ─────────

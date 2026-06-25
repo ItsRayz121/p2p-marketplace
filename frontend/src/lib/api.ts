@@ -2287,13 +2287,15 @@ export const adminApi = {
 
   // Gas giveaways (admin)
   getGasGiveaways: () =>
-    apiRequest<Array<{ id: string; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: string; winnerCount: number; drawnCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; isActive: boolean; createdAt: string }>>('/gas-fee/admin/giveaways'),
+    apiRequest<Array<{ id: string; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: string; winnerCount: number; drawnCount: number; selectedCount: number; sentCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; isActive: boolean; createdAt: string }>>('/gas-fee/admin/giveaways'),
   createGasGiveaway: (data: { code: string; kolLabel: string; tokenConfigId: string; amountNative: number; winnerCount: number; entryDeadline?: string; requireKyc: boolean }) =>
     apiRequest<unknown>('/gas-fee/admin/giveaways', { method: 'POST', body: JSON.stringify(data) }),
   getGasGiveawayEntries: (id: string) =>
     apiRequest<Array<{ id: string; userId: string; email: string | null; receivingAddress: string; status: string; orderId: string | null; orderStatus: string | null; orderRef: string | null; createdAt: string }>>(`/gas-fee/admin/giveaways/${id}/entries`),
   drawGasGiveaway: (id: string, count?: number) =>
-    apiRequest<{ drawn: number; attempted: number; results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> }>(`/gas-fee/admin/giveaways/${id}/draw`, { method: 'POST', body: JSON.stringify(count ? { count } : {}) }),
+    apiRequest<{ selected: number; attempted: number }>(`/gas-fee/admin/giveaways/${id}/draw`, { method: 'POST', body: JSON.stringify(count ? { count } : {}) }),
+  sendGasGiveaway: (id: string) =>
+    apiRequest<{ sent: number; attempted: number; results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> }>(`/gas-fee/admin/giveaways/${id}/send`, { method: 'POST' }),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>

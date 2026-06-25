@@ -9,7 +9,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
-import { ArrowLeft, RefreshCw, Plus } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Plus, ChevronDown, ChevronRight } from 'lucide-react'
 
 function giveawayLink(code: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
@@ -45,6 +45,9 @@ export default function GasGiveawaysAdminPage() {
   const [entries, setEntries] = useState<Record<string, Entry[]>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [entriesBusy, setEntriesBusy] = useState<string | null>(null)
+  // Finished campaigns (sent/closed) render collapsed by default; ids here are the
+  // ones the admin has manually expanded back open.
+  const [expandedDone, setExpandedDone] = useState<Set<string>>(new Set())
 
   const loadEntries = useCallback(async (campaignId: string) => {
     setEntriesBusy(campaignId)
@@ -69,7 +72,9 @@ export default function GasGiveawaysAdminPage() {
   }, [])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => { if (showCreate && chains.length === 0) gasApi.getChains().then(({ chains: c }) => setChains(c.filter((x) => x.isAvailable))).catch(() => {}) }, [showCreate, chains.length])
+  // Show every gas chain we support (matching the Free-Gas page), not just the
+  // currently-available ones — a KOL prize can be any token whose gas we provide.
+  useEffect(() => { if (showCreate && chains.length === 0) gasApi.getChains().then(({ chains: c }) => setChains(c)).catch(() => {}) }, [showCreate, chains.length])
 
   async function pickChain(c: GasChain) {
     setSelChain(c); setTokens([]); setForm((f) => ({ ...f, tokenConfigId: '' }))
@@ -98,21 +103,35 @@ export default function GasGiveawaysAdminPage() {
     finally { setSaving(false) }
   }
 
+  // Step 1: randomly SELECT winners. No funds move — rewards are sent separately.
   async function draw(c: Campaign) {
     const remaining = c.winnerCount - c.drawnCount
-    const raw = window.prompt(`Draw how many winners for ${c.code}? (${remaining} slots left, ${c.entryCount} entries). This sends REAL free gas to winners.`, String(remaining))
+    const raw = window.prompt(`Draw how many winners for ${c.code}? (${remaining} slots left, ${c.entryCount} entries). This only SELECTS winners — you'll send the rewards in the next step.`, String(remaining))
     if (raw == null) return
     const count = Number(raw)
     if (!(count > 0)) { toast.error('Enter a positive number'); return }
     setBusyId(c.id)
     try {
       const r = await adminApi.drawGasGiveaway(c.id, count)
-      const failed = r.results.filter((x) => !x.ok).length
-      toast.success(`Drew ${r.drawn} winner(s)${failed ? `, ${failed} failed` : ''}`)
+      toast.success(`Selected ${r.selected} winner(s) — review, then Send rewards`)
       void load()
       // Refresh the winners list if it's currently loaded/open.
       if (entries[c.id] || expandedId === c.id) void loadEntries(c.id)
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Draw failed') }
+    finally { setBusyId(null) }
+  }
+
+  // Step 2: deliver real free gas to every selected (but unsent) winner.
+  async function send(c: Campaign) {
+    if (!window.confirm(`Send free gas to ${c.selectedCount} selected winner(s) of ${c.code}? This releases REAL on-chain funds at the platform's expense.`)) return
+    setBusyId(c.id)
+    try {
+      const r = await adminApi.sendGasGiveaway(c.id)
+      const failed = r.results.filter((x) => !x.ok).length
+      toast.success(`Sent ${r.sent} reward(s)${failed ? `, ${failed} failed — press Send again to retry` : ''}`)
+      void load()
+      if (entries[c.id] || expandedId === c.id) void loadEntries(c.id)
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Send failed') }
     finally { setBusyId(null) }
   }
 
@@ -182,30 +201,50 @@ export default function GasGiveawaysAdminPage() {
 
       {!loading && !error && campaigns && campaigns.length > 0 && (
         <div className="space-y-3">
-          {campaigns.map((c) => (
-            <div key={c.id} className="rounded-xl border border-border bg-surface p-4">
+          {campaigns.map((c) => {
+            // Finished campaigns (all rewards sent, or manually closed) collapse to just
+            // their header to keep the list tidy; click the chevron to reopen.
+            const isDone = c.status === 'sent' || c.status === 'closed'
+            const collapsed = isDone && !expandedDone.has(c.id)
+            return (
+            <div key={c.id} className={`rounded-xl border border-border bg-surface ${collapsed ? 'p-3' : 'p-4'}`}>
               <div className="flex items-start gap-3 flex-wrap">
+                {isDone && (
+                  <button
+                    onClick={() => setExpandedDone((prev) => { const n = new Set(prev); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n })}
+                    className="p-0.5 rounded hover:bg-surface-alt text-text-muted shrink-0 mt-0.5"
+                    aria-label={collapsed ? 'Expand' : 'Collapse'}
+                  >
+                    {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                )}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono font-bold text-text-primary">{c.code}</span>
-                    <Badge variant={c.status === 'open' ? 'success' : c.status === 'drawn' ? 'info' : 'default'}>{c.status}</Badge>
+                    <Badge variant={c.status === 'open' ? 'success' : c.status === 'drawn' ? 'warning' : c.status === 'sent' ? 'info' : 'default'}>{c.status}</Badge>
+                    {collapsed && <span className="text-[11px] text-text-muted">{c.sentCount}/{c.winnerCount} delivered · {c.entryCount} entries</span>}
                   </div>
-                  <p className="text-xs text-text-muted mt-0.5">{c.kolLabel}</p>
+                  {!collapsed && <p className="text-xs text-text-muted mt-0.5">{c.kolLabel}</p>}
                 </div>
-                {isSuperAdmin && c.drawnCount < c.winnerCount && (
-                  <Button size="sm" variant="primary" onClick={() => draw(c)} disabled={busyId === c.id || c.entryCount === 0}>Draw winners</Button>
+                {isSuperAdmin && !collapsed && c.selectedCount > 0 && (
+                  <Button size="sm" variant="primary" onClick={() => send(c)} disabled={busyId === c.id}>Send rewards ({c.selectedCount})</Button>
+                )}
+                {isSuperAdmin && !collapsed && c.drawnCount < c.winnerCount && (
+                  <Button size="sm" variant={c.selectedCount > 0 ? 'secondary' : 'primary'} onClick={() => draw(c)} disabled={busyId === c.id || c.entryCount === 0}>Draw winners</Button>
                 )}
               </div>
 
+              {!collapsed && <>
               {/* Shareable entry link — what the KOL posts; entrants open it to submit an address. */}
               <div className="mt-2 flex items-center gap-2 rounded-lg bg-surface-alt border border-border px-3 py-2">
                 <span className="text-[11px] text-text-muted shrink-0">Entry link</span>
                 <span className="text-xs font-mono text-text-secondary truncate flex-1">{giveawayLink(c.code)}</span>
                 <CopyButton text={giveawayLink(c.code)} />
               </div>
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
                 <div><p className="text-text-muted">Amount/winner</p><p className="font-semibold text-text-primary">{c.amountNative}</p></div>
                 <div><p className="text-text-muted">Winners drawn</p><p className="font-semibold text-text-primary">{c.drawnCount} / {c.winnerCount}</p></div>
+                <div><p className="text-text-muted">Rewards sent</p><p className="font-semibold text-text-primary">{c.sentCount}{c.selectedCount > 0 ? <span className="text-warning"> · {c.selectedCount} pending</span> : null}</p></div>
                 <div><p className="text-text-muted">Entries</p><p className="font-semibold text-text-primary">{c.entryCount}</p></div>
                 <div><p className="text-text-muted">KYC</p><p className="font-semibold text-text-primary">{c.requireKyc ? 'Required' : 'No'}</p></div>
               </div>
@@ -228,12 +267,14 @@ export default function GasGiveawaysAdminPage() {
                     <>
                       {(() => {
                         const list = entries[c.id]!
+                        const selected = list.filter((e) => e.status === 'selected')
                         const won = list.filter((e) => e.status === 'won')
                         const delivered = won.filter((e) => e.orderStatus === 'delivered')
                         return (
                           <div className="flex flex-wrap gap-3 text-xs mb-3 pb-2 border-b border-border">
                             <span><span className="text-text-muted">Participants </span><span className="font-semibold text-text-primary">{list.length}</span></span>
-                            <span><span className="text-text-muted">Winners </span><span className="font-semibold text-text-primary">{won.length}</span></span>
+                            <span><span className="text-text-muted">Winners </span><span className="font-semibold text-text-primary">{selected.length + won.length}</span></span>
+                            {selected.length > 0 && <span><span className="text-text-muted">Awaiting send </span><span className="font-semibold text-warning">{selected.length}</span></span>}
                             <span><span className="text-text-muted">Prize delivered </span><span className="font-semibold text-success">{delivered.length}</span></span>
                           </div>
                         )
@@ -248,6 +289,8 @@ export default function GasGiveawaysAdminPage() {
                                 <Badge variant="success">won</Badge>
                                 <Badge variant={deliveryVariant(e.orderStatus)}>{e.orderStatus ?? 'pending'}</Badge>
                               </span>
+                            ) : e.status === 'selected' ? (
+                              <Badge variant="warning">selected · awaiting send</Badge>
                             ) : (
                               <Badge variant="default">{e.status === 'not_selected' ? 'not selected' : 'entered'}</Badge>
                             )}
@@ -258,8 +301,10 @@ export default function GasGiveawaysAdminPage() {
                   )}
                 </div>
               )}
+              </>}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
