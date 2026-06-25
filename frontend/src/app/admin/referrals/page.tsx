@@ -1,6 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { adminApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -9,7 +10,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
-import { Users, AlertTriangle, Download } from 'lucide-react'
+import { ReferralBubbleMap, type GraphNode, type GraphEdge } from '@/components/admin/ReferralBubbleMap'
+import { Users, AlertTriangle, Download, Share2 } from 'lucide-react'
 
 interface ReferredUser {
   id: string
@@ -53,13 +55,16 @@ interface SuspiciousGroup {
   referredByIds: (string | null)[]
 }
 
-type Tab = 'referred' | 'inviters' | 'suspicious'
+type Tab = 'referred' | 'inviters' | 'suspicious' | 'network'
 
 export default function ReferralsPage() {
+  const router = useRouter()
   const [tab, setTab] = useState<Tab>('referred')
   const [referrals, setReferrals] = useState<ReferredUser[]>([])
   const [inviters, setInviters] = useState<TopInviter[]>([])
   const [suspicious, setSuspicious] = useState<SuspiciousGroup[]>([])
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([])
+  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -112,11 +117,26 @@ export default function ReferralsPage() {
     }
   }, [])
 
+  const fetchGraph = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await adminApi.getReferralGraph()
+      setGraphNodes(data.nodes ?? [])
+      setGraphEdges(data.edges ?? [])
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load referral network')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (tab === 'referred') fetchReferrals()
     else if (tab === 'inviters') fetchInviters()
+    else if (tab === 'network') fetchGraph()
     else fetchSuspicious()
-  }, [tab, fetchReferrals, fetchInviters, fetchSuspicious])
+  }, [tab, fetchReferrals, fetchInviters, fetchSuspicious, fetchGraph])
 
   async function viewChain(userId: string) {
     setChainLoading(true)
@@ -167,7 +187,7 @@ export default function ReferralsPage() {
 
       {/* Tabs */}
       <div className="flex gap-2">
-        {(['referred', 'inviters', 'suspicious'] as Tab[]).map((t) => (
+        {(['referred', 'inviters', 'network', 'suspicious'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); setPage(1) }}
@@ -176,7 +196,8 @@ export default function ReferralsPage() {
             }`}
           >
             {t === 'suspicious' && <AlertTriangle className="w-3.5 h-3.5" />}
-            {t === 'referred' ? 'Referred Users' : t === 'inviters' ? 'Top Inviters' : 'Suspicious'}
+            {t === 'network' && <Share2 className="w-3.5 h-3.5" />}
+            {t === 'referred' ? 'Referred Users' : t === 'inviters' ? 'Top Inviters' : t === 'network' ? 'Network Map' : 'Suspicious'}
           </button>
         ))}
       </div>
@@ -200,6 +221,8 @@ export default function ReferralsPage() {
         <LoadingState message="Loading referrals…" />
       ) : error ? (
         <ErrorState title={error} onRetry={tab === 'referred' ? fetchReferrals : tab === 'inviters' ? fetchInviters : fetchSuspicious} />
+      ) : tab === 'network' ? (
+        <ReferralBubbleMap nodes={graphNodes} edges={graphEdges} onSelect={(id) => router.push(`/admin/users/${id}`)} />
       ) : tab === 'referred' ? (
         referrals.length === 0 ? (
           <EmptyState icon={Users} title="No referred users" description="No users have signed up via a referral link yet." />

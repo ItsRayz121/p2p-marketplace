@@ -1763,9 +1763,13 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('INVALID_ADDRESS', `Invalid ${tokenCfg.chain.networkLabel} address format`, 400)
     }
 
-    // Load the account (KYC gate + capture email for winner contact).
-    const u = await db.user.findUnique({ where: { id: req.user!.id }, select: { kycLevel: true, email: true } })
-    if (campaign.requireKyc && (!u || u.kycLevel === 'none')) {
+    // Load the account (identity gate + capture email for winner contact). Entry requires a
+    // real platform identity: a set username always, plus KYC1 when the campaign requires it.
+    const u = await db.user.findUnique({ where: { id: req.user!.id }, select: { kycLevel: true, email: true, username: true } })
+    if (!u || !u.username || !u.username.trim()) {
+      throw new AppError('USERNAME_REQUIRED', 'Set a platform username to enter this giveaway.', 403)
+    }
+    if (campaign.requireKyc && u.kycLevel === 'none') {
       throw new AppError('KYC_REQUIRED', 'Complete identity verification (KYC) to enter this giveaway.', 403)
     }
     const contactEmail = email ?? u?.email ?? null

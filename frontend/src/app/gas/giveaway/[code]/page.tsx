@@ -107,7 +107,9 @@ export default function GiveawayEntryPage() {
               <label className="text-xs font-semibold text-text-primary block">Your {campaign.networkLabel} receiving address
                 <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={`Your ${campaign.tokenSymbol} address`} className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm font-mono" />
               </label>
-              {campaign.requireKyc && <p className="text-[11px] text-amber-600 dark:text-amber-400">Identity verification (KYC) is required to enter.</p>}
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                A platform username{campaign.requireKyc ? ' and identity verification (KYC)' : ''} {campaign.requireKyc ? 'are' : 'is'} required to enter.
+              </p>
               <Button size="sm" variant="primary" onClick={enter} disabled={submitting || !address.trim()} className="w-full">
                 {submitting ? 'Entering…' : 'Enter Giveaway'}
               </Button>

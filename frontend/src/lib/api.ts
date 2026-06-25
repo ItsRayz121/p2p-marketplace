@@ -1847,6 +1847,11 @@ export const adminApi = {
     apiRequest<{ referrals: unknown[]; total: number }>('/admin/referrals' + buildQs(params)),
   getTopInviters: () =>
     apiRequest<unknown[]>('/admin/referrals/top-inviters'),
+  getReferralGraph: () =>
+    apiRequest<{
+      nodes: Array<{ id: string; username: string; kycStatus: string; referrals: number; referredById: string | null }>
+      edges: Array<{ source: string; target: string }>
+    }>('/admin/referrals/graph'),
   getReferralChain: (userId: string) =>
     apiRequest<unknown>(`/admin/referrals/${userId}`),
   getSuspiciousReferrals: () =>

@@ -1141,6 +1141,36 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: inviters })
   })
 
+  // GET /admin/referrals/graph — nodes + edges of the whole referral network (for the
+  // bubble-map view). Includes every user involved in a referral relationship (referred
+  // someone OR was referred); an edge points from referrer → referred. Capped for safety.
+  app.get('/admin/referrals/graph', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const users = await db.user.findMany({
+      where: { OR: [{ referredById: { not: null } }, { referrals: { some: {} } }] },
+      select: {
+        id: true,
+        username: true,
+        kycStatus: true,
+        referredById: true,
+        _count: { select: { referrals: true } },
+      },
+      take: 2000,
+    })
+    const ids = new Set(users.map((u) => u.id))
+    const nodes = users.map((u) => ({
+      id: u.id,
+      username: u.username,
+      kycStatus: u.kycStatus,
+      referrals: u._count.referrals,
+      referredById: u.referredById,
+    }))
+    // Only keep edges whose referrer is also in the node set (it always is, via the OR).
+    const edges = users
+      .filter((u) => u.referredById && ids.has(u.referredById))
+      .map((u) => ({ source: u.referredById as string, target: u.id }))
+    return reply.send({ success: true, data: { nodes, edges } })
+  })
+
   // GET /admin/referrals/:userId — full chain for one user
   app.get('/admin/referrals/:userId', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { userId } = req.params as { userId: string }
@@ -3787,6 +3817,8 @@ export async function adminRoutes(app: FastifyInstance) {
     } else if (query.paymentCoin) {
       where.paymentCoin = query.paymentCoin
     }
+    // Free-grant history: platform-funded ($0) deliveries from the Free Gas tool.
+    if (query.freeGrant === 'true') where.isFreeGrant = true
 
     const [orders, total] = await Promise.all([
       db.gasFeeOrder.findMany({

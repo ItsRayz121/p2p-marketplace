@@ -5,16 +5,22 @@ import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/Button'
-import { ArrowLeft, Gift } from 'lucide-react'
+import { ArrowLeft, Gift, Plus, X, ChevronDown, History } from 'lucide-react'
 
 // Admin-only tool to send fully platform-funded (free) gas deliveries. The platform
 // covers base + margin; each order routes through the normal delivery worker. Runs
 // only when the gas_free_grant_enabled flag is ON (else the API rejects it).
 //
-// Two upgrades over the original: the chain picker lists EVERY configured gas chain
-// (not just the user-visible payment set), and a single submission can fan out to
-// many recipient addresses at once (one order per address).
+// Recipients are entered as individual add/remove rows; a single submission fans out to
+// every address (one order per address). A collapsible history lists past free sends.
 type SendResult = { address: string; ok: boolean; orderRef?: string; error?: string }
+type FreeOrder = { id: string; orderRef: string; toAddress: string; chain: string; gasAmountNative: string | number; status: string; createdAt: string }
+
+function statusColor(s: string): string {
+  if (s === 'delivered') return 'text-green-700 dark:text-green-300'
+  if (s === 'failed' || s === 'refunded' || s === 'cancelled') return 'text-red-600 dark:text-red-400'
+  return 'text-amber-600 dark:text-amber-400'
+}
 
 export default function AdminFreeGasPage() {
   const router = useRouter()
@@ -26,17 +32,28 @@ export default function AdminFreeGasPage() {
   const [tokensLoading, setTokensLoading] = useState(false)
   const [tokenId, setTokenId] = useState('')
   const [amount, setAmount] = useState('')
-  const [addressesRaw, setAddressesRaw] = useState('')
+  const [addressRows, setAddressRows] = useState<string[]>([''])
   const [userId, setUserId] = useState('')
   const [note, setNote] = useState('')
   const [sending, setSending] = useState(false)
   const [results, setResults] = useState<SendResult[] | null>(null)
+  const [history, setHistory] = useState<FreeOrder[]>([])
+  const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
     adminApi.getGasChains()
       .then((r) => setChains(r.chains.filter((c) => !c.isArchived).sort((a, b) => a.displayOrder - b.displayOrder)))
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Failed to load chains'))
   }, [])
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const r = await adminApi.getGasOrders({ freeGrant: 'true', limit: 25 })
+      setHistory(r.orders as FreeOrder[])
+    } catch { /* non-critical */ }
+  }, [])
+
+  useEffect(() => { void loadHistory() }, [loadHistory])
 
   const loadTokens = useCallback(async (id: string) => {
     setChainId(id); setTokens([]); setTokenId('')
@@ -52,14 +69,18 @@ export default function AdminFreeGasPage() {
     }
   }, [])
 
-  // Accept addresses separated by newlines, commas or spaces; de-duplicate.
+  // De-duplicated, non-empty addresses across all rows.
   const addresses = useMemo(
-    () => Array.from(new Set(addressesRaw.split(/[\s,]+/).map((a) => a.trim()).filter(Boolean))),
-    [addressesRaw],
+    () => Array.from(new Set(addressRows.map((a) => a.trim()).filter(Boolean))),
+    [addressRows],
   )
 
   const selChain = chains.find((c) => c.id === chainId) ?? null
   const addrPlaceholder = selChain?.addressType === 'tron' ? 'T…' : selChain?.addressType === 'aptos' ? '0x…(Aptos)' : '0x…'
+
+  const setRow = (i: number, v: string) => setAddressRows((rows) => rows.map((r, idx) => (idx === i ? v : r)))
+  const addRow = () => setAddressRows((rows) => [...rows, ''])
+  const removeRow = (i: number) => setAddressRows((rows) => (rows.length <= 1 ? [''] : rows.filter((_, idx) => idx !== i)))
 
   async function send() {
     if (!tokenId || !(parseFloat(amount) > 0) || addresses.length === 0) {
@@ -89,7 +110,8 @@ export default function AdminFreeGasPage() {
     const failCount = out.length - okCount
     if (okCount > 0) toast.success(`Queued ${okCount} free deliver${okCount === 1 ? 'y' : 'ies'}${failCount ? `, ${failCount} failed` : ''}`)
     else toast.error('All deliveries failed')
-    if (failCount === 0) { setAmount(''); setAddressesRaw(''); setUserId(''); setNote('') }
+    if (failCount === 0) { setAmount(''); setAddressRows(['']); setUserId(''); setNote('') }
+    void loadHistory()
   }
 
   if (!isSuperAdmin) {
@@ -136,20 +158,38 @@ export default function AdminFreeGasPage() {
           <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.5" inputMode="decimal" className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
         </label>
 
-        <label className="block text-xs font-semibold text-text-primary">
-          Recipient address(es)
-          <span className="ml-1 font-normal text-text-muted">— one per line; the same amount goes to each</span>
-          <textarea
-            value={addressesRaw}
-            onChange={(e) => setAddressesRaw(e.target.value)}
-            placeholder={`${addrPlaceholder}\n${addrPlaceholder}\n${addrPlaceholder}`}
-            rows={4}
-            className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm font-mono"
-          />
-        </label>
-        {addresses.length > 0 && (
-          <p className="text-xs text-text-muted">{addresses.length} unique address{addresses.length === 1 ? '' : 'es'} · {amount && parseFloat(amount) > 0 ? `${(parseFloat(amount)).toString()} each` : 'set an amount'}</p>
-        )}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-text-primary">Recipient address(es) <span className="font-normal text-text-muted">— same amount goes to each</span></p>
+          {addressRows.map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                value={row}
+                onChange={(e) => setRow(i, e.target.value)}
+                placeholder={addrPlaceholder}
+                className="flex-1 rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                disabled={addressRows.length === 1 && !row.trim()}
+                className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 disabled:opacity-30"
+                aria-label="Remove address"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addRow}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add another address
+          </button>
+          {addresses.length > 0 && (
+            <p className="text-xs text-text-muted">{addresses.length} unique address{addresses.length === 1 ? '' : 'es'} · {amount && parseFloat(amount) > 0 ? `${parseFloat(amount).toString()} each` : 'set an amount'}</p>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="text-xs font-semibold text-text-primary">Attribute to user ID (optional)
@@ -176,6 +216,46 @@ export default function AdminFreeGasPage() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Send history — past free-grant deliveries, click an entry to open the order */}
+      <div className="rounded-xl border border-border bg-surface overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowHistory((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-alt transition-colors"
+          aria-expanded={showHistory}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <History className="w-4 h-4 text-text-muted" />
+            Send history
+            <span className="text-xs text-text-muted">({history.length})</span>
+          </span>
+          <ChevronDown className={`w-4 h-4 text-text-muted transition-transform ${showHistory ? 'rotate-180' : ''}`} />
+        </button>
+        {showHistory && (
+          <div className="border-t border-border">
+            {history.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-text-muted">No free gas has been sent yet.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {history.map((o) => (
+                  <button
+                    key={o.id}
+                    onClick={() => router.push(`/admin/gas/orders/${o.orderRef}`)}
+                    className="w-full text-left px-4 py-2.5 hover:bg-surface-alt transition-colors flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs text-text-primary truncate">{o.toAddress}</p>
+                      <p className="text-[11px] text-text-muted">{o.chain} · {String(o.gasAmountNative)} · {new Date(o.createdAt).toLocaleString()}</p>
+                    </div>
+                    <span className={`shrink-0 text-[11px] font-semibold capitalize ${statusColor(o.status)}`}>{o.status.replace(/_/g, ' ')}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
