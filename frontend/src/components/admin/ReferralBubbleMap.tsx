@@ -85,6 +85,29 @@ export function ReferralBubbleMap({ nodes, edges, onSelect }: { nodes: GraphNode
 
   // Drag state held in a ref so pointer move handlers stay cheap.
   const drag = useRef<{ kind: 'pan' | 'node'; id?: string; startX: number; startY: number; origVbX: number; origVbY: number; moved: boolean } | null>(null)
+  // Latest viewBox mirrored to a ref so the native (non-passive) wheel handler reads it.
+  const vbRef = useRef(vb)
+  vbRef.current = vb
+
+  // Zoom via a NATIVE wheel listener registered non-passive — React's onWheel is passive,
+  // so preventDefault() there is ignored and the page would scroll while zooming.
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault()
+      const rect = svg.getBoundingClientRect()
+      const v = vbRef.current
+      const wx = v.x + ((e.clientX - rect.left) / rect.width) * v.w
+      const wy = v.y + ((e.clientY - rect.top) / rect.height) * v.h
+      const factor = e.deltaY > 0 ? 1.12 : 0.89
+      const nw = Math.max(80, Math.min(8000, v.w * factor))
+      const nh = nw * (v.h / v.w)
+      setVb({ x: wx - (wx - v.x) * (nw / v.w), y: wy - (wy - v.y) * (nh / v.h), w: nw, h: nh })
+    }
+    svg.addEventListener('wheel', onWheelNative, { passive: false })
+    return () => svg.removeEventListener('wheel', onWheelNative)
+  }, [])
 
   useEffect(() => {
     const laid = runLayout(nodes, edges)
@@ -105,18 +128,6 @@ export function ReferralBubbleMap({ nodes, edges, onSelect }: { nodes: GraphNode
     if (!rect) return { x: 0, y: 0 }
     return { x: vb.x + ((clientX - rect.left) / rect.width) * vb.w, y: vb.y + ((clientY - rect.top) / rect.height) * vb.h }
   }, [vb])
-
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault()
-    const factor = e.deltaY > 0 ? 1.12 : 0.89
-    const w = toWorld(e.clientX, e.clientY)
-    setVb((v) => {
-      const nw = Math.max(80, Math.min(8000, v.w * factor))
-      const nh = nw * (v.h / v.w)
-      // Keep the cursor's world point fixed while scaling.
-      return { x: w.x - (w.x - v.x) * (nw / v.w), y: w.y - (w.y - v.y) * (nh / v.h), w: nw, h: nh }
-    })
-  }
 
   const onPointerDown = (e: React.PointerEvent, id?: string) => {
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
@@ -162,8 +173,7 @@ export function ReferralBubbleMap({ nodes, edges, onSelect }: { nodes: GraphNode
           ref={svgRef}
           viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
           className="w-full touch-none select-none"
-          style={{ height: 560, cursor: drag.current?.kind === 'pan' ? 'grabbing' : 'grab' }}
-          onWheel={onWheel}
+          style={{ height: 560, cursor: 'grab' }}
           onPointerDown={(e) => onPointerDown(e)}
           onPointerMove={onPointerMove}
           onPointerUp={(e) => onPointerUp(e)}
