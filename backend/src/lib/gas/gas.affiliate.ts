@@ -208,6 +208,42 @@ export async function resolveAffiliateDiscount(
   return { discountUsdt, codeId: binding.codeId }
 }
 
+export interface AffiliateQuote {
+  discountUsdt: number
+  discountPct: number
+  referrerLabel: string
+}
+
+/**
+ * Pre-order preview of the buyer's affiliate discount for the checkout breakdown — the
+ * affiliate analogue of previewPromo. Same resolution as resolveAffiliateDiscount, plus
+ * the referrer's display name so the UI can attribute the discount ("courtesy of @X").
+ * Read-only; returns null when there is nothing to show (flag off / unbound / 0%).
+ */
+export async function getAffiliateQuote(buyerUserId: string, marginUsdt: number): Promise<AffiliateQuote | null> {
+  if (!(await isFlagEnabled(FLAGS.GAS_AFFILIATE))) return null
+  if (!(marginUsdt > 0)) return null
+
+  const binding = await db.gasReferral.findUnique({
+    where: { referredId: buyerUserId },
+    include: { code: { include: { owner: { select: { username: true } } } } },
+  })
+  if (!binding || !binding.code.isActive) return null
+  if (binding.referrerId === buyerUserId) return null
+  if (!(binding.code.userDiscountPct > 0)) return null
+
+  const aff = await db.gasAffiliate.findUnique({ where: { userId: binding.referrerId }, select: { status: true } })
+  if (!aff || aff.status !== 'approved') return null
+
+  const discountPct = binding.code.userDiscountPct
+  const raw = round2((discountPct / 100) * marginUsdt)
+  const discountUsdt = Math.max(0, Math.min(raw, round2(marginUsdt)))
+  if (discountUsdt <= 0) return null
+
+  const referrerLabel = binding.code.owner?.username || binding.code.label || 'your referral link'
+  return { discountUsdt, discountPct, referrerLabel }
+}
+
 // ── Admin ────────────────────────────────────────────────────────────────────
 
 export interface AdminAffiliateRow {

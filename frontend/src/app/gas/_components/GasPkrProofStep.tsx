@@ -5,7 +5,7 @@ import { CopyButton } from '@/components/ui/CopyButton'
 import { useGasCtx } from './GasContext'
 import { CardHeader, PkrMethodIcon } from './GasPrimitives'
 import { PKR_METHOD_META } from './GasContext'
-import { GasPromoApplied } from './GasPromo'
+import { GasPromoApplied, GasAffiliateApplied } from './GasPromo'
 
 export function GasPkrProofStep() {
   const {
@@ -24,6 +24,7 @@ export function GasPkrProofStep() {
     <div className="p-5 space-y-4">
       <CardHeader title="Make Payment" sub={`Order #${order.orderRef}`} />
 
+      <GasAffiliateApplied />
       <GasPromoApplied />
 
       <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 space-y-3">

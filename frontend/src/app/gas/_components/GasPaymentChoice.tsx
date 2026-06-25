@@ -3,13 +3,14 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useGasCtx, PHASE } from './GasContext'
 import { ChainLogo, CardHeader } from './GasPrimitives'
-import { GasPromoField } from './GasPromo'
+import { GasPromoField, GasAffiliateApplied } from './GasPromo'
 
 export function GasPaymentChoice() {
   const {
     selectedChain, selectedToken, setPhase,
-    methodsLoading, computedUsd, promoApplied, effectiveUsd, effectivePkr,
+    methodsLoading, computedUsd, promoApplied, effectiveUsd, effectivePkr, affiliateDiscountUsd,
   } = useGasCtx()
+  const discounted = !!promoApplied || affiliateDiscountUsd > 0
 
   if (!selectedChain || !selectedToken) return null
 
@@ -22,7 +23,7 @@ export function GasPaymentChoice() {
           <ChainLogo chain={selectedChain} sizeCls="w-4 h-4" />
           {selectedToken.symbol} · {selectedChain.networkLabel}
         </span>
-        {promoApplied ? (
+        {discounted ? (
           <>
             <span className="text-text-muted line-through">${computedUsd.toFixed(2)}</span>
             <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${effectiveUsd.toFixed(2)} USDT</span>
@@ -33,7 +34,8 @@ export function GasPaymentChoice() {
         <span className="bg-green-500/15 text-green-700 dark:text-green-300 rounded-full px-3 py-1 font-bold">≈ PKR {effectivePkr.toFixed(0)}</span>
       </div>
 
-      {/* Promo code — flag-gated; shared with the two confirm screens via context. */}
+      {/* Affiliate auto-discount (if the buyer came via an affiliate link) + promo code. */}
+      <GasAffiliateApplied />
       <GasPromoField />
 
       {methodsLoading && <LoadingState message="Loading payment options..." />}

@@ -12,7 +12,9 @@ export function GasPkrMethodStep() {
     creatingPkr, pkrError, handleCreatePkrOrder,
     amount, priceUsd, gasValueUsd, platformFeeUsdt,
     usdPkrRate, computedPkr, effectivePkr, promoApplied, promoDiscountUsd,
+    affiliateDiscountUsd, affiliateQuote,
   } = useGasCtx()
+  const showDiscount = (!!promoApplied && promoDiscountUsd > 0) || affiliateDiscountUsd > 0
 
   if (!selectedToken) return null
 
@@ -82,6 +84,12 @@ export function GasPkrMethodStep() {
                 <span className="font-semibold text-green-700 dark:text-green-300">−${promoDiscountUsd.toFixed(2)} USDT</span>
               </div>
             )}
+            {affiliateDiscountUsd > 0 && affiliateQuote && (
+              <div className="flex justify-between text-xs">
+                <span className="text-green-700 dark:text-green-300">Affiliate {affiliateQuote.discountPct}% off · {affiliateQuote.referrerLabel}</span>
+                <span className="font-semibold text-green-700 dark:text-green-300">−${affiliateDiscountUsd.toFixed(2)} USDT</span>
+              </div>
+            )}
             {usdPkrRate > 0 && (
               <div className="flex justify-between text-xs">
                 <span className="text-text-muted">Exchange Rate</span>
@@ -91,7 +99,7 @@ export function GasPkrMethodStep() {
             <div className="flex justify-between pt-2 border-t border-border">
               <span className="font-bold text-text-primary">Total Payable in PKR</span>
               <span className="font-bold text-green-700 dark:text-green-300 text-base">
-                {promoApplied && promoDiscountUsd > 0 && (
+                {showDiscount && (
                   <span className="text-text-muted line-through font-normal text-sm mr-2">PKR {computedPkr.toFixed(0)}</span>
                 )}
                 PKR {effectivePkr.toFixed(0)}

@@ -146,6 +146,8 @@ export interface GasFlowCtx {
   effectiveUsd: number
   effectivePkr: number
   promoDiscountUsd: number
+  affiliateDiscountUsd: number
+  affiliateQuote: { discountUsdt: number; discountPct: number; referrerLabel: string } | null
   maxUsd: number
   minAmount: number
   usdExceeded: boolean

@@ -8,7 +8,13 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { CopyButton } from '@/components/ui/CopyButton'
 import { ArrowLeft, RefreshCw, Plus } from 'lucide-react'
+
+function giveawayLink(code: string): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}/gas/giveaway/${code}`
+}
 
 type Campaign = Awaited<ReturnType<typeof adminApi.getGasGiveaways>>[number]
 
@@ -161,6 +167,13 @@ export default function GasGiveawaysAdminPage() {
                 {isSuperAdmin && c.drawnCount < c.winnerCount && (
                   <Button size="sm" variant="primary" onClick={() => draw(c)} disabled={busyId === c.id || c.entryCount === 0}>Draw winners</Button>
                 )}
+              </div>
+
+              {/* Shareable entry link — what the KOL posts; entrants open it to submit an address. */}
+              <div className="mt-2 flex items-center gap-2 rounded-lg bg-surface-alt border border-border px-3 py-2">
+                <span className="text-[11px] text-text-muted shrink-0">Entry link</span>
+                <span className="text-xs font-mono text-text-secondary truncate flex-1">{giveawayLink(c.code)}</span>
+                <CopyButton text={giveawayLink(c.code)} />
               </div>
               <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div><p className="text-text-muted">Amount/winner</p><p className="font-semibold text-text-primary">{c.amountNative}</p></div>

@@ -35,6 +35,7 @@ import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings } from '../lib/gas/gas.referral'
 import {
   resolveAffiliateDiscount,
+  getAffiliateQuote,
   applyForAffiliate,
   getAffiliateOverview,
   createAffiliateLink,
@@ -1484,6 +1485,19 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   app.get('/gas-fee/affiliate/me', { preHandler: [authenticate] }, async (req, reply) => {
     const data = await getAffiliateOverview(req.user!.id)
     return reply.send({ success: true, data })
+  })
+
+  // GET /gas-fee/affiliate/quote — buyer's auto-discount preview for the checkout
+  // breakdown (margin-only, read-only). Returns null when nothing applies.
+  const affiliateQuoteSchema = z.object({ tokenConfigId: z.string().min(1) })
+  app.get('/gas-fee/affiliate/quote', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = affiliateQuoteSchema.safeParse(req.query)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: parsed.data.tokenConfigId }, include: { chain: true } })
+    if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
+    const resolved = resolveTokenConfig(tokenCfg, tokenCfg.chain)
+    const quote = await getAffiliateQuote(req.user!.id, resolved.platformFeeUsdt)
+    return reply.send({ success: true, data: quote })
   })
 
   // POST /gas-fee/affiliate/apply — submit/re-submit an affiliate application.

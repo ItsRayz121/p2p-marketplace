@@ -78,3 +78,21 @@ export function GasPromoApplied() {
     </div>
   )
 }
+
+// Celebratory affiliate-discount banner. Surfaces the buyer's automatic margin-only
+// discount (and who it's courtesy of) on the payment screens. No-op when the logged-in
+// buyer isn't bound to an approved affiliate link with a positive discount.
+export function GasAffiliateApplied() {
+  const { affiliateQuote, affiliateDiscountUsd } = useGasCtx()
+  if (!affiliateQuote || affiliateDiscountUsd <= 0) return null
+  return (
+    <div className="rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-2">
+      <p className="text-xs font-semibold text-green-700 dark:text-green-300">
+        🎉 {affiliateQuote.discountPct}% affiliate discount applied
+      </p>
+      <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+        You saved ${affiliateDiscountUsd.toFixed(2)} courtesy of {affiliateQuote.referrerLabel}&apos;s link — the amount below is already discounted.
+      </p>
+    </div>
+  )
+}

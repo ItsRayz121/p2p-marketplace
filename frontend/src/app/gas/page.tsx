@@ -96,6 +96,8 @@ export default function GasPage() {
   const [promoApplied, setPromoApplied]   = useState<{ code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string } | null>(null)
   const [promoError, setPromoError]       = useState('')
   const [promoChecking, setPromoChecking] = useState(false)
+  // Affiliate buyer auto-discount preview (margin-only, fetched for the logged-in buyer).
+  const [affiliateQuote, setAffiliateQuote] = useState<{ discountUsdt: number; discountPct: number; referrerLabel: string } | null>(null)
 
   // ── Order tracking ─────────────────────────────────────────────────────────
   const [order, setOrder]               = useState<GasOrder | null>(null)
@@ -125,7 +127,13 @@ export default function GasPage() {
   // margin, never below the base gas cost (enforced server-side). When no promo is
   // applied these equal the computed totals.
   const promoDiscountUsd = promoApplied ? Math.min(promoApplied.discountUsdt, computedUsd) : 0
-  const effectiveUsd     = Math.max(0, computedUsd - promoDiscountUsd)
+  // Affiliate buyer discount fills the margin REMAINING after any promo — mirrors the
+  // server (affiliateOrderDiscount), so the previewed total matches the charged total.
+  const affiliateDiscountUsd = affiliateQuote
+    ? Math.max(0, Math.min(affiliateQuote.discountUsdt, platformFeeUsdt - promoDiscountUsd))
+    : 0
+  const totalDiscountUsd = promoDiscountUsd + affiliateDiscountUsd
+  const effectiveUsd     = Math.max(0, computedUsd - totalDiscountUsd)
   const effectivePkr     = effectiveUsd * usdPkrRate
   const maxUsd          = selectedToken?.maxUsdValue ?? 10
   const minAmount       = selectedToken?.minAmount ?? 0.1
@@ -145,6 +153,17 @@ export default function GasPage() {
   // Any change to the order parameters invalidates a previously-applied promo, so it
   // is re-validated server-side (the source of truth) before it can affect the price.
   useEffect(() => { setPromoApplied(null); setPromoError('') }, [amount, selectedToken?.id])
+
+  // Fetch the logged-in buyer's affiliate auto-discount for the selected token so the
+  // checkout breakdown can surface it. No-op for guests / unbound users (returns null).
+  useEffect(() => {
+    if (!user || !selectedToken) { setAffiliateQuote(null); return }
+    let cancelled = false
+    gasApi.getAffiliateQuote(selectedToken.id)
+      .then((q) => { if (!cancelled) setAffiliateQuote(q) })
+      .catch(() => { if (!cancelled) setAffiliateQuote(null) })
+    return () => { cancelled = true }
+  }, [user, selectedToken?.id])
 
   useEffect(() => {
     if (phase !== PHASE.PAY_METHOD || pkrMethods || cryptoMethods) return
@@ -433,6 +452,7 @@ export default function GasPage() {
     order, setOrder, pollErrCount, setPollErrCount,
     priceUsd, pricePkr, platformFeeUsdt, amountNum, gasValueUsd, usdPkrRate,
     totalUsd, computedUsd, computedPkr, effectiveUsd, effectivePkr, promoDiscountUsd, maxUsd, minAmount, usdExceeded,
+    affiliateDiscountUsd, affiliateQuote,
     isPkrOrder, explorerBase, chainGroups, getPkrDetails,
     promoEnabled, promoCode, setPromoCode, promoApplied, promoError, promoChecking, applyPromo, clearPromo,
   }

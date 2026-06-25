@@ -1462,6 +1462,8 @@ export const gasApi = {
       links: Array<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>
       earnings: { enabled: boolean; code: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }
     }>('/gas-fee/affiliate/me'),
+  getAffiliateQuote: (tokenConfigId: string) =>
+    apiRequest<{ discountUsdt: number; discountPct: number; referrerLabel: string } | null>(`/gas-fee/affiliate/quote?tokenConfigId=${encodeURIComponent(tokenConfigId)}`),
   applyAffiliate: (data: { socials: Record<string, string>; note?: string }) =>
     apiRequest<{ status: string }>('/gas-fee/affiliate/apply', { method: 'POST', body: JSON.stringify(data) }),
   createAffiliateLink: (data: { label?: string; userDiscountPct: number; commissionPct: number }) =>
