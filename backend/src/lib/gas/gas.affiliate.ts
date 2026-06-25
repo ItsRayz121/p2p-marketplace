@@ -181,33 +181,6 @@ export async function updateAffiliateLink(
   return { id: updated.id, code: updated.code, label: updated.label, userDiscountPct: updated.userDiscountPct, commissionPct: updated.referralPct, isActive: updated.isActive, referredCount }
 }
 
-/**
- * Order-time buyer auto-discount. When the flag is ON and the buyer is bound to an
- * APPROVED affiliate's active link with a positive userDiscountPct, returns the margin-
- * only discount this order should receive. Deterministic + read-only (no slot/budget to
- * reserve, unlike promo). Floored at the margin so it can never reduce below base cost.
- */
-export async function resolveAffiliateDiscount(
-  buyerUserId: string,
-  marginUsdt: number,
-): Promise<{ discountUsdt: number; codeId: string } | null> {
-  if (!(await isFlagEnabled(FLAGS.GAS_AFFILIATE))) return null
-  if (!(marginUsdt > 0)) return null
-
-  const binding = await db.gasReferral.findUnique({ where: { referredId: buyerUserId }, include: { code: true } })
-  if (!binding || !binding.code.isActive) return null
-  if (binding.referrerId === buyerUserId) return null
-  if (!(binding.code.userDiscountPct > 0)) return null
-
-  const aff = await db.gasAffiliate.findUnique({ where: { userId: binding.referrerId }, select: { status: true } })
-  if (!aff || aff.status !== 'approved') return null
-
-  const raw = round2((binding.code.userDiscountPct / 100) * marginUsdt)
-  const discountUsdt = Math.max(0, Math.min(raw, round2(marginUsdt)))
-  if (discountUsdt <= 0) return null
-  return { discountUsdt, codeId: binding.codeId }
-}
-
 export interface AffiliateQuote {
   discountUsdt: number
   discountPct: number
@@ -215,10 +188,12 @@ export interface AffiliateQuote {
 }
 
 /**
- * Pre-order preview of the buyer's affiliate discount for the checkout breakdown — the
- * affiliate analogue of previewPromo. Same resolution as resolveAffiliateDiscount, plus
- * the referrer's display name so the UI can attribute the discount ("courtesy of @X").
- * Read-only; returns null when there is nothing to show (flag off / unbound / 0%).
+ * Resolves the buyer's order-time affiliate auto-discount AND the referrer's display name.
+ * Used both for the checkout preview (the affiliate analogue of previewPromo) and, at order
+ * creation, to compute + snapshot the discount. When the flag is ON and the buyer is bound
+ * to an APPROVED affiliate's active link with a positive userDiscountPct, returns the
+ * margin-only discount (floored at the margin → never below base cost) plus the referrer
+ * label. Read-only; returns null when there is nothing to show (flag off / unbound / 0%).
  */
 export async function getAffiliateQuote(buyerUserId: string, marginUsdt: number): Promise<AffiliateQuote | null> {
   if (!(await isFlagEnabled(FLAGS.GAS_AFFILIATE))) return null
