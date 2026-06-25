@@ -27,6 +27,7 @@ import {
 } from './ctm.trade.service'
 import { db } from '../lib/prisma'
 import { releaseMakerBond } from '../services/makerBond.service'
+import { incrementTradeStreak } from '../services/tradeStreak.service'
 import { logger } from '../lib/logger'
 
 const disputeSchema = z.object({
@@ -316,7 +317,15 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     const trade = await db.ctmTrade.findUnique({ where: { tradeRef: ref } })
     if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
-    await db.ctmTrade.update({ where: { tradeRef: ref }, data: { status: 'completed', completedAt: new Date() } })
+    const wasAlreadyComplete = trade.status === 'completed'
+    await db.$transaction(async (tx) => {
+      await tx.ctmTrade.update({ where: { tradeRef: ref }, data: { status: 'completed', completedAt: new Date() } })
+      // Only bump the streak on a genuine transition into completed — re-running
+      // force-release on an already-completed trade must not double-count.
+      if (!wasAlreadyComplete) {
+        await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
+      }
+    })
     await db.auditLog.create({
       data: { actorId: req.user!.id, action: 'CTM_ADMIN_FORCE_RELEASE', metadata: { tradeRef: ref } },
     }).catch(() => {})

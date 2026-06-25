@@ -3,6 +3,8 @@ import { logger } from '../lib/logger'
 import https from 'node:https'
 import { notify as centralNotify } from '../lib/notify'
 import { releaseMakerBond } from '../services/makerBond.service'
+import { incrementTradeStreak, ordinal } from '../services/tradeStreak.service'
+import { postCtmSystemMessage } from './ctm.trade.service'
 
 /** Human-readable trade label for user-facing notifications — never exposes the raw cuid. */
 const lbl = (t: { displayRef?: string | null }): string => t.displayRef ?? 'your CTM trade'
@@ -119,6 +121,7 @@ export async function runCtmProofDeadline() {
     const autoComplete = sellerTier === 'verified' || sellerTier === 'elite'
 
     if (autoComplete) {
+      let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
       await db.$transaction(async (tx) => {
         await tx.ctmTrade.update({ where: { id: trade.id }, data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null } })
         await tx.ctmToken.update({ where: { id: trade.tokenId }, data: { totalTrades: { increment: 1 }, totalVolumePkr: { increment: trade.fiatAmount }, lastTradedAt: new Date() } })
@@ -132,12 +135,21 @@ export async function runCtmProofDeadline() {
           where: { userId: trade.sellerId },
           data: { totalCtmTrades: { increment: 1 }, completedCtmTrades: { increment: 1 } },
         })
+        // Bump the combined buyer↔seller streak, atomic with the auto-completion.
+        streakResult = await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
       })
 
       // Clean auto-completion → release the maker's bond (idempotent; no-op when off).
       await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
         logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM auto-complete'),
       )
+
+      if (streakResult.count > 0) {
+        const streakMsg = streakResult.isMilestone
+          ? `🔥 Milestone! This is your ${ordinal(streakResult.count)} completed trade together. Thanks for building trust on the platform.`
+          : `🤝 ${ordinal(streakResult.count)} completed trade between you two.`
+        await postCtmSystemMessage(trade.id, trade.buyerId, streakMsg)
+      }
 
       notify(trade.buyerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
       notify(trade.sellerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed after buyer's confirmation deadline passed.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
