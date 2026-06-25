@@ -512,6 +512,8 @@ model User {
   gasReferralAsReferred  GasReferral?            @relation("GasReferredUser")
   gasReferralsAsReferrer GasReferral[]           @relation("GasReferrerUser")
   gasReferralAccruals    GasReferralAccrual[]    @relation("GasReferrerAccrual")
+  tradeStreaksAsA        TradeStreak[]           @relation("StreakUserA")
+  tradeStreaksAsB        TradeStreak[]           @relation("StreakUserB")
 
   @@index([email])
   @@index([username])
@@ -1358,6 +1360,30 @@ model UserFavorite {
 
   @@unique([userId, favoritedUserId])
   @@index([userId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MUTUAL TRADE STREAKS
+// A single row per unordered pair of users, holding their COMBINED completed-trade
+// count across every pillar (USDT P2P + CTM). userAId is always the
+// lexicographically smaller id so each pair maps to exactly one row. The count is
+// incremented inside the same transaction that completes a trade.
+// ──────────────────────────────────────────────────────────────────────────────
+model TradeStreak {
+  id           String   @id @default(cuid())
+  userAId      String   // always the smaller of the two ids
+  userA        User     @relation("StreakUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId      String
+  userB        User     @relation("StreakUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  tradeCount   Int      @default(0) // combined completed trades between the pair
+  firstTradeAt DateTime @default(now())
+  lastTradeAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -21,6 +21,7 @@ import {
 } from './blockchainVerification.service'
 import { logger } from '../lib/logger'
 import { validateAddressForNetwork } from '../lib/addressValidation'
+import { incrementTradeStreak, getTradeStreak, ordinal } from './tradeStreak.service'
 
 // ─── Payment-method resolution ──────────────────────────────────────────────
 // A trade stores `paymentMethod` as the buyer's selection. For current trades
@@ -876,6 +877,8 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     )
   }
 
+  let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
+
   await db.$transaction(async (tx: Tx) => {
     // SELECT FOR UPDATE prevents concurrent release from double-completing
     const [rows] = await tx.$queryRaw<Array<{
@@ -910,6 +913,10 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     // Recalculate seller's median response + release times from last 20 trades
     await recalcSellerResponseTime(tx, rows.sellerId)
     await recalcSellerReleaseTime(tx, rows.sellerId)
+
+    // Bump the buyer↔seller combined trade streak (USDT + CTM). Atomic with the
+    // release so the count can never drift from the trades that produced it.
+    streakResult = await incrementTradeStreak(tx, rows.buyerId, rows.sellerId)
   })
 
   // Trade completed cleanly → release the maker's collateral bond (idempotent;
@@ -928,6 +935,14 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
   }
 
   await postTradeSystemMessage(tradeId, buyerId, 'Trade complete — the buyer confirmed receipt and released the trade. 🎉')
+
+  // Mutual streak — always confirm the running count; celebrate at milestones.
+  if (streakResult.count > 0) {
+    const streakMsg = streakResult.isMilestone
+      ? `🔥 Milestone! This is your ${ordinal(streakResult.count)} completed trade together. Thanks for building trust on the platform.`
+      : `🤝 ${ordinal(streakResult.count)} completed trade between you two.`
+    await postTradeSystemMessage(tradeId, buyerId, streakMsg)
+  }
 
   notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId }, tradeId)
   createAdminNotif({ category: 'TRADE', title: 'Trade Completed', body: `Trade #${tradeDetails.orderRef} has been completed.`, href: `/admin/trades/${tradeId}` })
@@ -1394,10 +1409,14 @@ export async function getTradeById(tradeId: string, userId: string, role: string
     sellerPaymentAccount = resolvedPm.account
   }
 
+  // Combined buyer↔seller streak (USDT + CTM) for the trust header.
+  const streak = await getTradeStreak(trade.buyerId, trade.sellerId)
+
   return {
     ...trade,
     ratedByMe: !!ratedByMeRecord,
     paymentMethodLabel,
     sellerPaymentAccount,
+    streakCount: streak.count,
   }
 }

@@ -89,6 +89,8 @@ interface ExtendedTrade extends Trade {
   sellerPaymentAccount?: SellerPaymentAccount | null
   /** Buy ads only: the buyer/lister's pay-FROM account(s). Single or { accounts: [...] }. */
   buyerPaymentSnapshot?: (SellerPaymentAccount & { accounts?: SellerPaymentAccount[] }) | null
+  /** Combined completed-trade count between this buyer & seller (USDT + CTM). */
+  streakCount?: number
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -835,6 +837,14 @@ export default function TradePage() {
               <span className="inline-flex items-center gap-1 text-xs text-success font-medium">
                 <BadgeCheck size={12} />
                 KYC Verified
+              </span>
+            )}
+            {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+                title="Combined completed trades between you two (USDT + community tokens)"
+              >
+                🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
               </span>
             )}
           </div>

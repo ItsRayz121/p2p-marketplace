@@ -13,6 +13,7 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
+import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -106,7 +107,10 @@ export async function getTradeByRef(tradeRef: string, userId: string, role: stri
     }).catch(() => [])
   }
 
-  return { ...trade, ratedByMe: !!ratedByMeRecord, auditLogs }
+  // Combined buyer↔seller streak (shared with USDT P2P) for the trust header.
+  const streak = await getTradeStreak(trade.buyerId, trade.sellerId)
+
+  return { ...trade, ratedByMe: !!ratedByMeRecord, auditLogs, streakCount: streak.count }
 }
 
 export async function uploadPaymentProof(tradeRef: string, buyerId: string, fileUrl: string, fileHash: string) {
@@ -301,6 +305,7 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   // Set inside the tx if the seller's merchant tier is auto-promoted on completion;
   // used after commit to notify them.
   let promotedTo: string | null = null
+  let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
 
   await db.$transaction(async (tx: Tx) => {
     await tx.ctmTrade.update({
@@ -386,6 +391,9 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
         })
       }
     }
+
+    // Bump the combined buyer↔seller streak (shared with USDT P2P), atomic with completion.
+    streakResult = await incrementTradeStreak(tx, buyerId, trade.sellerId)
   })
 
   // Trade completed cleanly → release the maker's bond (idempotent; no-op when off).
@@ -397,6 +405,14 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   queues.badgeRecalculate.add('recalc', { userId: trade.sellerId }).catch(() => {})
 
   await postCtmSystemMessage(trade.id, buyerId, 'Trade complete — the buyer confirmed receipt of the tokens. 🎉')
+
+  // Mutual streak — confirm the running count, celebrate at milestones.
+  if (streakResult.count > 0) {
+    const streakMsg = streakResult.isMilestone
+      ? `🔥 Milestone! This is your ${ordinal(streakResult.count)} completed trade together. Thanks for building trust on the platform.`
+      : `🤝 ${ordinal(streakResult.count)} completed trade between you two.`
+    await postCtmSystemMessage(trade.id, buyerId, streakMsg)
+  }
   notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
   notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
 

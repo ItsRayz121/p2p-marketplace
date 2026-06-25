@@ -168,6 +168,8 @@ interface Trade {
   dispute?: { id: string; reason: string; description: string; status: string; resolution?: string; winner?: string; messages?: Array<{ id: string; senderId: string; message: string; createdAt: string }> }
   ratings: Array<{ ratedByUserId: string; ratedUserId: string; rating: number; comment?: string | null }>
   ratedByMe?: boolean
+  /** Combined completed-trade count between this buyer & seller (USDT + CTM). */
+  streakCount?: number
 }
 
 interface Message { id: string; senderId: string; message: string; isSystem?: boolean; createdAt: string }
@@ -791,6 +793,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               <div>
                 <h1 className="font-bold text-text-primary text-lg">{trade.tokenAmount} {trade.token.symbol}</h1>
                 <p className="text-text-muted text-sm">PKR {Number(trade.fiatAmount).toLocaleString()} · Trade #{trade.displayRef ?? trade.tradeRef.slice(-8)}</p>
+                {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
+                  <span
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+                    title="Combined completed trades between you two (USDT + community tokens)"
+                  >
+                    🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
+                  </span>
+                )}
               </div>
               <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${trade.status === 'completed' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : trade.status === 'disputed' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300'}`}>
                 {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
