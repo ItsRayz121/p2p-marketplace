@@ -46,6 +46,7 @@ const STRUCTURED_KEYS = new Set([
   'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt_l1', 'noncustodial_max_order_usdt_l2',
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
   'maker_bond_enabled', 'maker_bond_ratio_pct', 'maker_bond_min_usdt',
+  'gas_promo_enabled', 'gas_referral_enabled', 'gas_giveaway_enabled', 'gas_free_grant_enabled',
   'usdt_price_margin_pct', 'ctm_price_margin_pct',
   'usdt_bid_margin_pct', 'ctm_bid_margin_pct',
   'max_concurrent_trades', 'max_concurrent_trades_with_dispute',
@@ -211,6 +212,7 @@ export default function ConfigPage() {
   const [offersOpen, setOffersOpen] = useState(false)
   const [advOpen, setAdvOpen] = useState(false)
   const [ncOpen, setNcOpen] = useState(false)
+  const [mktOpen, setMktOpen] = useState(false)
   const [pricingOpen, setPricingOpen] = useState(false)
 
   // ── Pricing guardrails ───────────────────────────────────────────────────────
@@ -237,6 +239,13 @@ export default function ConfigPage() {
   const [bondEnabled, setBondEnabled] = useState(false)
   const [bondRatioPct, setBondRatioPct] = useState('10')
   const [bondMinUsdt, setBondMinUsdt] = useState('0')
+
+  // ── Marketing & Growth (gas promo / referral / giveaway / free-gas flags) ────
+  const [promoFlag, setPromoFlag] = useState(false)
+  const [referralFlag, setReferralFlag] = useState(false)
+  const [giveawayFlag, setGiveawayFlag] = useState(false)
+  const [freeGrantFlag, setFreeGrantFlag] = useState(false)
+  const [mktSaving, setMktSaving] = useState(false)
 
   // ── Homepage Top Offers ─────────────────────────────────────────────────────
   const [offersMode, setOffersMode] = useState<'top' | 'latest' | 'pinned'>('top')
@@ -337,6 +346,10 @@ export default function ConfigPage() {
       setBondEnabled(m['maker_bond_enabled'] === 'true')
       setBondRatioPct(m['maker_bond_ratio_pct'] ?? '10')
       setBondMinUsdt(m['maker_bond_min_usdt'] ?? '0')
+      setPromoFlag(m['gas_promo_enabled'] === 'true')
+      setReferralFlag(m['gas_referral_enabled'] === 'true')
+      setGiveawayFlag(m['gas_giveaway_enabled'] === 'true')
+      setFreeGrantFlag(m['gas_free_grant_enabled'] === 'true')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
       setUsdtBidMargin(m['usdt_bid_margin_pct'] ?? '10')
@@ -480,6 +493,20 @@ export default function ConfigPage() {
     finally { setNcSaving(false) }
   }
 
+  async function saveMarketing() {
+    setMktSaving(true)
+    try {
+      await saveKeys([
+        { key: 'gas_promo_enabled', value: promoFlag ? 'true' : 'false' },
+        { key: 'gas_referral_enabled', value: referralFlag ? 'true' : 'false' },
+        { key: 'gas_giveaway_enabled', value: giveawayFlag ? 'true' : 'false' },
+        { key: 'gas_free_grant_enabled', value: freeGrantFlag ? 'true' : 'false' },
+      ])
+      showToast('Marketing & Growth settings saved. Takes effect within ~15s.')
+    } catch { showToast('Failed to save marketing settings.', false) }
+    finally { setMktSaving(false) }
+  }
+
   async function savePricing() {
     setMarginSaving(true)
     try {
@@ -610,6 +637,63 @@ export default function ConfigPage() {
 
           <div className="flex justify-end">
             <Button size="sm" loading={ncSaving} onClick={saveNonCustodial}>Save Non-Custodial Settings</Button>
+          </div>
+        </div>
+      </Accordion>
+
+      {/* ══ Marketing & Growth ════════════════════════════════════════════════ */}
+      <Accordion
+        title="Marketing & Growth"
+        subtitle="Master switches for gas promo codes, referrals, giveaways and admin free-gas"
+        open={mktOpen}
+        onToggle={() => setMktOpen((v) => !v)}
+        badge={
+          (promoFlag || referralFlag || giveawayFlag || freeGrantFlag)
+            ? <Badge variant="success" size="sm">{[promoFlag, referralFlag, giveawayFlag, freeGrantFlag].filter(Boolean).length} ON</Badge>
+            : <Badge variant="outline" size="sm">All OFF</Badge>
+        }
+      >
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-text-muted">
+            Each switch is OFF by default. Turning one ON activates that feature platform-wide;
+            turning it OFF instantly disables it. Discounts &amp; rewards only ever come from the
+            platform margin — never the base gas cost.
+          </p>
+
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={promoFlag} onChange={(e) => setPromoFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Promo codes <span className="font-mono text-xs text-text-muted">gas_promo_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Shows the &ldquo;Have a promo code?&rdquo; field on the gas payment screens and lets codes from Marketing → Promo Codes apply a margin discount.</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={referralFlag} onChange={(e) => setReferralFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Referrals / affiliate <span className="font-mono text-xs text-text-muted">gas_referral_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Activates the user Settings → Affiliate tab: referral codes, binding, margin-share accrual and withdrawals.</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={giveawayFlag} onChange={(e) => setGiveawayFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Giveaways <span className="font-mono text-xs text-text-muted">gas_giveaway_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Lets users enter KOL giveaway campaigns and lets admins draw winners (Marketing → Giveaways). Campaigns can be created while OFF, but entry &amp; draw are blocked until ON.</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 cursor-pointer hover:bg-amber-500/10 transition-colors">
+            <input type="checkbox" checked={freeGrantFlag} onChange={(e) => setFreeGrantFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Admin free-gas delivery <span className="font-mono text-xs text-text-muted">gas_free_grant_enabled</span></p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">⚠️ Sends <b>real on-chain funds at the platform&apos;s expense</b>. Enables Marketing → Free Gas and giveaway draws. Only turn ON when you intend to sponsor users.</p>
+            </div>
+          </label>
+
+          <div className="flex justify-end">
+            <Button size="sm" loading={mktSaving} onClick={saveMarketing}>Save Marketing Settings</Button>
           </div>
         </div>
       </Accordion>
