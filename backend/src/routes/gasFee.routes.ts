@@ -1326,10 +1326,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const discountedBase = promoRes
       ? Math.round((baseCharge - promoRes.discountUsdt) * 100) / 100
       : baseCharge
-    const paymentAmount = await assignUniqueGasPaymentAmount(paymentNetwork, discountedBase)
-
+    // Assign the unique amount AND create the order inside the same guarded block, so
+    // ANY failure after the promo reservation (incl. assignUnique) releases the slot.
     const order = await (async () => {
       try {
+        const paymentAmount = await assignUniqueGasPaymentAmount(paymentNetwork, discountedBase)
         return await db.gasFeeOrder.create({
           data: {
             orderRef,
@@ -1368,7 +1369,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!userId) {
       const today    = new Date().toISOString().slice(0, 10)
       const spendKey = `gas_guest_spend:${clientIp}:${today}`
-      await redis.incrbyfloat(spendKey, paymentAmount)
+      await redis.incrbyfloat(spendKey, Number(order.paymentAmount))
       await redis.expire(spendKey, 86400)
     }
     await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 15 * 60 * 1000, jobId: `gas-expire-${order.id}` })
@@ -1606,16 +1607,18 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('INVALID_ADDRESS', `Invalid ${tokenCfg.chain.networkLabel} address format`, 400)
     }
 
-    if (campaign.requireKyc) {
-      const u = await db.user.findUnique({ where: { id: req.user!.id }, select: { kycLevel: true } })
-      if (!u || u.kycLevel === 'none') throw new AppError('KYC_REQUIRED', 'Complete identity verification (KYC) to enter this giveaway.', 403)
+    // Load the account (KYC gate + capture email for winner contact).
+    const u = await db.user.findUnique({ where: { id: req.user!.id }, select: { kycLevel: true, email: true } })
+    if (campaign.requireKyc && (!u || u.kycLevel === 'none')) {
+      throw new AppError('KYC_REQUIRED', 'Complete identity verification (KYC) to enter this giveaway.', 403)
     }
+    const contactEmail = email ?? u?.email ?? null
 
     // One entry per user per campaign; re-entering updates the receiving address.
     await db.gasGiveawayEntry.upsert({
       where: { campaignId_userId: { campaignId: campaign.id, userId: req.user!.id } },
-      create: { campaignId: campaign.id, userId: req.user!.id, receivingAddress, ...(email ? { email } : {}) },
-      update: { receivingAddress, ...(email ? { email } : {}) },
+      create: { campaignId: campaign.id, userId: req.user!.id, receivingAddress, ...(contactEmail ? { email: contactEmail } : {}) },
+      update: { receivingAddress, ...(contactEmail ? { email: contactEmail } : {}) },
     })
     return reply.send({ success: true, data: { entered: true } })
   })
