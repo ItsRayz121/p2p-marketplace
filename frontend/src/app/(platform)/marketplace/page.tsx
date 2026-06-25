@@ -343,6 +343,14 @@ interface MarketStats {
   totalListings: number
   totalTrades: number
   usdtRate: number | null
+  rateSource?: 'recent_trades' | 'active_listings' | 'fx_spot' | 'none'
+}
+
+const RATE_SOURCE_LABEL: Record<NonNullable<MarketStats['rateSource']>, string> = {
+  recent_trades: 'based on recent trades',
+  active_listings: 'based on active listings',
+  fx_spot: 'spot rate',
+  none: '',
 }
 
 function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
@@ -362,6 +370,9 @@ function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
           <span className="w-px h-3 bg-border hidden sm:block" />
           <span>
             1 USDT = <span className="font-semibold text-text-primary">PKR {stats.usdtRate.toLocaleString()}</span>
+            {stats.rateSource && RATE_SOURCE_LABEL[stats.rateSource] && (
+              <span className="ml-1 text-text-muted">· {RATE_SOURCE_LABEL[stats.rateSource]}</span>
+            )}
           </span>
         </>
       )}
@@ -457,16 +468,18 @@ export default function MarketplacePage() {
       const [tradesRes, statsRes, rateRes] = await Promise.allSettled([
         marketplaceApi.getRecentTrades(),
         marketplaceApi.getStats(),
-        marketplaceApi.getRate('USDT'),
+        marketplaceApi.getUsdtReferenceRate(),
       ])
       if (tradesRes.status === 'fulfilled') setRecentTrades(tradesRes.value)
       if (statsRes.status === 'fulfilled') {
         const s = statsRes.value as { totalTrades: number; todayTrades?: number }
         const rate = rateRes.status === 'fulfilled' ? rateRes.value.rate : null
+        const rateSource = rateRes.status === 'fulfilled' ? rateRes.value.source : undefined
         setMarketStats({
           totalListings: total,
           totalTrades: s.totalTrades ?? 0,
           usdtRate: rate,
+          ...(rateSource ? { rateSource } : {}),
         })
         if (rate) {
           setLiveRate(rate)

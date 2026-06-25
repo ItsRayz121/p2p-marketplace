@@ -33,6 +33,13 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { ...insight, marginPct } })
   })
 
+  // Marketplace USDT→PKR reference rate derived from real activity on this
+  // platform (median of recent trades → active listings → FX spot). Public.
+  app.get('/rates/usdt-reference', async (_req, reply) => {
+    const data = await marketplaceService.getUsdtReferenceRate()
+    return reply.send({ success: true, data })
+  })
+
   app.get('/stats', async (_req, reply) => {
     const data = await marketplaceService.getStats()
     return reply.send({ success: true, data })

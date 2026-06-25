@@ -782,6 +782,8 @@ export const marketplaceApi = {
     apiRequest<MarketRatesSummary>('/marketplace/rates/summary'),
   getUsdtInsight: () =>
     apiRequest<{ avg: number | null; buyAvg: number | null; sellAvg: number | null; sampleSize: number; lowData: boolean; dataSource: string; marginPct: number }>('/marketplace/rates/usdt-insight'),
+  getUsdtReferenceRate: () =>
+    apiRequest<{ rate: number | null; source: 'recent_trades' | 'active_listings' | 'fx_spot' | 'none'; sampleSize: number }>('/marketplace/rates/usdt-reference'),
   getAds: (params?: Record<string, string | number | undefined>) => {
     const qs = params
       ? '?' + new URLSearchParams(

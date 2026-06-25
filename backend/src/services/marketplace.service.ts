@@ -783,6 +783,76 @@ export async function getUsdtMarketInsight(): Promise<UsdtMarketInsight> {
   }
 }
 
+export interface UsdtReferenceRate {
+  rate: number | null
+  source: 'recent_trades' | 'active_listings' | 'fx_spot' | 'none'
+  sampleSize: number
+}
+
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b)
+  const mid = Math.floor(s.length / 2)
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2
+}
+
+// Marketplace-facing USDT→PKR reference rate. Unlike getRateCoin (which is the
+// external FX spot rate, ~USDT≈USD≈PKR), this reflects what people actually pay
+// on THIS platform: median of recent completed USDT trades, falling back to the
+// median of active USDT listings, then to the FX spot rate. Median (not mean)
+// keeps one off-price outlier from skewing the headline number.
+export async function getUsdtReferenceRate(): Promise<UsdtReferenceRate> {
+  const cacheKey = 'marketplace:usdt-reference-rate'
+  const cached = await redis.get(cacheKey)
+  if (cached) {
+    try { return JSON.parse(cached) as UsdtReferenceRate } catch { /* fall through */ }
+  }
+
+  const round2 = (n: number) => parseFloat(n.toFixed(2))
+  let result: UsdtReferenceRate
+
+  // 1. Median of the latest 20 completed USDT trades (actual transacted price)
+  const trades = await db.trade.findMany({
+    where: { status: 'crypto_released', coin: 'USDT' },
+    orderBy: { updatedAt: 'desc' },
+    take: 20,
+    select: { price: true },
+  })
+  const tradePrices = trades.map((t) => Number(t.price)).filter((n) => n > 0)
+
+  if (tradePrices.length >= 3) {
+    result = { rate: round2(median(tradePrices)), source: 'recent_trades', sampleSize: tradePrices.length }
+  } else {
+    // 2. Median of the latest 20 active USDT listings
+    const listings = await db.ad.findMany({
+      where: { status: 'active', coin: 'USDT' },
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+      select: { price: true },
+    })
+    const listPrices = listings.map((l) => Number(l.price)).filter((n) => n > 0)
+    if (listPrices.length > 0) {
+      result = { rate: round2(median(listPrices)), source: 'active_listings', sampleSize: listPrices.length }
+    } else {
+      // 3. FX spot fallback (rate:USDT is JSON; rate:USD_PKR is a plain number)
+      const raw = (await redis.get('rate:USDT')) ?? (await redis.get('rate:USD_PKR'))
+      let spot: number | null = null
+      if (raw) {
+        try {
+          const p = JSON.parse(raw) as { rate?: number }
+          spot = typeof p.rate === 'number' ? p.rate : parseFloat(raw)
+        } catch {
+          spot = parseFloat(raw)
+        }
+        if (!(spot > 0)) spot = null
+      }
+      result = { rate: spot !== null ? round2(spot) : null, source: spot !== null ? 'fx_spot' : 'none', sampleSize: 0 }
+    }
+  }
+
+  await redis.set(cacheKey, JSON.stringify(result), 'EX', 30)
+  return result
+}
+
 export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
   const cacheKey = 'market-rates-summary'
   const cached = await redis.get(cacheKey)
