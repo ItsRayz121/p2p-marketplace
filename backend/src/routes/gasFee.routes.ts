@@ -33,6 +33,13 @@ import {
 } from '../lib/gas/gas.promo'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings } from '../lib/gas/gas.referral'
+import {
+  resolveAffiliateDiscount,
+  applyForAffiliate,
+  getAffiliateOverview,
+  createAffiliateLink,
+  updateAffiliateLink,
+} from '../lib/gas/gas.affiliate'
 
 // Reserve a promo slot for an order about to be created. Returns null when no code
 // was supplied or the promo system is off. Throws AppError (clear message) on an
@@ -49,6 +56,23 @@ async function reserveOrderPromo(
     throw new AppError('PROMO_DISABLED', 'Promo codes are not available right now.', 400)
   }
   return reservePromo({ code: promoCode, orderUsd, marginUsdt, identity })
+}
+
+// Affiliate buyer auto-discount for an order. Fills the margin REMAINING after any promo
+// discount, so a stacked promo is always honored in full and the combined discount can
+// never exceed the margin (→ never below base gas cost). Returns the affiliate portion in
+// USDT (0 when no affiliate binding / flag off / no room left). Margin-only, like promo.
+async function affiliateOrderDiscount(
+  buyerUserId: string | null,
+  marginUsdt: number,
+  promoDiscountUsdt: number,
+): Promise<number> {
+  if (!buyerUserId) return 0
+  const room = Math.max(0, Math.round((marginUsdt - promoDiscountUsdt) * 100) / 100)
+  if (room <= 0) return 0
+  const aff = await resolveAffiliateDiscount(buyerUserId, marginUsdt)
+  if (!aff) return 0
+  return Math.min(aff.discountUsdt, room)
 }
 
 // ── Guest tracking token validator ────────────────────────────────────────────
@@ -1105,9 +1129,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // the derived PKR amount, BEFORE persisting. Floored at the margin → never below base.
     const promoIdent = promoIdentity(userId, req.ip ?? 'unknown')
     const promoRes = await reserveOrderPromo(promoCode, paymentAmountUsd, platformFeeUsdt, promoIdent)
-    const finalPaymentUsd = promoRes
-      ? Math.round((paymentAmountUsd - promoRes.discountUsdt) * 100) / 100
-      : paymentAmountUsd
+    const promoDisc = promoRes?.discountUsdt ?? 0
+    const affDisc = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
+    const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
     const finalPkrAmount = finalPaymentUsd * usdPkrRate
 
     const order = await (async () => {
@@ -1127,7 +1152,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             paymentNetwork:   pkrPaymentMethod.toUpperCase(),
             paymentAmount:    finalPaymentUsd,
             platformMarginUsdt: platformFeeUsdt,
-            discountUsdt:     promoRes?.discountUsdt ?? 0,
+            discountUsdt:     totalDiscount,
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             pkrAmount:        finalPkrAmount,
             pkrPaymentMethod,
@@ -1171,7 +1196,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         // Transparent price breakdown (consistent with USDT orders)
         gasValueUsd:     gasAmountUSD.toFixed(4),
         platformFeeUsdt: platformFeeUsdt.toFixed(4),
-        discountUsdt:    (promoRes?.discountUsdt ?? 0).toFixed(4),
+        discountUsdt:    totalDiscount.toFixed(4),
         promoCode:       promoRes?.code ?? null,
         priceAtOrder:    nativeUsdRate.toFixed(4),
       },
@@ -1323,9 +1348,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // the exact amount the user is told to pay). Floored at the margin → never below base.
     const promoIdent = promoIdentity(userId, clientIp)
     const promoRes = await reserveOrderPromo(promoCode, baseCharge, platformFeeUsdt, promoIdent)
-    const discountedBase = promoRes
-      ? Math.round((baseCharge - promoRes.discountUsdt) * 100) / 100
-      : baseCharge
+    const promoDisc = promoRes?.discountUsdt ?? 0
+    const affDisc = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
+    const discountedBase = Math.round((baseCharge - totalDiscount) * 100) / 100
     // Assign the unique amount AND create the order inside the same guarded block, so
     // ANY failure after the promo reservation (incl. assignUnique) releases the slot.
     const order = await (async () => {
@@ -1346,7 +1372,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             paymentNetwork,
             paymentAmount,
             platformMarginUsdt: platformFeeUsdt,
-            discountUsdt:     promoRes?.discountUsdt ?? 0,
+            discountUsdt:     totalDiscount,
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             fromHotWallet:    hotWallet.address,
             toAddress,
@@ -1393,7 +1419,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         // Transparent price breakdown
         gasValueUsd:     gasAmountUSD.toFixed(4),
         platformFeeUsdt: platformFeeUsdt.toFixed(4),
-        discountUsdt:    (promoRes?.discountUsdt ?? 0).toFixed(4),
+        discountUsdt:    totalDiscount.toFixed(4),
         promoCode:       promoRes?.code ?? null,
         priceAtOrder:    nativeUsdRate.toFixed(4),
       },
@@ -1449,6 +1475,58 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   app.post('/gas-fee/referral/withdraw', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const result = await withdrawReferralEarnings(req.user!.id)
     return reply.send({ success: true, data: result })
+  })
+
+  // ── Affiliate program (self-service, extends referrals) ──────────────────────
+
+  // GET /gas-fee/affiliate/me — application status, caps, links + earnings.
+  app.get('/gas-fee/affiliate/me', { preHandler: [authenticate] }, async (req, reply) => {
+    const data = await getAffiliateOverview(req.user!.id)
+    return reply.send({ success: true, data })
+  })
+
+  // POST /gas-fee/affiliate/apply — submit/re-submit an affiliate application.
+  const affiliateApplySchema = z.object({
+    socials: z.record(z.string().trim().max(300)).refine((o) => Object.keys(o).length > 0, 'Provide at least one social profile.'),
+    note:    z.string().trim().max(1000).optional(),
+  })
+  app.post('/gas-fee/affiliate/apply', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const parsed = affiliateApplySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const data = await applyForAffiliate(req.user!.id, parsed.data.socials, parsed.data.note ?? null)
+    return reply.send({ success: true, data })
+  })
+
+  // POST /gas-fee/affiliate/links — create a new affiliate link with a chosen split.
+  const affiliateLinkCreateSchema = z.object({
+    label:           z.string().trim().max(60).optional(),
+    userDiscountPct: z.number().min(0).max(100),
+    commissionPct:   z.number().min(0).max(100),
+  })
+  app.post('/gas-fee/affiliate/links', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = affiliateLinkCreateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const data = await createAffiliateLink(req.user!.id, {
+      label: parsed.data.label ?? null,
+      userDiscountPct: parsed.data.userDiscountPct,
+      commissionPct: parsed.data.commissionPct,
+    })
+    return reply.code(201).send({ success: true, data })
+  })
+
+  // PATCH /gas-fee/affiliate/links/:codeId — update a link's split/label/active state.
+  const affiliateLinkUpdateSchema = z.object({
+    label:           z.string().trim().max(60).nullable().optional(),
+    userDiscountPct: z.number().min(0).max(100).optional(),
+    commissionPct:   z.number().min(0).max(100).optional(),
+    isActive:        z.boolean().optional(),
+  })
+  app.patch('/gas-fee/affiliate/links/:codeId', { preHandler: [authenticate] }, async (req, reply) => {
+    const { codeId } = req.params as { codeId: string }
+    const parsed = affiliateLinkUpdateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const data = await updateAffiliateLink(req.user!.id, codeId, parsed.data)
+    return reply.send({ success: true, data })
   })
 
   // ── POST /gas-fee/admin/free-deliver — admin-issued, platform-funded free gas ──

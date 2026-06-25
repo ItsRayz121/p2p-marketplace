@@ -33,6 +33,7 @@ import { listReconciliationRuns, getReconciliationRun, resolveDiscrepancy } from
 import { getChainBurnRates, getChainRunways, getProfitabilityByChain, getVolumeTimeSeries } from '../lib/gas/gas.analytics'
 import { listFlaggedOrders, reviewFlaggedOrder } from '../lib/gas/gas.risk'
 import { listMerchantAccounts, createMerchantAccount, updateMerchantAccount, getMerchantAccount, listMerchantSettlements, approveSettlement } from '../lib/gas/gas.merchant-settlement'
+import { adminListAffiliates, adminReviewAffiliate } from '../lib/gas/gas.affiliate'
 type JsonValue = Prisma.InputJsonValue
 
 // Maps withdrawal network label → GasChainId for platform_fee ledger entries
@@ -4933,6 +4934,31 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     await createAuditLog(req.user!.id, 'GAS_REFERRAL_UPDATE', 'GasReferralCode', codeId, { changes: parsed.data }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: updated })
+  })
+
+  // ── Gas affiliates (self-service applications + approval) ──────────────────
+
+  // GET /admin/gas/affiliates — all affiliate profiles (applications + approved)
+  app.get('/admin/gas/affiliates', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const data = await adminListAffiliates()
+    return reply.send({ success: true, data })
+  })
+
+  // POST /admin/gas/affiliates/:userId/review — approve (with caps) or reject (super_admin)
+  const affiliateReviewSchema = z.object({
+    decision:           z.enum(['approve', 'reject']),
+    maxMarginPct:       z.number().min(0).max(100).optional(),
+    minUserDiscountPct: z.number().min(0).max(100).optional(),
+    maxLinks:           z.number().int().min(1).max(50).optional(),
+    rejectionReason:    z.string().trim().max(500).nullable().optional(),
+  })
+  app.post('/admin/gas/affiliates/:userId/review', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { userId } = req.params as { userId: string }
+    const parsed = affiliateReviewSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const result = await adminReviewAffiliate(req.user!.id, userId, parsed.data)
+    await createAuditLog(req.user!.id, 'GAS_AFFILIATE_REVIEW', 'GasAffiliate', userId, { changes: parsed.data }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: result })
   })
 
   // POST /admin/gas/wallets/:chain/balance — manually override cached balance (super_admin)

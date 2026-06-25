@@ -33,7 +33,7 @@ function round2(n: number): number { return Math.round(n * 100) / 100 }
 export function normalizeReferralCode(code: string): string { return code.trim().toUpperCase() }
 
 /** Generate a short, human-friendly, unique referral code. */
-async function generateUniqueCode(): Promise<string> {
+export async function generateUniqueCode(): Promise<string> {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no ambiguous 0/O/1/I
   for (let attempt = 0; attempt < 12; attempt++) {
     let s = 'GAS'
@@ -98,13 +98,17 @@ export async function accrueReferralForDelivery(order: GasFeeOrder): Promise<voi
   const minOrderUsd = await getNumberConfig(MIN_ORDER_CONFIG, 0)
   if (minOrderUsd > 0 && Number(order.paymentAmount) < minOrderUsd) return
 
-  const margin = Number(order.platformMarginUsdt ?? 0)
+  const grossMargin = Number(order.platformMarginUsdt ?? 0)
   const discount = Number(order.discountUsdt ?? 0)
-  const realizedMargin = round2(Math.max(0, margin - discount))
+  const realizedMargin = round2(Math.max(0, grossMargin - discount))
   if (realizedMargin <= 0) return
 
   const pct = binding.code.referralPct
-  let amount = round2((pct / 100) * realizedMargin)
+  // Commission is referralPct of the GROSS margin, but never more than the margin the
+  // platform actually KEPT after all discounts (realizedMargin). This guarantees the
+  // platform can never pay out more margin than it earned — affiliate commission and the
+  // buyer's auto-discount together stay margin-only and never touch the base gas cost.
+  let amount = round2(Math.min((pct / 100) * grossMargin, realizedMargin))
   if (amount <= 0) return
 
   // Anti-abuse: clamp to the per-referred-user lifetime commission cap (if set), so a
