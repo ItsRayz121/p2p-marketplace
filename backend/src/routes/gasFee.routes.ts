@@ -642,9 +642,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // amount can never drop below the base gas cost (gasAmountUSD).
     const promoIdent = promoIdentity(userId, clientIp)
     const promoRes = await reserveOrderPromo(promoCode, paymentAmount, platformFeeUsdt, promoIdent)
-    const finalPaymentAmount = promoRes
-      ? Math.round((paymentAmount - promoRes.discountUsdt) * 100) / 100
-      : paymentAmount
+    const promoDisc = promoRes?.discountUsdt ?? 0
+    const affDisc = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
+    const finalPaymentAmount = Math.round((paymentAmount - totalDiscount) * 100) / 100
 
     const order = await (async () => {
       try {
@@ -664,7 +665,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             paymentNetwork:  legacyChainConfig.networkLabel,
             paymentAmount:   finalPaymentAmount,
             platformMarginUsdt: platformFeeUsdt,
-            discountUsdt:    promoRes?.discountUsdt ?? 0,
+            discountUsdt:    totalDiscount,
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             toAddress,
             fromHotWallet:  hotWallet.address,
@@ -713,7 +714,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         // Transparent price breakdown
         gasValueUsd:     gasAmountUSD.toFixed(4),
         platformFeeUsdt: platformFeeUsdt.toFixed(4),
-        discountUsdt:    (promoRes?.discountUsdt ?? 0).toFixed(4),
+        discountUsdt:    totalDiscount.toFixed(4),
         promoCode:       promoRes?.code ?? null,
         priceAtOrder:    nativeUsdRate.toFixed(4),
       },
