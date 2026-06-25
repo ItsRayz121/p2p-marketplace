@@ -88,11 +88,20 @@ export async function referralRoutes(app: FastifyInstance) {
 
     const referredUsers = await db.user.findMany({
       where: { referredById: userId },
-      select: { id: true, username: true, createdAt: true, kycStatus: true },
+      select: { id: true, username: true, createdAt: true, tradeStats: { select: { completedTrades: true } } },
       orderBy: { createdAt: 'desc' },
       take: 100,
     })
 
-    return reply.send({ success: true, data: { referrals: referredUsers } })
+    // Map to the shape the frontend list expects ({ joinedAt, status }). A referral is
+    // "active" once they've completed at least one trade, else "not traded yet".
+    const referrals = referredUsers.map((u) => ({
+      id: u.id,
+      username: u.username,
+      joinedAt: u.createdAt,
+      status: (u.tradeStats?.completedTrades ?? 0) > 0 ? 'active' : 'pending',
+    }))
+
+    return reply.send({ success: true, data: { referrals } })
   })
 }

@@ -1219,7 +1219,7 @@ export const referralApi = {
             .map(([k, v]) => [k, String(v)])
         ).toString()
       : ''
-    return apiRequest<{ referrals: Array<{ id: string; email: string; joinedAt: string; status: string }> }>('/referral/list' + qs)
+    return apiRequest<{ referrals: Array<{ id: string; username: string; joinedAt: string; status: string }> }>('/referral/list' + qs)
   },
 }
 

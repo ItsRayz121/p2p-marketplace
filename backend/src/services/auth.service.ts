@@ -39,6 +39,7 @@ import {
 import { sendOtpEmail } from './email.service'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
+import { resolveReferralOwner, bindReferral } from '../lib/gas/gas.referral'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -317,15 +318,13 @@ export async function register(input: RegisterInput): Promise<{ message: string 
   const existing = await db.user.findUnique({ where: { email }, select: { id: true } })
   if (existing) throw new AppError('CONFLICT', 'An account with this email already exists', 409)
 
-  // Resolve referral code to referrerId
+  // Resolve referral code to referrerId. A code may belong to EITHER namespace
+  // (signup code or a gas/affiliate code) — they're unified, so cross-resolve both.
   let referredById: string | undefined
   if (referralCode) {
-    const referrer = await db.user.findUnique({
-      where: { referralCode },
-      select: { id: true },
-    })
-    if (!referrer) throw new AppError('VALIDATION_ERROR', 'Invalid referral code', 400)
-    referredById = referrer.id
+    const resolved = await resolveReferralOwner(referralCode)
+    if (!resolved) throw new AppError('VALIDATION_ERROR', 'Invalid referral code', 400)
+    referredById = resolved.ownerId
   }
 
   const passwordHash = await hashPassword(password)
@@ -334,6 +333,7 @@ export async function register(input: RegisterInput): Promise<{ message: string 
   const otpCode = generateOtp()
   const otpHash = await hashOtp(otpCode)
 
+  let newUserId: string | undefined
   await db.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
@@ -370,7 +370,14 @@ export async function register(input: RegisterInput): Promise<{ message: string 
         expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
       },
     })
+    newUserId = user.id
   })
+
+  // Mirror the signup attribution into the gas referral system so a referred user
+  // immediately starts earning their referrer gas commission (best-effort, idempotent).
+  if (newUserId && referredById) {
+    bindReferral(newUserId).catch((err) => logger.error({ err, userId: newUserId }, 'gas referral heal on register failed'))
+  }
 
   // Send OTP email (non-blocking on failure)
   sendOtpEmail(email, otpCode, 'verify').catch((err) =>
@@ -902,8 +909,10 @@ export async function loginOrRegisterWithTelegram(
   }
   let referredById: string | undefined
   if (referralCode) {
-    const referrer = await db.user.findUnique({ where: { referralCode }, select: { id: true } })
-    if (referrer) referredById = referrer.id // silently ignore an unknown code rather than blocking signup
+    // Cross-resolve both code namespaces (signup + gas/affiliate); silently ignore an
+    // unknown code rather than blocking signup.
+    const resolved = await resolveReferralOwner(referralCode)
+    if (resolved) referredById = resolved.ownerId
   }
 
   // Telegram accounts have no email — synthesize a unique, clearly-non-deliverable
@@ -948,6 +957,11 @@ export async function loginOrRegisterWithTelegram(
 
     return user
   })
+
+  // Mirror the signup attribution into the gas referral system (best-effort, idempotent).
+  if (referredById) {
+    bindReferral(created.id).catch((err) => logger.error({ err, userId: created.id }, 'gas referral heal on telegram register failed'))
+  }
 
   const { accessToken, refreshToken } = await createSession(created.id, created.email, created.role, userAgent, ip)
   return { isNew: true, requiresTwoFa: false, accessToken, refreshToken, user: toSafeUser(created) }

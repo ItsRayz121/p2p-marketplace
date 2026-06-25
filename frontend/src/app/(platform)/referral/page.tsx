@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ReferralLinks } from '@/components/referral/ReferralLinks'
+import { ReferralEarnings } from '@/components/referral/ReferralEarnings'
 import { Users, TrendingUp, Clock } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -20,8 +21,7 @@ interface ReferralStats {
 
 interface Referral {
   id: string
-  email: string
-  username?: string
+  username: string
   joinedAt: string
   status: string
 }
@@ -137,6 +137,9 @@ export default function ReferralPage() {
         ))}
       </div>
 
+      {/* Live gas referral earnings + affiliate program (merged from Settings → Affiliate) */}
+      <ReferralEarnings />
+
       {/* Referred Users */}
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-3">Your Referrals</h2>
@@ -152,7 +155,7 @@ export default function ReferralPage() {
                 <div key={ref.id} className="flex items-center justify-between px-4 py-3">
                   <div>
                     <p className="text-sm font-medium text-text-primary">
-                      {ref.username ?? ref.email.split('@')[0] + '@...'}
+                      {ref.username}
                     </p>
                     <p className="text-xs text-text-muted">Joined {timeAgo(ref.joinedAt)}</p>
                   </div>

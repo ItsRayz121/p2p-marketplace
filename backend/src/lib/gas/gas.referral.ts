@@ -55,26 +55,70 @@ export async function getOrCreateOwnCode(userId: string): Promise<{ id: string; 
 }
 
 /**
- * Bind the caller to a referrer via a code (first-touch, permanent). Idempotent:
- * if already bound, returns the existing binding unchanged. Blocks self-referral.
+ * Resolve a referral code from EITHER namespace to its owner. The platform has two
+ * code surfaces that must behave as one: the signup code (`User.referralCode`, shown
+ * on /referral) and gas/affiliate codes (`GasReferralCode`, used at gas checkout).
+ * A code typed anywhere should attribute to the same person regardless of which
+ * surface it came from. Gas/affiliate codes are matched first because they carry the
+ * discount-split (we return their id so the affiliate split is preserved); otherwise
+ * we fall back to the signup code. Matching is case-insensitive.
  */
-export async function bindReferral(userId: string, rawCode: string): Promise<{ bound: boolean; referrerId: string }> {
-  const code = normalizeReferralCode(rawCode)
-  const existingBinding = await db.gasReferral.findUnique({ where: { referredId: userId } })
-  if (existingBinding) return { bound: false, referrerId: existingBinding.referrerId }
+export async function resolveReferralOwner(rawCode: string): Promise<{ ownerId: string; gasCodeId: string | null } | null> {
+  const norm = normalizeReferralCode(rawCode)
+  if (!norm) return null
+  const gas = await db.gasReferralCode.findUnique({ where: { code: norm } })
+  if (gas && gas.isActive) return { ownerId: gas.ownerId, gasCodeId: gas.id }
+  const bySignup = await db.user.findFirst({ where: { referralCode: { equals: norm, mode: 'insensitive' } }, select: { id: true } })
+  if (bySignup) return { ownerId: bySignup.id, gasCodeId: null }
+  return null
+}
 
-  const refCode = await db.gasReferralCode.findUnique({ where: { code } })
-  if (!refCode || !refCode.isActive) throw new AppError('REFERRAL_INVALID', 'This referral code is not valid.', 400)
-  if (refCode.ownerId === userId) throw new AppError('REFERRAL_SELF', 'You cannot refer yourself.', 400)
+/**
+ * Unify a referred user under a single canonical referrer across BOTH systems —
+ * the signup binding (`User.referredById`) and the gas binding (`GasReferral`).
+ *
+ * First-touch in EITHER system wins for both: whoever the user is already bound to
+ * (signup OR gas) stays the owner, and we only fill in the *missing* side ("healing"),
+ * so a person referred at signup automatically starts earning their referrer gas
+ * commission, and vice-versa. When the user is bound to nobody yet, `rawCode` decides
+ * the owner (cross-resolved against both namespaces). Idempotent; blocks self-referral.
+ */
+export async function bindReferral(referredUserId: string, rawCode?: string): Promise<{ bound: boolean; referrerId: string | null }> {
+  const [user, gasBinding] = await Promise.all([
+    db.user.findUnique({ where: { id: referredUserId }, select: { referredById: true } }),
+    db.gasReferral.findUnique({ where: { referredId: referredUserId }, select: { referrerId: true } }),
+  ])
 
-  try {
-    await db.gasReferral.create({ data: { referredId: userId, referrerId: refCode.ownerId, codeId: refCode.id } })
-  } catch {
-    // Unique race: someone bound this user concurrently — treat as already bound.
-    const now = await db.gasReferral.findUnique({ where: { referredId: userId } })
-    return { bound: false, referrerId: now?.referrerId ?? refCode.ownerId }
+  // Canonical owner already locked by an earlier touch in either system.
+  let ownerId = user?.referredById ?? gasBinding?.referrerId ?? null
+  let gasCodeId: string | null = null
+
+  if (!ownerId) {
+    if (!rawCode) return { bound: false, referrerId: null }
+    const resolved = await resolveReferralOwner(rawCode)
+    if (!resolved) throw new AppError('REFERRAL_INVALID', 'This referral code is not valid.', 400)
+    if (resolved.ownerId === referredUserId) throw new AppError('REFERRAL_SELF', 'You cannot refer yourself.', 400)
+    ownerId = resolved.ownerId
+    gasCodeId = resolved.gasCodeId
   }
-  return { bound: true, referrerId: refCode.ownerId }
+  if (ownerId === referredUserId) return { bound: false, referrerId: ownerId } // safety: never self-bind
+
+  let didBind = false
+  // Heal the signup side (first-touch: only when not already set).
+  if (!user?.referredById) {
+    const res = await db.user.updateMany({ where: { id: referredUserId, referredById: null }, data: { referredById: ownerId } })
+    if (res.count > 0) didBind = true
+  }
+  // Heal the gas side. GasReferral.codeId is required, so attach the matched
+  // affiliate code (preserving its split) or fall back to the owner's default code.
+  if (!gasBinding) {
+    const codeId = gasCodeId ?? (await getOrCreateOwnCode(ownerId)).id
+    try {
+      await db.gasReferral.create({ data: { referredId: referredUserId, referrerId: ownerId, codeId } })
+      didBind = true
+    } catch { /* unique race — already bound concurrently */ }
+  }
+  return { bound: didBind, referrerId: ownerId }
 }
 
 /**
