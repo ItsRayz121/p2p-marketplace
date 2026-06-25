@@ -243,6 +243,7 @@ export default function ConfigPage() {
   // ── Marketing & Growth (gas promo / referral / giveaway / free-gas flags) ────
   const [promoFlag, setPromoFlag] = useState(false)
   const [referralFlag, setReferralFlag] = useState(false)
+  const [affiliateFlag, setAffiliateFlag] = useState(false)
   const [giveawayFlag, setGiveawayFlag] = useState(false)
   const [freeGrantFlag, setFreeGrantFlag] = useState(false)
   const [mktSaving, setMktSaving] = useState(false)
@@ -348,6 +349,7 @@ export default function ConfigPage() {
       setBondMinUsdt(m['maker_bond_min_usdt'] ?? '0')
       setPromoFlag(m['gas_promo_enabled'] === 'true')
       setReferralFlag(m['gas_referral_enabled'] === 'true')
+      setAffiliateFlag(m['gas_affiliate_enabled'] === 'true')
       setGiveawayFlag(m['gas_giveaway_enabled'] === 'true')
       setFreeGrantFlag(m['gas_free_grant_enabled'] === 'true')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
@@ -499,6 +501,7 @@ export default function ConfigPage() {
       await saveKeys([
         { key: 'gas_promo_enabled', value: promoFlag ? 'true' : 'false' },
         { key: 'gas_referral_enabled', value: referralFlag ? 'true' : 'false' },
+        { key: 'gas_affiliate_enabled', value: affiliateFlag ? 'true' : 'false' },
         { key: 'gas_giveaway_enabled', value: giveawayFlag ? 'true' : 'false' },
         { key: 'gas_free_grant_enabled', value: freeGrantFlag ? 'true' : 'false' },
       ])
@@ -671,8 +674,16 @@ export default function ConfigPage() {
           <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
             <input type="checkbox" checked={referralFlag} onChange={(e) => setReferralFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
             <div>
-              <p className="text-sm font-medium text-text-primary">Referrals / affiliate <span className="font-mono text-xs text-text-muted">gas_referral_enabled</span></p>
+              <p className="text-sm font-medium text-text-primary">Referrals <span className="font-mono text-xs text-text-muted">gas_referral_enabled</span></p>
               <p className="text-xs text-text-muted mt-0.5">Activates the user Referral page: referral codes, binding, margin-share accrual and withdrawals.</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={affiliateFlag} onChange={(e) => setAffiliateFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Custom links &amp; affiliate <span className="font-mono text-xs text-text-muted">gas_affiliate_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Adds self-service custom referral links (standard 5% friend discount + 5% commission), the buyer auto-discount at gas checkout, and the &ldquo;Become an affiliate&rdquo; application. Needs Referrals ON too.</p>
             </div>
           </label>
 
