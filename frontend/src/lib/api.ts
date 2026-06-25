@@ -1449,6 +1449,11 @@ export const gasApi = {
   withdrawReferral: () =>
     apiRequest<{ withdrawnUsdt: number; newBalanceUsdt: number }>('/gas-fee/referral/withdraw', { method: 'POST' }),
 
+  getGiveaway: (code: string) =>
+    apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; amountNative: string; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
+  enterGiveaway: (data: { code: string; receivingAddress: string; email?: string }) =>
+    apiRequest<{ entered: boolean }>('/gas-fee/giveaway/enter', { method: 'POST', body: JSON.stringify(data) }),
+
   submitProof: (orderRef: string, proofUrl: string) =>
     apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/proof`, { method: 'POST', body: JSON.stringify({ proofUrl }) }),
 
@@ -2243,6 +2248,16 @@ export const adminApi = {
     }> }>('/admin/gas/referrals').then((r) => r.data),
   updateGasReferral: (codeId: string, data: { referralPct?: number; isActive?: boolean }) =>
     apiRequest<unknown>(`/admin/gas/referrals/${codeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Gas giveaways (admin)
+  getGasGiveaways: () =>
+    apiRequest<{ data: Array<{ id: string; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: string; winnerCount: number; drawnCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; isActive: boolean; createdAt: string }> }>('/gas-fee/admin/giveaways').then((r) => r.data),
+  createGasGiveaway: (data: { code: string; kolLabel: string; tokenConfigId: string; amountNative: number; winnerCount: number; entryDeadline?: string; requireKyc: boolean }) =>
+    apiRequest<unknown>('/gas-fee/admin/giveaways', { method: 'POST', body: JSON.stringify(data) }),
+  getGasGiveawayEntries: (id: string) =>
+    apiRequest<{ data: Array<{ id: string; userId: string; email: string | null; receivingAddress: string; status: string; orderId: string | null; createdAt: string }> }>(`/gas-fee/admin/giveaways/${id}/entries`).then((r) => r.data),
+  drawGasGiveaway: (id: string, count?: number) =>
+    apiRequest<{ drawn: number; attempted: number; results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> }>(`/gas-fee/admin/giveaways/${id}/draw`, { method: 'POST', body: JSON.stringify(count ? { count } : {}) }),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>

@@ -1463,26 +1463,24 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     userId:        z.string().min(1).optional(),
     note:          z.string().trim().max(200).optional(),
   })
-  app.post('/gas-fee/admin/free-deliver', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
-    if (!(await isFlagEnabled(FLAGS.GAS_FREE_GRANT))) {
-      throw new AppError('FREE_GRANT_DISABLED', 'Free-gas delivery is not enabled.', 400)
-    }
-    const parsed = freeDeliverSchema.safeParse(req.body)
-    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-    const { tokenConfigId, amount, toAddress, userId, note } = parsed.data
-
-    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
+  // Shared: create a fully platform-funded ($0) gas order and route it to the normal
+  // delivery worker (status payment_detected). Used by the admin free-deliver endpoint
+  // AND the giveaway draw. Throws AppError on any resolution failure; the caller
+  // decides how to surface it (the draw catches per-winner so one bad address doesn't
+  // abort the whole draw).
+  async function issueFreeGasOrder(args: { tokenConfigId: string; amount: number; toAddress: string; userId: string | null }): Promise<{ orderId: string; orderRef: string; gasAmountUSD: number; fullCoverUsdt: number; chain: string }> {
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: args.tokenConfigId }, include: { chain: true } })
     if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
     const chainCfg = tokenCfg.chain
     if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
     if (!isTokenOrderable(chainCfg.backendChainId, tokenCfg)) throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
-    if (!validateAddress(toAddress, chainCfg.addressType)) throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
+    if (!validateAddress(args.toAddress, chainCfg.addressType)) throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
 
     const resolved = resolveTokenConfig(tokenCfg, chainCfg)
-    if (amount < resolved.minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${resolved.minAmount} ${tokenCfg.symbol}`, 400)
+    if (args.amount < resolved.minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${resolved.minAmount} ${tokenCfg.symbol}`, 400)
     const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
-    const gasAmountUSD = amount * nativeUsdRate
+    const gasAmountUSD = args.amount * nativeUsdRate
     if (gasAmountUSD > resolved.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolved.maxUsdValue} USD.`, 400)
     const platformFeeUsdt = resolved.platformFeeUsdt
     const fullCoverUsdt = Math.round((gasAmountUSD + platformFeeUsdt) * 100) / 100
@@ -1493,21 +1491,16 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const hotWallet: { address: string } | null = dbHotWallet ?? (aptosHotAddr ? { address: aptosHotAddr } : null)
     if (!hotWallet) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}.`, 503)
 
-    if (userId) {
-      const u = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
-      if (!u) throw Errors.NOT_FOUND('User')
-    }
-
     const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
     const orderRef = generateOrderRef('GF')
     const order = await db.gasFeeOrder.create({
       data: {
         orderRef,
-        ...(userId ? { userId } : {}),
+        ...(args.userId ? { userId: args.userId } : {}),
         ipAddress:          'admin',
         chain:              dbChainEnum,
         gasTokenConfigId:   tokenCfg.id,
-        gasAmountNative:    amount,
+        gasAmountNative:    args.amount,
         gasAmountUSD,
         priceAtOrder:       nativeUsdRate,
         paymentCoin:        'FREE',
@@ -1516,31 +1509,214 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         platformMarginUsdt: platformFeeUsdt,
         discountUsdt:       fullCoverUsdt,
         isFreeGrant:        true,
-        toAddress,
+        toAddress:          args.toAddress,
         fromHotWallet:      hotWallet.address,
         status:             'payment_detected', // routes straight to the delivery worker
         expiresAt:          new Date(Date.now() + 60 * 60 * 1000),
       },
     })
-
     await queues.gasFee.add('deliver', { orderId: order.id }, { priority: 1 })
+    logger.info({ orderRef, gasAmountUSD, fullCoverUsdt, targetUserId: args.userId ?? null }, 'free-gas delivery issued')
+    return { orderId: order.id, orderRef, gasAmountUSD, fullCoverUsdt, chain: order.chain }
+  }
+
+  app.post('/gas-fee/admin/free-deliver', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_FREE_GRANT))) {
+      throw new AppError('FREE_GRANT_DISABLED', 'Free-gas delivery is not enabled.', 400)
+    }
+    const parsed = freeDeliverSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { tokenConfigId, amount, toAddress, userId, note } = parsed.data
+    if (userId) {
+      const u = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
+      if (!u) throw Errors.NOT_FOUND('User')
+    }
+    const res = await issueFreeGasOrder({ tokenConfigId, amount, toAddress, userId: userId ?? null })
     await db.auditLog.create({
       data: {
         actorId:    req.user!.id,
         action:     'GAS_FREE_DELIVER',
         targetType: 'GasFeeOrder',
-        targetId:   order.id,
-        metadata:   { orderRef, tokenConfigId, amount, toAddress, gasAmountUSD, fullCoverUsdt, targetUserId: userId ?? null, note: note ?? null } as never,
+        targetId:   res.orderId,
+        metadata:   { orderRef: res.orderRef, tokenConfigId, amount, toAddress, gasAmountUSD: res.gasAmountUSD, fullCoverUsdt: res.fullCoverUsdt, targetUserId: userId ?? null, note: note ?? null } as never,
         ipAddress:  req.ip ?? null,
         userAgent:  (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null,
       },
     })
-    logger.info({ orderRef, gasAmountUSD, fullCoverUsdt, targetUserId: userId ?? null }, 'admin free-gas delivery issued')
-
     return reply.code(201).send({
       success: true,
-      data: { orderRef, gasAmountNative: amount, gasAmountUSD: gasAmountUSD.toFixed(4), fullCoverUsdt: fullCoverUsdt.toFixed(4), chain: order.chain },
+      data: { orderRef: res.orderRef, gasAmountNative: amount, gasAmountUSD: res.gasAmountUSD.toFixed(4), fullCoverUsdt: res.fullCoverUsdt.toFixed(4), chain: res.chain },
     })
+  })
+
+  // ── GAS GIVEAWAYS (KOL campaigns: entry pool → admin draw → free gas to winners) ──
+
+  // GET /gas-fee/giveaway/:code — public campaign info + whether the caller entered.
+  app.get('/gas-fee/giveaway/:code', { preHandler: [optionalAuth] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not available right now.', 400)
+    const { code } = req.params as { code: string }
+    const campaign = await db.gasGiveawayCampaign.findUnique({ where: { code: code.trim().toUpperCase() } })
+    if (!campaign || !campaign.isActive) throw Errors.NOT_FOUND('Giveaway')
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: campaign.gasTokenConfigId }, include: { chain: true } })
+    const entryCount = await db.gasGiveawayEntry.count({ where: { campaignId: campaign.id } })
+    const alreadyEntered = req.user
+      ? !!(await db.gasGiveawayEntry.findUnique({ where: { campaignId_userId: { campaignId: campaign.id, userId: req.user.id } } }))
+      : false
+    const open = campaign.status === 'open' && (!campaign.entryDeadline || campaign.entryDeadline.getTime() > Date.now())
+    return reply.send({
+      success: true,
+      data: {
+        code: campaign.code,
+        kolLabel: campaign.kolLabel,
+        tokenSymbol: tokenCfg?.symbol ?? '',
+        networkLabel: tokenCfg?.chain.networkLabel ?? '',
+        addressType: tokenCfg?.chain.addressType ?? '',
+        amountNative: campaign.amountNative.toString(),
+        winnerCount: campaign.winnerCount,
+        entryCount,
+        entryDeadline: campaign.entryDeadline?.toISOString() ?? null,
+        requireKyc: campaign.requireKyc,
+        status: campaign.status,
+        open,
+        alreadyEntered,
+      },
+    })
+  })
+
+  // POST /gas-fee/giveaway/enter — enter a campaign (login + KYC1). One entry per user.
+  const giveawayEnterSchema = z.object({
+    code:             z.string().trim().min(2).max(40),
+    receivingAddress: z.string().min(1),
+    email:            z.string().email().optional(),
+  })
+  app.post('/gas-fee/giveaway/enter', { preHandler: [authenticate], config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not available right now.', 400)
+    const parsed = giveawayEnterSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { code, receivingAddress, email } = parsed.data
+
+    const campaign = await db.gasGiveawayCampaign.findUnique({ where: { code: code.trim().toUpperCase() } })
+    if (!campaign || !campaign.isActive) throw new AppError('GIVEAWAY_INVALID', 'This giveaway code is not valid.', 400)
+    if (campaign.status !== 'open') throw new AppError('GIVEAWAY_CLOSED', 'This giveaway is no longer accepting entries.', 400)
+    if (campaign.entryDeadline && campaign.entryDeadline.getTime() < Date.now()) throw new AppError('GIVEAWAY_CLOSED', 'This giveaway has closed.', 400)
+
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: campaign.gasTokenConfigId }, include: { chain: true } })
+    if (!tokenCfg) throw new AppError('GIVEAWAY_INVALID', 'This giveaway is misconfigured.', 400)
+    if (!validateAddress(receivingAddress, tokenCfg.chain.addressType)) {
+      throw new AppError('INVALID_ADDRESS', `Invalid ${tokenCfg.chain.networkLabel} address format`, 400)
+    }
+
+    if (campaign.requireKyc) {
+      const u = await db.user.findUnique({ where: { id: req.user!.id }, select: { kycLevel: true } })
+      if (!u || u.kycLevel === 'none') throw new AppError('KYC_REQUIRED', 'Complete identity verification (KYC) to enter this giveaway.', 403)
+    }
+
+    // One entry per user per campaign; re-entering updates the receiving address.
+    await db.gasGiveawayEntry.upsert({
+      where: { campaignId_userId: { campaignId: campaign.id, userId: req.user!.id } },
+      create: { campaignId: campaign.id, userId: req.user!.id, receivingAddress, ...(email ? { email } : {}) },
+      update: { receivingAddress, ...(email ? { email } : {}) },
+    })
+    return reply.send({ success: true, data: { entered: true } })
+  })
+
+  const giveawayCreateSchema = z.object({
+    code:          z.string().trim().min(2).max(40),
+    kolLabel:      z.string().trim().min(1).max(120),
+    tokenConfigId: z.string().min(1),
+    amountNative:  z.number().positive(),
+    winnerCount:   z.number().int().positive().max(100000),
+    entryDeadline: z.string().datetime().optional(),
+    requireKyc:    z.boolean().default(true),
+  })
+
+  // POST /gas-fee/admin/giveaways — create a campaign (super-admin)
+  app.post('/gas-fee/admin/giveaways', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
+    const parsed = giveawayCreateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const p = parsed.data
+    const code = p.code.toUpperCase()
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: p.tokenConfigId } })
+    if (!tokenCfg) throw Errors.NOT_FOUND('Gas token')
+    const existing = await db.gasGiveawayCampaign.findUnique({ where: { code } })
+    if (existing) throw new AppError('CONFLICT', `Giveaway code '${code}' already exists`, 409)
+    const created = await db.gasGiveawayCampaign.create({
+      data: {
+        code, kolLabel: p.kolLabel, gasTokenConfigId: p.tokenConfigId,
+        amountNative: p.amountNative, winnerCount: p.winnerCount, requireKyc: p.requireKyc,
+        createdById: req.user!.id,
+        ...(p.entryDeadline ? { entryDeadline: new Date(p.entryDeadline) } : {}),
+      },
+    })
+    await db.auditLog.create({ data: { actorId: req.user!.id, action: 'GAS_GIVEAWAY_CREATE', targetType: 'GasGiveawayCampaign', targetId: created.id, metadata: { code, winnerCount: p.winnerCount, amountNative: p.amountNative } as never, ipAddress: req.ip ?? null, userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null } })
+    return reply.code(201).send({ success: true, data: created })
+  })
+
+  // GET /gas-fee/admin/giveaways — list campaigns with entry counts (admin)
+  app.get('/gas-fee/admin/giveaways', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (_req, reply) => {
+    const campaigns = await db.gasGiveawayCampaign.findMany({ orderBy: { createdAt: 'desc' }, include: { _count: { select: { entries: true } } } })
+    return reply.send({ success: true, data: campaigns.map((c) => ({
+      id: c.id, code: c.code, kolLabel: c.kolLabel, gasTokenConfigId: c.gasTokenConfigId,
+      amountNative: c.amountNative.toString(), winnerCount: c.winnerCount, drawnCount: c.drawnCount,
+      entryCount: c._count.entries, entryDeadline: c.entryDeadline, requireKyc: c.requireKyc,
+      status: c.status, isActive: c.isActive, createdAt: c.createdAt,
+    })) })
+  })
+
+  // GET /gas-fee/admin/giveaways/:id/entries — entries for a campaign (admin)
+  app.get('/gas-fee/admin/giveaways/:id/entries', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const entries = await db.gasGiveawayEntry.findMany({ where: { campaignId: id }, orderBy: { createdAt: 'desc' }, take: 500 })
+    return reply.send({ success: true, data: entries })
+  })
+
+  // POST /gas-fee/admin/giveaways/:id/draw — randomly pick winners and deliver free gas.
+  const giveawayDrawSchema = z.object({ count: z.number().int().positive().max(10000).optional() })
+  app.post('/gas-fee/admin/giveaways/:id/draw', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not enabled.', 400)
+    const { id } = req.params as { id: string }
+    const parsed = giveawayDrawSchema.safeParse(req.body ?? {})
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    const campaign = await db.gasGiveawayCampaign.findUnique({ where: { id } })
+    if (!campaign) throw Errors.NOT_FOUND('Giveaway')
+    const remainingSlots = campaign.winnerCount - campaign.drawnCount
+    if (remainingSlots <= 0) throw new AppError('GIVEAWAY_FULL', 'All winners for this campaign have already been drawn.', 400)
+
+    const pool = await db.gasGiveawayEntry.findMany({ where: { campaignId: id, status: 'entered' }, select: { id: true, userId: true, receivingAddress: true } })
+    const drawCount = Math.min(parsed.data.count ?? remainingSlots, remainingSlots, pool.length)
+    if (drawCount <= 0) throw new AppError('NO_ENTRIES', 'There are no eligible entries to draw.', 400)
+
+    // Fisher-Yates shuffle, then take the first drawCount.
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[pool[i], pool[j]] = [pool[j]!, pool[i]!]
+    }
+    const winners = pool.slice(0, drawCount)
+
+    const results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> = []
+    for (const w of winners) {
+      // CAS-claim so a concurrent draw can't double-pay the same entry.
+      const claimed = await db.gasGiveawayEntry.updateMany({ where: { id: w.id, status: 'entered' }, data: { status: 'won' } })
+      if (claimed.count === 0) continue
+      try {
+        const res = await issueFreeGasOrder({ tokenConfigId: campaign.gasTokenConfigId, amount: Number(campaign.amountNative), toAddress: w.receivingAddress, userId: w.userId })
+        await db.gasGiveawayEntry.update({ where: { id: w.id }, data: { orderId: res.orderId } })
+        results.push({ entryId: w.id, ok: true, orderRef: res.orderRef })
+      } catch (e) {
+        // Revert the claim so this entry can be redrawn after the issue is fixed.
+        await db.gasGiveawayEntry.updateMany({ where: { id: w.id, status: 'won' }, data: { status: 'entered' } })
+        results.push({ entryId: w.id, ok: false, error: e instanceof Error ? e.message : 'delivery failed' })
+      }
+    }
+    const successful = results.filter((r) => r.ok).length
+    const newDrawn = campaign.drawnCount + successful
+    await db.gasGiveawayCampaign.update({
+      where: { id },
+      data: { drawnCount: newDrawn, ...(newDrawn >= campaign.winnerCount ? { status: 'drawn' } : {}) },
+    })
+    await db.auditLog.create({ data: { actorId: req.user!.id, action: 'GAS_GIVEAWAY_DRAW', targetType: 'GasGiveawayCampaign', targetId: id, metadata: { requested: drawCount, successful, results } as never, ipAddress: req.ip ?? null, userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null } })
+    return reply.send({ success: true, data: { drawn: successful, attempted: drawCount, results } })
   })
 
   // ── POST /gas-fee/orders/:orderRef/proof — submit PKR payment proof ─────────

@@ -47,6 +47,13 @@ export const FLAGS = {
    * (default) = no binding, no accrual; gas orders behave exactly as today.
    */
   GAS_REFERRAL: 'gas_referral_enabled',
+  /**
+   * Gas giveaway campaigns (KOL draws). When ON, users can enter a KOL campaign
+   * with their receiving address and an admin can draw winners — free gas is then
+   * delivered to the selected addresses (platform-funded, like a Phase 3 grant).
+   * OFF (default) = entry + draw endpoints are rejected; nothing is sent.
+   */
+  GAS_GIVEAWAY: 'gas_giveaway_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

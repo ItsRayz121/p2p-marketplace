@@ -1604,6 +1604,49 @@ model GasReferralAccrual {
   @@index([referrerId, status])
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// GAS GIVEAWAYS (KOL campaigns — entry pool + admin draw → free gas to winners)
+// People enter a KOL-branded campaign with their receiving address; an admin later
+// draws N winners and free gas is delivered to the selected addresses (reusing the
+// Phase 3 free-delivery path). Payout is decoupled from entry, so cost is fixed at
+// winners × amount no matter how many enter. See gasFee.routes giveaway endpoints.
+// ────────────────────────────────────────────────────────────────────────────
+model GasGiveawayCampaign {
+  id               String   @id @default(cuid())
+  code             String   @unique          // KOL code entrants type; stored UPPERCASE
+  kolLabel         String                      // KOL / campaign name (shown to entrants)
+  gasTokenConfigId String                      // which token winners receive (plain ref)
+  amountNative     Decimal  @db.Decimal(18, 8) // fixed gas amount each winner gets
+  winnerCount      Int                          // target number of winners
+  drawnCount       Int      @default(0)
+  entryDeadline    DateTime?
+  requireKyc       Boolean  @default(true)      // require KYC1 to enter
+  status           String   @default("open")    // open | drawn | closed
+  isActive         Boolean  @default(true)       // kill switch
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  entries          GasGiveawayEntry[]
+
+  @@index([isActive, status])
+}
+
+model GasGiveawayEntry {
+  id               String              @id @default(cuid())
+  campaignId       String
+  campaign         GasGiveawayCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId           String                                  // entrant (plain ref)
+  email            String?
+  receivingAddress String
+  status           String              @default("entered") // entered | won | not_selected
+  orderId          String?                                 // free-gas order created on win (plain ref)
+  createdAt        DateTime            @default(now())
+
+  @@unique([campaignId, userId])      // one entry per user per campaign
+  @@index([campaignId, status])
+}
+
 model GasHotWallet {
   id                   String    @id @default(cuid())
   chain                GasChain
