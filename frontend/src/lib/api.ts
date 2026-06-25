@@ -2217,15 +2217,15 @@ export const adminApi = {
 
   // ── Gas promo codes (margin-only marketing discounts) ──────────────────────
   getGasPromoCodes: () =>
-    apiRequest<{ data: Array<{
+    apiRequest<Array<{
       id: string; code: string; ownerLabel: string
       tiers: Array<{ maxRedemptions: number; discountPct: number }>
       defaultDiscountPct: number; marginBudgetUsdt: number; marginSpentUsdt: number; budgetRemainingUsdt: number
       totalRedemptions: number; redemptionRows: number; perUserLimit: number; minOrderUsd: number
       expiresAt: string | null; isActive: boolean; createdAt: string
-    }> }>('/admin/gas/promo-codes').then((r) => r.data),
+    }>>('/admin/gas/promo-codes'),
   getGasPromoRedemptions: (id: string) =>
-    apiRequest<{ data: Array<{ id: string; identity: string; discountUsdt: string; marginUsdt: string; tierIndex: number; createdAt: string; order: { orderRef: string; paymentAmount: string; status: string } | null }> }>(`/admin/gas/promo-codes/${id}/redemptions`).then((r) => r.data),
+    apiRequest<Array<{ id: string; identity: string; discountUsdt: string; marginUsdt: string; tierIndex: number; createdAt: string; order: { orderRef: string; paymentAmount: string; status: string } | null }>>(`/admin/gas/promo-codes/${id}/redemptions`),
   createGasPromoCode: (data: {
     code: string; ownerLabel: string
     tiers: Array<{ maxRedemptions: number; discountPct: number }>
@@ -2241,21 +2241,21 @@ export const adminApi = {
 
   // Gas referral overview (admin)
   getGasReferrals: () =>
-    apiRequest<{ data: Array<{
+    apiRequest<Array<{
       codeId: string; code: string; referralPct: number; isActive: boolean
       owner: { id: string; username: string | null; email: string | null; kycLevel: string }
       referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawnUsdt: number; createdAt: string
-    }> }>('/admin/gas/referrals').then((r) => r.data),
+    }>>('/admin/gas/referrals'),
   updateGasReferral: (codeId: string, data: { referralPct?: number; isActive?: boolean }) =>
     apiRequest<unknown>(`/admin/gas/referrals/${codeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Gas giveaways (admin)
   getGasGiveaways: () =>
-    apiRequest<{ data: Array<{ id: string; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: string; winnerCount: number; drawnCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; isActive: boolean; createdAt: string }> }>('/gas-fee/admin/giveaways').then((r) => r.data),
+    apiRequest<Array<{ id: string; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: string; winnerCount: number; drawnCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; isActive: boolean; createdAt: string }>>('/gas-fee/admin/giveaways'),
   createGasGiveaway: (data: { code: string; kolLabel: string; tokenConfigId: string; amountNative: number; winnerCount: number; entryDeadline?: string; requireKyc: boolean }) =>
     apiRequest<unknown>('/gas-fee/admin/giveaways', { method: 'POST', body: JSON.stringify(data) }),
   getGasGiveawayEntries: (id: string) =>
-    apiRequest<{ data: Array<{ id: string; userId: string; email: string | null; receivingAddress: string; status: string; orderId: string | null; createdAt: string }> }>(`/gas-fee/admin/giveaways/${id}/entries`).then((r) => r.data),
+    apiRequest<Array<{ id: string; userId: string; email: string | null; receivingAddress: string; status: string; orderId: string | null; createdAt: string }>>(`/gas-fee/admin/giveaways/${id}/entries`),
   drawGasGiveaway: (id: string, count?: number) =>
     apiRequest<{ drawn: number; attempted: number; results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> }>(`/gas-fee/admin/giveaways/${id}/draw`, { method: 'POST', body: JSON.stringify(count ? { count } : {}) }),
   getGasWallets: () =>
