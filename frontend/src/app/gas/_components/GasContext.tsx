@@ -143,6 +143,9 @@ export interface GasFlowCtx {
   totalUsd: number
   computedUsd: number
   computedPkr: number
+  effectiveUsd: number
+  effectivePkr: number
+  promoDiscountUsd: number
   maxUsd: number
   minAmount: number
   usdExceeded: boolean

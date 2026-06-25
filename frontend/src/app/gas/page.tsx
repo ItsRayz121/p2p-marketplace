@@ -121,6 +121,12 @@ export default function GasPage() {
   const totalUsd        = gasValueUsd + platformFeeUsdt
   const computedUsd     = totalUsd
   const computedPkr     = totalUsd * usdPkrRate
+  // Effective (post-promo) totals — the discount only ever reduces the platform
+  // margin, never below the base gas cost (enforced server-side). When no promo is
+  // applied these equal the computed totals.
+  const promoDiscountUsd = promoApplied ? Math.min(promoApplied.discountUsdt, computedUsd) : 0
+  const effectiveUsd     = Math.max(0, computedUsd - promoDiscountUsd)
+  const effectivePkr     = effectiveUsd * usdPkrRate
   const maxUsd          = selectedToken?.maxUsdValue ?? 10
   const minAmount       = selectedToken?.minAmount ?? 0.1
   const usdExceeded     = gasValueUsd > maxUsd && amountNum > 0
@@ -426,7 +432,7 @@ export default function GasPage() {
     requestingRefund, refundReqError, handleRequestRefund,
     order, setOrder, pollErrCount, setPollErrCount,
     priceUsd, pricePkr, platformFeeUsdt, amountNum, gasValueUsd, usdPkrRate,
-    totalUsd, computedUsd, computedPkr, maxUsd, minAmount, usdExceeded,
+    totalUsd, computedUsd, computedPkr, effectiveUsd, effectivePkr, promoDiscountUsd, maxUsd, minAmount, usdExceeded,
     isPkrOrder, explorerBase, chainGroups, getPkrDetails,
     promoEnabled, promoCode, setPromoCode, promoApplied, promoError, promoChecking, applyPromo, clearPromo,
   }

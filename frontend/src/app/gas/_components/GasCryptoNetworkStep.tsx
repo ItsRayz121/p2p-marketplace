@@ -2,17 +2,34 @@
 import { Button } from '@/components/ui/Button'
 import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader, PaymentNetworkLogo } from './GasPrimitives'
+import { GasPromoField } from './GasPromo'
 
 export function GasCryptoNetworkStep() {
   const {
     setPhase, cryptoMethods,
     selectedCryptoNetwork, setSelectedCryptoNetwork,
     creatingCrypto, cryptoError, handleCreateCryptoOrder,
+    computedUsd, effectiveUsd, promoApplied, promoDiscountUsd,
   } = useGasCtx()
 
   return (
     <div className="p-5 space-y-4">
       <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Select Payment Network" sub="Choose a network to send your payment" />
+
+      <div className="flex items-center gap-2 flex-wrap text-xs">
+        <span className="text-text-muted">You pay</span>
+        {promoApplied && promoDiscountUsd > 0 ? (
+          <>
+            <span className="text-text-muted line-through">${computedUsd.toFixed(2)}</span>
+            <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${effectiveUsd.toFixed(2)} USDT</span>
+          </>
+        ) : (
+          <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${computedUsd.toFixed(2)} USDT</span>
+        )}
+      </div>
+
+      {/* Promo code — flag-gated; applying here discounts the order created below. */}
+      <GasPromoField />
 
       <div className="space-y-3">
         {/* BEP20 */}

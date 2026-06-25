@@ -6,6 +6,7 @@ import { CountdownTimer } from '@/components/ui/CountdownTimer'
 import { Badge } from '@/components/ui/Badge'
 import { useGasCtx, PHASE } from './GasContext'
 import { ProcessingTimeline, RefundTimeline, STATUS_LABELS, statusVariant } from './GasPrimitives'
+import { GasPromoApplied } from './GasPromo'
 
 // How long we show the "detecting your payment" window before offering manual
 // tx-hash entry. On-chain deposits are usually detected by the poller within ~1 min.
@@ -147,7 +148,8 @@ export function GasCryptoQRStep() {
 
           {/* Amount */}
           <div>
-            <p className="text-xs text-text-muted font-semibold mb-1.5">Exact Amount — Send to Platform</p>
+            <GasPromoApplied />
+            <p className="text-xs text-text-muted font-semibold mb-1.5 mt-2">Exact Amount — Send to Platform</p>
             <div className="bg-surface-alt rounded-xl p-3 flex items-center justify-between border border-border">
               <span className="text-lg font-bold text-text-primary">{order.paymentAmount} USDT</span>
               <CopyButton text={order.paymentAmount} />

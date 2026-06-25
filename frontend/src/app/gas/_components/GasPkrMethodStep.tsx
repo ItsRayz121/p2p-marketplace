@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { useGasCtx, PHASE, PKR_METHOD_META, type PkrMethodKey } from './GasContext'
 import { CardHeader, PkrMethodIcon, pkrIsConfigured } from './GasPrimitives'
+import { GasPromoField } from './GasPromo'
 
 export function GasPkrMethodStep() {
   const {
@@ -10,7 +11,7 @@ export function GasPkrMethodStep() {
     selectedPkrMethod, setSelectedPkrMethod,
     creatingPkr, pkrError, handleCreatePkrOrder,
     amount, priceUsd, gasValueUsd, platformFeeUsdt,
-    usdPkrRate, computedPkr,
+    usdPkrRate, computedPkr, effectivePkr, promoApplied, promoDiscountUsd,
   } = useGasCtx()
 
   if (!selectedToken) return null
@@ -50,6 +51,9 @@ export function GasPkrMethodStep() {
         })}
       </div>
 
+      {/* Promo code — flag-gated; applying here discounts the order created below. */}
+      <GasPromoField />
+
       {selectedPkrMethod && (
         <div className="bg-surface-alt rounded-xl p-4 space-y-2.5 text-sm">
           <p className="text-xs font-bold text-text-muted uppercase tracking-wide">Payment Breakdown</p>
@@ -72,6 +76,12 @@ export function GasPkrMethodStep() {
               <span className="text-text-muted">Platform Fee</span>
               <span className="font-semibold">${platformFeeUsdt.toFixed(2)} USDT</span>
             </div>
+            {promoApplied && promoDiscountUsd > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-green-700 dark:text-green-300">Promo {promoApplied.code} ({promoApplied.discountPct}% off fee)</span>
+                <span className="font-semibold text-green-700 dark:text-green-300">−${promoDiscountUsd.toFixed(2)} USDT</span>
+              </div>
+            )}
             {usdPkrRate > 0 && (
               <div className="flex justify-between text-xs">
                 <span className="text-text-muted">Exchange Rate</span>
@@ -80,7 +90,12 @@ export function GasPkrMethodStep() {
             )}
             <div className="flex justify-between pt-2 border-t border-border">
               <span className="font-bold text-text-primary">Total Payable in PKR</span>
-              <span className="font-bold text-green-700 dark:text-green-300 text-base">PKR {computedPkr.toFixed(0)}</span>
+              <span className="font-bold text-green-700 dark:text-green-300 text-base">
+                {promoApplied && promoDiscountUsd > 0 && (
+                  <span className="text-text-muted line-through font-normal text-sm mr-2">PKR {computedPkr.toFixed(0)}</span>
+                )}
+                PKR {effectivePkr.toFixed(0)}
+              </span>
             </div>
           </div>
         </div>
@@ -101,7 +116,7 @@ export function GasPkrMethodStep() {
         loading={creatingPkr}
         onClick={handleCreatePkrOrder}
       >
-        {creatingPkr ? 'Creating Order...' : `Pay PKR ${computedPkr.toFixed(0)}`}
+        {creatingPkr ? 'Creating Order...' : `Pay PKR ${effectivePkr.toFixed(0)}`}
       </Button>
     </div>
   )
