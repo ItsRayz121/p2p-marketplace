@@ -1,14 +1,14 @@
-﻿'use client'
-import { useState, useEffect, useCallback } from 'react'
-import { referralApi } from '@/lib/api'
+'use client'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { referralApi, gasApi } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ReferralLinks } from '@/components/referral/ReferralLinks'
 import { ReferralEarnings } from '@/components/referral/ReferralEarnings'
-import { Users, TrendingUp, Clock } from 'lucide-react'
+import { ChevronDown, Users } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,11 +36,13 @@ function timeAgo(dateStr: string): string {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function ReferralPage() {
+function ReferralPageInner() {
+  const params = useSearchParams()
   const [stats, setStats] = useState<ReferralStats | null>(null)
   const [referrals, setReferrals] = useState<Referral[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showReferrals, setShowReferrals] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -59,6 +61,16 @@ export default function ReferralPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // First-touch attribution for an inbound ?ref= (e.g. a redirected /gas/referral link or a
+  // custom link an existing user clicks). Best-effort + once; the backend ignores self/dupe.
+  useEffect(() => {
+    const ref = params.get('ref')
+    if (!ref) return
+    const seen = `ref_applied_${ref.toUpperCase()}`
+    try { if (sessionStorage.getItem(seen)) return; sessionStorage.setItem(seen, '1') } catch { /* ignore */ }
+    void gasApi.applyReferral(ref.trim()).catch(() => { /* invalid/self/already-bound — ignore */ })
+  }, [params])
+
   if (loading) return <LoadingState message="Loading referral data..." />
   if (error || !stats) return <ErrorState title={error || 'Failed to load data'} onRetry={fetchData} />
 
@@ -71,24 +83,24 @@ export default function ReferralPage() {
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Referral Program</h1>
-        <p className="text-sm text-text-muted">Invite friends to RupChain — referral rewards coming soon.</p>
+        <p className="text-sm text-text-muted">Invite friends to RupChain and earn on every gas top-up they make.</p>
       </div>
 
-      {/* Reward banner — rewards are not auto-credited; admin-approved after real volume */}
+      {/* Active rewards banner — the live 5% / 5% program */}
       <div className="bg-gradient-to-r from-primary/5 to-pink-500/5 border border-primary/20 rounded-xl p-5 space-y-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-bold text-text-primary">Referral rewards / cashback</h2>
-          <Badge variant="warning" size="sm">Coming soon</Badge>
+          <h2 className="text-base font-bold text-text-primary">Referral rewards</h2>
+          <Badge variant="success" size="sm">Active</Badge>
         </div>
         <p className="text-sm text-text-muted">
-          We&apos;re finalising our referral rewards program. Rewards will be reviewed and approved by our team
-          based on your referrals&apos; completed trading activity — there are no automatic cash payouts yet.
+          Earn <strong>5% of the platform gas fee</strong> from everyone you refer — paid into your USDT balance —
+          and your friend gets <strong>5% off</strong> their gas fee automatically. Paid from our fee, never extra cost to anyone.
         </p>
         <div className="text-xs text-text-muted space-y-1 bg-surface rounded-lg border border-border px-3 py-2">
-          <p>• Your friend must register using your referral code or link.</p>
-          <p>• Track your referrals below — start building your network now.</p>
-          <p>• Rewards will be announced and credited after admin review.</p>
-          <p>• No limit on the number of referrals.</p>
+          <p>• Share your code or link below — or create named custom links.</p>
+          <p>• Earnings accrue automatically once your referrals&apos; gas orders are delivered.</p>
+          <p>• Withdraw to your USDT balance after a short fraud-hold window.</p>
+          <p>• Want a bigger cut? Apply to become an affiliate for up to 20–30%.</p>
         </div>
       </div>
 
@@ -120,56 +132,45 @@ export default function ReferralPage() {
         <ReferralLinks code={stats.referralCode} />
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total Referrals', value: stats.totalReferrals.toString(),                          Icon: Users,       iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'    },
-          { label: 'Total Earned',    value: `PKR ${parseFloat(stats.totalEarned).toLocaleString()}`,  Icon: TrendingUp,  iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10' },
-          { label: 'Pending',         value: `PKR ${parseFloat(stats.pendingEarnings).toLocaleString()}`, Icon: Clock,    iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'   },
-        ].map(({ label, value, Icon, iconCls, bgCls }) => (
-          <div key={label} className="bg-surface shadow-card border border-border rounded-xl p-4 text-center">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-2 ${bgCls}`}>
-              <Icon size={16} className={iconCls} aria-hidden />
-            </div>
-            <p className="text-lg font-bold text-text-primary">{value}</p>
-            <p className="text-xs text-text-muted mt-0.5">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Live gas referral earnings + affiliate program (merged from Settings → Affiliate) */}
+      {/* Live earnings + custom links + affiliate (single source of truth) */}
       <ReferralEarnings />
 
-      {/* Referred Users */}
-      <section>
-        <h2 className="text-base font-semibold text-text-primary mb-3">Your Referrals</h2>
-        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
-          {referrals.length === 0 ? (
-            <div className="py-10 text-center">
+      {/* Referred Users — collapsible */}
+      <section className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowReferrals((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-alt transition-colors"
+          aria-expanded={showReferrals}
+        >
+          <span className="flex items-center gap-2 text-base font-semibold text-text-primary">
+            <Users size={16} className="text-text-muted" />
+            Your Referrals
+            <Badge variant="default" size="sm">{referrals.length}</Badge>
+          </span>
+          <ChevronDown size={18} className={`text-text-muted transition-transform ${showReferrals ? 'rotate-180' : ''}`} />
+        </button>
+        {showReferrals && (
+          referrals.length === 0 ? (
+            <div className="py-10 text-center border-t border-border">
               <p className="text-text-muted text-sm">No referrals yet.</p>
               <p className="text-xs text-text-muted mt-1">Share your code and start earning!</p>
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border border-t border-border">
               {referrals.map((ref) => (
                 <div key={ref.id} className="flex items-center justify-between px-4 py-3">
                   <div>
-                    <p className="text-sm font-medium text-text-primary">
-                      {ref.username}
-                    </p>
+                    <p className="text-sm font-medium text-text-primary">{ref.username}</p>
                     <p className="text-xs text-text-muted">Joined {timeAgo(ref.joinedAt)}</p>
                   </div>
-                  <Badge
-                    variant={ref.status === 'active' ? 'success' : 'default'}
-                    size="sm"
-                  >
+                  <Badge variant={ref.status === 'active' ? 'success' : 'default'} size="sm">
                     {ref.status === 'active' ? 'Active' : 'Not traded yet'}
                   </Badge>
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          )
+        )}
       </section>
 
       {/* How it works */}
@@ -177,9 +178,9 @@ export default function ReferralPage() {
         <h2 className="text-base font-semibold text-text-primary">How It Works</h2>
         {[
           { step: '1', text: 'Share your referral code or link with friends' },
-          { step: '2', text: 'Friend signs up using your referral code' },
-          { step: '3', text: 'Friend completes their first trade on RupChain' },
-          { step: '4', text: 'Referral rewards (coming soon) will be credited after admin review of completed trades' },
+          { step: '2', text: 'Friend signs up and tops up gas using your code' },
+          { step: '3', text: 'You earn 5% of the gas fee in USDT; they get 5% off automatically' },
+          { step: '4', text: 'Withdraw your earnings to your USDT balance any time after the hold window' },
         ].map((item) => (
           <div key={item.step} className="flex items-start gap-3">
             <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -190,5 +191,13 @@ export default function ReferralPage() {
         ))}
       </section>
     </div>
+  )
+}
+
+export default function ReferralPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Loading referral data..." />}>
+      <ReferralPageInner />
+    </Suspense>
   )
 }

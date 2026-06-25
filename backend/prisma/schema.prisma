@@ -1601,6 +1601,11 @@ model GasReferralCode {
   userDiscountPct Float    @default(0)       // % of margin auto-discounted to the bound buyer
   label           String?                    // affiliate-facing nickname for this link
   isActive        Boolean  @default(true)
+  // Soft-delete for self-service custom links. When set, the link is hidden from the
+  // owner's manage list + excluded from the active-link cap, and stops carrying a buyer
+  // discount — but it STILL resolves to its owner (old shared links never break) and
+  // any existing bindings keep accruing commission. The base (oldest) code is never deleted.
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

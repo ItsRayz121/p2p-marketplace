@@ -20,6 +20,7 @@
     "stats:backfill": "tsx src/scripts/backfillTradeStats.ts",
     "streaks:backfill": "tsx src/scripts/backfillTradeStreaks.ts",
     "referral:unify-backfill": "tsx src/scripts/unifyReferrals.ts",
+    "referral:enable": "tsx src/scripts/enableReferralProgram.ts",
     "gas:config-restrict": "tsx src/scripts/gasConfigRestrict.ts",
     "gas:fix-base-logo": "tsx src/scripts/gasFixBaseLogo.ts",
     "gas:diagnose-tokens": "tsx src/scripts/gasDiagnoseTokens.ts",

@@ -1465,6 +1465,7 @@ export const gasApi = {
       rejectionReason: string | null
       caps: { maxMarginPct: number; minUserDiscountPct: number; maxLinks: number } | null
       links: Array<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>
+      customLinkPolicy: { maxLinks: number; used: number; canCreate: boolean; cooldownUntil: string | null; userDiscountPct: number; commissionPct: number; isAffiliate: boolean }
       earnings: { enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }
     }>('/gas-fee/affiliate/me'),
   getAffiliateQuote: (tokenConfigId: string) =>
@@ -1475,6 +1476,11 @@ export const gasApi = {
     apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>('/gas-fee/affiliate/links', { method: 'POST', body: JSON.stringify(data) }),
   updateAffiliateLink: (codeId: string, data: { label?: string | null; userDiscountPct?: number; commissionPct?: number; isActive?: boolean }) =>
     apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>(`/gas-fee/affiliate/links/${codeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  // Self-service custom links (any user; standard split, capped + cooldown)
+  createCustomLink: (label?: string | null) =>
+    apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>('/gas-fee/referral/custom-links', { method: 'POST', body: JSON.stringify({ label: label ?? null }) }),
+  deleteCustomLink: (codeId: string) =>
+    apiRequest<{ deleted: true }>(`/gas-fee/referral/custom-links/${codeId}`, { method: 'DELETE' }),
 
   getGiveaway: (code: string) =>
     apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; amountNative: string; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),

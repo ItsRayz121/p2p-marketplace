@@ -39,6 +39,8 @@ import {
   getAffiliateOverview,
   createAffiliateLink,
   updateAffiliateLink,
+  createOwnCustomLink,
+  deleteOwnCustomLink,
 } from '../lib/gas/gas.affiliate'
 
 // Reserve a promo slot for an order about to be created. Returns null when no code
@@ -1520,6 +1522,24 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   app.post('/gas-fee/referral/withdraw', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const result = await withdrawReferralEarnings(req.user!.id)
     return reply.send({ success: true, data: result })
+  })
+
+  // ── Self-service custom links (any user; standard split, capped + cooldown) ──
+
+  // POST /gas-fee/referral/custom-links — mint a named custom link (standard 5/5 split).
+  const customLinkCreateSchema = z.object({ label: z.string().trim().max(60).nullable().optional() })
+  app.post('/gas-fee/referral/custom-links', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const parsed = customLinkCreateSchema.safeParse(req.body ?? {})
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const data = await createOwnCustomLink(req.user!.id, parsed.data.label ?? null)
+    return reply.code(201).send({ success: true, data })
+  })
+
+  // DELETE /gas-fee/referral/custom-links/:codeId — soft-delete a custom link.
+  app.delete('/gas-fee/referral/custom-links/:codeId', { preHandler: [authenticate], config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { codeId } = req.params as { codeId: string }
+    const data = await deleteOwnCustomLink(req.user!.id, codeId)
+    return reply.send({ success: true, data })
   })
 
   // ── Affiliate program (self-service, extends referrals) ──────────────────────

@@ -21,6 +21,11 @@ import type { GasFeeOrder } from '@prisma/client'
 
 const DEFAULT_PCT_CONFIG = 'gas_referral_default_pct'
 const DEFAULT_PCT = 5
+// Standard buyer discount given to a friend who joins via ANY referral link (base or
+// custom). Self-service custom links use this for both the discount and the commission;
+// the base code is healed up to this discount so the primary link also rewards the friend.
+export const USER_DISCOUNT_CONFIG = 'gas_referral_user_discount_pct'
+export const DEFAULT_USER_DISCOUNT = 5
 // Anti-abuse + withdrawal config (PlatformConfig keys; safe defaults).
 const MIN_ORDER_CONFIG       = 'gas_referral_min_order_usd'        // skip accrual below this order value
 const MAX_PER_REFERRED_CONFIG = 'gas_referral_max_per_referred_usdt' // lifetime cap per referred user (0 = none)
@@ -44,13 +49,25 @@ export async function generateUniqueCode(): Promise<string> {
   throw new AppError('REFERRAL_CODE_GEN', 'Could not allocate a referral code, please retry.', 500)
 }
 
-/** Get the caller's referral code, creating one on first access (pct from config). */
+/**
+ * Get the caller's BASE referral code (the oldest one they own), creating one on first
+ * access. The base code carries the standard friend discount so the user's primary link
+ * rewards both sides — a legacy base code created before the discount existed is healed
+ * up to the configured default (idempotent; at most one write).
+ */
 export async function getOrCreateOwnCode(userId: string): Promise<{ id: string; code: string; referralPct: number; isActive: boolean; label: string | null }> {
+  const discount = await getNumberConfig(USER_DISCOUNT_CONFIG, DEFAULT_USER_DISCOUNT)
   const existing = await db.gasReferralCode.findFirst({ where: { ownerId: userId }, orderBy: { createdAt: 'asc' } })
-  if (existing) return { id: existing.id, code: existing.code, referralPct: existing.referralPct, isActive: existing.isActive, label: existing.label }
+  if (existing) {
+    if (existing.userDiscountPct < discount) {
+      const healed = await db.gasReferralCode.update({ where: { id: existing.id }, data: { userDiscountPct: discount } })
+      return { id: healed.id, code: healed.code, referralPct: healed.referralPct, isActive: healed.isActive, label: healed.label }
+    }
+    return { id: existing.id, code: existing.code, referralPct: existing.referralPct, isActive: existing.isActive, label: existing.label }
+  }
   const pct = await getNumberConfig(DEFAULT_PCT_CONFIG, DEFAULT_PCT)
   const code = await generateUniqueCode()
-  const created = await db.gasReferralCode.create({ data: { code, ownerId: userId, referralPct: pct } })
+  const created = await db.gasReferralCode.create({ data: { code, ownerId: userId, referralPct: pct, userDiscountPct: discount } })
   return { id: created.id, code: created.code, referralPct: created.referralPct, isActive: created.isActive, label: created.label }
 }
 
@@ -79,7 +96,9 @@ export async function resolveReferralOwner(rawCode: string): Promise<{ ownerId: 
   const norm = normalizeReferralCode(rawCode)
   if (!norm) return null
   const gas = await db.gasReferralCode.findUnique({ where: { code: norm } })
-  if (gas && gas.isActive) return { ownerId: gas.ownerId, gasCodeId: gas.id }
+  // A soft-deleted custom link still attributes to its owner forever (old shared links
+  // never break) but no longer carries its discount split → bind via the owner's base code.
+  if (gas && gas.isActive) return { ownerId: gas.ownerId, gasCodeId: gas.deletedAt ? null : gas.id }
   const bySignup = await db.user.findFirst({ where: { referralCode: { equals: norm, mode: 'insensitive' } }, select: { id: true } })
   if (bySignup) return { ownerId: bySignup.id, gasCodeId: null }
   return null

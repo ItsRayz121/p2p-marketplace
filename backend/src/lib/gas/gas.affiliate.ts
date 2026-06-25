@@ -21,11 +21,25 @@
 import { db } from '../prisma'
 import { AppError } from '../errors'
 import { logger } from '../logger'
-import { isFlagEnabled, FLAGS } from '../../services/platformFlags.service'
-import { generateUniqueCode, getReferralSummary, type ReferralSummary } from './gas.referral'
+import { isFlagEnabled, FLAGS, getNumberConfig } from '../../services/platformFlags.service'
+import {
+  generateUniqueCode, getReferralSummary, getOrCreateOwnCode,
+  USER_DISCOUNT_CONFIG, DEFAULT_USER_DISCOUNT, type ReferralSummary,
+} from './gas.referral'
 import type { Prisma } from '@prisma/client'
 
 function round2(n: number): number { return Math.round(n * 100) / 100 }
+
+// Self-service custom links (open to every user, not just approved affiliates). A user may
+// hold up to `max` named links, each giving the standard friend-discount + commission split.
+// Deleting one starts a cooldown before a replacement slot opens, so links can't be churned.
+const CUSTOM_LINK_MAX_CONFIG  = 'gas_custom_link_max'
+const DEFAULT_CUSTOM_LINK_MAX = 2
+const COOLDOWN_DAYS_CONFIG    = 'gas_custom_link_cooldown_days'
+const DEFAULT_COOLDOWN_DAYS   = 30
+const COMMISSION_PCT_CONFIG   = 'gas_referral_default_pct'
+const DEFAULT_COMMISSION_PCT  = 5
+const DAY_MS = 86_400_000
 
 export type AffiliateStatus = 'none' | 'pending' | 'approved' | 'rejected'
 
@@ -39,6 +53,16 @@ export interface AffiliateLink {
   referredCount: number
 }
 
+export interface CustomLinkPolicy {
+  maxLinks: number              // how many custom links this user may hold
+  used: number                  // active (non-deleted) custom links they currently have
+  canCreate: boolean            // under the cap AND not in cooldown
+  cooldownUntil: string | null  // ISO — when the next create slot opens (null if not blocked by cooldown)
+  userDiscountPct: number       // standard friend discount baked into a self-service link
+  commissionPct: number         // standard commission baked into a self-service link
+  isAffiliate: boolean          // approved affiliates choose their own split instead
+}
+
 export interface AffiliateOverview {
   enabled: boolean
   status: AffiliateStatus
@@ -46,7 +70,21 @@ export interface AffiliateOverview {
   rejectionReason: string | null
   caps: { maxMarginPct: number; minUserDiscountPct: number; maxLinks: number } | null
   links: AffiliateLink[]
+  customLinkPolicy: CustomLinkPolicy
   earnings: ReferralSummary
+}
+
+/**
+ * The user's CUSTOM links: every referral code they own except the base (oldest) code,
+ * excluding soft-deleted ones. The base code backs the user's primary share link and is
+ * never listed/deletable here. Returned oldest-first.
+ */
+async function listCustomCodes(userId: string) {
+  const codes = await db.gasReferralCode.findMany({
+    where: { ownerId: userId, deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+  })
+  return codes.slice(1) // drop the base (oldest) code
 }
 
 /** Ensure a split is legal for the affiliate's admin-granted caps. Throws on violation. */
@@ -88,38 +126,59 @@ export async function applyForAffiliate(
   return { status: row.status as AffiliateStatus }
 }
 
-/** User-facing overview: profile status + caps, all of the user's links, and earnings. */
+/** User-facing overview: profile status + caps, the user's custom links + policy, earnings. */
 export async function getAffiliateOverview(userId: string): Promise<AffiliateOverview> {
   const enabled = await isFlagEnabled(FLAGS.GAS_AFFILIATE)
   const earnings = await getReferralSummary(userId)
   const profile = await db.gasAffiliate.findUnique({ where: { userId } })
   const status: AffiliateStatus = (profile?.status as AffiliateStatus) ?? 'none'
+  const isAffiliate = status === 'approved'
 
-  let links: AffiliateLink[] = []
-  if (status === 'approved') {
-    const codes = await db.gasReferralCode.findMany({ where: { ownerId: userId }, orderBy: { createdAt: 'asc' } })
-    const counts = await db.gasReferral.groupBy({ by: ['codeId'], where: { codeId: { in: codes.map((c) => c.id) } }, _count: { _all: true } })
-    const countMap = new Map(counts.map((c) => [c.codeId, c._count._all]))
-    links = codes.map((c) => ({
-      id: c.id,
-      code: c.code,
-      label: c.label,
-      userDiscountPct: c.userDiscountPct,
-      commissionPct: c.referralPct,
-      isActive: c.isActive,
-      referredCount: countMap.get(c.id) ?? 0,
-    }))
-  }
+  // Custom links (everyone, not just approved affiliates) — base code excluded.
+  const customCodes = await listCustomCodes(userId)
+  const counts = await db.gasReferral.groupBy({ by: ['codeId'], where: { codeId: { in: customCodes.map((c) => c.id) } }, _count: { _all: true } })
+  const countMap = new Map(counts.map((c) => [c.codeId, c._count._all]))
+  const links: AffiliateLink[] = customCodes.map((c) => ({
+    id: c.id,
+    code: c.code,
+    label: c.label,
+    userDiscountPct: c.userDiscountPct,
+    commissionPct: c.referralPct,
+    isActive: c.isActive,
+    referredCount: countMap.get(c.id) ?? 0,
+  }))
+
+  const [stdMax, cooldownDays, stdDiscount, stdCommission, lastDeleted] = await Promise.all([
+    getNumberConfig(CUSTOM_LINK_MAX_CONFIG, DEFAULT_CUSTOM_LINK_MAX),
+    getNumberConfig(COOLDOWN_DAYS_CONFIG, DEFAULT_COOLDOWN_DAYS),
+    getNumberConfig(USER_DISCOUNT_CONFIG, DEFAULT_USER_DISCOUNT),
+    getNumberConfig(COMMISSION_PCT_CONFIG, DEFAULT_COMMISSION_PCT),
+    db.gasReferralCode.findFirst({ where: { ownerId: userId, deletedAt: { not: null } }, orderBy: { deletedAt: 'desc' }, select: { deletedAt: true } }),
+  ])
+  // Approved affiliates use their admin maxLinks and have no churn cooldown.
+  const maxLinks = isAffiliate && profile ? profile.maxLinks : stdMax
+  const cooldownAt = !isAffiliate && lastDeleted?.deletedAt ? new Date(lastDeleted.deletedAt.getTime() + cooldownDays * DAY_MS) : null
+  const cooldownActive = !!cooldownAt && cooldownAt > new Date()
+  const canCreate = links.length < maxLinks && !cooldownActive
 
   return {
     enabled,
     status,
     applicantNote: profile?.applicantNote ?? null,
     rejectionReason: profile?.rejectionReason ?? null,
-    caps: profile && status === 'approved'
+    caps: isAffiliate && profile
       ? { maxMarginPct: profile.maxMarginPct, minUserDiscountPct: profile.minUserDiscountPct, maxLinks: profile.maxLinks }
       : null,
     links,
+    customLinkPolicy: {
+      maxLinks,
+      used: links.length,
+      canCreate,
+      cooldownUntil: cooldownActive && cooldownAt ? cooldownAt.toISOString() : null,
+      userDiscountPct: stdDiscount,
+      commissionPct: stdCommission,
+      isAffiliate,
+    },
     earnings,
   }
 }
@@ -142,8 +201,9 @@ export async function createAffiliateLink(
 ): Promise<AffiliateLink> {
   const aff = await requireApprovedAffiliate(userId)
   assertSplit(aff, args.userDiscountPct, args.commissionPct)
-  const count = await db.gasReferralCode.count({ where: { ownerId: userId } })
-  if (count >= aff.maxLinks) {
+  await getOrCreateOwnCode(userId) // ensure the base code exists so "custom" is well-defined
+  const customs = await listCustomCodes(userId)
+  if (customs.length >= aff.maxLinks) {
     throw new AppError('AFFILIATE_MAX_LINKS', `You can have at most ${aff.maxLinks} affiliate links.`, 400)
   }
   const code = await generateUniqueCode()
@@ -181,6 +241,70 @@ export async function updateAffiliateLink(
   return { id: updated.id, code: updated.code, label: updated.label, userDiscountPct: updated.userDiscountPct, commissionPct: updated.referralPct, isActive: updated.isActive, referredCount }
 }
 
+// ── Self-service custom links (every user, no affiliate approval needed) ──────────
+
+/**
+ * Create a named custom referral link for a normal user — fixed standard split
+ * (friend discount + commission from config). Approved affiliates use createAffiliateLink
+ * instead (chosen split). Enforces the per-user link cap and the post-delete cooldown.
+ */
+export async function createOwnCustomLink(userId: string, label: string | null): Promise<AffiliateLink> {
+  if (!(await isFlagEnabled(FLAGS.GAS_AFFILIATE))) {
+    throw new AppError('AFFILIATE_DISABLED', 'Custom referral links are not available right now.', 400)
+  }
+  await getOrCreateOwnCode(userId) // ensure the base code exists so "custom" is well-defined
+
+  const aff = await db.gasAffiliate.findUnique({ where: { userId }, select: { status: true } })
+  if (aff?.status === 'approved') {
+    throw new AppError('AFFILIATE_USE_SPLIT', 'Approved affiliates create links with a custom split.', 400)
+  }
+
+  const [max, cooldownDays, discount, commission, lastDeleted, customs] = await Promise.all([
+    getNumberConfig(CUSTOM_LINK_MAX_CONFIG, DEFAULT_CUSTOM_LINK_MAX),
+    getNumberConfig(COOLDOWN_DAYS_CONFIG, DEFAULT_COOLDOWN_DAYS),
+    getNumberConfig(USER_DISCOUNT_CONFIG, DEFAULT_USER_DISCOUNT),
+    getNumberConfig(COMMISSION_PCT_CONFIG, DEFAULT_COMMISSION_PCT),
+    db.gasReferralCode.findFirst({ where: { ownerId: userId, deletedAt: { not: null } }, orderBy: { deletedAt: 'desc' }, select: { deletedAt: true } }),
+    listCustomCodes(userId),
+  ])
+
+  if (customs.length >= max) {
+    throw new AppError('CUSTOM_LINK_MAX', `You can have at most ${max} custom links. Delete one to create another.`, 400)
+  }
+  const cooldownAt = lastDeleted?.deletedAt ? new Date(lastDeleted.deletedAt.getTime() + cooldownDays * DAY_MS) : null
+  if (cooldownAt && cooldownAt > new Date()) {
+    throw new AppError('CUSTOM_LINK_COOLDOWN', `You can add a new link after ${cooldownAt.toISOString().slice(0, 10)}.`, 400)
+  }
+
+  const code = await generateUniqueCode()
+  const created = await db.gasReferralCode.create({
+    data: { code, ownerId: userId, referralPct: commission, userDiscountPct: discount, label: label?.trim().slice(0, 60) || null },
+  })
+  logger.info({ userId, codeId: created.id }, 'self-service custom link created')
+  return { id: created.id, code: created.code, label: created.label, userDiscountPct: created.userDiscountPct, commissionPct: created.referralPct, isActive: created.isActive, referredCount: 0 }
+}
+
+/**
+ * Soft-delete one of the caller's custom links. The base (primary) code can never be
+ * deleted. A deleted link still attributes its past + future signups to the owner (old
+ * shared links never break) and existing bindings keep earning — it just frees a slot
+ * (after the cooldown) and stops giving new buyers a discount.
+ */
+export async function deleteOwnCustomLink(userId: string, codeId: string): Promise<{ deleted: true }> {
+  if (!(await isFlagEnabled(FLAGS.GAS_AFFILIATE))) {
+    throw new AppError('AFFILIATE_DISABLED', 'Custom referral links are not available right now.', 400)
+  }
+  const code = await db.gasReferralCode.findUnique({ where: { id: codeId }, select: { id: true, ownerId: true, deletedAt: true } })
+  if (!code || code.ownerId !== userId || code.deletedAt) throw new AppError('NOT_FOUND', 'Custom link not found.', 404)
+
+  const base = await db.gasReferralCode.findFirst({ where: { ownerId: userId, deletedAt: null }, orderBy: { createdAt: 'asc' }, select: { id: true } })
+  if (base?.id === codeId) throw new AppError('CUSTOM_LINK_BASE', 'You cannot delete your primary referral link.', 400)
+
+  await db.gasReferralCode.update({ where: { id: codeId }, data: { deletedAt: new Date() } })
+  logger.info({ userId, codeId }, 'self-service custom link deleted')
+  return { deleted: true }
+}
+
 export interface AffiliateQuote {
   discountUsdt: number
   discountPct: number
@@ -203,13 +327,14 @@ export async function getAffiliateQuote(buyerUserId: string, marginUsdt: number)
     where: { referredId: buyerUserId },
     include: { code: { include: { owner: { select: { username: true } } } } },
   })
-  if (!binding || !binding.code.isActive) return null
+  // A soft-deleted link keeps paying the owner commission but stops discounting the buyer.
+  if (!binding || !binding.code.isActive || binding.code.deletedAt) return null
   if (binding.referrerId === buyerUserId) return null
   if (!(binding.code.userDiscountPct > 0)) return null
 
-  const aff = await db.gasAffiliate.findUnique({ where: { userId: binding.referrerId }, select: { status: true } })
-  if (!aff || aff.status !== 'approved') return null
-
+  // Open to everyone: any active link with a buyer discount applies it (standard 5% for
+  // self-service links, higher for approved affiliates). The discount % was validated
+  // against the owner's caps at write time, and is floored at the margin below.
   const discountPct = binding.code.userDiscountPct
   const raw = round2((discountPct / 100) * marginUsdt)
   const discountUsdt = Math.max(0, Math.min(raw, round2(marginUsdt)))
