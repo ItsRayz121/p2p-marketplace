@@ -1425,19 +1425,22 @@ export interface GasNetworkFee {
 
 export const gasApi = {
   getChains: () =>
-    apiRequest<{ chains: GasChain[] }>('/gas-fee/chains'),
+    apiRequest<{ chains: GasChain[]; promoEnabled?: boolean }>('/gas-fee/chains'),
 
   getChainTokens: (chainSlug: string) =>
     apiRequest<GasTokensResponse>(`/gas-fee/chains/${chainSlug}/tokens`),
 
-  createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string }) =>
+  createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string; promoCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders', { method: 'POST', body: JSON.stringify(data) }),
 
-  createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash' | 'nayapay' | 'sadapay'; idempotencyKey?: string }) =>
+  createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash' | 'nayapay' | 'sadapay'; idempotencyKey?: string; promoCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/pkr', { method: 'POST', body: JSON.stringify(data) }),
 
-  createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'TRC20' | 'BEP20' | 'ERC20' | 'APTOS'; idempotencyKey?: string }) =>
+  createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'TRC20' | 'BEP20' | 'ERC20' | 'APTOS'; idempotencyKey?: string; promoCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/crypto', { method: 'POST', body: JSON.stringify(data) }),
+
+  previewPromo: (data: { promoCode: string; tokenConfigId: string; amount: number }) =>
+    apiRequest<{ valid: boolean; code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string }>('/gas-fee/promo/preview', { method: 'POST', body: JSON.stringify(data) }),
 
   submitProof: (orderRef: string, proofUrl: string) =>
     apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/proof`, { method: 'POST', body: JSON.stringify({ proofUrl }) }),

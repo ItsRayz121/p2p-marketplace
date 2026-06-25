@@ -1461,10 +1461,13 @@ model GasFeeOrder {
 
   ledgerEntries       GasLedgerEntry[]
   flaggedOrder        GasFlaggedOrder?
+  promoCode           GasPromoCode?       @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  promoRedemption     GasPromoRedemption?
 
   @@index([status, expiresAt])
   @@index([userId])
   @@index([orderRef])
+  @@index([promoCodeId])
 }
 
 // User-initiated gas-order cancellations, used to drive the abuse/cooldown ladder.
@@ -1481,6 +1484,59 @@ model GasCancellationEvent {
   createdAt DateTime @default(now())
 
   @@index([identity, createdAt])
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// GAS PROMO CODES (margin-only discounts for marketing / KOL campaigns)
+// A promo code discounts ONLY the platform margin of a gas order, never the base
+// gas cost. Each code is self-contained: its own tiers, budget and counters — codes
+// never interact. Discount = min(pct% × margin, margin), so a fully-discounted
+// order still pays the base cost and is never a loss. See lib/gas/gas.promo.ts.
+// ────────────────────────────────────────────────────────────────────────────
+model GasPromoCode {
+  id                 String   @id @default(cuid())
+  code               String   @unique           // stored UPPERCASE; matched case-insensitively
+  ownerLabel         String                      // KOL / campaign name (admin reference)
+  // Ordered redemption tiers consumed first-come: [{ maxRedemptions:int, discountPct:number }].
+  // discountPct is a % of the order's platform margin (0-100). Once all tier slots are
+  // used, defaultDiscountPct applies to everyone after.
+  tiers              Json     @default("[]")
+  defaultDiscountPct Float    @default(0)
+  // Lifetime cap on margin (USDT) this code may give away. Auto-disables when reached.
+  marginBudgetUsdt   Float
+  marginSpentUsdt    Float    @default(0)
+  totalRedemptions   Int      @default(0)        // also the next slot index (optimistic-lock key)
+  perUserLimit       Int      @default(1)        // max redemptions per identity (user or IP)
+  minOrderUsd        Float    @default(0)        // min order value (pre-discount) to qualify
+  expiresAt          DateTime?
+  isActive           Boolean  @default(true)     // admin kill switch
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  redemptions        GasPromoRedemption[]
+  orders             GasFeeOrder[]
+
+  @@index([isActive])
+}
+
+// One row per successful redemption. orderId is unique (one code per order). The
+// row is created in lock-step with the order; the code's counters are advanced
+// atomically at reservation time (see gas.promo.ts reservePromo).
+model GasPromoRedemption {
+  id           String       @id @default(cuid())
+  promoCodeId  String
+  promoCode    GasPromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  identity     String        // "user:<id>" or "ip:<addr>"
+  userId       String?
+  orderId      String        @unique
+  order        GasFeeOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  discountUsdt Decimal       @db.Decimal(10, 4)
+  marginUsdt   Decimal       @db.Decimal(10, 4)  // margin the discount was computed against
+  tierIndex    Int                                // tier slot used; -1 = default tier
+  createdAt    DateTime      @default(now())
+
+  @@index([promoCodeId])
+  @@index([identity])
 }
 
 model GasHotWallet {

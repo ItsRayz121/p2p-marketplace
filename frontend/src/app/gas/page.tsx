@@ -89,6 +89,13 @@ export default function GasPage() {
   const [verifyError, setVerifyError]   = useState('')
   const [verifySuccess, setVerifySuccess] = useState('')
 
+  // ── Promo code (gas marketing — box only renders when the feature flag is live) ──
+  const [promoEnabled, setPromoEnabled]   = useState(false)
+  const [promoCode, setPromoCode]         = useState('')
+  const [promoApplied, setPromoApplied]   = useState<{ code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string } | null>(null)
+  const [promoError, setPromoError]       = useState('')
+  const [promoChecking, setPromoChecking] = useState(false)
+
   // ── Order tracking ─────────────────────────────────────────────────────────
   const [order, setOrder]               = useState<GasOrder | null>(null)
   const [pollErrCount, setPollErrCount] = useState(0)
@@ -123,10 +130,14 @@ export default function GasPage() {
 
   useEffect(() => {
     gasApi.getChains()
-      .then(({ chains: c }) => setChains(c))
+      .then(({ chains: c, promoEnabled: pe }) => { setChains(c); setPromoEnabled(!!pe) })
       .catch((e: Error) => setChainsError(e.message || 'Failed to load chains'))
       .finally(() => setChainsLoading(false))
   }, [])
+
+  // Any change to the order parameters invalidates a previously-applied promo, so it
+  // is re-validated server-side (the source of truth) before it can affect the price.
+  useEffect(() => { setPromoApplied(null); setPromoError('') }, [amount, selectedToken?.id])
 
   useEffect(() => {
     if (phase !== PHASE.PAY_METHOD || pkrMethods || cryptoMethods) return
@@ -184,6 +195,21 @@ export default function GasPage() {
     setAddressError(''); return true
   }
 
+  async function applyPromo() {
+    if (!selectedToken || !promoCode.trim() || !(parseFloat(amount) > 0)) return
+    setPromoChecking(true); setPromoError(''); setPromoApplied(null)
+    try {
+      const res = await gasApi.previewPromo({
+        promoCode: promoCode.trim(), tokenConfigId: selectedToken.id, amount: parseFloat(amount),
+      })
+      setPromoApplied(res)
+    } catch (e: unknown) {
+      setPromoError(e instanceof Error ? e.message : 'Invalid promo code')
+    } finally { setPromoChecking(false) }
+  }
+
+  function clearPromo() { setPromoApplied(null); setPromoCode(''); setPromoError('') }
+
   async function handleCreatePkrOrder() {
     if (!selectedToken || !selectedChain || !selectedPkrMethod) return
     setCreatingPkr(true); setPkrError('')
@@ -192,6 +218,7 @@ export default function GasPage() {
         tokenConfigId: selectedToken.id, amount: parseFloat(amount),
         toAddress: address, pkrPaymentMethod: selectedPkrMethod,
         idempotencyKey: `${idempKeyRef.current}_pkr`,
+        ...(promoApplied ? { promoCode: promoApplied.code } : {}),
       })
       setOrder(o); setPollErrCount(0); setPhase(PHASE.PKR_PROOF)
     } catch (e: unknown) { setPkrError(e instanceof Error ? e.message : 'Failed to create order') }
@@ -225,6 +252,7 @@ export default function GasPage() {
         tokenConfigId: selectedToken.id, amount: parseFloat(amount),
         toAddress: address, paymentNetwork: selectedCryptoNetwork,
         idempotencyKey: `${idempKeyRef.current}_crypto`,
+        ...(promoApplied ? { promoCode: promoApplied.code } : {}),
       })
       setOrder(o); setPollErrCount(0); setQrFailed(false); setPaymentSent(false); setPhase(PHASE.CRYPTO_QR)
       try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* storage unavailable */ }
@@ -399,6 +427,7 @@ export default function GasPage() {
     priceUsd, pricePkr, platformFeeUsdt, amountNum, gasValueUsd, usdPkrRate,
     totalUsd, computedUsd, computedPkr, maxUsd, minAmount, usdExceeded,
     isPkrOrder, explorerBase, chainGroups, getPkrDetails,
+    promoEnabled, promoCode, setPromoCode, promoApplied, promoError, promoChecking, applyPromo, clearPromo,
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────

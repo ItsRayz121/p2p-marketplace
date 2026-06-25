@@ -23,6 +23,32 @@ import {
   previewCancelPenalty,
   recordCancellation,
 } from '../lib/gas/gas.cancellation'
+import {
+  reservePromo,
+  recordRedemption,
+  releaseReservation,
+  previewPromo,
+  promoIdentity,
+  type PromoResolution,
+} from '../lib/gas/gas.promo'
+import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
+
+// Reserve a promo slot for an order about to be created. Returns null when no code
+// was supplied or the promo system is off. Throws AppError (clear message) on an
+// invalid/exhausted code. Caller MUST recordRedemption after a successful create,
+// or releaseReservation if the create throws.
+async function reserveOrderPromo(
+  promoCode: string | undefined,
+  orderUsd: number,
+  marginUsdt: number,
+  identity: string,
+): Promise<PromoResolution | null> {
+  if (!promoCode) return null
+  if (!(await isFlagEnabled(FLAGS.GAS_PROMO))) {
+    throw new AppError('PROMO_DISABLED', 'Promo codes are not available right now.', 400)
+  }
+  return reservePromo({ code: promoCode, orderUsd, marginUsdt, identity })
+}
 
 // ── Guest tracking token validator ────────────────────────────────────────────
 
@@ -145,6 +171,7 @@ const createOrderNewSchema = z.object({
   amount:         z.number().positive(),
   toAddress:      z.string().min(1),
   idempotencyKey: z.string().optional(),
+  promoCode:      z.string().trim().min(1).max(40).optional(),
 })
 
 // Legacy format: chain + tier (kept for merchant backward compat)
@@ -220,7 +247,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // Public endpoint: filter to only visible chains (admin sees all via /admin/gas/chains)
     const visibleChains = chains.filter((c) => c.publiclyVisible)
 
-    return reply.send({ success: true, data: { chains: visibleChains } })
+    // Surface the promo master switch so the checkout only renders the promo-code box
+    // when the feature is live (default OFF = box hidden, production unchanged).
+    const promoEnabled = await isFlagEnabled(FLAGS.GAS_PROMO)
+
+    return reply.send({ success: true, data: { chains: visibleChains, promoEnabled } })
   })
 
   // ── GET /api/gas-fee/chains/:chainSlug/tokens — tokens with live pricing ───
@@ -449,7 +480,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { tokenConfigId, amount, toAddress, idempotencyKey } = parsed.data
+    const { tokenConfigId, amount, toAddress, idempotencyKey, promoCode } = parsed.data
 
     // Load token config + chain config
     const tokenCfg = await db.gasTokenConfig.findUnique({
@@ -578,35 +609,58 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const trackingToken = generateTrackingToken()
     const expiresAt     = new Date(Date.now() + 5 * 60 * 1000)
 
-    const order = await db.gasFeeOrder.create({
-      data: {
-        orderRef,
-        trackingToken,
-        ...(userId ? { userId } : {}),
-        ipAddress:       clientIp,
-        chain:           dbChainEnum,
-        tier:            null,
-        gasTokenConfigId: tokenCfg.id,
-        gasAmountNative: amount,
-        gasAmountUSD,
-        priceAtOrder:   nativeUsdRate,
-        paymentCoin:    'USDT',
-        paymentNetwork:  legacyChainConfig.networkLabel,
-        paymentAmount,
-        platformMarginUsdt: platformFeeUsdt,
-        toAddress,
-        fromHotWallet:  hotWallet.address,
-        status:         'payment_pending',
-        expiresAt,
-      },
-    })
+    // Promo: reserve a margin-only discount and bake it into the amount the user
+    // pays, BEFORE the order is persisted. Floored at the margin, so the final
+    // amount can never drop below the base gas cost (gasAmountUSD).
+    const promoIdent = promoIdentity(userId, clientIp)
+    const promoRes = await reserveOrderPromo(promoCode, paymentAmount, platformFeeUsdt, promoIdent)
+    const finalPaymentAmount = promoRes
+      ? Math.round((paymentAmount - promoRes.discountUsdt) * 100) / 100
+      : paymentAmount
+
+    const order = await (async () => {
+      try {
+        return await db.gasFeeOrder.create({
+          data: {
+            orderRef,
+            trackingToken,
+            ...(userId ? { userId } : {}),
+            ipAddress:       clientIp,
+            chain:           dbChainEnum,
+            tier:            null,
+            gasTokenConfigId: tokenCfg.id,
+            gasAmountNative: amount,
+            gasAmountUSD,
+            priceAtOrder:   nativeUsdRate,
+            paymentCoin:    'USDT',
+            paymentNetwork:  legacyChainConfig.networkLabel,
+            paymentAmount:   finalPaymentAmount,
+            platformMarginUsdt: platformFeeUsdt,
+            discountUsdt:    promoRes?.discountUsdt ?? 0,
+            ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
+            toAddress,
+            fromHotWallet:  hotWallet.address,
+            status:         'payment_pending',
+            expiresAt,
+          },
+        })
+      } catch (e) {
+        if (promoRes) await releaseReservation(promoRes)
+        throw e
+      }
+    })()
+
+    if (promoRes) {
+      await recordRedemption({ resolution: promoRes, orderId: order.id, identity: promoIdent, userId })
+        .catch((e) => logger.error({ err: e, orderId: order.id }, 'gas promo redemption row failed (discount stands)'))
+    }
 
     await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 5 * 60 * 1000, jobId: `gas-expire-${order.id}` })
 
     if (!userId) {
       const today    = new Date().toISOString().slice(0, 10)
       const spendKey = `gas_guest_spend:${clientIp}:${today}`
-      await redis.incrbyfloat(spendKey, paymentAmount)
+      await redis.incrbyfloat(spendKey, finalPaymentAmount)
       await redis.expire(spendKey, 86400)
     }
     if (idempKey) {
@@ -631,6 +685,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         // Transparent price breakdown
         gasValueUsd:     gasAmountUSD.toFixed(4),
         platformFeeUsdt: platformFeeUsdt.toFixed(4),
+        discountUsdt:    (promoRes?.discountUsdt ?? 0).toFixed(4),
+        promoCode:       promoRes?.code ?? null,
         priceAtOrder:    nativeUsdRate.toFixed(4),
       },
     })
@@ -973,6 +1029,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     toAddress:        z.string().min(1),
     pkrPaymentMethod: z.enum(['bank_transfer', 'easypaisa', 'jazzcash', 'nayapay', 'sadapay']),
     idempotencyKey:   z.string().optional(),
+    promoCode:        z.string().trim().min(1).max(40).optional(),
   })
 
   app.post('/gas-fee/orders/pkr', { preHandler: [authenticate] }, async (req, reply) => {
@@ -980,7 +1037,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { tokenConfigId, amount, toAddress, pkrPaymentMethod, idempotencyKey } = parsed.data
+    const { tokenConfigId, amount, toAddress, pkrPaymentMethod, idempotencyKey, promoCode } = parsed.data
     const userId = req.user!.id
     await assertNotInGasCooldown(gasCancelIdentity(userId, req.ip))
 
@@ -1025,7 +1082,6 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (gasAmountUSD > resolvedPkr.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolvedPkr.maxUsdValue} USD. Reduce the amount.`, 400)
 
     const paymentAmountUsd = gasAmountUSD + platformFeeUsdt
-    const pkrAmount        = paymentAmountUsd * usdPkrRate
 
     const idempKey = (req.headers['idempotency-key'] as string | undefined) ?? idempotencyKey
     if (idempKey) {
@@ -1041,35 +1097,58 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const trackingToken = generateTrackingToken()
     const expiresAt     = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
-    const order = await db.gasFeeOrder.create({
-      data: {
-        orderRef,
-        trackingToken,
-        userId,
-        ipAddress:        req.ip ?? 'unknown',
-        chain:            dbChainEnum,
-        gasTokenConfigId: tokenCfg.id,
-        gasAmountNative:  amount,
-        gasAmountUSD,
-        priceAtOrder:     nativeUsdRate,
-        paymentCoin:      'PKR',
-        paymentNetwork:   pkrPaymentMethod.toUpperCase(),
-        paymentAmount:    paymentAmountUsd,
-        platformMarginUsdt: platformFeeUsdt,
-        pkrAmount,
-        pkrPaymentMethod,
-        fromHotWallet:    hotWallet.address,
-        toAddress,
-        status:           'payment_pending',
-        expiresAt,
-      },
-    })
+    // Promo: reserve a margin-only discount, then bake it into both the USD charge and
+    // the derived PKR amount, BEFORE persisting. Floored at the margin → never below base.
+    const promoIdent = promoIdentity(userId, req.ip ?? 'unknown')
+    const promoRes = await reserveOrderPromo(promoCode, paymentAmountUsd, platformFeeUsdt, promoIdent)
+    const finalPaymentUsd = promoRes
+      ? Math.round((paymentAmountUsd - promoRes.discountUsdt) * 100) / 100
+      : paymentAmountUsd
+    const finalPkrAmount = finalPaymentUsd * usdPkrRate
+
+    const order = await (async () => {
+      try {
+        return await db.gasFeeOrder.create({
+          data: {
+            orderRef,
+            trackingToken,
+            userId,
+            ipAddress:        req.ip ?? 'unknown',
+            chain:            dbChainEnum,
+            gasTokenConfigId: tokenCfg.id,
+            gasAmountNative:  amount,
+            gasAmountUSD,
+            priceAtOrder:     nativeUsdRate,
+            paymentCoin:      'PKR',
+            paymentNetwork:   pkrPaymentMethod.toUpperCase(),
+            paymentAmount:    finalPaymentUsd,
+            platformMarginUsdt: platformFeeUsdt,
+            discountUsdt:     promoRes?.discountUsdt ?? 0,
+            ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
+            pkrAmount:        finalPkrAmount,
+            pkrPaymentMethod,
+            fromHotWallet:    hotWallet.address,
+            toAddress,
+            status:           'payment_pending',
+            expiresAt,
+          },
+        })
+      } catch (e) {
+        if (promoRes) await releaseReservation(promoRes)
+        throw e
+      }
+    })()
+
+    if (promoRes) {
+      await recordRedemption({ resolution: promoRes, orderId: order.id, identity: promoIdent, userId })
+        .catch((e) => logger.error({ err: e, orderId: order.id }, 'gas promo redemption row failed (discount stands)'))
+    }
 
     if (idempKey) await redis.setex(`idem:gasfee:pkr:${idempKey}`, 86400, order.id)
     await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 24 * 60 * 60 * 1000, jobId: `gas-expire-${order.id}` })
 
     flagIfRisky(order, req.ip ?? 'unknown').catch(() => {})
-    logger.info({ orderId: order.id, userId, pkrAmount, pkrPaymentMethod }, 'PKR gas order created')
+    logger.info({ orderId: order.id, userId, pkrAmount: finalPkrAmount, pkrPaymentMethod }, 'PKR gas order created')
 
     return reply.code(201).send({
       success: true,
@@ -1078,8 +1157,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         trackingToken:   order.trackingToken,
         paymentCoin:     'PKR',
         paymentNetwork:  pkrPaymentMethod,
-        paymentAmount:   paymentAmountUsd.toFixed(2),
-        pkrAmount:       pkrAmount.toFixed(0),
+        paymentAmount:   finalPaymentUsd.toFixed(2),
+        pkrAmount:       finalPkrAmount.toFixed(0),
         gasAmountNative: order.gasAmountNative.toString(),
         nativeSymbol:    tokenCfg.symbol,
         chain:           order.chain,
@@ -1088,6 +1167,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         // Transparent price breakdown (consistent with USDT orders)
         gasValueUsd:     gasAmountUSD.toFixed(4),
         platformFeeUsdt: platformFeeUsdt.toFixed(4),
+        discountUsdt:    (promoRes?.discountUsdt ?? 0).toFixed(4),
+        promoCode:       promoRes?.code ?? null,
         priceAtOrder:    nativeUsdRate.toFixed(4),
       },
     })
@@ -1126,6 +1207,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     toAddress:       z.string().min(1),
     paymentNetwork:  z.enum(['TRC20', 'BEP20', 'ERC20', 'APTOS']),
     idempotencyKey:  z.string().optional(),
+    promoCode:       z.string().trim().min(1).max(40).optional(),
   })
 
   app.post('/gas-fee/orders/crypto', { preHandler: [optionalAuth] }, async (req, reply) => {
@@ -1133,7 +1215,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { tokenConfigId, amount, toAddress, paymentNetwork, idempotencyKey } = parsed.data
+    const { tokenConfigId, amount, toAddress, paymentNetwork, idempotencyKey, promoCode } = parsed.data
     await assertNotInGasCooldown(gasCancelIdentity(req.user?.id ?? null, req.ip))
 
     const configKeyMap: Record<string, string> = {
@@ -1192,8 +1274,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const gasAmountUSD    = amount * nativeUsdRate
     const platformFeeUsdt = resolvedCrypto.platformFeeUsdt
     if (gasAmountUSD > resolvedCrypto.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolvedCrypto.maxUsdValue} USD. Reduce the amount.`, 400)
-    // Unique amount → unambiguous payment attribution (no same-amount collisions).
-    const paymentAmount = await assignUniqueGasPaymentAmount(paymentNetwork, gasAmountUSD + platformFeeUsdt)
+    // Pre-discount charge — the unique discounted amount is assigned later, after all
+    // validation passes and the promo slot is reserved, so payment-matching operates
+    // on the exact final figure.
+    const baseCharge = gasAmountUSD + platformFeeUsdt
 
     // IP rate limit
     const clientIp  = req.ip ?? 'unknown'
@@ -1217,7 +1301,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const today    = new Date().toISOString().slice(0, 10)
       const spendKey = `gas_guest_spend:${clientIp}:${today}`
       const cur = parseFloat((await redis.get(spendKey)) ?? '0')
-      if (cur + paymentAmount > env.GAS_GUEST_DAILY_LIMIT_USD) {
+      if (cur + baseCharge > env.GAS_GUEST_DAILY_LIMIT_USD) {
         throw new AppError('GUEST_LIMIT_EXCEEDED', `Guest orders are limited to $${env.GAS_GUEST_DAILY_LIMIT_USD} per day.`, 400)
       }
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
@@ -1230,27 +1314,51 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const trackingToken = generateTrackingToken()
     const expiresAt     = new Date(Date.now() + 15 * 60 * 1000)
 
-    const order = await db.gasFeeOrder.create({
-      data: {
-        orderRef,
-        trackingToken,
-        ...(userId ? { userId } : {}),
-        ipAddress:        clientIp,
-        chain:            dbChainEnum,
-        gasTokenConfigId: tokenCfg.id,
-        gasAmountNative:  amount,
-        gasAmountUSD,
-        priceAtOrder:     nativeUsdRate,
-        paymentCoin:      'USDT',
-        paymentNetwork,
-        paymentAmount,
-        platformMarginUsdt: platformFeeUsdt,
-        fromHotWallet:    hotWallet.address,
-        toAddress,
-        status:           'payment_pending',
-        expiresAt,
-      },
-    })
+    // Promo: reserve a margin-only discount, apply it to the base charge, THEN assign
+    // the unique payment amount on the discounted figure (so verify ±1% + matching use
+    // the exact amount the user is told to pay). Floored at the margin → never below base.
+    const promoIdent = promoIdentity(userId, clientIp)
+    const promoRes = await reserveOrderPromo(promoCode, baseCharge, platformFeeUsdt, promoIdent)
+    const discountedBase = promoRes
+      ? Math.round((baseCharge - promoRes.discountUsdt) * 100) / 100
+      : baseCharge
+    const paymentAmount = await assignUniqueGasPaymentAmount(paymentNetwork, discountedBase)
+
+    const order = await (async () => {
+      try {
+        return await db.gasFeeOrder.create({
+          data: {
+            orderRef,
+            trackingToken,
+            ...(userId ? { userId } : {}),
+            ipAddress:        clientIp,
+            chain:            dbChainEnum,
+            gasTokenConfigId: tokenCfg.id,
+            gasAmountNative:  amount,
+            gasAmountUSD,
+            priceAtOrder:     nativeUsdRate,
+            paymentCoin:      'USDT',
+            paymentNetwork,
+            paymentAmount,
+            platformMarginUsdt: platformFeeUsdt,
+            discountUsdt:     promoRes?.discountUsdt ?? 0,
+            ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
+            fromHotWallet:    hotWallet.address,
+            toAddress,
+            status:           'payment_pending',
+            expiresAt,
+          },
+        })
+      } catch (e) {
+        if (promoRes) await releaseReservation(promoRes)
+        throw e
+      }
+    })()
+
+    if (promoRes) {
+      await recordRedemption({ resolution: promoRes, orderId: order.id, identity: promoIdent, userId })
+        .catch((e) => logger.error({ err: e, orderId: order.id }, 'gas promo redemption row failed (discount stands)'))
+    }
 
     if (idempKey) await redis.setex(`idem:gasfee:crypto:${idempKey}`, 86400, order.id)
     if (!userId) {
@@ -1280,9 +1388,38 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         // Transparent price breakdown
         gasValueUsd:     gasAmountUSD.toFixed(4),
         platformFeeUsdt: platformFeeUsdt.toFixed(4),
+        discountUsdt:    (promoRes?.discountUsdt ?? 0).toFixed(4),
+        promoCode:       promoRes?.code ?? null,
         priceAtOrder:    nativeUsdRate.toFixed(4),
       },
     })
+  })
+
+  // ── POST /gas-fee/promo/preview — validate a promo code for an order (no reserve) ──
+  // Cosmetic preview for the payment page. The real discount is re-validated and
+  // reserved server-side at order creation, so a tampered preview cannot grant value.
+  const promoPreviewSchema = z.object({
+    promoCode:     z.string().trim().min(1).max(40),
+    tokenConfigId: z.string().min(1),
+    amount:        z.number().positive(),
+  })
+  app.post('/gas-fee/promo/preview', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const parsed = promoPreviewSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { promoCode, tokenConfigId, amount } = parsed.data
+
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
+    if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
+    const resolved = resolveTokenConfig(tokenCfg, tokenCfg.chain)
+    const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
+    if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
+    const gasAmountUSD = amount * nativeUsdRate
+    const marginUsdt   = resolved.platformFeeUsdt
+    const orderUsd     = Math.round((gasAmountUSD + marginUsdt) * 100) / 100
+
+    const identity = promoIdentity(req.user?.id ?? null, req.ip ?? 'unknown')
+    const preview = await previewPromo({ code: promoCode, orderUsd, marginUsdt, identity })
+    return reply.send({ success: true, data: preview })
   })
 
   // ── POST /gas-fee/orders/:orderRef/proof — submit PKR payment proof ─────────

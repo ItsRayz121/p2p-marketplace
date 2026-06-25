@@ -149,6 +149,16 @@ export interface GasFlowCtx {
   isPkrOrder: boolean
   explorerBase: string | null
 
+  // Promo code (gas marketing — margin-only discount)
+  promoEnabled: boolean
+  promoCode: string
+  setPromoCode: (v: string) => void
+  promoApplied: { code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string } | null
+  promoError: string
+  promoChecking: boolean
+  applyPromo: () => Promise<void>
+  clearPromo: () => void
+
   // Helpers
   getPkrDetails: () => { label: string; value: string | null | undefined }[] | null
 }
