@@ -45,11 +45,17 @@ export default function GasAffiliatesAdminPage() {
   useEffect(() => { void load() }, [load])
 
   async function approve(a: Affiliate) {
-    const maxMarginPct = Number(window.prompt(`Margin allowance % for ${a.email ?? a.userId}\n(total margin the affiliate may split between buyer discount + commission)`, String(a.maxMarginPct)))
+    const marginRaw = window.prompt(`Margin allowance % for ${a.email ?? a.userId}\n(total margin the affiliate may split between buyer discount + commission)`, String(a.maxMarginPct))
+    if (marginRaw === null) return
+    const maxMarginPct = Number(marginRaw)
     if (!(maxMarginPct >= 0 && maxMarginPct <= 100)) { toast.error('Margin % must be 0–100'); return }
-    const minUserDiscountPct = Number(window.prompt(`Minimum buyer discount % (0–${maxMarginPct})`, String(a.minUserDiscountPct)))
+    const minRaw = window.prompt(`Minimum buyer discount % (0–${maxMarginPct})`, String(a.minUserDiscountPct))
+    if (minRaw === null) return
+    const minUserDiscountPct = Number(minRaw)
     if (!(minUserDiscountPct >= 0 && minUserDiscountPct <= maxMarginPct)) { toast.error(`Min discount must be 0–${maxMarginPct}`); return }
-    const maxLinks = Number(window.prompt('Max number of affiliate links (1–50)', String(a.maxLinks)))
+    const linksRaw = window.prompt('Max number of affiliate links (1–50)', String(a.maxLinks))
+    if (linksRaw === null) return
+    const maxLinks = Number(linksRaw)
     if (!(Number.isInteger(maxLinks) && maxLinks >= 1 && maxLinks <= 50)) { toast.error('Max links must be 1–50'); return }
     setBusyId(a.userId)
     try {

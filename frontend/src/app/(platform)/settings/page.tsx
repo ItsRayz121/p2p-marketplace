@@ -839,10 +839,15 @@ function AffiliateTab() {
 
   const handleCreateLink = async () => {
     if (!caps) return
-    const label = window.prompt('Name this link (optional)', '') ?? ''
-    const userDiscountPct = Number(window.prompt(`Buyer discount % (min ${caps.minUserDiscountPct}, your allowance is ${caps.maxMarginPct}% total)`, String(caps.minUserDiscountPct)))
+    const label = window.prompt('Name this link (optional)', '')
+    if (label === null) return
+    const discountRaw = window.prompt(`Buyer discount % (min ${caps.minUserDiscountPct}, your allowance is ${caps.maxMarginPct}% total)`, String(caps.minUserDiscountPct))
+    if (discountRaw === null) return
+    const userDiscountPct = Number(discountRaw)
     if (!(userDiscountPct >= 0)) { toast.error('Invalid discount'); return }
-    const commissionPct = Number(window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(Math.max(0, caps.maxMarginPct - userDiscountPct))))
+    const commissionRaw = window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(Math.max(0, caps.maxMarginPct - userDiscountPct)))
+    if (commissionRaw === null) return
+    const commissionPct = Number(commissionRaw)
     if (!(commissionPct >= 0)) { toast.error('Invalid commission'); return }
     setBusyLink('new')
     try {
@@ -855,9 +860,13 @@ function AffiliateTab() {
 
   const handleEditLink = async (link: AffiliateLink) => {
     if (!caps) return
-    const userDiscountPct = Number(window.prompt(`Buyer discount % for ${link.code} (min ${caps.minUserDiscountPct})`, String(link.userDiscountPct)))
+    const discountRaw = window.prompt(`Buyer discount % for ${link.code} (min ${caps.minUserDiscountPct})`, String(link.userDiscountPct))
+    if (discountRaw === null) return
+    const userDiscountPct = Number(discountRaw)
     if (!(userDiscountPct >= 0)) { toast.error('Invalid discount'); return }
-    const commissionPct = Number(window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(link.commissionPct)))
+    const commissionRaw = window.prompt(`Your commission % (discount + commission must be ≤ ${caps.maxMarginPct}%)`, String(link.commissionPct))
+    if (commissionRaw === null) return
+    const commissionPct = Number(commissionRaw)
     if (!(commissionPct >= 0)) { toast.error('Invalid commission'); return }
     setBusyLink(link.id)
     try {
