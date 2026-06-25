@@ -224,6 +224,8 @@ export async function getAffiliateQuote(buyerUserId: string, marginUsdt: number)
 export interface AdminAffiliateRow {
   userId: string
   email: string | null
+  username: string | null
+  referralCode: string | null
   status: AffiliateStatus
   socials: unknown
   applicantNote: string | null
@@ -240,13 +242,15 @@ export interface AdminAffiliateRow {
 export async function adminListAffiliates(): Promise<AdminAffiliateRow[]> {
   const rows = await db.gasAffiliate.findMany({
     orderBy: { createdAt: 'desc' },
-    include: { user: { select: { email: true } } },
+    include: { user: { select: { email: true, username: true, referralCode: true } } },
   })
   const counts = await db.gasReferralCode.groupBy({ by: ['ownerId'], _count: { _all: true } })
   const countMap = new Map(counts.map((c) => [c.ownerId, c._count._all]))
   return rows.map((r) => ({
     userId: r.userId,
     email: r.user?.email ?? null,
+    username: r.user?.username ?? null,
+    referralCode: r.user?.referralCode ?? null,
     status: r.status as AffiliateStatus,
     socials: r.socials,
     applicantNote: r.applicantNote,

@@ -11,6 +11,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
 import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
+import { WereYouReferred } from '@/components/referral/WereYouReferred'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { toast } from '@/lib/toast'
 import { Lock, Camera, Mail, Send, Check } from 'lucide-react'
@@ -756,6 +757,9 @@ function ConnectionsTab() {
           </>
         )}
       </div>
+
+      {/* Referral linkage — set who invited you (once) */}
+      <WereYouReferred />
     </div>
   )
 }

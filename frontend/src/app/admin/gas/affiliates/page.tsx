@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { toast } from '@/lib/toast'
@@ -8,7 +9,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Search } from 'lucide-react'
 
 type Affiliate = Awaited<ReturnType<typeof adminApi.getGasAffiliates>>[number]
 type EarningRow = Awaited<ReturnType<typeof adminApi.getGasReferrals>>[number]
@@ -31,6 +32,7 @@ export default function GasAffiliatesAdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -78,6 +80,20 @@ export default function GasAffiliatesAdminPage() {
     finally { setBusyId(null) }
   }
 
+  const q = query.trim().toLowerCase()
+  const filteredAffiliates = useMemo(() => {
+    if (!affiliates) return null
+    if (!q) return affiliates
+    return affiliates.filter((a) => [a.username, a.email, a.referralCode, a.applicantNote, ...Object.values(a.socials ?? {})]
+      .some((v) => v?.toLowerCase().includes(q)))
+  }, [affiliates, q])
+  const filteredEarnings = useMemo(() => {
+    if (!earnings) return null
+    if (!q) return earnings
+    return earnings.filter((r) => [r.code, r.owner.username, r.owner.email]
+      .some((v) => v?.toLowerCase().includes(q)))
+  }, [earnings, q])
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center gap-3">
@@ -89,6 +105,17 @@ export default function GasAffiliatesAdminPage() {
         <Button size="sm" variant="ghost" onClick={() => void load()}><RefreshCw className="w-4 h-4" /></Button>
       </div>
 
+      {/* Search across username / email / code / socials */}
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by username, email, code…"
+          className="w-full rounded-lg border border-border bg-surface-alt pl-9 pr-3 py-2 text-sm"
+        />
+      </div>
+
       {loading && <LoadingState message="Loading affiliates..." />}
       {error && !loading && <ErrorState description={error} onRetry={load} />}
 
@@ -97,16 +124,20 @@ export default function GasAffiliatesAdminPage() {
           {/* Applications + approved affiliates */}
           <section className="space-y-3">
             <h2 className="text-sm font-bold text-text-primary">Applications</h2>
-            {affiliates && affiliates.length === 0 && (
-              <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">No affiliate applications yet.</div>
+            {filteredAffiliates && filteredAffiliates.length === 0 && (
+              <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">{q ? 'No applications match your search.' : 'No affiliate applications yet.'}</div>
             )}
-            {affiliates && affiliates.map((a) => (
+            {filteredAffiliates && filteredAffiliates.map((a) => (
               <div key={a.userId} className="rounded-xl border border-border bg-surface p-4">
                 <div className="flex items-start gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-text-primary truncate">{a.email ?? a.userId}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link href={`/admin/users/${a.userId}`} className="font-semibold text-text-primary truncate hover:text-primary hover:underline">{a.username ?? a.email ?? a.userId}</Link>
                       <Badge variant={statusVariant(a.status)}>{a.status}</Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-text-muted">
+                      {a.email && <span>{a.email}</span>}
+                      {a.referralCode && <span>Ref code <span className="font-mono text-text-secondary">{a.referralCode}</span></span>}
                     </div>
                     {a.socials && Object.keys(a.socials).length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-2">
@@ -143,16 +174,16 @@ export default function GasAffiliatesAdminPage() {
           {/* Earnings (per referral/affiliate link) */}
           <section className="space-y-3">
             <h2 className="text-sm font-bold text-text-primary">Affiliate earnings</h2>
-            {earnings && earnings.length === 0 && (
-              <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">No affiliate links with activity yet.</div>
+            {filteredEarnings && filteredEarnings.length === 0 && (
+              <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">{q ? 'No earnings match your search.' : 'No affiliate links with activity yet.'}</div>
             )}
-            {earnings && earnings.map((r) => (
+            {filteredEarnings && filteredEarnings.map((r) => (
               <div key={r.codeId} className="rounded-xl border border-border bg-surface p-4">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-bold text-text-primary">{r.code}</span>
+                  <Link href={`/admin/users/${r.owner.id}`} className="font-semibold text-text-primary truncate hover:text-primary hover:underline">{r.owner.username ?? r.owner.email ?? 'Unknown user'}</Link>
                   <Badge variant={r.isActive ? 'success' : 'default'}>{r.isActive ? 'Active' : 'Disabled'}</Badge>
                   <span className="text-xs text-primary font-semibold">{r.referralPct}% commission</span>
-                  <span className="text-xs text-text-muted truncate">· {r.owner.username ?? r.owner.email}</span>
+                  <span className="text-xs text-text-muted">· code <span className="font-mono text-text-secondary">{r.code}</span></span>
                 </div>
                 <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{r.referredCount}</p></div>

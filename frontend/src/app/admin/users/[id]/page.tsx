@@ -541,6 +541,56 @@ export default function AdminUserProfilePage() {
       {/* ── Referrals ── */}
       {tab === 'referrals' && (
         <div className="space-y-4">
+          {data.referralProgram && (() => {
+            const rp = data.referralProgram
+            const aff = rp.affiliate
+            const socials: Record<string, string> = (aff?.socials && typeof aff.socials === 'object') ? aff.socials : {}
+            return (
+              <Section title="Referral & Affiliate Program">
+                <div className="px-5 py-4 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-text-muted">Referral code</span>
+                    <span className="font-mono font-semibold text-text-primary">{rp.referralCode ?? '—'}</span>
+                    {rp.referralPct != null && <Badge variant="info" size="sm">{rp.referralPct}% commission</Badge>}
+                    {aff ? (
+                      <Badge variant={aff.status === 'approved' ? 'success' : aff.status === 'pending' ? 'warning' : aff.status === 'rejected' ? 'danger' : 'default'} size="sm">Affiliate: {aff.status}</Badge>
+                    ) : <Badge variant="default" size="sm">Not an affiliate</Badge>}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div className="rounded-lg bg-surface-alt p-3"><p className="text-lg font-bold text-text-primary">{rp.referredCount}</p><p className="text-xs text-text-muted">Referred</p></div>
+                    <div className="rounded-lg bg-surface-alt p-3"><p className="text-lg font-bold text-text-primary">${rp.totalEarnedUsdt.toFixed(2)}</p><p className="text-xs text-text-muted">Total earned</p></div>
+                    <div className="rounded-lg bg-surface-alt p-3"><p className="text-lg font-bold text-success">${rp.availableUsdt.toFixed(2)}</p><p className="text-xs text-text-muted">Available</p></div>
+                    <div className="rounded-lg bg-surface-alt p-3"><p className="text-lg font-bold text-text-primary">${rp.withdrawnUsdt.toFixed(2)}</p><p className="text-xs text-text-muted">Withdrawn</p></div>
+                  </div>
+
+                  {aff && Object.keys(socials).length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(socials).map(([k, v]) => (
+                        <span key={k} className="text-xs bg-surface-alt rounded-full px-2.5 py-0.5 text-text-secondary"><span className="text-text-muted">{k}:</span> {v}</span>
+                      ))}
+                    </div>
+                  )}
+                  {aff?.applicantNote && <p className="text-xs text-text-muted italic">“{aff.applicantNote}”</p>}
+                  {aff?.status === 'approved' && (
+                    <p className="text-xs text-text-muted">Allowance {aff.maxMarginPct}% · min buyer discount {aff.minUserDiscountPct}% · up to {aff.maxLinks} links</p>
+                  )}
+
+                  {rp.codes?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold text-text-secondary">Links / codes</p>
+                      {rp.codes.map((c: any) => (
+                        <div key={c.id} className="flex items-center justify-between gap-2 text-xs rounded-lg bg-surface-alt px-3 py-2">
+                          <span className="font-mono font-semibold text-text-primary">{c.code}{c.label ? <span className="font-sans text-text-muted ml-2">{c.label}</span> : null}</span>
+                          <span className="text-text-muted">{c.userDiscountPct > 0 ? `${c.userDiscountPct}% discount · ` : ''}{c.referralPct}% commission · {c.referredCount} referred{c.isActive ? '' : ' · disabled'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Section>
+            )
+          })()}
           <Section title="Referred By">
             {data.referredBy ? (
               <div className="px-5 py-3 text-sm">

@@ -41,15 +41,31 @@ export function ReferralEarnings() {
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [busyLink, setBusyLink] = useState<string | null>(null)
+  const [labelInput, setLabelInput] = useState('')
+  const [savingLabel, setSavingLabel] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
-    try { setData(await gasApi.getAffiliateOverview()) }
+    try {
+      const d = await gasApi.getAffiliateOverview()
+      setData(d)
+      setLabelInput(d.earnings.label ?? '')
+    }
     catch (e) { setError(e instanceof Error ? e.message : 'Failed to load earnings') }
     finally { setLoading(false) }
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  const handleSaveLabel = async () => {
+    setSavingLabel(true)
+    try {
+      await gasApi.setReferralLabel(labelInput.trim() || null)
+      toast.success('Referral label saved')
+      await load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to save label') }
+    finally { setSavingLabel(false) }
+  }
 
   const handleWithdraw = async () => {
     setWithdrawing(true)
@@ -225,6 +241,18 @@ export function ReferralEarnings() {
           <div>
             <h2 className="text-base font-semibold text-text-primary mb-1">Gas referral earnings</h2>
             <p className="text-xs text-text-muted">Earn <strong>{sum.referralPct ?? 0}%</strong> of the platform gas fee from everyone you refer — paid into your USDT balance.</p>
+          </div>
+
+          {/* Vanity label — name your referral link (cosmetic; code & attribution unchanged) */}
+          <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-2">
+            <h3 className="text-sm font-bold text-text-primary">Custom label for your link</h3>
+            <p className="text-xs text-text-muted">Give your referral link a name so you can recognise it (e.g. “My Twitter drop”). Optional — it doesn&apos;t change your code.</p>
+            <div className="flex gap-2">
+              <Input value={labelInput} onChange={(e) => setLabelInput(e.target.value)} placeholder="My referral link" maxLength={60} />
+              <Button variant="secondary" onClick={handleSaveLabel} disabled={savingLabel || labelInput.trim() === (sum.label ?? '')}>
+                {savingLabel ? <Spinner size="sm" /> : 'Save'}
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

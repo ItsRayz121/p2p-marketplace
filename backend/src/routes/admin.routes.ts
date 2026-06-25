@@ -583,6 +583,33 @@ export async function adminRoutes(app: FastifyInstance) {
     const onlineThreshold = new Date(Date.now() - 5 * 60 * 1000)
     const isOnline = !!user.lastSeenAt && user.lastSeenAt > onlineThreshold
 
+    // ── Referral & affiliate program (flag-independent admin view) ──
+    const [gasCodes, accrualAgg, affiliateProfile] = await Promise.all([
+      db.gasReferralCode.findMany({ where: { ownerId: id }, orderBy: { createdAt: 'asc' }, select: { id: true, code: true, label: true, referralPct: true, userDiscountPct: true, isActive: true } }),
+      db.gasReferralAccrual.groupBy({ by: ['status'], where: { referrerId: id }, _sum: { amountUsdt: true } }),
+      db.gasAffiliate.findUnique({ where: { userId: id }, select: { status: true, socials: true, applicantNote: true, rejectionReason: true, maxMarginPct: true, minUserDiscountPct: true, maxLinks: true, reviewedAt: true } }),
+    ])
+    const codeIds = gasCodes.map((c) => c.id)
+    const perCode = codeIds.length ? await db.gasReferral.groupBy({ by: ['codeId'], where: { codeId: { in: codeIds } }, _count: { _all: true } }) : []
+    const perCodeMap = new Map(perCode.map((c) => [c.codeId, c._count._all]))
+    const round2 = (n: number) => Math.round(n * 100) / 100
+    let totalEarnedUsdt = 0, availableUsdt = 0, withdrawnUsdt = 0
+    for (const a of accrualAgg) {
+      const amt = Number(a._sum.amountUsdt ?? 0)
+      if (a.status === 'available') { availableUsdt += amt; totalEarnedUsdt += amt }
+      else if (a.status === 'withdrawn') { withdrawnUsdt += amt; totalEarnedUsdt += amt }
+    }
+    const referralProgram = {
+      referralCode: user.referralCode,
+      referralPct: gasCodes[0]?.referralPct ?? null,
+      referredCount: referralCount,
+      totalEarnedUsdt: round2(totalEarnedUsdt),
+      availableUsdt: round2(availableUsdt),
+      withdrawnUsdt: round2(withdrawnUsdt),
+      affiliate: affiliateProfile,
+      codes: gasCodes.map((c) => ({ ...c, referredCount: perCodeMap.get(c.id) ?? 0 })),
+    }
+
     const ts = user.tradeStats
     return reply.send({
       success: true,
@@ -639,6 +666,7 @@ export async function adminRoutes(app: FastifyInstance) {
         ratings: { p2p: ratingsReceived, ctm: ctmRatingsReceived },
         referrals,
         referredBy: user.referredBy,
+        referralProgram,
         auditByUser,
         auditTargetingUser,
         adminNotes: user.adminNotes,

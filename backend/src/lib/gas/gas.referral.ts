@@ -45,13 +45,25 @@ export async function generateUniqueCode(): Promise<string> {
 }
 
 /** Get the caller's referral code, creating one on first access (pct from config). */
-export async function getOrCreateOwnCode(userId: string): Promise<{ id: string; code: string; referralPct: number; isActive: boolean }> {
+export async function getOrCreateOwnCode(userId: string): Promise<{ id: string; code: string; referralPct: number; isActive: boolean; label: string | null }> {
   const existing = await db.gasReferralCode.findFirst({ where: { ownerId: userId }, orderBy: { createdAt: 'asc' } })
-  if (existing) return { id: existing.id, code: existing.code, referralPct: existing.referralPct, isActive: existing.isActive }
+  if (existing) return { id: existing.id, code: existing.code, referralPct: existing.referralPct, isActive: existing.isActive, label: existing.label }
   const pct = await getNumberConfig(DEFAULT_PCT_CONFIG, DEFAULT_PCT)
   const code = await generateUniqueCode()
   const created = await db.gasReferralCode.create({ data: { code, ownerId: userId, referralPct: pct } })
-  return { id: created.id, code: created.code, referralPct: created.referralPct, isActive: created.isActive }
+  return { id: created.id, code: created.code, referralPct: created.referralPct, isActive: created.isActive, label: created.label }
+}
+
+/**
+ * Set a vanity label/alias on the caller's own referral code. Purely cosmetic — it
+ * does not change the code string or attribution; it just lets a user name their link
+ * (e.g. "My Twitter drop"). Available to every user, not only affiliates.
+ */
+export async function setOwnCodeLabel(userId: string, rawLabel: string | null): Promise<{ label: string | null }> {
+  const label = rawLabel?.trim().slice(0, 60) || null
+  const own = await getOrCreateOwnCode(userId)
+  const updated = await db.gasReferralCode.update({ where: { id: own.id }, data: { label } })
+  return { label: updated.label }
 }
 
 /**
@@ -191,6 +203,7 @@ export async function accrueReferralForDelivery(order: GasFeeOrder): Promise<voi
 export interface ReferralSummary {
   enabled: boolean
   code: string | null
+  label: string | null
   referralPct: number | null
   referredCount: number
   totalAccruedUsdt: number
@@ -210,7 +223,7 @@ function holdCutoff(holdHours: number): Date {
 export async function getReferralSummary(userId: string): Promise<ReferralSummary> {
   const enabled = await isFlagEnabled(FLAGS.GAS_REFERRAL)
   if (!enabled) {
-    return { enabled: false, code: null, referralPct: null, referredCount: 0, totalAccruedUsdt: 0, availableUsdt: 0, withdrawableUsdt: 0, withdrawnUsdt: 0, minWithdrawUsdt: 0, kycOk: false, boundToReferrer: false }
+    return { enabled: false, code: null, label: null, referralPct: null, referredCount: 0, totalAccruedUsdt: 0, availableUsdt: 0, withdrawableUsdt: 0, withdrawnUsdt: 0, minWithdrawUsdt: 0, kycOk: false, boundToReferrer: false }
   }
 
   const own = await getOrCreateOwnCode(userId)
@@ -240,6 +253,7 @@ export async function getReferralSummary(userId: string): Promise<ReferralSummar
   return {
     enabled: true,
     code: own.code,
+    label: own.label,
     referralPct: own.referralPct,
     referredCount,
     totalAccruedUsdt: round2(total),

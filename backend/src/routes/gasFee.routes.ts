@@ -32,7 +32,7 @@ import {
   type PromoResolution,
 } from '../lib/gas/gas.promo'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
-import { bindReferral, getReferralSummary, withdrawReferralEarnings } from '../lib/gas/gas.referral'
+import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
   getAffiliateQuote,
   applyForAffiliate,
@@ -1480,6 +1480,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const parsed = referralApplySchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     const result = await bindReferral(req.user!.id, parsed.data.code)
+    return reply.send({ success: true, data: result })
+  })
+
+  // ── POST /gas-fee/referral/label — set a vanity label/alias on your own code ──
+  const referralLabelSchema = z.object({ label: z.string().trim().max(60).nullable() })
+  app.post('/gas-fee/referral/label', { preHandler: [authenticate], config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const parsed = referralLabelSchema.safeParse(req.body ?? {})
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const result = await setOwnCodeLabel(req.user!.id, parsed.data.label)
     return reply.send({ success: true, data: result })
   })
 

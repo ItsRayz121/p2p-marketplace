@@ -1448,9 +1448,11 @@ export const gasApi = {
     apiRequest<{ valid: boolean; code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string }>('/gas-fee/promo/preview', { method: 'POST', body: JSON.stringify(data) }),
 
   getReferralSummary: () =>
-    apiRequest<{ enabled: boolean; code: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }>('/gas-fee/referral/me'),
+    apiRequest<{ enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }>('/gas-fee/referral/me'),
   applyReferral: (code: string) =>
-    apiRequest<{ bound: boolean; referrerId: string }>('/gas-fee/referral/apply', { method: 'POST', body: JSON.stringify({ code }) }),
+    apiRequest<{ bound: boolean; referrerId: string | null }>('/gas-fee/referral/apply', { method: 'POST', body: JSON.stringify({ code }) }),
+  setReferralLabel: (label: string | null) =>
+    apiRequest<{ label: string | null }>('/gas-fee/referral/label', { method: 'POST', body: JSON.stringify({ label }) }),
   withdrawReferral: () =>
     apiRequest<{ withdrawnUsdt: number; newBalanceUsdt: number }>('/gas-fee/referral/withdraw', { method: 'POST' }),
 
@@ -1463,7 +1465,7 @@ export const gasApi = {
       rejectionReason: string | null
       caps: { maxMarginPct: number; minUserDiscountPct: number; maxLinks: number } | null
       links: Array<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>
-      earnings: { enabled: boolean; code: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }
+      earnings: { enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }
     }>('/gas-fee/affiliate/me'),
   getAffiliateQuote: (tokenConfigId: string) =>
     apiRequest<{ discountUsdt: number; discountPct: number; referrerLabel: string } | null>(`/gas-fee/affiliate/quote?tokenConfigId=${encodeURIComponent(tokenConfigId)}`),
@@ -2277,7 +2279,8 @@ export const adminApi = {
   // Gas affiliates (admin: applications + approval)
   getGasAffiliates: () =>
     apiRequest<Array<{
-      userId: string; email: string | null; status: 'none' | 'pending' | 'approved' | 'rejected'
+      userId: string; email: string | null; username: string | null; referralCode: string | null
+      status: 'none' | 'pending' | 'approved' | 'rejected'
       socials: Record<string, string> | null; applicantNote: string | null; rejectionReason: string | null
       maxMarginPct: number; minUserDiscountPct: number; maxLinks: number; linkCount: number
       reviewedAt: string | null; createdAt: string
