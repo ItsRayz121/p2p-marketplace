@@ -1451,6 +1451,24 @@ export const gasApi = {
   withdrawReferral: () =>
     apiRequest<{ withdrawnUsdt: number; newBalanceUsdt: number }>('/gas-fee/referral/withdraw', { method: 'POST' }),
 
+  // Affiliate program (self-service, extends referrals)
+  getAffiliateOverview: () =>
+    apiRequest<{
+      enabled: boolean
+      status: 'none' | 'pending' | 'approved' | 'rejected'
+      applicantNote: string | null
+      rejectionReason: string | null
+      caps: { maxMarginPct: number; minUserDiscountPct: number; maxLinks: number } | null
+      links: Array<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>
+      earnings: { enabled: boolean; code: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }
+    }>('/gas-fee/affiliate/me'),
+  applyAffiliate: (data: { socials: Record<string, string>; note?: string }) =>
+    apiRequest<{ status: string }>('/gas-fee/affiliate/apply', { method: 'POST', body: JSON.stringify(data) }),
+  createAffiliateLink: (data: { label?: string; userDiscountPct: number; commissionPct: number }) =>
+    apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>('/gas-fee/affiliate/links', { method: 'POST', body: JSON.stringify(data) }),
+  updateAffiliateLink: (codeId: string, data: { label?: string | null; userDiscountPct?: number; commissionPct?: number; isActive?: boolean }) =>
+    apiRequest<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>(`/gas-fee/affiliate/links/${codeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
   getGiveaway: (code: string) =>
     apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; amountNative: string; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
   enterGiveaway: (data: { code: string; receivingAddress: string; email?: string }) =>
@@ -2250,6 +2268,17 @@ export const adminApi = {
     }>>('/admin/gas/referrals'),
   updateGasReferral: (codeId: string, data: { referralPct?: number; isActive?: boolean }) =>
     apiRequest<unknown>(`/admin/gas/referrals/${codeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Gas affiliates (admin: applications + approval)
+  getGasAffiliates: () =>
+    apiRequest<Array<{
+      userId: string; email: string | null; status: 'none' | 'pending' | 'approved' | 'rejected'
+      socials: Record<string, string> | null; applicantNote: string | null; rejectionReason: string | null
+      maxMarginPct: number; minUserDiscountPct: number; maxLinks: number; linkCount: number
+      reviewedAt: string | null; createdAt: string
+    }>>('/admin/gas/affiliates'),
+  reviewGasAffiliate: (userId: string, data: { decision: 'approve' | 'reject'; maxMarginPct?: number; minUserDiscountPct?: number; maxLinks?: number; rejectionReason?: string | null }) =>
+    apiRequest<{ status: string }>(`/admin/gas/affiliates/${userId}/review`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Gas giveaways (admin)
   getGasGiveaways: () =>

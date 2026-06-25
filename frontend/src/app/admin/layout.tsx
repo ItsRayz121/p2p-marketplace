@@ -429,8 +429,8 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
-        label: 'Referrals',
-        href: '/admin/gas/referrals',
+        label: 'Affiliates',
+        href: '/admin/gas/affiliates',
         roles: ['admin', 'super_admin'],
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
