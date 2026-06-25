@@ -2288,7 +2288,7 @@ export const adminApi = {
   createGasGiveaway: (data: { code: string; kolLabel: string; tokenConfigId: string; amountNative: number; winnerCount: number; entryDeadline?: string; requireKyc: boolean }) =>
     apiRequest<unknown>('/gas-fee/admin/giveaways', { method: 'POST', body: JSON.stringify(data) }),
   getGasGiveawayEntries: (id: string) =>
-    apiRequest<Array<{ id: string; userId: string; email: string | null; receivingAddress: string; status: string; orderId: string | null; createdAt: string }>>(`/gas-fee/admin/giveaways/${id}/entries`),
+    apiRequest<Array<{ id: string; userId: string; email: string | null; receivingAddress: string; status: string; orderId: string | null; orderStatus: string | null; orderRef: string | null; createdAt: string }>>(`/gas-fee/admin/giveaways/${id}/entries`),
   drawGasGiveaway: (id: string, count?: number) =>
     apiRequest<{ drawn: number; attempted: number; results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> }>(`/gas-fee/admin/giveaways/${id}/draw`, { method: 'POST', body: JSON.stringify(count ? { count } : {}) }),
   getGasWallets: () =>

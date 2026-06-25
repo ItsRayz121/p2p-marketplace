@@ -1759,11 +1759,24 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })) })
   })
 
-  // GET /gas-fee/admin/giveaways/:id/entries — entries for a campaign (admin)
+  // GET /gas-fee/admin/giveaways/:id/entries — entries for a campaign (admin), enriched
+  // with each winner's delivery status so admins can see who actually received the prize.
   app.get('/gas-fee/admin/giveaways/:id/entries', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const entries = await db.gasGiveawayEntry.findMany({ where: { campaignId: id }, orderBy: { createdAt: 'desc' }, take: 500 })
-    return reply.send({ success: true, data: entries })
+    const orderIds = entries.map((e) => e.orderId).filter((x): x is string => !!x)
+    const orders = orderIds.length
+      ? await db.gasFeeOrder.findMany({ where: { id: { in: orderIds } }, select: { id: true, status: true, orderRef: true } })
+      : []
+    const orderMap = new Map(orders.map((o) => [o.id, o]))
+    return reply.send({ success: true, data: entries.map((e) => {
+      const o = e.orderId ? orderMap.get(e.orderId) : undefined
+      return {
+        id: e.id, userId: e.userId, email: e.email, receivingAddress: e.receivingAddress,
+        status: e.status, orderId: e.orderId, createdAt: e.createdAt,
+        orderStatus: o?.status ?? null, orderRef: o?.orderRef ?? null,
+      }
+    }) })
   })
 
   // POST /gas-fee/admin/giveaways/:id/draw — randomly pick winners and deliver free gas.

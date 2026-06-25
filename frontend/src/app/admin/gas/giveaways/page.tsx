@@ -17,6 +17,14 @@ function giveawayLink(code: string): string {
 }
 
 type Campaign = Awaited<ReturnType<typeof adminApi.getGasGiveaways>>[number]
+type Entry = Awaited<ReturnType<typeof adminApi.getGasGiveawayEntries>>[number]
+
+function deliveryVariant(s: string | null): 'success' | 'warning' | 'danger' | 'default' {
+  if (s === 'delivered') return 'success'
+  if (s === 'failed' || s === 'refunded' || s === 'expired') return 'danger'
+  if (!s) return 'default'
+  return 'warning' // payment_detected / sending / etc — in flight
+}
 
 const blankForm = () => ({ code: '', kolLabel: '', tokenConfigId: '', amountNative: '', winnerCount: '10', entryDeadline: '', requireKyc: true })
 
@@ -34,6 +42,24 @@ export default function GasGiveawaysAdminPage() {
   const [tokens, setTokens] = useState<GasToken[]>([])
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [entries, setEntries] = useState<Record<string, Entry[]>>({})
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [entriesBusy, setEntriesBusy] = useState<string | null>(null)
+
+  const loadEntries = useCallback(async (campaignId: string) => {
+    setEntriesBusy(campaignId)
+    try {
+      const e = await adminApi.getGasGiveawayEntries(campaignId)
+      setEntries((prev) => ({ ...prev, [campaignId]: e }))
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Failed to load entries') }
+    finally { setEntriesBusy(null) }
+  }, [])
+
+  async function toggleEntries(c: Campaign) {
+    if (expandedId === c.id) { setExpandedId(null); return }
+    setExpandedId(c.id)
+    if (!entries[c.id]) await loadEntries(c.id)
+  }
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -84,6 +110,8 @@ export default function GasGiveawaysAdminPage() {
       const failed = r.results.filter((x) => !x.ok).length
       toast.success(`Drew ${r.drawn} winner(s)${failed ? `, ${failed} failed` : ''}`)
       void load()
+      // Refresh the winners list if it's currently loaded/open.
+      if (entries[c.id] || expandedId === c.id) void loadEntries(c.id)
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Draw failed') }
     finally { setBusyId(null) }
   }
@@ -181,6 +209,55 @@ export default function GasGiveawaysAdminPage() {
                 <div><p className="text-text-muted">Entries</p><p className="font-semibold text-text-primary">{c.entryCount}</p></div>
                 <div><p className="text-text-muted">KYC</p><p className="font-semibold text-text-primary">{c.requireKyc ? 'Required' : 'No'}</p></div>
               </div>
+
+              {/* Participants + winners history */}
+              <button
+                onClick={() => toggleEntries(c)}
+                className="mt-3 text-xs font-semibold text-primary hover:underline"
+              >
+                {expandedId === c.id ? 'Hide participants' : `View participants & winners (${c.entryCount})`}
+              </button>
+
+              {expandedId === c.id && (
+                <div className="mt-2 rounded-lg border border-border bg-surface-alt/50 p-3">
+                  {entriesBusy === c.id && !entries[c.id] ? (
+                    <p className="text-xs text-text-muted text-center py-2">Loading participants…</p>
+                  ) : !entries[c.id] || entries[c.id]!.length === 0 ? (
+                    <p className="text-xs text-text-muted text-center py-2">No participants yet.</p>
+                  ) : (
+                    <>
+                      {(() => {
+                        const list = entries[c.id]!
+                        const won = list.filter((e) => e.status === 'won')
+                        const delivered = won.filter((e) => e.orderStatus === 'delivered')
+                        return (
+                          <div className="flex flex-wrap gap-3 text-xs mb-3 pb-2 border-b border-border">
+                            <span><span className="text-text-muted">Participants </span><span className="font-semibold text-text-primary">{list.length}</span></span>
+                            <span><span className="text-text-muted">Winners </span><span className="font-semibold text-text-primary">{won.length}</span></span>
+                            <span><span className="text-text-muted">Prize delivered </span><span className="font-semibold text-success">{delivered.length}</span></span>
+                          </div>
+                        )
+                      })()}
+                      <div className="space-y-1.5 max-h-80 overflow-auto">
+                        {entries[c.id]!.map((e) => (
+                          <div key={e.id} className="flex items-center gap-2 text-xs">
+                            <span className="text-text-secondary truncate flex-1 min-w-0">{e.email ?? `user ${e.userId.slice(0, 8)}`}</span>
+                            <span className="font-mono text-text-muted truncate hidden sm:inline" style={{ maxWidth: 140 }}>{e.receivingAddress.slice(0, 8)}…{e.receivingAddress.slice(-6)}</span>
+                            {e.status === 'won' ? (
+                              <span className="flex items-center gap-1 shrink-0">
+                                <Badge variant="success">won</Badge>
+                                <Badge variant={deliveryVariant(e.orderStatus)}>{e.orderStatus ?? 'pending'}</Badge>
+                              </span>
+                            ) : (
+                              <Badge variant="default">{e.status === 'not_selected' ? 'not selected' : 'entered'}</Badge>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
