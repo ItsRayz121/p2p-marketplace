@@ -5,7 +5,7 @@ import { CardHeader, ProcessingTimeline } from './GasPrimitives'
 
 export function GasPkrReviewStep() {
   const {
-    order, selectedToken, computedPkr,
+    order, selectedToken, effectivePkr,
     setPhase, resetFlow, pollErrCount, setPollErrCount, pollOrder,
   } = useGasCtx()
 
@@ -33,7 +33,7 @@ export function GasPkrReviewStep() {
       <div className="bg-surface-alt rounded-xl p-3 space-y-2 text-xs">
         <div className="flex justify-between"><span className="text-text-muted">Order ID</span><span className="font-mono text-text-secondary">{order.orderRef}</span></div>
         <div className="flex justify-between"><span className="text-text-muted">Amount Ordered</span><span className="font-semibold">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">PKR Paid</span><span className="font-semibold text-green-700 dark:text-green-300">PKR {order.pkrAmount ?? computedPkr.toFixed(0)}</span></div>
+        <div className="flex justify-between"><span className="text-text-muted">PKR Paid</span><span className="font-semibold text-green-700 dark:text-green-300">PKR {order.pkrAmount ?? effectivePkr.toFixed(0)}</span></div>
       </div>
 
       {order.status === 'delivered' && (
