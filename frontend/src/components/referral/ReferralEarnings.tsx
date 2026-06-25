@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import { CopyButton } from '@/components/ui/CopyButton'
-import { Gift, Trash2, Link2 } from 'lucide-react'
+import { Gift, Trash2, Link2, ChevronDown } from 'lucide-react'
 
 // The single earnings + links hub for the Referral page. Shows live (USDT) gas referral
 // earnings, the user's custom referral links (open to everyone — standard friend-discount
@@ -44,6 +44,7 @@ export function ReferralEarnings() {
   const [busyLink, setBusyLink] = useState<string | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [creating, setCreating] = useState(false)
+  const [showWasReferred, setShowWasReferred] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -289,17 +290,29 @@ export function ReferralEarnings() {
         </div>
       )}
 
-      {/* Were you referred? — single instance */}
+      {/* Were you referred? — single instance, collapsible */}
       {sum.enabled && !sum.boundToReferrer && (
-        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-          <h3 className="text-sm font-bold text-text-primary">Were you referred?</h3>
-          <p className="text-xs text-text-muted">Enter the code of whoever invited you. This can only be set once.</p>
-          <div className="flex gap-2">
-            <Input value={applyCode} onChange={(e) => setApplyCode(e.target.value.toUpperCase())} placeholder="REFERRAL CODE" className="uppercase" />
-            <Button variant="secondary" onClick={handleApply} disabled={applying || !applyCode.trim()}>
-              {applying ? <Spinner size="sm" /> : 'Apply'}
-            </Button>
-          </div>
+        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowWasReferred((v) => !v)}
+            className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-alt transition-colors"
+            aria-expanded={showWasReferred}
+          >
+            <span className="text-sm font-bold text-text-primary">Were you referred?</span>
+            <ChevronDown size={18} className={`text-text-muted transition-transform ${showWasReferred ? 'rotate-180' : ''}`} />
+          </button>
+          {showWasReferred && (
+            <div className="px-5 pb-5 pt-1 space-y-3 border-t border-border">
+              <p className="text-xs text-text-muted">Enter the code of whoever invited you. This can only be set once.</p>
+              <div className="flex gap-2">
+                <Input value={applyCode} onChange={(e) => setApplyCode(e.target.value.toUpperCase())} placeholder="REFERRAL CODE" className="uppercase" />
+                <Button variant="secondary" onClick={handleApply} disabled={applying || !applyCode.trim()}>
+                  {applying ? <Spinner size="sm" /> : 'Apply'}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
