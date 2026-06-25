@@ -2221,6 +2221,11 @@ export const adminApi = {
   }) => apiRequest<unknown>('/admin/gas/promo-codes', { method: 'POST', body: JSON.stringify(data) }),
   updateGasPromoCode: (id: string, data: Record<string, unknown>) =>
     apiRequest<unknown>(`/admin/gas/promo-codes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Admin-issued free-gas delivery (platform funds base + margin; flag-gated)
+  freeGasDeliver: (data: { tokenConfigId: string; amount: number; toAddress: string; userId?: string; note?: string }) =>
+    apiRequest<{ orderRef: string; gasAmountNative: number; gasAmountUSD: string; fullCoverUsdt: string; chain: string }>(
+      '/gas-fee/admin/free-deliver', { method: 'POST', body: JSON.stringify(data) }),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>

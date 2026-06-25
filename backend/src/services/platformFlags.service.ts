@@ -32,6 +32,13 @@ export const FLAGS = {
    * referral logic runs; gas orders behave exactly as they do today.
    */
   GAS_PROMO: 'gas_promo_enabled',
+  /**
+   * Admin-issued free-gas deliveries. When ON, a super-admin can issue a fully
+   * platform-funded gas delivery to a specific user (paymentAmount 0, base+margin
+   * covered). OFF (default) = the free-deliver endpoint is rejected, so no free gas
+   * can be sent even by an admin until this is deliberately enabled.
+   */
+  GAS_FREE_GRANT: 'gas_free_grant_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { authenticate, optionalAuth } from '../middleware/auth.middleware'
+import { authenticate, optionalAuth, requireRole } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError, Errors } from '../lib/errors'
@@ -1420,6 +1420,99 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const identity = promoIdentity(req.user?.id ?? null, req.ip ?? 'unknown')
     const preview = await previewPromo({ code: promoCode, orderUsd, marginUsdt, identity })
     return reply.send({ success: true, data: preview })
+  })
+
+  // ── POST /gas-fee/admin/free-deliver — admin-issued, platform-funded free gas ──
+  // Super-admin only + flag-gated (gas_free_grant_enabled). Creates a fully-covered
+  // order (paymentAmount 0; platform funds base + margin) already in payment_detected,
+  // so it routes through the EXACT SAME proven delivery worker as a normal paid order.
+  // A failed free delivery has no paymentTxHash → enterRefundWindow sends it to
+  // 'failed' (never a 0-USDT refund). Curated tool for a small set of users.
+  const freeDeliverSchema = z.object({
+    tokenConfigId: z.string().min(1),
+    amount:        z.number().positive(),
+    toAddress:     z.string().min(1),
+    userId:        z.string().min(1).optional(),
+    note:          z.string().trim().max(200).optional(),
+  })
+  app.post('/gas-fee/admin/free-deliver', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_FREE_GRANT))) {
+      throw new AppError('FREE_GRANT_DISABLED', 'Free-gas delivery is not enabled.', 400)
+    }
+    const parsed = freeDeliverSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { tokenConfigId, amount, toAddress, userId, note } = parsed.data
+
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
+    if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
+    const chainCfg = tokenCfg.chain
+    if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
+    if (!isTokenOrderable(chainCfg.backendChainId, tokenCfg)) throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
+    if (!validateAddress(toAddress, chainCfg.addressType)) throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
+
+    const resolved = resolveTokenConfig(tokenCfg, chainCfg)
+    if (amount < resolved.minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${resolved.minAmount} ${tokenCfg.symbol}`, 400)
+    const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
+    if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
+    const gasAmountUSD = amount * nativeUsdRate
+    if (gasAmountUSD > resolved.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolved.maxUsdValue} USD.`, 400)
+    const platformFeeUsdt = resolved.platformFeeUsdt
+    const fullCoverUsdt = Math.round((gasAmountUSD + platformFeeUsdt) * 100) / 100
+
+    const legacyId = chainCfg.backendChainId === 'ETH' ? 'ETHEREUM' : chainCfg.backendChainId
+    const dbHotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    const aptosHotAddr = chainCfg.backendChainId === 'APT' ? getAptosHotWalletAddress() : null
+    const hotWallet: { address: string } | null = dbHotWallet ?? (aptosHotAddr ? { address: aptosHotAddr } : null)
+    if (!hotWallet) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}.`, 503)
+
+    if (userId) {
+      const u = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
+      if (!u) throw Errors.NOT_FOUND('User')
+    }
+
+    const dbChainEnum = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
+    const orderRef = generateOrderRef('GF')
+    const order = await db.gasFeeOrder.create({
+      data: {
+        orderRef,
+        ...(userId ? { userId } : {}),
+        ipAddress:          'admin',
+        chain:              dbChainEnum,
+        gasTokenConfigId:   tokenCfg.id,
+        gasAmountNative:    amount,
+        gasAmountUSD,
+        priceAtOrder:       nativeUsdRate,
+        paymentCoin:        'FREE',
+        paymentNetwork:     chainCfg.networkLabel,
+        paymentAmount:      0,
+        platformMarginUsdt: platformFeeUsdt,
+        discountUsdt:       fullCoverUsdt,
+        isFreeGrant:        true,
+        toAddress,
+        fromHotWallet:      hotWallet.address,
+        status:             'payment_detected', // routes straight to the delivery worker
+        expiresAt:          new Date(Date.now() + 60 * 60 * 1000),
+      },
+    })
+
+    await queues.gasFee.add('deliver', { orderId: order.id }, { priority: 1 })
+    await db.auditLog.create({
+      data: {
+        actorId:    req.user!.id,
+        action:     'GAS_FREE_DELIVER',
+        targetType: 'GasFeeOrder',
+        targetId:   order.id,
+        metadata:   { orderRef, tokenConfigId, amount, toAddress, gasAmountUSD, fullCoverUsdt, targetUserId: userId ?? null, note: note ?? null } as never,
+        ipAddress:  req.ip ?? null,
+        userAgent:  (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null,
+      },
+    })
+    logger.info({ orderRef, gasAmountUSD, fullCoverUsdt, targetUserId: userId ?? null }, 'admin free-gas delivery issued')
+
+    return reply.code(201).send({
+      success: true,
+      data: { orderRef, gasAmountNative: amount, gasAmountUSD: gasAmountUSD.toFixed(4), fullCoverUsdt: fullCoverUsdt.toFixed(4), chain: order.chain },
+    })
   })
 
   // ── POST /gas-fee/orders/:orderRef/proof — submit PKR payment proof ─────────

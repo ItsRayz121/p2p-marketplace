@@ -1423,6 +1423,10 @@ model GasFeeOrder {
   // already baked into paymentAmount. Default 0 = no discount (current behavior).
   discountUsdt         Decimal           @default(0) @db.Decimal(10, 4)
   promoCodeId          String?           // set when a promo code was applied (Phase 1)
+  // true = an admin-issued free-gas delivery: paymentAmount is 0 and the platform
+  // funds the FULL cost (base + margin). The order is created already in
+  // payment_detected so it routes straight to the normal delivery worker.
+  isFreeGrant          Boolean           @default(false)
   trackingToken        String?           @unique  // guest order privacy token (192-bit hex)
   paymentTxHash        String?           @unique
   paymentSenderAddress String?
