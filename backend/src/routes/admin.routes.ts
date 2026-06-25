@@ -4748,6 +4748,128 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { changes } })
   })
 
+  // ── Gas promo codes (margin-only marketing discounts) ──────────────────────
+  // Discounts only ever draw from the platform margin, never the base gas cost
+  // (enforced in lib/gas/gas.promo.ts). These routes manage the codes; the engine
+  // only takes effect when flag gas_promo_enabled is ON.
+
+  const promoTierSchema = z.object({
+    maxRedemptions: z.number().int().positive(),
+    discountPct:    z.number().min(0).max(100),
+  })
+  const promoCreateSchema = z.object({
+    code:               z.string().trim().min(2).max(40),
+    ownerLabel:         z.string().trim().min(1).max(120),
+    tiers:              z.array(promoTierSchema).max(20).default([]),
+    defaultDiscountPct: z.number().min(0).max(100).default(0),
+    marginBudgetUsdt:   z.number().positive(),
+    perUserLimit:       z.number().int().min(1).max(1000).default(1),
+    minOrderUsd:        z.number().min(0).default(0),
+    expiresAt:          z.string().datetime().optional(),
+  })
+  const promoUpdateSchema = z.object({
+    ownerLabel:         z.string().trim().min(1).max(120).optional(),
+    tiers:              z.array(promoTierSchema).max(20).optional(),
+    defaultDiscountPct: z.number().min(0).max(100).optional(),
+    marginBudgetUsdt:   z.number().positive().optional(),
+    perUserLimit:       z.number().int().min(1).max(1000).optional(),
+    minOrderUsd:        z.number().min(0).optional(),
+    expiresAt:          z.string().datetime().nullable().optional(),
+    isActive:           z.boolean().optional(),
+  })
+
+  // GET /admin/gas/promo-codes — list with live redemption counts + margin spent
+  app.get('/admin/gas/promo-codes', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const codes = await db.gasPromoCode.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { redemptions: true } } },
+    })
+    const data = codes.map((c) => ({
+      id: c.id,
+      code: c.code,
+      ownerLabel: c.ownerLabel,
+      tiers: c.tiers,
+      defaultDiscountPct: c.defaultDiscountPct,
+      marginBudgetUsdt: c.marginBudgetUsdt,
+      marginSpentUsdt: c.marginSpentUsdt,
+      budgetRemainingUsdt: Math.max(0, c.marginBudgetUsdt - c.marginSpentUsdt),
+      totalRedemptions: c.totalRedemptions,
+      redemptionRows: c._count.redemptions,
+      perUserLimit: c.perUserLimit,
+      minOrderUsd: c.minOrderUsd,
+      expiresAt: c.expiresAt,
+      isActive: c.isActive,
+      createdAt: c.createdAt,
+    }))
+    return reply.send({ success: true, data })
+  })
+
+  // GET /admin/gas/promo-codes/:id/redemptions — per-code redemption history
+  app.get('/admin/gas/promo-codes/:id/redemptions', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const rows = await db.gasPromoRedemption.findMany({
+      where: { promoCodeId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: { order: { select: { orderRef: true, paymentAmount: true, status: true } } },
+    })
+    return reply.send({ success: true, data: rows })
+  })
+
+  // POST /admin/gas/promo-codes — create a code (super-admin: it gives away margin)
+  app.post('/admin/gas/promo-codes', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const parsed = promoCreateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const p = parsed.data
+    const code = p.code.toUpperCase()
+
+    const existing = await db.gasPromoCode.findUnique({ where: { code } })
+    if (existing) throw new AppError('CONFLICT', `Promo code '${code}' already exists`, 409)
+
+    const created = await db.gasPromoCode.create({
+      data: {
+        code,
+        ownerLabel: p.ownerLabel,
+        tiers: p.tiers,
+        defaultDiscountPct: p.defaultDiscountPct,
+        marginBudgetUsdt: p.marginBudgetUsdt,
+        perUserLimit: p.perUserLimit,
+        minOrderUsd: p.minOrderUsd,
+        ...(p.expiresAt ? { expiresAt: new Date(p.expiresAt) } : {}),
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_PROMO_CREATE', 'GasPromoCode', created.id, { code, marginBudgetUsdt: p.marginBudgetUsdt }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.code(201).send({ success: true, data: created })
+  })
+
+  // PATCH /admin/gas/promo-codes/:id — edit terms / kill switch (super-admin).
+  // The code string itself is immutable once created (it may already be in the wild).
+  app.patch('/admin/gas/promo-codes/:id', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = promoUpdateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const p = parsed.data
+
+    const existing = await db.gasPromoCode.findUnique({ where: { id } })
+    if (!existing) throw Errors.NOT_FOUND('Promo code')
+
+    const updated = await db.gasPromoCode.update({
+      where: { id },
+      data: {
+        ...(p.ownerLabel !== undefined ? { ownerLabel: p.ownerLabel } : {}),
+        ...(p.tiers !== undefined ? { tiers: p.tiers } : {}),
+        ...(p.defaultDiscountPct !== undefined ? { defaultDiscountPct: p.defaultDiscountPct } : {}),
+        ...(p.marginBudgetUsdt !== undefined ? { marginBudgetUsdt: p.marginBudgetUsdt } : {}),
+        ...(p.perUserLimit !== undefined ? { perUserLimit: p.perUserLimit } : {}),
+        ...(p.minOrderUsd !== undefined ? { minOrderUsd: p.minOrderUsd } : {}),
+        ...(p.expiresAt !== undefined ? { expiresAt: p.expiresAt ? new Date(p.expiresAt) : null } : {}),
+        ...(p.isActive !== undefined ? { isActive: p.isActive } : {}),
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_PROMO_UPDATE', 'GasPromoCode', id, { changes: p }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: updated })
+  })
+
   // POST /admin/gas/wallets/:chain/balance — manually override cached balance (super_admin)
   app.post('/admin/gas/wallets/:chain/balance', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
     const { chain } = req.params as { chain: string }

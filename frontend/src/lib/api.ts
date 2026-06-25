@@ -2202,6 +2202,25 @@ export const adminApi = {
     apiRequest<{ changes: Array<{ chain: string; symbol: string; from: string | null; to: string }> }>(
       '/admin/gas/token-diagnostics/fix-addresses', { method: 'POST' },
     ),
+
+  // ── Gas promo codes (margin-only marketing discounts) ──────────────────────
+  getGasPromoCodes: () =>
+    apiRequest<{ data: Array<{
+      id: string; code: string; ownerLabel: string
+      tiers: Array<{ maxRedemptions: number; discountPct: number }>
+      defaultDiscountPct: number; marginBudgetUsdt: number; marginSpentUsdt: number; budgetRemainingUsdt: number
+      totalRedemptions: number; redemptionRows: number; perUserLimit: number; minOrderUsd: number
+      expiresAt: string | null; isActive: boolean; createdAt: string
+    }> }>('/admin/gas/promo-codes').then((r) => r.data),
+  getGasPromoRedemptions: (id: string) =>
+    apiRequest<{ data: Array<{ id: string; identity: string; discountUsdt: string; marginUsdt: string; tierIndex: number; createdAt: string; order: { orderRef: string; paymentAmount: string; status: string } | null }> }>(`/admin/gas/promo-codes/${id}/redemptions`).then((r) => r.data),
+  createGasPromoCode: (data: {
+    code: string; ownerLabel: string
+    tiers: Array<{ maxRedemptions: number; discountPct: number }>
+    defaultDiscountPct: number; marginBudgetUsdt: number; perUserLimit: number; minOrderUsd: number; expiresAt?: string
+  }) => apiRequest<unknown>('/admin/gas/promo-codes', { method: 'POST', body: JSON.stringify(data) }),
+  updateGasPromoCode: (id: string, data: Record<string, unknown>) =>
+    apiRequest<unknown>(`/admin/gas/promo-codes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>
