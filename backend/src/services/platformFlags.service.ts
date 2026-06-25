@@ -25,6 +25,13 @@ export const FLAGS = {
    * maker loses a dispute. OFF (default) = no bond, current behavior.
    */
   MAKER_BOND: 'maker_bond_enabled',
+  /**
+   * Gas-Payment promo/referral system master switch. When ON, promo codes and
+   * referral rewards may be applied to gas orders — but ONLY ever drawing from
+   * the platform margin, never the base gas cost. OFF (default) = no promo/
+   * referral logic runs; gas orders behave exactly as they do today.
+   */
+  GAS_PROMO: 'gas_promo_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

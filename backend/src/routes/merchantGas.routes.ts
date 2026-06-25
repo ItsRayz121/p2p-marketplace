@@ -299,6 +299,7 @@ export async function merchantGasRoutes(app: FastifyInstance) {
         paymentCoin:      'USDT',
         paymentNetwork:   chainConfig.networkLabel,
         paymentAmount,
+        platformMarginUsdt: platformFeeUsdt,
         toAddress,
         fromHotWallet:    hotWallet.address,
         status:           'payment_pending',

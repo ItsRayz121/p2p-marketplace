@@ -1414,6 +1414,15 @@ model GasFeeOrder {
   paymentCoin          String            @default("USDT")
   paymentNetwork       String
   paymentAmount        Decimal           @db.Decimal(10, 4)
+  // Platform margin component of paymentAmount, recorded immutably at creation
+  // (paymentAmount = gasAmountUSD base cost + platformMarginUsdt margin). This is
+  // the ONLY pool that promo discounts / referral rewards may ever draw from.
+  // Nullable for back-compat: orders created before the promo system have it null.
+  platformMarginUsdt   Decimal?          @db.Decimal(10, 4)
+  // Discount applied to the margin at creation (>= 0, never exceeds the margin),
+  // already baked into paymentAmount. Default 0 = no discount (current behavior).
+  discountUsdt         Decimal           @default(0) @db.Decimal(10, 4)
+  promoCodeId          String?           // set when a promo code was applied (Phase 1)
   trackingToken        String?           @unique  // guest order privacy token (192-bit hex)
   paymentTxHash        String?           @unique
   paymentSenderAddress String?

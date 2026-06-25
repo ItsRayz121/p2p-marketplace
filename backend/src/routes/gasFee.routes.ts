@@ -593,6 +593,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         paymentCoin:    'USDT',
         paymentNetwork:  legacyChainConfig.networkLabel,
         paymentAmount,
+        platformMarginUsdt: platformFeeUsdt,
         toAddress,
         fromHotWallet:  hotWallet.address,
         status:         'payment_pending',
@@ -693,6 +694,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const gasAmountUSD  = gasAmountNative * nativeUsdRate
     const priceAtOrder  = nativeUsdRate
     const paymentAmount = Math.round(gasAmountUSD * markup * 100) / 100
+    // This tier path folds the margin into a markup multiplier, so the margin is
+    // implicit: recover it as (payment - base), floored at 0.
+    const platformMarginUsdt = Math.max(0, Math.round((paymentAmount - gasAmountUSD) * 100) / 100)
 
     const userId = req.user?.id ?? null
     if (!userId) {
@@ -726,6 +730,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         paymentCoin:    'USDT',
         paymentNetwork: chainConfig.networkLabel,
         paymentAmount,
+        platformMarginUsdt,
         toAddress,
         fromHotWallet:  hotWallet.address,
         status:         'payment_pending',
@@ -1050,6 +1055,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         paymentCoin:      'PKR',
         paymentNetwork:   pkrPaymentMethod.toUpperCase(),
         paymentAmount:    paymentAmountUsd,
+        platformMarginUsdt: platformFeeUsdt,
         pkrAmount,
         pkrPaymentMethod,
         fromHotWallet:    hotWallet.address,
@@ -1238,6 +1244,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         paymentCoin:      'USDT',
         paymentNetwork,
         paymentAmount,
+        platformMarginUsdt: platformFeeUsdt,
         fromHotWallet:    hotWallet.address,
         toAddress,
         status:           'payment_pending',
