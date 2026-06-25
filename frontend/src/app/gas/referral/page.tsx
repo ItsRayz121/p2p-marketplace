@@ -21,6 +21,7 @@ function ReferralInner() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
   const [applied, setApplied] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
 
   // Capture an inbound ?ref=CODE so it survives a login round-trip.
   useEffect(() => {
@@ -54,6 +55,19 @@ function ReferralInner() {
   }, [user])
 
   useEffect(() => { void load() }, [load])
+
+  async function withdraw() {
+    setWithdrawing(true)
+    try {
+      const r = await gasApi.withdrawReferral()
+      toast.success(`$${r.withdrawnUsdt.toFixed(2)} moved to your USDT balance`)
+      void load()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Withdrawal failed')
+    } finally {
+      setWithdrawing(false)
+    }
+  }
 
   const link = summary?.code ? `${typeof window !== 'undefined' ? window.location.origin : ''}/gas/referral?ref=${summary.code}` : ''
 
@@ -124,7 +138,27 @@ function ReferralInner() {
             </div>
           </div>
 
-          <p className="text-[11px] text-text-muted text-center">Withdrawals open soon. Earnings accrue automatically once your referrals&apos; gas orders are delivered.</p>
+          <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-text-muted">Withdrawable now</p>
+                <p className="text-lg font-bold text-text-primary">${summary.withdrawableUsdt.toFixed(2)}</p>
+              </div>
+              <Button
+                size="sm" variant="primary"
+                onClick={withdraw}
+                disabled={withdrawing || !summary.kycOk || summary.withdrawableUsdt < summary.minWithdrawUsdt}
+              >
+                {withdrawing ? 'Processing…' : 'Withdraw to USDT'}
+              </Button>
+            </div>
+            {!summary.kycOk && <p className="text-[11px] text-amber-600 dark:text-amber-400">Complete identity verification (KYC) to withdraw.</p>}
+            {summary.kycOk && summary.withdrawableUsdt < summary.minWithdrawUsdt && (
+              <p className="text-[11px] text-text-muted">Minimum withdrawal is ${summary.minWithdrawUsdt.toFixed(2)}. Newly earned amounts become withdrawable after a short hold.</p>
+            )}
+          </div>
+
+          <p className="text-[11px] text-text-muted text-center">Earnings accrue automatically once your referrals&apos; gas orders are delivered, then become withdrawable after a short fraud-hold window.</p>
         </>
       )}
     </div>

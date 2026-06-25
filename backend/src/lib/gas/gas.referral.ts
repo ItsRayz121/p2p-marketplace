@@ -13,6 +13,7 @@
  * Everything here is inert unless flag gas_referral_enabled is ON.
  */
 import { db } from '../prisma'
+import { Prisma } from '@prisma/client'
 import { AppError } from '../errors'
 import { logger } from '../logger'
 import { isFlagEnabled, FLAGS, getNumberConfig } from '../../services/platformFlags.service'
@@ -20,6 +21,13 @@ import type { GasFeeOrder } from '@prisma/client'
 
 const DEFAULT_PCT_CONFIG = 'gas_referral_default_pct'
 const DEFAULT_PCT = 5
+// Anti-abuse + withdrawal config (PlatformConfig keys; safe defaults).
+const MIN_ORDER_CONFIG       = 'gas_referral_min_order_usd'        // skip accrual below this order value
+const MAX_PER_REFERRED_CONFIG = 'gas_referral_max_per_referred_usdt' // lifetime cap per referred user (0 = none)
+const HOLD_HOURS_CONFIG      = 'gas_referral_hold_hours'          // fraud-hold before earnings are withdrawable
+const MIN_WITHDRAW_CONFIG    = 'gas_referral_min_withdraw_usdt'   // minimum withdrawal
+const DEFAULT_HOLD_HOURS     = 72
+const DEFAULT_MIN_WITHDRAW   = 5
 
 function round2(n: number): number { return Math.round(n * 100) / 100 }
 export function normalizeReferralCode(code: string): string { return code.trim().toUpperCase() }
@@ -86,14 +94,33 @@ export async function accrueReferralForDelivery(order: GasFeeOrder): Promise<voi
   if (!binding || !binding.code.isActive) return
   if (binding.referrerId === order.userId) return // safety: never self-accrue
 
+  // Anti-abuse: ignore dust orders below the configured minimum order value.
+  const minOrderUsd = await getNumberConfig(MIN_ORDER_CONFIG, 0)
+  if (minOrderUsd > 0 && Number(order.paymentAmount) < minOrderUsd) return
+
   const margin = Number(order.platformMarginUsdt ?? 0)
   const discount = Number(order.discountUsdt ?? 0)
   const realizedMargin = round2(Math.max(0, margin - discount))
   if (realizedMargin <= 0) return
 
   const pct = binding.code.referralPct
-  const amount = round2((pct / 100) * realizedMargin)
+  let amount = round2((pct / 100) * realizedMargin)
   if (amount <= 0) return
+
+  // Anti-abuse: clamp to the per-referred-user lifetime commission cap (if set), so a
+  // single referred account can't farm unlimited commission for the referrer.
+  const maxPerReferred = await getNumberConfig(MAX_PER_REFERRED_CONFIG, 0)
+  if (maxPerReferred > 0) {
+    const prior = await db.gasReferralAccrual.aggregate({
+      where: { referrerId: binding.referrerId, referredId: order.userId },
+      _sum: { amountUsdt: true },
+    })
+    const already = Number(prior._sum.amountUsdt ?? 0)
+    const remaining = round2(maxPerReferred - already)
+    if (remaining <= 0) return
+    amount = Math.min(amount, remaining)
+    if (amount <= 0) return
+  }
 
   try {
     await db.gasReferralAccrual.create({
@@ -120,30 +147,46 @@ export interface ReferralSummary {
   referredCount: number
   totalAccruedUsdt: number
   availableUsdt: number
+  withdrawableUsdt: number      // available AND past the fraud-hold window
   withdrawnUsdt: number
+  minWithdrawUsdt: number
+  kycOk: boolean
   boundToReferrer: boolean
+}
+
+function holdCutoff(holdHours: number): Date {
+  return new Date(Date.now() - holdHours * 3_600_000)
 }
 
 /** Dashboard summary for a user: their code, referred count, and earnings. */
 export async function getReferralSummary(userId: string): Promise<ReferralSummary> {
   const enabled = await isFlagEnabled(FLAGS.GAS_REFERRAL)
   if (!enabled) {
-    return { enabled: false, code: null, referralPct: null, referredCount: 0, totalAccruedUsdt: 0, availableUsdt: 0, withdrawnUsdt: 0, boundToReferrer: false }
+    return { enabled: false, code: null, referralPct: null, referredCount: 0, totalAccruedUsdt: 0, availableUsdt: 0, withdrawableUsdt: 0, withdrawnUsdt: 0, minWithdrawUsdt: 0, kycOk: false, boundToReferrer: false }
   }
 
   const own = await getOrCreateOwnCode(userId)
-  const [referredCount, accruals, binding] = await Promise.all([
+  const [holdHours, minWithdraw] = await Promise.all([
+    getNumberConfig(HOLD_HOURS_CONFIG, DEFAULT_HOLD_HOURS),
+    getNumberConfig(MIN_WITHDRAW_CONFIG, DEFAULT_MIN_WITHDRAW),
+  ])
+  const cutoff = holdCutoff(holdHours)
+
+  const [referredCount, accruals, binding, user] = await Promise.all([
     db.gasReferral.count({ where: { referrerId: userId } }),
-    db.gasReferralAccrual.findMany({ where: { referrerId: userId }, select: { amountUsdt: true, status: true } }),
+    db.gasReferralAccrual.findMany({ where: { referrerId: userId }, select: { amountUsdt: true, status: true, createdAt: true } }),
     db.gasReferral.findUnique({ where: { referredId: userId }, select: { id: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } }),
   ])
 
-  let total = 0, available = 0, withdrawn = 0
+  let total = 0, available = 0, withdrawable = 0, withdrawn = 0
   for (const a of accruals) {
     const amt = Number(a.amountUsdt)
     total += amt
-    if (a.status === 'available') available += amt
-    else if (a.status === 'withdrawn') withdrawn += amt
+    if (a.status === 'available') {
+      available += amt
+      if (a.createdAt <= cutoff) withdrawable += amt
+    } else if (a.status === 'withdrawn') withdrawn += amt
   }
 
   return {
@@ -153,7 +196,73 @@ export async function getReferralSummary(userId: string): Promise<ReferralSummar
     referredCount,
     totalAccruedUsdt: round2(total),
     availableUsdt: round2(available),
+    withdrawableUsdt: round2(withdrawable),
     withdrawnUsdt: round2(withdrawn),
+    minWithdrawUsdt: minWithdraw,
+    kycOk: !!user && user.kycLevel !== 'none',
     boundToReferrer: !!binding,
   }
+}
+
+/**
+ * Withdraw available referral earnings (past the fraud-hold window) into the user's
+ * internal USDT balance. Guards: flag ON, KYC ≥ basic, total ≥ min threshold. The
+ * eligible accruals are flipped to 'withdrawn' and the USDT wallet credited inside one
+ * transaction with a CAS guard, so a double-submit can never pay twice.
+ */
+export async function withdrawReferralEarnings(userId: string): Promise<{ withdrawnUsdt: number; newBalanceUsdt: number }> {
+  if (!(await isFlagEnabled(FLAGS.GAS_REFERRAL))) {
+    throw new AppError('REFERRAL_DISABLED', 'Referrals are not available right now.', 400)
+  }
+  const user = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
+  if (!user || user.kycLevel === 'none') {
+    throw new AppError('KYC_REQUIRED', 'Complete identity verification (KYC) to withdraw referral earnings.', 403)
+  }
+  const [holdHours, minWithdraw] = await Promise.all([
+    getNumberConfig(HOLD_HOURS_CONFIG, DEFAULT_HOLD_HOURS),
+    getNumberConfig(MIN_WITHDRAW_CONFIG, DEFAULT_MIN_WITHDRAW),
+  ])
+  const cutoff = holdCutoff(holdHours)
+
+  return db.$transaction(async (tx) => {
+    const eligible = await tx.gasReferralAccrual.findMany({
+      where: { referrerId: userId, status: 'available', createdAt: { lte: cutoff } },
+      select: { id: true, amountUsdt: true },
+    })
+    const total = round2(eligible.reduce((s, a) => s + Number(a.amountUsdt), 0))
+    if (total <= 0) throw new AppError('NOTHING_TO_WITHDRAW', 'You have no withdrawable referral earnings yet.', 400)
+    if (total < minWithdraw) throw new AppError('BELOW_MIN_WITHDRAW', `Minimum withdrawal is $${minWithdraw.toFixed(2)}. You have $${total.toFixed(2)} available.`, 400)
+
+    const ids = eligible.map((a) => a.id)
+    // CAS: only flip rows still 'available'; if the count drifts, abort the whole tx.
+    const flipped = await tx.gasReferralAccrual.updateMany({
+      where: { id: { in: ids }, status: 'available' },
+      data: { status: 'withdrawn' },
+    })
+    if (flipped.count !== ids.length) {
+      throw new AppError('REFERRAL_BUSY', 'Withdrawal is being processed — please retry in a moment.', 409)
+    }
+
+    // Credit the user's internal USDT balance (real, withdrawable funds).
+    const existingUsdt = await tx.wallet.findFirst({ where: { userId, coin: 'USDT' }, select: { network: true } })
+    const network = existingUsdt?.network ?? 'BEP20'
+    const amountDec = new Prisma.Decimal(total)
+    const wallet = await tx.wallet.upsert({
+      where: { userId_coin_network: { userId, coin: 'USDT', network } },
+      create: { userId, coin: 'USDT', network, balance: amountDec, lockedBalance: new Prisma.Decimal(0) },
+      update: { balance: { increment: amountDec } },
+    })
+    await tx.transaction.create({
+      data: {
+        walletId: wallet.id,
+        type: 'referral_reward',
+        amount: amountDec,
+        fee: new Prisma.Decimal(0),
+        status: 'completed',
+        metadata: { source: 'gas_referral_payout', accrualCount: ids.length },
+      },
+    })
+    logger.info({ userId, total, accrualCount: ids.length }, 'gas referral earnings withdrawn to USDT balance')
+    return { withdrawnUsdt: total, newBalanceUsdt: Number(wallet.balance) }
+  })
 }

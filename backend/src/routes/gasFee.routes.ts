@@ -32,7 +32,7 @@ import {
   type PromoResolution,
 } from '../lib/gas/gas.promo'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
-import { bindReferral, getReferralSummary } from '../lib/gas/gas.referral'
+import { bindReferral, getReferralSummary, withdrawReferralEarnings } from '../lib/gas/gas.referral'
 
 // Reserve a promo slot for an order about to be created. Returns null when no code
 // was supplied or the promo system is off. Throws AppError (clear message) on an
@@ -1441,6 +1441,12 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const parsed = referralApplySchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     const result = await bindReferral(req.user!.id, parsed.data.code)
+    return reply.send({ success: true, data: result })
+  })
+
+  // ── POST /gas-fee/referral/withdraw — move withdrawable earnings to USDT balance ──
+  app.post('/gas-fee/referral/withdraw', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const result = await withdrawReferralEarnings(req.user!.id)
     return reply.send({ success: true, data: result })
   })
 

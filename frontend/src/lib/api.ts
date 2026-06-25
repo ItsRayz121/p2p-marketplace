@@ -1443,9 +1443,11 @@ export const gasApi = {
     apiRequest<{ valid: boolean; code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string }>('/gas-fee/promo/preview', { method: 'POST', body: JSON.stringify(data) }),
 
   getReferralSummary: () =>
-    apiRequest<{ enabled: boolean; code: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawnUsdt: number; boundToReferrer: boolean }>('/gas-fee/referral/me'),
+    apiRequest<{ enabled: boolean; code: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }>('/gas-fee/referral/me'),
   applyReferral: (code: string) =>
     apiRequest<{ bound: boolean; referrerId: string }>('/gas-fee/referral/apply', { method: 'POST', body: JSON.stringify({ code }) }),
+  withdrawReferral: () =>
+    apiRequest<{ withdrawnUsdt: number; newBalanceUsdt: number }>('/gas-fee/referral/withdraw', { method: 'POST' }),
 
   submitProof: (orderRef: string, proofUrl: string) =>
     apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/proof`, { method: 'POST', body: JSON.stringify({ proofUrl }) }),
@@ -2231,6 +2233,16 @@ export const adminApi = {
   freeGasDeliver: (data: { tokenConfigId: string; amount: number; toAddress: string; userId?: string; note?: string }) =>
     apiRequest<{ orderRef: string; gasAmountNative: number; gasAmountUSD: string; fullCoverUsdt: string; chain: string }>(
       '/gas-fee/admin/free-deliver', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Gas referral overview (admin)
+  getGasReferrals: () =>
+    apiRequest<{ data: Array<{
+      codeId: string; code: string; referralPct: number; isActive: boolean
+      owner: { id: string; username: string | null; email: string | null; kycLevel: string }
+      referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawnUsdt: number; createdAt: string
+    }> }>('/admin/gas/referrals').then((r) => r.data),
+  updateGasReferral: (codeId: string, data: { referralPct?: number; isActive?: boolean }) =>
+    apiRequest<unknown>(`/admin/gas/referrals/${codeId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>

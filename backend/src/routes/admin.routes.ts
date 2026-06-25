@@ -4870,6 +4870,71 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: updated })
   })
 
+  // ── Gas referrals (KOL income overview + controls) ─────────────────────────
+
+  // GET /admin/gas/referrals — referrers ranked by total accrued, with status totals
+  app.get('/admin/gas/referrals', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const codes = await db.gasReferralCode.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        owner: { select: { id: true, username: true, email: true, kycLevel: true } },
+        _count: { select: { referrals: true } },
+      },
+    })
+    // Aggregate accruals per referrer (owner) in one grouped pass.
+    const grouped = await db.gasReferralAccrual.groupBy({
+      by: ['referrerId', 'status'],
+      _sum: { amountUsdt: true },
+    })
+    const totals = new Map<string, { available: number; withdrawn: number; total: number }>()
+    for (const g of grouped) {
+      const cur = totals.get(g.referrerId) ?? { available: 0, withdrawn: 0, total: 0 }
+      const amt = Number(g._sum.amountUsdt ?? 0)
+      cur.total += amt
+      if (g.status === 'available') cur.available += amt
+      else if (g.status === 'withdrawn') cur.withdrawn += amt
+      totals.set(g.referrerId, cur)
+    }
+    const data = codes.map((c) => {
+      const t = totals.get(c.ownerId) ?? { available: 0, withdrawn: 0, total: 0 }
+      return {
+        codeId: c.id,
+        code: c.code,
+        referralPct: c.referralPct,
+        isActive: c.isActive,
+        owner: c.owner,
+        referredCount: c._count.referrals,
+        totalAccruedUsdt: Math.round(t.total * 100) / 100,
+        availableUsdt: Math.round(t.available * 100) / 100,
+        withdrawnUsdt: Math.round(t.withdrawn * 100) / 100,
+        createdAt: c.createdAt,
+      }
+    })
+    return reply.send({ success: true, data })
+  })
+
+  // PATCH /admin/gas/referrals/:codeId — tune the rate or disable a referrer's code
+  const referralUpdateSchema = z.object({
+    referralPct: z.number().min(0).max(100).optional(),
+    isActive:    z.boolean().optional(),
+  })
+  app.patch('/admin/gas/referrals/:codeId', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { codeId } = req.params as { codeId: string }
+    const parsed = referralUpdateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const existing = await db.gasReferralCode.findUnique({ where: { id: codeId } })
+    if (!existing) throw Errors.NOT_FOUND('Referral code')
+    const updated = await db.gasReferralCode.update({
+      where: { id: codeId },
+      data: {
+        ...(parsed.data.referralPct !== undefined ? { referralPct: parsed.data.referralPct } : {}),
+        ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {}),
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_REFERRAL_UPDATE', 'GasReferralCode', codeId, { changes: parsed.data }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: updated })
+  })
+
   // POST /admin/gas/wallets/:chain/balance — manually override cached balance (super_admin)
   app.post('/admin/gas/wallets/:chain/balance', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
     const { chain } = req.params as { chain: string }
