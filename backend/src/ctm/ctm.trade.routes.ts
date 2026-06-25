@@ -317,12 +317,12 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     const trade = await db.ctmTrade.findUnique({ where: { tradeRef: ref } })
     if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
-    const wasAlreadyComplete = trade.status === 'completed'
     await db.$transaction(async (tx) => {
-      await tx.ctmTrade.update({ where: { tradeRef: ref }, data: { status: 'completed', completedAt: new Date() } })
-      // Only bump the streak on a genuine transition into completed — re-running
-      // force-release on an already-completed trade must not double-count.
-      if (!wasAlreadyComplete) {
+      // CAS guard: bump the streak only on a genuine transition INTO completed. A
+      // re-run on an already-completed trade — or a race with the auto-complete job /
+      // buyer confirm — claims 0 rows and skips the increment, so it can't double-count.
+      const claimed = await tx.ctmTrade.updateMany({ where: { tradeRef: ref, status: { not: 'completed' } }, data: { status: 'completed', completedAt: new Date() } })
+      if (claimed.count > 0) {
         await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
       }
     })

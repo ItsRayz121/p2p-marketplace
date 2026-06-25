@@ -122,8 +122,14 @@ export async function runCtmProofDeadline() {
 
     if (autoComplete) {
       let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
+      let didComplete = false
       await db.$transaction(async (tx) => {
-        await tx.ctmTrade.update({ where: { id: trade.id }, data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null } })
+        // CAS guard: only complete a trade still in proof_submitted. If the buyer
+        // confirmed receipt in the same instant (confirmReceipt), that path wins and
+        // this no-ops — preventing a double streak / stats increment for one trade.
+        const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: 'proof_submitted' }, data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null } })
+        if (claimed.count === 0) return
+        didComplete = true
         await tx.ctmToken.update({ where: { id: trade.tokenId }, data: { totalTrades: { increment: 1 }, totalVolumePkr: { increment: trade.fiatAmount }, lastTradedAt: new Date() } })
         if (trade.listingId) {
           await tx.ctmListing.update({
@@ -138,6 +144,9 @@ export async function runCtmProofDeadline() {
         // Bump the combined buyer↔seller streak, atomic with the auto-completion.
         streakResult = await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
       })
+
+      // Buyer confirmed in the same instant — that path owns the completion side effects.
+      if (!didComplete) continue
 
       // Clean auto-completion → release the maker's bond (idempotent; no-op when off).
       await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>

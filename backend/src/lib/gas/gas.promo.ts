@@ -290,3 +290,42 @@ export async function releaseReservation(resolution: PromoResolution): Promise<v
 export function promoIdentity(userId: string | null, ip: string | undefined): string {
   return userId ? `user:${userId}` : `ip:${ip ?? 'unknown'}`
 }
+
+/**
+ * Release the promo reservation tied to an order that was abandoned (expired unpaid).
+ * Reverses exactly what reservePromo()/recordRedemption() consumed — the tier slot,
+ * the spent-budget, and the redemption row — so the slot/budget free up and the user
+ * isn't permanently blocked by perUserLimit after never paying. Idempotent: once the
+ * redemption row is gone, subsequent calls no-op.
+ *
+ * Guard: only releases when the order has genuinely reached 'expired', so a payment
+ * that lands in the same instant (status moved to payment_detected) keeps its discount.
+ */
+export async function releasePromoForExpiredOrder(orderId: string): Promise<void> {
+  try {
+    const order = await db.gasFeeOrder.findUnique({ where: { id: orderId }, select: { status: true } })
+    if (!order || order.status !== 'expired') return
+
+    const redemption = await db.gasPromoRedemption.findUnique({
+      where: { orderId },
+      select: { id: true, promoCodeId: true, discountUsdt: true },
+    })
+    if (!redemption) return
+    const discount = Number(redemption.discountUsdt)
+
+    await db.$transaction([
+      db.gasPromoCode.update({
+        where: { id: redemption.promoCodeId },
+        data: {
+          totalRedemptions: { decrement: 1 },
+          marginSpentUsdt: { decrement: discount },
+        },
+      }),
+      db.gasPromoRedemption.delete({ where: { id: redemption.id } }),
+    ])
+    logger.info({ orderId, promoCodeId: redemption.promoCodeId, discount }, 'released promo reservation for expired gas order')
+  } catch (err) {
+    // Best-effort: a stuck reservation only slightly over-counts spend until the next pass.
+    logger.error({ err, orderId }, 'failed to release promo reservation for expired gas order')
+  }
+}

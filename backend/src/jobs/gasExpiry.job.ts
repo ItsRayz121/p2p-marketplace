@@ -2,6 +2,7 @@ import type { Job } from 'bullmq'
 import { db } from '../lib/prisma'
 import { queues } from '../queues/definitions'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
+import { releasePromoForExpiredOrder } from '../lib/gas/gas.promo'
 import { logger } from '../lib/logger'
 
 // Handles two modes:
@@ -17,18 +18,30 @@ export async function runGasExpiryJob(job: Job<{ orderId?: string }>) {
     })
     if (result.count > 0) {
       logger.info({ orderId }, 'Gas order expired by per-order job')
+      // Free any promo reservation this abandoned order was holding.
+      await releasePromoForExpiredOrder(orderId)
       await notifyMerchantWebhook(orderId, 'expired')
     }
     return { expired: result.count }
   }
 
-  // Sweeper: expire all overdue payment_pending orders
+  // Sweeper: expire all overdue payment_pending orders. Capture the IDs of overdue
+  // orders that carry a promo reservation FIRST so we can free those reservations
+  // after the bulk expire (releasePromoForExpiredOrder re-checks status === 'expired',
+  // so an order paid in the interim keeps its discount).
+  const promoOrdersToFree = await db.gasFeeOrder.findMany({
+    where: { status: 'payment_pending', expiresAt: { lt: new Date() }, promoCodeId: { not: null } },
+    select: { id: true },
+  })
   const expiredResult = await db.gasFeeOrder.updateMany({
     where: { status: 'payment_pending', expiresAt: { lt: new Date() } },
     data: { status: 'expired' },
   })
   if (expiredResult.count > 0) {
     logger.info({ count: expiredResult.count }, 'Gas expiry sweep: expired overdue orders')
+  }
+  for (const o of promoOrdersToFree) {
+    await releasePromoForExpiredOrder(o.id)
   }
 
   // Edge case: payment_detected orders past their expiry window — payment arrived but

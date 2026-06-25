@@ -308,10 +308,18 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
 
   await db.$transaction(async (tx: Tx) => {
-    await tx.ctmTrade.update({
-      where: { id: trade.id },
+    // CAS guard: only the transition OUT OF proof_submitted may complete the trade.
+    // The status was checked before the tx, but the auto-complete job (ctm.jobs.ts)
+    // can complete the same proof_submitted trade the instant confirmDeadlineAt passes.
+    // Without this guard both paths would run, double-counting the streak + token /
+    // merchant stats. If the row already moved on, abort the whole tx.
+    const claimed = await tx.ctmTrade.updateMany({
+      where: { id: trade.id, status: 'proof_submitted' },
       data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null },
     })
+    if (claimed.count === 0) {
+      throw new AppError('CONFLICT', 'This trade was already completed.', 409)
+    }
 
     // Update token stats
     await tx.ctmToken.update({
