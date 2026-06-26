@@ -1350,10 +1350,12 @@ export default function TradePage() {
               })
               if (msg.isSystem) {
                 return (
-                  <div key={msg.id} className="flex justify-center my-1">
-                    <div className="bg-surface border border-border rounded-xl px-3 py-1.5 text-center max-w-[85%]">
-                      <p className="text-xs text-text-muted italic">{msg.message}</p>
-                      <p className="text-[10px] text-text-muted/60 mt-0.5">{msgTime}</p>
+                  <div key={msg.id} className="flex justify-center my-2">
+                    <div className="bg-text-muted/[0.08] rounded-2xl px-3 py-1.5 max-w-[80%]">
+                      <p className="text-[11px] text-text-muted text-center leading-snug">
+                        {msg.message}
+                        <span className="text-text-muted/50 ml-1.5 whitespace-nowrap">{msgTime}</span>
+                      </p>
                     </div>
                   </div>
                 )

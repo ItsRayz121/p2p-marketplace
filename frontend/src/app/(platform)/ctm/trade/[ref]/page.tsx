@@ -1296,10 +1296,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               const isMe = m.senderId === user?.id
               if (m.isSystem) {
                 return (
-                  <div key={m.id} className="flex justify-center my-1">
-                    <div className="bg-surface border border-border rounded-xl px-3 py-1.5 text-center max-w-[85%]">
-                      <p className="text-xs text-text-muted italic">{m.message}</p>
-                      <p className="text-[10px] text-text-muted/60 mt-0.5">{new Date(m.createdAt).toLocaleTimeString()}</p>
+                  <div key={m.id} className="flex justify-center my-2">
+                    <div className="bg-text-muted/[0.08] rounded-2xl px-3 py-1.5 max-w-[80%]">
+                      <p className="text-[11px] text-text-muted text-center leading-snug">
+                        {m.message}
+                        <span className="text-text-muted/50 ml-1.5 whitespace-nowrap">{new Date(m.createdAt).toLocaleTimeString()}</span>
+                      </p>
                     </div>
                   </div>
                 )
