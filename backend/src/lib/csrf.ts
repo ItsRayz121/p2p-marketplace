@@ -30,6 +30,11 @@ const CSRF_EXEMPT = new Set([
   '/api/v1/gas-fee/orders/crypto',
   '/api/v1/gas-fee/prices',
   '/api/v1/gas-fee/custom-request',
+  // SSE ticket mint is authenticated by the Authorization: Bearer header (not a
+  // cookie), so it cannot be CSRF-forged cross-site — a forged request can't set
+  // that header. The EventSource bootstrap can't attach a CSRF token reliably, so
+  // requiring one here just 403s every SSE connection and triggers a reconnect storm.
+  '/api/v1/sse/ticket',
 ])
 
 function sign(payload: string): string {

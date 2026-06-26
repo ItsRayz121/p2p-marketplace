@@ -309,6 +309,19 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   if (!res.ok) {
     // Handle 429 Rate Limit
     if (res.status === 429) {
+      const code = (data as { error?: string }).error
+      const message = (data as { message?: string }).message
+      // Two very different things return 429:
+      //  • the global rate limiter (code TOO_MANY_REQUESTS) — no actionable detail,
+      //    so we show a friendly retry hint with the Retry-After countdown.
+      //  • application limits (concurrent-trade cap → TOO_MANY_OPEN_TRADES /
+      //    COUNTERPARTY_TOO_MANY_TRADES, gas order cap → RATE_LIMITED, etc.) — these
+      //    carry a specific, actionable message ("You can have 3 active trades at a
+      //    time. Finish a current trade first."). Surface it verbatim instead of
+      //    masking it behind the generic text.
+      if (message && code && code !== 'TOO_MANY_REQUESTS') {
+        throw new ApiError(code, message, 429, (data as { requestId?: string }).requestId)
+      }
       const retryAfter = res.headers.get('Retry-After')
       throw new ApiError(
         'RATE_LIMITED',
