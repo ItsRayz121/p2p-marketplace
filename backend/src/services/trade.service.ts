@@ -566,14 +566,29 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
   // sequential retry returns the same trade instead of creating a new one.
   await redis.set(idempKey, trade.id, 'EX', 300)
 
-  // On a BUY ad the buyer is the ad owner — they did NOT initiate this trade (the
-  // seller filled their listing), so ping them to pay within the trade window.
+  // Notify the party who did NOT initiate this trade — the ad owner — so they
+  // know a trade just opened against their listing, instead of only hearing about
+  // it later when payment proof is uploaded.
   if (isBuyAd) {
+    // BUY ad: the buyer is the ad owner. The seller filled their listing, so ping
+    // the buyer to pay within the trade window.
     notify(
       buyerId,
       'trade',
       'A seller filled your buy listing',
       `Trade ${trade.orderRef} is open — send the PKR payment and upload proof within the trade window.`,
+      { tradeId: trade.id },
+      trade.id,
+    )
+  } else {
+    // SELL ad: the seller is the ad owner. A buyer just opened a trade against
+    // their listing, so ping the seller that a trade has started and payment is
+    // incoming — they'll need to confirm receipt and release the crypto.
+    notify(
+      sellerId,
+      'trade',
+      'A buyer started a trade on your listing',
+      `Trade ${trade.orderRef} is open — the buyer will send the PKR payment and upload proof within the trade window. Confirm once it arrives, then release the crypto.`,
       { tradeId: trade.id },
       trade.id,
     )
