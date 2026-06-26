@@ -97,9 +97,12 @@ export function PriceAlertsPanel({ currentRate }: Props) {
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
       </button>
 
-      {/* Panel */}
+      {/* Panel — on mobile it's a fixed, fully on-screen card (inset from both
+          edges) so it can never spill off the left/right like an anchored
+          right-0 w-80 dropdown does when the bell sits near a screen edge. On
+          sm+ it reverts to the anchored dropdown below the trigger. */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-surface border border-border rounded-xl shadow-card-lg z-50 overflow-hidden">
+        <div className="fixed inset-x-4 top-16 z-50 mx-auto w-auto max-w-sm bg-surface border border-border rounded-xl shadow-card-lg overflow-hidden sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 sm:max-w-none sm:mx-0">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h3 className="text-sm font-semibold text-text-primary">USDT / PKR Price Alerts</h3>
