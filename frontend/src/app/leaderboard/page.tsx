@@ -32,18 +32,20 @@ interface LeaderboardEntry {
 type Period = 'daily' | 'weekly' | 'monthly' | 'all-time'
 type TradeType = 'all' | 'usdt' | 'ctm' | 'gas'
 
-const PERIODS: { id: Period; label: string }[] = [
-  { id: 'all-time', label: 'All Time' },
-  { id: 'monthly', label: 'This Month' },
-  { id: 'weekly', label: 'This Week' },
-  { id: 'daily', label: 'Today' },
+// `short` labels keep all tabs on one line on phones (no horizontal scroll);
+// the full label shows from sm+.
+const PERIODS: { id: Period; label: string; short: string }[] = [
+  { id: 'all-time', label: 'All Time', short: 'All' },
+  { id: 'monthly', label: 'This Month', short: 'Month' },
+  { id: 'weekly', label: 'This Week', short: 'Week' },
+  { id: 'daily', label: 'Today', short: 'Today' },
 ]
 
-const TRADE_TYPES: { id: TradeType; label: string }[] = [
-  { id: 'all', label: 'Overall' },
-  { id: 'usdt', label: 'USDT Trades' },
-  { id: 'ctm', label: 'Community Token Trades' },
-  { id: 'gas', label: 'Crypto Gas Trades' },
+const TRADE_TYPES: { id: TradeType; label: string; short: string }[] = [
+  { id: 'all', label: 'Overall', short: 'Overall' },
+  { id: 'usdt', label: 'USDT Trades', short: 'USDT' },
+  { id: 'ctm', label: 'Community Token Trades', short: 'Tokens' },
+  { id: 'gas', label: 'Crypto Gas Trades', short: 'Gas' },
 ]
 
 // Map frontend period labels to backend query params
@@ -115,32 +117,34 @@ export default function LeaderboardPage() {
         </div>
       </div>
 
-      {/* Trade Type Filter */}
-      <div className="flex gap-1 bg-surface rounded-xl p-1 overflow-x-auto">
+      {/* Trade Type Filter — all tabs fit one line on mobile (short labels) */}
+      <div className="flex gap-1 bg-surface rounded-xl p-1">
         {TRADE_TYPES.map((t) => (
           <button
             key={t.id}
             onClick={() => setTradeType(t.id)}
-            className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+            className={`flex-1 min-w-0 py-2 px-1.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
               tradeType === t.id ? 'bg-surface-alt text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
-            {t.label}
+            <span className="sm:hidden">{t.short}</span>
+            <span className="hidden sm:inline">{t.label}</span>
           </button>
         ))}
       </div>
 
-      {/* Period Filter */}
-      <div className="flex gap-1 bg-surface rounded-xl p-1 overflow-x-auto">
+      {/* Period Filter — all tabs fit one line on mobile (short labels) */}
+      <div className="flex gap-1 bg-surface rounded-xl p-1">
         {PERIODS.map((p) => (
           <button
             key={p.id}
             onClick={() => setPeriod(p.id)}
-            className={`flex-1 min-w-max py-2 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+            className={`flex-1 min-w-0 py-2 px-1.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
               period === p.id ? 'bg-surface-alt text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
-            {p.label}
+            <span className="sm:hidden">{p.short}</span>
+            <span className="hidden sm:inline">{p.label}</span>
           </button>
         ))}
       </div>
