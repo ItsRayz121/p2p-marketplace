@@ -135,8 +135,8 @@ export default function GiveawayEntryPage() {
                 <span className="font-medium text-text-primary truncate flex-1 min-w-0">{w.username ?? 'Winner'}</span>
                 <span className="font-mono text-text-muted truncate hidden sm:inline" style={{ maxWidth: 130 }} title={w.address}>{w.address.slice(0, 8)}…{w.address.slice(-6)}</span>
                 {w.txHash ? (
-                  campaign.explorerBase ? (
-                    <a href={`${campaign.explorerBase.replace(/\/$/, '')}/tx/${w.txHash}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline shrink-0">view tx</a>
+                  w.explorerUrl ? (
+                    <a href={w.explorerUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline shrink-0">view tx</a>
                   ) : (
                     <span className="font-mono text-text-muted shrink-0" title={w.txHash}>{w.txHash.slice(0, 6)}…{w.txHash.slice(-4)}</span>
                   )

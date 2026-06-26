@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { gasApi, adminApi, type GasChain, type GasToken } from '@/lib/api'
+import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -37,9 +37,9 @@ export default function GasGiveawaysAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(blankForm())
-  const [chains, setChains] = useState<GasChain[]>([])
-  const [selChain, setSelChain] = useState<GasChain | null>(null)
-  const [tokens, setTokens] = useState<GasToken[]>([])
+  const [chains, setChains] = useState<AdminGasChain[]>([])
+  const [selChain, setSelChain] = useState<AdminGasChain | null>(null)
+  const [tokens, setTokens] = useState<AdminGasToken[]>([])
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [entries, setEntries] = useState<Record<string, Entry[]>>({})
@@ -73,13 +73,20 @@ export default function GasGiveawaysAdminPage() {
   }, [])
 
   useEffect(() => { void load() }, [load])
-  // Show every gas chain we support (matching the Free-Gas page), not just the
-  // currently-available ones — a KOL prize can be any token whose gas we provide.
-  useEffect(() => { if (showCreate && chains.length === 0) gasApi.getChains().then(({ chains: c }) => setChains(c)).catch(() => {}) }, [showCreate, chains.length])
+  // Use the SAME admin chain/token source as the Free-Gas page so a KOL prize can be ANY
+  // chain/token whose gas we provide (every non-archived one, including those hidden from
+  // regular users), and any chain/token added later appears automatically — no hardcoding.
+  useEffect(() => {
+    if (showCreate && chains.length === 0) {
+      adminApi.getGasChains()
+        .then((r) => setChains(r.chains.filter((c) => !c.isArchived).sort((a, b) => a.displayOrder - b.displayOrder)))
+        .catch(() => {})
+    }
+  }, [showCreate, chains.length])
 
-  async function pickChain(c: GasChain) {
+  async function pickChain(c: AdminGasChain) {
     setSelChain(c); setTokens([]); setForm((f) => ({ ...f, tokenConfigId: '' }))
-    try { const r = await gasApi.getChainTokens(c.slug); setTokens(r.tokens) } catch { /* ignore */ }
+    try { const r = await adminApi.getGasTokens(c.id); setTokens(r.tokens.filter((t) => !t.isArchived)) } catch { /* ignore */ }
   }
 
   async function create() {
@@ -171,11 +178,12 @@ export default function GasGiveawaysAdminPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Selected token (for min-amount + USD-equivalent hints on the create form).
+  // Selected token (for the min-amount hint/guard on the create form). The minimum is
+  // resolved the same way the backend does it: token override → chain default → fallback.
   const selToken = tokens.find((t) => t.id === form.tokenConfigId) ?? null
   const amountNum = parseFloat(form.amountNative)
-  const amountUsd = selToken && amountNum > 0 && selToken.priceUsd > 0 ? amountNum * selToken.priceUsd : null
-  const belowMin = !!selToken && amountNum > 0 && amountNum < selToken.minAmount
+  const tokenMin = selToken ? Number(selToken.minAmount ?? selChain?.defaultMinAmount ?? 0.1) : 0
+  const belowMin = !!selToken && amountNum > 0 && amountNum < tokenMin
 
   // Campaigns filtered by the search box (code or KOL/campaign name).
   const q = query.trim().toLowerCase()
@@ -236,10 +244,8 @@ export default function GasGiveawaysAdminPage() {
               {selToken && (
                 <span className="mt-1 block text-[11px] font-normal">
                   {belowMin
-                    ? <span className="text-danger">Minimum is {selToken.minAmount} {selToken.symbol}</span>
-                    : amountUsd != null
-                      ? <span className="text-text-muted">≈ ${amountUsd.toFixed(amountUsd < 1 ? 4 : 2)} per winner · min {selToken.minAmount} {selToken.symbol}</span>
-                      : <span className="text-text-muted">min {selToken.minAmount} {selToken.symbol}</span>}
+                    ? <span className="text-danger">Minimum is {tokenMin} {selToken.symbol}</span>
+                    : <span className="text-text-muted">min {tokenMin} {selToken.symbol} per winner</span>}
                 </span>
               )}
             </label>

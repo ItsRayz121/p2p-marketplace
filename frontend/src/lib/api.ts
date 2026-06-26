@@ -1483,7 +1483,7 @@ export const gasApi = {
     apiRequest<{ deleted: true }>(`/gas-fee/referral/custom-links/${codeId}`, { method: 'DELETE' }),
 
   getGiveaway: (code: string) =>
-    apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; explorerBase: string | null; amountNative: string; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean; winners: Array<{ username: string | null; address: string; txHash: string | null; delivered: boolean }> }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
+    apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; explorerBase: string | null; amountNative: string; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean; winners: Array<{ username: string | null; address: string; txHash: string | null; explorerUrl: string | null; delivered: boolean }> }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
   enterGiveaway: (data: { code: string; receivingAddress: string; email?: string }) =>
     apiRequest<{ entered: boolean }>('/gas-fee/giveaway/enter', { method: 'POST', body: JSON.stringify(data) }),
 

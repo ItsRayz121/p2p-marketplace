@@ -17,6 +17,7 @@ import { tokenDeliverySupported } from '../lib/gas/gas.delivery'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import { isRefundEligible, refundWaitRemainingMs } from '../lib/gas/gas.refundWindow'
+import { buildGasExplorerTxUrl } from '../lib/gas/gasExplorer'
 import {
   gasCancelIdentity,
   assertNotInGasCooldown,
@@ -1733,7 +1734,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
       take: 200,
     })
-    let winners: Array<{ username: string | null; address: string; txHash: string | null; delivered: boolean }> = []
+    let winners: Array<{ username: string | null; address: string; txHash: string | null; explorerUrl: string | null; delivered: boolean }> = []
     if (winnerEntries.length) {
       const userIds = [...new Set(winnerEntries.map((e) => e.userId))]
       const orderIds = winnerEntries.map((e) => e.orderId).filter((x): x is string => !!x)
@@ -1743,9 +1744,18 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       ])
       const uMap = new Map(users.map((u) => [u.id, u.username]))
       const oMap = new Map(orders.map((o) => [o.id, o]))
+      // Build the correct explorer link per chain from the chain config — works for every
+      // chain we provide gas for (and any added later) without a hardcoded per-chain map.
       winners = winnerEntries.map((e) => {
         const o = e.orderId ? oMap.get(e.orderId) : undefined
-        return { username: uMap.get(e.userId) ?? null, address: e.receivingAddress, txHash: o?.deliveryTxHash ?? null, delivered: o?.status === 'delivered' }
+        const txHash = o?.deliveryTxHash ?? null
+        return {
+          username: uMap.get(e.userId) ?? null,
+          address: e.receivingAddress,
+          txHash,
+          explorerUrl: tokenCfg ? buildGasExplorerTxUrl(tokenCfg.chain, txHash) : null,
+          delivered: o?.status === 'delivered',
+        }
       })
     }
 
