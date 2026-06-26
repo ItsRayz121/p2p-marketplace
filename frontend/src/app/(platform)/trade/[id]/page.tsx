@@ -856,7 +856,7 @@ export default function TradePage() {
       </div>
 
       {/* Trade protection banner — only on active trades */}
-      {!['crypto_released', 'cancelled', 'expired', 'disputed'].includes(trade.status) && (
+      {!['crypto_released', 'cancelled', 'expired', 'disputed', 'dispute_resolved'].includes(trade.status) && (
         <div className="mb-4 flex items-start gap-3 rounded-xl bg-primary/5 border border-primary/15 px-4 py-3">
           <ShieldCheck size={16} className="text-primary flex-shrink-0 mt-0.5" aria-hidden />
           <p className="text-sm text-primary/90">
@@ -945,6 +945,13 @@ export default function TradePage() {
             <div className="bg-danger/10 border border-danger/30 rounded-xl p-4 text-sm">
               <p className="font-semibold text-danger mb-1">Dispute in progress</p>
               <p className="text-text-muted text-xs">Our team is reviewing this trade. Please respond in the chat with any evidence you have.</p>
+            </div>
+          )}
+
+          {trade.status === 'dispute_resolved' && (
+            <div className="bg-surface-alt border border-border rounded-xl p-4 text-sm">
+              <p className="font-semibold text-text-primary mb-1">Dispute resolved</p>
+              <p className="text-text-muted text-xs">An admin has resolved this dispute — see your notifications and the chat for the ruling. The platform doesn&apos;t move funds, so settle directly with your counterparty per the decision. The trade details below are kept for your reference.</p>
             </div>
           )}
 

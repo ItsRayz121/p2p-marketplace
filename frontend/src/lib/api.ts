@@ -476,7 +476,7 @@ export interface Trade {
   /** Alias for fiatAmount — backend may return either */
   totalPkr: string
   fiatAmount?: string
-  status: 'payment_pending' | 'payment_uploaded' | 'payment_confirmed' | 'crypto_sent' | 'crypto_released' | 'cancelled' | 'disputed' | 'expired'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_confirmed' | 'crypto_sent' | 'crypto_released' | 'cancelled' | 'disputed' | 'dispute_resolved' | 'expired'
   paymentMethod: string
   paymentProofUrl?: string
   buyerWalletAddress?: string
