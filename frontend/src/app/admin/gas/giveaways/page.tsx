@@ -184,6 +184,17 @@ export default function GasGiveawaysAdminPage() {
   const amountNum = parseFloat(form.amountNative)
   const tokenMin = selToken ? Number(selToken.minAmount ?? selChain?.defaultMinAmount ?? 0.1) : 0
   const belowMin = !!selToken && amountNum > 0 && amountNum < tokenMin
+  // Live USD price for the selected token's priceSymbol → USD-equivalent of the per-winner
+  // amount (a native prize shows its ≈USDT value; a USDT/USDC prize shows its $ value).
+  const [tokenUsd, setTokenUsd] = useState<number | null>(null)
+  useEffect(() => {
+    const sym = selToken?.priceSymbol
+    if (!sym) { setTokenUsd(null); return }
+    let cancelled = false
+    adminApi.getGasNativeRate(sym).then((r) => { if (!cancelled) setTokenUsd(r.usdPrice > 0 ? r.usdPrice : null) }).catch(() => { if (!cancelled) setTokenUsd(null) })
+    return () => { cancelled = true }
+  }, [selToken?.priceSymbol])
+  const amountUsd = tokenUsd != null && amountNum > 0 ? amountNum * tokenUsd : null
 
   // Campaigns filtered by the search box (code or KOL/campaign name).
   const q = query.trim().toLowerCase()
@@ -245,7 +256,9 @@ export default function GasGiveawaysAdminPage() {
                 <span className="mt-1 block text-[11px] font-normal">
                   {belowMin
                     ? <span className="text-danger">Minimum is {tokenMin} {selToken.symbol}</span>
-                    : <span className="text-text-muted">min {tokenMin} {selToken.symbol} per winner</span>}
+                    : amountUsd != null
+                      ? <span className="text-text-muted">≈ ${amountUsd.toFixed(amountUsd < 1 ? 4 : 2)} per winner · min {tokenMin} {selToken.symbol}</span>
+                      : <span className="text-text-muted">min {tokenMin} {selToken.symbol} per winner</span>}
                 </span>
               )}
             </label>

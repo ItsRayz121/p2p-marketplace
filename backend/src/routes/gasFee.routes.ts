@@ -1759,6 +1759,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       })
     }
 
+    // USD value of the per-winner prize (transparency) — best-effort; null when no rate.
+    const nativeUsd = tokenCfg ? await getNativeUsdRate(tokenCfg.priceSymbol) : 0
+    const amountUsd = nativeUsd > 0 ? Number(campaign.amountNative) * nativeUsd : null
+
     return reply.send({
       success: true,
       data: {
@@ -1769,6 +1773,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         addressType: tokenCfg?.chain.addressType ?? '',
         explorerBase: tokenCfg?.chain.explorerBase ?? null,
         amountNative: campaign.amountNative.toString(),
+        amountUsd,
         winnerCount: campaign.winnerCount,
         entryCount,
         entryDeadline: campaign.entryDeadline?.toISOString() ?? null,
@@ -1822,6 +1827,16 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       update: { receivingAddress, ...(contactEmail ? { email: contactEmail } : {}) },
     })
     return reply.send({ success: true, data: { entered: true } })
+  })
+
+  // GET /gas-fee/admin/native-rate?symbol=ETH — live USD price for a token's priceSymbol.
+  // Admin helper so the giveaway/free-gas forms can show a USD-equivalent for any token
+  // (native or stablecoin) without hardcoding prices. Stablecoins ≈ 1; missing/stale → 0.
+  app.get('/gas-fee/admin/native-rate', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
+    const { symbol } = req.query as { symbol?: string }
+    if (!symbol || !symbol.trim()) throw new AppError('VALIDATION_ERROR', 'symbol is required', 400)
+    const info = await getNativeRateInfo(symbol.trim())
+    return reply.send({ success: true, data: { symbol: symbol.trim().toUpperCase(), usdPrice: info.usdPrice, source: info.source } })
   })
 
   const giveawayCreateSchema = z.object({

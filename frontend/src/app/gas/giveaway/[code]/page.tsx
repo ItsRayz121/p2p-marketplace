@@ -81,7 +81,7 @@ export default function GiveawayEntryPage() {
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="rounded-lg bg-surface-alt p-3">
               <p className="text-lg font-bold text-primary">{campaign.amountNative} {campaign.tokenSymbol}</p>
-              <p className="text-[11px] text-text-muted">per winner</p>
+              <p className="text-[11px] text-text-muted">per winner{campaign.amountUsd != null ? ` · ≈ $${campaign.amountUsd.toFixed(campaign.amountUsd < 1 ? 4 : 2)}` : ''}</p>
             </div>
             <div className="rounded-lg bg-surface-alt p-3">
               <p className="text-lg font-bold text-text-primary">{campaign.winnerCount}</p>

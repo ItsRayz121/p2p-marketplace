@@ -1483,7 +1483,7 @@ export const gasApi = {
     apiRequest<{ deleted: true }>(`/gas-fee/referral/custom-links/${codeId}`, { method: 'DELETE' }),
 
   getGiveaway: (code: string) =>
-    apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; explorerBase: string | null; amountNative: string; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean; winners: Array<{ username: string | null; address: string; txHash: string | null; explorerUrl: string | null; delivered: boolean }> }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
+    apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; explorerBase: string | null; amountNative: string; amountUsd: number | null; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean; winners: Array<{ username: string | null; address: string; txHash: string | null; explorerUrl: string | null; delivered: boolean }> }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
   enterGiveaway: (data: { code: string; receivingAddress: string; email?: string }) =>
     apiRequest<{ entered: boolean }>('/gas-fee/giveaway/enter', { method: 'POST', body: JSON.stringify(data) }),
 
@@ -2314,6 +2314,8 @@ export const adminApi = {
     apiRequest<{ sent: number; attempted: number; results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> }>(`/gas-fee/admin/giveaways/${id}/send`, { method: 'POST' }),
   closeGasGiveaway: (id: string) =>
     apiRequest<{ status: string }>(`/gas-fee/admin/giveaways/${id}/close`, { method: 'POST' }),
+  getGasNativeRate: (symbol: string) =>
+    apiRequest<{ symbol: string; usdPrice: number; source: string }>(`/gas-fee/admin/native-rate?symbol=${encodeURIComponent(symbol)}`),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>
