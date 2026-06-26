@@ -84,7 +84,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // suppressHydrationWarning: the anti-FOUC script adds/removes .dark on
     // <html> before React hydrates, which would otherwise cause a mismatch.
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-canvas antialiased">
+      {/* overflow-x-clip on <body> is the app-wide horizontal-overflow backstop:
+          it covers EVERY route — including standalone ones outside the platform
+          shell (/gas, /leaderboard, /admin, auth) — so no page can ever scroll
+          sideways on a phone. `clip` (not `hidden`) is deliberate: it doesn't
+          create a scroll container, so sticky navbars/headers keep working, and
+          it's ignored gracefully on older WebViews (no regression). */}
+      <body className="min-h-screen bg-canvas antialiased overflow-x-clip">
         {/* Anti-FOUC theme script — must be the very first child of <body>
             so it runs synchronously before any paint or React hydration.
             Not wrapped in <head> because Next.js App Router owns <head>
