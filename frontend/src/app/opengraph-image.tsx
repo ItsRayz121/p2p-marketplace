@@ -5,6 +5,8 @@ export const alt = 'RupChain — Buy & Sell Crypto in Pakistan'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
+
 export default function OgImage() {
   return new ImageResponse(
     (
@@ -45,22 +47,14 @@ export default function OgImage() {
               padding: '10px 28px',
             }}
           >
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 20,
-                color: 'white',
-                fontWeight: 900,
-              }}
-            >
-              R
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${BASE_URL}/brand/icon-192.png`}
+              width={44}
+              height={44}
+              alt="RupChain"
+              style={{ borderRadius: 10 }}
+            />
             <span style={{ fontSize: 28, fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>
               RupChain
             </span>

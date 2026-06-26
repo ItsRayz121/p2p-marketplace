@@ -1,4 +1,4 @@
-/* PakSwap Web Push Service Worker */
+/* RupChain Web Push Service Worker */
 
 self.addEventListener('install', () => { self.skipWaiting() })
 self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()) })
@@ -9,13 +9,13 @@ self.addEventListener('push', (event) => {
   let payload = {}
   try { payload = event.data.json() } catch { return }
 
-  const { title = 'PakSwap', body = '', url = '/', icon = '/favicon.svg' } = payload
+  const { title = 'RupChain', body = '', url = '/', icon = '/brand/icon-192.png' } = payload
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon,
-      badge: '/favicon.svg',
+      badge: '/favicon-48x48.png',
       data: { url },
       vibrate: [200, 100, 200],
     })

@@ -30,8 +30,10 @@ export const metadata: Metadata = {
   publisher: 'RupChain',
   manifest: '/manifest.json',
   icons: {
+    // Chain-badge PNGs only — the old simplified-R favicon.svg is retired so the
+    // unified RupChain mark shows in the browser tab too.
     icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-48x48.png', sizes: '48x48', type: 'image/png' },
       { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
     ],

@@ -730,7 +730,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="px-4 py-5 border-b border-gray-700">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden">
-            <img src="/favicon.svg" alt="RupChain" className="w-full h-full object-cover" />
+            <img src="/brand/icon-192.png" alt="RupChain" className="w-full h-full object-contain" />
           </div>
           <span className="text-white font-bold text-lg">RupChain Admin</span>
         </div>

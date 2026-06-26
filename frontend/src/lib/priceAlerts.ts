@@ -72,5 +72,5 @@ export async function requestAndNotify(title: string, body: string) {
     const permission = await Notification.requestPermission()
     if (permission !== 'granted') return
   }
-  new Notification(title, { body, icon: '/brand/logo-icon.png' })
+  new Notification(title, { body, icon: '/brand/icon-192.png' })
 }
