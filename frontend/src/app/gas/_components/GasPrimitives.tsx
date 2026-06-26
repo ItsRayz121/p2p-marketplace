@@ -59,6 +59,7 @@ const ADDRESS_PATTERNS: Record<string, RegExp> = {
   EVM:   /^0x[0-9a-fA-F]{40}$/,
   SOL:   /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
   SUI:   /^0x[0-9a-fA-F]{64}$/,
+  APTOS: /^0x[0-9a-fA-F]{64}$/,
   TON:   /^[UE][Qq][A-Za-z0-9+/\-_]{46}$/,
 }
 
@@ -73,6 +74,7 @@ export function addressPlaceholder(addressType: string): string {
     case 'EVM':   return '0x... (42 characters)'
     case 'SOL':   return 'Base58 address (32–44 characters)'
     case 'SUI':   return '0x... (66 characters)'
+    case 'APTOS': return '0x... (66 characters)'
     case 'TON':   return 'UQ... or EQ... (48 characters)'
     default:      return 'Enter wallet address'
   }

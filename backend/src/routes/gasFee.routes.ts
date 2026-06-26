@@ -185,6 +185,7 @@ const ADDRESS_PATTERNS: Record<string, RegExp> = {
   EVM:   /^0x[0-9a-fA-F]{40}$/,
   SOL:   /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
   SUI:   /^0x[0-9a-fA-F]{64}$/,
+  APTOS: /^0x[0-9a-fA-F]{64}$/,
   TON:   /^0:[0-9a-f]{64}$|^[UE][Qq][A-Za-z0-9+/\-_]{46}$/,
 }
 
