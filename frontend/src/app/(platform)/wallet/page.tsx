@@ -929,7 +929,7 @@ function PaymentMethodsSection() {
           {/* Step 1: Category */}
           <div>
             <p className="text-xs font-medium text-text-muted mb-2">Select category</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {PM_CATEGORIES.map((cat) => (
                 <button
                   key={cat.key}

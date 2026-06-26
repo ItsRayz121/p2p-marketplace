@@ -94,7 +94,7 @@ export default function SupportChatWidget() {
     <>
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-5 right-5 z-50 w-[calc(100vw-2.5rem)] sm:w-96 h-[32rem] max-h-[calc(100vh-2.5rem)] bg-surface border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] lg:bottom-5 right-5 z-50 w-[calc(100vw-2.5rem)] sm:w-96 h-[32rem] max-h-[calc(100dvh-7rem)] lg:max-h-[calc(100dvh-2.5rem)] bg-surface border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-primary text-white flex-shrink-0">
             <div>

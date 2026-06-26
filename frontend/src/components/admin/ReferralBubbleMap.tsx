@@ -230,7 +230,7 @@ export function ReferralBubbleMap({ nodes, edges, onSelect }: { nodes: GraphNode
           })}
         </svg>
       </div>
-      <div className="flex items-center gap-4 text-[11px] text-text-muted">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-text-muted">
         <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full" style={{ background: 'var(--color-primary, #6366f1)' }} /> Inviter (size = # referred)</span>
         <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-slate-400" /> Referred only</span>
         <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full border-2 border-emerald-500" /> KYC approved</span>
