@@ -92,8 +92,8 @@ export default function GiveawayEntryPage() {
           {entered ? (
             <div className="rounded-lg border border-green-500/40 bg-green-500/5 p-4 text-center">
               <CheckCircle2 className="w-6 h-6 mx-auto text-green-600 dark:text-green-400" />
-              <p className="mt-1 text-sm font-semibold text-green-700 dark:text-green-300">You&apos;re entered!</p>
-              <p className="text-xs text-text-muted mt-0.5">Winners are drawn after the entry period. If you win, gas is sent to your address automatically.</p>
+              <p className="mt-1 text-sm font-semibold text-green-700 dark:text-green-300">You&apos;re already entered!</p>
+              <p className="text-xs text-text-muted mt-0.5">No need to enter again — winners are drawn after the entry period. If you win, gas is sent to your address automatically. Check back here to see the winners.</p>
             </div>
           ) : !campaign.open ? (
             <div className="rounded-lg bg-surface-alt p-4 text-center text-sm text-text-muted">This giveaway is closed.</div>
@@ -101,6 +101,12 @@ export default function GiveawayEntryPage() {
             <div className="text-center space-y-2">
               <p className="text-xs text-text-muted">Log in to enter this giveaway.</p>
               <Button size="sm" variant="primary" onClick={() => router.push('/login')}>Log in</Button>
+            </div>
+          ) : campaign.requireKyc && user.kycLevel === 'none' ? (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-center space-y-2">
+              <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Identity verification required</p>
+              <p className="text-xs text-text-muted">Complete a quick identity verification (KYC) to enter this giveaway.</p>
+              <Button size="sm" variant="primary" onClick={() => router.push('/kyc')}>Complete KYC</Button>
             </div>
           ) : (
             <div className="space-y-2">
@@ -116,6 +122,30 @@ export default function GiveawayEntryPage() {
               <p className="text-[11px] text-text-muted text-center">Free — entering costs nothing. Winners receive gas at no charge.</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Public winners list — transparency once a draw has happened */}
+      {!loading && campaign && campaign.winners.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface p-5 space-y-3">
+          <h2 className="text-sm font-bold text-text-primary">Winners ({campaign.winners.length})</h2>
+          <div className="space-y-2">
+            {campaign.winners.map((w, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs border-b border-border last:border-0 pb-2 last:pb-0">
+                <span className="font-medium text-text-primary truncate flex-1 min-w-0">{w.username ?? 'Winner'}</span>
+                <span className="font-mono text-text-muted truncate hidden sm:inline" style={{ maxWidth: 130 }} title={w.address}>{w.address.slice(0, 8)}…{w.address.slice(-6)}</span>
+                {w.txHash ? (
+                  campaign.explorerBase ? (
+                    <a href={`${campaign.explorerBase.replace(/\/$/, '')}/tx/${w.txHash}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline shrink-0">view tx</a>
+                  ) : (
+                    <span className="font-mono text-text-muted shrink-0" title={w.txHash}>{w.txHash.slice(0, 6)}…{w.txHash.slice(-4)}</span>
+                  )
+                ) : (
+                  <span className="text-text-muted shrink-0">{w.delivered ? 'delivered' : 'pending'}</span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

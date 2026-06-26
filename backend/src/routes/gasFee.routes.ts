@@ -1725,6 +1725,30 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       ? !!(await db.gasGiveawayEntry.findUnique({ where: { campaignId_userId: { campaignId: campaign.id, userId: req.user.id } } }))
       : false
     const open = campaign.status === 'open' && (!campaign.entryDeadline || campaign.entryDeadline.getTime() > Date.now())
+
+    // Public winners list (transparency) once a draw has happened: platform username,
+    // the receiving address, and the delivery tx hash when delivered.
+    const winnerEntries = await db.gasGiveawayEntry.findMany({
+      where: { campaignId: campaign.id, status: 'won' },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    })
+    let winners: Array<{ username: string | null; address: string; txHash: string | null; delivered: boolean }> = []
+    if (winnerEntries.length) {
+      const userIds = [...new Set(winnerEntries.map((e) => e.userId))]
+      const orderIds = winnerEntries.map((e) => e.orderId).filter((x): x is string => !!x)
+      const [users, orders] = await Promise.all([
+        db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, username: true } }),
+        orderIds.length ? db.gasFeeOrder.findMany({ where: { id: { in: orderIds } }, select: { id: true, status: true, deliveryTxHash: true } }) : Promise.resolve([]),
+      ])
+      const uMap = new Map(users.map((u) => [u.id, u.username]))
+      const oMap = new Map(orders.map((o) => [o.id, o]))
+      winners = winnerEntries.map((e) => {
+        const o = e.orderId ? oMap.get(e.orderId) : undefined
+        return { username: uMap.get(e.userId) ?? null, address: e.receivingAddress, txHash: o?.deliveryTxHash ?? null, delivered: o?.status === 'delivered' }
+      })
+    }
+
     return reply.send({
       success: true,
       data: {
@@ -1733,6 +1757,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         tokenSymbol: tokenCfg?.symbol ?? '',
         networkLabel: tokenCfg?.chain.networkLabel ?? '',
         addressType: tokenCfg?.chain.addressType ?? '',
+        explorerBase: tokenCfg?.chain.explorerBase ?? null,
         amountNative: campaign.amountNative.toString(),
         winnerCount: campaign.winnerCount,
         entryCount,
@@ -1741,6 +1766,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         status: campaign.status,
         open,
         alreadyEntered,
+        winners,
       },
     })
   })
