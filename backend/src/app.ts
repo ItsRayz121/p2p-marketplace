@@ -53,18 +53,32 @@ export async function buildApp() {
   // Multipart — required for file uploads (payment proof, token proof)
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } })
 
-  // Global rate limiting — per-route limits are set in route files
+  // Global rate limiting — per-route limits are set in route files.
+  //
+  // Two INDEPENDENT per-IP buckets, split by method class:
+  //   • reads  (GET/HEAD/OPTIONS) — the 15–60s pollers on listing/trade/dashboard
+  //     pages, SSE reconnects, and the fan-out of reads on every page load. These
+  //     are cheap and idempotent, and a single active user (especially with a few
+  //     tabs open) racks them up fast.
+  //   • writes (POST/PUT/PATCH/DELETE) — the actual actions: creating a trade,
+  //     placing a bid, sending a chat message.
+  //
+  // Keying the bucket by method class isolates the two so background reads can
+  // NEVER exhaust the budget a user needs for a real action and surface
+  // "Too many requests" mid-flow (the failure mode this split fixes). Sensitive
+  // routes keep their own much tighter per-route limits (auth, SSE, etc.).
+  const isReadMethod = (method: string) =>
+    method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
   await app.register(rateLimit, {
     redis: rateLimitRedis,
     skipOnError: true, // fail open if Redis is unavailable — never block a request with 500
     global: true,
-    // Per-IP ceiling across ALL routes. A single active user racks up requests
-    // fast (30s/60s polling on listing + trade pages, SSE reconnects, opening
-    // modals), so a tight cap starved the budget for the actual write actions
-    // (creating a trade, placing a bid) and surfaced "Too many requests" mid-flow.
-    // Sensitive routes keep their own much tighter per-route limits.
-    max: 400,
     timeWindow: '1 minute',
+    keyGenerator: (req) => {
+      const ip = resolveClientIp(req.headers as Record<string, unknown>, req.ip) ?? req.ip
+      return `${ip}:${isReadMethod(req.method) ? 'r' : 'w'}`
+    },
+    max: (req) => (isReadMethod(req.method) ? 1000 : 200),
     errorResponseBuilder: (_req, context) => ({
       success: false,
       error: 'TOO_MANY_REQUESTS',
