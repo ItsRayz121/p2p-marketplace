@@ -125,19 +125,22 @@ function fmtUsdt(n: number): string {
 
 function CtmStatsStrip({ stats, total }: { stats: CtmStats; total: number }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-text-muted">
+    // Mobile: even 2-col grid so the four stats line up in clean rows/columns
+    // (active listings ↔ trades completed, tokens listed ↔ Featured Tokens).
+    // Desktop (sm+): single inline row with dividers.
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-4 text-xs text-text-muted sm:flex sm:flex-wrap sm:items-center">
       <span className="flex items-center gap-1">
-        <TrendingUp size={11} className="text-primary" />
+        <TrendingUp size={11} className="text-primary flex-shrink-0" />
         <span className="font-semibold text-text-primary">{total}</span> active listings
       </span>
       <span className="w-px h-3 bg-border hidden sm:block" />
       <span className="flex items-center gap-1">
-        <CheckCircle2 size={11} className="text-success" />
+        <CheckCircle2 size={11} className="text-success flex-shrink-0" />
         <span className="font-semibold text-success">{stats.totalTrades}</span> trades completed
       </span>
       <span className="w-px h-3 bg-border hidden sm:block" />
       <span className="flex items-center gap-1">
-        <LayoutGrid size={11} className="text-primary" />
+        <LayoutGrid size={11} className="text-primary flex-shrink-0" />
         <span className="font-semibold text-text-primary">{stats.totalTokens}</span> tokens listed
       </span>
       <span className="w-px h-3 bg-border hidden sm:block" />
@@ -145,7 +148,7 @@ function CtmStatsStrip({ stats, total }: { stats: CtmStats; total: number }) {
         href="/ctm/tokens"
         className="flex items-center gap-1 text-primary hover:underline hover:text-primary/80 transition-colors cursor-pointer"
       >
-        <Sparkles size={11} />
+        <Sparkles size={11} className="flex-shrink-0" />
         <span className="font-medium">Featured Tokens</span>
       </Link>
     </div>
@@ -547,10 +550,11 @@ export default function CtmHomePage() {
       {/* Recent trades ticker */}
       <RecentTradesFeed trades={recentTrades} />
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        {/* Buy / Sell toggle */}
-        <div className="flex bg-surface border border-border rounded-lg overflow-hidden flex-shrink-0">
+      {/* Filters — mobile: compact 2-col grid that uses the full width with no
+          dead gaps; desktop (sm+): single inline wrap row. */}
+      <div className="grid grid-cols-2 gap-2 mb-6 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+        {/* Buy / Sell toggle (full width on mobile) */}
+        <div className="col-span-2 flex bg-surface border border-border rounded-lg overflow-hidden w-full sm:w-auto sm:flex-shrink-0">
           {([
             { value: 'buy' as const, label: 'Buy Tokens' },
             { value: 'sell' as const, label: 'Sell Tokens' },
@@ -558,7 +562,7 @@ export default function CtmHomePage() {
             <button
               key={opt.value}
               onClick={() => { setSide((s) => s === opt.value ? '' : opt.value); setPage(1) }}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium transition-colors ${
                 side === opt.value ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-alt'
               }`}
             >
@@ -574,15 +578,15 @@ export default function CtmHomePage() {
           onChange={(id) => { setTokenId(id); setPage(1) }}
           allLabel="All Tokens"
           compact
-          className="min-w-44"
+          className="w-full sm:w-auto sm:min-w-44"
         />
 
         {/* Payment methods */}
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={paymentMethod}
             onChange={(e) => { setPaymentMethod(e.target.value); setPage(1) }}
-            className="appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
+            className="w-full sm:w-auto appearance-none border border-border rounded-lg pl-3 pr-8 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary cursor-pointer"
           >
             <option value="">All payment methods</option>
             {PAYMENT_METHODS.map((pm) => <option key={pm} value={pm}>{pm}</option>)}
@@ -595,19 +599,19 @@ export default function CtmHomePage() {
           placeholder="Min PKR"
           value={minAmount}
           onChange={(e) => setMinAmount(e.target.value)}
-          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
+          className="w-full sm:w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
         />
         <input
           type="number"
           placeholder="Max PKR"
           value={maxAmount}
           onChange={(e) => setMaxAmount(e.target.value)}
-          className="w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
+          className="w-full sm:w-28 px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-text-primary"
         />
 
         <button
           onClick={clearFilters}
-          className="border border-border rounded-lg px-3 py-2 text-sm bg-surface hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
+          className="col-span-2 w-full sm:w-auto border border-border rounded-lg px-3 py-2 text-sm bg-surface hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
         >
           Clear
         </button>
