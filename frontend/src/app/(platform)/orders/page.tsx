@@ -119,15 +119,17 @@ export default function OrdersPage() {
         </Link>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      {/* Filters — mobile: chips fill the full width in tidy grids (status in
+          2 columns, role in 3) so there are no ragged trailing gaps; desktop
+          (sm+): inline wrap rows with a divider. */}
+      <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:flex-wrap sm:items-start">
         {/* Status */}
-        <div className="flex flex-wrap gap-1">
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:gap-1">
           {STATUS_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               onClick={() => setStatus(opt.value)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-center ${
                 status === opt.value
                   ? 'bg-primary text-white'
                   : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
@@ -141,12 +143,12 @@ export default function OrdersPage() {
         <div className="w-px bg-border hidden sm:block" />
 
         {/* Role */}
-        <div className="flex gap-1">
+        <div className="grid grid-cols-3 gap-1.5 sm:flex sm:gap-1">
           {ROLE_OPTIONS.map((r) => (
             <button
               key={r}
               onClick={() => setRole(r)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-center ${
                 role === r
                   ? 'bg-primary/10 text-primary border border-primary/30'
                   : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
