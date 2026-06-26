@@ -28,11 +28,20 @@ export async function countActiveTrades(userId: string): Promise<number> {
   return usdt + ctm
 }
 
-/** True if the user is a party to any currently-disputed trade (USDT or CTM). */
+/**
+ * True if the user is a party to any UNRESOLVED dispute (USDT or CTM).
+ *
+ * Keyed off the dispute record's status, NOT the trade status: a USDT trade stays
+ * in `disputed` even after an admin rules (there is no terminal "dispute_resolved"
+ * trade status on the USDT side), so counting by trade.status left the reduced cap
+ * stuck forever after a dispute was actually resolved. The Dispute row flips to
+ * `resolved` on the ruling, so the cap now lifts automatically once it's resolved.
+ */
 export async function hasOpenDispute(userId: string): Promise<boolean> {
+  const partyFilter = { OR: [{ buyerId: userId }, { sellerId: userId }] }
   const [usdt, ctm] = await Promise.all([
-    db.trade.count({ where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'disputed' } }),
-    db.ctmTrade.count({ where: { OR: [{ buyerId: userId }, { sellerId: userId }], status: 'disputed' } }),
+    db.dispute.count({ where: { status: { not: 'resolved' }, trade: partyFilter } }),
+    db.ctmDispute.count({ where: { status: { not: 'resolved' }, trade: partyFilter } }),
   ])
   return usdt + ctm > 0
 }
@@ -84,12 +93,15 @@ export async function assertCanOpenTrade(userId: string, subject: 'self' | 'coun
       429,
     )
   }
+  // A dispute is resolved by an admin, not the user, so don't tell them to
+  // "resolve it" themselves — point them to where they add evidence and explain
+  // the cap lifts automatically once the ruling is made.
   const disputeNote = (await hasOpenDispute(userId))
-    ? ' Your limit is reduced while you have an open dispute — resolve it to lift the limit.'
+    ? ' Your limit is temporarily reduced because you have a dispute under review. Open the disputed trade from your Dashboard to add evidence (payment proof, chat screenshots); the limit returns to normal automatically once an admin resolves it.'
     : ''
   throw new AppError(
     'TOO_MANY_OPEN_TRADES',
-    `You can have ${cap} active trade${cap === 1 ? '' : 's'} at a time.${disputeNote} Finish a current trade first.`,
+    `You can have ${cap} active trade${cap === 1 ? '' : 's'} at a time. Finish a current trade first.${disputeNote}`,
     429,
   )
 }
