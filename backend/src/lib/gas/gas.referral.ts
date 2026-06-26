@@ -31,7 +31,7 @@ const MIN_ORDER_CONFIG       = 'gas_referral_min_order_usd'        // skip accru
 const MAX_PER_REFERRED_CONFIG = 'gas_referral_max_per_referred_usdt' // lifetime cap per referred user (0 = none)
 const HOLD_HOURS_CONFIG      = 'gas_referral_hold_hours'          // fraud-hold before earnings are withdrawable
 const MIN_WITHDRAW_CONFIG    = 'gas_referral_min_withdraw_usdt'   // minimum withdrawal
-const DEFAULT_HOLD_HOURS     = 72
+const DEFAULT_HOLD_HOURS     = 24
 const DEFAULT_MIN_WITHDRAW   = 5
 
 function round2(n: number): number { return Math.round(n * 100) / 100 }
