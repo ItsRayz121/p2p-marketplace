@@ -113,6 +113,21 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
+  /* Responsive-media guardrail: media and preformatted blocks must never push a
+     page wider than the phone viewport (the root cause of the "half the screen
+     is cut off / scrolls sideways" reports). Tailwind Preflight already caps
+     img/video; we extend it to canvas/svg/iframe and force long preformatted
+     text (tx hashes, JSON) to wrap instead of forcing a horizontal scrollbar.
+     The platform <main> also has overflow-x-clip as a final backstop. */
+  img, video, canvas, svg, iframe {
+    max-width: 100%;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
   /* Prevent iOS Safari auto-zoom on input focus.
      The base rule below is a bare element selector (specificity 0,0,1), so any
      `text-sm`/`text-xs` utility class (0,1,0) on an input silently overrides it

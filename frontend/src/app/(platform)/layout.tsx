@@ -116,7 +116,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             the device safe-area inset (home indicator / gesture bar), so content
             is never hidden behind the nav on notched phones or in Telegram.
             individual pages no longer need to add it themselves. */}
-        <main className="flex-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
+        <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
           {authLoading ? (
             <div className="flex items-center justify-center min-h-[60vh]">
               <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

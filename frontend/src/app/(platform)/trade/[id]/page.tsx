@@ -1056,7 +1056,7 @@ export default function TradePage() {
                     <p className="text-xs text-text-muted mb-2">Payment Proof</p>
                     {isTrustedImageUrl(trade.paymentProofUrl) ? (
                       <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-                        <NextImage src={trade.paymentProofUrl} alt="Payment proof" width={320} height={240} className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover" referrerPolicy="no-referrer" unoptimized />
+                        <NextImage src={trade.paymentProofUrl} alt="Payment proof" width={320} height={240} className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer max-h-60 w-auto max-w-full object-contain" referrerPolicy="no-referrer" unoptimized />
                       </a>
                     ) : (
                       <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">Payment proof URL is from an untrusted source and cannot be displayed.</div>
@@ -1168,7 +1168,7 @@ export default function TradePage() {
                     <p className="text-xs text-text-muted mb-2">Transfer Screenshot</p>
                     {isTrustedImageUrl(trade.sellerDeliveryProofUrl) ? (
                       <a href={trade.sellerDeliveryProofUrl} target="_blank" rel="noopener noreferrer">
-                        <NextImage src={trade.sellerDeliveryProofUrl} alt="Transfer screenshot" width={320} height={240} className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer object-cover" referrerPolicy="no-referrer" unoptimized />
+                        <NextImage src={trade.sellerDeliveryProofUrl} alt="Transfer screenshot" width={320} height={240} className="rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer max-h-60 w-auto max-w-full object-contain" referrerPolicy="no-referrer" unoptimized />
                       </a>
                     ) : (
                       <div className="bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 text-xs text-warning">Screenshot URL is from an untrusted source and cannot be displayed.</div>
