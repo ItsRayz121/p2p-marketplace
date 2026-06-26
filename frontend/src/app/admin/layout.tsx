@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
 import { authApi, adminApi, type AdminNotif, type AdminNotifCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 import CommandPalette, { type PaletteCommand } from './CommandPalette'
 
 type AdminRole = 'admin' | 'super_admin' | 'kyc_reviewer'
@@ -729,9 +730,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <nav className="flex flex-col h-full">
       <div className="px-4 py-5 border-b border-gray-700">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden">
-            <img src="/brand/icon-192.png" alt="RupChain" className="w-full h-full object-contain" />
-          </div>
+          <BrandLogo size={32} className="w-8 h-8" />
           <span className="text-white font-bold text-lg">RupChain Admin</span>
         </div>
       </div>
