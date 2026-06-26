@@ -1343,6 +1343,17 @@ export default function TradePage() {
             )}
             {messages.map((msg) => {
               const isMine = msg.senderId === user?.id
+              // Resolve the human name behind this message's senderId. System
+              // status messages carry the senderId of the actor who triggered
+              // the step (buyer for "proof uploaded", seller for "confirmed"),
+              // so they side + label by the real trader, never a generic brand.
+              const senderName = isMine
+                ? 'You'
+                : msg.senderId === trade.buyerId
+                  ? (trade.buyer?.fullName || trade.buyer?.username || 'Buyer')
+                  : msg.senderId === trade.sellerId
+                    ? (trade.seller?.fullName || trade.seller?.username || 'Seller')
+                    : 'RupChain'
               const msgTime = new Date(msg.createdAt).toLocaleTimeString('en-PK', {
                 timeZone: 'Asia/Karachi',
                 hour: '2-digit',
@@ -1350,11 +1361,11 @@ export default function TradePage() {
               })
               if (msg.isSystem) {
                 return (
-                  <div key={msg.id} className={`flex ${isUserBuyer ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-[80%] px-3 py-2 rounded-2xl bg-surface border border-border shadow-sm ${isUserBuyer ? 'rounded-bl-sm' : 'rounded-br-sm'}`}>
+                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] px-3 py-2 rounded-2xl bg-surface border border-border shadow-sm ${isMine ? 'rounded-br-sm' : 'rounded-bl-sm'}`}>
                       <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
                         <ShieldCheck size={12} className="flex-shrink-0" aria-hidden />
-                        RupChain
+                        {senderName}
                       </p>
                       <p className="text-sm text-text-primary leading-relaxed">{msg.message}</p>
                       <p className="text-[10px] text-text-muted/60 mt-0.5">{msgTime}</p>
@@ -1366,6 +1377,7 @@ export default function TradePage() {
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] flex flex-col gap-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
+                    <span className="text-[11px] font-semibold text-text-secondary px-1">{senderName}</span>
                     {imageUrl ? (
                       <a href={imageUrl} target="_blank" rel="noopener noreferrer" className={`block rounded-2xl overflow-hidden border-2 shadow-sm ${isMine ? 'border-primary/30' : 'border-border'} ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}

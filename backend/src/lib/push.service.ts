@@ -36,7 +36,9 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     title: payload.title,
     body: payload.body,
     url: payload.url ?? '/',
-    icon: payload.icon ?? '/favicon.svg',
+    // Use the current R+chain badge, not the retired white/green favicon.svg —
+    // that old asset was what showed as the wrong logo on push notifications.
+    icon: payload.icon ?? '/brand/icon-192.png',
   })
 
   const stale: string[] = []
