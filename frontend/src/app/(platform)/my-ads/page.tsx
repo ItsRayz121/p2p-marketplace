@@ -52,9 +52,11 @@ const adStatusLabel = (s: string) => AD_STATUS_LABELS[s] ?? s.charAt(0).toUpperC
 
 function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
   return (
-    <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+    <div className="bg-surface shadow-card border border-border rounded-xl p-4 min-w-0">
       <p className="text-xs text-text-muted">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${accent ?? 'text-text-primary'}`}>{value}</p>
+      {/* Responsive size + wrap so long PKR values (e.g. "PKR 18,138.29") stay
+          inside the card in the tight 3-col mobile grid instead of spilling out. */}
+      <p className={`text-lg sm:text-2xl font-bold mt-1 break-words tabular-nums leading-tight ${accent ?? 'text-text-primary'}`}>{value}</p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
     </div>
   )
