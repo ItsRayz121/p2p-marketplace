@@ -49,7 +49,7 @@ const STRUCTURED_KEYS = new Set([
   'gas_promo_enabled', 'gas_referral_enabled', 'gas_giveaway_enabled', 'gas_free_grant_enabled',
   'usdt_price_margin_pct', 'ctm_price_margin_pct',
   'usdt_bid_margin_pct', 'ctm_bid_margin_pct',
-  'max_concurrent_trades', 'max_concurrent_trades_with_dispute',
+  'max_concurrent_trades', 'max_concurrent_trades_with_dispute', 'trade_limit_bypass_user_ids',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -226,6 +226,7 @@ export default function ConfigPage() {
   const [limitsOpen, setLimitsOpen] = useState(false)
   const [maxConcurrent, setMaxConcurrent] = useState('3')
   const [maxConcurrentDispute, setMaxConcurrentDispute] = useState('1')
+  const [bypassUserIds, setBypassUserIds] = useState('')
   const [limitsSaving, setLimitsSaving] = useState(false)
 
   // ── Non-Custodial P2P ────────────────────────────────────────────────────────
@@ -358,6 +359,7 @@ export default function ConfigPage() {
       setCtmBidMargin(m['ctm_bid_margin_pct'] ?? '10')
       setMaxConcurrent(m['max_concurrent_trades'] ?? '3')
       setMaxConcurrentDispute(m['max_concurrent_trades_with_dispute'] ?? '1')
+      setBypassUserIds(m['trade_limit_bypass_user_ids'] ?? '')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -530,6 +532,7 @@ export default function ConfigPage() {
       await saveKeys([
         { key: 'max_concurrent_trades', value: String(Math.max(parseInt(maxConcurrent, 10) || 0, 0)) },
         { key: 'max_concurrent_trades_with_dispute', value: String(Math.max(parseInt(maxConcurrentDispute, 10) || 0, 0)) },
+        { key: 'trade_limit_bypass_user_ids', value: bypassUserIds.split(',').map((s) => s.trim()).filter(Boolean).join(',') },
       ])
       showToast('Trade limits saved.')
     } catch { showToast('Failed to save trade limits.', false) }
@@ -767,6 +770,12 @@ export default function ConfigPage() {
           <Field label="Max with open dispute" hint="Reduced cap while a user has an unresolved dispute (recommended 1). 0 = unlimited.">
             <input className={inputCls} type="number" min="0" value={maxConcurrentDispute} onChange={(e) => setMaxConcurrentDispute(e.target.value)} placeholder="1" />
           </Field>
+          <div className="border-t border-border pt-4">
+            <Field label="Cap-exempt accounts" hint="Test / staff accounts that bypass the cap entirely. Comma-separated usernames or user IDs. Leave blank for none. Real users stay capped.">
+              <input className={inputCls} value={bypassUserIds} onChange={(e) => setBypassUserIds(e.target.value)} placeholder="awazedil223, test_seller, …" />
+            </Field>
+            <p className="text-xs text-warning mt-2">For testing only — exempt accounts can hold unlimited simultaneous trades. Clear this list before launch.</p>
+          </div>
           <div className="flex justify-end">
             <Button size="sm" loading={limitsSaving} onClick={saveLimits}>Save Trade Limits</Button>
           </div>

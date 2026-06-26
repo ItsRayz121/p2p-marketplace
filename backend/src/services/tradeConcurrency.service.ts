@@ -37,6 +37,24 @@ export async function hasOpenDispute(userId: string): Promise<boolean> {
   return usdt + ctm > 0
 }
 
+/**
+ * Test/staff accounts that bypass the concurrency cap entirely. Admin-managed via
+ * the PlatformConfig key `trade_limit_bypass_user_ids` (comma-separated). Accepts
+ * either user IDs or usernames for convenience. Read live (no cache) so adding /
+ * removing an account takes effect immediately. Empty list = nobody bypasses, so
+ * the cap behaves exactly as before for real users.
+ */
+async function isTradeLimitBypassed(userId: string): Promise<boolean> {
+  const row = await db.platformConfig.findUnique({ where: { key: 'trade_limit_bypass_user_ids' } })
+  if (!row?.value) return false
+  const tokens = row.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+  if (tokens.length === 0) return false
+  if (tokens.includes(userId.toLowerCase())) return true
+  // Fall back to matching by username so an admin can type "awazedil223" instead of a cuid.
+  const user = await db.user.findUnique({ where: { id: userId }, select: { username: true } })
+  return !!user?.username && tokens.includes(user.username.toLowerCase())
+}
+
 /** The user's effective cap right now (lower while they have an open dispute). */
 export async function effectiveTradeCap(userId: string): Promise<number> {
   const [normal, withDispute, disputed] = await Promise.all([
@@ -53,6 +71,7 @@ export async function effectiveTradeCap(userId: string): Promise<number> {
  * 'counterparty' = the other party (e.g. the ad owner is too busy).
  */
 export async function assertCanOpenTrade(userId: string, subject: 'self' | 'counterparty' = 'self'): Promise<void> {
+  if (await isTradeLimitBypassed(userId)) return // test/staff account — exempt from the cap
   const cap = await effectiveTradeCap(userId)
   if (cap <= 0) return // 0 = unlimited
   const active = await countActiveTrades(userId)
