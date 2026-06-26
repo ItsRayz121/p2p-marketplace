@@ -1328,8 +1328,8 @@ export default function TradePage() {
             {/* Seller's terms carried over from the ad, shown as the first message
                 in the thread (left-aligned, like a message from the counterparty). */}
             {trade.ad?.terms?.trim() && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-bl-sm bg-surface border border-border shadow-sm">
+              <div className={`flex ${isUserBuyer ? 'justify-start' : 'justify-end'}`}>
+                <div className={`max-w-[80%] px-3 py-2 rounded-2xl bg-surface border border-border shadow-sm ${isUserBuyer ? 'rounded-bl-sm' : 'rounded-br-sm'}`}>
                   <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
                     <FileText size={12} className="flex-shrink-0" aria-hidden />
                     {(trade.seller?.fullName || trade.seller?.username || 'Seller')}&apos;s terms &amp; conditions
@@ -1350,8 +1350,8 @@ export default function TradePage() {
               })
               if (msg.isSystem) {
                 return (
-                  <div key={msg.id} className="flex justify-start">
-                    <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-bl-sm bg-surface border border-border shadow-sm">
+                  <div key={msg.id} className={`flex ${isUserBuyer ? 'justify-start' : 'justify-end'}`}>
+                    <div className={`max-w-[80%] px-3 py-2 rounded-2xl bg-surface border border-border shadow-sm ${isUserBuyer ? 'rounded-bl-sm' : 'rounded-br-sm'}`}>
                       <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
                         <ShieldCheck size={12} className="flex-shrink-0" aria-hidden />
                         RupChain
