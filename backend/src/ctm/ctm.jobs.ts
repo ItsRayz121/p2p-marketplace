@@ -347,7 +347,46 @@ export async function runCtmBidExpiry() {
     notify(bid.bidderId, 'CTM_BID_EXPIRED', 'Bid expired', `Your bid on ${bid.listing.token.symbol} expired — the merchant did not respond in time.`, { bidId: bid.id })
   }
 
-  if (expiredBids.length > 0) {
-    logger.info({ count: expiredBids.length }, 'CTM bid expiry: expired bids')
+  // Also wind up bids the merchant ACCEPTED but the buyer never confirmed payment
+  // details on in time (status accepted_pending_buyer). Acceptance locked tokens on
+  // the listing (availableAmount -> lockedAmount), so the window lapsing must RELEASE
+  // that lock back — otherwise the tokens stay stuck and the buyer keeps seeing a
+  // dead "Complete Trade Details" prompt for a bid that can no longer be completed.
+  const staleAccepted = await db.ctmListingBid.findMany({
+    where: { status: 'accepted_pending_buyer', expiresAt: { lte: now } },
+    select: {
+      id: true, bidderId: true, listingId: true, tokenAmount: true,
+      listing: { select: { merchantProfile: { select: { userId: true } }, token: { select: { symbol: true } } } },
+    },
+  })
+
+  for (const bid of staleAccepted) {
+    try {
+      const released = await db.$transaction(async (tx) => {
+        // CAS guard: only the worker that flips it out of accepted_pending_buyer
+        // releases the lock, so a buyer confirming at the same instant can't double-release.
+        const flipped = await tx.ctmListingBid.updateMany({
+          where: { id: bid.id, status: 'accepted_pending_buyer' },
+          data: { status: 'expired' },
+        })
+        if (flipped.count === 0) return false
+        await tx.ctmListing.update({
+          where: { id: bid.listingId },
+          data: { availableAmount: { increment: bid.tokenAmount }, lockedAmount: { decrement: bid.tokenAmount } },
+        })
+        return true
+      })
+      if (!released) continue
+      notify(bid.bidderId, 'CTM_BID_EXPIRED', 'Bid expired',
+        `Your accepted bid on ${bid.listing.token.symbol} expired — you didn't complete the payment details in time.`, { bidId: bid.id })
+      notify(bid.listing.merchantProfile.userId, 'CTM_BID_EXPIRED', 'Accepted bid expired',
+        `An accepted bid on your ${bid.listing.token.symbol} listing expired — the buyer didn't confirm in time. The tokens are available again.`, { bidId: bid.id })
+    } catch (err) {
+      logger.error({ err, bidId: bid.id }, 'CTM bid expiry: failed to release accepted_pending_buyer bid')
+    }
+  }
+
+  if (expiredBids.length > 0 || staleAccepted.length > 0) {
+    logger.info({ pending: expiredBids.length, accepted: staleAccepted.length }, 'CTM bid expiry: expired bids')
   }
 }

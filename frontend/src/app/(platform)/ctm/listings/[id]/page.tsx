@@ -721,21 +721,33 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      {/* Complete Trade banner — shown when buyer's bid was accepted but payment details not yet provided */}
+      {/* Complete Trade banner — shown when buyer's bid was accepted but payment details not yet provided.
+          Once the confirmation window has passed the bid can no longer be completed (the backend rejects it
+          and a job winds it up + releases the listing lock), so show an expired state instead of a dead CTA. */}
       {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
-        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
-          <p className="font-semibold text-amber-900 dark:text-amber-200">Your bid was accepted!</p>
-          <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-            Complete your payment details to open the trade. The window expires at{' '}
-            {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
-          </p>
-          <button
-            onClick={() => { setShowConfirmBidModal(true); setConfirmPaymentMethodId(''); setConfirmBuyerFromMethodId(''); setConfirmPaymentMethodIds([]); setConfirmAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setConfirmBuyerSettlementId(''); setConfirmMessage(''); setConfirmError('') }}
-            className="mt-3 bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-amber-700 transition-colors"
-          >
-            Complete Trade Details
-          </button>
-        </div>
+        new Date(myActiveBid.expiresAt) < new Date() ? (
+          <div className="bg-surface-alt border border-border rounded-xl p-4">
+            <p className="font-semibold text-text-secondary">Bid confirmation window expired</p>
+            <p className="text-sm text-text-muted mt-1">
+              Your bid was accepted but the payment details weren&apos;t completed in time, so it has expired.
+              Place a new bid if you still want to trade.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
+            <p className="font-semibold text-amber-900 dark:text-amber-200">Your bid was accepted!</p>
+            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+              Complete your payment details to open the trade. The window expires at{' '}
+              {new Date(myActiveBid.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+            </p>
+            <button
+              onClick={() => { setShowConfirmBidModal(true); setConfirmPaymentMethodId(''); setConfirmBuyerFromMethodId(''); setConfirmPaymentMethodIds([]); setConfirmAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setConfirmBuyerSettlementId(''); setConfirmMessage(''); setConfirmError('') }}
+              className="mt-3 bg-amber-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-amber-700 transition-colors"
+            >
+              Complete Trade Details
+            </button>
+          </div>
+        )
       )}
 
       {/* CTA */}
