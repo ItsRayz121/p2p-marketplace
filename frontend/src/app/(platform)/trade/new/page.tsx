@@ -171,15 +171,18 @@ function NewTradePageContent() {
         )}
 
         <div className="mt-3 flex flex-wrap gap-1">
-          {(ad.paymentMethods ?? []).map((pm) => (
-            <Badge key={pm} variant="default" size="sm">
+          {(ad.resolvedPaymentMethods?.length
+            ? ad.resolvedPaymentMethods
+            : (ad.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm }))
+          ).map((pm) => (
+            <Badge key={pm.id} variant="default" size="sm">
               <EntityLogo
-                type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'}
-                slug={pm}
+                type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'}
+                slug={pm.label}
                 size="xs"
                 className="flex-shrink-0 mr-1"
               />
-              {pm}
+              {pm.label}
             </Badge>
           ))}
         </div>

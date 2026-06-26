@@ -467,17 +467,17 @@ export default function GasPage() {
 
         {/* Sticky header */}
         <div className="bg-surface border-b border-border">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white">
+          <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white flex-shrink-0">
                 <Fuel size={18} />
               </div>
-              <div>
-                <h1 className="text-base font-bold text-text-primary leading-tight">Buy Gas Instantly</h1>
-                <p className="text-xs text-text-muted">Pay with PKR or USDT</p>
+              <div className="min-w-0">
+                <h1 className="text-base font-bold text-text-primary leading-tight truncate">Buy Gas Instantly</h1>
+                <p className="text-xs text-text-muted truncate">Pay with PKR or USDT</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <Link href="/dashboard" className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors px-2 py-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                 Dashboard
