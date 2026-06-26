@@ -548,11 +548,14 @@ export async function authRoutes(app: FastifyInstance) {
   // ─── Google OAuth ──────────────────────────────────────────────────────────
 
   // Step 1: redirect user to Google consent screen
-  app.get('/google', async (_req, reply) => {
+  app.get('/google', async (req, reply) => {
     if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CALLBACK_URL) {
       // Redirect to a friendly login error instead of dead-ending on raw JSON.
       return reply.redirect(`${env.FRONTEND_URL}/login?error=google_not_configured`)
     }
+    // Carry an inbound referral code (?ref=CODE) through the OAuth round-trip via the
+    // `state` param so a Google signup credits the referrer (Google returns state as-is).
+    const ref = (req.query as { ref?: string }).ref
     const params = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
       redirect_uri: env.GOOGLE_CALLBACK_URL,
@@ -561,12 +564,13 @@ export async function authRoutes(app: FastifyInstance) {
       access_type: 'offline',
       prompt: 'select_account',
     })
+    if (ref && typeof ref === 'string') params.set('state', ref.trim().slice(0, 64))
     return reply.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`)
   })
 
   // Step 2: Google redirects back here with a code
   app.get('/google/callback', async (req, reply) => {
-    const { code, error } = req.query as { code?: string; error?: string }
+    const { code, error, state } = req.query as { code?: string; error?: string; state?: string }
     const frontendUrl = env.FRONTEND_URL
 
     if (error || !code) {
@@ -609,6 +613,7 @@ export async function authRoutes(app: FastifyInstance) {
         googleUser.name ?? (googleUser.email.split('@')[0] ?? 'user'),
         req.headers['user-agent'],
         req.ip,
+        state && typeof state === 'string' ? state : undefined,
       )
 
       // Banned / suspended Google users → restricted appeal flow.

@@ -84,6 +84,13 @@ export default function RegisterPage() {
     )
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ''
+  // Carry the stored referral code into the Google OAuth flow so a Google signup
+  // credits the referrer just like an email/password signup does.
+  const [googleRef, setGoogleRef] = useState('')
+  useEffect(() => {
+    if (typeof window !== 'undefined') setGoogleRef(localStorage.getItem('referralCode') ?? '')
+  }, [])
+  const googleHref = `${API_BASE}/api/v1/auth/google${googleRef ? `?ref=${encodeURIComponent(googleRef)}` : ''}`
 
   return (
     <div>
@@ -92,7 +99,7 @@ export default function RegisterPage() {
 
       {/* Google Sign-Up */}
       <a
-        href={`${API_BASE}/api/v1/auth/google`}
+        href={googleHref}
         className="flex items-center justify-center gap-3 w-full border border-border rounded-xl px-4 py-2.5 text-sm font-medium text-text-primary hover:bg-surface transition-colors mb-4"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">

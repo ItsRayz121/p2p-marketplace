@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -45,6 +45,12 @@ function LoginInner() {
   const [alreadyVerified, setAlreadyVerified] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState('')
+  // Carry a stored referral code through Google sign-in (it's login-or-register).
+  const [googleRef, setGoogleRef] = useState('')
+  useEffect(() => {
+    if (typeof window !== 'undefined') setGoogleRef(localStorage.getItem('referralCode') ?? '')
+  }, [])
+  const googleHref = `${API_BASE}/api/v1/auth/google${googleRef ? `?ref=${encodeURIComponent(googleRef)}` : ''}`
 
   const {
     register,
@@ -136,7 +142,7 @@ function LoginInner() {
 
       {/* Google Sign-In */}
       <a
-        href={`${API_BASE}/api/v1/auth/google`}
+        href={googleHref}
         className="flex items-center justify-center gap-3 w-full border border-border rounded-xl px-4 py-2.5 text-sm font-medium text-text-primary hover:bg-surface transition-colors mb-4"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">

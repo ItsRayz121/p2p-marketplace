@@ -788,6 +788,7 @@ export async function loginOrRegisterWithGoogle(
   fullName: string,
   userAgent?: string,
   ip?: string,
+  referralCode?: string,
 ): Promise<LoginResult> {
   // Find by googleId first, fall back to email (links existing account)
   let user = await db.user.findFirst({
@@ -802,6 +803,15 @@ export async function loginOrRegisterWithGoogle(
     const taken = await db.user.findUnique({ where: { username } })
     if (taken) username = base + Math.floor(10000 + Math.random() * 90000)
 
+    // Resolve the inbound referral code (carried through the OAuth `state` param) the
+    // same way email/password + Telegram signups do, so a Google signup credits the
+    // referrer. Invalid/self codes simply produce no binding — never block the signup.
+    let referredById: string | undefined
+    if (referralCode) {
+      const resolved = await resolveReferralOwner(referralCode)
+      if (resolved) referredById = resolved.ownerId
+    }
+
     const created = await db.user.create({
       data: {
         email,
@@ -811,10 +821,16 @@ export async function loginOrRegisterWithGoogle(
         googleId,
         isEmailVerified: true,
         referralCode: randomBytes(8).toString('hex'),
+        ...(referredById ? { referredById } : {}),
       },
       select: USER_SELECT,
     })
     user = created
+
+    // Mirror the signup attribution into the gas referral system (best-effort, idempotent).
+    if (referredById) {
+      bindReferral(created.id).catch((err) => logger.error({ err, userId: created.id }, 'gas referral heal on google register failed'))
+    }
   } else if (!user.googleId) {
     // Existing email/password user — link their Google account
     const updated = await db.user.update({
