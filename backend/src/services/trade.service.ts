@@ -525,11 +525,14 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
       },
     })
 
-    // System message
+    // System message. Attribute to the SELLER so it sides + labels on the
+    // counterparty's side: this is an instruction directed AT the buyer ("please
+    // upload payment proof"), so it should read as coming from the seller, never
+    // from the buyer's own "You" side.
     await tx.tradeMessage.create({
       data: {
         tradeId: newTrade.id,
-        senderId: buyerId,
+        senderId: sellerId,
         message: 'Trade created. Please upload payment proof within the trade window.',
         isSystem: true,
       },

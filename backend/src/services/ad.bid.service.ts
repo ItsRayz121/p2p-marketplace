@@ -218,8 +218,10 @@ export async function confirmBidDetails(
       },
     })
 
+    // Attribute to the seller so it sides on the counterparty's side — this
+    // instruction is directed at the buyer, not from the buyer's own "You" side.
     await tx.tradeMessage.create({
-      data: { tradeId: trade.id, senderId: buyerId, message: 'Trade opened via bid. Please upload payment proof within the trade window.', isSystem: true },
+      data: { tradeId: trade.id, senderId: sellerId, message: 'Trade opened via bid. Please upload payment proof within the trade window.', isSystem: true },
     })
 
     await tx.adBid.update({ where: { id: bidId }, data: { status: 'accepted', paymentMethod: data.paymentMethod, buyerUsdtAddress: data.buyerUsdtAddress ?? null } })
