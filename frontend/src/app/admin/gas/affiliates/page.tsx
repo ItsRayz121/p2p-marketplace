@@ -9,7 +9,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { ArrowLeft, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Search, ChevronDown, ChevronRight } from 'lucide-react'
 
 type Affiliate = Awaited<ReturnType<typeof adminApi.getGasAffiliates>>[number]
 type EarningRow = Awaited<ReturnType<typeof adminApi.getGasReferrals>>[number]
@@ -33,6 +33,8 @@ export default function GasAffiliatesAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  // Which owners' earnings groups are expanded (collapsed by default to keep the list tidy).
+  const [openOwners, setOpenOwners] = useState<Set<string>>(new Set())
   // Inline editor (replaces window.prompt): which affiliate + which form is open, plus its
   // working values. `mode` is 'caps' (approve / edit caps) or 'reject' (capture a reason).
   const [edit, setEdit] = useState<{
@@ -107,6 +109,27 @@ export default function GasAffiliatesAdminPage() {
     return earnings.filter((r) => [r.code, r.owner.username, r.owner.email]
       .some((v) => v?.toLowerCase().includes(q)))
   }, [earnings, q])
+
+  // Group earnings by owner so a KOL with many links shows as ONE collapsible card
+  // (with aggregate totals) instead of one row per link. Sorted by total earned.
+  const earningsByOwner = useMemo(() => {
+    if (!filteredEarnings) return null
+    const map = new Map<string, {
+      owner: EarningRow['owner']; links: EarningRow[]
+      referred: number; total: number; available: number; withdrawn: number; anyActive: boolean
+    }>()
+    for (const r of filteredEarnings) {
+      let g = map.get(r.owner.id)
+      if (!g) { g = { owner: r.owner, links: [], referred: 0, total: 0, available: 0, withdrawn: 0, anyActive: false }; map.set(r.owner.id, g) }
+      g.links.push(r)
+      g.referred += r.referredCount
+      g.total += r.totalAccruedUsdt
+      g.available += r.availableUsdt
+      g.withdrawn += r.withdrawnUsdt
+      g.anyActive = g.anyActive || r.isActive
+    }
+    return Array.from(map.values()).sort((a, b) => b.total - a.total)
+  }, [filteredEarnings])
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
@@ -219,28 +242,58 @@ export default function GasAffiliatesAdminPage() {
             ))}
           </section>
 
-          {/* Earnings (per referral/affiliate link) */}
+          {/* Earnings — grouped by owner; one collapsible card per affiliate, aggregating
+              all their links. Expand to see each link's code, commission and per-link stats. */}
           <section className="space-y-3">
             <h2 className="text-sm font-bold text-text-primary">Affiliate earnings</h2>
-            {filteredEarnings && filteredEarnings.length === 0 && (
+            {earningsByOwner && earningsByOwner.length === 0 && (
               <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">{q ? 'No earnings match your search.' : 'No affiliate links with activity yet.'}</div>
             )}
-            {filteredEarnings && filteredEarnings.map((r) => (
-              <div key={r.codeId} className="rounded-xl border border-border bg-surface p-4">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Link href={`/admin/users/${r.owner.id}`} className="font-semibold text-text-primary truncate hover:text-primary hover:underline">{r.owner.username ?? r.owner.email ?? 'Unknown user'}</Link>
-                  <Badge variant={r.isActive ? 'success' : 'default'}>{r.isActive ? 'Active' : 'Disabled'}</Badge>
-                  <span className="text-xs text-primary font-semibold">{r.referralPct}% commission</span>
-                  <span className="text-xs text-text-muted">· code <span className="font-mono text-text-secondary">{r.code}</span></span>
+            {earningsByOwner && earningsByOwner.map((g) => {
+              const open = openOwners.has(g.owner.id)
+              return (
+                <div key={g.owner.id} className="rounded-xl border border-border bg-surface overflow-hidden">
+                  <button
+                    onClick={() => setOpenOwners((prev) => { const n = new Set(prev); if (n.has(g.owner.id)) n.delete(g.owner.id); else n.add(g.owner.id); return n })}
+                    className="w-full text-left p-4 hover:bg-surface-alt transition-colors"
+                    aria-expanded={open}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {open ? <ChevronDown className="w-4 h-4 text-text-muted shrink-0" /> : <ChevronRight className="w-4 h-4 text-text-muted shrink-0" />}
+                      <span className="font-semibold text-text-primary truncate">{g.owner.username ?? g.owner.email ?? 'Unknown user'}</span>
+                      <Badge variant={g.anyActive ? 'success' : 'default'}>{g.anyActive ? 'Active' : 'Disabled'}</Badge>
+                      <span className="text-xs text-text-muted">{g.links.length} link{g.links.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{g.referred}</p></div>
+                      <div><p className="text-text-muted">Total earned</p><p className="font-semibold text-text-primary">{fmt(g.total)}</p></div>
+                      <div><p className="text-text-muted">Available</p><p className="font-semibold text-primary">{fmt(g.available)}</p></div>
+                      <div><p className="text-text-muted">Withdrawn</p><p className="font-semibold text-text-primary">{fmt(g.withdrawn)}</p></div>
+                    </div>
+                  </button>
+                  {open && (
+                    <div className="border-t border-border divide-y divide-border">
+                      {g.links.map((r) => (
+                        <div key={r.codeId} className="px-4 py-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-sm font-bold tracking-wider text-text-primary">{r.code}</span>
+                            <Badge variant={r.isActive ? 'success' : 'default'}>{r.isActive ? 'Active' : 'Disabled'}</Badge>
+                            <span className="text-xs text-primary font-semibold">{r.referralPct}% commission</span>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                            <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{r.referredCount}</p></div>
+                            <div><p className="text-text-muted">Total earned</p><p className="font-semibold text-text-primary">{fmt(r.totalAccruedUsdt)}</p></div>
+                            <div><p className="text-text-muted">Available</p><p className="font-semibold text-primary">{fmt(r.availableUsdt)}</p></div>
+                            <div><p className="text-text-muted">Withdrawn</p><p className="font-semibold text-text-primary">{fmt(r.withdrawnUsdt)}</p></div>
+                          </div>
+                          <Link href={`/admin/users/${r.owner.id}`} className="mt-1.5 inline-block text-[11px] text-primary hover:underline">View user</Link>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{r.referredCount}</p></div>
-                  <div><p className="text-text-muted">Total earned</p><p className="font-semibold text-text-primary">{fmt(r.totalAccruedUsdt)}</p></div>
-                  <div><p className="text-text-muted">Available</p><p className="font-semibold text-primary">{fmt(r.availableUsdt)}</p></div>
-                  <div><p className="text-text-muted">Withdrawn</p><p className="font-semibold text-text-primary">{fmt(r.withdrawnUsdt)}</p></div>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </section>
         </>
       )}

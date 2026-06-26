@@ -25,7 +25,11 @@ function runLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, Pos> {
     pos.set(node.id, { x: Math.cos(a) * r, y: Math.sin(a) * r })
   })
   const area = W * H
-  const k = Math.sqrt(area / Math.max(1, n)) // ideal edge length
+  // Ideal edge length. The raw sqrt(area/n) explodes for small graphs (≈430px for 3
+  // nodes), which flings the few bubbles far apart so the auto-fit zooms way out and
+  // they render as tiny specks. Clamp it to a sane on-screen range so a handful of
+  // nodes sit close enough to read, while large graphs still spread out.
+  const k = Math.max(40, Math.min(150, Math.sqrt(area / Math.max(1, n)))) // ideal edge length
   const iters = n > 500 ? 120 : 260
   let temp = W / 8
   const cool = temp / (iters + 1)
@@ -109,19 +113,26 @@ export function ReferralBubbleMap({ nodes, edges, onSelect }: { nodes: GraphNode
     return () => svg.removeEventListener('wheel', onWheelNative)
   }, [])
 
+  // Fit the viewBox snugly to a computed layout, padded by the largest bubble + label
+  // room, with a minimum span so a 1–2 node graph isn't absurdly zoomed in/out. Reused
+  // by the initial layout effect and the Reset button.
+  const fitTo = useCallback((laid: Map<string, Pos>) => {
+    if (laid.size === 0) return
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    laid.forEach((p) => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y) })
+    const maxR = nodes.reduce((m, nd) => Math.max(m, radius(nd.referrals)), 0)
+    const pad = 40 + maxR
+    const w = Math.max(260, maxX - minX + pad * 2)
+    const h = Math.max(200, maxY - minY + pad * 2)
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+    setVb({ x: cx - w / 2, y: cy - h / 2, w, h })
+  }, [nodes])
+
   useEffect(() => {
     const laid = runLayout(nodes, edges)
     setPos(laid)
-    // Fit the viewBox to the computed layout bounds.
-    if (laid.size > 0) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      laid.forEach((p) => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y) })
-      const pad = 60
-      const w = Math.max(200, maxX - minX + pad * 2)
-      const h = Math.max(160, maxY - minY + pad * 2)
-      setVb({ x: minX - pad, y: minY - pad, w, h })
-    }
-  }, [nodes, edges])
+    fitTo(laid)
+  }, [nodes, edges, fitTo])
 
   const toWorld = useCallback((clientX: number, clientY: number): Pos => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -166,7 +177,7 @@ export function ReferralBubbleMap({ nodes, edges, onSelect }: { nodes: GraphNode
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-text-muted">
         <span>{nodes.length} users · {edges.length} referral links — scroll to zoom, drag to pan, drag a bubble to move it, click to open.</span>
-        <button onClick={() => { const laid = runLayout(nodes, edges); setPos(laid); setVb({ x: -W / 2, y: -H / 2, w: W, h: H }) }} className="text-primary hover:underline">Reset</button>
+        <button onClick={() => { const laid = runLayout(nodes, edges); setPos(laid); fitTo(laid) }} className="text-primary hover:underline">Reset</button>
       </div>
       <div className="rounded-xl border border-border bg-surface overflow-hidden">
         <svg
@@ -209,7 +220,7 @@ export function ReferralBubbleMap({ nodes, edges, onSelect }: { nodes: GraphNode
                   stroke={approved ? '#10b981' : '#ffffff'}
                   strokeWidth={approved ? 2 : 1}
                 />
-                {(isHub || hover === nd.id) && (
+                {(isHub || hover === nd.id || nodes.length <= 25) && (
                   <text textAnchor="middle" y={r + 11} fontSize={Math.max(9, Math.min(13, vb.w < 1200 ? 11 : 9))} className="fill-text-primary" style={{ pointerEvents: 'none' }}>
                     {nd.username}{nd.referrals > 0 ? ` (${nd.referrals})` : ''}
                   </text>
