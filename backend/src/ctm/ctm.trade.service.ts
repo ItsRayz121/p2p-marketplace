@@ -862,8 +862,22 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
       )
     }
 
-    // Notify the listing creator (buyer for BUY listings, seller for SELL listings)
-    notify(listing.merchantProfile.userId, 'ctm_trade_created', 'New CTM Trade', `New trade for your ${listing.token.symbol} listing`, { tradeRef: trade.tradeRef })
+    // Notify the listing creator the moment a trade opens against their listing —
+    // not only later when proof is uploaded. The merchant is the buyer on a BUY
+    // listing (they pay) or the seller on a SELL listing (they receive payment),
+    // so word it from their side. 'ctm_trade_created' is Telegram-allowlisted so
+    // this also reaches the merchant as a DM (parity with USDT 'trade').
+    const sym = listing.token.symbol
+    const lbl = refLabel(trade.displayRef)
+    notify(
+      listing.merchantProfile.userId,
+      'ctm_trade_created',
+      'New CTM trade opened',
+      isBuyListing
+        ? `A seller filled your ${sym} buy listing. Trade ${lbl} is open — send the PKR payment and upload proof within the trade window.`
+        : `A buyer started a trade on your ${sym} listing. Trade ${lbl} is open — the buyer will send the PKR payment and upload proof. Confirm once it arrives, then send the tokens.`,
+      { tradeRef: trade.tradeRef, displayRef: trade.displayRef },
+    )
 
     return trade
   })

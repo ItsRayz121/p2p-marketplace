@@ -49,6 +49,7 @@ const TELEGRAM_IMPORTANT_TYPES = new Set<string>([
   'moderation',   // account restricted (security)
   'AD_TRADE_READY', // a marketplace trade just opened
   // ── CTM: settlement / escrow / dispute / completion (NOT bid noise) ──
+  'ctm_trade_created', // a CTM trade just opened against the merchant's listing
   'CTM_PAYMENT_UPLOADED', 'CTM_PAYMENT_CONFIRMED', 'CTM_SELLER_TRANSFERRING',
   'CTM_TOKEN_PROOF_SUBMITTED', 'CTM_ESCROW_CONFIRMED', 'CTM_TRADE_READY',
   'CTM_TRADE_COMPLETED', 'CTM_AUTO_COMPLETED', 'CTM_TRADE_CANCELLED',
