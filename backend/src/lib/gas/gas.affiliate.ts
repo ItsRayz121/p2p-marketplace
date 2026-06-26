@@ -282,43 +282,21 @@ export async function updateAffiliateLink(
 // ── Self-service custom links (every user, no affiliate approval needed) ──────────
 
 /**
- * Create a named custom referral link for a normal user — fixed standard split
- * (friend discount + commission from config). Approved affiliates use createAffiliateLink
- * instead (chosen split). Enforces the per-user link cap and the post-delete cooldown.
+ * Named custom links are an approved-affiliate feature only. Regular users keep their
+ * primary referral code + dual (Telegram/Website) share links but no longer mint extra
+ * named links; approved affiliates create links via createAffiliateLink (chosen split).
+ * This self-service entry point is retired and always rejects — kept so the route and
+ * any old clients fail with a clear message rather than 404.
  */
-export async function createOwnCustomLink(userId: string, label: string | null, rawCode?: string | null): Promise<AffiliateLink> {
+export async function createOwnCustomLink(userId: string, _label: string | null, _rawCode?: string | null): Promise<AffiliateLink> {
   if (!(await isFlagEnabled(FLAGS.GAS_AFFILIATE))) {
     throw new AppError('AFFILIATE_DISABLED', 'Custom referral links are not available right now.', 400)
   }
-  await getOrCreateOwnCode(userId) // ensure the base code exists so "custom" is well-defined
-
   const aff = await db.gasAffiliate.findUnique({ where: { userId }, select: { status: true } })
   if (aff?.status === 'approved') {
     throw new AppError('AFFILIATE_USE_SPLIT', 'Approved affiliates create links with a custom split.', 400)
   }
-  await assertLabelNotDuplicated(userId, label)
-
-  const [max, cooldownDays, discount, commission, lastDeleted, customs] = await Promise.all([
-    getNumberConfig(CUSTOM_LINK_MAX_CONFIG, DEFAULT_CUSTOM_LINK_MAX),
-    getNumberConfig(COOLDOWN_DAYS_CONFIG, DEFAULT_COOLDOWN_DAYS),
-    getNumberConfig(USER_DISCOUNT_CONFIG, DEFAULT_USER_DISCOUNT),
-    getNumberConfig(COMMISSION_PCT_CONFIG, DEFAULT_COMMISSION_PCT),
-    db.gasReferralCode.findFirst({ where: { ownerId: userId, deletedAt: { not: null } }, orderBy: { deletedAt: 'desc' }, select: { deletedAt: true } }),
-    listCustomCodes(userId),
-  ])
-
-  if (customs.length >= max) {
-    throw new AppError('CUSTOM_LINK_MAX', `You can have at most ${max} custom links. Delete one to create another.`, 400)
-  }
-  const cooldownAt = lastDeleted?.deletedAt ? new Date(lastDeleted.deletedAt.getTime() + cooldownDays * DAY_MS) : null
-  if (cooldownAt && cooldownAt > new Date()) {
-    throw new AppError('CUSTOM_LINK_COOLDOWN', `You can add a new link after ${cooldownAt.toISOString().slice(0, 10)}.`, 400)
-  }
-
-  const code = rawCode?.trim() ? await normalizeAndAssertVanityCode(rawCode) : await generateUniqueCode()
-  const created = await createCodeRow(userId, code, commission, discount, label)
-  logger.info({ userId, codeId: created.id }, 'self-service custom link created')
-  return { id: created.id, code: created.code, label: created.label, userDiscountPct: created.userDiscountPct, commissionPct: created.referralPct, isActive: created.isActive, referredCount: 0 }
+  throw new AppError('AFFILIATE_NOT_APPROVED', 'Named custom links are available to approved affiliates. Apply to become an affiliate to create them.', 403)
 }
 
 /**

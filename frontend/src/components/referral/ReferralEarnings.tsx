@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import { CopyButton } from '@/components/ui/CopyButton'
-import { Gift, Trash2, Link2, ChevronDown } from 'lucide-react'
+import { Gift, Trash2, Link2, ChevronDown, Send, Globe } from 'lucide-react'
 
 // The single earnings + links hub for the Referral page. Shows live (USDT) gas referral
 // earnings, the user's custom referral links (open to everyone — standard friend-discount
@@ -205,8 +205,8 @@ export function ReferralEarnings() {
         </>
       )}
 
-      {/* Custom referral links — open to every user */}
-      {data.enabled && (
+      {/* Custom referral links — approved affiliates only */}
+      {data.enabled && caps && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
             <Link2 size={16} className="text-primary" />
@@ -231,20 +231,19 @@ export function ReferralEarnings() {
                     <span className="text-base font-mono font-bold tracking-wider text-text-primary">{link.code}</span>
                     {link.label && <span className="text-xs text-text-muted">{link.label}</span>}
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-text-muted" title={shareUrl(link.code)}>{shareUrl(link.code)}</p>
                 </div>
-                <div className="flex items-center gap-1">
-                  <CopyButton text={shareUrl(link.code)} />
-                  <button
-                    onClick={() => handleDeleteLink(link)}
-                    disabled={busyLink === link.id}
-                    className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 disabled:opacity-50"
-                    aria-label={`Delete ${link.code}`}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleDeleteLink(link)}
+                  disabled={busyLink === link.id}
+                  className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 disabled:opacity-50"
+                  aria-label={`Delete ${link.code}`}
+                >
+                  <Trash2 size={15} />
+                </button>
               </div>
+              {/* Both share links for this code — Telegram (one-tap auto-auth) + Website.
+                  Both carry the SAME code, so either one credits the affiliate. */}
+              <CustomLinkShare code={link.code} />
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div><p className="text-text-muted">Friend discount</p><p className="font-semibold text-success">{link.userDiscountPct}%</p></div>
                 <div><p className="text-text-muted">You earn</p><p className="font-semibold text-primary">{link.commissionPct}%</p></div>
@@ -400,6 +399,28 @@ function Stat({ label, value, accent = false }: { label: string; value: string; 
     <div className="bg-surface shadow-card border border-border rounded-xl p-4">
       <p className="text-xs text-text-muted">{label}</p>
       <p className={`text-lg font-bold ${accent ? 'text-success' : 'text-text-primary'}`}>{value}</p>
+    </div>
+  )
+}
+
+/** Both share links (Telegram + Website) for a single custom code, each copyable.
+ *  Mirrors the primary code's dual links so affiliates can share whichever fits. */
+function CustomLinkShare({ code }: { code: string }) {
+  const { telegram, web } = buildReferralLinks(code)
+  return (
+    <div className="space-y-1.5">
+      {telegram && (
+        <div className="flex items-center gap-2 rounded-lg border border-[#229ED9]/30 bg-surface px-2.5 py-1.5">
+          <Send size={14} className="text-[#229ED9] shrink-0" aria-hidden />
+          <span className="truncate text-[11px] text-text-muted flex-1" title={telegram}>{telegram}</span>
+          <CopyButton text={telegram} />
+        </div>
+      )}
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
+        <Globe size={14} className="text-primary shrink-0" aria-hidden />
+        <span className="truncate text-[11px] text-text-muted flex-1" title={web}>{web}</span>
+        <CopyButton text={web} />
+      </div>
     </div>
   )
 }
