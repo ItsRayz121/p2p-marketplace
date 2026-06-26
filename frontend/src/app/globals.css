@@ -192,6 +192,26 @@
   color: rgb(var(--color-text-primary));
 }
 
+/* ─── Admin wide-table scroll affordance ──────────────────────────────────────
+   Wide admin tables already scroll horizontally inside their overflow-x-auto
+   wrapper, but on phones it isn't obvious there's more content off the right
+   edge. Add self-hiding left/right "scroll shadows" (Lea Verou's technique) to
+   the wrapper — the div that DIRECTLY holds a <table>. tbody rows are
+   transparent, so the shadow shows through and disappears at each scroll end.
+
+   Scoped to the admin panel (.admin-tables on <main>) and, via :has(> table),
+   only to table-wrapping scrollers — never chat/timeline/dropdown scrollers.
+   Purely cosmetic and progressive: browsers without :has() simply show no
+   shadow (the table still scrolls). The cover gradients use --color-surface so
+   the effect tracks light/dark mode automatically. */
+.admin-tables div:has(> table) {
+  background:
+    linear-gradient(to right, rgb(var(--color-surface)), rgb(var(--color-surface) / 0)) 0 0 / 28px 100% no-repeat local,
+    linear-gradient(to left,  rgb(var(--color-surface)), rgb(var(--color-surface) / 0)) 100% 0 / 28px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%,   rgb(0 0 0 / 0.16), rgb(0 0 0 / 0)) 0 0 / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.16), rgb(0 0 0 / 0)) 100% 0 / 12px 100% no-repeat scroll;
+}
+
 /* ─── Reduced motion ──────────────────────────────────────────────────────────
    Respect the OS "reduce motion" setting (vestibular safety, WCAG). Neutralises
    the infinite marquee tickers (Recent Trades / CTM), pulse, spin and long
