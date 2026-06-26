@@ -515,6 +515,9 @@ export interface Ad {
   minOrder: string
   maxOrder: string
   paymentMethods: string[]
+  /** Payment-method IDs resolved to human labels (e.g. "JazzCash"). Present on
+      list + detail responses; falls back to the raw id if a method was deleted. */
+  resolvedPaymentMethods?: { id: string; type: string; label: string }[]
   tokenDeliveryTypes?: string[]
   settlementMethod?: string
   tradeWindow: number

@@ -196,19 +196,27 @@ function UsdtAdsTab() {
                       {parseFloat(ad.minOrder).toLocaleString()} – {parseFloat(ad.maxOrder).toLocaleString()}
                     </p>
                   </div>
-                  {(ad.paymentMethods ?? []).length > 0 && (
-                    <div className="col-span-2">
-                      <p className="text-text-muted text-xs mb-1">Payment Methods</p>
-                      <div className="flex flex-wrap gap-1">
-                        {(ad.paymentMethods ?? []).map((pm) => (
-                          <span key={pm} className="inline-flex items-center gap-1 text-xs bg-surface border border-border px-2 py-0.5 rounded-full text-text-muted">
-                            <EntityLogo type={PK_MOBILE_METHODS.includes(pm) ? 'payment_method' : 'bank'} slug={pm} size="xs" className="flex-shrink-0" />
-                            {pm}
-                          </span>
-                        ))}
+                  {(() => {
+                    // Prefer resolved {id,label} from the API; fall back to raw
+                    // ids only if the backend didn't resolve them.
+                    const methods = ad.resolvedPaymentMethods?.length
+                      ? ad.resolvedPaymentMethods
+                      : (ad.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm }))
+                    if (methods.length === 0) return null
+                    return (
+                      <div className="col-span-2">
+                        <p className="text-text-muted text-xs mb-1">Payment Methods</p>
+                        <div className="flex flex-wrap gap-1">
+                          {methods.map((pm) => (
+                            <span key={pm.id} className="inline-flex items-center gap-1 text-xs bg-surface border border-border px-2 py-0.5 rounded-full text-text-muted">
+                              <EntityLogo type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'} slug={pm.label} size="xs" className="flex-shrink-0" />
+                              {pm.label}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                 </div>
                 <div className="flex gap-2">
                   <Link href={`/marketplace/listings/${ad.id}`} className="flex-1">

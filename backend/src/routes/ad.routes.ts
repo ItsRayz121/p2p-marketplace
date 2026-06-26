@@ -19,6 +19,34 @@ const PM_LABELS: Record<string, string> = {
   bank_transfer: 'Bank Transfer',
 }
 
+type ResolvedPaymentMethod = { id: string; type: string; label: string }
+
+/**
+ * Resolve stored payment-method IDs into human labels for one or more ads in a
+ * single batched DB query. Ads persist payment methods as PaymentMethod IDs;
+ * the UI must show "JazzCash"/"HBL" etc. (with icons), never the raw cuid.
+ */
+async function resolvePaymentMethodsFor(
+  adsList: { paymentMethods: string[] }[],
+): Promise<Map<string, ResolvedPaymentMethod>> {
+  const allIds = [...new Set(adsList.flatMap((a) => a.paymentMethods ?? []))]
+  if (allIds.length === 0) return new Map()
+  const recs = await db.paymentMethod.findMany({
+    where: { id: { in: allIds } },
+    select: { id: true, type: true, bankName: true },
+  })
+  const map = new Map<string, ResolvedPaymentMethod>()
+  for (const id of allIds) {
+    const rec = recs.find((r) => r.id === id)
+    if (!rec) { map.set(id, { id, type: 'unknown', label: id }); continue }
+    const label = rec.type === 'bank_transfer'
+      ? (rec.bankName ?? 'Bank Transfer')
+      : (PM_LABELS[rec.type] ?? rec.type)
+    map.set(id, { id, type: rec.type, label })
+  }
+  return map
+}
+
 const ALLOWED_NETWORKS = ['BEP20', 'Aptos'] as const
 
 const createAdSchema = z.object({
@@ -85,20 +113,10 @@ export async function adRoutes(app: FastifyInstance) {
     }
 
     // Resolve payment method labels by looking up DB records (stored as IDs)
-    const pmRecords = ad.paymentMethods.length > 0
-      ? await db.paymentMethod.findMany({
-          where: { id: { in: ad.paymentMethods } },
-          select: { id: true, type: true, bankName: true },
-        })
-      : []
-    const resolvedPaymentMethods = ad.paymentMethods.map((pmId) => {
-      const rec = pmRecords.find((r) => r.id === pmId)
-      if (!rec) return { id: pmId, type: 'unknown', label: pmId }
-      const label = rec.type === 'bank_transfer'
-        ? (rec.bankName ?? 'Bank Transfer')
-        : (PM_LABELS[rec.type] ?? rec.type)
-      return { id: pmId, type: rec.type, label }
-    })
+    const pmMap = await resolvePaymentMethodsFor([ad])
+    const resolvedPaymentMethods = ad.paymentMethods.map(
+      (pmId) => pmMap.get(pmId) ?? { id: pmId, type: 'unknown', label: pmId },
+    )
 
     return reply.send({ success: true, data: { ...ad, resolvedPaymentMethods } })
   })
@@ -113,7 +131,16 @@ export async function adRoutes(app: FastifyInstance) {
         ...(query.page ? { page: parseInt(query.page) } : {}),
         ...(query.limit ? { limit: parseInt(query.limit) } : {}),
       })
-      return reply.send({ success: true, data: result })
+      // Attach resolved payment-method labels so the UI shows real names +
+      // icons (e.g. "JazzCash") instead of the raw stored PaymentMethod IDs.
+      const pmMap = await resolvePaymentMethodsFor(result.items)
+      const items = result.items.map((ad) => ({
+        ...ad,
+        resolvedPaymentMethods: (ad.paymentMethods ?? []).map(
+          (pmId) => pmMap.get(pmId) ?? { id: pmId, type: 'unknown', label: pmId },
+        ),
+      }))
+      return reply.send({ success: true, data: { ...result, items } })
     })
   }
 
