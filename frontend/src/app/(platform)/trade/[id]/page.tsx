@@ -909,35 +909,35 @@ export default function TradePage() {
             </div>
           )}
 
-          {/* Progress bar */}
+          {/* Progress bar — full-width, flex-distributed so all steps fit any
+              screen without a sideways scroll (connectors flex to fill). */}
           <div className="bg-surface rounded-xl border border-border shadow-card p-4">
-            <div className="overflow-x-auto pb-1">
-              <div className="flex items-start min-w-max">
-                {TIMELINE_STEPS.map((step, i) => {
-                  const { Icon } = step
-                  return (
-                    <div key={step.key} className="flex items-start">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          i < currentStep ? 'bg-success text-white'
-                            : i === currentStep ? 'bg-primary text-white ring-4 ring-primary/15'
-                            : 'bg-surface-alt text-text-muted border border-border'
-                        }`}>
-                          {i < currentStep ? <CheckCircle2 size={14} aria-hidden /> : <Icon size={14} aria-hidden />}
-                        </div>
-                        <p className={`mt-1.5 w-16 text-center text-[10px] leading-tight ${
-                          i === currentStep ? 'text-primary font-semibold'
-                            : i < currentStep ? 'text-success font-medium'
-                            : 'text-text-muted'
-                        }`}>{step.label}</p>
+            <div className="flex items-start">
+              {TIMELINE_STEPS.map((step, i) => {
+                const { Icon } = step
+                const isLast = i === TIMELINE_STEPS.length - 1
+                return (
+                  <div key={step.key} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        i < currentStep ? 'bg-success text-white'
+                          : i === currentStep ? 'bg-primary text-white ring-4 ring-primary/15'
+                          : 'bg-surface-alt text-text-muted border border-border'
+                      }`}>
+                        {i < currentStep ? <CheckCircle2 size={14} aria-hidden /> : <Icon size={14} aria-hidden />}
                       </div>
-                      {i < TIMELINE_STEPS.length - 1 && (
-                        <div className={`h-0.5 w-8 mt-4 flex-shrink-0 ${i < currentStep ? 'bg-success' : 'bg-border'}`} />
-                      )}
+                      <p className={`mt-1.5 w-14 sm:w-16 text-center text-[10px] leading-tight ${
+                        i === currentStep ? 'text-primary font-semibold'
+                          : i < currentStep ? 'text-success font-medium'
+                          : 'text-text-muted'
+                      }`}>{step.label}</p>
                     </div>
-                  )
-                })}
-              </div>
+                    {!isLast && (
+                      <div className={`h-0.5 flex-1 min-w-[6px] mt-4 mx-1 ${i < currentStep ? 'bg-success' : 'bg-border'}`} />
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -1367,7 +1367,7 @@ export default function TradePage() {
                         <ShieldCheck size={12} className="flex-shrink-0" aria-hidden />
                         {senderName}
                       </p>
-                      <p className="text-sm text-text-primary leading-relaxed">{msg.message}</p>
+                      <p className="text-sm text-text-primary leading-relaxed break-words whitespace-pre-wrap">{msg.message}</p>
                       <p className="text-[10px] text-text-muted/60 mt-0.5">{msgTime}</p>
                     </div>
                   </div>
@@ -1388,7 +1388,7 @@ export default function TradePage() {
                         />
                       </a>
                     ) : (
-                      <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+                      <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words whitespace-pre-wrap ${
                         isMine
                           ? 'bg-primary text-white rounded-br-sm shadow-sm'
                           : 'bg-surface border border-border text-text-primary rounded-bl-sm shadow-sm'
@@ -1443,9 +1443,9 @@ export default function TradePage() {
               onChange={(e) => setMessageInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
               placeholder="Type a message..."
-              className="flex-1 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-surface"
+              className="flex-1 min-w-0 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-surface"
             />
-            <Button size="sm" loading={sendingMsg} onClick={handleSendMessage}>Send</Button>
+            <Button size="sm" className="flex-shrink-0" loading={sendingMsg} onClick={handleSendMessage}>Send</Button>
           </div>
         </div>
       </div>

@@ -814,15 +814,18 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <Countdown deadline={trade.confirmDeadlineAt ?? trade.proofDeadlineAt ?? trade.expiresAt} />
               </div>
             )}
-            <div className="overflow-x-auto pb-2">
-              <div className="flex items-start min-w-max">
-                {STATUS_STEPS.map((s, i) => (
-                  <div key={s} className="flex items-start">
-                    <div className="flex flex-col items-center">
+            {/* Full-width, flex-distributed stepper — fits any screen without a
+                sideways scroll (connectors flex to fill the gaps). */}
+            <div className="flex items-start">
+              {STATUS_STEPS.map((s, i) => {
+                const isLast = i === STATUS_STEPS.length - 1
+                return (
+                  <div key={s} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
+                    <div className="flex flex-col items-center flex-shrink-0">
                       <div className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 ${i < stepIndex ? 'bg-green-500 text-white' : i === stepIndex ? 'bg-primary text-white' : 'bg-surface-alt text-text-muted'}`}>
                         {i < stepIndex ? '✓' : i + 1}
                       </div>
-                      <div className="mt-1.5 w-16 text-center">
+                      <div className="mt-1.5 w-14 sm:w-16 text-center">
                         <p className={`text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 dark:text-green-400 font-medium' : 'text-text-muted'}`}>
                           {STEP_INFO[i].label}
                         </p>
@@ -833,12 +836,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         )}
                       </div>
                     </div>
-                    {i < STATUS_STEPS.length - 1 && (
-                      <div className={`h-0.5 w-8 mt-3.5 flex-shrink-0 ${i < stepIndex ? 'bg-green-500' : 'bg-border'}`} />
+                    {!isLast && (
+                      <div className={`h-0.5 flex-1 min-w-[6px] mt-3.5 mx-1 ${i < stepIndex ? 'bg-green-500' : 'bg-border'}`} />
                     )}
                   </div>
-                ))}
-              </div>
+                )
+              })}
             </div>
           </div>
 
@@ -1302,7 +1305,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
                         RupChain
                       </p>
-                      <p className="text-sm text-text-primary leading-relaxed">{m.message}</p>
+                      <p className="text-sm text-text-primary leading-relaxed break-words whitespace-pre-wrap">{m.message}</p>
                       <p className="text-[10px] text-text-muted/60 mt-0.5">{new Date(m.createdAt).toLocaleTimeString()}</p>
                     </div>
                   </div>
@@ -1311,7 +1314,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               return (
                 <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] px-3 py-2 rounded-xl text-sm ${isMe ? 'bg-primary text-white' : 'bg-surface text-text-primary'}`}>
-                    <p>{m.message}</p>
+                    <p className="break-words whitespace-pre-wrap">{m.message}</p>
                     <p className={`text-xs mt-1 ${isMe ? 'text-primary-foreground/70' : 'text-text-muted'}`}>{new Date(m.createdAt).toLocaleTimeString()}</p>
                   </div>
                 </div>
@@ -1322,8 +1325,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <div className="p-3 border-t border-border flex gap-2">
             <input type="text" value={msgText} onChange={(e) => setMsgText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
-              placeholder="Type a message…" className="flex-1 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            <button onClick={handleSendMessage} disabled={sendingMsg || !msgText.trim()} className="bg-primary text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-60">Send</button>
+              placeholder="Type a message…" className="flex-1 min-w-0 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <button onClick={handleSendMessage} disabled={sendingMsg || !msgText.trim()} className="flex-shrink-0 bg-primary text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-60">Send</button>
           </div>
         </div>
       </div>
