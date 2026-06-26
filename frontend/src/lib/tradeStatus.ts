@@ -28,6 +28,7 @@ const TRADE_STATUS_MAP: Record<string, StatusConfig> = {
   crypto_sent:       { label: 'Crypto Sent',         variant: 'info',    icon: ArrowUpRight   },
   crypto_released:   { label: 'Completed',           variant: 'success', icon: CheckCircle2   },
   disputed:          { label: 'Disputed',            variant: 'danger',  icon: AlertTriangle  },
+  dispute_resolved:  { label: 'Dispute Resolved',    variant: 'success', icon: CheckCircle2   },
   cancelled:         { label: 'Cancelled',           variant: 'default', icon: XCircle        },
   expired:           { label: 'Expired',             variant: 'danger',  icon: Timer          },
 }

@@ -808,7 +808,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
           <div className="bg-surface rounded-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-lg text-text-primary">Start Trade</h3>
-            {error && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{error}</div>}
+            {error && (
+              <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">
+                {error}
+                {error.toLowerCase().includes('active trade') && (
+                  <a href="/ctm/my-trades" className="block mt-1.5 font-semibold underline">View your trades →</a>
+                )}
+              </div>
+            )}
 
             {/* Token-quantity input */}
             <div>
@@ -1028,7 +1035,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <h3 className="font-bold text-lg text-text-primary">Place a Bid</h3>
               <p className="text-xs text-text-muted mt-0.5">Offer your own price. The merchant has 30 minutes to accept or reject.</p>
             </div>
-            {error && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{error}</div>}
+            {error && (
+              <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">
+                {error}
+                {error.toLowerCase().includes('active trade') && (
+                  <a href="/ctm/my-trades" className="block mt-1.5 font-semibold underline">View your trades →</a>
+                )}
+              </div>
+            )}
 
             {/* Bid price */}
             <div>
@@ -1135,7 +1149,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
 
-            {confirmError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{confirmError}</div>}
+            {confirmError && (
+              <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">
+                {confirmError}
+                {confirmError.toLowerCase().includes('active trade') && (
+                  <a href="/ctm/my-trades" className="block mt-1.5 font-semibold underline">View your trades →</a>
+                )}
+              </div>
+            )}
 
             {/* Payment method selection */}
             <div>

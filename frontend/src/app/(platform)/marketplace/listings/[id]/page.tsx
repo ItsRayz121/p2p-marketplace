@@ -731,7 +731,14 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <h3 className="font-bold text-lg text-text-primary">{isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}</h3>
               <p className="text-xs text-text-muted mt-0.5">Trade at the listed price of PKR {Number(ad.price).toLocaleString()}.</p>
             </div>
-            {instantError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{instantError}</div>}
+            {instantError && (
+              <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">
+                {instantError}
+                {instantError.toLowerCase().includes('active trade') && (
+                  <a href="/orders" className="block mt-1.5 font-semibold underline">View your trades →</a>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
@@ -995,7 +1002,14 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               </div>
             </div>
 
-            {confirmError && <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">{confirmError}</div>}
+            {confirmError && (
+              <div className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/30 rounded-xl p-3 text-sm">
+                {confirmError}
+                {confirmError.toLowerCase().includes('active trade') && (
+                  <a href="/orders" className="block mt-1.5 font-semibold underline">View your trades →</a>
+                )}
+              </div>
+            )}
 
             {/* Payment method */}
             <div>

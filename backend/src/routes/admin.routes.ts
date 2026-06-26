@@ -1858,6 +1858,10 @@ export async function adminRoutes(app: FastifyInstance) {
           resolvedBy: req.user!.id,
         },
       })
+      // Move the trade to its terminal "dispute_resolved" state so it stops showing
+      // as "Disputed" forever (and the reduced concurrency cap lifts). The platform
+      // never moves funds — parties settle directly per the ruling.
+      await tx.trade.update({ where: { id: dispute.tradeId }, data: { status: 'dispute_resolved' } })
       // Increment dispute win/loss counts for both parties
       await tx.tradeStats.upsert({
         where: { userId: winnerId },

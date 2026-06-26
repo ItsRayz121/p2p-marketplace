@@ -65,6 +65,7 @@ enum TradeStatus {
   crypto_released
   cancelled
   disputed
+  dispute_resolved
 }
 
 enum InstantBuyStatus {
