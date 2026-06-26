@@ -1296,12 +1296,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               const isMe = m.senderId === user?.id
               if (m.isSystem) {
                 return (
-                  <div key={m.id} className="flex justify-center my-2">
-                    <div className="bg-text-muted/[0.08] rounded-2xl px-3 py-1.5 max-w-[80%]">
-                      <p className="text-[11px] text-text-muted text-center leading-snug">
-                        {m.message}
-                        <span className="text-text-muted/50 ml-1.5 whitespace-nowrap">{new Date(m.createdAt).toLocaleTimeString()}</span>
+                  <div key={m.id} className="flex justify-start">
+                    <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-bl-sm bg-surface border border-border shadow-sm">
+                      <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
+                        <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                        RupChain
                       </p>
+                      <p className="text-sm text-text-primary leading-relaxed">{m.message}</p>
+                      <p className="text-[10px] text-text-muted/60 mt-0.5">{new Date(m.createdAt).toLocaleTimeString()}</p>
                     </div>
                   </div>
                 )

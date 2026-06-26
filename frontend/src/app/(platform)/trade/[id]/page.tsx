@@ -1350,12 +1350,14 @@ export default function TradePage() {
               })
               if (msg.isSystem) {
                 return (
-                  <div key={msg.id} className="flex justify-center my-2">
-                    <div className="bg-text-muted/[0.08] rounded-2xl px-3 py-1.5 max-w-[80%]">
-                      <p className="text-[11px] text-text-muted text-center leading-snug">
-                        {msg.message}
-                        <span className="text-text-muted/50 ml-1.5 whitespace-nowrap">{msgTime}</span>
+                  <div key={msg.id} className="flex justify-start">
+                    <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-bl-sm bg-surface border border-border shadow-sm">
+                      <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
+                        <ShieldCheck size={12} className="flex-shrink-0" aria-hidden />
+                        RupChain
                       </p>
+                      <p className="text-sm text-text-primary leading-relaxed">{msg.message}</p>
+                      <p className="text-[10px] text-text-muted/60 mt-0.5">{msgTime}</p>
                     </div>
                   </div>
                 )
