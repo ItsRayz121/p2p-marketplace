@@ -2312,6 +2312,8 @@ export const adminApi = {
     apiRequest<{ selected: number; attempted: number }>(`/gas-fee/admin/giveaways/${id}/draw`, { method: 'POST', body: JSON.stringify(count ? { count } : {}) }),
   sendGasGiveaway: (id: string) =>
     apiRequest<{ sent: number; attempted: number; results: Array<{ entryId: string; ok: boolean; orderRef?: string; error?: string }> }>(`/gas-fee/admin/giveaways/${id}/send`, { method: 'POST' }),
+  closeGasGiveaway: (id: string) =>
+    apiRequest<{ status: string }>(`/gas-fee/admin/giveaways/${id}/close`, { method: 'POST' }),
   getGasWallets: () =>
     apiRequest<{ wallets: Array<{ id: string; chain: string; address: string; isActive: boolean; balanceTRX: number | null; isAutoPaused: boolean }> }>('/admin/gas/wallets'),
   updateGasWalletBalance: (chain: string, balanceTRX: number) =>

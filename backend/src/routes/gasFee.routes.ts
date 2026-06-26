@@ -1804,8 +1804,15 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     const p = parsed.data
     const code = p.code.toUpperCase()
-    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: p.tokenConfigId } })
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: p.tokenConfigId }, include: { chain: true } })
     if (!tokenCfg) throw Errors.NOT_FOUND('Gas token')
+    // Enforce the per-winner amount against the token/chain minimum at CREATION time, so a
+    // misconfigured campaign fails here rather than silently at the much-later send step
+    // (where it previously surfaced as "Minimum amount is 0.0001 ETH" after a draw).
+    const resolvedMin = resolveTokenConfig(tokenCfg, tokenCfg.chain)
+    if (p.amountNative < resolvedMin.minAmount) {
+      throw new AppError('VALIDATION_ERROR', `Amount per winner must be at least ${resolvedMin.minAmount} ${tokenCfg.symbol} on ${tokenCfg.chain.name}.`, 400)
+    }
     const existing = await db.gasGiveawayCampaign.findUnique({ where: { code } })
     if (existing) throw new AppError('CONFLICT', `Giveaway code '${code}' already exists`, 409)
     const created = await db.gasGiveawayCampaign.create({
@@ -1941,6 +1948,23 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
     await db.auditLog.create({ data: { actorId: req.user!.id, action: 'GAS_GIVEAWAY_SEND', targetType: 'GasGiveawayCampaign', targetId: id, metadata: { attempted: pending.length, successful, results } as never, ipAddress: req.ip ?? null, userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null } })
     return reply.send({ success: true, data: { sent: successful, attempted: pending.length, results } })
+  })
+
+  // POST /gas-fee/admin/giveaways/:id/close — instantly close a campaign (super-admin).
+  // Stops new entries and marks it done, even when fewer than winnerCount were drawn —
+  // e.g. a KOL campaign you want to wrap up early after delivering the prizes you wanted.
+  // Idempotent: already-sent/closed campaigns return their current status unchanged.
+  app.post('/gas-fee/admin/giveaways/:id/close', { preHandler: [authenticate, requireRole('super_admin')] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.GAS_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not enabled.', 400)
+    const { id } = req.params as { id: string }
+    const campaign = await db.gasGiveawayCampaign.findUnique({ where: { id } })
+    if (!campaign) throw Errors.NOT_FOUND('Giveaway')
+    if (campaign.status === 'closed' || campaign.status === 'sent') {
+      return reply.send({ success: true, data: { status: campaign.status } })
+    }
+    await db.gasGiveawayCampaign.update({ where: { id }, data: { status: 'closed' } })
+    await db.auditLog.create({ data: { actorId: req.user!.id, action: 'GAS_GIVEAWAY_CLOSE', targetType: 'GasGiveawayCampaign', targetId: id, metadata: { previousStatus: campaign.status } as never, ipAddress: req.ip ?? null, userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null } })
+    return reply.send({ success: true, data: { status: 'closed' } })
   })
 
   // ── POST /gas-fee/orders/:orderRef/proof — submit PKR payment proof ─────────

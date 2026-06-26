@@ -9,7 +9,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
-import { ArrowLeft, RefreshCw, Plus, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Plus, ChevronDown, ChevronRight, Search, Download, XCircle } from 'lucide-react'
 
 function giveawayLink(code: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
@@ -48,6 +48,7 @@ export default function GasGiveawaysAdminPage() {
   // Finished campaigns (sent/closed) render collapsed by default; ids here are the
   // ones the admin has manually expanded back open.
   const [expandedDone, setExpandedDone] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
 
   const loadEntries = useCallback(async (campaignId: string) => {
     setEntriesBusy(campaignId)
@@ -135,6 +136,51 @@ export default function GasGiveawaysAdminPage() {
     finally { setBusyId(null) }
   }
 
+  // Instantly close a campaign (stops entries, marks it done) — for wrapping up a KOL
+  // campaign early after delivering the prizes you wanted, without drawing all slots.
+  async function closeCampaign(c: Campaign) {
+    if (!window.confirm(`Close giveaway ${c.code} now? It will stop accepting entries and be marked done. Winners already drawn are unaffected.`)) return
+    setBusyId(c.id)
+    try {
+      await adminApi.closeGasGiveaway(c.id)
+      toast.success(`Giveaway ${c.code} closed`)
+      void load()
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Close failed') }
+    finally { setBusyId(null) }
+  }
+
+  // Export a campaign's entries to a CSV (username/email, address, status, tx ref). Loads
+  // them first if not already fetched, then triggers a client-side download.
+  async function exportEntries(c: Campaign) {
+    let list = entries[c.id]
+    if (!list) {
+      try {
+        list = await adminApi.getGasGiveawayEntries(c.id)
+        setEntries((prev) => ({ ...prev, [c.id]: list! }))
+      } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Failed to load entries'); return }
+    }
+    if (!list || list.length === 0) { toast.error('No entries to export'); return }
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const header = ['email', 'userId', 'receivingAddress', 'status', 'orderStatus', 'orderRef', 'enteredAt']
+    const rows = list.map((e) => [e.email ?? '', e.userId, e.receivingAddress, e.status, e.orderStatus ?? '', e.orderRef ?? '', new Date(e.createdAt).toISOString()].map((x) => esc(String(x))).join(','))
+    const csv = [header.join(','), ...rows].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `giveaway-${c.code}-entries.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Selected token (for min-amount + USD-equivalent hints on the create form).
+  const selToken = tokens.find((t) => t.id === form.tokenConfigId) ?? null
+  const amountNum = parseFloat(form.amountNative)
+  const amountUsd = selToken && amountNum > 0 && selToken.priceUsd > 0 ? amountNum * selToken.priceUsd : null
+  const belowMin = !!selToken && amountNum > 0 && amountNum < selToken.minAmount
+
+  // Campaigns filtered by the search box (code or KOL/campaign name).
+  const q = query.trim().toLowerCase()
+  const visibleCampaigns = !campaigns ? null : (!q ? campaigns : campaigns.filter((c) => `${c.code} ${c.kolLabel}`.toLowerCase().includes(q)))
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
       <div className="flex items-center gap-3">
@@ -157,23 +203,45 @@ export default function GasGiveawaysAdminPage() {
               <input value={form.kolLabel} onChange={(e) => setForm({ ...form, kolLabel: e.target.value })} placeholder="Influencer Ali" className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
             </label>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-text-primary mb-1.5">Token winners receive</p>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {chains.map((c) => (
-                <button key={c.id} onClick={() => pickChain(c)} className={`px-3 py-1.5 rounded-lg border text-sm ${selChain?.id === c.id ? 'border-primary bg-primary/10 text-primary font-semibold' : 'border-border bg-surface-alt'}`}>{c.name}</button>
-              ))}
-            </div>
-            {selChain && (
-              <select value={form.tokenConfigId} onChange={(e) => setForm({ ...form, tokenConfigId: e.target.value })} className="w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm">
-                <option value="">Select token…</option>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-xs font-semibold text-text-primary">Chain
+              <select
+                value={selChain?.id ?? ''}
+                onChange={(e) => {
+                  const c = chains.find((x) => x.id === e.target.value)
+                  if (c) void pickChain(c)
+                  else { setSelChain(null); setTokens([]); setForm((f) => ({ ...f, tokenConfigId: '' })) }
+                }}
+                className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm"
+              >
+                <option value="">Select chain…</option>
+                {chains.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-text-primary">Token winners receive
+              <select
+                value={form.tokenConfigId}
+                onChange={(e) => setForm({ ...form, tokenConfigId: e.target.value })}
+                disabled={!selChain}
+                className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm disabled:opacity-50"
+              >
+                <option value="">{selChain ? 'Select token…' : 'Pick a chain first'}</option>
                 {tokens.map((t) => <option key={t.id} value={t.id}>{t.symbol} — {t.name}</option>)}
               </select>
-            )}
+            </label>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <label className="text-xs font-semibold text-text-primary">Amount per winner (native)
-              <input value={form.amountNative} onChange={(e) => setForm({ ...form, amountNative: e.target.value })} placeholder="0.01" inputMode="decimal" className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
+              <input value={form.amountNative} onChange={(e) => setForm({ ...form, amountNative: e.target.value })} placeholder="0.01" inputMode="decimal" className={`mt-1 w-full rounded-lg border bg-surface-alt px-3 py-2 text-sm ${belowMin ? 'border-danger' : 'border-border'}`} />
+              {selToken && (
+                <span className="mt-1 block text-[11px] font-normal">
+                  {belowMin
+                    ? <span className="text-danger">Minimum is {selToken.minAmount} {selToken.symbol}</span>
+                    : amountUsd != null
+                      ? <span className="text-text-muted">≈ ${amountUsd.toFixed(amountUsd < 1 ? 4 : 2)} per winner · min {selToken.minAmount} {selToken.symbol}</span>
+                      : <span className="text-text-muted">min {selToken.minAmount} {selToken.symbol}</span>}
+                </span>
+              )}
             </label>
             <label className="text-xs font-semibold text-text-primary"># Winners
               <input value={form.winnerCount} onChange={(e) => setForm({ ...form, winnerCount: e.target.value })} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
@@ -187,9 +255,21 @@ export default function GasGiveawaysAdminPage() {
             Require KYC to enter (recommended)
           </label>
           <div className="flex gap-2">
-            <Button size="sm" variant="primary" onClick={create} disabled={saving}>{saving ? 'Creating…' : 'Create Giveaway'}</Button>
+            <Button size="sm" variant="primary" onClick={create} disabled={saving || belowMin}>{saving ? 'Creating…' : 'Create Giveaway'}</Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowCreate(false); setForm(blankForm()) }}>Cancel</Button>
           </div>
+        </div>
+      )}
+
+      {!loading && !error && campaigns && campaigns.length > 0 && (
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by code or campaign name…"
+            className="w-full rounded-lg border border-border bg-surface-alt pl-9 pr-3 py-2 text-sm"
+          />
         </div>
       )}
 
@@ -198,10 +278,13 @@ export default function GasGiveawaysAdminPage() {
       {!loading && !error && campaigns && campaigns.length === 0 && (
         <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">No giveaways yet.</div>
       )}
+      {!loading && !error && visibleCampaigns && visibleCampaigns.length === 0 && campaigns && campaigns.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">No giveaways match your search.</div>
+      )}
 
-      {!loading && !error && campaigns && campaigns.length > 0 && (
+      {!loading && !error && visibleCampaigns && visibleCampaigns.length > 0 && (
         <div className="space-y-3">
-          {campaigns.map((c) => {
+          {visibleCampaigns.map((c) => {
             // Finished campaigns (all rewards sent, or manually closed) collapse to just
             // their header to keep the list tidy; click the chevron to reopen.
             const isDone = c.status === 'sent' || c.status === 'closed'
@@ -232,6 +315,11 @@ export default function GasGiveawaysAdminPage() {
                 {isSuperAdmin && !collapsed && c.drawnCount < c.winnerCount && (
                   <Button size="sm" variant={c.selectedCount > 0 ? 'secondary' : 'primary'} onClick={() => draw(c)} disabled={busyId === c.id || c.entryCount === 0}>Draw winners</Button>
                 )}
+                {isSuperAdmin && !collapsed && c.status !== 'sent' && c.status !== 'closed' && (
+                  <Button size="sm" variant="ghost" onClick={() => closeCampaign(c)} disabled={busyId === c.id} title="Close this giveaway now">
+                    <XCircle className="w-4 h-4 mr-1" />Close
+                  </Button>
+                )}
               </div>
 
               {!collapsed && <>
@@ -250,12 +338,22 @@ export default function GasGiveawaysAdminPage() {
               </div>
 
               {/* Participants + winners history */}
-              <button
-                onClick={() => toggleEntries(c)}
-                className="mt-3 text-xs font-semibold text-primary hover:underline"
-              >
-                {expandedId === c.id ? 'Hide participants' : `View participants & winners (${c.entryCount})`}
-              </button>
+              <div className="mt-3 flex items-center gap-4">
+                <button
+                  onClick={() => toggleEntries(c)}
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  {expandedId === c.id ? 'Hide participants' : `View participants & winners (${c.entryCount})`}
+                </button>
+                {c.entryCount > 0 && (
+                  <button
+                    onClick={() => void exportEntries(c)}
+                    className="text-xs font-semibold text-text-muted hover:text-text-primary inline-flex items-center gap-1"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Export CSV
+                  </button>
+                )}
+              </div>
 
               {expandedId === c.id && (
                 <div className="mt-2 rounded-lg border border-border bg-surface-alt/50 p-3">
@@ -271,11 +369,17 @@ export default function GasGiveawaysAdminPage() {
                         const won = list.filter((e) => e.status === 'won')
                         const delivered = won.filter((e) => e.orderStatus === 'delivered')
                         return (
-                          <div className="flex flex-wrap gap-3 text-xs mb-3 pb-2 border-b border-border">
+                          <div className="flex flex-wrap items-center gap-3 text-xs mb-3 pb-2 border-b border-border">
                             <span><span className="text-text-muted">Participants </span><span className="font-semibold text-text-primary">{list.length}</span></span>
                             <span><span className="text-text-muted">Winners </span><span className="font-semibold text-text-primary">{selected.length + won.length}</span></span>
                             {selected.length > 0 && <span><span className="text-text-muted">Awaiting send </span><span className="font-semibold text-warning">{selected.length}</span></span>}
                             <span><span className="text-text-muted">Prize delivered </span><span className="font-semibold text-success">{delivered.length}</span></span>
+                            <button
+                              onClick={() => { void navigator.clipboard.writeText(list.map((e) => e.receivingAddress).join('\n')); toast.success(`Copied ${list.length} address${list.length === 1 ? '' : 'es'}`) }}
+                              className="ml-auto text-primary hover:underline font-semibold"
+                            >
+                              Copy all addresses
+                            </button>
                           </div>
                         )
                       })()}
@@ -284,6 +388,7 @@ export default function GasGiveawaysAdminPage() {
                           <div key={e.id} className="flex items-center gap-2 text-xs">
                             <span className="text-text-secondary truncate flex-1 min-w-0">{e.email ?? `user ${e.userId.slice(0, 8)}`}</span>
                             <span className="font-mono text-text-muted truncate hidden sm:inline" style={{ maxWidth: 140 }}>{e.receivingAddress.slice(0, 8)}…{e.receivingAddress.slice(-6)}</span>
+                            <CopyButton text={e.receivingAddress} />
                             {e.status === 'won' ? (
                               <span className="flex items-center gap-1 shrink-0">
                                 <Badge variant="success">won</Badge>
