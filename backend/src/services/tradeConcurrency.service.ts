@@ -53,7 +53,7 @@ export async function hasOpenDispute(userId: string): Promise<boolean> {
  * removing an account takes effect immediately. Empty list = nobody bypasses, so
  * the cap behaves exactly as before for real users.
  */
-async function isTradeLimitBypassed(userId: string): Promise<boolean> {
+export async function isTradeLimitBypassed(userId: string): Promise<boolean> {
   const row = await db.platformConfig.findUnique({ where: { key: 'trade_limit_bypass_user_ids' } })
   if (!row?.value) return false
   const tokens = row.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)

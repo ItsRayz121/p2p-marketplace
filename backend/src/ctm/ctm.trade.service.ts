@@ -12,7 +12,7 @@ import { notify as centralNotify } from '../lib/notify'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
-import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
+import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 
 type JsonValue = Prisma.InputJsonValue
@@ -690,7 +690,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   // tier-aware (taker = buyerId). L1 default 50 USDT-equiv, L2 default unlimited.
   // Converts the PKR order value using the platform USDT→PKR rate; if that rate
   // is unavailable the cap is skipped (fail-open) rather than blocking trades.
-  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+  if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P) && !(await isTradeLimitBypassed(buyerId))) {
     const taker = await db.user.findUnique({ where: { id: buyerId }, select: { kycLevel: true } })
     const capUsdt = taker?.kycLevel === 'enhanced'
       ? await getNumberConfig('noncustodial_max_order_usdt_l2', 500)

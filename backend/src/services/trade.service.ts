@@ -10,7 +10,7 @@ import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
 import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
-import { assertCanOpenTrade } from './tradeConcurrency.service'
+import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
@@ -290,7 +290,9 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     // ── Non-custodial anti-griefing (taker = the initiator) ───────────────────
     // Flag OFF (default) skips this, so production is unchanged. Caps only the
     // TAKER. (General concurrency is handled above, regardless of this flag.)
-    if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+    // Test/staff accounts on the cap-bypass list also skip the abandoned-trade
+    // cooldown and the per-order size cap, so they can test the full flow freely.
+    if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P) && !(await isTradeLimitBypassed(initiatorId))) {
       const u = await db.user.findUnique({
         where: { id: initiatorId },
         select: { kycLevel: true, tradeCooldownUntil: true },
