@@ -21,7 +21,12 @@ export async function sseRoutes(app: FastifyInstance) {
    */
   app.post(
     '/sse/ticket',
-    { preHandler: [authenticate], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    // Keyed per-user (see the global keyGenerator). A single user legitimately
+    // mints several tickets a minute — one per open tab, plus a fresh one on every
+    // reconnect after the long-lived stream is cut (mobile networks / proxy idle
+    // timeouts drop SSE often). Too tight a cap here turns a transient drop into a
+    // self-sustaining reconnect loop, so keep real headroom.
+    { preHandler: [authenticate], config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const userId = req.user!.id
       const ticket = randomBytes(24).toString('hex')
@@ -42,7 +47,14 @@ export async function sseRoutes(app: FastifyInstance) {
    *   data: {"type":"trade_update","payload":{...}}\n\n
    *   data: {"type":"ping"}\n\n         (every 25 s keepalive)
    */
-  app.get('/sse', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+  // Keyed by IP, not user: EventSource cannot send an Authorization header (the
+  // ticket exists for exactly this reason), so the global keyGenerator falls back
+  // to IP here. Each open tab holds its own EventSource and reopens on every
+  // network drop, so 10/min was easily exhausted by a multi-tab user (or several
+  // testers behind one CGNAT IP) and the resulting churn kept the connection
+  // broken. Connection rate is already gated per-user by /sse/ticket above; this
+  // is just a coarse backstop, so 60/min gives real headroom.
+  app.get('/sse', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { token, ticket } = req.query as { token?: string; ticket?: string }
 
     // Preferred path: single-use ticket (no JWT in the URL). Consume it atomically

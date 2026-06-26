@@ -14,6 +14,7 @@ import { registerRoutes } from './routes/index'
 import { AppError } from './lib/errors'
 import { csrfHook } from './lib/csrf'
 import { requestContext, resolveClientIp } from './lib/requestContext'
+import { verifyAccessToken } from './lib/jwt'
 
 export async function buildApp() {
   const app = Fastify({
@@ -43,6 +44,17 @@ export async function buildApp() {
     origin: [env.FRONTEND_URL],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    // Without this, the browser hides these from fetch() (they are not CORS-safelisted).
+    // The client reads Retry-After to show an accurate "retry after Ns" countdown on a
+    // 429 (otherwise it degrades to a bare "Please wait before retrying."), and
+    // X-Request-Id to surface a support reference on 500s.
+    exposedHeaders: [
+      'Retry-After',
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+      'X-RateLimit-Reset',
+      'X-Request-Id',
+    ],
   })
 
   // Cookies (for httpOnly refresh token)
@@ -67,6 +79,17 @@ export async function buildApp() {
   // NEVER exhaust the budget a user needs for a real action and surface
   // "Too many requests" mid-flow (the failure mode this split fixes). Sensitive
   // routes keep their own much tighter per-route limits (auth, SSE, etc.).
+  //
+  // The bucket is keyed by the AUTHENTICATED USER when a valid access token is
+  // present, and only falls back to IP for anonymous traffic. This is the load-
+  // bearing part for our audience: Pakistani mobile carriers and most ISPs sit
+  // behind CGNAT, so hundreds of distinct users (plus a single user's own tabs /
+  // devices / Telegram Mini App) egress through a handful of shared public IPs.
+  // Keying purely by IP lumped them all into one budget, so a few active users
+  // would saturate it and unrelated logged-in users hit "Too many requests" on a
+  // real action (e.g. confirming CTM trade details). The access token is a
+  // stateless HMAC JWT, so verifying it here is cheap (no DB / IO) and works even
+  // though this runs in onRequest, before the route's auth preHandler.
   const isReadMethod = (method: string) =>
     method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
   await app.register(rateLimit, {
@@ -75,8 +98,14 @@ export async function buildApp() {
     global: true,
     timeWindow: '1 minute',
     keyGenerator: (req) => {
+      const cls = isReadMethod(req.method) ? 'r' : 'w'
+      const auth = req.headers.authorization
+      if (auth?.startsWith('Bearer ')) {
+        const payload = verifyAccessToken(auth.slice(7))
+        if (payload) return `u:${payload.userId}:${cls}`
+      }
       const ip = resolveClientIp(req.headers as Record<string, unknown>, req.ip) ?? req.ip
-      return `${ip}:${isReadMethod(req.method) ? 'r' : 'w'}`
+      return `ip:${ip}:${cls}`
     },
     max: (req) => (isReadMethod(req.method) ? 1000 : 200),
     errorResponseBuilder: (_req, context) => ({
