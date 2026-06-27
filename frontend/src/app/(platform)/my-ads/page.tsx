@@ -60,7 +60,7 @@ function StatCard({ label, value, sub, unit, accent }: { label: string; value: s
           amount truncates so it can never spill outside the card. */}
       <p className="mt-1 flex items-baseline gap-1 min-w-0">
         {unit && <span className="text-[10px] sm:text-xs font-semibold text-text-muted flex-shrink-0">{unit}</span>}
-        <span className={`text-sm sm:text-2xl font-bold tabular-nums leading-tight truncate ${accent ?? 'text-text-primary'}`}>{value}</span>
+        <span className={`min-w-0 text-sm sm:text-2xl font-bold tabular-nums leading-tight truncate ${accent ?? 'text-text-primary'}`}>{value}</span>
       </p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
     </div>
