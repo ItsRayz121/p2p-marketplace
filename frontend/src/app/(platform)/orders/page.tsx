@@ -106,14 +106,16 @@ export default function OrdersPage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <h1 className="text-2xl font-bold text-text-primary mb-4">My Orders</h1>
 
-      {/* Market segmented control — switch between USDT P2P trades and CTM trades */}
-      <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-fit">
-        <button className="px-4 py-2 text-sm font-medium bg-primary text-white">
+      {/* Market segmented control — switch between USDT P2P trades and CTM trades.
+          Full width with two equal halves on mobile so neither tab looks
+          undersized (and the top-left space is filled); compact on desktop. */}
+      <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-full sm:w-fit">
+        <button className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium bg-primary text-white text-center">
           USDT P2P
         </button>
         <Link
           href="/ctm/my-trades"
-          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors"
+          className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors text-center"
         >
           Community Tokens
         </Link>

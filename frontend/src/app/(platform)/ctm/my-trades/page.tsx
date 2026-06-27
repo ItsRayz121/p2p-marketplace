@@ -85,48 +85,59 @@ export default function MyCtmTradesPage() {
     <div className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-text-primary mb-4">My CTM Trades</h1>
 
-      {/* Market segmented control */}
-      <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-fit">
+      {/* Market segmented control — equal-width halves on mobile (matches the
+          USDT P2P Orders page), compact on desktop. */}
+      <div className="flex bg-surface border border-border rounded-lg overflow-hidden mb-4 w-full sm:w-fit">
         <Link
           href="/orders"
-          className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface transition-colors"
+          className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface-alt transition-colors text-center"
         >
           USDT P2P
         </Link>
-        <button className="px-4 py-2 text-sm font-medium bg-primary text-white">
+        <button className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium bg-primary text-white text-center">
           Community Tokens
         </button>
       </div>
 
-      {/* Filters – single row, fits at a glance on desktop */}
-      <div className="flex items-center gap-1 flex-wrap mb-6 overflow-x-auto">
-        {STATUS_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => { setStatus(opt.value); setPage(1) }}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-              status === opt.value
-                ? 'bg-primary text-white'
-                : 'bg-surface border border-border text-text-secondary hover:bg-surface'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-        <div className="w-px h-4 bg-border mx-1 shrink-0 self-center" />
-        {ROLE_OPTIONS.map((r) => (
-          <button
-            key={r}
-            onClick={() => { setRole(r); setPage(1) }}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-              role === r
-                ? 'bg-primary/10 text-primary border border-primary/30'
-                : 'bg-surface border border-border text-text-secondary hover:bg-surface'
-            }`}
-          >
-            {r === 'all' ? 'All Roles' : r.charAt(0).toUpperCase() + r.slice(1)}
-          </button>
-        ))}
+      {/* Filters — mobile: chips fill the full width in tidy grids (status in
+          2 columns, role in 3), matching the USDT P2P Orders page so there are
+          no ragged trailing gaps or sideways scroll; desktop (sm+): inline wrap. */}
+      <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:flex-wrap sm:items-start">
+        {/* Status */}
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:gap-1">
+          {STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { setStatus(opt.value); setPage(1) }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-center ${
+                status === opt.value
+                  ? 'bg-primary text-white'
+                  : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-px bg-border hidden sm:block" />
+
+        {/* Role */}
+        <div className="grid grid-cols-3 gap-1.5 sm:flex sm:gap-1">
+          {ROLE_OPTIONS.map((r) => (
+            <button
+              key={r}
+              onClick={() => { setRole(r); setPage(1) }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-center ${
+                role === r
+                  ? 'bg-primary/10 text-primary border border-primary/30'
+                  : 'bg-surface border border-border text-text-secondary hover:bg-surface-alt'
+              }`}
+            >
+              {r === 'all' ? 'All Roles' : r.charAt(0).toUpperCase() + r.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
@@ -134,7 +145,9 @@ export default function MyCtmTradesPage() {
       ) : trades.length === 0 ? (
         <div className="text-center py-16 text-text-muted">No trades matching the current filters.</div>
       ) : (
-        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
+        <>
+        {/* Desktop table */}
+        <div className="hidden sm:block bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <table className="w-full">
             <thead className="bg-surface border-b-2 border-border">
               <tr>
@@ -187,6 +200,45 @@ export default function MyCtmTradesPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile cards — full detail (token, ref, role, status, PKR, date) with
+            nothing clipped, instead of a sideways-scrolling table. */}
+        <div className="sm:hidden space-y-3">
+          {trades.map((t) => {
+            const isBuyer = user?.id === t.buyer.id
+            return (
+              <Link key={t.id} href={`/ctm/trade/${t.tradeRef}`}>
+                <div className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <EntityLogo type="token" slug={t.token.symbol} size="sm" logoUrl={t.token.logoUrl} />
+                      <div className="min-w-0">
+                        <span className="block text-sm font-bold text-text-primary">{t.token.symbol}</span>
+                        {t.displayRef && <span className="block text-[11px] text-text-muted truncate">#{t.displayRef}</span>}
+                      </div>
+                    </div>
+                    <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[t.status] ?? 'bg-surface-alt text-text-secondary'}`}>
+                      {t.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <div className="flex items-end justify-between gap-2 mt-2">
+                    <div>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isBuyer ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>
+                        {isBuyer ? 'Buyer' : 'Seller'}
+                      </span>
+                      <p className="text-xs text-text-muted mt-1">{new Date(t.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-text-primary">PKR {Number(t.fiatAmount).toLocaleString()}</p>
+                      <p className="text-xs text-text-muted font-mono">{t.tokenAmount} {t.token.symbol}</p>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+        </>
       )}
 
       {total > 20 && (
