@@ -302,7 +302,7 @@ export function PriceAlertsManager() {
       <AlertLists
         alerts={alerts}
         onRemove={(id) => { removeAlert(id); reload() }}
-        onClearTriggered={() => { clearTriggeredAlerts(); reload() }}
+        onClearTriggered={() => { clearTriggeredAlerts((a) => a.coin === 'USDT'); reload() }}
       />
     </CollapsibleCard>
   )
@@ -431,7 +431,7 @@ export function CtmPriceAlertsManager() {
           <AlertLists
             alerts={alerts}
             onRemove={(id) => { removeAlert(id); reload() }}
-            onClearTriggered={() => { clearTriggeredAlerts(); reload() }}
+            onClearTriggered={() => { clearTriggeredAlerts((a) => a.coin !== 'USDT'); reload() }}
           />
         </>
       )}

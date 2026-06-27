@@ -49,8 +49,11 @@ export function removeAlert(id: string) {
   saveAlerts(getAlerts().filter((a) => a.id !== id))
 }
 
-export function clearTriggeredAlerts() {
-  saveAlerts(getAlerts().filter((a) => !a.triggered))
+// Clear triggered alerts. With `match` given, only alerts the predicate selects
+// are cleared (e.g. just USDT, or just CTM tokens) so one section's "Clear all"
+// never wipes the other's.
+export function clearTriggeredAlerts(match?: (a: PriceAlert) => boolean) {
+  saveAlerts(getAlerts().filter((a) => !(a.triggered && (!match || match(a)))))
 }
 
 // Check a coin's rate against its active alerts. Returns the alerts that were
