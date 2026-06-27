@@ -57,6 +57,10 @@ interface NetworkConfig {
   usdtDecimals: number
   depositAddressDbKey: string
   depositAddressEnvFn: () => string | undefined
+  // Etherscan V2 chain id (BSC 56, Ethereum 1) for the explorer-API scanner —
+  // the reliable, indexer-grade detection path (parity with TronGrid/Aptos),
+  // used in preference to getLogs whenever ETHERSCAN_API_KEY is configured.
+  etherscanChainId: number
   // How many blocks ≈ the scan window. Keeps getLogs range reasonable.
   // BSC  ~3 s/block → 100 blocks ≈ 5 min
   // ETH ~12 s/block →  30 blocks ≈ 6 min
@@ -77,7 +81,10 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     // bsc-dataseed.binance.org rejects getLogs ranges ("Request exceeds defined
     // limit"). Prefer operator-configured endpoints, then publicnode (allows
     // getLogs), and keep BSC_RPC_URL last as a getBlockNumber fallback.
+    // Alchemy (if ALCHEMY_API_KEY set) first — it serves getLogs reliably, unlike
+    // most free public BSC nodes. Then operator endpoints, then publicnode.
     rpcUrls:             () => uniqUrls(
+      env.ALCHEMY_API_KEY ? `https://bnb-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}` : undefined,
       env.BSC_RPC_URL_PRIMARY,
       env.BSC_RPC_URL_FALLBACK,
       'https://bsc-rpc.publicnode.com',
@@ -88,6 +95,7 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     usdtDecimals:        18,  // Binance-Peg USDT on BSC uses 18 decimals
     depositAddressDbKey: 'gas_usdt_bep20_address',
     depositAddressEnvFn: () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
+    etherscanChainId:    56,
     scanBlocks:          100,
     minConfirmations:    3,
   },
@@ -95,6 +103,7 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     paymentNetwork:      'ERC20',
     viemChain:           mainnet,
     rpcUrls:             () => uniqUrls(
+      env.ALCHEMY_API_KEY ? `https://eth-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}` : undefined,
       env.ETHEREUM_RPC_URL,
       'https://ethereum-rpc.publicnode.com',
       'https://rpc.ankr.com/eth',
@@ -103,6 +112,7 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     usdtDecimals:        6,
     depositAddressDbKey: 'gas_usdt_erc20_address',
     depositAddressEnvFn: () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
+    etherscanChainId:    1,
     scanBlocks:          30,
     minConfirmations:    6,
   },
@@ -342,6 +352,172 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
 
   if (totalFound > 0) {
     logger.info({ network: cfg.paymentNetwork, count: totalFound, from: effectiveFrom.toString(), to: safeToBlock.toString(), rpc: rpcUrls[activeUrlIdx] }, 'gasPaymentPoller: found Transfer events')
+  }
+}
+
+// ── EVM scanner (Etherscan V2 explorer API) ─────────────────────────────────────
+// Indexer-grade detection for BEP20/ERC20 — the reliable primary path, used in
+// preference to getLogs whenever ETHERSCAN_API_KEY is set. Mirrors the TRON
+// (TronGrid) and Aptos (indexer) approach: query the deposit address's USDT token
+// transfers from a maintained explorer index instead of depending on a public
+// archive node honouring getLogs. Etherscan V2 uses ONE key across all chains via
+// the `chainid` param (BSC 56, Ethereum 1).
+const ETHERSCAN_V2_BASE = 'https://api.etherscan.io/v2/api'
+
+interface EtherscanTokenTx {
+  blockNumber?: string
+  timeStamp?: string
+  hash?: string
+  from?: string
+  to?: string
+  value?: string
+  contractAddress?: string
+  tokenDecimal?: string
+  confirmations?: string
+}
+
+// Current head block via Etherscan proxy — used only on a cold start so we begin
+// scanning from a recent block (not chain genesis, which would surface ancient
+// transfers as "unattributed" and spam admins).
+async function getEtherscanBlockNumber(chainId: number, apiKey: string): Promise<number | null> {
+  const url = new URL(ETHERSCAN_V2_BASE)
+  url.searchParams.set('chainid', String(chainId))
+  url.searchParams.set('module', 'proxy')
+  url.searchParams.set('action', 'eth_blockNumber')
+  url.searchParams.set('apikey', apiKey)
+  try {
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) return null
+    const json = (await res.json()) as { result?: string }
+    if (!json.result) return null
+    const n = Number(BigInt(json.result))
+    return Number.isFinite(n) ? n : null
+  } catch {
+    return null
+  }
+}
+
+async function scanEvmExplorer(cfg: NetworkConfig): Promise<void> {
+  const apiKey = env.ETHERSCAN_API_KEY
+  if (!apiKey) { await scanNetwork(cfg); return } // no key → fall back to getLogs
+
+  const depositAddress =
+    (await resolveDepositAddress(cfg.depositAddressDbKey, cfg.depositAddressEnvFn(), cfg.paymentNetwork))
+    ?? getEvmHotWalletAddress()
+  if (!depositAddress) {
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, configured: false, error: 'No deposit address configured (env, platformConfig, or mnemonic)' })
+    return
+  }
+
+  // Skip the API call entirely when nothing is awaiting payment.
+  const graceCutoff = new Date(Date.now() - GRACE_WINDOW_MS)
+  const actionable = await db.gasFeeOrder.count({
+    where: {
+      paymentNetwork: cfg.paymentNetwork,
+      status: { in: ['payment_pending', 'payment_uploaded', 'expired'] },
+      expiresAt: { gte: graceCutoff },
+    },
+  })
+  if (actionable === 0) { await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0 }); return }
+
+  // Durable cursor: last block we've fully scanned. Cold start anchors to the
+  // current head minus the scan window so we never replay old history.
+  const cursorKey = `gas_poller_explorer_block:${cfg.paymentNetwork}`
+  const storedBlock = await redis.get(cursorKey)
+  let startBlock: number
+  if (storedBlock) {
+    startBlock = Number(storedBlock) + 1
+  } else {
+    const head = await getEtherscanBlockNumber(cfg.etherscanChainId, apiKey)
+    if (head == null) { await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: 'Etherscan eth_blockNumber failed (cold start)' }); return }
+    startBlock = Math.max(0, head - cfg.scanBlocks)
+  }
+
+  const url = new URL(ETHERSCAN_V2_BASE)
+  url.searchParams.set('chainid', String(cfg.etherscanChainId))
+  url.searchParams.set('module', 'account')
+  url.searchParams.set('action', 'tokentx')
+  url.searchParams.set('address', depositAddress)
+  url.searchParams.set('contractaddress', cfg.usdtContract)
+  url.searchParams.set('startblock', String(startBlock))
+  url.searchParams.set('endblock', '999999999')
+  url.searchParams.set('page', '1')
+  url.searchParams.set('offset', '100')
+  url.searchParams.set('sort', 'asc')
+  url.searchParams.set('apikey', apiKey)
+
+  let result: EtherscanTokenTx[]
+  try {
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(12_000) })
+    if (!res.ok) { await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `Etherscan HTTP ${res.status}` }); return }
+    const json = (await res.json()) as { status?: string; message?: string; result?: EtherscanTokenTx[] | string }
+    // Etherscan returns result as a STRING message on status "0" (empty set OR error).
+    if (typeof json.result === 'string') {
+      if (/no transactions found/i.test(json.result) || json.status === '1') {
+        await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0 })
+        return
+      }
+      logger.warn({ network: cfg.paymentNetwork, msg: json.result }, 'gasPaymentPoller: Etherscan returned error/limit — will retry next tick')
+      await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `Etherscan: ${json.result}` })
+      return // don't advance cursor
+    }
+    result = json.result ?? []
+  } catch (err) {
+    logger.warn({ err, network: cfg.paymentNetwork }, 'gasPaymentPoller: Etherscan fetch errored — will retry next tick')
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `Etherscan fetch error: ${(err as Error)?.message ?? 'unknown'}` })
+    return // don't advance cursor
+  }
+
+  if (result.length === 0) { await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0 }); return }
+
+  // Advance the cursor to the highest CONFIRMED block in the page (any direction —
+  // including our own outgoing deliveries/refunds), so a page full of outgoing txs
+  // can't stall the cursor. Every confirmed INCOMING transfer up to that block is
+  // matched in this same pass, so we never advance past an unprocessed payment.
+  // Not-yet-confirmed transfers sit in more-recent blocks and stay behind the
+  // cursor until they mature (matchAndDeliver dedupes any boundary tx re-seen).
+  let cursorBlock = startBlock - 1
+  let processed = 0
+  for (const t of result) {
+    const txHash = t.hash
+    if (!txHash) continue
+    const confirmations = Number(t.confirmations ?? 0)
+    const blockNum = Number(t.blockNumber ?? 0)
+    if (confirmations < cfg.minConfirmations) continue // not final yet — leave behind cursor
+
+    // This block is final: it's safe to move the cursor past it.
+    if (blockNum > cursorBlock) cursorBlock = blockNum
+
+    // Only INCOMING USDT to our deposit address is a payment.
+    if (!t.to || t.to.toLowerCase() !== depositAddress.toLowerCase()) continue
+    if (t.contractAddress && t.contractAddress.toLowerCase() !== cfg.usdtContract.toLowerCase()) continue
+
+    const decimals = t.tokenDecimal ? Number(t.tokenDecimal) : cfg.usdtDecimals
+    const raw = t.value
+    if (!raw) continue
+    let incoming: number
+    try { incoming = Number(BigInt(raw)) / Math.pow(10, decimals) } catch { continue }
+    if (!(incoming > 0)) continue
+
+    const tsMs = t.timeStamp ? Number(t.timeStamp) * 1000 : null
+    await matchAndDeliverGasPayment({
+      source: 'poller',
+      paymentNetwork: cfg.paymentNetwork,
+      txHash,
+      incoming,
+      confirmations,
+      ...(t.from ? { senderAddress: t.from } : {}),
+      depositAddress,
+      graceCutoff,
+      getBlockTimestampMs: async () => tsMs,
+    })
+    processed++
+  }
+
+  if (cursorBlock >= startBlock) await redis.set(cursorKey, String(cursorBlock))
+  await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: processed })
+  if (processed > 0) {
+    logger.info({ network: cfg.paymentNetwork, count: processed, fromBlock: startBlock, toBlock: cursorBlock }, 'gasPaymentPoller: Etherscan found USDT transfers')
   }
 }
 
@@ -587,9 +763,12 @@ async function scanAptos(): Promise<void> {
 export async function runGasPaymentPoller(): Promise<void> {
   for (const cfg of NETWORK_CONFIGS) {
     try {
-      await scanNetwork(cfg)
+      // Prefer the Etherscan explorer API (reliable, indexer-grade) when a key is
+      // configured; otherwise fall back to the getLogs RPC scanner. scanEvmExplorer
+      // itself defers to scanNetwork when ETHERSCAN_API_KEY is absent.
+      await scanEvmExplorer(cfg)
     } catch (err) {
-      logger.error({ err, network: cfg.paymentNetwork }, 'gasPaymentPoller: scanNetwork threw unexpectedly')
+      logger.error({ err, network: cfg.paymentNetwork }, 'gasPaymentPoller: EVM scan threw unexpectedly')
     }
   }
 
