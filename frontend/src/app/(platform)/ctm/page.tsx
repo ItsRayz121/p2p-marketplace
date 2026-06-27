@@ -435,7 +435,9 @@ function ListingRow({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CtmHomePage() {
-  const [side, setSide] = useState<'buy' | 'sell' | ''>('')
+  // Default to 'buy' so the segmented toggle always has an active state (one of
+  // the two is highlighted), mirroring the USDT Marketplace. Never resets to ''.
+  const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [tokenId, setTokenId] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('')
   const [minAmount, setMinAmount] = useState('')
@@ -520,7 +522,7 @@ export default function CtmHomePage() {
   usePolling(fetchMeta, 60_000, true)
 
   const clearFilters = () => {
-    setSide('')
+    setSide('buy')
     setTokenId('')
     setPaymentMethod('')
     setMinAmount('')
@@ -561,7 +563,7 @@ export default function CtmHomePage() {
           ]).map((opt) => (
             <button
               key={opt.value}
-              onClick={() => { setSide((s) => s === opt.value ? '' : opt.value); setPage(1) }}
+              onClick={() => { setSide(opt.value); setPage(1) }}
               className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium transition-colors ${
                 side === opt.value ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-alt'
               }`}
