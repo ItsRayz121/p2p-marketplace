@@ -781,13 +781,16 @@ export default function SettingsPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-text-primary mb-6">Settings</h1>
 
-      {/* Tabs — shrink to fit one line on mobile (scrolls only as a last resort) */}
-      <div className="flex gap-1 bg-surface rounded-xl p-1 mb-6 overflow-x-auto">
+      {/* Tabs — all five fit on screen with no horizontal scroll. Equal-width
+          cells; long labels (e.g. "Connections") wrap within their own cell
+          instead of overflowing into the neighbour, so there's always a clear
+          gap between tabs. */}
+      <div className="flex gap-1 bg-surface rounded-xl p-1 mb-6">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`flex-1 min-w-0 py-2 px-1.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+            className={`flex-1 min-w-0 py-2 px-1 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors text-center leading-tight ${
               activeTab === t.id
                 ? 'bg-surface-alt text-text-primary shadow-sm'
                 : 'text-text-muted hover:text-text-primary'
