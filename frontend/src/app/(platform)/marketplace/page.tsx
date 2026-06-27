@@ -370,15 +370,19 @@ function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
       {stats.usdtRate !== null && (
         <>
           <span className="w-px h-3 bg-border hidden sm:block" />
-          {/* Sits in the right column, directly under "trades completed", with
-              its coin icon lined up beneath the trades-completed check icon. */}
-          <span className="col-start-2 flex flex-wrap items-center gap-x-1 sm:col-auto">
+          {/* Mobile: the rate sits in the LEFT column (row 2, under "active
+              listings" — icons line up), and its "based on recent trades"
+              caption sits in the RIGHT column (row 2, under "trades
+              completed"). Desktop (sm+): both flow inline in the single row. */}
+          <span className="col-start-1 flex items-center gap-x-1 sm:col-auto">
             <Coins size={11} className="text-primary flex-shrink-0" />
             1 USDT = <span className="font-semibold text-text-primary">PKR {stats.usdtRate.toLocaleString()}</span>
-            {stats.rateSource && RATE_SOURCE_LABEL[stats.rateSource] && (
-              <span className="w-full text-text-muted sm:w-auto sm:ml-1">{RATE_SOURCE_LABEL[stats.rateSource]}</span>
-            )}
           </span>
+          {stats.rateSource && RATE_SOURCE_LABEL[stats.rateSource] && (
+            <span className="col-start-2 flex items-center text-text-muted sm:col-auto sm:ml-1">
+              {RATE_SOURCE_LABEL[stats.rateSource]}
+            </span>
+          )}
         </>
       )}
     </div>
@@ -487,7 +491,7 @@ export default function MarketplacePage() {
         })
         if (rate) {
           // Check price alerts and fire notifications for any that triggered
-          const triggered = checkAlerts(rate)
+          const triggered = checkAlerts('USDT', rate)
           for (const a of triggered) {
             const msg = `USDT is now PKR ${rate.toLocaleString()} — your ${a.direction} PKR ${a.targetPkr.toLocaleString()} alert triggered.`
             await requestAndNotify('RupChain Price Alert', msg)

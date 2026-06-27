@@ -13,6 +13,8 @@ import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPay
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck } from 'lucide-react'
+import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
+import { toast } from '@/lib/toast'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const PAGE_SIZE = 20
@@ -515,6 +517,18 @@ export default function CtmHomePage() {
         const map: Record<string, MarketRateToken> = {}
         for (const t of ratesRes.value.communityTokens) map[t.symbol] = t
         setRateMap(map)
+        // Evaluate any CTM price alerts the user set in Settings against each
+        // token's current PKR rate (mirrors the USDT alert check on the
+        // marketplace page — fires while the user is browsing the CTM market).
+        for (const t of ratesRes.value.communityTokens) {
+          if (t.averagePkrRate == null) continue
+          const triggered = checkAlerts(t.slug, t.averagePkrRate)
+          for (const a of triggered) {
+            const msg = `${t.symbol} is now PKR ${t.averagePkrRate.toLocaleString()} — your ${a.direction} PKR ${a.targetPkr.toLocaleString()} alert triggered.`
+            await requestAndNotify('RupChain Price Alert', msg)
+            toast.success(`Price alert: ${t.symbol} ${a.direction === 'above' ? '↑' : '↓'} PKR ${a.targetPkr.toLocaleString()}`, msg)
+          }
+        }
       }
     } catch { /* silently fail */ }
   }, [])

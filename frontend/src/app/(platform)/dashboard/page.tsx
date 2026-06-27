@@ -354,16 +354,20 @@ export default function DashboardPage() {
                 : (t.buyer?.fullName || t.buyer?.username || 'Buyer')
               const ts = getTradeStatus(t.status)
               return (
-                <Link key={t.id} href={`/trade/${t.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-surface-alt/60 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Badge variant={ts.variant} icon={ts.icon} size="sm">{ts.label}</Badge>
-                    <div className="flex items-center gap-1.5">
-                      <UserAvatar name={counterparty} avatarUrl={isUserBuyer ? t.seller?.avatarUrl : t.buyer?.avatarUrl} size="xs" />
-                      <span className="text-sm text-text-primary">{counterparty}</span>
+                <Link key={t.id} href={`/trade/${t.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface-alt/60 transition-colors">
+                  {/* Name first (always aligned at the avatar offset) with the
+                      status badge stacked beneath it — status labels vary in
+                      width, so keeping them out of the name's column is what
+                      stops the counterparty names from zig-zagging. */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <UserAvatar name={counterparty} avatarUrl={isUserBuyer ? t.seller?.avatarUrl : t.buyer?.avatarUrl} size="xs" className="flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-text-primary truncate">{counterparty}</p>
+                      <Badge variant={ts.variant} icon={ts.icon} size="sm" className="mt-0.5 whitespace-nowrap">{ts.label}</Badge>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-text-primary">{parseFloat(t.amount).toFixed(4)} {t.coin}</p>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-medium text-text-primary whitespace-nowrap">{parseFloat(t.amount).toFixed(4)} {t.coin}</p>
                     <p className="text-xs text-text-muted">{timeAgo(t.createdAt)}</p>
                   </div>
                 </Link>

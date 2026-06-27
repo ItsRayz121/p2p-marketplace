@@ -148,7 +148,50 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
           </p>
         </div>
       )}
-    <div className="grid grid-cols-[1fr_auto_auto_auto] sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center p-4">
+    {/* ── Mobile layout ──────────────────────────────────────────────
+        Date/ref on the left; TX link, amount and status stacked and
+        right-aligned on the right. Right-aligning everything keeps the
+        amounts on one straight vertical line and the statuses on another,
+        and pins the TX link to the card's top-right corner. */}
+    <div className="flex sm:hidden items-start justify-between gap-3 p-4">
+      <div className="min-w-0">
+        <p className="text-xs text-text-muted">{date}</p>
+        <p className="text-sm font-mono font-medium text-text-primary truncate">{order.orderRef}</p>
+        <p className="text-xs text-text-muted truncate">{order.toAddress}</p>
+      </div>
+      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        {order.deliveryTxHash && (
+          <span
+            onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(explorerTxUrl(order.chain, order.deliveryTxHash!), '_blank') }}
+            className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            TX
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </span>
+        )}
+        {order.refundTxHash && (
+          <span
+            onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(explorerTxUrl(paymentNetworkChain(order.paymentNetwork), order.refundTxHash!), '_blank') }}
+            className="text-xs text-success hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            Refund TX
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </span>
+        )}
+        <p className="text-sm font-semibold text-text-primary whitespace-nowrap">{parseFloat(order.gasAmountNative).toFixed(2)} {symbol}</p>
+        <p className="text-xs text-text-muted whitespace-nowrap">{parseFloat(order.paymentAmount).toFixed(2)} USDT</p>
+        <Badge variant={statusVariant(order.status)} size="sm" className="whitespace-nowrap">
+          {STATUS_LABELS[order.status] ?? order.status}
+        </Badge>
+      </div>
+    </div>
+
+    {/* ── Desktop layout (sm+) ── */}
+    <div className="hidden sm:grid sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto] gap-4 items-center p-4">
       {/* Date + ref + address */}
       <div className="min-w-0">
         <p className="text-xs text-text-muted">{date}</p>
@@ -156,15 +199,15 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
         <p className="text-xs text-text-muted truncate">{order.toAddress}</p>
       </div>
 
-      {/* Chain + tier — hidden on mobile */}
-      <div className="hidden sm:flex items-center gap-1.5 text-sm text-text-secondary">
+      {/* Chain + tier */}
+      <div className="flex items-center gap-1.5 text-sm text-text-secondary">
         <EntityLogo type="chain" slug={order.chain} size="sm" />
         <span className="font-medium">{order.chain}</span>
         <span className="text-text-muted text-xs">/ {order.tier}</span>
       </div>
 
       {/* Amount */}
-      <div className="text-right sm:text-left">
+      <div>
         <p className="text-sm font-semibold text-text-primary">{parseFloat(order.gasAmountNative).toFixed(2)} {symbol}</p>
         <p className="text-xs text-text-muted">{parseFloat(order.paymentAmount).toFixed(2)} USDT</p>
       </div>
@@ -261,22 +304,22 @@ export default function GasOrdersPage() {
     <div className="min-h-screen bg-surface">
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white shrink-0">
               <Fuel size={18} />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-xl font-bold text-text-primary">Gas Order History</h1>
               <p className="text-sm text-text-muted mt-0.5">All your past gas fee orders</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Link href="/dashboard">
-              <Button variant="secondary" size="sm">Dashboard</Button>
+              <Button variant="secondary" size="sm" className="whitespace-nowrap">Dashboard</Button>
             </Link>
             <Link href="/gas">
-              <Button size="sm">Crypto Gas Fee</Button>
+              <Button size="sm" className="whitespace-nowrap">Crypto Gas Fee</Button>
             </Link>
           </div>
         </div>

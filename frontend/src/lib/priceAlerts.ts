@@ -1,6 +1,9 @@
 export interface PriceAlert {
   id: string
+  /** 'USDT' for the stablecoin, or a CTM token slug (e.g. 'mec') */
   coin: string
+  /** Human label shown in alert lists / notifications (e.g. 'USDT', 'MEC') */
+  label?: string
   direction: 'above' | 'below'
   targetPkr: number
   createdAt: string
@@ -23,10 +26,11 @@ export function saveAlerts(alerts: PriceAlert[]) {
   localStorage.setItem(KEY, JSON.stringify(alerts))
 }
 
-export function addAlert(coin: string, direction: 'above' | 'below', targetPkr: number): PriceAlert {
+export function addAlert(coin: string, direction: 'above' | 'below', targetPkr: number, label?: string): PriceAlert {
   const alert: PriceAlert = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     coin,
+    ...(label ? { label } : {}),
     direction,
     targetPkr,
     createdAt: new Date().toISOString(),
@@ -37,6 +41,10 @@ export function addAlert(coin: string, direction: 'above' | 'below', targetPkr: 
   return alert
 }
 
+export function getAlertsForCoin(coin: string): PriceAlert[] {
+  return getAlerts().filter((a) => a.coin === coin)
+}
+
 export function removeAlert(id: string) {
   saveAlerts(getAlerts().filter((a) => a.id !== id))
 }
@@ -45,12 +53,14 @@ export function clearTriggeredAlerts() {
   saveAlerts(getAlerts().filter((a) => !a.triggered))
 }
 
-// Check rate against all active alerts. Returns IDs that were newly triggered.
-export function checkAlerts(currentRate: number): PriceAlert[] {
+// Check a coin's rate against its active alerts. Returns the alerts that were
+// newly triggered. Only alerts whose `coin` matches are evaluated, so USDT and
+// each CTM token are scored against their own rate.
+export function checkAlerts(coin: string, currentRate: number): PriceAlert[] {
   const alerts = getAlerts()
   const triggered: PriceAlert[] = []
   const updated = alerts.map((a) => {
-    if (a.triggered) return a
+    if (a.triggered || a.coin !== coin) return a
     const hit =
       (a.direction === 'above' && currentRate >= a.targetPkr) ||
       (a.direction === 'below' && currentRate <= a.targetPkr)

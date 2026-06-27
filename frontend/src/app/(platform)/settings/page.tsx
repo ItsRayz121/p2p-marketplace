@@ -11,7 +11,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
 import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
-import { PriceAlertsManager } from '@/components/ui/PriceAlertsPanel'
+import { PriceAlertsManager, CtmPriceAlertsManager } from '@/components/ui/PriceAlertsPanel'
 import { WereYouReferred } from '@/components/referral/WereYouReferred'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { toast } from '@/lib/toast'
@@ -396,6 +396,9 @@ function NotificationsTab() {
 
       {/* USDT/PKR price alerts (moved here from the marketplace bell) */}
       <PriceAlertsManager />
+
+      {/* CTM community-token price alerts */}
+      <CtmPriceAlertsManager />
     </div>
   )
 }

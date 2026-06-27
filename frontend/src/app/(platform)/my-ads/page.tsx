@@ -425,6 +425,17 @@ function TradingAnalyticsTab() {
   )
 
   const fmtNum = (v: string) => Number(v).toLocaleString()
+  // Compact form (e.g. 18,425 → "18.4K", 2,750,000 → "2.8M") for the tight
+  // 3-column Volume cards where the full number gets truncated mid-digits.
+  const fmtCompact = (v: string) => {
+    const n = Number(v)
+    if (!isFinite(n)) return v
+    const fmt = (x: number, suffix: string) =>
+      `${x.toFixed(1).replace(/\.0$/, '')}${suffix}`
+    if (n >= 1_000_000) return fmt(n / 1_000_000, 'M')
+    if (n >= 10_000) return fmt(n / 1_000, 'K')
+    return n.toLocaleString()
+  }
   const combinedRate = data.combined.completionRate != null ? Math.round(data.combined.completionRate * 100) : null
 
   return (
@@ -449,7 +460,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.usdt.totalTrades} />
           <StatCard label="Completed" value={data.usdt.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Volume" value={fmtNum(data.usdt.volumePkr)} unit="PKR" />
+          <StatCard label="Volume" value={fmtCompact(data.usdt.volumePkr)} unit="PKR" />
         </div>
       </div>
 
@@ -462,7 +473,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.ctm.totalTrades} />
           <StatCard label="Completed" value={data.ctm.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Volume" value={fmtNum(data.ctm.volumePkr)} unit="PKR" />
+          <StatCard label="Volume" value={fmtCompact(data.ctm.volumePkr)} unit="PKR" />
         </div>
         {data.ctm.isMerchant && (
           <div className="flex items-center gap-3 mt-4 text-xs text-text-muted">
