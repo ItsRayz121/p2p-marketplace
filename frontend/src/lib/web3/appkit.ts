@@ -29,10 +29,15 @@ export function ensureAppKit() {
     metadata: {
       name: 'RupChain',
       description: 'Pakistan P2P Crypto Marketplace',
-      // Pin to the production origin (current origin at runtime) so the wallet
-      // shows the real RupChain identity — guards against spoofed metadata.
-      url: typeof window !== 'undefined' ? window.location.origin : 'https://rupchain.pk',
-      icons: ['https://rupchain.pk/brand/icon-192.png'],
+      // Derive the wallet-facing identity from the actual origin at runtime so
+      // the URL + icon always match the live domain (rupchain.com) and load
+      // correctly — guards against spoofed metadata, no hard-coded domain.
+      url: typeof window !== 'undefined' ? window.location.origin : 'https://rupchain.com',
+      icons: [
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/brand/icon-192.png`
+          : 'https://rupchain.com/brand/icon-192.png',
+      ],
     },
     features: {
       analytics: false,
