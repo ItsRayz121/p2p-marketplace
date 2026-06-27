@@ -813,46 +813,46 @@ export default function TradePage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <UserAvatar name={counterparty} avatarUrl={counterpartyUser?.avatarUrl} size="md" />
-            <h1 className="text-xl font-bold text-text-primary">
-              Trade with {counterparty}
-            </h1>
-            <BadgeChip badge={counterpartyBadge} />
-          </div>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
-            <p className="text-xs text-text-muted font-mono">Trade #{trade.orderRef || trade.id.slice(-6).toUpperCase()}</p>
-            {counterpartyStats && (
-              <span className="text-xs text-text-muted">
-                {counterpartyStats.completedTrades} trades ·{' '}
-                <span className={completionRateColor(Number(counterpartyStats.completionRate) ?? 0)}>
-                  {((Number(counterpartyStats.completionRate) ?? 0) * 100).toFixed(0)}% completion
-                </span>
-              </span>
-            )}
-            {counterpartyKycVerified && (
-              <span className="inline-flex items-center gap-1 text-xs text-success font-medium">
-                <BadgeCheck size={12} />
-                KYC Verified
-              </span>
-            )}
-            {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
-                title="Combined completed trades between you two (USDT + community tokens)"
-              >
-                🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
-              </span>
-            )}
-          </div>
+      {/* Header — title row, then a single wrapping meta row that keeps the
+          status badge inline next to the streak chip so it reads as one tidy
+          block (no lone "status" row dangling on its own line on mobile). */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 flex-wrap">
+          <UserAvatar name={counterparty} avatarUrl={counterpartyUser?.avatarUrl} size="md" />
+          <h1 className="text-lg sm:text-xl font-bold text-text-primary">
+            Trade with {counterparty}
+          </h1>
+          <BadgeChip badge={counterpartyBadge} />
         </div>
-        {(() => {
-          const s = getTradeStatus(trade.status)
-          return <Badge variant={s.variant} icon={s.icon}>{s.label}</Badge>
-        })()}
+        <div className="flex items-center gap-x-3 gap-y-2 mt-2 flex-wrap">
+          <p className="text-xs text-text-muted font-mono break-words">Trade #{trade.orderRef || trade.id.slice(-6).toUpperCase()}</p>
+          {counterpartyStats && (
+            <span className="text-xs text-text-muted">
+              {counterpartyStats.completedTrades} trades ·{' '}
+              <span className={completionRateColor(Number(counterpartyStats.completionRate) ?? 0)}>
+                {((Number(counterpartyStats.completionRate) ?? 0) * 100).toFixed(0)}% completion
+              </span>
+            </span>
+          )}
+          {counterpartyKycVerified && (
+            <span className="inline-flex items-center gap-1 text-xs text-success font-medium">
+              <BadgeCheck size={12} />
+              KYC Verified
+            </span>
+          )}
+          {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+              title="Combined completed trades between you two (USDT + community tokens)"
+            >
+              🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
+            </span>
+          )}
+          {(() => {
+            const s = getTradeStatus(trade.status)
+            return <Badge variant={s.variant} icon={s.icon}>{s.label}</Badge>
+          })()}
+        </div>
       </div>
 
       {/* Trade protection banner — only on active trades */}
@@ -894,8 +894,10 @@ export default function TradePage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Left: status + actions */}
-        <div className={`space-y-5 ${mobileTab === 'chat' ? 'hidden lg:block' : ''}`}>
+        {/* Left: status + actions. min-w-0 lets this grid column shrink to the
+            viewport instead of being sized up by any wide child (e.g. the
+            progress timeline), which would otherwise clip every card. */}
+        <div className={`min-w-0 space-y-5 ${mobileTab === 'chat' ? 'hidden lg:block' : ''}`}>
           {/* Countdown */}
           {trade.expiresAt && trade.status === 'payment_pending' && (
             <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-center gap-3">
@@ -911,13 +913,13 @@ export default function TradePage() {
 
           {/* Progress bar — full-width, flex-distributed so all steps fit any
               screen without a sideways scroll (connectors flex to fill). */}
-          <div className="bg-surface rounded-xl border border-border shadow-card p-4">
-            <div className="flex items-start">
+          <div className="bg-surface rounded-xl border border-border shadow-card p-3 sm:p-4">
+            <div className="flex items-start min-w-0">
               {TIMELINE_STEPS.map((step, i) => {
                 const { Icon } = step
                 const isLast = i === TIMELINE_STEPS.length - 1
                 return (
-                  <div key={step.key} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
+                  <div key={step.key} className={`flex items-start min-w-0 ${isLast ? '' : 'flex-1'}`}>
                     <div className="flex flex-col items-center flex-shrink-0">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                         i < currentStep ? 'bg-success text-white'
@@ -926,14 +928,14 @@ export default function TradePage() {
                       }`}>
                         {i < currentStep ? <CheckCircle2 size={14} aria-hidden /> : <Icon size={14} aria-hidden />}
                       </div>
-                      <p className={`mt-1.5 w-14 sm:w-16 text-center text-[10px] leading-tight ${
+                      <p className={`mt-1.5 w-12 sm:w-16 text-center text-[10px] leading-tight break-words ${
                         i === currentStep ? 'text-primary font-semibold'
                           : i < currentStep ? 'text-success font-medium'
                           : 'text-text-muted'
                       }`}>{step.label}</p>
                     </div>
                     {!isLast && (
-                      <div className={`h-0.5 flex-1 min-w-[6px] mt-4 mx-1 ${i < currentStep ? 'bg-success' : 'bg-border'}`} />
+                      <div className={`h-0.5 flex-1 min-w-[2px] mt-4 mx-0.5 sm:mx-1 ${i < currentStep ? 'bg-success' : 'bg-border'}`} />
                     )}
                   </div>
                 )
@@ -1318,7 +1320,7 @@ export default function TradePage() {
         {/* Mobile: chat fills most of the dynamic viewport so it behaves like a
             messaging screen and the send box stays reachable above the keyboard.
             Desktop (lg): fixed 400–600px box inside the two-column layout. */}
-        <div className={`bg-surface rounded-xl border border-border shadow-card flex-col min-h-[60dvh] max-h-[75dvh] lg:min-h-[400px] lg:max-h-[600px] ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`}>
+        <div className={`min-w-0 bg-surface rounded-xl border border-border shadow-card flex-col min-h-[60dvh] max-h-[75dvh] lg:min-h-[400px] lg:max-h-[600px] ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`}>
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-semibold text-text-primary">Chat with {counterparty}</h2>
           </div>
@@ -1513,9 +1515,9 @@ function deliveryDestinationLabel(method: string | undefined, isUserBuyer: boole
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between">
-      <span className="text-text-muted">{label}</span>
-      <span className="font-medium text-text-primary">{value}</span>
+    <div className="flex justify-between gap-2">
+      <span className="text-text-muted flex-shrink-0">{label}</span>
+      <span className="font-medium text-text-primary text-right break-words min-w-0">{value}</span>
     </div>
   )
 }
