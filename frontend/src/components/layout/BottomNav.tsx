@@ -74,28 +74,55 @@ export default function BottomNav() {
       <div className="flex items-center justify-around h-16">
         {navItems.map((item) => {
           const active = isActive(item.href)
+
+          // Gas is the permanent prominent center FAB — always popped out.
+          if (item.primary) {
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-label={item.label}
+                className="relative flex flex-col items-center justify-center flex-1 h-full"
+              >
+                <span className="absolute -top-5 flex items-center justify-center w-12 h-12 bg-primary rounded-full text-white shadow-lg transition-transform duration-150 active:scale-95">
+                  {item.icon}
+                </span>
+                <span className={cn('text-[10px] font-medium mt-8', active ? 'text-primary' : 'text-text-muted')}>
+                  {item.label}
+                </span>
+              </Link>
+            )
+          }
+
+          // Every other tab: when active, the icon lifts into a raised circular
+          // badge (ring-surface punches it through the top edge) so the current
+          // tab "pops" like the Gas FAB. Smoothly animated.
           return (
             <Link
               key={item.href}
               href={item.href}
               aria-label={item.label}
               className={cn(
-                'flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors',
-                item.primary
-                  ? 'relative'
-                  : active
-                  ? 'text-primary border-t-2 border-primary -mt-px'
-                  : 'text-text-muted hover:text-text-secondary border-t-2 border-transparent -mt-px',
+                'flex flex-col items-center justify-center flex-1 h-full gap-0.5',
+                active ? 'text-primary' : 'text-text-muted hover:text-text-secondary',
               )}
             >
-              {item.primary ? (
-                <span className="absolute -top-5 flex items-center justify-center w-12 h-12 bg-primary rounded-full text-white shadow-lg">
-                  {item.icon}
-                </span>
-              ) : (
-                item.icon
-              )}
-              <span className={cn('text-[10px] font-medium', item.primary && 'mt-8')}>
+              <span
+                className={cn(
+                  'flex items-center justify-center w-11 h-11 rounded-full transition-all duration-200 ease-out',
+                  active
+                    ? '-translate-y-2.5 bg-primary/10 ring-4 ring-surface shadow-md'
+                    : 'translate-y-0',
+                )}
+              >
+                {item.icon}
+              </span>
+              <span
+                className={cn(
+                  'text-[10px] font-medium transition-transform duration-200',
+                  active && '-translate-y-1.5',
+                )}
+              >
                 {item.label}
               </span>
             </Link>
