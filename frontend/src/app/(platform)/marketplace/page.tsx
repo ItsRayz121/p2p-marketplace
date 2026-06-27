@@ -13,7 +13,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
-import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp } from 'lucide-react'
+import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { PriceAlertsPanel } from '@/components/ui/PriceAlertsPanel'
@@ -355,20 +355,24 @@ const RATE_SOURCE_LABEL: Record<NonNullable<MarketStats['rateSource']>, string> 
 
 function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-text-muted">
+    // Mobile: 2-col grid so each stat has its icon aligned in a column (the
+    // rate row spans full width with its own coin icon, lined up under the
+    // active-listings icon). Desktop (sm+): single inline row with dividers.
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-4 text-xs text-text-muted sm:flex sm:flex-wrap sm:items-center">
       <span className="flex items-center gap-1">
-        <TrendingUp size={11} className="text-primary" />
+        <TrendingUp size={11} className="text-primary flex-shrink-0" />
         <span className="font-semibold text-text-primary">{stats.totalListings}</span> active listings
       </span>
       <span className="w-px h-3 bg-border hidden sm:block" />
       <span className="flex items-center gap-1">
-        <CheckCircle2 size={11} className="text-success" />
+        <CheckCircle2 size={11} className="text-success flex-shrink-0" />
         <span className="font-semibold text-success">{stats.totalTrades}</span> trades completed
       </span>
       {stats.usdtRate !== null && (
         <>
           <span className="w-px h-3 bg-border hidden sm:block" />
-          <span>
+          <span className="col-span-2 flex items-center gap-1 sm:col-auto">
+            <Coins size={11} className="text-primary flex-shrink-0" />
             1 USDT = <span className="font-semibold text-text-primary">PKR {stats.usdtRate.toLocaleString()}</span>
             {stats.rateSource && RATE_SOURCE_LABEL[stats.rateSource] && (
               <span className="ml-1 text-text-muted">· {RATE_SOURCE_LABEL[stats.rateSource]}</span>
@@ -502,15 +506,17 @@ export default function MarketplacePage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
 
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">USDT Marketplace</h1>
+      {/* Page header — bell + Create Listing sit on the title row (top-right),
+          filling the empty space, on every breakpoint instead of stacking
+          below the title on mobile. */}
+      <div className="flex flex-row items-start justify-between gap-3 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-text-primary">USDT Marketplace</h1>
           <p className="text-text-muted text-sm">{total} listings available</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <PriceAlertsPanel currentRate={liveRate} />
-          <Link href="/create-ad" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center">
+          <Link href="/create-ad" className="bg-primary text-white px-3 sm:px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center whitespace-nowrap">
             + Create Listing
           </Link>
         </div>

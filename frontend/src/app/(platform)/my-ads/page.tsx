@@ -54,9 +54,11 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string 
   return (
     <div className="bg-surface shadow-card border border-border rounded-xl p-4 min-w-0">
       <p className="text-xs text-text-muted">{label}</p>
-      {/* Responsive size + wrap so long PKR values (e.g. "PKR 18,138.29") stay
-          inside the card in the tight 3-col mobile grid instead of spilling out. */}
-      <p className={`text-lg sm:text-2xl font-bold mt-1 break-words tabular-nums leading-tight ${accent ?? 'text-text-primary'}`}>{value}</p>
+      {/* Wrap only at the space (e.g. "PKR" on top, "18,426.29" below) — never
+          inside the number. `break-words` was splitting digits mid-number
+          ("PKR 18,42 / 6.29") in the tight 3-col mobile grid; default wrapping
+          keeps the amount intact while still fitting the card. */}
+      <p className={`text-base sm:text-2xl font-bold mt-1 tabular-nums leading-tight ${accent ?? 'text-text-primary'}`}>{value}</p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
     </div>
   )
