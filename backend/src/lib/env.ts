@@ -231,7 +231,7 @@ const envSchema = z.object({
   // registers the webhook with Telegram on boot. Leave unset to skip.
   TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
   // TELEGRAM_MINI_APP_URL: the exact Mini App bridge URL configured in
-  // BotFather (e.g. https://rupchain.pk/mini-app). Used in the /start reply's
+  // BotFather (e.g. https://rupchain.com/mini-app). Used in the /start reply's
   // web_app button. Falls back to `${FRONTEND_URL}/mini-app` when unset.
   TELEGRAM_MINI_APP_URL: z.string().url().optional(),
 

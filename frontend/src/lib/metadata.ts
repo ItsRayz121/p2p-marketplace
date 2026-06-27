@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
 
 export function buildMeta(
   title: string,

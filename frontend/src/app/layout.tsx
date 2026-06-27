@@ -10,7 +10,7 @@ import { TELEGRAM_DETECT_SCRIPT } from '@/lib/telegram'
 
 const GA_ID = 'G-8RBC5X1N38'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

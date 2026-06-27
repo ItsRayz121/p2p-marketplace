@@ -5,7 +5,7 @@ export const alt = 'RupChain — Buy & Sell Crypto in Pakistan'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
 
 export default function OgImage() {
   return new ImageResponse(
@@ -117,7 +117,7 @@ export default function OgImage() {
             fontWeight: 600,
           }}
         >
-          rupchain.pk
+          rupchain.com
         </div>
       </div>
     ),

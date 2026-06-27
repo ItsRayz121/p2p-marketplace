@@ -147,7 +147,7 @@ function QuickActionCard({
 export default async function HomePage() {
   const { stats, topAds, topCtm, topGas, faqs } = await getHomeData()
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk'
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
   const jsonLd: object[] = [
     {
       '@context': 'https://schema.org',

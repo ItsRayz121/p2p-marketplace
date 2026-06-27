@@ -79,7 +79,7 @@ export function buildReferralLinks(code: string): { telegram: string | null; web
   const origin =
     typeof window !== 'undefined'
       ? window.location.origin
-      : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.pk')
+      : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com')
   return {
     telegram: bot ? `https://t.me/${bot}?start=ref_${code}` : null,
     web: `${origin}/r/${code}`,
