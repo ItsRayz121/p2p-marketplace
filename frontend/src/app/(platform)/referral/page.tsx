@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ReferralLinks } from '@/components/referral/ReferralLinks'
 import { ReferralEarnings } from '@/components/referral/ReferralEarnings'
-import { ChevronDown, Users } from 'lucide-react'
+import { ChevronDown, Users, Send, Globe } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +24,7 @@ interface Referral {
   username: string
   joinedAt: string
   status: string
+  source?: 'telegram' | 'web'
 }
 
 function timeAgo(dateStr: string): string {
@@ -159,9 +160,21 @@ function ReferralPageInner() {
             <div className="divide-y divide-border border-t border-border">
               {referrals.map((ref) => (
                 <div key={ref.id} className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-text-primary">{ref.username}</p>
-                    <p className="text-xs text-text-muted">Joined {timeAgo(ref.joinedAt)}</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {/* Signup source — small icon shows where they joined from */}
+                    {ref.source === 'telegram' ? (
+                      <span title="Joined via Telegram" className="flex-shrink-0 text-[#229ED9]">
+                        <Send size={14} />
+                      </span>
+                    ) : (
+                      <span title="Joined via website" className="flex-shrink-0 text-text-muted">
+                        <Globe size={14} />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text-primary truncate">{ref.username}</p>
+                      <p className="text-xs text-text-muted">Joined {timeAgo(ref.joinedAt)}</p>
+                    </div>
                   </div>
                   <Badge variant={ref.status === 'active' ? 'success' : 'default'} size="sm">
                     {ref.status === 'active' ? 'Active' : 'Not traded yet'}
