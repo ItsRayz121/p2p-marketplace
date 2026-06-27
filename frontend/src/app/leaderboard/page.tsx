@@ -184,8 +184,8 @@ export default function LeaderboardPage() {
                         <div className="w-full min-w-0">
                           <p className={`font-bold text-text-primary truncate ${isFirst ? 'text-sm sm:text-base' : 'text-xs sm:text-sm'}`}>
                             {entry.fullName || entry.username}
-                            {isMe && <span className="text-primary"> (you)</span>}
                           </p>
+                          {isMe && <p className="text-[10px] sm:text-xs font-semibold text-primary leading-tight">(you)</p>}
                           <p className="text-[10px] sm:text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
                           {entry.totalVolumePKR != null && (
                             <p className="text-[10px] sm:text-xs font-semibold text-text-secondary mt-0.5 truncate">

@@ -184,23 +184,19 @@ export default function LevelsPage() {
           </p>
         </div>
 
-        {/* table-fixed + wrapping headers/cells + tighter mobile padding keep
-            all four columns on-screen (no sideways scroll / half-cut "What it
-            means" column on phones). */}
-        <div className="rounded-xl border border-border overflow-hidden">
-          <table className="w-full table-fixed">
-            <colgroup>
-              <col className="w-[22%]" />
-              <col className="w-[20%]" />
-              <col className="w-[20%]" />
-              <col className="w-[38%]" />
-            </colgroup>
+        {/* Auto-layout (not table-fixed): the badge pill sizes to its own
+            content while the numeric headers and the "What it means" sentences
+            wrap — so the four columns shrink to fit the phone width without a
+            big sideways scroll or a half-cut last column. overflow-x-auto is a
+            safety net for very narrow devices (content stays fully visible). */}
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full">
             <thead className="bg-surface-alt border-b border-border">
               <tr>
-                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">Badge</th>
-                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">Completed Trades</th>
-                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">Completion Rate</th>
-                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">What it means</th>
+                <th className="text-left text-[10px] sm:text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top">Badge</th>
+                <th className="text-left text-[10px] sm:text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top">Completed Trades</th>
+                <th className="text-left text-[10px] sm:text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top">Completion Rate</th>
+                <th className="text-left text-[10px] sm:text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top">What it means</th>
               </tr>
             </thead>
             <tbody className="bg-surface divide-y divide-border">
@@ -209,15 +205,15 @@ export default function LevelsPage() {
                 return (
                   <tr key={tier.name}>
                     <td className="px-2 sm:px-4 py-3 align-top">
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${tier.bg} ${tier.color}`}>
-                        <Icon size={13} aria-hidden className="flex-shrink-0" />{tier.name}
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] sm:text-xs font-bold whitespace-nowrap ${tier.bg} ${tier.color}`}>
+                        <Icon size={11} aria-hidden className="flex-shrink-0" />{tier.name}
                       </span>
                     </td>
-                    <td className="px-2 sm:px-4 py-3 text-sm font-semibold text-text-primary align-top">
+                    <td className="px-2 sm:px-4 py-3 text-xs sm:text-sm font-semibold text-text-primary align-top">
                       {tier.minTrades === 0 ? '0+' : `${tier.minTrades}+`}
                     </td>
-                    <td className="px-2 sm:px-4 py-3 text-sm font-semibold text-text-primary align-top">{fmtRate(tier.minRate)}</td>
-                    <td className="px-2 sm:px-4 py-3 text-sm text-text-secondary align-top break-words">{tier.blurb}</td>
+                    <td className="px-2 sm:px-4 py-3 text-xs sm:text-sm font-semibold text-text-primary align-top">{fmtRate(tier.minRate)}</td>
+                    <td className="px-2 sm:px-4 py-3 text-xs sm:text-sm text-text-secondary align-top">{tier.blurb}</td>
                   </tr>
                 )
               })}
