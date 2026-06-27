@@ -2415,7 +2415,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     // ── On-chain verification ────────────────────────────────────────────────
     // Resolve the correct RPC and USDT contract for this order's payment network.
-    const { createPublicClient, http: viemHttp } = await import('viem')
+    const { createPublicClient, http: viemHttp, getAddress } = await import('viem')
     const viemChains = await import('viem/chains')
 
     type NetworkDef = {
@@ -2533,8 +2533,12 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       if (humanAmount >= lo && humanAmount <= hi) {
         matchedAmount = humanAmount
         // Capture the payer (Transfer 'from') so the admin sees "Paid from" and the
-        // refund destination is pre-filled without a later on-chain lookup.
-        if (log.topics[1]) senderAddress = '0x' + log.topics[1].slice(26)
+        // refund destination is pre-filled without a later on-chain lookup. Checksum
+        // it (getAddress accepts all-lowercase) to match the poller's stored form.
+        if (log.topics[1]) {
+          try { senderAddress = getAddress(('0x' + log.topics[1].slice(26)) as `0x${string}`) }
+          catch { /* malformed topic — leave unset, refund job resolves lazily */ }
+        }
         break
       }
     }
