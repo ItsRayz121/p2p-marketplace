@@ -50,11 +50,13 @@ interface GasChain {
 function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
-      <table className="w-full">
+      {/* table-fixed + tighter mobile padding + wrapping headers keep every
+          column on-screen (no sideways scroll / half-cut last column on phones). */}
+      <table className="w-full table-fixed">
         <thead className="bg-surface border-b border-border">
           <tr>
             {headers.map((h) => (
-              <th key={h} className="text-left text-xs font-semibold text-text-muted px-4 py-3 whitespace-nowrap">{h}</th>
+              <th key={h} className="text-left text-xs font-semibold text-text-muted px-3 sm:px-4 py-3 align-top break-words">{h}</th>
             ))}
           </tr>
         </thead>
@@ -62,7 +64,7 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
           {rows.map((row, i) => (
             <tr key={i} className="hover:bg-surface/50 transition-colors">
               {row.map((cell, j) => (
-                <td key={j} className="px-4 py-3 text-sm text-text-primary">{cell}</td>
+                <td key={j} className="px-3 sm:px-4 py-3 text-sm text-text-primary break-words">{cell}</td>
               ))}
             </tr>
           ))}
@@ -188,18 +190,25 @@ export default function FeesPage() {
       <section>
         <h2 className="text-lg font-bold text-text-primary mb-3">Referral Rewards</h2>
         <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-          <div className="flex items-center gap-4">
+          <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
               <Gift size={20} className="text-primary" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-base font-bold text-text-primary">
-                Referral rewards — coming soon
+                Earn 5% — and give your friends 5% off
               </p>
-              <p className="text-sm text-text-muted">
-                Rewards are reviewed and approved by our team based on your referrals&apos; completed
-                trading activity. There are no automatic cash payouts.
+              <p className="text-sm text-text-muted mt-1">
+                Invite friends to RupChain and earn <strong className="text-text-primary">5% of the platform gas fee</strong> from
+                everyone you refer — paid into your USDT balance. Your friend automatically gets{' '}
+                <strong className="text-text-primary">5% off</strong> their gas fee. Paid from our fee, never an extra cost to anyone.
               </p>
+              <Link
+                href="/referral"
+                className="inline-flex items-center gap-1 mt-3 text-sm font-semibold text-primary hover:underline"
+              >
+                Get your referral link →
+              </Link>
             </div>
           </div>
         </div>
