@@ -3,12 +3,15 @@ import { mainnet, bsc, polygon, arbitrum, optimism, base } from '@reown/appkit/n
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 
 /**
- * Reown AppKit project id. Provision one at https://cloud.reown.com and set the
- * value via NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID. Without it, WalletConnect /
- * mobile wallets won't pair (injected wallets like MetaMask still work).
+ * Reown AppKit project id (provisioned at https://cloud.reown.com — RupChain /
+ * PakSwap team project). This value is NOT a secret: AppKit embeds it in the
+ * client bundle by design, and it's protected by the allowed-domains list in
+ * the Reown dashboard rather than by keeping it private. The env var override
+ * lets us rotate it without a code change. Without any id, WalletConnect /
+ * mobile pairing is disabled (injected wallets like MetaMask still work).
  */
 export const WALLETCONNECT_PROJECT_ID =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? ''
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? '61dd45a14b857501cf6f976bab316897'
 
 /**
  * EVM networks RupChain supports. Imported from `@reown/appkit/networks` (which
