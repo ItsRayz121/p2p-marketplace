@@ -184,14 +184,23 @@ export default function LevelsPage() {
           </p>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full">
+        {/* table-fixed + wrapping headers/cells + tighter mobile padding keep
+            all four columns on-screen (no sideways scroll / half-cut "What it
+            means" column on phones). */}
+        <div className="rounded-xl border border-border overflow-hidden">
+          <table className="w-full table-fixed">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[38%]" />
+            </colgroup>
             <thead className="bg-surface-alt border-b border-border">
               <tr>
-                <th className="text-left text-xs font-semibold text-text-muted px-4 py-3">Badge</th>
-                <th className="text-left text-xs font-semibold text-text-muted px-4 py-3 whitespace-nowrap">Completed Trades</th>
-                <th className="text-left text-xs font-semibold text-text-muted px-4 py-3 whitespace-nowrap">Completion Rate</th>
-                <th className="text-left text-xs font-semibold text-text-muted px-4 py-3">What it means</th>
+                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">Badge</th>
+                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">Completed Trades</th>
+                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">Completion Rate</th>
+                <th className="text-left text-xs font-semibold text-text-muted px-2 sm:px-4 py-3 align-top break-words">What it means</th>
               </tr>
             </thead>
             <tbody className="bg-surface divide-y divide-border">
@@ -199,16 +208,16 @@ export default function LevelsPage() {
                 const { Icon } = tier
                 return (
                   <tr key={tier.name}>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${tier.bg} ${tier.color}`}>
-                        <Icon size={13} aria-hidden />{tier.name}
+                    <td className="px-2 sm:px-4 py-3 align-top">
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${tier.bg} ${tier.color}`}>
+                        <Icon size={13} aria-hidden className="flex-shrink-0" />{tier.name}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-text-primary whitespace-nowrap">
+                    <td className="px-2 sm:px-4 py-3 text-sm font-semibold text-text-primary align-top">
                       {tier.minTrades === 0 ? '0+' : `${tier.minTrades}+`}
                     </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-text-primary whitespace-nowrap">{fmtRate(tier.minRate)}</td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">{tier.blurb}</td>
+                    <td className="px-2 sm:px-4 py-3 text-sm font-semibold text-text-primary align-top">{fmtRate(tier.minRate)}</td>
+                    <td className="px-2 sm:px-4 py-3 text-sm text-text-secondary align-top break-words">{tier.blurb}</td>
                   </tr>
                 )
               })}

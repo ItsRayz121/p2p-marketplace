@@ -159,32 +159,36 @@ export default function LeaderboardPage() {
             <EmptyState icon={Trophy} title="No data yet" description="No traders found for this period yet." />
           ) : (
             <>
-              {/* Top-3 podium — desktop only */}
+              {/* Top-3 podium — shown on every breakpoint (compact on mobile) */}
               {entries.length >= 3 && (
-                <div className="hidden md:grid grid-cols-3 gap-3 mb-2 items-end">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-2 items-end">
                   {[entries[1], entries[0], entries[2]].map((entry, podiumIdx) => {
                     const isFirst = podiumIdx === 1
                     // rank badge styles: gold=1st, slate=2nd, amber=3rd
                     const rankNum = podiumIdx === 0 ? 2 : podiumIdx === 1 ? 1 : 3
+                    const isMe = entry.userId === user?.id
                     const rankBadgeCls = isFirst
                       ? 'bg-yellow-500 text-white shadow-lg shadow-yellow-200'
                       : rankNum === 2
                       ? 'bg-slate-400 text-white'
                       : 'bg-amber-600 text-white'
                     const cardCls = isFirst
-                      ? 'bg-gradient-to-b from-yellow-500/10 to-surface border-yellow-500/30 shadow-card-md pb-5'
-                      : 'bg-surface border-border shadow-card pb-4'
+                      ? 'bg-gradient-to-b from-yellow-500/10 to-surface border-yellow-500/30 shadow-card-md pb-4 sm:pb-5'
+                      : 'bg-surface border-border shadow-card pb-3 sm:pb-4'
                     return (
-                      <div key={entry.userId} className={`border rounded-xl pt-4 px-4 text-center flex flex-col items-center gap-2 ${cardCls}`}>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${rankBadgeCls}`}>
+                      <div key={entry.userId} className={`border rounded-xl pt-3 px-1.5 sm:pt-4 sm:px-4 text-center flex flex-col items-center gap-1.5 sm:gap-2 ${cardCls}`}>
+                        <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-black flex-shrink-0 ${rankBadgeCls}`}>
                           #{rankNum}
                         </div>
                         <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size={isFirst ? 'lg' : 'md'} />
-                        <div>
-                          <p className={`font-bold text-text-primary truncate max-w-[120px] ${isFirst ? 'text-base' : 'text-sm'}`}>{entry.fullName || entry.username}</p>
-                          <p className="text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
+                        <div className="w-full min-w-0">
+                          <p className={`font-bold text-text-primary truncate ${isFirst ? 'text-sm sm:text-base' : 'text-xs sm:text-sm'}`}>
+                            {entry.fullName || entry.username}
+                            {isMe && <span className="text-primary"> (you)</span>}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
                           {entry.totalVolumePKR != null && (
-                            <p className="text-xs font-semibold text-text-secondary mt-0.5">
+                            <p className="text-[10px] sm:text-xs font-semibold text-text-secondary mt-0.5 truncate">
                               PKR {fmtNumber(entry.totalVolumePKR)}
                             </p>
                           )}
@@ -247,9 +251,10 @@ export default function LeaderboardPage() {
                 </table>
               </div>
 
-              {/* Mobile */}
+              {/* Mobile — top 3 are shown in the podium above, so the list
+                  starts from rank 4 (falls back to all if fewer than 3). */}
               <div className="md:hidden space-y-2">
-                {entries.map((entry) => {
+                {(entries.length >= 3 ? entries.slice(3) : entries).map((entry) => {
                   const isMe = entry.userId === user?.id
                   const rowBg = isMe ? 'border-primary/30 bg-primary/5' : entry.rank === 1 ? 'border-yellow-500/30 bg-yellow-500/10 dark:border-yellow-500/30 dark:bg-yellow-500/10' : entry.rank === 2 ? 'border-slate-200 bg-slate-50 dark:border-slate-500/30 dark:bg-slate-500/10' : entry.rank === 3 ? 'border-amber-500/30 bg-amber-500/10 dark:border-amber-500/30 dark:bg-amber-500/10' : 'border-border bg-surface'
                   return (
@@ -262,9 +267,10 @@ export default function LeaderboardPage() {
                       </div>
                       <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size="sm" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-text-primary truncate">
-                          {entry.fullName || entry.username}
-                          {isMe && <span className="ml-1 text-primary text-xs">(you)</span>}
+                        {/* name truncates but "(you)" never gets clipped */}
+                        <p className="text-sm font-semibold text-text-primary flex items-baseline gap-1 min-w-0">
+                          <span className="truncate">{entry.fullName || entry.username}</span>
+                          {isMe && <span className="text-primary text-xs flex-shrink-0">(you)</span>}
                         </p>
                         <p className="text-xs text-text-muted">{fmtNumber(entry.completedTrades)} trades</p>
                       </div>
