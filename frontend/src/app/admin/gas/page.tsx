@@ -1337,26 +1337,30 @@ export default function GasAdminPage() {
 
       {/* ── Status Filters ───────────────────────────────────────────────────── */}
       <div ref={ordersSectionRef} className="bg-surface shadow-card p-4 rounded-xl border border-border space-y-3 scroll-mt-4">
-        {/* Payment type — keeps PKR (manual proof) and crypto (auto-verified) flows separate */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-text-muted mr-1">Payment type:</span>
-          {([
-            { v: 'all',    label: 'All' },
-            { v: 'PKR',    label: 'PKR (manual review)' },
-            { v: 'CRYPTO', label: 'Crypto (auto-verify)' },
-          ] as const).map((pt) => (
-            <button
-              key={pt.v}
-              onClick={() => { setPaymentTypeFilter(pt.v); setPage(1) }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
-                paymentTypeFilter === pt.v
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-surface text-text-secondary border-border hover:bg-surface'
-              }`}
-            >
-              {pt.label}
-            </button>
-          ))}
+        {/* Payment type — keeps PKR (manual proof) and crypto (auto-verified) flows
+            separate. Label on its own line above the buttons so it doesn't crowd
+            the chips on narrow widths. */}
+        <div>
+          <span className="block text-xs font-semibold text-text-muted mb-1.5">Payment type</span>
+          <div className="flex flex-wrap gap-2">
+            {([
+              { v: 'all',    label: 'All' },
+              { v: 'PKR',    label: 'PKR (manual review)' },
+              { v: 'CRYPTO', label: 'Crypto (auto-verify)' },
+            ] as const).map((pt) => (
+              <button
+                key={pt.v}
+                onClick={() => { setPaymentTypeFilter(pt.v); setPage(1) }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                  paymentTypeFilter === pt.v
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-surface text-text-secondary border-border hover:bg-surface'
+                }`}
+              >
+                {pt.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refund_pending', 'refunded', 'cancelled'].map((s) => (

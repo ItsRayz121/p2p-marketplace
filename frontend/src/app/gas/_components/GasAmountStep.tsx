@@ -34,10 +34,14 @@ export function GasAmountStep() {
         </div>
       </div>
 
-      {/* Preset chips */}
+      {/* Preset chips — laid out in a single row (equal columns) so 3 OR 4 presets
+          never wrap onto a second line on mobile. Capped at 4 columns. */}
       <div>
         <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Quick Select</p>
-        <div className="flex flex-wrap gap-2">
+        <div
+          className="grid gap-2"
+          style={{ gridTemplateColumns: `repeat(${Math.min(selectedToken.presetAmounts.length, 4)}, minmax(0, 1fr))` }}
+        >
           {selectedToken.presetAmounts.map(preset => {
             const usdVal = preset * priceUsd
             const tooHigh = usdVal > maxUsd
@@ -53,13 +57,13 @@ export function GasAmountStep() {
                   }
                 }}
                 disabled={tooHigh}
-                className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all flex flex-col items-center ${
+                className={`min-w-0 px-2 py-2 rounded-xl text-sm font-bold border-2 transition-all flex flex-col items-center ${
                   active    ? 'border-primary bg-primary text-white shadow-card'
                   : tooHigh ? 'border-border text-text-disabled bg-surface-alt cursor-not-allowed'
                   :           'border-border bg-surface text-text-secondary hover:border-primary/30'
                 }`}
               >
-                <span>{preset} {selectedToken.symbol}</span>
+                <span className="truncate max-w-full">{preset} {selectedToken.symbol}</span>
                 {priceUsd > 0 && (
                   <span className={`text-[10px] font-medium mt-0.5 ${active ? 'text-white/70' : tooHigh ? 'text-text-disabled' : 'text-text-muted'}`}>
                     ≈ ${usdVal.toFixed(2)}
@@ -95,15 +99,18 @@ export function GasAmountStep() {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 bg-blue-500/10 dark:bg-blue-950/40 rounded-xl px-3 py-2.5 text-xs text-blue-600 dark:text-blue-400">
-        <div className="flex items-center gap-2">
+      {/* Stacked so the limit sentence stays on ONE line and "Request higher limit"
+          sits on its own line below it (was squeezed side-by-side, wrapping the
+          sentence across 3 lines on mobile). */}
+      <div className="bg-blue-500/10 dark:bg-blue-950/40 rounded-xl px-3 py-2.5 text-xs text-blue-600 dark:text-blue-400 space-y-1">
+        <div className="flex items-center gap-2 whitespace-nowrap">
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          Max order value: <span className="font-bold ml-1">${maxUsd} USDT</span> per transaction
+          <span className="truncate">Max order value: <span className="font-bold">${maxUsd} USDT</span> per transaction</span>
         </div>
         <a
           href={supportMailto('Gas Fee Large Order Request')}
           title={`Need more than $${maxUsd}? Email us and we'll help you with a larger gas order.`}
-          className="underline hover:no-underline whitespace-nowrap flex-shrink-0 font-semibold"
+          className="inline-block underline hover:no-underline font-semibold pl-6"
         >
           Request higher limit
         </a>

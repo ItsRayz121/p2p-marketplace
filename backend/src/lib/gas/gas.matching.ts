@@ -329,7 +329,11 @@ export async function parkUnattributed(txHash: string, incoming: number, payment
 }
 
 // Queue automatic delivery (same path as the webhook), then record ledger + notif.
-async function onPaymentDetected(
+// Exported so the user-self-report verify-payment path (gasFee.routes.ts) can reuse
+// the exact same finalisation (delivery enqueue + order_payment ledger + admin notif)
+// once it has independently verified the tx on-chain — giving EVM (BEP20/ERC20) full
+// parity with the Aptos/TRON pollers instead of stalling at a manual-review state.
+export async function onPaymentDetected(
   orderId: string,
   orderRef: string,
   orderChain: string,

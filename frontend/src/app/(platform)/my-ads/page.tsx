@@ -50,16 +50,22 @@ const AD_STATUS_LABELS: Record<string, string> = {
 }
 const adStatusLabel = (s: string) => AD_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
 
-function StatCard({ label, value, sub, unit, accent }: { label: string; value: string | number; sub?: string; unit?: string; accent?: string }) {
+function StatCard({ label, value, sub, unit, accent, unitInLabel }: { label: string; value: string | number; sub?: string; unit?: string; accent?: string; unitInLabel?: boolean }) {
   return (
-    <div className="bg-surface shadow-card border border-border rounded-xl p-3 sm:p-4 min-w-0">
+    // select-none: stops a mobile long-press from highlighting the number and
+    // triggering the OS "tap to search" popover over a compact value like "27.1K".
+    <div className="bg-surface shadow-card border border-border rounded-xl p-3 sm:p-4 min-w-0 select-none">
       {/* Label always stays on one line — truncates rather than wrapping to two
-          rows (keeps e.g. "Total Spent" tidy in the tight 3-col grid). */}
-      <p className="text-[11px] sm:text-xs text-text-muted truncate">{label}</p>
-      {/* The currency (PKR / USDT) sits small, in front of the amount, and the
-          amount truncates so it can never spill outside the card. */}
+          rows (keeps e.g. "Total Spent" tidy in the tight 3-col grid). When
+          unitInLabel is set, the currency (PKR / USDT) rides up here next to the
+          label so the amount below gets the card's FULL width and can show in
+          full instead of being truncated to "18....". */}
+      <p className="text-[11px] sm:text-xs text-text-muted truncate">
+        {label}
+        {unitInLabel && unit && <span className="ml-1 font-semibold">{unit}</span>}
+      </p>
       <p className="mt-1 flex items-baseline gap-1 min-w-0">
-        {unit && <span className="text-[10px] sm:text-xs font-semibold text-text-muted flex-shrink-0">{unit}</span>}
+        {unit && !unitInLabel && <span className="text-[10px] sm:text-xs font-semibold text-text-muted flex-shrink-0">{unit}</span>}
         <span className={`min-w-0 text-sm sm:text-2xl font-bold tabular-nums leading-tight truncate ${accent ?? 'text-text-primary'}`}>{value}</span>
       </p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
@@ -424,7 +430,6 @@ function TradingAnalyticsTab() {
     </div>
   )
 
-  const fmtNum = (v: string) => Number(v).toLocaleString()
   // Compact form (e.g. 18,425 → "18.4K", 2,750,000 → "2.8M") for the tight
   // 3-column Volume cards where the full number gets truncated mid-digits.
   const fmtCompact = (v: string) => {
@@ -446,7 +451,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Total Trades" value={data.combined.totalTrades} />
           <StatCard label="Completed" value={combinedRate != null ? `${data.combined.completedTrades} (${combinedRate}%)` : data.combined.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Total Volume" value={fmtNum(data.combined.totalVolumePkr)} unit="PKR" />
+          <StatCard label="Total Volume" value={fmtCompact(data.combined.totalVolumePkr)} unit="PKR" unitInLabel />
           <StatCard label="Gas Spend" value={data.gas.spentUsd} unit="USDT" />
         </div>
       </div>
@@ -460,7 +465,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.usdt.totalTrades} />
           <StatCard label="Completed" value={data.usdt.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Volume" value={fmtCompact(data.usdt.volumePkr)} unit="PKR" />
+          <StatCard label="Volume" value={fmtCompact(data.usdt.volumePkr)} unit="PKR" unitInLabel />
         </div>
       </div>
 
@@ -473,7 +478,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.ctm.totalTrades} />
           <StatCard label="Completed" value={data.ctm.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Volume" value={fmtCompact(data.ctm.volumePkr)} unit="PKR" />
+          <StatCard label="Volume" value={fmtCompact(data.ctm.volumePkr)} unit="PKR" unitInLabel />
         </div>
         {data.ctm.isMerchant && (
           <div className="flex items-center gap-3 mt-4 text-xs text-text-muted">

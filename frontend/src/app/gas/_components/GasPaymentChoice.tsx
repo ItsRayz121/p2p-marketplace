@@ -18,20 +18,22 @@ export function GasPaymentChoice() {
     <div className="p-5 space-y-4">
       <CardHeader onBack={() => setPhase(PHASE.ADDRESS)} title="Choose How You Want to Pay" sub="Select your preferred payment method" />
 
-      <div className="flex items-center gap-2 flex-wrap text-xs">
-        <span className="flex items-center gap-1.5 bg-surface-alt rounded-full px-3 py-1">
+      {/* Pills kept on a single line (no wrap) so "≈ PKR …" never drops to its own
+          row on mobile. Tightened padding/gap to fit; scrolls if ever too wide. */}
+      <div className="flex items-center gap-1.5 text-xs overflow-x-auto -mx-1 px-1">
+        <span className="flex items-center gap-1.5 bg-surface-alt rounded-full px-2.5 py-1 whitespace-nowrap flex-shrink-0">
           <ChainLogo chain={selectedChain} sizeCls="w-4 h-4" />
           {selectedToken.symbol} · {selectedChain.networkLabel}
         </span>
         {discounted ? (
           <>
-            <span className="text-text-muted line-through">${computedUsd.toFixed(2)}</span>
-            <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${effectiveUsd.toFixed(2)} USDT</span>
+            <span className="text-text-muted line-through flex-shrink-0">${computedUsd.toFixed(2)}</span>
+            <span className="bg-primary/10 text-primary rounded-full px-2.5 py-1 font-bold whitespace-nowrap flex-shrink-0">${effectiveUsd.toFixed(2)} USDT</span>
           </>
         ) : (
-          <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${computedUsd.toFixed(2)} USDT</span>
+          <span className="bg-primary/10 text-primary rounded-full px-2.5 py-1 font-bold whitespace-nowrap flex-shrink-0">${computedUsd.toFixed(2)} USDT</span>
         )}
-        <span className="bg-green-500/15 text-green-700 dark:text-green-300 rounded-full px-3 py-1 font-bold">≈ PKR {effectivePkr.toFixed(0)}</span>
+        <span className="bg-green-500/15 text-green-700 dark:text-green-300 rounded-full px-2.5 py-1 font-bold whitespace-nowrap flex-shrink-0">≈ PKR {effectivePkr.toFixed(0)}</span>
       </div>
 
       {/* Affiliate auto-discount (if the buyer came via an affiliate link) + promo code. */}

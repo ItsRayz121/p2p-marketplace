@@ -238,7 +238,7 @@ function GasOrderTrackingPageInner() {
               </p>
             </div>
           </div>
-          <Badge variant={statusVariant(order.status)} size="md">
+          <Badge variant={statusVariant(order.status)} size="md" className="whitespace-nowrap shrink-0">
             {STATUS_LABELS[order.status] ?? order.status}
           </Badge>
         </div>

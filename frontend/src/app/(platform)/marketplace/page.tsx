@@ -13,7 +13,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
-import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins } from 'lucide-react'
+import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, History } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
@@ -379,7 +379,10 @@ function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
             1 USDT = <span className="font-semibold text-text-primary">PKR {stats.usdtRate.toLocaleString()}</span>
           </span>
           {stats.rateSource && RATE_SOURCE_LABEL[stats.rateSource] && (
-            <span className="col-start-2 flex items-center text-text-muted sm:col-auto sm:ml-1">
+            // gap-1 + leading icon so it lines up vertically under the "trades
+            // completed" check icon in the right mobile column (icons in a column).
+            <span className="col-start-2 flex items-center gap-1 text-text-muted sm:col-auto sm:ml-1">
+              <History size={11} className="text-text-muted flex-shrink-0" />
               {RATE_SOURCE_LABEL[stats.rateSource]}
             </span>
           )}

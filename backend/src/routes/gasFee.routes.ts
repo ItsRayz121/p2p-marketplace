@@ -18,6 +18,7 @@ import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import { isRefundEligible, refundWaitRemainingMs } from '../lib/gas/gas.refundWindow'
 import { buildGasExplorerTxUrl } from '../lib/gas/gasExplorer'
+import { onPaymentDetected } from '../lib/gas/gas.matching'
 import {
   gasCancelIdentity,
   assertNotInGasCooldown,
@@ -2423,7 +2424,12 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       usdtContract: `0x${string}`
       usdtDecimals: number
       depositAddressDbKey: string
-      depositAddressEnvFn: () => string | undefined
+      // Resolves the deposit address with the SAME fallback chain as order creation
+      // and the poller: env override → mnemonic-derived EVM hot wallet. Previously
+      // this only checked env, so a mnemonic-only deployment (no GAS_FEE_DEPOSIT_*
+      // env var) resolved null here and every self-reported BEP20/ERC20 payment was
+      // dumped into 'payment_uploaded' for manual review instead of being verified.
+      getDepositAddress: () => string | undefined
       requiredConfirmations: number
     }
 
@@ -2434,7 +2440,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         usdtContract:         '0x55d398326f99059fF775485246999027B3197955',
         usdtDecimals:         18,
         depositAddressDbKey:  'gas_usdt_bep20_address',
-        depositAddressEnvFn:  () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20,
+        getDepositAddress:    () => GAS_CHAINS.BSC.getDepositAddress(),
         requiredConfirmations: 3,
       },
       ERC20: {
@@ -2443,7 +2449,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         usdtContract:         '0xdAC17F958D2ee523a2206206994597C13D831ec7',
         usdtDecimals:         6,
         depositAddressDbKey:  'gas_usdt_erc20_address',
-        depositAddressEnvFn:  () => env.GAS_FEE_DEPOSIT_ADDRESS_ERC20,
+        getDepositAddress:    () => GAS_CHAINS.ETHEREUM.getDepositAddress(),
         requiredConfirmations: 12,
       },
     }
@@ -2456,9 +2462,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const netDef = NETWORK_MAP[order.paymentNetwork]
     if (!netDef) throw new AppError('CHAIN_NOT_SUPPORTED', `Payment network '${order.paymentNetwork}' does not support on-chain verification`, 400)
 
-    // Resolve the deposit address (DB override takes precedence)
+    // Resolve the deposit address (DB override → env → mnemonic hot wallet).
     const dbDepositOverride = await db.platformConfig.findUnique({ where: { key: netDef.depositAddressDbKey } })
-    const depositAddress = (dbDepositOverride?.value ?? netDef.depositAddressEnvFn())?.toLowerCase()
+    const depositAddress = (dbDepositOverride?.value ?? netDef.getDepositAddress())?.toLowerCase()
 
     // If deposit address is not configured we cannot verify on-chain, but we can
     // still accept the txHash and queue the order for manual admin review.
@@ -2513,6 +2519,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const hi = paymentAmountFloat * 1.01
 
     let matchedAmount: number | null = null
+    let senderAddress: string | undefined
     for (const log of transferLogs) {
       if (!log.topics[2]) continue
       const toAddr = '0x' + log.topics[2].slice(26).toLowerCase()
@@ -2525,6 +2532,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const humanAmount = Number(rawValue) / Math.pow(10, netDef.usdtDecimals)
       if (humanAmount >= lo && humanAmount <= hi) {
         matchedAmount = humanAmount
+        // Capture the payer (Transfer 'from') so the admin sees "Paid from" and the
+        // refund destination is pre-filled without a later on-chain lookup.
+        if (log.topics[1]) senderAddress = '0x' + log.topics[1].slice(26)
         break
       }
     }
@@ -2551,16 +2561,22 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       }
     }
 
-    // ── Attribute order — set payment_verified (admin must Release Gas) ─────────
+    // ── Attribute order — set payment_detected and auto-deliver ─────────────────
+    // The payment has been independently verified on-chain (correct recipient,
+    // token, amount ±1%, confirmations, before expiry) — the same rigour the
+    // pollers apply. So we finalise it identically: move to payment_detected and
+    // queue delivery, giving BEP20/ERC20 self-reports full parity with the Aptos
+    // and TRON pollers (which auto-release) instead of stalling for manual review.
     const claimed = await db.gasFeeOrder.updateMany({
       where: { id: order.id, status: order.status === 'expired' ? 'expired' : 'payment_pending', paymentTxHash: null },
       data:  {
-        status:               'payment_verified',
+        status:               'payment_detected',
         paymentTxHash:        txHash,
         paymentVerifiedAt:    new Date(),
         verifiedAmount:       matchedAmount,
         verifiedAsset:        'USDT',
         verifiedConfirmations: confirmations,
+        ...(senderAddress ? { paymentSenderAddress: senderAddress } : {}),
       },
     })
 
@@ -2570,8 +2586,12 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       return reply.send({ success: true, data: { status: fresh?.status ?? order.status, message: 'Payment already detected.' } })
     }
 
-    logger.info({ orderRef, txHash, amount: matchedAmount, network: order.paymentNetwork, confirmations }, 'verify-payment: user self-reported — payment_verified, awaiting admin release')
+    // Same finalisation the pollers use: enqueue delivery + write the order_payment
+    // ledger entry (so the payment shows in admin Wallet Activity) + notify admins.
+    await onPaymentDetected(order.id, order.orderRef, order.chain, txHash, matchedAmount, confirmations, order.paymentNetwork, senderAddress, 'poller')
 
-    return reply.send({ success: true, data: { status: 'payment_verified', message: 'Payment verified! An admin will release your gas shortly.' } })
+    logger.info({ orderRef, txHash, amount: matchedAmount, network: order.paymentNetwork, confirmations }, 'verify-payment: user self-reported — verified on-chain, payment_detected, delivery queued')
+
+    return reply.send({ success: true, data: { status: 'payment_detected', message: 'Payment verified! Releasing your gas now.' } })
   })
 }

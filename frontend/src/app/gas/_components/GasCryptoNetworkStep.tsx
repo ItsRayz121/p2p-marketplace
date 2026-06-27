@@ -49,12 +49,12 @@ export function GasCryptoNetworkStep() {
               }`}
             >
               <PaymentNetworkLogo networkKey="BEP20" logoUrl={cryptoMethods?.bep20?.logoUrl} />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-text-primary">USDT BEP20</p>
                 <p className="text-xs text-text-muted">
                   {bepConfigured ? 'BNB Smart Chain · est. ~$0.29 network fee' : 'Coming soon — not yet configured'}
                 </p>
-                {bepAddr && <p className="text-xs font-mono text-text-muted mt-0.5">{bepAddr.slice(0, 8)}...{bepAddr.slice(-6)}</p>}
+                {bepAddr && <p className="text-xs font-mono text-text-muted mt-0.5 truncate">{bepAddr.slice(0, 8)}...{bepAddr.slice(-6)}</p>}
               </div>
               {bepConfigured
                 ? selectedCryptoNetwork === 'BEP20'
@@ -77,10 +77,10 @@ export function GasCryptoNetworkStep() {
               }`}
             >
               <PaymentNetworkLogo networkKey="APTOS" logoUrl={cryptoMethods?.aptos?.logoUrl} />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-text-primary">USDT Aptos</p>
                 <p className="text-xs text-text-muted">Aptos Network · ~$0.01 network fee</p>
-                {aptosAddr && <p className="text-xs font-mono text-text-muted mt-0.5">{aptosAddr.slice(0, 8)}...{aptosAddr.slice(-6)}</p>}
+                {aptosAddr && <p className="text-xs font-mono text-text-muted mt-0.5 truncate">{aptosAddr.slice(0, 8)}...{aptosAddr.slice(-6)}</p>}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 font-semibold px-2 py-0.5 rounded-full">Lowest Fee</span>
