@@ -385,17 +385,17 @@ export default function DashboardPage() {
               const symbol = GAS_NATIVE_SYMBOL[o.chain] ?? o.chain
               const gs = getGasStatus(o.status)
               return (
-                <div key={o.orderRef} className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-3">
+                <div key={o.orderRef} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <Badge variant={gs.variant} icon={gs.icon} size="sm">{gs.label}</Badge>
-                    <div>
-                      <p className="text-sm font-medium text-text-primary">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text-primary whitespace-nowrap">
                         {parseFloat(o.gasAmountNative).toFixed(4)} {symbol}
                       </p>
-                      <p className="text-xs text-text-muted font-mono">{o.orderRef}</p>
+                      <p className="text-xs text-text-muted font-mono truncate">{o.orderRef}</p>
                     </div>
                   </div>
-                  <span className="text-xs text-text-muted">{timeAgo(o.createdAt)}</span>
+                  <span className="text-xs text-text-muted whitespace-nowrap flex-shrink-0">{timeAgo(o.createdAt)}</span>
                 </div>
               )
             })}

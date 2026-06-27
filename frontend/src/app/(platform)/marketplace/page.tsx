@@ -16,7 +16,6 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
-import { PriceAlertsPanel } from '@/components/ui/PriceAlertsPanel'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 
 const NETWORKS = [
@@ -371,11 +370,13 @@ function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
       {stats.usdtRate !== null && (
         <>
           <span className="w-px h-3 bg-border hidden sm:block" />
-          <span className="col-span-2 flex items-center gap-1 sm:col-auto">
+          {/* Sits in the right column, directly under "trades completed", with
+              its coin icon lined up beneath the trades-completed check icon. */}
+          <span className="col-start-2 flex flex-wrap items-center gap-x-1 sm:col-auto">
             <Coins size={11} className="text-primary flex-shrink-0" />
             1 USDT = <span className="font-semibold text-text-primary">PKR {stats.usdtRate.toLocaleString()}</span>
             {stats.rateSource && RATE_SOURCE_LABEL[stats.rateSource] && (
-              <span className="ml-1 text-text-muted">· {RATE_SOURCE_LABEL[stats.rateSource]}</span>
+              <span className="w-full text-text-muted sm:w-auto sm:ml-1">{RATE_SOURCE_LABEL[stats.rateSource]}</span>
             )}
           </span>
         </>
@@ -407,7 +408,6 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null)
   const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])
   const [marketStats, setMarketStats] = useState<MarketStats | null>(null)
-  const [liveRate, setLiveRate] = useState<number | null>(null)
 
   const fetchAds = useCallback(async (p = 1, append = false) => {
     try {
@@ -486,7 +486,6 @@ export default function MarketplacePage() {
           ...(rateSource ? { rateSource } : {}),
         })
         if (rate) {
-          setLiveRate(rate)
           // Check price alerts and fire notifications for any that triggered
           const triggered = checkAlerts(rate)
           for (const a of triggered) {
@@ -506,20 +505,17 @@ export default function MarketplacePage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
 
-      {/* Page header — bell + Create Listing sit on the title row (top-right),
-          filling the empty space, on every breakpoint instead of stacking
-          below the title on mobile. */}
-      <div className="flex flex-row items-start justify-between gap-3 mb-4">
-        <div className="min-w-0">
+      {/* Page header — title on top, full-width Create Listing below on mobile
+          (mirrors the CTM market header). Price alerts moved to Settings →
+          Notifications. */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <div>
           <h1 className="text-xl sm:text-2xl font-bold text-text-primary">USDT Marketplace</h1>
           <p className="text-text-muted text-sm">{total} listings available</p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <PriceAlertsPanel currentRate={liveRate} />
-          <Link href="/create-ad" className="bg-primary text-white px-3 sm:px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center whitespace-nowrap">
-            + Create Listing
-          </Link>
-        </div>
+        <Link href="/create-ad" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center">
+          + Create Listing
+        </Link>
       </div>
 
       {/* Stats strip */}

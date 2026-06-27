@@ -656,12 +656,12 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
+      <div>
+        <div className="flex items-start justify-between gap-3">
           <h2 className="text-base font-semibold text-text-primary">Trusted Withdrawal Addresses</h2>
-          <p className="text-xs text-text-muted">Whitelisted addresses skip the NEW_WALLET risk flag. New addresses have a 24h activation delay.</p>
+          <Button size="sm" className="flex-shrink-0 whitespace-nowrap" onClick={() => setShowForm((v) => !v)}>{showForm ? 'Cancel' : '+ Add'}</Button>
         </div>
-        <Button size="sm" className="flex-shrink-0 whitespace-nowrap" onClick={() => setShowForm((v) => !v)}>{showForm ? 'Cancel' : '+ Add'}</Button>
+        <p className="text-xs text-text-muted mt-1">Whitelisted addresses skip the NEW_WALLET risk flag. New addresses have a 24h activation delay.</p>
       </div>
 
       {showForm && (
@@ -901,16 +901,16 @@ function PaymentMethodsSection() {
 
   return (
     <section>
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="min-w-0">
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-3">
           <h2 className="text-base font-semibold text-text-primary">PKR Payment Methods</h2>
-          <p className="text-xs text-text-muted mt-0.5">Saved accounts used when receiving PKR in trades</p>
+          {!showForm && (
+            <Button size="sm" variant="secondary" className="flex-shrink-0 whitespace-nowrap" onClick={() => setShowForm(true)}>
+              + Add Method
+            </Button>
+          )}
         </div>
-        {!showForm && (
-          <Button size="sm" variant="secondary" className="flex-shrink-0 whitespace-nowrap" onClick={() => setShowForm(true)}>
-            + Add Method
-          </Button>
-        )}
+        <p className="text-xs text-text-muted mt-1">Saved accounts used when receiving PKR in trades</p>
       </div>
 
       {showForm && (
@@ -1247,14 +1247,14 @@ function SavedDeliveryAddressesSection() {
 
   return (
     <section>
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="min-w-0">
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-3">
           <h2 className="text-base font-semibold text-text-primary">Saved Delivery Addresses</h2>
-          <p className="text-xs text-text-muted mt-0.5">Your wallet addresses, exchange UIDs and community-token accounts — auto-fill when starting a trade</p>
+          {!showForm && (
+            <Button size="sm" variant="secondary" className="flex-shrink-0 whitespace-nowrap" onClick={() => { setForm((f) => ({ ...f, tokenSymbol: ctmTokens[0]?.symbol ?? '' })); setShowForm(true) }}>+ Add Address</Button>
+          )}
         </div>
-        {!showForm && (
-          <Button size="sm" variant="secondary" className="flex-shrink-0 whitespace-nowrap" onClick={() => { setForm((f) => ({ ...f, tokenSymbol: ctmTokens[0]?.symbol ?? '' })); setShowForm(true) }}>+ Add Address</Button>
-        )}
+        <p className="text-xs text-text-muted mt-1">Your wallet addresses, exchange UIDs and community-token accounts — auto-fill when starting a trade</p>
       </div>
 
       {showForm && (

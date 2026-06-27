@@ -48,6 +48,14 @@ export function ReferralEarnings() {
   const [creating, setCreating] = useState(false)
   const [showWasReferred, setShowWasReferred] = useState(false)
   const [showAffiliate, setShowAffiliate] = useState(false)
+  // Each created link renders collapsed (dropdown) and expands on demand, keeping
+  // it visually separate from the create-a-new-link form below.
+  const [openLinks, setOpenLinks] = useState<Set<string>>(new Set())
+  const toggleLink = (id: string) => setOpenLinks((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
   // Inline split editor for an existing affiliate link (replaces window.prompt).
   const [editSplit, setEditSplit] = useState<{ id: string; userDiscountPct: string; commissionPct: string } | null>(null)
 
@@ -223,50 +231,66 @@ export function ReferralEarnings() {
               : `Create up to ${policy.maxLinks} named links — each gives your friend ${policy.userDiscountPct}% off their gas fee and earns you ${policy.commissionPct}%, paid in USDT.`}
           </p>
 
-          {data.links.map((link) => (
-            <div key={link.id} className="bg-surface-alt rounded-xl p-3 border border-border space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base font-mono font-bold tracking-wider text-text-primary">{link.code}</span>
-                    {link.label && <span className="text-xs text-text-muted">{link.label}</span>}
-                  </div>
+          {data.links.map((link) => {
+            const open = openLinks.has(link.id)
+            return (
+              <div key={link.id} className="bg-surface-alt rounded-xl border border-border overflow-hidden">
+                {/* Collapsed header — tap to expand the link's share links + stats */}
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => toggleLink(link.id)}
+                    aria-expanded={open}
+                    className="flex-1 min-w-0 flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-surface/60 transition-colors"
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="text-base font-mono font-bold tracking-wider text-text-primary truncate">{link.code}</span>
+                      {link.label && <span className="text-xs text-text-muted truncate">{link.label}</span>}
+                      <span className="text-[11px] text-text-muted flex-shrink-0">· {link.referredCount} referred</span>
+                    </span>
+                    <ChevronDown size={18} className={`text-text-muted flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteLink(link)}
+                    disabled={busyLink === link.id}
+                    className="px-3 py-2.5 text-text-muted hover:text-danger disabled:opacity-50 flex-shrink-0"
+                    aria-label={`Delete ${link.code}`}
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleDeleteLink(link)}
-                  disabled={busyLink === link.id}
-                  className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 disabled:opacity-50"
-                  aria-label={`Delete ${link.code}`}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-              {/* Both share links for this code — Telegram (one-tap auto-auth) + Website.
-                  Both carry the SAME code, so either one credits the affiliate. */}
-              <CustomLinkShare code={link.code} />
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div><p className="text-text-muted">Friend discount</p><p className="font-semibold text-success">{link.userDiscountPct}%</p></div>
-                <div><p className="text-text-muted">You earn</p><p className="font-semibold text-primary">{link.commissionPct}%</p></div>
-                <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{link.referredCount}</p></div>
-              </div>
-              {caps && editSplit?.id !== link.id && (
-                <Button size="sm" variant="ghost" onClick={() => setEditSplit({ id: link.id, userDiscountPct: String(link.userDiscountPct), commissionPct: String(link.commissionPct) })} disabled={busyLink === link.id}>Edit split</Button>
-              )}
-              {caps && editSplit?.id === link.id && (
-                <div className="rounded-lg border border-border bg-surface p-3 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <SplitField label="Audience discount %" value={editSplit.userDiscountPct} onChange={(v) => setEditSplit({ ...editSplit, userDiscountPct: v })} />
-                    <SplitField label="Your commission %" value={editSplit.commissionPct} onChange={(v) => setEditSplit({ ...editSplit, commissionPct: v })} />
+
+                {open && (
+                  <div className="px-3 pb-3 space-y-2 border-t border-border pt-3">
+                    {/* Both share links for this code — Telegram (one-tap auto-auth) + Website.
+                        Both carry the SAME code, so either one credits the affiliate. */}
+                    <CustomLinkShare code={link.code} />
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div><p className="text-text-muted">Friend discount</p><p className="font-semibold text-success">{link.userDiscountPct}%</p></div>
+                      <div><p className="text-text-muted">You earn</p><p className="font-semibold text-primary">{link.commissionPct}%</p></div>
+                      <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{link.referredCount}</p></div>
+                    </div>
+                    {caps && editSplit?.id !== link.id && (
+                      <Button size="sm" variant="ghost" onClick={() => setEditSplit({ id: link.id, userDiscountPct: String(link.userDiscountPct), commissionPct: String(link.commissionPct) })} disabled={busyLink === link.id}>Edit split</Button>
+                    )}
+                    {caps && editSplit?.id === link.id && (
+                      <div className="rounded-lg border border-border bg-surface p-3 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <SplitField label="Audience discount %" value={editSplit.userDiscountPct} onChange={(v) => setEditSplit({ ...editSplit, userDiscountPct: v })} />
+                          <SplitField label="Your commission %" value={editSplit.commissionPct} onChange={(v) => setEditSplit({ ...editSplit, commissionPct: v })} />
+                        </div>
+                        <p className="text-[11px] text-text-muted">Discount + commission must be ≤ {caps.maxMarginPct}% (your allowance).</p>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="primary" onClick={() => handleSaveSplit(link)} disabled={busyLink === link.id}>{busyLink === link.id ? <Spinner size="sm" /> : 'Save'}</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditSplit(null)} disabled={busyLink === link.id}>Cancel</Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[11px] text-text-muted">Discount + commission must be ≤ {caps.maxMarginPct}% (your allowance).</p>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="primary" onClick={() => handleSaveSplit(link)} disabled={busyLink === link.id}>{busyLink === link.id ? <Spinner size="sm" /> : 'Save'}</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditSplit(null)} disabled={busyLink === link.id}>Cancel</Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            )
+          })}
 
           {policy.canCreate ? (
             <div className="space-y-2">

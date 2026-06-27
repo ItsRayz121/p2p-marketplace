@@ -11,6 +11,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
 import { PushToggle } from '@/components/ui/PushToggle'
 import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
+import { PriceAlertsManager } from '@/components/ui/PriceAlertsPanel'
 import { WereYouReferred } from '@/components/referral/WereYouReferred'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { toast } from '@/lib/toast'
@@ -19,7 +20,7 @@ import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
-type Tab = 'profile' | 'security' | 'connections' | 'sessions' | 'danger'
+type Tab = 'profile' | 'security' | 'notifications' | 'connections' | 'sessions' | 'danger'
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -364,6 +365,15 @@ function SecurityTab() {
         )}
       </div>
 
+    </div>
+  )
+}
+
+// ─── Notifications Tab ────────────────────────────────────────────────────────
+
+function NotificationsTab() {
+  return (
+    <div className="space-y-6">
       {/* Push Notifications */}
       <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
         <h3 className="text-base font-semibold text-text-primary">Push Notifications</h3>
@@ -383,6 +393,9 @@ function SecurityTab() {
           <AnnouncementsToggle />
         </div>
       </div>
+
+      {/* USDT/PKR price alerts (moved here from the marketplace bell) */}
+      <PriceAlertsManager />
     </div>
   )
 }
@@ -772,6 +785,7 @@ export default function SettingsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'profile', label: 'Profile' },
     { id: 'security', label: 'Security' },
+    { id: 'notifications', label: 'Notifications' },
     { id: 'connections', label: 'Connections' },
     { id: 'sessions', label: 'Sessions' },
     { id: 'danger', label: 'Danger Zone' },
@@ -781,16 +795,16 @@ export default function SettingsPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-text-primary mb-6">Settings</h1>
 
-      {/* Tabs — all five fit on screen with no horizontal scroll. Equal-width
-          cells; long labels (e.g. "Connections") wrap within their own cell
-          instead of overflowing into the neighbour, so there's always a clear
-          gap between tabs. */}
-      <div className="flex gap-1 bg-surface rounded-xl p-1 mb-6">
+      {/* Tabs — a 3-column grid on phones (two tidy rows of three) and a single
+          6-column row on sm+. Each label gets its own cell with whitespace-nowrap
+          so neighbours never merge and "Danger Zone" stays on one line, with no
+          horizontal scroll. */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 bg-surface rounded-xl p-1.5 mb-6">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`flex-1 min-w-0 py-2 px-1 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors text-center leading-tight ${
+            className={`min-w-0 py-2 px-1 rounded-lg text-xs sm:text-sm font-medium transition-colors text-center whitespace-nowrap ${
               activeTab === t.id
                 ? 'bg-surface-alt text-text-primary shadow-sm'
                 : 'text-text-muted hover:text-text-primary'
@@ -803,11 +817,12 @@ export default function SettingsPage() {
 
       {activeTab === 'profile' && <ProfileTab />}
       {activeTab === 'security' && <SecurityTab />}
+      {activeTab === 'notifications' && <NotificationsTab />}
       {activeTab === 'connections' && <ConnectionsTab />}
       {activeTab === 'sessions' && <SessionsTab />}
       {activeTab === 'danger' && (
         <div className="bg-danger/5 border border-danger/30 rounded-xl p-5 space-y-4">
-          <h3 className="text-base font-bold text-danger">Danger Zone</h3>
+          <h3 className="text-base font-bold text-danger whitespace-nowrap">Danger Zone</h3>
           <p className="text-sm text-text-muted">
             Deleting your account is permanent and cannot be undone. All your data, trades, and balances will be permanently deleted.
           </p>

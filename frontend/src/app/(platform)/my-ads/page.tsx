@@ -50,15 +50,18 @@ const AD_STATUS_LABELS: Record<string, string> = {
 }
 const adStatusLabel = (s: string) => AD_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
 
-function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
+function StatCard({ label, value, sub, unit, accent }: { label: string; value: string | number; sub?: string; unit?: string; accent?: string }) {
   return (
-    <div className="bg-surface shadow-card border border-border rounded-xl p-4 min-w-0">
-      <p className="text-xs text-text-muted">{label}</p>
-      {/* Wrap only at the space (e.g. "PKR" on top, "18,426.29" below) — never
-          inside the number. `break-words` was splitting digits mid-number
-          ("PKR 18,42 / 6.29") in the tight 3-col mobile grid; default wrapping
-          keeps the amount intact while still fitting the card. */}
-      <p className={`text-base sm:text-2xl font-bold mt-1 tabular-nums leading-tight ${accent ?? 'text-text-primary'}`}>{value}</p>
+    <div className="bg-surface shadow-card border border-border rounded-xl p-3 sm:p-4 min-w-0">
+      {/* Label always stays on one line — truncates rather than wrapping to two
+          rows (keeps e.g. "Total Spent" tidy in the tight 3-col grid). */}
+      <p className="text-[11px] sm:text-xs text-text-muted truncate">{label}</p>
+      {/* The currency (PKR / USDT) sits small, in front of the amount, and the
+          amount truncates so it can never spill outside the card. */}
+      <p className="mt-1 flex items-baseline gap-1 min-w-0">
+        {unit && <span className="text-[10px] sm:text-xs font-semibold text-text-muted flex-shrink-0">{unit}</span>}
+        <span className={`text-sm sm:text-2xl font-bold tabular-nums leading-tight truncate ${accent ?? 'text-text-primary'}`}>{value}</span>
+      </p>
       {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
     </div>
   )
@@ -421,7 +424,7 @@ function TradingAnalyticsTab() {
     </div>
   )
 
-  const fmtPkr = (v: string) => `PKR ${Number(v).toLocaleString()}`
+  const fmtNum = (v: string) => Number(v).toLocaleString()
   const combinedRate = data.combined.completionRate != null ? Math.round(data.combined.completionRate * 100) : null
 
   return (
@@ -432,8 +435,8 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <StatCard label="Total Trades" value={data.combined.totalTrades} />
           <StatCard label="Completed" value={combinedRate != null ? `${data.combined.completedTrades} (${combinedRate}%)` : data.combined.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Total Volume" value={fmtPkr(data.combined.totalVolumePkr)} />
-          <StatCard label="Gas Spend" value={`$${data.gas.spentUsd}`} sub="USDT" />
+          <StatCard label="Total Volume" value={fmtNum(data.combined.totalVolumePkr)} unit="PKR" />
+          <StatCard label="Gas Spend" value={data.gas.spentUsd} unit="USDT" />
         </div>
       </div>
 
@@ -446,7 +449,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.usdt.totalTrades} />
           <StatCard label="Completed" value={data.usdt.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Volume" value={fmtPkr(data.usdt.volumePkr)} />
+          <StatCard label="Volume" value={fmtNum(data.usdt.volumePkr)} unit="PKR" />
         </div>
       </div>
 
@@ -459,7 +462,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Trades" value={data.ctm.totalTrades} />
           <StatCard label="Completed" value={data.ctm.completedTrades} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Volume" value={fmtPkr(data.ctm.volumePkr)} />
+          <StatCard label="Volume" value={fmtNum(data.ctm.volumePkr)} unit="PKR" />
         </div>
         {data.ctm.isMerchant && (
           <div className="flex items-center gap-3 mt-4 text-xs text-text-muted">
@@ -478,7 +481,7 @@ function TradingAnalyticsTab() {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Orders" value={data.gas.totalOrders} />
           <StatCard label="Delivered" value={data.gas.deliveredOrders} accent="text-green-700 dark:text-green-300" />
-          <StatCard label="Total Spent" value={`$${data.gas.spentUsd}`} sub="USDT" />
+          <StatCard label="Total Spent" value={data.gas.spentUsd} unit="USDT" />
         </div>
       </div>
 
