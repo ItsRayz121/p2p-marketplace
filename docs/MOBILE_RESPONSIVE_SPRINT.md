@@ -33,7 +33,7 @@ Status legend: ⬜ not started · 🟦 in progress · ✅ shipped · ⏸️ defe
 ## F. Referral page (user)
 - ✅ **F1. Newly created custom link surfaces at the top.** (Phase 6) After create, the list diffs old vs new ids, pins the new link to the top of the list (right under the heading), auto-expands it, and flags it with a "New" badge + highlight ring.
 - ✅ **F2. "Your custom links" list cards collapsible.** (Phase 6) Already implemented via `openLinks`/chevron; verified. New links also auto-open.
-- 🟦 **F3. (Decision) Keep "Referral rewards / Active" explainer at top.** Per user — no change; left at top so users see what they're doing first.
+- ✅ **F3. (Decision — resolved) Keep "Referral rewards / Active" explainer at top.** Per user agreement — no change; left at top so users see what they're doing first.
 
 ## G. Deferred (do not start yet)
 - ⏸️ **G1. "Back" / browser back navigation not working properly.** User will provide reproduction details later. Skip for now.
