@@ -109,6 +109,30 @@ async function checkSuiTxConfirmed(txHash: string): Promise<boolean> {
   return data.result?.effects?.status?.status === 'success'
 }
 
+// ── Aptos confirmation ────────────────────────────────────────────────────────
+// Aptos has near-instant finality; a committed transaction is queryable by hash on
+// the fullnode REST API. A still-pending / not-yet-indexed tx returns 404 (or a
+// `pending_transaction` type) → return false so the job retries. A committed user
+// transaction carries `success: boolean` reflecting on-chain execution.
+
+async function checkAptosTxConfirmed(txHash: string): Promise<boolean> {
+  const base = env.APTOS_FULLNODE_URL.replace(/\/$/, '')
+  const headers: Record<string, string> = { accept: 'application/json' }
+  if (env.APTOS_API_KEY) headers['authorization'] = `Bearer ${env.APTOS_API_KEY}`
+
+  const res = await fetch(`${base}/transactions/by_hash/${encodeURIComponent(txHash)}`, {
+    headers,
+    signal: AbortSignal.timeout(10_000),
+  })
+  // Not committed / not yet indexed — retry on the next attempt.
+  if (res.status === 404) return false
+  if (!res.ok) throw new Error(`Aptos fullnode error: HTTP ${res.status}`)
+
+  const data = (await res.json()) as { type?: string; success?: boolean }
+  if (data.type === 'pending_transaction') return false
+  return data.success === true
+}
+
 // ── TON confirmation ──────────────────────────────────────────────────────────
 // TON block time is ~5s and the transaction is final once included in a masterchain block.
 // By the time this confirmation job runs (60s after delivery), the tx is always finalized.
@@ -142,6 +166,10 @@ export async function checkTxConfirmed(chain: GasChainId | string, txHash: strin
       return checkEvmTxConfirmed('MATIC', polygon,   env.POLYGON_RPC_URL,   txHash)
     case 'AVAX':
       return checkEvmTxConfirmed('AVAX', avalanche, env.AVALANCHE_RPC_URL, txHash)
+    // DB GasChain enum stores Aptos as 'APT'; GasChainId/callers may pass 'APTOS'
+    case 'APT':
+    case 'APTOS':
+      return checkAptosTxConfirmed(txHash)
     case 'SOL':
       return checkSolanaTxConfirmed(txHash)
     case 'TON':
@@ -159,6 +187,7 @@ export function getRequiredConfirmations(chain: GasChainId | string): number | n
   if (chain === 'TRON') return null
   if (chain === 'SOL')  return null // finalized status, not block count
   if (chain === 'TON')  return null // instant finality
+  if (chain === 'APT' || chain === 'APTOS') return null // success-flag check, not block count
   if (chain === 'SUI')  return null // effects.status check, not block count
   if (chain === 'ETH')  return REQUIRED_CONFIRMATIONS['ETHEREUM'] ?? null
   return REQUIRED_CONFIRMATIONS[chain as GasChainId] ?? null

@@ -44,36 +44,54 @@ const UNCONFIGURED = (name: string, role: string, detail: string): ProviderHealt
   name, role, status: 'unconfigured', detail, latencyMs: null, canDetect: false,
 })
 
-// ── EVM JSON-RPC probe (Alchemy / public nodes) ─────────────────────────────────
-async function probeEvmRpc(name: string, role: string, url: string | undefined): Promise<ProviderHealth> {
+// ── EVM getLogs probe (Alchemy / public nodes) ───────────────────────────────────
+// These providers are the poller's getLogs fallbacks, so the ONLY meaningful health
+// question is "can this node serve our getLogs query right now?" — NOT "can it answer
+// a block-number ping?". The old probe only did eth_blockNumber, so it showed green
+// even when getLogs was rejected (e.g. BSC dataseed "Request exceeds defined limit"),
+// masking real detection outages. This probe runs the SAME query shape the poller
+// uses — USDT Transfer logs over the last 50 blocks — so green means detection works.
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const ZERO_TOPIC = '0x0000000000000000000000000000000000000000000000000000000000000000'
+
+async function probeEvmGetLogs(name: string, url: string | undefined, usdtContract: string): Promise<ProviderHealth> {
+  const role = 'Fallback · getLogs'
   if (!url) return UNCONFIGURED(name, role, 'Not configured')
   const t0 = Date.now()
+  const rpc = async (body: unknown) => fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8_000),
+  })
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 }),
-      signal: AbortSignal.timeout(8_000),
+    const bnRes = await rpc({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 })
+    if (bnRes.status === 401 || bnRes.status === 403) return { name, role, status: 'red', detail: 'Unauthorized — check API key', latencyMs: Date.now() - t0, canDetect: false }
+    if (bnRes.status === 429) return { name, role, status: 'yellow', detail: 'Rate limited', latencyMs: Date.now() - t0, canDetect: true }
+    if (!bnRes.ok) return { name, role, status: 'red', detail: `HTTP ${bnRes.status}`, latencyMs: Date.now() - t0, canDetect: false }
+    const bnJson = (await bnRes.json()) as { result?: string }
+    if (typeof bnJson.result !== 'string' || !bnJson.result.startsWith('0x')) {
+      return { name, role, status: 'red', detail: 'No block number', latencyMs: Date.now() - t0, canDetect: false }
+    }
+    const head = BigInt(bnJson.result)
+    const from = head > 50n ? head - 50n : 0n
+    // Filter to USDT Transfer → zero address: near-empty result, same range mechanics
+    // the poller exercises (proves the node accepts a 50-block getLogs range).
+    const res = await rpc({
+      jsonrpc: '2.0', id: 2, method: 'eth_getLogs',
+      params: [{ address: usdtContract, topics: [TRANSFER_TOPIC, null, ZERO_TOPIC], fromBlock: `0x${from.toString(16)}`, toBlock: `0x${head.toString(16)}` }],
     })
     const latencyMs = Date.now() - t0
-    if (res.status === 401 || res.status === 403) {
-      return { name, role, status: 'red', detail: 'Unauthorized — check API key', latencyMs, canDetect: false }
-    }
-    if (res.status === 429) {
-      return { name, role, status: 'yellow', detail: 'Rate limited', latencyMs, canDetect: true }
-    }
-    if (!res.ok) {
-      return { name, role, status: 'red', detail: `HTTP ${res.status}`, latencyMs, canDetect: false }
-    }
-    const json = (await res.json()) as { result?: string; error?: { message?: string } }
+    if (res.status === 429) return { name, role, status: 'yellow', detail: 'Rate limited', latencyMs, canDetect: true }
+    if (!res.ok) return { name, role, status: 'red', detail: `getLogs HTTP ${res.status}`, latencyMs, canDetect: false }
+    const json = (await res.json()) as { result?: unknown[]; error?: { message?: string } }
     if (json.error) {
-      return { name, role, status: 'red', detail: json.error.message?.slice(0, 120) ?? 'RPC error', latencyMs, canDetect: false }
+      return { name, role, status: 'red', detail: `getLogs rejected: ${(json.error.message ?? 'error').slice(0, 90)}`, latencyMs, canDetect: false }
     }
-    if (typeof json.result === 'string' && json.result.startsWith('0x')) {
-      const block = Number(BigInt(json.result))
-      return { name, role, status: 'green', detail: `Block ${block.toLocaleString()} · ${latencyMs}ms`, latencyMs, canDetect: true }
+    if (Array.isArray(json.result)) {
+      return { name, role, status: 'green', detail: `getLogs ok · block ${Number(head).toLocaleString()} · ${latencyMs}ms`, latencyMs, canDetect: true }
     }
-    return { name, role, status: 'red', detail: 'Unexpected response', latencyMs, canDetect: false }
+    return { name, role, status: 'red', detail: 'Unexpected getLogs response', latencyMs, canDetect: false }
   } catch (err) {
     return { name, role, status: 'red', detail: (err as Error)?.name === 'TimeoutError' ? 'Timeout' : ((err as Error)?.message?.slice(0, 120) ?? 'Unreachable'), latencyMs: Date.now() - t0, canDetect: false }
   }
@@ -219,10 +237,11 @@ const alchemyUrl = (net: 'bnb-mainnet' | 'eth-mainnet') => ALCHEMY ? `https://${
 
 async function probeEvmNetwork(network: 'BEP20' | 'ERC20'): Promise<NetworkDetectionHealth> {
   const isBsc = network === 'BEP20'
+  const usdt = isBsc ? '0x55d398326f99059fF775485246999027B3197955' : '0xdAC17F958D2ee523a2206206994597C13D831ec7'
   const [etherscan, alchemy, publicRpc, moralis] = await Promise.all([
     probeEtherscan(isBsc ? 56 : 1),
-    probeEvmRpc('Alchemy', 'Fallback · getLogs', alchemyUrl(isBsc ? 'bnb-mainnet' : 'eth-mainnet')),
-    probeEvmRpc('Public RPC', 'Fallback · getLogs', isBsc ? 'https://bsc-rpc.publicnode.com' : 'https://ethereum-rpc.publicnode.com'),
+    probeEvmGetLogs('Alchemy', alchemyUrl(isBsc ? 'bnb-mainnet' : 'eth-mainnet'), usdt),
+    probeEvmGetLogs('Public RPC', isBsc ? 'https://bsc-rpc.publicnode.com' : 'https://ethereum-rpc.publicnode.com', usdt),
     probeMoralis(),
   ])
   const providers = [etherscan, alchemy, publicRpc, moralis]

@@ -80,7 +80,7 @@ export async function runReconciliation(chain?: GasChain) {
 
     const chains: GasChain[] = chain
       ? [chain]
-      : ['TRON', 'BSC', 'ETH', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX']
+      : ['TRON', 'BSC', 'ETH', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'APT', 'SOL', 'TON', 'SUI']
 
     for (const c of chains) {
       const chainId = fromDbChain(c)
@@ -204,7 +204,13 @@ async function reconcileChain(chainId: GasChainId, dbChain: GasChain) {
         continue
       }
 
-      if (!confirmed) {
+      if (confirmed) {
+        // Heal: the delivery IS final on-chain but deliveryConfirmed was never set
+        // (the confirmation job exhausted its retries, or — before the Aptos fix —
+        // the chain had no confirmation handler at all). Flip the flag so the order
+        // stops showing "Confirmed On-Chain: Pending" despite a confirmed delivery.
+        await db.gasFeeOrder.update({ where: { id: order.id }, data: { deliveryConfirmed: true } })
+      } else {
         discrepancies.push({
           orderId: order.id,
           type: 'delivery_tx_not_found',
