@@ -29,7 +29,27 @@ const envSchema = z.object({
   // Optional cookie domain so the refresh-token cookie can be first-party across
   // subdomains (e.g. ".rupchain.com" → shared by rupchain.com + api.rupchain.com).
   // Leave unset to keep host-only cookies (current behaviour).
-  COOKIE_DOMAIN: z.string().optional(),
+  //
+  // Self-healing: a malformed value here (protocol, trailing slash, port, stray
+  // whitespace, or a missing/extra leading dot) makes the browser silently REJECT
+  // every auth cookie → "logged out + 2FA on every open". So we normalize any
+  // reasonable input — "https://rupchain.com/", " rupchain.com ", ".rupchain.com"
+  // all collapse to ".rupchain.com" — rather than trusting it verbatim.
+  COOKIE_DOMAIN: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return undefined
+      const cleaned = v
+        .trim()
+        .replace(/^https?:\/\//i, '') // drop protocol
+        .replace(/\/.*$/, '')          // drop path
+        .replace(/:\d+$/, '')          // drop port
+        .replace(/^\.+|\.+$/g, '')     // drop leading/trailing dots
+        .toLowerCase()
+      if (!cleaned || !cleaned.includes('.')) return undefined // ignore junk / bare hostnames like "localhost"
+      return `.${cleaned}`
+    }),
 
   // Cloudinary (file storage — KYC docs, payment proof screenshots)
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
