@@ -20,6 +20,7 @@ interface GasHistoryOrder {
   tier: string
   gasAmountNative: string
   paymentAmount: string
+  paymentCoin?: string
   paymentNetwork: string
   toAddress: string
   deliveryTxHash?: string
@@ -118,6 +119,17 @@ function isInProgress(status: string): boolean {
   return ['payment_pending', 'payment_uploaded', 'payment_detected', 'sending', 'refund_pending'].includes(status)
 }
 
+// Where a row should navigate. An in-progress CRYPTO order reopens the EXACT
+// payment screen the user left (QR + countdown / processing) inside the /gas
+// wizard — not the read-only tracking page — so they can finish paying. PKR and
+// finished orders go to the tracking/detail page (which owns PKR proof resume).
+function orderHref(order: GasHistoryOrder): string {
+  const isCrypto = (order.paymentCoin ?? 'USDT') !== 'PKR'
+  const resumable = ['payment_pending', 'payment_detected', 'sending', 'payment_verified'].includes(order.status)
+  if (isCrypto && resumable) return `/gas?order=${encodeURIComponent(order.orderRef)}`
+  return `/gas/orders/${order.orderRef}`
+}
+
 // ─── Row ─────────────────────────────────────────────────────────────────────
 
 function OrderRow({ order }: { order: GasHistoryOrder }) {
@@ -127,7 +139,7 @@ function OrderRow({ order }: { order: GasHistoryOrder }) {
   })
 
   return (
-    <Link href={`/gas/orders/${order.orderRef}`} className="block border-b border-border last:border-0 cursor-pointer hover:bg-surface transition-colors">
+    <Link href={orderHref(order)} className="block border-b border-border last:border-0 cursor-pointer hover:bg-surface transition-colors">
       {order.status === 'payment_uploaded' && (
         <div className="mx-4 mt-3 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20">
           <svg className="w-4 h-4 text-warning shrink-0 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">

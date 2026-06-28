@@ -288,34 +288,65 @@ export default function GasPage() {
     finally { setCreatingCrypto(false) }
   }
 
-  // Restore an in-progress crypto order after a refresh so the user keeps their
-  // payment screen and detection timer (the timer itself is persisted per-order).
+  // Restore an in-progress crypto order so the user lands back on the EXACT payment
+  // screen they left (QR + countdown / processing) instead of a read-only summary.
+  // Two entry points:
+  //   1. ?order=<ref>[&token=<t>] — deep link from "My Orders" (resume an order).
+  //   2. ACTIVE_ORDER_KEY localStorage — same-browser refresh of /gas mid-payment.
+  // The detection timer itself is persisted per-order so the countdown survives too.
   useEffect(() => {
     let cancelled = false
-    let raw: string | null = null
-    try { raw = localStorage.getItem(ACTIVE_ORDER_KEY) } catch { /* storage unavailable */ }
-    if (!raw) return
-    let saved: { orderRef?: string; trackingToken?: string | null }
-    try { saved = JSON.parse(raw) } catch { try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ } return }
-    if (!saved.orderRef) return
+
+    // Prefer an explicit ?order= deep link, else the refresh-restore pointer.
+    let orderRef: string | undefined
+    let trackingToken: string | null | undefined
+    let fromUrl = false
+    try {
+      const qs = new URLSearchParams(window.location.search)
+      const qOrder = qs.get('order')
+      if (qOrder) { orderRef = qOrder; trackingToken = qs.get('token'); fromUrl = true }
+    } catch { /* window/URL unavailable */ }
+
+    if (!orderRef) {
+      let raw: string | null = null
+      try { raw = localStorage.getItem(ACTIVE_ORDER_KEY) } catch { /* storage unavailable */ }
+      if (!raw) return
+      try {
+        const saved = JSON.parse(raw) as { orderRef?: string; trackingToken?: string | null }
+        orderRef = saved.orderRef
+        trackingToken = saved.trackingToken
+      } catch { try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ } return }
+    }
+    if (!orderRef) return
+
+    // Strip the ?order= param so a refresh/back doesn't keep forcing a restore and
+    // the address bar stays clean — the localStorage pointer keeps refresh working.
+    if (fromUrl) {
+      try { window.history.replaceState(null, '', '/gas') } catch { /* */ }
+    }
+
     ;(async () => {
       try {
-        const o = await gasApi.getOrder(saved.orderRef!, saved.trackingToken ?? undefined)
+        const o = await gasApi.getOrder(orderRef!, trackingToken ?? undefined)
         if (cancelled) return
         if (o.status === 'payment_pending') {
           setOrder(o); setPhase(PHASE.CRYPTO_QR)
+          // Re-arm the refresh-restore pointer when resuming from a deep link.
+          try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* */ }
         } else if (['payment_detected', 'sending', 'payment_verified'].includes(o.status)) {
           setOrder(o); setPhase(PHASE.PROCESSING)
         } else {
           // Terminal, or proof already submitted → tracking page owns it from here.
           try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
-          if (o.status === 'payment_uploaded') {
+          if (fromUrl || o.status === 'payment_uploaded') {
             const t = o.trackingToken ? `?token=${encodeURIComponent(o.trackingToken)}` : ''
             router.replace(`/gas/orders/${o.orderRef}${t}`)
           }
         }
       } catch {
         try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
+        // A failed deep-link restore (e.g. not found) → send to the tracking page.
+        if (fromUrl && orderRef) router.replace(`/gas/orders/${orderRef}`)
       }
     })()
     return () => { cancelled = true }

@@ -429,7 +429,14 @@ async function scanEvmExplorer(cfg: NetworkConfig): Promise<void> {
     startBlock = Number(storedBlock) + 1
   } else {
     const head = await getEtherscanBlockNumber(cfg.etherscanChainId, apiKey)
-    if (head == null) { await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: 'Etherscan eth_blockNumber failed (cold start)' }); return }
+    // Cold-start anchor failed. DON'T give up — if we returned here with no cursor
+    // set, every subsequent tick would also be a cold start that fails identically,
+    // permanently stalling detection. Fall back to the getLogs/Alchemy scanner so
+    // payments are still detected (and the explorer path retries next tick).
+    if (head == null) {
+      logger.warn({ network: cfg.paymentNetwork }, 'gasPaymentPoller: Etherscan eth_blockNumber failed on cold start — falling back to getLogs/RPC scanner')
+      return scanNetwork(cfg)
+    }
     startBlock = Math.max(0, head - cfg.scanBlocks)
   }
 
@@ -446,10 +453,16 @@ async function scanEvmExplorer(cfg: NetworkConfig): Promise<void> {
   url.searchParams.set('sort', 'asc')
   url.searchParams.set('apikey', apiKey)
 
+  // On ANY Etherscan failure (HTTP error, rate limit, transient outage) fall back to
+  // the getLogs/Alchemy scanner rather than skipping this tick — Etherscan being
+  // degraded must never block payment detection. The explorer path retries next tick.
   let result: EtherscanTokenTx[]
   try {
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(12_000) })
-    if (!res.ok) { await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `Etherscan HTTP ${res.status}` }); return }
+    if (!res.ok) {
+      logger.warn({ network: cfg.paymentNetwork, status: res.status }, 'gasPaymentPoller: Etherscan HTTP error — falling back to getLogs/RPC scanner')
+      return scanNetwork(cfg)
+    }
     const json = (await res.json()) as { status?: string; message?: string; result?: EtherscanTokenTx[] | string }
     // Etherscan returns result as a STRING message on status "0" (empty set OR error).
     if (typeof json.result === 'string') {
@@ -457,15 +470,13 @@ async function scanEvmExplorer(cfg: NetworkConfig): Promise<void> {
         await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0 })
         return
       }
-      logger.warn({ network: cfg.paymentNetwork, msg: json.result }, 'gasPaymentPoller: Etherscan returned error/limit — will retry next tick')
-      await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `Etherscan: ${json.result}` })
-      return // don't advance cursor
+      logger.warn({ network: cfg.paymentNetwork, msg: json.result }, 'gasPaymentPoller: Etherscan returned error/limit — falling back to getLogs/RPC scanner')
+      return scanNetwork(cfg)
     }
     result = json.result ?? []
   } catch (err) {
-    logger.warn({ err, network: cfg.paymentNetwork }, 'gasPaymentPoller: Etherscan fetch errored — will retry next tick')
-    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `Etherscan fetch error: ${(err as Error)?.message ?? 'unknown'}` })
-    return // don't advance cursor
+    logger.warn({ err, network: cfg.paymentNetwork }, 'gasPaymentPoller: Etherscan fetch errored — falling back to getLogs/RPC scanner')
+    return scanNetwork(cfg)
   }
 
   if (result.length === 0) { await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0 }); return }

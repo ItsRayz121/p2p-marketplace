@@ -908,6 +908,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           tier:            true,
           gasAmountNative: true,
           paymentAmount:   true,
+          paymentCoin:     true,
           paymentNetwork:  true,
           toAddress:       true,
           deliveryTxHash:  true,
