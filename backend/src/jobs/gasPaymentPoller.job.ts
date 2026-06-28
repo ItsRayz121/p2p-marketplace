@@ -364,6 +364,27 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
 // the `chainid` param (BSC 56, Ethereum 1).
 const ETHERSCAN_V2_BASE = 'https://api.etherscan.io/v2/api'
 
+// Etherscan's FREE tier does NOT cover every chain — BSC (chainid=56) returns
+// "Free API access is not supported for this chain. Please upgrade your api plan".
+// When we see that plan-gate response we cache a per-chain skip flag so we stop
+// wasting a failing call every tick and go straight to the getLogs/Alchemy scanner.
+// The flag auto-expires, so the (faster, indexer-grade) Etherscan path resumes by
+// itself if the operator later upgrades to a paid plan that covers the chain.
+const ETHERSCAN_UNSUPPORTED_TTL_S = 6 * 60 * 60
+function etherscanUnsupportedKey(chainId: number) { return `gas_etherscan_unsupported:${chainId}` }
+function isEtherscanPlanGate(msg: string | undefined): boolean {
+  return !!msg && /not supported for this chain|upgrade your api plan/i.test(msg)
+}
+async function markEtherscanUnsupported(chainId: number, msg: string): Promise<void> {
+  try {
+    await redis.set(etherscanUnsupportedKey(chainId), msg.slice(0, 200))
+    await redis.expire(etherscanUnsupportedKey(chainId), ETHERSCAN_UNSUPPORTED_TTL_S)
+  } catch { /* best-effort — never break the poller over a flag write */ }
+}
+async function isEtherscanUnsupported(chainId: number): Promise<boolean> {
+  try { return (await redis.get(etherscanUnsupportedKey(chainId))) != null } catch { return false }
+}
+
 interface EtherscanTokenTx {
   blockNumber?: string
   timeStamp?: string
@@ -389,6 +410,11 @@ async function getEtherscanBlockNumber(chainId: number, apiKey: string): Promise
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return null
     const json = (await res.json()) as { result?: string }
+    // Plan-gate (e.g. BSC on the free tier): cache a skip flag and bail to fallback.
+    if (typeof json.result === 'string' && isEtherscanPlanGate(json.result)) {
+      await markEtherscanUnsupported(chainId, json.result)
+      return null
+    }
     if (!json.result) return null
     const n = Number(BigInt(json.result))
     return Number.isFinite(n) ? n : null
@@ -400,6 +426,9 @@ async function getEtherscanBlockNumber(chainId: number, apiKey: string): Promise
 async function scanEvmExplorer(cfg: NetworkConfig): Promise<void> {
   const apiKey = env.ETHERSCAN_API_KEY
   if (!apiKey) { await scanNetwork(cfg); return } // no key → fall back to getLogs
+  // This chain isn't covered by the current Etherscan plan (cached) — don't waste a
+  // failing call every tick; use the getLogs/Alchemy scanner directly.
+  if (await isEtherscanUnsupported(cfg.etherscanChainId)) { await scanNetwork(cfg); return }
 
   const depositAddress =
     (await resolveDepositAddress(cfg.depositAddressDbKey, cfg.depositAddressEnvFn(), cfg.paymentNetwork))
@@ -470,6 +499,7 @@ async function scanEvmExplorer(cfg: NetworkConfig): Promise<void> {
         await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0 })
         return
       }
+      if (isEtherscanPlanGate(json.result)) await markEtherscanUnsupported(cfg.etherscanChainId, json.result)
       logger.warn({ network: cfg.paymentNetwork, msg: json.result }, 'gasPaymentPoller: Etherscan returned error/limit — falling back to getLogs/RPC scanner')
       return scanNetwork(cfg)
     }
