@@ -253,7 +253,8 @@ function ListingRow({
 
   return (
     <div className={`bg-surface shadow-card border border-border rounded-xl p-3 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      {/* ── Desktop / tablet layout (unchanged) ── */}
+      <div className="hidden sm:flex sm:flex-row sm:items-center gap-3">
 
         {/* ── 1. TRADER IDENTITY (first & most prominent) ── */}
         <div className="sm:w-48 flex-shrink-0">
@@ -429,6 +430,117 @@ function ListingRow({
             {isSell ? `Buy ${sym}` : `Sell ${sym}`}
           </Link>
         )}
+      </div>
+
+      {/* ── Mobile compact layout (mobile only) ──
+          Same data as desktop, regrouped into tight rows so ~3 listings fit on
+          one phone screen. Nothing dropped: name, since, badges, trust metrics,
+          token/symbol, verified, price, per-unit, available, USDT/PKR estimate,
+          order limit (+PKR), window, listed age, payment methods, CTA. */}
+      <div className="sm:hidden">
+        {/* Row 1: identity + action chip */}
+        <div className="flex items-start gap-2">
+          <button type="button" onClick={openProfile} className="flex-shrink-0 cursor-pointer">
+            <UserAvatar name={displayName} avatarUrl={user.avatarUrl} size="sm" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <button type="button" onClick={openProfile} className="text-sm font-bold text-text-primary hover:text-primary truncate leading-tight text-left cursor-pointer">
+                {displayName}
+              </button>
+              {user.createdAt && <span className="text-[10px] text-text-muted flex-shrink-0">· Since {memberSince(user.createdAt)}</span>}
+            </div>
+            <div className="flex items-center gap-1 flex-wrap mt-0.5">
+              {isMerchant && mp.merchant?.id && (
+                <Link href={`/merchant/${mp.merchant.id}`} onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
+                  <ShieldCheck size={9} /> Merchant
+                </Link>
+              )}
+              <BadgeChip badge={badge} />
+            </div>
+          </div>
+          <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
+            {isSell ? 'BUY' : 'SELL'}
+          </span>
+        </div>
+
+        {/* Row 2: trust metrics + activity */}
+        <div className="flex items-center gap-2 text-xs flex-wrap mt-1.5">
+          {completionPct !== null && <span className={`font-bold ${completionColor}`}>{completionPct.toFixed(0)}%</span>}
+          {rating > 0 && (
+            <button type="button" onClick={openProfile} className="flex items-center gap-0.5 text-text-muted cursor-pointer">
+              <span className="text-gold">★</span>{rating.toFixed(1)}
+            </button>
+          )}
+          <span className="text-text-muted">{trades} trades</span>
+          {activity && <span className={`text-[10px] ${activity.cls}`}>· {activity.text}</span>}
+        </div>
+
+        {/* Row 3: token + price */}
+        <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-border">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <EntityLogo type="token" slug={sym} size="sm" logoUrl={listing.token.logoUrl} />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-text-primary leading-tight truncate">{listing.token.name}</p>
+              <p className="text-[11px] text-text-muted leading-tight flex items-center gap-1">
+                {sym}
+                {listing.token.communityVerified && <BadgeCheck size={10} className="text-success" />}
+              </p>
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className={`text-lg font-bold leading-none ${priceCls}`}>PKR {price.toLocaleString()}</p>
+            <p className="text-[11px] text-text-muted mt-0.5">{listing.side === 'buy' ? 'Wanted' : 'Avail'} {Number(listing.availableAmount).toLocaleString()} {sym}</p>
+          </div>
+        </div>
+
+        {/* Row 4: estimate (if any) + limits + window + listed */}
+        {hasConversion && (usdtRate !== null || pkrRate !== null) && (
+          <p className="text-[11px] text-text-muted/80 mt-1.5">
+            {usdtRate !== null && <>1 {sym} ≈ {fmtUsdt(usdtRate)} USDT</>}
+            {usdtRate !== null && pkrRate !== null && <span className="mx-1">·</span>}
+            {pkrRate !== null && <>≈ PKR {pkrRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</>}
+          </p>
+        )}
+        <p className="text-[11px] text-text-muted mt-1">
+          Limit {minTok.toLocaleString()}–{maxTok.toLocaleString()} {sym}
+          {price > 0 && <span className="text-text-muted/80"> (≈PKR {minPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })}–{maxPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>}
+          {listing.tradeWindowMins != null && <><span className="mx-1">·</span><Clock size={9} className="inline -mt-0.5" /> {listing.tradeWindowMins} min</>}
+          {age && <><span className="mx-1">·</span>Listed {age}</>}
+        </p>
+
+        {/* Row 5: payment methods + CTA */}
+        <div className="flex items-center justify-between gap-2 mt-2">
+          <div className="flex flex-wrap items-center gap-1 min-w-0">
+            {methods.length > 0 ? (
+              <>
+                {methods.slice(0, 2).map((pm) => (
+                  <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${getPaymentMethodColor(pm.label)}`}>
+                    <EntityLogo type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'} slug={pm.label} size="xs" className="flex-shrink-0" />
+                    {pm.label}
+                  </span>
+                ))}
+                {methods.length > 2 && (
+                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-surface-alt text-text-secondary">+{methods.length - 2}</span>
+                )}
+              </>
+            ) : (
+              <span className="text-[11px] text-text-muted/50">No payment methods</span>
+            )}
+          </div>
+          <div className="flex-shrink-0">
+            {listing.makerBondInsufficient ? (
+              <span className="px-2.5 py-1.5 text-[11px] font-semibold rounded-full bg-warning/10 text-warning border border-warning/20 whitespace-nowrap">Maker unavailable</span>
+            ) : (
+              <Link
+                href={`/ctm/listings/${listing.id}`}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${isSell ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}
+              >
+                {isSell ? `Buy ${sym}` : `Sell ${sym}`}
+              </Link>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

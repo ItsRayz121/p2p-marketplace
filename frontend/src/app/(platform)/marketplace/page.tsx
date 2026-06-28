@@ -110,8 +110,9 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
   })
 
   return (
-    <div className={`bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+    <div className={`bg-surface shadow-card border border-border rounded-xl p-4 sm:p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
+      {/* ── Desktop / tablet layout (unchanged) ── */}
+      <div className="hidden sm:flex sm:flex-row sm:items-center gap-4">
 
         {/* ── 1. TRADER IDENTITY (first & most prominent) ── */}
         <div className="sm:w-52 flex-shrink-0">
@@ -286,6 +287,126 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           )}
         </div>
 
+      </div>
+
+      {/* ── Mobile compact layout (mobile only) ──
+          Same data as desktop, regrouped into tight rows so ~3 ads fit on one
+          phone screen. Nothing is dropped — name, since, all badges, trust
+          metrics, activity, coin/network, price, available, limits, window,
+          listed age, payment methods (with logos) and the CTA are all here. */}
+      <div className="sm:hidden">
+        {/* Row 1: identity + action chip */}
+        <div className="flex items-start gap-2">
+          <Link href={profileHref} onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+            <UserAvatar name={sellerName} avatarUrl={ad.seller?.avatarUrl} size="sm" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Link
+                href={profileHref}
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm font-bold text-text-primary hover:text-primary truncate leading-tight"
+              >
+                {sellerName}
+              </Link>
+              {ad.seller?.joinedAt && (
+                <span className="text-[10px] text-text-muted flex-shrink-0">· Since {memberSince(ad.seller.joinedAt)}</span>
+              )}
+            </div>
+            {/* badges */}
+            <div className="flex items-center gap-1 flex-wrap mt-0.5">
+              {ad.seller?.isMerchant && ad.seller?.merchantId && (
+                <Link
+                  href={`/merchant/${ad.seller.merchantId}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full"
+                >
+                  <ShieldCheck size={9} /> Merchant
+                </Link>
+              )}
+              <BadgeChip badge={(ad.seller?.badge ?? 'new') as TraderBadge} />
+              {ad.seller?.hasCollateral && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-success bg-success/10 px-1.5 py-0.5 rounded-full">
+                  <ShieldCheck size={9} /> Collateral
+                </span>
+              )}
+            </div>
+          </div>
+          <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
+            {userAction}
+          </span>
+        </div>
+
+        {/* Row 2: trust metrics + activity */}
+        <div className="flex items-center gap-2 text-xs flex-wrap mt-1.5">
+          {completionPct !== null && <span className={`font-bold ${completionColor}`}>{completionPct.toFixed(0)}%</span>}
+          {rating > 0 && (
+            <Link href={`${profileHref}#reviews`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 text-text-muted">
+              <span className="text-gold">★</span>{rating.toFixed(1)}{totalReviews > 0 && <span className="text-text-muted/70 ml-0.5">({totalReviews})</span>}
+            </Link>
+          )}
+          <span className="text-text-muted">{completedTrades} trades</span>
+          {activity && <span className={`text-[10px] ${activity.cls}`}>· {activity.text}</span>}
+          {responseTime && <span className={`text-[10px] ${responseTime.cls}`}>· {responseTime.text}</span>}
+        </div>
+
+        {/* Row 3: coin + price */}
+        <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-border">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <EntityLogo type="token" slug="USDT" size="sm" />
+            <span className="text-sm font-semibold text-text-primary">{ad.coin}</span>
+            <span className="text-[11px] text-text-muted truncate">· {ad.network}</span>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className={`text-lg font-bold leading-none ${priceCls}`}>PKR {Number(ad.price).toLocaleString()}</p>
+            <p className="text-[11px] text-text-muted mt-0.5">{ad.side === 'buy' ? 'Wanted' : 'Avail'} {Number(ad.availableAmount).toFixed(2)} {ad.coin}</p>
+          </div>
+        </div>
+
+        {/* Row 4: limits + window + listed */}
+        <p className="text-[11px] text-text-muted mt-1.5">
+          Limit {Number(ad.minOrder).toLocaleString()}–{Number(ad.maxOrder).toLocaleString()} {ad.coin}
+          <span className="mx-1">·</span><Clock size={9} className="inline -mt-0.5" /> {ad.tradeWindow} min
+          <span className="mx-1">·</span>Listed {listingAge(ad.createdAt)}
+        </p>
+
+        {/* Row 5: payment methods + CTA */}
+        <div className="flex items-center justify-between gap-2 mt-2">
+          <div className="flex flex-wrap items-center gap-1 min-w-0">
+            {methods.length > 0 ? (
+              <>
+                {methods.slice(0, 2).map((pm) => {
+                  const label = canonicalPaymentLabel(pm)
+                  return (
+                    <span key={pm} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${getPaymentMethodColor(label)}`}>
+                      <EntityLogo type={isMobileMethod(label) ? 'payment_method' : 'bank'} slug={label} size="xs" className="flex-shrink-0" />
+                      {label}
+                    </span>
+                  )
+                })}
+                {methods.length > 2 && (
+                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-surface-alt text-text-secondary">+{methods.length - 2}</span>
+                )}
+              </>
+            ) : (
+              <span className="text-[11px] text-text-muted/50">No payment methods</span>
+            )}
+          </div>
+          <div className="flex-shrink-0">
+            {ad.makerBondInsufficient ? (
+              <span className="px-2.5 py-1.5 text-[11px] font-semibold rounded-full bg-warning/10 text-warning border border-warning/20 whitespace-nowrap">Maker unavailable</span>
+            ) : parseFloat(ad.availableAmount) > 0 ? (
+              <Link
+                href={`/marketplace/listings/${ad.id}`}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${ad.side === 'sell' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}
+              >
+                {ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
+              </Link>
+            ) : (
+              <span className="px-2.5 py-1.5 text-[11px] font-semibold rounded-full bg-surface-alt text-text-muted border border-border whitespace-nowrap">Sold Out</span>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
