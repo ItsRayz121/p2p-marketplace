@@ -233,6 +233,10 @@ export async function authRoutes(app: FastifyInstance) {
       throw new AppError('UNAUTHORIZED', 'No refresh token provided', 401)
     }
     const result = await refreshAccessToken(refreshToken)
+    // Slide the cookie's own expiry forward to match the rolling DB session, so
+    // a device that keeps the app open stays signed in indefinitely (7-day idle
+    // window) rather than being hard-cut at 7 days from the original login.
+    reply.setCookie('refresh_token', refreshToken, COOKIE_OPTIONS)
     return reply.send({ success: true, data: result })
   })
 

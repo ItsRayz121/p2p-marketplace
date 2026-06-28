@@ -855,10 +855,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       )}
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar */}
-        <header className="flex-shrink-0 h-14 bg-surface border-b border-border flex items-center px-4 gap-4">
+      {/* Main content — the column itself is the scroll container so the
+          sticky header below pins on every platform (mobile WebView / PWA /
+          desktop), not just well-behaved desktop browsers. */}
+      <div className="flex-1 flex flex-col overflow-y-auto">
+        {/* Top bar — sticky so it stays visible no matter how far the page scrolls */}
+        <header className="sticky top-0 z-30 flex-shrink-0 h-14 bg-surface border-b border-border flex items-center px-4 gap-4">
           <button
             className="md:hidden p-2 rounded-lg text-text-secondary hover:bg-surface transition-colors"
             onClick={() => setMobileOpen(true)}
@@ -1005,8 +1007,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         )}
 
-        {/* Page content */}
-        <main className="admin-tables flex-1 overflow-y-auto p-4 md:p-6">
+        {/* Page content — column owns the scroll now, so no nested overflow here */}
+        <main className="admin-tables flex-1 p-4 md:p-6">
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
               <div className="flex items-center gap-3 text-text-muted">

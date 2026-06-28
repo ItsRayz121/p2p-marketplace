@@ -629,6 +629,16 @@ export async function refreshAccessToken(
     throw new AppError('ACCOUNT_BANNED', 'Your account has been banned', 403)
   }
 
+  // Rolling session: every successful refresh slides the 7-day expiry window
+  // forward, so a regularly-used session never lapses out from under the user.
+  // (The caller also re-sets the refresh cookie's own maxAge to match.)
+  await db.session
+    .update({
+      where: { id: session.id },
+      data: { expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    })
+    .catch(() => undefined)
+
   const accessToken = signAccessToken({
     userId: session.user.id,
     email: session.user.email,
