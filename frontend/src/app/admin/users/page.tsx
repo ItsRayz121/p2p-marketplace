@@ -174,7 +174,7 @@ export default function UsersPage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
@@ -194,40 +194,42 @@ export default function UsersPage() {
                     onClick={() => router.push(`/admin/users/${u.id}`)}
                     className="hover:bg-surface/50 transition-colors cursor-pointer"
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <Link
-                          href={`/admin/users/${u.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {u.username || '—'}
-                        </Link>
-                        {u.telegramLinked && (
-                          <span
-                            title={u.telegramUsername ? `Telegram: @${u.telegramUsername}` : 'Joined via Telegram'}
-                            className="inline-flex items-center gap-0.5 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-500"
+                    <td className="px-4 py-3" data-label="User">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 sm:justify-start justify-end flex-wrap">
+                          <Link
+                            href={`/admin/users/${u.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-medium text-primary hover:underline"
                           >
-                            <Send size={10} /> Telegram
-                          </span>
-                        )}
+                            {u.username || '—'}
+                          </Link>
+                          {u.telegramLinked && (
+                            <span
+                              title={u.telegramUsername ? `Telegram: @${u.telegramUsername}` : 'Joined via Telegram'}
+                              className="inline-flex items-center gap-0.5 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-500"
+                            >
+                              <Send size={10} /> Telegram
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-text-muted break-all">
+                          {u.hasRealEmail
+                            ? u.email
+                            : u.telegramUsername
+                              ? `@${u.telegramUsername}`
+                              : 'Telegram — no email yet'}
+                        </p>
                       </div>
-                      <p className="text-xs text-text-muted">
-                        {u.hasRealEmail
-                          ? u.email
-                          : u.telegramUsername
-                            ? `@${u.telegramUsername}`
-                            : 'Telegram — no email yet'}
-                      </p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Role">
                       <Badge variant="outline" size="sm">{u.role}</Badge>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="KYC">
                       <Badge variant={kycVariant(u.kycStatus)} size="sm">{kycStatusLabel(u.kycStatus)}</Badge>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col items-start gap-1">
+                    <td className="px-4 py-3" data-label="Status">
+                      <div className="flex flex-col items-end sm:items-start gap-1">
                         {u.moderationStatus === 'permanently_banned' || u.moderationStatus === 'temporarily_banned' ? (
                           <Badge variant="danger" size="sm">{u.moderationStatus === 'temporarily_banned' ? 'Temp Banned' : 'Banned'}</Badge>
                         ) : u.moderationStatus === 'suspended' ? (
@@ -240,7 +242,7 @@ export default function UsersPage() {
                         {u.hasPendingAppeal && <Badge variant="info" size="sm">Appeal</Badge>}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Badge">
                       {u.tradeStats ? (
                         <div className="flex items-center gap-1">
                           <BadgeChip badge={u.tradeStats.badge as TraderBadge} />
@@ -250,9 +252,9 @@ export default function UsersPage() {
                         <span className="text-xs text-text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{u.tradeCount ?? 0}</td>
-                    <td className="px-4 py-3 text-text-secondary">{fmtDate(u.createdAt)}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-text-secondary" data-label="Trades">{u.tradeCount ?? 0}</td>
+                    <td className="px-4 py-3 text-text-secondary" data-label="Joined">{fmtDate(u.createdAt)}</td>
+                    <td className="px-4 py-3 text-right stack-hide">
                       <ChevronRight size={16} className="text-text-muted inline-block" />
                     </td>
                   </tr>

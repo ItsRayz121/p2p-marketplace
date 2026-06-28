@@ -140,7 +140,7 @@ export default function MerchantKycPage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
@@ -154,17 +154,21 @@ export default function MerchantKycPage() {
               <tbody className="divide-y divide-border">
                 {submissions.map((sub) => (
                   <tr key={sub.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{sub.user?.username || 'Unknown'}</p>
-                      <p className="text-xs text-text-muted">{sub.user?.email}</p>
+                    <td className="px-4 py-3" data-label="User">
+                      <div className="min-w-0">
+                        <p className="font-medium text-text-primary">{sub.user?.username || 'Unknown'}</p>
+                        <p className="text-xs text-text-muted break-all">{sub.user?.email}</p>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="text-text-primary">{sub.businessName || '—'}</p>
-                      {sub.description && (
-                        <p className="text-xs text-text-muted truncate max-w-xs">{sub.description}</p>
-                      )}
+                    <td className="px-4 py-3" data-label="Business">
+                      <div className="min-w-0">
+                        <p className="text-text-primary">{sub.businessName || '—'}</p>
+                        {sub.description && (
+                          <p className="text-xs text-text-muted truncate sm:max-w-xs">{sub.description}</p>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Status">
                       <Badge
                         variant={sub.status === 'approved' ? 'success' : sub.status === 'rejected' ? 'danger' : 'warning'}
                         size="sm"
@@ -172,8 +176,8 @@ export default function MerchantKycPage() {
                         {merchantStatusLabel(sub.status)}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{fmtDate(sub.createdAt)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-text-secondary" data-label="Submitted">{fmtDate(sub.createdAt)}</td>
+                    <td className="px-4 py-3" data-label="Waiting">
                       <span className={`text-sm font-medium ${daysAgo(sub.createdAt) > 3 ? 'text-danger' : 'text-text-secondary'}`}>
                         {daysAgo(sub.createdAt)}d
                       </span>

@@ -295,7 +295,7 @@ export default function DisputesPage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Trade ID</th>
@@ -310,18 +310,18 @@ export default function DisputesPage() {
               <tbody className="divide-y divide-border">
                 {disputes.map((d) => (
                   <tr key={d.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">
+                    <td className="px-4 py-3 font-mono text-xs text-text-secondary" data-label="Trade ID">
                       #{d.trade?.orderRef?.slice(0, 8) ?? d.tradeId.slice(0, 8)}
                     </td>
-                    <td className="px-4 py-3 text-text-primary">{d.trade?.buyer?.username || d.trade?.buyerId?.slice(0, 8) || 'Unknown'}</td>
-                    <td className="px-4 py-3 text-text-primary">{d.trade?.seller?.username || d.trade?.sellerId?.slice(0, 8) || 'Unknown'}</td>
-                    <td className="px-4 py-3 text-text-secondary">{fmtDate(d.createdAt)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-text-primary" data-label="Buyer">{d.trade?.buyer?.username || d.trade?.buyerId?.slice(0, 8) || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-text-primary" data-label="Seller">{d.trade?.seller?.username || d.trade?.sellerId?.slice(0, 8) || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-text-secondary" data-label="Opened">{fmtDate(d.createdAt)}</td>
+                    <td className="px-4 py-3" data-label="SLA">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${slaBadgeClass(d.createdAt)}`}>
                         {slaLabel(d.createdAt)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Status">
                       <Badge variant={statusVariant(d.status)} size="sm">{disputeStatusLabel(d.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right">

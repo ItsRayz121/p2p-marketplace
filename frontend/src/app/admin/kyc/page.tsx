@@ -200,7 +200,7 @@ export default function KycQueuePage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
@@ -214,26 +214,28 @@ export default function KycQueuePage() {
               <tbody className="divide-y divide-border">
                 {submissions.map((sub) => (
                   <tr key={sub.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <Link href={`/admin/users/${sub.userId}`} className="font-medium text-primary hover:underline">
-                        {sub.user?.username || 'Unknown'}
-                      </Link>
-                      <p className="text-text-muted text-xs">{sub.user?.email}</p>
+                    <td className="px-4 py-3" data-label="User">
+                      <div className="min-w-0">
+                        <Link href={`/admin/users/${sub.userId}`} className="font-medium text-primary hover:underline">
+                          {sub.user?.username || 'Unknown'}
+                        </Link>
+                        <p className="text-text-muted text-xs break-all">{sub.user?.email}</p>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Tier">
                       <Badge variant={sub.tier === 'enhanced' ? 'gold' : 'default'} size="sm">
                         {sub.tier}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Status">
                       <Badge variant={STATUS_BADGE[sub.status]} size="sm">
                         {sub.status}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">
+                    <td className="px-4 py-3 text-text-secondary" data-label="Submitted">
                       {fmtDate(sub.createdAt)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Waiting">
                       {sub.status === 'pending' ? (
                         <span className={`text-sm font-medium ${daysAgo(sub.createdAt) > 3 ? 'text-danger' : 'text-text-secondary'}`}>
                           {daysAgo(sub.createdAt)}d

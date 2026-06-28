@@ -208,7 +208,7 @@ export default function TradesPage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Trade ID</th>
@@ -224,7 +224,7 @@ export default function TradesPage() {
               <tbody className="divide-y divide-border">
                 {trades.map((t) => (
                   <tr key={t.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs">
+                    <td className="px-4 py-3 font-mono text-xs" data-label="Trade ID">
                       <Link
                         href={`/admin/trades/${t.id}`}
                         className="text-primary hover:underline inline-flex items-center gap-1"
@@ -234,18 +234,18 @@ export default function TradesPage() {
                         <ExternalLink size={11} className="opacity-60" />
                       </Link>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Buyer">
                       <p className="text-text-primary">{t.buyer?.username || t.buyerId.slice(0, 8)}</p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Seller">
                       <p className="text-text-primary">{t.seller?.username || t.sellerId.slice(0, 8)}</p>
                     </td>
-                    <td className="px-4 py-3 font-medium text-text-primary">{t.coin}</td>
-                    <td className="px-4 py-3 font-medium text-text-primary">{t.amount}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 font-medium text-text-primary" data-label="Coin">{t.coin}</td>
+                    <td className="px-4 py-3 font-medium text-text-primary" data-label="Amount">{t.amount}</td>
+                    <td className="px-4 py-3" data-label="Status">
                       <Badge variant={statusVariant(t.status)} size="sm">{tradeStatusLabel(t.status)}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{fmtDate(t.createdAt)}</td>
+                    <td className="px-4 py-3 text-text-secondary" data-label="Date">{fmtDate(t.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {(t.status === 'payment_uploaded' || t.status === 'paid') && (

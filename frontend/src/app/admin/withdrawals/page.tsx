@@ -374,7 +374,7 @@ export default function WithdrawalsPage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">User</th>
@@ -390,56 +390,66 @@ export default function WithdrawalsPage() {
               <tbody className="divide-y divide-border">
                 {withdrawals.map((w) => (
                   <tr key={w.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{w.user?.username ?? '—'}</p>
-                      <p className="text-xs text-text-muted">{w.user?.email}</p>
+                    <td className="px-4 py-3" data-label="User">
+                      <div className="min-w-0">
+                        <p className="font-medium text-text-primary">{w.user?.username ?? '—'}</p>
+                        <p className="text-xs text-text-muted break-all">{w.user?.email}</p>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-text-primary">{w.amount} {w.coin}</p>
-                      {parseFloat(w.fee) > 0 ? (
-                        <p className="text-xs text-text-muted">fee: {w.fee} {w.coin}</p>
-                      ) : null}
-                      {w.amountUsd && (
-                        <p className="text-xs text-text-muted">≈ ${parseFloat(w.amountUsd).toFixed(2)}</p>
-                      )}
+                    <td className="px-4 py-3" data-label="Amount · Fee">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-text-primary">{w.amount} {w.coin}</p>
+                        {parseFloat(w.fee) > 0 ? (
+                          <p className="text-xs text-text-muted">fee: {w.fee} {w.coin}</p>
+                        ) : null}
+                        {w.amountUsd && (
+                          <p className="text-xs text-text-muted">≈ ${parseFloat(w.amountUsd).toFixed(2)}</p>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">
-                      <p>{w.network}</p>
-                      {w.txHash ? (
-                        <a
-                          href={explorerTxUrl(w.network, w.txHash)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline font-mono"
-                        >
-                          {w.txHash.slice(0, 10)}…
-                        </a>
-                      ) : null}
+                    <td className="px-4 py-3 text-sm text-text-secondary" data-label="Network">
+                      <div className="min-w-0">
+                        <p>{w.network}</p>
+                        {w.txHash ? (
+                          <a
+                            href={explorerTxUrl(w.network, w.txHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline font-mono"
+                          >
+                            {w.txHash.slice(0, 10)}…
+                          </a>
+                        ) : null}
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${tierColor(w.tier ?? 3)}`}>
-                        {tierLabel(w.tier ?? 3)}
-                      </span>
-                      {w.riskFlags?.length > 0 && (
-                        <p className="text-xs text-danger mt-0.5">⚠ {w.riskFlags.length} flag{w.riskFlags.length > 1 ? 's' : ''}</p>
-                      )}
-                      {w.riskOverride && (
-                        <p className="text-xs text-text-muted mt-0.5">Override applied</p>
-                      )}
+                    <td className="px-4 py-3" data-label="Tier / Risk">
+                      <div className="min-w-0">
+                        <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${tierColor(w.tier ?? 3)}`}>
+                          {tierLabel(w.tier ?? 3)}
+                        </span>
+                        {w.riskFlags?.length > 0 && (
+                          <p className="text-xs text-danger mt-0.5">⚠ {w.riskFlags.length} flag{w.riskFlags.length > 1 ? 's' : ''}</p>
+                        )}
+                        {w.riskOverride && (
+                          <p className="text-xs text-text-muted mt-0.5">Override applied</p>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">
+                    <td className="px-4 py-3 font-mono text-xs text-text-secondary break-all" data-label="Address">
                       {w.toAddress ? `${w.toAddress.slice(0, 8)}...${w.toAddress.slice(-6)}` : '—'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Status">
                       <Badge variant={statusVariant(w.status)} size="sm">
                         {statusLabel(w.status)}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary text-xs">
-                      <p>{fmtDate(w.createdAt)}</p>
-                      {w.completedAt && (
-                        <p className="text-text-muted">sent: {fmtDate(w.completedAt)}</p>
-                      )}
+                    <td className="px-4 py-3 text-text-secondary text-xs" data-label="Date">
+                      <div className="min-w-0">
+                        <p>{fmtDate(w.createdAt)}</p>
+                        {w.completedAt && (
+                          <p className="text-text-muted">sent: {fmtDate(w.completedAt)}</p>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       {w.status === 'auto_approved' ? (

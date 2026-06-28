@@ -248,6 +248,50 @@
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* ─── Wide admin tables → stacked cards on mobile ─────────────────────────────
+   Add `stack-sm` to a <table> and `data-label="Column"` to each <td>. On phones
+   (<640px) the header hides and every row becomes a labeled card so all columns
+   are visible WITHOUT horizontal scrolling. Desktop is untouched (normal table
+   from sm+). Cells with rich/multi-line content should wrap that content in a
+   single child element so it aligns on the right of the label. */
+@media (max-width: 639.98px) {
+  table.stack-sm thead { display: none; }
+  table.stack-sm,
+  table.stack-sm tbody { display: block; width: 100%; }
+  table.stack-sm tr {
+    display: block;
+    border: 1px solid rgb(var(--color-border));
+    border-radius: 0.75rem;
+    margin: 0 0.5rem 0.6rem;
+    padding: 0.1rem 0.85rem;
+    background: rgb(var(--color-surface));
+  }
+  table.stack-sm td {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0 !important;
+    text-align: right;
+    border: 0 !important;
+  }
+  table.stack-sm td + td { border-top: 1px solid rgb(var(--color-border) / 0.55) !important; }
+  table.stack-sm td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: rgb(var(--color-text-muted));
+    text-align: left;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  /* Action cells (no data-label) drop the label and right-align their control. */
+  table.stack-sm td:not([data-label])::before { content: ""; }
+  table.stack-sm td:empty { display: none; }
+  /* Opt a cell out of the card entirely on mobile (e.g. a decorative chevron). */
+  table.stack-sm td.stack-hide { display: none !important; }
+}
+
 /* ─── Reduced motion ──────────────────────────────────────────────────────────
    Respect the OS "reduce motion" setting (vestibular safety, WCAG). Neutralises
    the infinite marquee tickers (Recent Trades / CTM), pulse, spin and long

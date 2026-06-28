@@ -274,7 +274,7 @@ export default function ReferralsPage() {
         ) : (
           <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm stack-sm">
                 <thead className="bg-surface border-b border-border">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-text-muted">Referred User</th>
@@ -288,25 +288,27 @@ export default function ReferralsPage() {
                 <tbody className="divide-y divide-border">
                   {referrals.map((u) => (
                     <tr key={u.id} className="hover:bg-surface/50 transition-colors">
-                      <td className="px-4 py-3">
-                        <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
-                        <p className="text-xs text-text-muted">{u.email}</p>
+                      <td className="px-4 py-3" data-label="Referred User">
+                        <div className="min-w-0">
+                          <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
+                          <p className="text-xs text-text-muted break-all">{u.email}</p>
+                        </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" data-label="Referred By">
                         {u.referredBy ? (
-                          <>
+                          <div className="min-w-0">
                             <Link href={`/admin/users/${u.referredBy.id}`} className="text-primary hover:underline">{u.referredBy.username}</Link>
-                            <p className="text-xs text-text-muted">{u.referredBy.email}</p>
-                          </>
+                            <p className="text-xs text-text-muted break-all">{u.referredBy.email}</p>
+                          </div>
                         ) : <span className="text-text-muted">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-text-secondary">{fmtDate(u.createdAt)}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-text-secondary" data-label="Joined">{fmtDate(u.createdAt)}</td>
+                      <td className="px-4 py-3" data-label="KYC">
                         <span className={`text-xs font-medium ${u.kycStatus === 'approved' ? 'text-success' : u.kycStatus === 'rejected' ? 'text-danger' : 'text-warning'}`}>
                           {u.kycStatus} (L{u.kycLevel === 'enhanced' ? 2 : u.kycLevel === 'basic' ? 1 : 0})
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-text-secondary">{u.liveTradeCount}</td>
+                      <td className="px-4 py-3 text-text-secondary" data-label="Trades">{u.liveTradeCount}</td>
                       <td className="px-4 py-3 text-right">
                         <Button size="sm" variant="ghost" onClick={() => void viewChain(u.id)}>
                           Chain
@@ -334,7 +336,7 @@ export default function ReferralsPage() {
         ) : (
           <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">#</th>
@@ -348,16 +350,18 @@ export default function ReferralsPage() {
               <tbody className="divide-y divide-border">
                 {inviters.map((u, i) => (
                   <tr key={u.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3 text-text-muted font-medium">{i + 1}</td>
-                    <td className="px-4 py-3">
-                      <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
-                      <p className="text-xs text-text-muted">{u.email}</p>
+                    <td className="px-4 py-3 text-text-muted font-medium" data-label="#">{i + 1}</td>
+                    <td className="px-4 py-3" data-label="Inviter">
+                      <div className="min-w-0">
+                        <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
+                        <p className="text-xs text-text-muted break-all">{u.email}</p>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="KYC">
                       <span className={`text-xs font-medium ${u.kycStatus === 'approved' ? 'text-success' : 'text-warning'}`}>{u.kycStatus}</span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">{u.referralCode}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 font-mono text-xs text-text-secondary" data-label="Referral Code">{u.referralCode}</td>
+                    <td className="px-4 py-3" data-label="Invited">
                       <button onClick={() => void viewChain(u.id)} className="font-bold text-primary hover:underline" title="View invited users">
                         {u._count.referrals}
                       </button>

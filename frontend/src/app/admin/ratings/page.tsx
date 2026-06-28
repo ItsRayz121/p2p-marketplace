@@ -162,7 +162,7 @@ export default function AdminRatingsPage() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm stack-sm">
               <thead className="bg-surface border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-text-muted">Trade</th>
@@ -178,34 +178,40 @@ export default function AdminRatingsPage() {
               <tbody className="divide-y divide-border">
                 {ratings.map((r) => (
                   <tr key={r.id} className={`hover:bg-surface/50 transition-colors ${r.hidden ? 'opacity-50' : ''}`}>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Trade">
                       <Link href={`/admin/trades/${r.trade?.id ?? r.tradeId}`} className="font-mono text-xs text-primary hover:underline">
                         #{r.trade?.orderRef?.slice(0, 12) ?? r.tradeId.slice(0, 8)}
                       </Link>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{r.reviewer?.username ?? r.ratedByUserId.slice(0, 8)}</p>
-                      <p className="text-xs text-text-muted">{r.reviewer?.email}</p>
+                    <td className="px-4 py-3" data-label="Reviewer">
+                      <div className="min-w-0">
+                        <p className="font-medium text-text-primary">{r.reviewer?.username ?? r.ratedByUserId.slice(0, 8)}</p>
+                        <p className="text-xs text-text-muted break-all">{r.reviewer?.email}</p>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-text-primary">{r.reviewedUser?.username ?? r.ratedUserId.slice(0, 8)}</p>
-                      <p className="text-xs text-text-muted">{r.reviewedUser?.email}</p>
+                    <td className="px-4 py-3" data-label="Reviewed">
+                      <div className="min-w-0">
+                        <p className="font-medium text-text-primary">{r.reviewedUser?.username ?? r.ratedUserId.slice(0, 8)}</p>
+                        <p className="text-xs text-text-muted break-all">{r.reviewedUser?.email}</p>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Stars">
                       <Stars n={r.rating} />
                     </td>
-                    <td className="px-4 py-3 text-text-secondary max-w-xs">
-                      <p className="truncate">{r.comment || '—'}</p>
-                      {(r.tags ?? []).length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {(r.tags ?? []).map((t) => (
-                            <span key={t} className="text-[10px] bg-surface px-1.5 py-0.5 rounded-full text-text-muted">{t}</span>
-                          ))}
-                        </div>
-                      )}
+                    <td className="px-4 py-3 text-text-secondary sm:max-w-xs" data-label="Comment">
+                      <div className="min-w-0">
+                        <p className="truncate">{r.comment || '—'}</p>
+                        {(r.tags ?? []).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1 justify-end sm:justify-start">
+                            {(r.tags ?? []).map((t) => (
+                              <span key={t} className="text-[10px] bg-surface px-1.5 py-0.5 rounded-full text-text-muted">{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtDateTime(r.createdAt)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-text-secondary whitespace-nowrap" data-label="Date">{fmtDateTime(r.createdAt)}</td>
+                    <td className="px-4 py-3" data-label="Status">
                       {r.hidden ? (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-danger/10 text-danger font-medium">Hidden</span>
                       ) : (
