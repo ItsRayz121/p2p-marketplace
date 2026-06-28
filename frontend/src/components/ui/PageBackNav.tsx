@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, LayoutDashboard, Home } from 'lucide-react'
 import { useAuthStore } from '@/store/auth.store'
+import { goBackSafe } from '@/lib/nav'
 
 interface PageBackNavProps {
   /** Override the back destination. Default: browser history. */
@@ -17,7 +18,7 @@ export function PageBackNav({ backHref, dashboardHref = '/dashboard' }: PageBack
 
   function handleBack() {
     if (backHref) router.push(backHref)
-    else router.back()
+    else goBackSafe(router, dashboardHref)
   }
 
   return (

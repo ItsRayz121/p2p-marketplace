@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { goBackSafe } from '@/lib/nav'
 import { ArrowLeft, Copy, ExternalLink } from 'lucide-react'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -79,7 +80,7 @@ export default function TradeDetailPage() {
   }, [id])
 
   if (loading) return <LoadingState message="Loading trade details…" />
-  if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={() => router.back()} />
+  if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={() => goBackSafe(router, '/admin/trades')} />
 
   const buyer = trade.buyer
   const seller = trade.seller
@@ -88,7 +89,7 @@ export default function TradeDetailPage() {
     <div className="space-y-5 max-w-4xl">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-text-muted hover:text-text-primary transition-colors">
+        <button onClick={() => goBackSafe(router, '/admin/trades')} className="text-text-muted hover:text-text-primary transition-colors">
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 min-w-0">
@@ -299,7 +300,7 @@ export default function TradeDetailPage() {
 
       {/* Actions */}
       <div className="flex gap-3">
-        <Button variant="secondary" onClick={() => router.back()}>← Back to Trades</Button>
+        <Button variant="secondary" onClick={() => goBackSafe(router, '/admin/trades')}>← Back to Trades</Button>
         {trade.dispute?.id && (
           <Link href={`/admin/disputes`}>
             <Button variant="secondary">View Dispute</Button>

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
+import { goBackSafe } from '@/lib/nav'
 import { PaymentMethodPicker } from '@/components/ui/PaymentMethodPicker'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
 
@@ -119,7 +120,7 @@ export default function CreateRequestPage() {
         </div>
 
         <div className="flex gap-3 pt-2">
-          <button type="button" onClick={() => router.back()} className="flex-1 border border-border py-3 rounded-xl text-sm font-medium text-text-primary hover:bg-surface">Cancel</button>
+          <button type="button" onClick={() => goBackSafe(router, '/ctm')} className="flex-1 border border-border py-3 rounded-xl text-sm font-medium text-text-primary hover:bg-surface">Cancel</button>
           <button type="submit" disabled={submitting} className="flex-1 bg-primary text-white py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 disabled:opacity-60">
             {submitting ? 'Posting…' : 'Post Request'}
           </button>

@@ -55,5 +55,9 @@ Status legend: ⬜ not started · 🟦 in progress · ✅ shipped · ⏸️ defe
 - **Phase 4 — Admin wallet/profile/controls:** D3 (button overlap), D4 (profile compaction), D5 (sweep remaining pages).
 - **Phase 5 — Marketplace/CTM ad cards:** B1 (compact 3-up cards).
 - **Phase 6 — Leaderboard + Referral polish:** E1/E2, F1/F2/F3.
+- **Phase 7 — Admin audit:** complete D2 (all tables wrapped) + D5 (remaining tab/filter strips).
+- **Phase 8 — Back button fix:** ✅
+  - **Root cause 1 (Telegram race):** the Mini App BackButton was wired in an effect that read the SDK synchronously, but the SDK loads async — on cold-open/deep-link the SDK wasn't ready, so the button was never shown/wired until the user navigated once (then it "started working"). Hardware back then closed the whole Mini App. Fix: a `sdkReady` flag re-runs the wiring effect once the SDK resolves, so the button is wired on the first screen.
+  - **Root cause 2 (no safe fallback):** `router.back()` (= `history.back()`) does nothing / exits the app when the user deep-landed with no in-app history. Fix: new `lib/nav.ts` `goBackSafe()` — tracks in-app navigation (module counter, resets on full load); if the user hasn't navigated in-app it `router.push()`es a safe fallback (dashboard) instead of `back()`. Applied to TelegramPolish back handler, `PageBackNav`, admin trade detail back buttons, and the CTM request-create Cancel.
 
 Each phase: implement → typecheck/build → commit to `main` → STOP for approval.
