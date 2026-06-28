@@ -33,11 +33,22 @@ export function middleware(request: NextRequest) {
   // backend on its own (Railway) origin, so the Vercel-side middleware can't
   // see it. Each protected backend route still validates the JWT — the hint
   // cookie only controls client-side route gating.
-  const hasAuthHint = request.cookies.has('rupchain_auth')
+  // The hint cookie value carries a coarse role: "admin" for staff, "1" for
+  // regular users. Routing UX only — the real role is enforced server-side.
+  const authHint = request.cookies.get('rupchain_auth')?.value
+  const hasAuthHint = !!authHint
+  const isAdminHint = authHint === 'admin'
 
   const requiresAuth = AUTH_REQUIRED.some((p) => pathname.startsWith(p))
   const requiresAdmin = ADMIN_REQUIRED.some((p) => pathname.startsWith(p))
   const isGuestOnly = GUEST_ONLY.some((p) => pathname.startsWith(p))
+
+  // Staff opening the bare homepage drop straight into the admin panel — no
+  // "logged in as a user" detour. Only "/" is redirected, so admins can still
+  // reach the user side by navigating to /dashboard, /marketplace, etc.
+  if (pathname === '/' && isAdminHint) {
+    return NextResponse.redirect(new URL('/admin', request.url))
+  }
 
   if (requiresAdmin && !hasAuthHint) {
     return NextResponse.redirect(new URL('/login', request.url))
@@ -50,7 +61,7 @@ export function middleware(request: NextRequest) {
   }
 
   if (isGuestOnly && hasAuthHint) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    return NextResponse.redirect(new URL(isAdminHint ? '/admin' : '/dashboard', request.url))
   }
 
   return NextResponse.next()

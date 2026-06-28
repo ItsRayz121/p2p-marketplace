@@ -59,7 +59,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
     // domain so the Next.js middleware (running on Vercel) can gate routes.
     // The real refresh_token cookie lives on the Railway backend domain and
     // is not visible to Vercel.
-    setAuthHint()
+    setAuthHint(user.role)
     set({ user })
   },
   setLoading: (loading) => set({ isLoading: loading }),
