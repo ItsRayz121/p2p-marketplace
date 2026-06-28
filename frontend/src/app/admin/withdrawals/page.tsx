@@ -393,7 +393,7 @@ export default function WithdrawalsPage() {
                     <td className="px-4 py-3" data-label="User">
                       <div className="min-w-0">
                         <p className="font-medium text-text-primary">{w.user?.username ?? '—'}</p>
-                        <p className="text-xs text-text-muted break-all">{w.user?.email}</p>
+                        <p className="text-xs text-text-muted">{w.user?.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3" data-label="Amount · Fee">
@@ -435,7 +435,7 @@ export default function WithdrawalsPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary break-all" data-label="Address">
+                    <td className="px-4 py-3 font-mono text-xs text-text-secondary" data-label="Address">
                       {w.toAddress ? `${w.toAddress.slice(0, 8)}...${w.toAddress.slice(-6)}` : '—'}
                     </td>
                     <td className="px-4 py-3" data-label="Status">

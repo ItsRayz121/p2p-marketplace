@@ -219,7 +219,7 @@ export default function KycQueuePage() {
                         <Link href={`/admin/users/${sub.userId}`} className="font-medium text-primary hover:underline">
                           {sub.user?.username || 'Unknown'}
                         </Link>
-                        <p className="text-text-muted text-xs break-all">{sub.user?.email}</p>
+                        <p className="text-text-muted text-xs">{sub.user?.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3" data-label="Tier">

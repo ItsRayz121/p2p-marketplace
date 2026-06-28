@@ -291,14 +291,14 @@ export default function ReferralsPage() {
                       <td className="px-4 py-3" data-label="Referred User">
                         <div className="min-w-0">
                           <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
-                          <p className="text-xs text-text-muted break-all">{u.email}</p>
+                          <p className="text-xs text-text-muted">{u.email}</p>
                         </div>
                       </td>
                       <td className="px-4 py-3" data-label="Referred By">
                         {u.referredBy ? (
                           <div className="min-w-0">
                             <Link href={`/admin/users/${u.referredBy.id}`} className="text-primary hover:underline">{u.referredBy.username}</Link>
-                            <p className="text-xs text-text-muted break-all">{u.referredBy.email}</p>
+                            <p className="text-xs text-text-muted">{u.referredBy.email}</p>
                           </div>
                         ) : <span className="text-text-muted">—</span>}
                       </td>
@@ -354,7 +354,7 @@ export default function ReferralsPage() {
                     <td className="px-4 py-3" data-label="Inviter">
                       <div className="min-w-0">
                         <Link href={`/admin/users/${u.id}`} className="font-medium text-text-primary hover:text-primary hover:underline">{u.username}</Link>
-                        <p className="text-xs text-text-muted break-all">{u.email}</p>
+                        <p className="text-xs text-text-muted">{u.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3" data-label="KYC">

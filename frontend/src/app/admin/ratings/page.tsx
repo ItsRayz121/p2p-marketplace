@@ -186,13 +186,13 @@ export default function AdminRatingsPage() {
                     <td className="px-4 py-3" data-label="Reviewer">
                       <div className="min-w-0">
                         <p className="font-medium text-text-primary">{r.reviewer?.username ?? r.ratedByUserId.slice(0, 8)}</p>
-                        <p className="text-xs text-text-muted break-all">{r.reviewer?.email}</p>
+                        <p className="text-xs text-text-muted">{r.reviewer?.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3" data-label="Reviewed">
                       <div className="min-w-0">
                         <p className="font-medium text-text-primary">{r.reviewedUser?.username ?? r.ratedUserId.slice(0, 8)}</p>
-                        <p className="text-xs text-text-muted break-all">{r.reviewedUser?.email}</p>
+                        <p className="text-xs text-text-muted">{r.reviewedUser?.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3" data-label="Stars">

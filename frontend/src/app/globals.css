@@ -274,6 +274,10 @@
     padding: 0.45rem 0 !important;
     text-align: right;
     border: 0 !important;
+    /* Long unbreakable strings (emails, addresses, hashes) wrap inside the card
+       instead of overflowing — scoped to card mode so desktop tables are
+       unaffected. Inherited by child <p>/<a>. */
+    overflow-wrap: anywhere;
   }
   table.stack-sm td + td { border-top: 1px solid rgb(var(--color-border) / 0.55) !important; }
   table.stack-sm td::before {

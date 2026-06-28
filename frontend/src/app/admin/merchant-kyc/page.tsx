@@ -157,7 +157,7 @@ export default function MerchantKycPage() {
                     <td className="px-4 py-3" data-label="User">
                       <div className="min-w-0">
                         <p className="font-medium text-text-primary">{sub.user?.username || 'Unknown'}</p>
-                        <p className="text-xs text-text-muted break-all">{sub.user?.email}</p>
+                        <p className="text-xs text-text-muted">{sub.user?.email}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3" data-label="Business">

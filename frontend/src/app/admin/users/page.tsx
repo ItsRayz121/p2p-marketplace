@@ -213,7 +213,7 @@ export default function UsersPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-text-muted break-all">
+                        <p className="text-xs text-text-muted">
                           {u.hasRealEmail
                             ? u.email
                             : u.telegramUsername
