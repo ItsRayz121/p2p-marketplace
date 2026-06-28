@@ -59,12 +59,31 @@ export function ReferralEarnings() {
   // Inline split editor for an existing affiliate link (replaces window.prompt).
   const [editSplit, setEditSplit] = useState<{ id: string; userDiscountPct: string; commissionPct: string } | null>(null)
 
-  const load = useCallback(async () => {
+  // The link the user just created — pinned to the top of the list and shown
+  // expanded so it surfaces right under the "Your custom links" heading.
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null)
+
+  const load = useCallback(async (): Promise<AffiliateOverview | null> => {
     setLoading(true); setError('')
-    try { setData(await gasApi.getAffiliateOverview()) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Failed to load earnings') }
+    try {
+      const fresh = await gasApi.getAffiliateOverview()
+      setData(fresh)
+      return fresh
+    }
+    catch (e) { setError(e instanceof Error ? e.message : 'Failed to load earnings'); return null }
     finally { setLoading(false) }
   }, [])
+
+  // Reload, then pin + expand whichever link is newly present (by id diff).
+  const reloadAndHighlightNew = useCallback(async () => {
+    const prevIds = new Set((data?.links ?? []).map((l) => l.id))
+    const fresh = await load()
+    const created = fresh?.links?.find((l) => !prevIds.has(l.id))
+    if (created) {
+      setJustCreatedId(created.id)
+      setOpenLinks((prev) => new Set(prev).add(created.id))
+    }
+  }, [data?.links, load])
 
   useEffect(() => { void load() }, [load])
 
@@ -112,7 +131,7 @@ export function ReferralEarnings() {
       await gasApi.createCustomLink(code ? { code } : undefined)
       toast.success('Custom link created')
       setNewCode('')
-      await load()
+      await reloadAndHighlightNew()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to create link') }
     finally { setCreating(false) }
   }
@@ -140,7 +159,7 @@ export function ReferralEarnings() {
       await gasApi.createAffiliateLink({ ...(code ? { code } : {}), userDiscountPct, commissionPct })
       toast.success('Affiliate link created')
       setNewCode(''); setNewDiscount(''); setNewCommission('')
-      await load()
+      await reloadAndHighlightNew()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to create link') }
     finally { setCreating(false) }
   }
@@ -231,10 +250,13 @@ export function ReferralEarnings() {
               : `Create up to ${policy.maxLinks} named links — each gives your friend ${policy.userDiscountPct}% off their gas fee and earns you ${policy.commissionPct}%, paid in USDT.`}
           </p>
 
-          {data.links.map((link) => {
+          {[...data.links]
+            .sort((a, b) => (a.id === justCreatedId ? -1 : b.id === justCreatedId ? 1 : 0))
+            .map((link) => {
             const open = openLinks.has(link.id)
+            const isNew = link.id === justCreatedId
             return (
-              <div key={link.id} className="bg-surface-alt rounded-xl border border-border overflow-hidden">
+              <div key={link.id} className={`bg-surface-alt rounded-xl border overflow-hidden ${isNew ? 'border-primary ring-2 ring-primary/30' : 'border-border'}`}>
                 {/* Collapsed header — tap to expand the link's share links + stats */}
                 <div className="flex items-center">
                   <button
@@ -245,6 +267,7 @@ export function ReferralEarnings() {
                   >
                     <span className="flex items-center gap-2 min-w-0">
                       <span className="text-base font-mono font-bold tracking-wider text-text-primary truncate">{link.code}</span>
+                      {isNew && <span className="flex-shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">New</span>}
                       {link.label && <span className="text-xs text-text-muted truncate">{link.label}</span>}
                       <span className="text-[11px] text-text-muted flex-shrink-0">· {link.referredCount} referred</span>
                     </span>

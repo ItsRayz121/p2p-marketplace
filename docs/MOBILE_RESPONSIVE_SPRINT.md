@@ -27,13 +27,13 @@ Status legend: ⬜ not started · 🟦 in progress · ✅ shipped · ⏸️ defe
 - 🟦 **D5. General sweep of remaining admin pages** (Phase 4 partial) Named offenders fixed. `.admin-toolbar` available for any remaining wrapping rows; tables already wrapped. Further pages can be converted on report. for the same three failure modes (wrapping tabs, clipped tables, overlapping/oversized controls). Screenshots were examples; full audit required.
 
 ## E. Leaderboard (mobile only — small label changes)
-- ⬜ **E1. Rename category tab "Tokens" → "CTM".**
-- ⬜ **E2. Rename category tab "Gas" → "Gas Fee"** (optional polish; keep one word if it breaks layout).
+- ✅ **E1. Rename category tab "Tokens" → "CTM".** (Phase 6) Mobile `short` label now "CTM".
+- ✅ **E2. Rename category tab "Gas" → "Gas Fee"** (Phase 6) Mobile `short` label now "Gas Fee" (fits the equal-width tab). Full labels unchanged.
 
 ## F. Referral page (user)
-- ⬜ **F1. Newly created custom link should appear directly ABOVE the "Your custom links" section heading** (so the just-created link surfaces at top).
-- ⬜ **F2. "Your custom links" list (each custom link card, e.g. CWFAZAL) should be collapsible.**
-- ⬜ **F3. (Decision) Optionally move the "Referral rewards / Active" explainer card to the bottom of the page** (mobile + desktop). User leaning "okay to keep at top" — see Decisions.
+- ✅ **F1. Newly created custom link surfaces at the top.** (Phase 6) After create, the list diffs old vs new ids, pins the new link to the top of the list (right under the heading), auto-expands it, and flags it with a "New" badge + highlight ring.
+- ✅ **F2. "Your custom links" list cards collapsible.** (Phase 6) Already implemented via `openLinks`/chevron; verified. New links also auto-open.
+- 🟦 **F3. (Decision) Keep "Referral rewards / Active" explainer at top.** Per user — no change; left at top so users see what they're doing first.
 
 ## G. Deferred (do not start yet)
 - ⏸️ **G1. "Back" / browser back navigation not working properly.** User will provide reproduction details later. Skip for now.

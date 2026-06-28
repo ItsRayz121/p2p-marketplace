@@ -44,8 +44,8 @@ const PERIODS: { id: Period; label: string; short: string }[] = [
 const TRADE_TYPES: { id: TradeType; label: string; short: string }[] = [
   { id: 'all', label: 'Overall', short: 'Overall' },
   { id: 'usdt', label: 'USDT Trades', short: 'USDT' },
-  { id: 'ctm', label: 'Community Token Trades', short: 'Tokens' },
-  { id: 'gas', label: 'Crypto Gas Trades', short: 'Gas' },
+  { id: 'ctm', label: 'Community Token Trades', short: 'CTM' },
+  { id: 'gas', label: 'Crypto Gas Trades', short: 'Gas Fee' },
 ]
 
 // Map frontend period labels to backend query params
