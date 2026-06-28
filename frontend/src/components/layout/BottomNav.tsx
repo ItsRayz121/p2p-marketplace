@@ -2,7 +2,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/hooks/useAuth'
 import {
   Home,
   ArrowLeftRight,
@@ -56,13 +55,12 @@ const ctmNavItem: NavItem = {
 
 export default function BottomNav() {
   const pathname = usePathname()
-  const { user } = useAuth()
 
-  // Only show CTM to KYC-approved users — new users see a clean 5-item nav
-  const kycApproved = user?.kycStatus === 'approved'
-  const navItems = kycApproved
-    ? [...baseNavItems.slice(0, 4), ctmNavItem, baseNavItems[4]]
-    : baseNavItems
+  // CTM is always visible (prominently) for every user — no KYC gating and no
+  // dependence on the async `user` load, which previously caused the tab to be
+  // missing on the Telegram Mini App and to flicker in/out until a refresh on
+  // mobile. Order: Home · Market · Gas (center) · Wallet · CTM · Orders.
+  const navItems = [...baseNavItems.slice(0, 4), ctmNavItem, baseNavItems[4]]
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
@@ -75,7 +73,9 @@ export default function BottomNav() {
         {navItems.map((item) => {
           const active = isActive(item.href)
 
-          // Gas is the permanent prominent center FAB — always popped out.
+          // Gas is the center action — a raised circle that stays distinct by its
+          // filled primary color, but sized in line with the other tabs (no
+          // longer an oversized bulge) so all six items read evenly.
           if (item.primary) {
             return (
               <Link
@@ -84,10 +84,10 @@ export default function BottomNav() {
                 aria-label={item.label}
                 className="relative flex flex-col items-center justify-center flex-1 h-full"
               >
-                <span className="absolute -top-5 flex items-center justify-center w-12 h-12 bg-primary rounded-full text-white shadow-lg transition-transform duration-150 active:scale-95">
-                  {item.icon}
+                <span className="absolute -top-3.5 flex items-center justify-center w-11 h-11 bg-primary rounded-full text-white shadow-md transition-transform duration-150 active:scale-95">
+                  <Fuel className="w-5 h-5" />
                 </span>
-                <span className={cn('text-[10px] font-medium mt-8', active ? 'text-primary' : 'text-text-muted')}>
+                <span className={cn('text-[10px] font-medium mt-7', active ? 'text-primary' : 'text-text-muted')}>
                   {item.label}
                 </span>
               </Link>
