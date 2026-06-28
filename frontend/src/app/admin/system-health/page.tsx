@@ -11,6 +11,7 @@ type Traffic = 'green' | 'yellow' | 'red'
 type PollerNet = Awaited<ReturnType<typeof adminApi.getPollerHealth>>['networks'][number]
 type ChainRow = Awaited<ReturnType<typeof adminApi.getChainHealth>>['chains'][number]
 type SystemHealth = Awaited<ReturnType<typeof adminApi.getSystemHealth>>
+type DetectionNet = Awaited<ReturnType<typeof adminApi.getDetectionProviders>>['networks'][number]
 
 // ─── Small presentational helpers ───────────────────────────────────────────
 const DOT: Record<Traffic, string> = {
@@ -133,6 +134,7 @@ function QueueRow({ q, onChanged }: { q: QueueHealthRow; onChanged: () => void }
 // ─── Page ───────────────────────────────────────────────────────────────────
 export default function SystemHealthPage() {
   const [poller, setPoller] = useState<PollerNet[] | null>(null)
+  const [detection, setDetection] = useState<DetectionNet[] | null>(null)
   const [chains, setChains] = useState<ChainRow[] | null>(null)
   const [sys, setSys] = useState<SystemHealth | null>(null)
   const [loading, setLoading] = useState(true)
@@ -141,12 +143,14 @@ export default function SystemHealthPage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [p, c, s] = await Promise.all([
+      const [p, d, c, s] = await Promise.all([
         adminApi.getPollerHealth(),
+        adminApi.getDetectionProviders(),
         adminApi.getChainHealth(),
         adminApi.getSystemHealth(),
       ])
       setPoller(p.networks)
+      setDetection(d.networks)
       setChains(c.chains)
       setSys(s)
       setError(null)
@@ -258,6 +262,57 @@ export default function SystemHealthPage() {
                   )}
                 </dl>
                 {n.lastError && <p className="mt-1.5 text-[10px] text-red-500 line-clamp-2" title={n.lastError}>{n.lastError}</p>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Payment detection providers — per-network, with active provider + fallbacks */}
+      {detection && (
+        <Card
+          title="Payment Detection Providers"
+          right={
+            <span className={cn('text-[11px] font-semibold', detection.every((n) => n.canDetect) ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>
+              {detection.every((n) => n.canDetect) ? 'All networks detecting' : 'Detection gap — see below'}
+            </span>
+          }
+        >
+          <p className="text-[11px] text-text-muted mb-3">
+            Whether incoming USDT payments can be seen right now, and which provider is doing it. A network is healthy as long as
+            <b className="text-text-secondary"> at least one</b> provider can detect — fallbacks cover each other.
+          </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {detection.map((n) => (
+              <div key={n.network} className={cn('rounded-lg border p-3', n.canDetect ? 'border-border bg-surface-alt' : 'border-red-500/40 bg-red-500/10')}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Dot status={n.canDetect ? 'green' : 'red'} />
+                    <span className="text-sm font-bold text-text-primary">{n.network}</span>
+                    <span className="text-[11px] text-text-muted truncate">{n.label}</span>
+                  </div>
+                  <span className="text-[10px] shrink-0">
+                    {n.canDetect
+                      ? <span className="text-text-muted">via <b className="text-emerald-600 dark:text-emerald-400">{n.activeProvider}</b></span>
+                      : <span className="text-red-500 font-bold">NOT DETECTING</span>}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {n.providers.map((p) => {
+                    const st: Traffic = p.status === 'green' ? 'green' : p.status === 'red' ? 'red' : 'yellow'
+                    const isActive = p.name === n.activeProvider
+                    return (
+                      <div key={p.name} className="flex items-center gap-2 text-[11px]">
+                        <Dot status={st} />
+                        <span className={cn('font-semibold w-24 shrink-0', isActive ? 'text-emerald-700 dark:text-emerald-300' : 'text-text-primary')}>
+                          {p.name}{isActive && ' ✓'}
+                        </span>
+                        <span className="text-text-muted shrink-0 w-28 hidden sm:block">{p.role}</span>
+                        <span className={cn('truncate', p.status === 'red' ? 'text-red-500' : 'text-text-muted')} title={p.detail}>{p.detail}</span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             ))}
           </div>

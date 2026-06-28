@@ -2140,6 +2140,25 @@ export const adminApi = {
       }>
       healthyWindowSeconds: number
     }>('/admin/gas/poller-health'),
+  getDetectionProviders: () =>
+    apiRequest<{
+      networks: Array<{
+        network: string
+        label: string
+        canDetect: boolean
+        activeProvider: string | null
+        providers: Array<{
+          name: string
+          role: string
+          status: 'green' | 'yellow' | 'red' | 'unconfigured'
+          detail: string
+          latencyMs: number | null
+          canDetect: boolean
+        }>
+      }>
+      allCanDetect: boolean
+      fetchedAt: string
+    }>('/admin/gas/detection-providers'),
   getSystemHealth: () =>
     apiRequest<{
       generatedAt: string

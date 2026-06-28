@@ -3774,6 +3774,26 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { networks, healthyWindowSeconds: HEALTHY_WINDOW_MS / 1000 } })
   })
 
+  // GET /admin/gas/detection-providers — live health of the providers that DETECT
+  // incoming payments (Etherscan / Alchemy / public RPC / Moralis per EVM network,
+  // TronGrid for TRC20, Aptos Indexer for APTOS). Answers "can we see payments right
+  // now, and on which provider?" — payment detection is the critical money-path.
+  // Best-effort: each probe has a short timeout and runs in parallel, so a dead
+  // provider can never block this endpoint.
+  app.get('/admin/gas/detection-providers', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const { probeDetectionProviders } = await import('../lib/gas/detectionProviders')
+    const networks = await probeDetectionProviders().catch(() => [])
+    return reply.send({
+      success: true,
+      data: {
+        networks,
+        // network-level: false if ANY network can no longer detect payments
+        allCanDetect: networks.every((n) => n.canDetect),
+        fetchedAt: new Date().toISOString(),
+      },
+    })
+  })
+
   // GET /admin/gas/chain-health — live RPC health for EVERY supported gas chain
   // (Ethereum, BNB, Base, Polygon, Arbitrum, Optimism, Avalanche, Tron, Solana,
   // TON, Sui). green = reachable & fresh, yellow = reachable but stale node,
