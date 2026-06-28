@@ -67,3 +67,21 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     await db.pushSubscription.deleteMany({ where: { id: { in: stale } } }).catch(() => {})
   }
 }
+
+/**
+ * Fan a push out to every staff member (admin / super_admin / kyc_reviewer) who
+ * has a push subscription. Used for global admin notifications so admins get
+ * OS-level alerts in addition to the in-app bell. Fire-and-forget; never throws.
+ */
+export async function sendPushToAdmins(payload: PushPayload): Promise<void> {
+  if (!pushConfigured) return
+  try {
+    const admins = await db.user.findMany({
+      where: { role: { in: ['admin', 'super_admin', 'kyc_reviewer'] } },
+      select: { id: true },
+    })
+    await Promise.allSettled(admins.map((a) => sendPushToUser(a.id, payload)))
+  } catch (err) {
+    logger.warn({ err }, 'Admin push fan-out failed')
+  }
+}

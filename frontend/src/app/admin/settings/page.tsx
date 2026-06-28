@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Spinner } from '@/components/ui/Spinner'
+import { PushToggle } from '@/components/ui/PushToggle'
 
-type Tab = 'profile' | 'security' | 'sessions'
+type Tab = 'profile' | 'security' | 'sessions' | 'notifications'
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -319,18 +320,43 @@ function SessionsTab() {
   )
 }
 
+// ─── Notifications Tab ────────────────────────────────────────────────────────
+
+function NotificationsTab() {
+  return (
+    <div className="space-y-6">
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-text-primary">Push Notifications</h3>
+          <p className="text-sm text-text-muted mt-1">
+            Get real-time alerts pushed to this device — KYC submissions, disputes, gas orders,
+            withdrawals and more — even when the admin panel is closed. This is in addition to the
+            in-app notification bell.
+          </p>
+        </div>
+        <PushToggle />
+        <p className="text-xs text-text-muted">
+          Enable on each device/browser you want to receive alerts on. Disabling stops push only on
+          this device.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 function AdminSettingsInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as Tab | null) ?? 'profile'
   const [activeTab, setActiveTab] = useState<Tab>(
-    ['profile', 'security', 'sessions'].includes(initialTab) ? initialTab : 'profile',
+    ['profile', 'security', 'sessions', 'notifications'].includes(initialTab) ? initialTab : 'profile',
   )
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'profile', label: 'Profile' },
     { id: 'security', label: 'Security' },
+    { id: 'notifications', label: 'Notifications' },
     { id: 'sessions', label: 'Sessions' },
   ]
 
@@ -360,6 +386,7 @@ function AdminSettingsInner() {
 
       {activeTab === 'profile' && <ProfileTab />}
       {activeTab === 'security' && <SecurityTab />}
+      {activeTab === 'notifications' && <NotificationsTab />}
       {activeTab === 'sessions' && <SessionsTab />}
     </div>
   )

@@ -837,7 +837,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   return (
-    <div className="flex h-screen bg-surface overflow-hidden">
+    <div className="flex h-[100dvh] bg-surface overflow-hidden">
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={paletteCommands} />
 
       {/* Desktop sidebar */}
