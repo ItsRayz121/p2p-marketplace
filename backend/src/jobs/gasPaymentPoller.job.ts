@@ -22,6 +22,7 @@ import { env } from '../lib/env'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { getEvmHotWalletAddress } from '../lib/gas/gasWalletService'
 import { matchAndDeliverGasPayment } from '../lib/gas/gas.matching'
+import { getWalletErc20Transfers } from '../lib/moralisClient'
 import { sendAdminAlertEmail } from '../services/email.service'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
@@ -208,6 +209,53 @@ async function resolveDepositAddress(dbKey: string, envValue: string | undefined
   return envValue ?? null
 }
 
+// ── EVM last-resort fallback (Moralis Web3 Data API) ─────────────────────────────
+// Reached ONLY when Etherscan and EVERY getLogs RPC endpoint have failed, so it runs
+// essentially never in steady state (≈zero CU) and is never the primary detection
+// path — pure defence-in-depth so a total getLogs outage can't blind us. Returns the
+// number of incoming USDT transfers processed, or null when Moralis is unavailable /
+// unconfigured (so the caller falls through to the balance watchdog + alert).
+async function scanViaMoralis(
+  cfg: NetworkConfig,
+  depositAddress: string,
+  currentBlock: number,
+  graceCutoff: Date,
+  fromBlock: number,
+): Promise<number | null> {
+  const transfers = await getWalletErc20Transfers({
+    chain: cfg.paymentNetwork === 'BEP20' ? 'BSC' : 'ETH',
+    address: depositAddress,
+    contractAddress: cfg.usdtContract,
+    fromBlock,
+    limit: 100,
+  })
+  if (transfers == null) return null // Moralis unavailable → caller handles the blackout
+
+  let processed = 0
+  for (const t of transfers) {
+    // Only INCOMING USDT to our deposit address is a payment.
+    if (!t.toAddress || t.toAddress.toLowerCase() !== depositAddress.toLowerCase()) continue
+    const confirmations = currentBlock - t.blockNumber
+    if (confirmations < cfg.minConfirmations) continue
+    let incoming: number
+    try { incoming = Number(BigInt(t.rawValue)) / Math.pow(10, t.decimals || cfg.usdtDecimals) } catch { continue }
+    if (!(incoming > 0)) continue
+    await matchAndDeliverGasPayment({
+      source: 'poller',
+      paymentNetwork: cfg.paymentNetwork,
+      txHash: t.txHash,
+      incoming,
+      confirmations,
+      ...(t.fromAddress ? { senderAddress: t.fromAddress } : {}),
+      depositAddress,
+      graceCutoff,
+      getBlockTimestampMs: async () => t.blockTimestampMs,
+    })
+    processed++
+  }
+  return processed
+}
+
 // ── EVM scanner (getLogs) ───────────────────────────────────────────────────────
 async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   // Resolve the deposit address the SAME way order creation does:
@@ -372,9 +420,26 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   } catch (err) {
     // Every capable endpoint failed even after splitting — record the PREFERRED
     // endpoint's error (not a noisy dataseed one) and retry next tick.
-    logger.warn({ err, network: cfg.paymentNetwork, from: effectiveFrom.toString(), to: safeToBlock.toString() }, 'gasPaymentPoller: getLogs failed on all capable RPCs — will retry next tick')
+    logger.warn({ err, network: cfg.paymentNetwork, from: effectiveFrom.toString(), to: safeToBlock.toString() }, 'gasPaymentPoller: getLogs failed on all capable RPCs — trying Moralis fallback')
 
-    // Watchdog: getLogs is blind right now. If the deposit balance ROSE vs the last
+    // LAST-RESORT fallback (Etherscan + every getLogs RPC are down): Moralis Web3
+    // Data API. If it serves the scan we re-baseline the watchdog (payments are
+    // accounted for) but deliberately DO NOT advance the block cursor — once getLogs
+    // recovers it re-scans this same range and matchAndDeliver dedups by txHash, so a
+    // Moralis indexing gap can never silently lose a payment.
+    const moralisCount = await scanViaMoralis(cfg, depositAddress, Number(currentBlock), graceCutoff, Number(effectiveFrom)).catch(() => null)
+    if (moralisCount != null && moralisCount > 0) {
+      // Moralis attributed real payments → the balance rise is accounted for. Re-baseline
+      // and report a healthy tick. Cursor stays put so getLogs re-scans (deduped) on recovery.
+      if (currentBalance != null) await redis.set(balanceKey, currentBalance.toString())
+      await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: moralisCount, currentBlock, syncedBlock: syncedBlock ?? effectiveFrom })
+      logger.info({ network: cfg.paymentNetwork, count: moralisCount }, 'gasPaymentPoller: Moralis fallback attributed transfers while getLogs was down')
+      return
+    }
+    // Moralis found nothing (or was unavailable) → fall through to the balance watchdog,
+    // so a payment that landed while BOTH getLogs and Moralis are blind still alerts.
+
+    // Watchdog: getLogs is blind right now (and Moralis did not attribute the payment). If the deposit balance ROSE vs the last
     // baseline, a payment landed during the blackout — alert admins so it can be
     // attributed manually. The block cursor is NOT advanced, so detection auto-recovers
     // and re-scans these blocks once any getLogs provider responds again.

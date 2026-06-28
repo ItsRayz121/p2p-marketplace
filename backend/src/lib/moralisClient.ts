@@ -147,3 +147,81 @@ export async function getWalletTokenBalances(chain: string, address: string): Pr
     return []
   }
 }
+
+export interface MoralisErc20Transfer {
+  txHash: string
+  fromAddress: string
+  toAddress: string
+  rawValue: string        // raw integer string from chain
+  decimals: number
+  blockNumber: number
+  blockTimestampMs: number | null
+}
+
+/**
+ * Fetch recent ERC-20 transfers of a single token to/from a wallet via the
+ * Moralis Web3 Data API (deep-index), newest first.
+ *
+ * This is the gas poller's LAST-RESORT detection fallback: it is only ever called
+ * when Etherscan AND every getLogs RPC endpoint have failed, so in steady state it
+ * runs essentially never and costs ~zero CU. It is never the primary path.
+ *
+ * Returns `null` on any failure (unconfigured key, non-EVM chain, HTTP error,
+ * timeout) so the caller can fall through to the balance watchdog; returns the
+ * (possibly empty) transfer list on success.
+ */
+export async function getWalletErc20Transfers(opts: {
+  chain: string
+  address: string
+  contractAddress: string
+  fromBlock?: number
+  limit?: number
+}): Promise<MoralisErc20Transfer[] | null> {
+  const hexChain = CHAIN_HEX[opts.chain.toUpperCase()]
+  if (!hexChain || !env.MORALIS_API_KEY) return null
+
+  const url = new URL(`${WEB3_BASE}/${encodeURIComponent(opts.address)}/erc20/transfers`)
+  url.searchParams.set('chain', hexChain)
+  url.searchParams.append('contract_addresses[]', opts.contractAddress)
+  url.searchParams.set('order', 'DESC')
+  url.searchParams.set('limit', String(opts.limit ?? 100))
+  if (opts.fromBlock != null) url.searchParams.set('from_block', String(opts.fromBlock))
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { 'x-api-key': env.MORALIS_API_KEY, accept: 'application/json' },
+      signal: AbortSignal.timeout(12_000),
+    })
+    if (!res.ok) {
+      logger.warn({ status: res.status, chain: opts.chain }, 'Moralis erc20/transfers non-2xx')
+      return null
+    }
+    const json = (await res.json()) as {
+      result?: Array<{
+        transaction_hash?: string; from_address?: string; to_address?: string
+        value?: string; token_decimals?: string | number
+        block_number?: string | number; block_timestamp?: string
+      }>
+    }
+    const rows = json.result ?? []
+    return rows.flatMap((r) => {
+      if (!r.transaction_hash || !r.value) return []
+      const decimals = Number(r.token_decimals)
+      const blockNumber = Number(r.block_number)
+      if (!Number.isFinite(decimals) || !Number.isFinite(blockNumber)) return []
+      const tsMs = r.block_timestamp ? Date.parse(r.block_timestamp) : NaN
+      return [{
+        txHash: r.transaction_hash,
+        fromAddress: r.from_address ?? '',
+        toAddress: r.to_address ?? '',
+        rawValue: r.value,
+        decimals,
+        blockNumber,
+        blockTimestampMs: Number.isFinite(tsMs) ? tsMs : null,
+      }]
+    })
+  } catch (err) {
+    logger.warn({ err, chain: opts.chain }, 'Moralis erc20/transfers fetch errored')
+    return null
+  }
+}

@@ -10,7 +10,8 @@
 //                       covers the chain (BSC is NOT on Etherscan's free tier).
 //     - Alchemy       — getLogs fallback (de-facto primary for BSC). Reliable.
 //     - Public RPC    — getLogs secondary fallback (publicnode).
-//     - Moralis       — supplementary webhook stream (detection does NOT depend on it).
+//     - Moralis       — last-resort API fallback (used only when Etherscan AND every
+//                       getLogs RPC are down; the poller's final defence-in-depth path).
 //   TRC20:  TronGrid (only automatic path).
 //   APTOS:  Aptos Indexer (only automatic path).
 //
@@ -20,6 +21,8 @@
 // (`canDetect` at network level) as long as AT LEAST ONE provider can detect.
 
 import { env } from '../env'
+import { redis } from '../redis'
+import { getEvmHotWalletAddress } from './gasWalletService'
 
 export type ProviderStatus = 'green' | 'yellow' | 'red' | 'unconfigured'
 
@@ -136,34 +139,63 @@ async function probeEtherscan(chainId: number): Promise<ProviderHealth> {
   }
 }
 
-// ── Moralis key-validity probe (supplementary webhook provider) ─────────────────
-// Detection does NOT depend on Moralis (it's a webhook stream, not a poll), so its
-// canDetect is always false — but we surface whether the key is still valid/expired
-// since the user asked specifically to monitor it.
+// ── Moralis key-validity probe (last-resort API fallback provider) ──────────────
+// Moralis now backs the poller's final EVM fallback (getWalletErc20Transfers), so a
+// healthy key means it CAN attribute a payment when everything else is down →
+// canDetect reflects that.
+//
+// The probe result is CACHED in Redis for 10 min. The old probe ran live on every
+// admin System Health load AND hit the ZERO address — which Moralis rejects with
+// HTTP 400 on every call. That single design bug was both the permanent "HTTP 400"
+// panel status and the bulk of the daily CU burn (each refresh = a wasted, failing,
+// billed request on Ethereum). We now probe a REAL address (our EVM hot wallet, or
+// the canonical USDT contract as a guaranteed-valid fallback) so a healthy key
+// returns 200, and the cache means at most one billed call per 10 minutes.
+const MORALIS_PROBE_CACHE_KEY = 'gas_moralis_probe_health'
+const MORALIS_PROBE_TTL_S = 600
+const MORALIS_PROBE_FALLBACK_ADDR = '0xdAC17F958D2ee523a2206206994597C13D831ec7' // ETH USDT contract — always a valid address
+
 async function probeMoralis(): Promise<ProviderHealth> {
   const name = 'Moralis'
-  const role = 'Supplementary · webhook'
-  if (!env.MORALIS_API_KEY) return UNCONFIGURED(name, role, 'Not configured (detection does not depend on it)')
-  const t0 = Date.now()
+  const role = 'Fallback · API'
+  if (!env.MORALIS_API_KEY) return UNCONFIGURED(name, role, 'Not configured (last-resort fallback only)')
+
+  // Serve a cached result so repeated admin page loads don't each bill a CU.
   try {
-    // Hit a key-GATED endpoint (ERC20 balances of the zero address) so an invalid /
+    const cached = await redis.get(MORALIS_PROBE_CACHE_KEY)
+    if (cached) return JSON.parse(cached) as ProviderHealth
+  } catch { /* cache miss / unavailable — probe live */ }
+
+  const address = getEvmHotWalletAddress() ?? MORALIS_PROBE_FALLBACK_ADDR
+  const t0 = Date.now()
+  let result: ProviderHealth
+  try {
+    // Hit a key-GATED endpoint (ERC20 balances of a REAL address) so an invalid /
     // expired key returns 401 — `web3/version` is public and would mask a dead key.
-    const res = await fetch('https://deep-index.moralis.io/api/v2.2/0x0000000000000000000000000000000000000000/erc20?chain=0x1', {
+    const res = await fetch(`https://deep-index.moralis.io/api/v2.2/${address}/erc20?chain=0x1`, {
       headers: { 'x-api-key': env.MORALIS_API_KEY, accept: 'application/json' },
       signal: AbortSignal.timeout(8_000),
     })
     const latencyMs = Date.now() - t0
     if (res.status === 401 || res.status === 403) {
-      return { name, role, status: 'red', detail: 'Key invalid or expired', latencyMs, canDetect: false }
+      result = { name, role, status: 'red', detail: 'Key invalid or expired', latencyMs, canDetect: false }
+    } else if (res.status === 429) {
+      result = { name, role, status: 'yellow', detail: 'Rate limited (key valid)', latencyMs, canDetect: false }
+    } else if (!res.ok) {
+      result = { name, role, status: 'yellow', detail: `HTTP ${res.status}`, latencyMs, canDetect: false }
+    } else {
+      // Key healthy → Moralis can serve the poller's last-resort transfer scan.
+      result = { name, role, status: 'green', detail: `Key valid · ${latencyMs}ms`, latencyMs, canDetect: true }
     }
-    if (res.status === 429) {
-      return { name, role, status: 'yellow', detail: 'Rate limited (key valid)', latencyMs, canDetect: false }
-    }
-    if (!res.ok) return { name, role, status: 'yellow', detail: `HTTP ${res.status}`, latencyMs, canDetect: false }
-    return { name, role, status: 'green', detail: `Key valid · ${latencyMs}ms`, latencyMs, canDetect: false }
   } catch (err) {
-    return { name, role, status: 'yellow', detail: (err as Error)?.name === 'TimeoutError' ? 'Timeout' : 'Unreachable', latencyMs: Date.now() - t0, canDetect: false }
+    result = { name, role, status: 'yellow', detail: (err as Error)?.name === 'TimeoutError' ? 'Timeout' : 'Unreachable', latencyMs: Date.now() - t0, canDetect: false }
   }
+
+  try {
+    await redis.set(MORALIS_PROBE_CACHE_KEY, JSON.stringify(result))
+    await redis.expire(MORALIS_PROBE_CACHE_KEY, MORALIS_PROBE_TTL_S)
+  } catch { /* best-effort — never break the health endpoint over a cache write */ }
+  return result
 }
 
 // ── TronGrid probe ──────────────────────────────────────────────────────────────
