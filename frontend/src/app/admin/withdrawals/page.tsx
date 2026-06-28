@@ -349,7 +349,7 @@ export default function WithdrawalsPage() {
       </div>
 
       {/* Status filter tabs */}
-      <div className="flex flex-wrap gap-1 p-1 bg-surface rounded-xl border border-border w-fit">
+      <div className="admin-toolbar gap-1 p-1 bg-surface rounded-xl border border-border max-w-full">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.value}

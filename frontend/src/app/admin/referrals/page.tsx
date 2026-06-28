@@ -197,7 +197,7 @@ export default function ReferralsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2">
+      <div className="admin-toolbar gap-2">
         {(['referred', 'inviters', 'network', 'suspicious'] as Tab[]).map((t) => (
           <button
             key={t}

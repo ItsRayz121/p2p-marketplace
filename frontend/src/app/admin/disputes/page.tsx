@@ -269,7 +269,7 @@ export default function DisputesPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-2">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border admin-toolbar gap-2">
         {[
           { value: 'open', label: 'Open' },
           { value: 'resolved', label: 'Resolved' },

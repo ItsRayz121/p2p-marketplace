@@ -1034,12 +1034,12 @@ export default function GasAdminPage() {
       )}
 
       {/* ── Header ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Gas Fee Operations</h1>
           <p className="text-text-muted text-sm mt-0.5">{total} total orders</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="admin-toolbar items-center gap-2 -mx-1 px-1">
           {isSuperAdmin && !globalPaused && (
             <Button size="sm" variant="danger" onClick={() => setConfirmGlobalPause(true)}>
               Emergency Pause
@@ -1342,7 +1342,7 @@ export default function GasAdminPage() {
             the chips on narrow widths. */}
         <div>
           <span className="block text-xs font-semibold text-text-muted mb-1.5">Payment type</span>
-          <div className="flex flex-wrap gap-2">
+          <div className="admin-toolbar gap-2">
             {([
               { v: 'all',    label: 'All' },
               { v: 'PKR',    label: 'PKR (manual review)' },
@@ -1362,7 +1362,7 @@ export default function GasAdminPage() {
             ))}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="admin-toolbar gap-2">
           {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refund_pending', 'refunded', 'cancelled'].map((s) => (
             <button
               key={s}

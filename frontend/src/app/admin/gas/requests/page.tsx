@@ -200,7 +200,7 @@ export default function GasRequestsPage() {
       )}
 
       {/* Status filter tabs */}
-      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-2">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border admin-toolbar gap-2">
         {(['all', 'pending', 'reviewing', 'completed', 'rejected'] as const).map((s) => (
           <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${

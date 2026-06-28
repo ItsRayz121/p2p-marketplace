@@ -227,6 +227,27 @@
     radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.16), rgb(0 0 0 / 0)) 100% 0 / 12px 100% no-repeat scroll;
 }
 
+/* ─── Single-line scroll strip for admin tab / filter / action rows ───────────
+   Admin sub-tab rows (Disputes filters, Referrals tabs, KYC filters, Gas page
+   header actions, etc.) used flex-wrap, so on a phone they wrapped onto a 2nd/
+   3rd line or overflowed the page. `.admin-toolbar` keeps them on ONE line and
+   scrolls horizontally instead, with the scrollbar hidden. Children never
+   shrink/wrap, so each control stays fully tappable. */
+.admin-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.admin-toolbar::-webkit-scrollbar { display: none; }
+.admin-toolbar > * { flex-shrink: 0; white-space: nowrap; }
+
+/* Generic scrollbar-hide helper for any horizontal strip. */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* ─── Reduced motion ──────────────────────────────────────────────────────────
    Respect the OS "reduce motion" setting (vestibular safety, WCAG). Neutralises
    the infinite marquee tickers (Recent Trades / CTM), pulse, spin and long

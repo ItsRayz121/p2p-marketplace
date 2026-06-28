@@ -149,7 +149,7 @@ export default function KycQueuePage() {
       </div>
 
       {/* Status filter */}
-      <div className="flex flex-wrap gap-2">
+      <div className="admin-toolbar gap-2">
         {STATUS_FILTERS.map((st) => (
           <button
             key={st}
