@@ -234,10 +234,10 @@ function WalletCard({
       : wallet.status === 'price_unavailable' ? 'border-orange-500/50 bg-orange-500/10'
       : 'border-border'
     }`}>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex-1 min-w-0">
           {/* Title row */}
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${walletHealthDot(wallet.status)}`} />
             <EntityLogo type="chain" slug={wallet.chain} size="sm" />
             <h2 className="text-sm font-semibold text-text-primary">{chainDisplayName(wallet.chain)} Hot Wallet</h2>
@@ -305,8 +305,9 @@ function WalletCard({
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-col gap-1.5 shrink-0">
+        {/* Actions — row that wraps on mobile (sits below the info), stacked
+            column on desktop. Prevents the controls overlapping the title. */}
+        <div className="flex flex-row flex-wrap gap-1.5 sm:flex-col sm:shrink-0">
           <Link
             href={`/admin/gas/wallet/${wallet.chain}`}
             className="text-center text-xs font-medium text-primary border border-primary/20 rounded-lg px-3 py-1.5 hover:bg-primary/5 transition-colors"

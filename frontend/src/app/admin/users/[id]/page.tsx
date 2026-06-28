@@ -186,7 +186,13 @@ export default function AdminUserProfilePage() {
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <Badge variant="default" size="sm">Role: {p.role}</Badge>
               <Badge variant={p.kycStatus === 'verified' ? 'success' : 'warning'} size="sm">KYC: {p.kycStatus} ({p.kycLevel})</Badge>
-              {p.isMerchant && <Badge variant="info" size="sm">Merchant{p.merchantName ? `: ${p.merchantName}` : ''}</Badge>}
+              {p.isMerchant && (
+                <Badge variant="info" size="sm">
+                  <span className="inline-flex items-baseline gap-1 max-w-[180px]">
+                    Merchant{p.merchantName ? <span className="truncate" title={p.merchantName}>: {p.merchantName}</span> : ''}
+                  </span>
+                </Badge>
+              )}
               {p.isCtmMerchant && <Badge variant="info" size="sm">CTM Merchant</Badge>}
               {p.badge && <BadgeChip badge={p.badge} badgeLabel={p.badgeLabel} />}
               {(p.moderationStatus === 'permanently_banned' || p.moderationStatus === 'temporarily_banned') && <Badge variant="danger" size="sm">{p.moderationStatus === 'temporarily_banned' ? 'Temp Banned' : 'Banned'}</Badge>}
@@ -194,11 +200,13 @@ export default function AdminUserProfilePage() {
               {p.moderationStatus === 'under_review' && <Badge variant="default" size="sm">Under Review</Badge>}
             </div>
           </div>
-          <div className="text-right text-xs text-text-muted space-y-0.5">
+          {/* Meta — left-aligned full-width list on mobile (cleaner than an
+              awkward right-aligned wrap), compact right-aligned block on desktop. */}
+          <div className="w-full sm:w-auto text-left sm:text-right text-xs text-text-muted space-y-0.5 border-t border-border pt-2 mt-1 sm:border-0 sm:pt-0 sm:mt-0">
             <p>Joined {fmtDate(p.createdAt)}</p>
             <p>Reg IP: <span className="font-mono">{p.registrationIp ?? 'Not captured'}</span></p>
             <p>Country: {p.country ?? 'Unknown'}</p>
-            <p className="font-mono">Ref: {p.referralCode}</p>
+            <p className="font-mono break-all">Ref: {p.referralCode}</p>
           </div>
         </div>
         {(p.isBanned || p.isSuspended) && p.suspendReason && (
