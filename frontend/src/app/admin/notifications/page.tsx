@@ -129,22 +129,24 @@ export default function AdminNotificationsPage() {
       </div>
 
       {/* Category tabs */}
-      <div className="bg-surface shadow-card rounded-xl border border-border p-1 flex flex-wrap gap-1">
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => switchTab(cat.id)}
-            className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors',
-              activeTab === cat.id
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-text-secondary hover:bg-surface',
-            )}
-          >
-            {cat.label}
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-2 px-2">
+      <div className="bg-surface shadow-card rounded-xl border border-border p-1 flex flex-col gap-1 sm:flex-row sm:items-center">
+        <div className="admin-toolbar gap-1 flex-1">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => switchTab(cat.id)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors',
+                activeTab === cat.id
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-text-secondary hover:bg-surface',
+              )}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 px-2 shrink-0">
           <label className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer select-none">
             <input
               type="checkbox"

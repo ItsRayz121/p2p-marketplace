@@ -85,7 +85,7 @@ export default function AppealsPage() {
           />
         </div>
         <Button onClick={() => { setSearch(searchInput.trim()); setPage(1) }} loading={searching}>Search</Button>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="admin-toolbar gap-1.5 w-full sm:w-auto">
           {FILTERS.map((f) => (
             <button
               key={f.key || 'all'}

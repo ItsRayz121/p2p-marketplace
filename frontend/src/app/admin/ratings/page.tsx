@@ -144,7 +144,7 @@ export default function AdminRatingsPage() {
           />
         </div>
         <Button onClick={runSearchNow} loading={searching}>Search</Button>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="admin-toolbar gap-1.5 w-full sm:w-auto">
           {([['', 'All'], ['visible', 'Visible'], ['hidden', 'Hidden']] as Array<[StatusFilter, string]>).map(([key, label]) => (
             <button
               key={key || 'all'}

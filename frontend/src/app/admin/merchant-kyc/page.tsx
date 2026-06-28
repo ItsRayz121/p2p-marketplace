@@ -119,7 +119,7 @@ export default function MerchantKycPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap gap-2">
+      <div className="bg-surface shadow-card p-4 rounded-xl border border-border admin-toolbar gap-2">
         {['pending', 'approved', 'rejected', 'all'].map((s) => (
           <button
             key={s}
