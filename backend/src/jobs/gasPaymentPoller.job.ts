@@ -22,11 +22,18 @@ import { env } from '../lib/env'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { getEvmHotWalletAddress } from '../lib/gas/gasWalletService'
 import { matchAndDeliverGasPayment } from '../lib/gas/gas.matching'
+import { sendAdminAlertEmail } from '../services/email.service'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
 const TRANSFER_EVENT = parseAbiItem(
   'event Transfer(address indexed from, address indexed to, uint256 value)',
 )
+
+// balanceOf — the watchdog's detection method. eth_call is supported by EVERY EVM
+// node (including the dataseed nodes that reject getLogs), so reading the deposit
+// balance never shares getLogs' failure mode. It's a SECOND, independent way to know
+// "money arrived" so a total getLogs outage can never silently swallow a payment.
+const BALANCE_OF = parseAbiItem('function balanceOf(address) view returns (uint256)')
 
 // Grace window: attribute payments to orders that expired at most this many ms ago.
 // Covers the case where the webhook fired after the order expiry job already ran.
@@ -100,11 +107,18 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     // getLogs), and keep BSC_RPC_URL last as a getBlockNumber fallback.
     // Alchemy (if ALCHEMY_API_KEY set) first — it serves getLogs reliably, unlike
     // most free public BSC nodes. Then operator endpoints, then publicnode.
+    // Multiple INDEPENDENT getLogs-capable endpoints so a single provider being down
+    // or rate-limited can't blind detection (publicnode confirmed serving the poller's
+    // query; drpc/blastapi/1rpc are reputable getLogs providers). dataseed/ninicoin are
+    // kept only as getBlockNumber fallbacks — getLogsCapable() strips them from scans.
     rpcUrls:             () => uniqUrls(
       env.ALCHEMY_API_KEY ? `https://bnb-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}` : undefined,
       env.BSC_RPC_URL_PRIMARY,
       env.BSC_RPC_URL_FALLBACK,
       'https://bsc-rpc.publicnode.com',
+      'https://bsc.drpc.org',
+      'https://bsc-mainnet.public.blastapi.io',
+      'https://1rpc.io/bnb',
       'https://bsc-dataseed1.ninicoin.io',
       env.BSC_RPC_URL,
     ),
@@ -123,7 +137,9 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
       env.ALCHEMY_API_KEY ? `https://eth-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}` : undefined,
       env.ETHEREUM_RPC_URL,
       'https://ethereum-rpc.publicnode.com',
-      'https://rpc.ankr.com/eth',
+      'https://eth.drpc.org',
+      'https://eth-mainnet.public.blastapi.io',
+      'https://1rpc.io/eth',
     ),
     usdtContract:        '0xdAC17F958D2ee523a2206206994597C13D831ec7',
     usdtDecimals:        6,
@@ -277,6 +293,29 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   const maxRange = BigInt(Math.max(cfg.scanBlocks, 500))
   const effectiveFrom = fromBlock < safeToBlock - maxRange ? safeToBlock - maxRange : fromBlock
 
+  // Watchdog baseline: read the deposit's current USDT balance via eth_call (supported
+  // by ANY node, even ones that reject getLogs — a detection method that does NOT share
+  // getLogs' failure mode). If a getLogs scan later fails outright while this balance has
+  // RISEN, a payment landed during a detection blackout and we alert loudly so it can
+  // never be silently swallowed. Best-effort: a failed read just skips the check.
+  const balanceKey = `gas_poller_balance_baseline:${cfg.paymentNetwork}`
+  async function readDepositBalance(): Promise<bigint | null> {
+    try {
+      return (await client!.readContract({
+        address: cfg.usdtContract,
+        abi: [BALANCE_OF],
+        functionName: 'balanceOf',
+        args: [depositAddress as `0x${string}`],
+      })) as bigint
+    } catch (err) {
+      logger.warn({ err, network: cfg.paymentNetwork }, 'gasPaymentPoller: balanceOf watchdog read failed')
+      return null
+    }
+  }
+  const currentBalance = await readDepositBalance()
+  const storedBalanceRaw = await redis.get(balanceKey)
+  const baselineBalance = storedBalanceRaw ? BigInt(storedBalanceRaw) : null
+
   // getLogs across [effectiveFrom, safeToBlock] using only getLogs-CAPABLE endpoints
   // (dataseed nodes answer getBlockNumber but reject every range query). Each endpoint
   // is tried in turn; if one rejects the range as too wide we SPLIT it in half and
@@ -334,7 +373,27 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     // Every capable endpoint failed even after splitting — record the PREFERRED
     // endpoint's error (not a noisy dataseed one) and retry next tick.
     logger.warn({ err, network: cfg.paymentNetwork, from: effectiveFrom.toString(), to: safeToBlock.toString() }, 'gasPaymentPoller: getLogs failed on all capable RPCs — will retry next tick')
-    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `getLogs failed (range ${effectiveFrom}-${safeToBlock}) via ${logRpcUrls[0]}: ${(err as Error)?.message ?? 'all getLogs-capable endpoints rejected the range'}`, currentBlock, syncedBlock: syncedBlock ?? effectiveFrom })
+
+    // Watchdog: getLogs is blind right now. If the deposit balance ROSE vs the last
+    // baseline, a payment landed during the blackout — alert admins so it can be
+    // attributed manually. The block cursor is NOT advanced, so detection auto-recovers
+    // and re-scans these blocks once any getLogs provider responds again.
+    let watchdogNote = ''
+    if (currentBalance != null && baselineBalance != null && currentBalance > baselineBalance) {
+      const deltaUsdt = Number(currentBalance - baselineBalance) / Math.pow(10, cfg.usdtDecimals)
+      watchdogNote = ` — ⚠️ balance rose ~${deltaUsdt} USDT while blind (admin alerted)`
+      logger.error({ network: cfg.paymentNetwork, deltaUsdt }, 'gasPaymentPoller: BALANCE ROSE while getLogs unavailable — possible undetected payment')
+      await sendAdminAlertEmail(
+        `⚠️ Gas ${cfg.paymentNetwork}: payment may be undetected (getLogs down)`,
+        `The ${cfg.paymentNetwork} deposit balance increased by ~${deltaUsdt} USDT, but getLogs is failing on every provider so the poller could not attribute it automatically.\n\n` +
+        `Deposit address: ${depositAddress}\nBlind range: ${effectiveFrom}-${safeToBlock}\nUnderlying error: ${(err as Error)?.message ?? 'unknown'}\n\n` +
+        `Detection auto-recovers once any getLogs provider responds (the block cursor was not advanced). If it doesn't clear shortly, attribute the payment manually in Admin → Gas.`,
+      ).catch(() => {})
+    }
+    // Re-baseline so we alert at most once per balance increment, not every 60s tick.
+    if (currentBalance != null) await redis.set(balanceKey, currentBalance.toString())
+
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: `getLogs failed (range ${effectiveFrom}-${safeToBlock}) via ${logRpcUrls[0]}: ${(err as Error)?.message ?? 'all getLogs-capable endpoints rejected the range'}${watchdogNote}`, currentBlock, syncedBlock: syncedBlock ?? effectiveFrom })
     return
   }
 
@@ -372,8 +431,11 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     })
   }
 
-  // Advance the durable cursor only after the full window scanned successfully.
+  // Advance the durable cursor only after the full window scanned successfully, and
+  // re-baseline the watchdog (getLogs handled attribution, so the balance is accounted
+  // for — the next blackout compares against this point).
   await redis.set(redisKey, safeToBlock.toString())
+  if (currentBalance != null) await redis.set(balanceKey, currentBalance.toString())
   await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: totalFound, currentBlock, syncedBlock: safeToBlock })
 
   if (totalFound > 0) {
