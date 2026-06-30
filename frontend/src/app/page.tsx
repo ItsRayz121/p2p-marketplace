@@ -246,6 +246,23 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ── 1a. WHAT IS RUPCHAIN — explicit plain-language purpose (helps users + Google OAuth review) ── */}
+      <section className="py-12 bg-canvas border-b border-border">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">What is RupChain?</h2>
+          <p className="mt-4 text-base sm:text-lg text-text-secondary leading-relaxed">
+            RupChain is Pakistan&rsquo;s peer-to-peer crypto marketplace. Buy and sell USDT and
+            community tokens using local payment methods like JazzCash, Easypaisa, and bank transfer,
+            and top up blockchain gas fees on any chain &mdash; all in one place.
+          </p>
+          <p className="mt-3 text-base sm:text-lg text-text-secondary leading-relaxed">
+            Create a free account with email, Google, or Telegram, verify your identity, and trade
+            directly with other verified users. Every trade is backed by on-chain verification and a
+            real dispute team.
+          </p>
+        </div>
+      </section>
+
       {/* ── 1b. PAS — name the pain, then position the fix ── */}
       <section className="py-14 bg-surface border-b border-border">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
