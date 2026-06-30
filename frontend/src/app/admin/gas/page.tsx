@@ -1055,18 +1055,6 @@ export default function GasAdminPage() {
           <Link href="/admin/gas/diagnostics">
             <Button size="sm" variant="ghost">Token Diagnostics</Button>
           </Link>
-          <Link href="/admin/gas/promo-codes">
-            <Button size="sm" variant="ghost">Promo Codes</Button>
-          </Link>
-          <Link href="/admin/gas/free-gas">
-            <Button size="sm" variant="ghost">Free Gas</Button>
-          </Link>
-          <Link href="/admin/gas/referrals">
-            <Button size="sm" variant="ghost">Referrals</Button>
-          </Link>
-          <Link href="/admin/gas/giveaways">
-            <Button size="sm" variant="ghost">Giveaways</Button>
-          </Link>
           <Link href="/admin/gas/chains">
             <Button size="sm" variant="secondary">Chain & Token Config</Button>
           </Link>
