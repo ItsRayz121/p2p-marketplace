@@ -248,24 +248,20 @@ export default async function HomePage() {
 
       {/* ── 1a. WHAT IS RUPCHAIN — explicit plain-language purpose (helps users + Google OAuth review) ── */}
       <section className="py-12 bg-canvas border-b border-border">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">What is RupChain?</h2>
           <p className="mt-4 text-base sm:text-lg text-text-secondary leading-relaxed">
-            RupChain is Pakistan&rsquo;s peer-to-peer crypto marketplace. Buy and sell USDT and
-            community tokens using local payment methods like JazzCash, Easypaisa, and bank transfer,
-            and top up blockchain gas fees on any chain &mdash; all in one place.
-          </p>
-          <p className="mt-3 text-base sm:text-lg text-text-secondary leading-relaxed">
-            Create a free account with email, Google, or Telegram, verify your identity, and trade
-            directly with other verified users. Every trade is backed by on-chain verification and a
-            real dispute team.
+            RupChain is Pakistan&rsquo;s peer-to-peer crypto marketplace &mdash; buy and sell USDT and
+            community tokens with JazzCash, Easypaisa, or bank transfer, and top up blockchain gas fees
+            on any chain. Sign up free with email, Google, or Telegram, verify your identity, and trade
+            directly with other verified users, backed by on-chain verification and a real dispute team.
           </p>
         </div>
       </section>
 
       {/* ── 1b. PAS — name the pain, then position the fix ── */}
       <section className="py-14 bg-surface border-b border-border">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 text-center">
           <span className="inline-block text-[11px] font-bold uppercase tracking-wide text-rose-500 bg-rose-500/10 px-3 py-1 rounded-full mb-4">
             Why this matters
           </span>
@@ -317,14 +313,14 @@ export default async function HomePage() {
 
       {/* ── 4b. BAB — the old way vs. the RupChain way ── */}
       <section className="py-14 bg-canvas border-t border-border">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">The old way vs. the RupChain way</h2>
             <p className="mt-2 text-sm text-text-muted">Same goal — getting your crypto. A completely different level of safety.</p>
           </div>
           <div className="grid md:grid-cols-2 gap-5">
             {/* Before */}
-            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-6">
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 sm:p-6">
               <p className="text-sm font-bold uppercase tracking-wide text-rose-500 mb-4">Without RupChain</p>
               <ul className="space-y-3">
                 {[
@@ -342,7 +338,7 @@ export default async function HomePage() {
               </ul>
             </div>
             {/* After */}
-            <div className="rounded-2xl border border-success/30 bg-success/5 p-6">
+            <div className="rounded-2xl border border-success/30 bg-success/5 p-4 sm:p-6">
               <p className="text-sm font-bold uppercase tracking-wide text-success mb-4">With RupChain</p>
               <ul className="space-y-3">
                 {[
