@@ -2573,6 +2573,76 @@ export const announcementApi = {
     }),
 }
 
+// ─── Blog / Content ───────────────────────────────────────────────────────────
+
+export interface BlogPostSummary {
+  slug: string
+  title: string
+  excerpt: string | null
+  coverImageUrl: string | null
+  coverImageAlt: string | null
+  category: string | null
+  tags: string[]
+  authorName: string
+  publishedAt: string | null
+  readingMinutes: number
+}
+
+export interface BlogPost extends BlogPostSummary {
+  id: string
+  bodyHtml: string
+  status: 'draft' | 'published'
+  scheduledFor: string | null
+  authorId: string | null
+  metaTitle: string | null
+  metaDescription: string | null
+  focusKeyword: string | null
+  ogImageUrl: string | null
+  canonicalUrl: string | null
+  noindex: boolean
+  viewCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BlogUpsert {
+  title: string
+  slug?: string
+  excerpt?: string | null
+  bodyHtml: string
+  coverImageUrl?: string | null
+  coverImageAlt?: string | null
+  status?: 'draft' | 'published'
+  tags?: string[]
+  category?: string | null
+  authorName?: string
+  metaTitle?: string | null
+  metaDescription?: string | null
+  focusKeyword?: string | null
+  ogImageUrl?: string | null
+  canonicalUrl?: string | null
+  noindex?: boolean
+}
+
+export const blogApi = {
+  // Public
+  list: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ posts: BlogPostSummary[]; total: number; page: number; pageSize: number }>('/blog' + buildQs(params)),
+  getBySlug: (slug: string) =>
+    apiRequest<BlogPost>(`/blog/post/${encodeURIComponent(slug)}`),
+  // Admin
+  adminList: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ posts: BlogPost[]; total: number; page: number; pageSize: number }>('/blog/admin' + buildQs(params)),
+  adminGet: (id: string) =>
+    apiRequest<BlogPost>(`/blog/admin/${id}`),
+  adminCreate: (data: BlogUpsert) =>
+    apiRequest<BlogPost>('/blog/admin', { method: 'POST', body: JSON.stringify(data) }),
+  adminUpdate: (id: string, data: Partial<BlogUpsert>) =>
+    apiRequest<BlogPost>(`/blog/admin/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  adminDelete: (id: string) =>
+    apiRequest<{ id: string }>(`/blog/admin/${id}`, { method: 'DELETE' }),
+}
+
 // ─── Community Token Market ───────────────────────────────────────────────────
 
 export const ctmApi = {
