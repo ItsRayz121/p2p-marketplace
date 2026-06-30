@@ -110,11 +110,10 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
         </div>
       </div>
 
-      {/* Sidebar */}
-      <div className="space-y-5">
-        {/* Publish + SEO check stay pinned while you scroll the article, so you
-            never have to jump back to the top to publish or re-check SEO. */}
-        <div className="lg:sticky lg:top-20 space-y-5 z-10">
+      {/* Sidebar — one pinned panel so it never half-scrolls: the whole column
+          stays put while you edit the article, scrolling within itself when it's
+          taller than the screen. */}
+      <div className="space-y-5 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
           {/* Publish box — kept at the top so it's the first thing in reach. */}
           <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -150,7 +149,6 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
             focusKeyword={focusKeyword}
             coverImageUrl={coverImageUrl}
           />
-        </div>
 
         {/* Cover image */}
         <div className="bg-surface border border-border rounded-xl p-4 space-y-3">

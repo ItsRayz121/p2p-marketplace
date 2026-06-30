@@ -1,9 +1,16 @@
 // Server-side blog fetches for the public /blog pages + sitemap. Plain fetch
-// against the backend (no client-only imports), with ISR caching so published
-// posts are fast and SEO-friendly without hammering the API.
+// against the backend (no client-only imports).
 import type { BlogPost, BlogPostSummary } from './api'
 
-const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
+// These run on the Vercel server, not in the browser. If the public API host
+// (NEXT_PUBLIC_API_URL, e.g. api.rupchain.com) sits behind Cloudflare bot
+// protection, Cloudflare can block server-to-server requests from Vercel's
+// datacenter IPs — the browser passes, but SSR gets nothing, so every post
+// 404s and the list shows "No posts yet". Set BACKEND_ORIGIN_URL (server-only,
+// NOT NEXT_PUBLIC_) to the backend's raw origin (e.g. the *.up.railway.app URL)
+// so SSR talks to the origin directly and bypasses Cloudflare. Falls back to
+// the public URL when unset, so existing setups keep working.
+const API = (process.env.BACKEND_ORIGIN_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '')
 
 async function unwrap<T>(res: Response): Promise<T | null> {
   if (!res.ok) return null
