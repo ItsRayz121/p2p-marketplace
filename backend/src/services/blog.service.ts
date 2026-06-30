@@ -1,3 +1,4 @@
+import sanitizeHtmlLib from 'sanitize-html'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 
@@ -35,16 +36,49 @@ export function estimateReadingMinutes(html: string): number {
 }
 
 /**
- * Minimal defence-in-depth sanitisation of admin-authored rich HTML before it
- * is stored and later rendered on public pages. Authors are trusted admins, but
- * we still strip <script>/<style> blocks, inline event handlers, and
- * javascript: URLs so a copy-pasted snippet can't smuggle in executable code.
+ * Hosts an <iframe> is allowed to embed. Kept tight on purpose: only the video
+ * providers the editor can actually insert (YouTube, Vimeo, Google Drive,
+ * Telegram). Anything else is dropped, regardless of who authored it.
+ */
+const ALLOWED_IFRAME_HOSTNAMES = [
+  'www.youtube.com',
+  'youtube.com',
+  'www.youtube-nocookie.com',
+  'youtube-nocookie.com',
+  'player.vimeo.com',
+  'drive.google.com',
+  't.me',
+]
+
+/**
+ * Defence-in-depth sanitisation of admin-authored rich HTML before it is stored
+ * and later rendered (via dangerouslySetInnerHTML) on public pages. Authors are
+ * trusted admins, but we run a real DOM allowlist (sanitize-html) so a
+ * copy-pasted/edited snippet can't smuggle in executable code: only known-good
+ * tags/attributes survive, <script>/<style>/event-handlers/js-URLs are stripped,
+ * and <iframe> is restricted to the embed hosts above. The allowlist preserves
+ * everything the TipTap editor emits — including the YouTube wrapper
+ * (<div data-youtube-video>), inline embeds (<iframe class="blog-embed">),
+ * images (<img class="blog-img">) and captions (<p class="blog-caption">).
  */
 export function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<\s*(script|style|iframe(?![^>]*\b(youtube|youtube-nocookie|player\.vimeo|drive\.google|t\.me|telegram)\b))[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/(href|src)\s*=\s*("|')\s*javascript:[^"']*\2/gi, '$1=$2#$2')
+  return sanitizeHtmlLib(html, {
+    allowedTags: sanitizeHtmlLib.defaults.allowedTags.concat(['img', 'iframe']),
+    allowedAttributes: {
+      '*': ['class'],
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt', 'title', 'width', 'height', 'loading'],
+      iframe: ['src', 'width', 'height', 'allow', 'allowfullscreen', 'frameborder', 'title', 'loading', 'referrerpolicy'],
+      div: ['data-youtube-video'],
+    },
+    allowedIframeHostnames: ALLOWED_IFRAME_HOSTNAMES,
+    allowIframeRelativeUrls: false,
+    allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+    // Harden every surviving link, including ones pasted without a rel.
+    transformTags: {
+      a: sanitizeHtmlLib.simpleTransform('a', { rel: 'noopener noreferrer' }),
+    },
+  })
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -58,6 +92,7 @@ export interface BlogPostInput {
   bodyHtml: string
   coverImageUrl?: string | null | undefined
   coverImageAlt?: string | null | undefined
+  coverImageCaption?: string | null | undefined
   status?: 'draft' | 'published' | undefined
   tags?: string[] | undefined
   category?: string | null | undefined
@@ -86,6 +121,7 @@ export async function createPost(input: BlogPostInput, authorId?: string) {
       bodyHtml,
       coverImageUrl: input.coverImageUrl ?? null,
       coverImageAlt: input.coverImageAlt ?? null,
+      coverImageCaption: input.coverImageCaption ?? null,
       status,
       publishedAt: status === 'published' ? new Date() : null,
       tags: input.tags ?? [],
@@ -132,6 +168,7 @@ export async function updatePost(id: string, input: BlogPostUpdate) {
       ...(bodyHtml !== undefined ? { bodyHtml, readingMinutes: estimateReadingMinutes(bodyHtml) } : {}),
       ...(input.coverImageUrl !== undefined ? { coverImageUrl: input.coverImageUrl } : {}),
       ...(input.coverImageAlt !== undefined ? { coverImageAlt: input.coverImageAlt } : {}),
+      ...(input.coverImageCaption !== undefined ? { coverImageCaption: input.coverImageCaption } : {}),
       ...(input.status !== undefined ? { status: input.status, publishedAt } : {}),
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
       ...(input.category !== undefined ? { category: input.category } : {}),
@@ -208,9 +245,21 @@ export async function listPublic(opts: { page?: number | undefined; pageSize?: n
 export async function getPublicBySlug(slug: string) {
   const post = await db.blogPost.findUnique({ where: { slug } })
   if (!post || post.status !== 'published') throw new AppError('NOT_FOUND', 'Post not found', 404)
-  // Fire-and-forget view increment — never block the read on it.
-  db.blogPost.update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } }).catch(() => {})
+  // NB: view counting lives in recordView(), pinged from the browser on each
+  // visit. Incrementing here would only fire once per ISR revalidation window
+  // (the public page is cached), badly under-counting real traffic.
   return post
+}
+
+/**
+ * Per-visit view increment, called from a lightweight browser ping rather than
+ * the cached page render so the count tracks actual visits. Silent no-op for
+ * unknown/unpublished slugs — it must never throw into a fire-and-forget call.
+ */
+export async function recordView(slug: string): Promise<void> {
+  await db.blogPost
+    .updateMany({ where: { slug, status: 'published' }, data: { viewCount: { increment: 1 } } })
+    .catch(() => {})
 }
 
 /** All published slugs for sitemap generation. */

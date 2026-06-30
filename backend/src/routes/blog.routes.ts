@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
 import {
   createPost, updatePost, deletePost, listAdmin, getAdminById,
-  listPublic, getPublicBySlug,
+  listPublic, getPublicBySlug, recordView,
 } from '../services/blog.service'
 
 const adminGuard = [authenticate, requireRole('admin', 'super_admin')]
@@ -16,6 +16,7 @@ const upsertSchema = z.object({
   bodyHtml: z.string().max(200_000),
   coverImageUrl: z.string().url().max(600).nullish(),
   coverImageAlt: z.string().max(200).nullish(),
+  coverImageCaption: z.string().max(300).nullish(),
   status: z.enum(['draft', 'published']).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
   category: z.string().max(60).nullish(),
@@ -46,6 +47,14 @@ export async function blogRoutes(app: FastifyInstance) {
     const { slug } = req.params as { slug: string }
     const post = await getPublicBySlug(slug)
     return reply.send({ success: true, data: post })
+  })
+
+  // Browser-pinged per-visit view counter — deliberately outside the cached
+  // page render so it tracks real visits rather than ISR revalidations.
+  app.post('/blog/post/:slug/view', async (req, reply) => {
+    const { slug } = req.params as { slug: string }
+    await recordView(slug)
+    return reply.send({ success: true })
   })
 
   // ── Admin ───────────────────────────────────────────────────────────────

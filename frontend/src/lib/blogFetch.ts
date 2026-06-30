@@ -31,7 +31,7 @@ export async function fetchBlogList(params: { page?: number; category?: string; 
   if (params.category) qs.set('category', params.category)
   if (params.tag) qs.set('tag', params.tag)
   try {
-    const res = await fetch(`${API}/api/v1/blog?${qs.toString()}`, { next: { revalidate: 120 } })
+    const res = await fetch(`${API}/api/v1/blog?${qs.toString()}`, { cache: 'no-store' })
     return (await unwrap<BlogList>(res)) ?? { posts: [], total: 0, page: 1, pageSize: 12 }
   } catch {
     return { posts: [], total: 0, page: 1, pageSize: 12 }
@@ -40,7 +40,10 @@ export async function fetchBlogList(params: { page?: number; category?: string; 
 
 export async function fetchBlogPost(slug: string): Promise<BlogPost | null> {
   try {
-    const res = await fetch(`${API}/api/v1/blog/post/${encodeURIComponent(slug)}`, { next: { revalidate: 120 } })
+    // `no-store`: never cache an individual post (especially a "not found"
+    // result). Without this, opening a slug before it was published cached the
+    // 404 for the whole revalidate window, so publishing didn't make it live.
+    const res = await fetch(`${API}/api/v1/blog/post/${encodeURIComponent(slug)}`, { cache: 'no-store' })
     return await unwrap<BlogPost>(res)
   } catch {
     return null

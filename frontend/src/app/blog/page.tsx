@@ -11,6 +11,9 @@ export const metadata: Metadata = buildMeta(
   '/blog',
 )
 
+// Render fresh so newly published posts appear in the listing right away.
+export const dynamic = 'force-dynamic'
+
 function fmtDate(d: string | null): string {
   if (!d) return ''
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })

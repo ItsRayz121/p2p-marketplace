@@ -2591,6 +2591,7 @@ export interface BlogPostSummary {
 export interface BlogPost extends BlogPostSummary {
   id: string
   bodyHtml: string
+  coverImageCaption: string | null
   status: 'draft' | 'published'
   scheduledFor: string | null
   authorId: string | null
@@ -2612,6 +2613,7 @@ export interface BlogUpsert {
   bodyHtml: string
   coverImageUrl?: string | null
   coverImageAlt?: string | null
+  coverImageCaption?: string | null
   status?: 'draft' | 'published'
   tags?: string[]
   category?: string | null

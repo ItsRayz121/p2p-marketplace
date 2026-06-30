@@ -2,15 +2,15 @@
 
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import Youtube from '@tiptap/extension-youtube'
 import { Iframe } from './iframeExtension'
+import { FigureImage } from './figureImageExtension'
 import { useRef, useState } from 'react'
 import {
   Bold, Italic, Strikethrough, Heading2, Heading3, List, ListOrdered,
-  Quote, Code, Link2, ImagePlus, Youtube as YoutubeIcon, Undo2, Redo2, Minus, Pencil,
+  Quote, Code, Link2, ImagePlus, Youtube as YoutubeIcon, Undo2, Redo2, Minus, RemoveFormatting,
 } from 'lucide-react'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { cn } from '@/lib/utils'
@@ -53,8 +53,9 @@ function Toolbar({ editor }: { editor: Editor }) {
     setImgError(null)
     try {
       const url = await upload(file)
-      const alt = window.prompt('Image description (alt text — important for SEO & accessibility):', '') ?? ''
-      editor.chain().focus().setImage({ src: url, alt }).run()
+      // Caption + alt are filled inline on the image itself (click it to edit),
+      // so no prompt here.
+      editor.chain().focus().setImage({ src: url, alt: '' }).run()
     } catch (err) {
       setImgError(err instanceof Error ? err.message : 'Upload failed')
     }
@@ -66,14 +67,6 @@ function Toolbar({ editor }: { editor: Editor }) {
     if (url === null) return
     if (url === '') { editor.chain().focus().extendMarkRange('link').unsetLink().run(); return }
     editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
-  }
-
-  function editImageAlt() {
-    if (!editor.isActive('image')) return
-    const current = (editor.getAttributes('image').alt as string | undefined) ?? ''
-    const alt = window.prompt('Edit image description (alt text — SEO & accessibility):', current)
-    if (alt === null) return
-    editor.chain().focus().updateAttributes('image', { alt }).run()
   }
 
   function addVideo() {
@@ -125,9 +118,9 @@ function Toolbar({ editor }: { editor: Editor }) {
       <span className="w-px h-5 bg-border mx-1" />
       <ToolbarButton title="Link" active={editor.isActive('link')} onClick={addLink}><Link2 size={16} /></ToolbarButton>
       <ToolbarButton title={uploading ? 'Uploading…' : 'Insert image'} disabled={uploading} onClick={() => fileRef.current?.click()}><ImagePlus size={16} /></ToolbarButton>
-      <ToolbarButton title="Edit selected image's alt text" disabled={!editor.isActive('image')} onClick={editImageAlt}><Pencil size={16} /></ToolbarButton>
       <ToolbarButton title="Embed video" onClick={addVideo}><YoutubeIcon size={16} /></ToolbarButton>
       <span className="w-px h-5 bg-border mx-1" />
+      <ToolbarButton title="Clear formatting (turn selection back into normal text)" onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()}><RemoveFormatting size={16} /></ToolbarButton>
       <ToolbarButton title="Undo" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={16} /></ToolbarButton>
       <ToolbarButton title="Redo" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={16} /></ToolbarButton>
       <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} />
@@ -141,7 +134,7 @@ export function BlogEditor({ value, onChange }: { value: string; onChange: (html
     immediatelyRender: false, // avoid Next.js SSR hydration mismatch
     extensions: [
       StarterKit,
-      Image.configure({ HTMLAttributes: { class: 'blog-img' } }),
+      FigureImage,
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener', target: '_blank' } }),
       Placeholder.configure({ placeholder: 'Write your article… use the toolbar for headings, images, and videos.' }),
       Youtube.configure({ width: 640, height: 360, HTMLAttributes: { class: 'blog-embed' } }),

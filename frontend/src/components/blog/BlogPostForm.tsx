@@ -21,12 +21,19 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   const [bodyHtml, setBodyHtml] = useState(initial?.bodyHtml ?? '')
   const [coverImageUrl, setCoverImageUrl] = useState(initial?.coverImageUrl ?? '')
   const [coverImageAlt, setCoverImageAlt] = useState(initial?.coverImageAlt ?? '')
+  const [coverImageCaption, setCoverImageCaption] = useState(initial?.coverImageCaption ?? '')
   const [tags, setTags] = useState((initial?.tags ?? []).join(', '))
   const [category, setCategory] = useState(initial?.category ?? '')
   const [metaTitle, setMetaTitle] = useState(initial?.metaTitle ?? '')
   const [metaDescription, setMetaDescription] = useState(initial?.metaDescription ?? '')
   const [focusKeyword, setFocusKeyword] = useState(initial?.focusKeyword ?? '')
   const [noindex, setNoindex] = useState(initial?.noindex ?? false)
+
+  // Live publish state mirrors what's actually saved, so the badge and the
+  // "View live post" link update immediately after publishing/unpublishing
+  // without waiting for a reload.
+  const [liveStatus, setLiveStatus] = useState(initial?.status)
+  const [liveSlug, setLiveSlug] = useState(initial?.slug)
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +61,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
       bodyHtml,
       coverImageUrl: coverImageUrl || null,
       coverImageAlt: coverImageAlt.trim() || null,
+      coverImageCaption: coverImageCaption.trim() || null,
       status,
       tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
       category: category.trim() || null,
@@ -71,7 +79,9 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
     try {
       const payload = buildPayload(status)
       if (isEdit && initial) {
-        await blogApi.adminUpdate(initial.id, payload)
+        const updated = await blogApi.adminUpdate(initial.id, payload)
+        setLiveStatus(updated.status)
+        setLiveSlug(updated.slug)
         setOk(status === 'published' ? 'Published!' : 'Saved.')
       } else {
         const created = await blogApi.adminCreate(payload)
@@ -86,7 +96,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   }
 
   return (
-    <div className="grid lg:grid-cols-3 gap-6">
+    <div className="grid lg:grid-cols-3 gap-6 items-start">
       {/* Main column */}
       <div className="lg:col-span-2 space-y-4">
         <div>
@@ -102,40 +112,44 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
 
       {/* Sidebar */}
       <div className="space-y-5">
-        <SeoChecklist
-          title={title}
-          slug={slug}
-          excerpt={excerpt}
-          bodyHtml={bodyHtml}
-          metaTitle={metaTitle}
-          metaDescription={metaDescription}
-          focusKeyword={focusKeyword}
-          coverImageUrl={coverImageUrl}
-        />
-
-        {/* Publish box */}
-        <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-text-primary">Publish</span>
-            {initial && (
-              <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', initial.status === 'published' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning')}>
-                {initial.status}
-              </span>
+        {/* Publish + SEO check stay pinned while you scroll the article, so you
+            never have to jump back to the top to publish or re-check SEO. */}
+        <div className="lg:sticky lg:top-20 space-y-5 z-10">
+          {/* Publish box — kept at the top so it's the first thing in reach. */}
+          <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-text-primary">Publish</span>
+              {initial && liveStatus && (
+                <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', liveStatus === 'published' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning')}>
+                  {liveStatus}
+                </span>
+              )}
+            </div>
+            {error && <p className="text-xs text-rose-500">{error}</p>}
+            {ok && <p className="text-xs text-success">{ok}</p>}
+            <div className="flex gap-2">
+              <button onClick={() => save('draft')} disabled={saving} className="flex-1 px-3 py-2 rounded-lg border border-border text-sm font-semibold text-text-secondary hover:bg-surface-alt disabled:opacity-50">
+                Save draft
+              </button>
+              <button onClick={() => save('published')} disabled={saving} className="flex-1 px-3 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50">
+                {saving ? 'Saving…' : 'Publish'}
+              </button>
+            </div>
+            {liveStatus === 'published' && liveSlug && (
+              <a href={`/blog/${liveSlug}`} target="_blank" rel="noopener" className="block text-center text-xs text-primary hover:underline">View live post ↗</a>
             )}
           </div>
-          {error && <p className="text-xs text-rose-500">{error}</p>}
-          {ok && <p className="text-xs text-success">{ok}</p>}
-          <div className="flex gap-2">
-            <button onClick={() => save('draft')} disabled={saving} className="flex-1 px-3 py-2 rounded-lg border border-border text-sm font-semibold text-text-secondary hover:bg-surface-alt disabled:opacity-50">
-              Save draft
-            </button>
-            <button onClick={() => save('published')} disabled={saving} className="flex-1 px-3 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50">
-              {saving ? 'Saving…' : 'Publish'}
-            </button>
-          </div>
-          {initial?.status === 'published' && (
-            <a href={`/blog/${initial.slug}`} target="_blank" rel="noopener" className="block text-center text-xs text-primary hover:underline">View live post ↗</a>
-          )}
+
+          <SeoChecklist
+            title={title}
+            slug={slug}
+            excerpt={excerpt}
+            bodyHtml={bodyHtml}
+            metaTitle={metaTitle}
+            metaDescription={metaDescription}
+            focusKeyword={focusKeyword}
+            coverImageUrl={coverImageUrl}
+          />
         </div>
 
         {/* Cover image */}
@@ -154,8 +168,15 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
           {uploadingCover && <p className="text-xs text-text-muted">Uploading…</p>}
           {coverImageUrl && (
             <>
-              <input className={inputCls} value={coverImageAlt} onChange={(e) => setCoverImageAlt(e.target.value)} placeholder="Cover alt text (SEO)" />
-              <button onClick={() => setCoverImageUrl('')} className="text-xs text-rose-500 hover:underline">Remove cover</button>
+              <div>
+                <label className={labelCls}>Alt text <span className="text-text-muted font-normal">— hidden, for SEO & screen readers (optional)</span></label>
+                <input className={inputCls} value={coverImageAlt} onChange={(e) => setCoverImageAlt(e.target.value)} placeholder="e.g. Person buying USDT on a phone" />
+              </div>
+              <div>
+                <label className={labelCls}>Caption <span className="text-text-muted font-normal">— visible under the image (optional)</span></label>
+                <input className={inputCls} value={coverImageCaption} onChange={(e) => setCoverImageCaption(e.target.value)} placeholder="e.g. Buying USDT with JazzCash in seconds" />
+              </div>
+              <button onClick={() => { setCoverImageUrl(''); setCoverImageAlt(''); setCoverImageCaption('') }} className="text-xs text-rose-500 hover:underline">Remove cover</button>
             </>
           )}
         </div>

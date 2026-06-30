@@ -1123,8 +1123,9 @@ model BlogPost {
   title           String
   excerpt         String?
   bodyHtml        String
-  coverImageUrl   String?
-  coverImageAlt   String?
+  coverImageUrl     String?
+  coverImageAlt     String?
+  coverImageCaption String?
 
   status          String    @default("draft") // draft | published
   publishedAt     DateTime?

@@ -3,7 +3,12 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { MarketingHeader } from '@/components/layout/MarketingHeader'
 import Footer from '@/components/layout/Footer'
+import { BlogViewPing } from '@/components/blog/BlogViewPing'
 import { fetchBlogPost } from '@/lib/blogFetch'
+
+// Render on each request: a freshly published post must be live immediately,
+// and a cached `notFound()` must never linger after publishing.
+export const dynamic = 'force-dynamic'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
 
@@ -81,6 +86,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   return (
     <div className="min-h-screen bg-surface">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <BlogViewPing slug={post.slug} />
       <MarketingHeader />
 
       <article className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -100,8 +106,13 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
         </div>
 
         {post.coverImageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={post.coverImageUrl} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border mt-6" />
+          <figure className="mt-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={post.coverImageUrl} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border" />
+            {post.coverImageCaption && (
+              <figcaption className="mt-2 text-center text-sm italic text-text-muted">{post.coverImageCaption}</figcaption>
+            )}
+          </figure>
         )}
 
         <div className="blog-article mt-8" dangerouslySetInnerHTML={{ __html: post.bodyHtml }} />

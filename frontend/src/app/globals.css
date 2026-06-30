@@ -346,10 +346,33 @@
   display: block; width: 100%; aspect-ratio: 16 / 9; height: auto;
   margin: 1.5rem 0; border-radius: 0.75rem; border: 0;
 }
+.blog-content figure, .blog-article figure { margin: 1.5rem 0; }
+.blog-content figure img, .blog-article figure img { margin: 0 auto; }
 .blog-content .blog-caption, .blog-article .blog-caption {
   text-align: center; font-size: 0.85rem; color: rgb(var(--color-text-muted));
-  margin-top: -0.75rem; font-style: italic;
+  margin-top: 0.5rem; font-style: italic;
 }
+
+/* Inline image editor (TipTap NodeView): click an image to set its visible
+   caption and hidden alt text, then Save. */
+.blog-content .blog-figure[data-selected='true'] img { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.blog-figure-editor {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  margin: 0.5rem auto 0; padding: 0.5rem;
+  background: rgb(var(--color-surface-alt)); border: 1px solid rgb(var(--color-border));
+  border-radius: 0.5rem;
+}
+.blog-figure-input {
+  flex: 1 1 12rem; min-width: 0; padding: 0.375rem 0.5rem; font-size: 0.8rem;
+  border: 1px solid rgb(var(--color-border)); border-radius: 0.375rem;
+  background: rgb(var(--color-canvas)); color: rgb(var(--color-text-primary));
+}
+.blog-figure-input:focus { outline: none; box-shadow: 0 0 0 2px hsl(var(--primary) / 0.4); }
+.blog-figure-save {
+  padding: 0.375rem 0.875rem; font-size: 0.8rem; font-weight: 700; border-radius: 0.375rem;
+  background: hsl(var(--primary)); color: #fff; white-space: nowrap;
+}
+.blog-figure-save:disabled { opacity: 0.45; cursor: default; }
 .blog-content hr, .blog-article hr { border: 0; border-top: 1px solid rgb(var(--color-border)); margin: 2rem 0; }
 .blog-content .is-editor-empty:first-child::before {
   content: attr(data-placeholder); float: left; color: rgb(var(--color-text-muted));

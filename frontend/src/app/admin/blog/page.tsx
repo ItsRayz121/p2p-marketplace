@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { Eye } from 'lucide-react'
 import { blogApi, type BlogPost, ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -90,6 +91,18 @@ export default function AdminBlogListPage() {
               </span>
               <span className="hidden sm:block text-xs text-text-muted w-20 text-right shrink-0">{p.viewCount} views</span>
               <div className="flex items-center gap-2 shrink-0">
+                {p.status === 'published' && (
+                  <a
+                    href={`/blog/${p.slug}`}
+                    target="_blank"
+                    rel="noopener"
+                    title="View live post"
+                    aria-label="View live post"
+                    className="text-text-muted hover:text-primary p-1"
+                  >
+                    <Eye size={16} />
+                  </a>
+                )}
                 <Link href={`/admin/blog/${p.id}`} className="text-xs font-semibold text-primary hover:underline">Edit</Link>
                 <button onClick={() => remove(p.id, p.title)} className="text-xs font-semibold text-rose-500 hover:underline">Delete</button>
               </div>
