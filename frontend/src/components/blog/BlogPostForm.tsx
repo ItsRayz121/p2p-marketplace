@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { blogApi, type BlogPost, type BlogUpsert, ApiError } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { BlogEditor } from './BlogEditor'
+import { SeoChecklist } from './SeoChecklist'
 import { cn } from '@/lib/utils'
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-border bg-canvas text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary/40'
@@ -101,6 +102,17 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
 
       {/* Sidebar */}
       <div className="space-y-5">
+        <SeoChecklist
+          title={title}
+          slug={slug}
+          excerpt={excerpt}
+          bodyHtml={bodyHtml}
+          metaTitle={metaTitle}
+          metaDescription={metaDescription}
+          focusKeyword={focusKeyword}
+          coverImageUrl={coverImageUrl}
+        />
+
         {/* Publish box */}
         <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between">
