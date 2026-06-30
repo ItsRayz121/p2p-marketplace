@@ -82,12 +82,12 @@ export default function OgImage() {
 
           {/* Subtext */}
           <div style={{ fontSize: 24, color: 'rgba(203,213,225,0.9)', textAlign: 'center', maxWidth: 700 }}>
-            P2P trading with escrow protection · JazzCash · Easypaisa · Bank Transfer
+            Protected P2P trading · JazzCash · Easypaisa · Bank Transfer
           </div>
 
           {/* Feature pills */}
           <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-            {['Escrow Protected', 'KYC Verified', 'Gas Fee Service', 'PKR Payments'].map((f) => (
+            {['Trade Protection', 'KYC Verified', 'Gas Fee Service', 'PKR Payments'].map((f) => (
               <div
                 key={f}
                 style={{

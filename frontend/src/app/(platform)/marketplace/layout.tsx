@@ -3,7 +3,7 @@ import { buildMeta } from '@/lib/metadata'
 
 export const metadata: Metadata = buildMeta(
   'USDT Marketplace — Buy & Sell USDT in Pakistan',
-  'Browse verified buy and sell USDT offers. Pay with JazzCash, Easypaisa, or bank transfer. Escrow-protected P2P trades in Pakistan.',
+  'Browse verified buy and sell USDT offers. Pay with JazzCash, Easypaisa, or bank transfer. Protected P2P trades in Pakistan.',
   '/marketplace',
 )
 

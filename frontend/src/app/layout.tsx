@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: '%s | RupChain',
   },
   description:
-    'RupChain is Pakistan\'s trusted P2P crypto marketplace. Buy and sell USDT with JazzCash, Easypaisa, and bank transfer. Escrow-protected trades, KYC-verified traders.',
+    'RupChain is Pakistan\'s trusted P2P crypto marketplace. Buy and sell USDT with JazzCash, Easypaisa, and bank transfer. Protected trades, KYC-verified traders, on-chain verification.',
   keywords: [
     'buy USDT Pakistan', 'sell USDT Pakistan', 'P2P crypto Pakistan',
     'JazzCash crypto', 'Easypaisa USDT', 'crypto exchange Pakistan',
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
     siteName: 'RupChain',
     title: 'RupChain — Buy & Sell Crypto in Pakistan',
     description:
-      'Pakistan\'s trusted P2P crypto marketplace. Trade USDT safely with JazzCash, Easypaisa, and bank transfer. Escrow-protected, KYC-verified.',
+      'Pakistan\'s trusted P2P crypto marketplace. Trade USDT safely with JazzCash, Easypaisa, and bank transfer. Protected trades, KYC-verified, on-chain verification.',
     images: [
       {
         url: '/opengraph-image',

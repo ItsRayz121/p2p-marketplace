@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowLeftRight, Fuel, FileText, Coins, ShieldCheck, Users, Lock, Headphones, UserPlus, BadgeCheck, Handshake } from 'lucide-react'
+import { ArrowLeftRight, Fuel, FileText, Coins, ShieldCheck, Users, Lock, Headphones, UserPlus, BadgeCheck, Handshake, Check, X } from 'lucide-react'
 import { RateCalculator } from './_components/home/RateCalculator'
 import { AnimatedStatsBar } from './_components/home/AnimatedStatsBar'
 import { TopAdsSection } from './_components/home/TopAdsSection'
@@ -196,15 +196,15 @@ export default async function HomePage() {
                 Live P2P Market · Pakistan
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight">
-                <span className="text-white">Buy &amp; Sell Crypto</span>
+                <span className="text-white">Crypto Trading</span>
                 <br />
                 <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                  in Pakistan
+                  You Can Trust
                 </span>
               </h1>
               <p className="mt-4 text-lg text-slate-300 max-w-md">
-                Peer-to-peer trading with secure escrow. Pay with JazzCash, Easypaisa, or bank transfer.
-                Funds release only when both sides confirm.
+                Protected P2P trading, instant cross-chain gas top-ups, and community tokens —
+                all in one place. In Pakistan, pay with JazzCash, Easypaisa, or bank transfer.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 mt-6">
                 <Link
@@ -246,6 +246,28 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ── 1b. PAS — name the pain, then position the fix ── */}
+      <section className="py-14 bg-surface border-b border-border">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <span className="inline-block text-[11px] font-bold uppercase tracking-wide text-rose-500 bg-rose-500/10 px-3 py-1 rounded-full mb-4">
+            Why this matters
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">
+            Most crypto deals are a leap of faith
+          </h2>
+          <p className="mt-4 text-base sm:text-lg text-text-secondary leading-relaxed">
+            You find a random seller in a group chat, send your money first, and just&hellip; hope.
+            No protection. No idea who they really are. Rates that move the second you commit.
+            One bad trade and it&rsquo;s gone &mdash; no support, no recourse, no one to call.
+          </p>
+          <p className="mt-5 text-base sm:text-lg font-semibold text-text-primary leading-relaxed">
+            RupChain was built to end that. Every trader is identity-verified, every transfer is
+            checked on-chain, and a real dispute team has your back &mdash; so you always know who
+            you&rsquo;re dealing with and can prove exactly what happened.
+          </p>
+        </div>
+      </section>
+
       {/* ── 2. STATS BAR — only show when there is real data ── */}
       {stats && (stats.totalUsers > 0 || stats.totalTrades > 0 || parseFloat(stats.totalVolume) > 0) && (
         <AnimatedStatsBar stats={stats} />
@@ -259,10 +281,10 @@ export default async function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { Icon: ShieldCheck,     title: 'Escrow Protected',   desc: 'Funds locked until both parties confirm',        color: 'text-success',    bg: 'bg-success/10'    },
-              { Icon: Users,           title: 'KYC Verified',       desc: 'Every trader identity-verified via CNIC',        color: 'text-primary',    bg: 'bg-primary/10'    },
-              { Icon: Lock,            title: 'Secure Withdrawals', desc: '2FA + email confirmation on every withdrawal',   color: 'text-warning',    bg: 'bg-warning/10'    },
-              { Icon: Headphones,      title: 'Dedicated Support',  desc: 'Real help with trades and disputes',             color: 'text-violet-500', bg: 'bg-violet-500/10' },
+              { Icon: ShieldCheck,     title: 'Trade Protection',   desc: 'Verified traders, on-chain proof, and a dispute team behind every trade',     color: 'text-success',    bg: 'bg-success/10'    },
+              { Icon: Users,           title: 'KYC Verified',       desc: 'Every trader is identity-checked, so you always know who you’re dealing with', color: 'text-primary',    bg: 'bg-primary/10'    },
+              { Icon: Lock,            title: 'Secure Withdrawals', desc: 'Nobody moves your funds without 2FA and email confirmation',                  color: 'text-warning',    bg: 'bg-warning/10'    },
+              { Icon: Headphones,      title: 'Dedicated Support',  desc: 'Real people to sort out any trade or dispute, fast',                          color: 'text-violet-500', bg: 'bg-violet-500/10' },
             ].map(({ Icon, title, desc, color, bg }) => (
               <div key={title} className="flex flex-col items-center text-center gap-2 px-3 py-4 bg-surface rounded-xl border border-border shadow-card">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg}`}>
@@ -276,6 +298,54 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ── 4b. BAB — the old way vs. the RupChain way ── */}
+      <section className="py-14 bg-canvas border-t border-border">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">The old way vs. the RupChain way</h2>
+            <p className="mt-2 text-sm text-text-muted">Same goal — getting your crypto. A completely different level of safety.</p>
+          </div>
+          <div className="grid md:grid-cols-2 gap-5">
+            {/* Before */}
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-6">
+              <p className="text-sm font-bold uppercase tracking-wide text-rose-500 mb-4">Without RupChain</p>
+              <ul className="space-y-3">
+                {[
+                  'Trust a stranger and hope for the best',
+                  'Send first, pray the crypto actually arrives',
+                  'Anonymous accounts with zero accountability',
+                  'Hidden middleman markups on every deal',
+                  'Get scammed? You’re completely on your own',
+                ].map((t) => (
+                  <li key={t} className="flex items-start gap-3 text-sm text-text-secondary">
+                    <X className="w-4 h-4 mt-0.5 shrink-0 text-rose-500" aria-hidden />
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {/* After */}
+            <div className="rounded-2xl border border-success/30 bg-success/5 p-6">
+              <p className="text-sm font-bold uppercase tracking-wide text-success mb-4">With RupChain</p>
+              <ul className="space-y-3">
+                {[
+                  'Every trader is KYC identity-verified',
+                  'Trade Protection backs every deal',
+                  'Transfers verified on-chain, in the open',
+                  'Live, transparent market rates — no markups',
+                  'A real dispute team has your back',
+                ].map((t) => (
+                  <li key={t} className="flex items-start gap-3 text-sm text-text-primary">
+                    <Check className="w-4 h-4 mt-0.5 shrink-0 text-success" aria-hidden />
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── 5. QUICK ACTIONS ── */}
       <section className="py-12 bg-canvas border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -283,7 +353,7 @@ export default async function HomePage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <QuickActionCard href="/marketplace" Icon={ArrowLeftRight} title="USDT Marketplace"    description="Browse buy and sell USDT offers from verified traders"   iconCls="text-blue-500"   bgCls="bg-blue-500/10"   />
             <QuickActionCard href="/ctm"         Icon={Coins}          title="Community Tokens"    description="Trade community tokens like BKR, SIDRA and more"         iconCls="text-pink-500"   bgCls="bg-pink-500/10"   />
-            <QuickActionCard href="/gas"          Icon={Fuel}           title="Crypto Gas Fees"     description="Top up gas fees on any chain instantly with PKR"         iconCls="text-amber-500"  bgCls="bg-amber-500/10"  />
+            <QuickActionCard href="/gas"          Icon={Fuel}           title="Crypto Gas Fees"     description="Never get stuck with empty gas — top up any chain in seconds" iconCls="text-amber-500"  bgCls="bg-amber-500/10"  />
             <QuickActionCard href="/fees"         Icon={FileText}       title="View Fees"           description="Transparent fee schedule for all transactions"          iconCls="text-indigo-500" bgCls="bg-indigo-500/10" />
           </div>
         </div>

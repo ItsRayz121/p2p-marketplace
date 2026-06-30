@@ -3,7 +3,7 @@ import { buildMeta } from '@/lib/metadata'
 
 export const metadata = buildMeta(
   'Terms of Service — RupChain',
-  'The terms governing your use of RupChain — Pakistan’s peer-to-peer crypto marketplace, escrow, withdrawals, and gas station.',
+  'The terms governing your use of RupChain — Pakistan’s peer-to-peer crypto marketplace, trade protection, withdrawals, and gas station.',
   '/terms',
 )
 

@@ -5,7 +5,7 @@ import { buildMeta } from '@/lib/metadata'
 
 export const metadata = buildMeta(
   'About RupChain — Pakistan’s P2P Crypto Marketplace',
-  'RupChain is Pakistan’s peer-to-peer crypto marketplace: escrow-protected USDT trades, local payments (JazzCash, Easypaisa, bank), community tokens, and a multi-chain gas station.',
+  'RupChain is Pakistan’s peer-to-peer crypto marketplace: protected USDT trades, local payments (JazzCash, Easypaisa, bank), community tokens, and a multi-chain gas station.',
   '/about',
 )
 

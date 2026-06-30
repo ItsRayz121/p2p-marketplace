@@ -15,7 +15,7 @@ export default function Footer() {
               <span className="font-black text-lg text-text-primary">RupChain</span>
             </Link>
             <p className="text-xs text-text-muted leading-relaxed">
-              Pakistan&apos;s trusted P2P crypto marketplace. Buy and sell USDT safely with escrow protection.
+              Pakistan&apos;s trusted P2P crypto marketplace. Buy and sell USDT safely with built-in trade protection.
             </p>
             <p className="text-xs text-text-muted mt-3">
               Proudly built in Pakistan · {SUPPORT_EMAIL}
