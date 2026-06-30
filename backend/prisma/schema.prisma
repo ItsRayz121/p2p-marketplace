@@ -1111,6 +1111,50 @@ model AnnouncementDismissal {
   @@index([userId])
 }
 
+// ── BLOG / CONTENT (SEO) ────────────────────────────────────────────────────
+// Admin-authored posts surfaced publicly at /blog and /blog/[slug]. `bodyHtml`
+// is sanitized rich HTML produced by the admin TipTap editor. Images live on
+// Cloudinary (BLOG_IMAGE folder); videos are EMBEDDED (YouTube/Drive/Telegram),
+// never self-hosted. The SEO fields drive <head> meta tags + Article JSON-LD so
+// the post is discoverable by Google and citable by AI answer engines.
+model BlogPost {
+  id              String    @id @default(cuid())
+  slug            String    @unique
+  title           String
+  excerpt         String?
+  bodyHtml        String
+  coverImageUrl   String?
+  coverImageAlt   String?
+
+  status          String    @default("draft") // draft | published
+  publishedAt     DateTime?
+  scheduledFor    DateTime?
+
+  tags            String[]  @default([])
+  category        String?
+
+  // Denormalized authorship — no FK, so we don't touch the User relation graph.
+  authorId        String?
+  authorName      String    @default("RupChain")
+
+  // SEO fields (all optional; sensible fallbacks computed at render time).
+  metaTitle       String?
+  metaDescription String?
+  focusKeyword    String?
+  ogImageUrl      String?
+  canonicalUrl    String?
+  noindex         Boolean   @default(false)
+
+  viewCount       Int       @default(0)
+  readingMinutes  Int       @default(1)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([category])
+}
+
 // ── LIVE SUPPORT CHAT ──────────────────────────────────────────────────────
 // User-to-admin support conversations. One open conversation per user; admins
 // reply from the admin panel. Delivery is via polling (see support routes).
