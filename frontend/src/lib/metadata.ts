@@ -16,7 +16,9 @@ export function buildMeta(
       description,
       url,
       siteName: 'RupChain',
-      images: [{ url: '/og-image.png', width: 1200, height: 630 }],
+      // Use the dynamic /opengraph-image route (renders the R+chain badge brand
+      // mark) — the old static /og-image.png never existed, so shares 404'd.
+      images: [{ url: `${BASE_URL}/opengraph-image`, width: 1200, height: 630 }],
     },
     twitter: { card: 'summary_large_image', title, description },
     alternates: { canonical: url },
