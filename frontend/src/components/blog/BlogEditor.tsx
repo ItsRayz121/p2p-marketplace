@@ -6,6 +6,7 @@ import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import Youtube from '@tiptap/extension-youtube'
+import { Iframe } from './iframeExtension'
 import { useRef, useState } from 'react'
 import {
   Bold, Italic, Strikethrough, Heading2, Heading3, List, ListOrdered,
@@ -76,19 +77,35 @@ function Toolbar({ editor }: { editor: Editor }) {
   }
 
   function addVideo() {
-    const url = window.prompt('Paste a YouTube video URL (best for SEO). Drive/Telegram links will be added as a link:', 'https://')
+    const url = window.prompt('Paste a video URL — YouTube, Google Drive, or a Telegram public post:', 'https://')
     if (!url) return
     const caption = (window.prompt('Video title / caption (optional — shown under the video):', '') ?? '').trim()
     const safeCaption = caption.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
-    if (/youtu\.?be/.test(url)) {
+
+    const isYoutube = /youtu\.?be/.test(url)
+
+    // Build an inline-embeddable iframe src for Drive / Telegram.
+    let embedSrc: string | null = null
+    if (!isYoutube && /drive\.google\.com/.test(url)) {
+      const m = url.match(/\/file\/d\/([\w-]+)/) ?? url.match(/[?&]id=([\w-]+)/) ?? url.match(/\/d\/([\w-]+)/)
+      if (m?.[1]) embedSrc = `https://drive.google.com/file/d/${m[1]}/preview`
+    } else if (!isYoutube && /t\.me\//.test(url)) {
+      const m = url.match(/t\.me\/([^/?#]+\/\d+)/)
+      if (m?.[1]) embedSrc = `https://t.me/${m[1]}?embed=1`
+    }
+
+    if (isYoutube) {
       editor.commands.setYoutubeVideo({ src: url })
-      if (safeCaption) editor.chain().focus().insertContent(`<p class="blog-caption">${safeCaption}</p>`).run()
+    } else if (embedSrc) {
+      editor.chain().focus().insertContent({ type: 'iframe', attrs: { src: embedSrc } }).run()
     } else {
-      // Non-YouTube: insert a prominent clickable link (inline players for
-      // Drive/Telegram can be added later; the link keeps the video reachable).
+      // Unrecognised link → clickable fallback (uses the caption as link text).
       const safeUrl = url.replace(/"/g, '%22')
       editor.chain().focus().insertContent(`<p>📹 <a href="${safeUrl}" target="_blank" rel="noopener">${safeCaption || 'Watch video'}</a></p>`).run()
+      return
     }
+
+    if (safeCaption) editor.chain().focus().insertContent(`<p class="blog-caption">${safeCaption}</p>`).run()
   }
 
   return (
@@ -128,6 +145,7 @@ export function BlogEditor({ value, onChange }: { value: string; onChange: (html
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener', target: '_blank' } }),
       Placeholder.configure({ placeholder: 'Write your article… use the toolbar for headings, images, and videos.' }),
       Youtube.configure({ width: 640, height: 360, HTMLAttributes: { class: 'blog-embed' } }),
+      Iframe,
     ],
     content: value || '',
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
