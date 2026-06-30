@@ -51,6 +51,13 @@ export async function uploadRoutes(app: FastifyInstance) {
     }
 
     const { type } = parsed.data
+
+    // Blog images are an admin-authoring concern — don't let any logged-in user
+    // mint Cloudinary upload signatures for the blog folder.
+    if (type === 'blog-image' && req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      throw new AppError('FORBIDDEN', 'Admin access required', 403)
+    }
+
     const folder = folderMap[type]!
     const resourceType = type === 'kyc-video' ? 'video' : 'image'
     const publicId = randomUUID()
