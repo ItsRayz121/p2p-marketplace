@@ -346,6 +346,10 @@
   display: block; width: 100%; aspect-ratio: 16 / 9; height: auto;
   margin: 1.5rem 0; border-radius: 0.75rem; border: 0;
 }
+.blog-content .blog-caption, .blog-article .blog-caption {
+  text-align: center; font-size: 0.85rem; color: rgb(var(--color-text-muted));
+  margin-top: -0.75rem; font-style: italic;
+}
 .blog-content hr, .blog-article hr { border: 0; border-top: 1px solid rgb(var(--color-border)); margin: 2rem 0; }
 .blog-content .is-editor-empty:first-child::before {
   content: attr(data-placeholder); float: left; color: rgb(var(--color-text-muted));

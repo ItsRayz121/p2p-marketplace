@@ -9,7 +9,7 @@ import Youtube from '@tiptap/extension-youtube'
 import { useRef, useState } from 'react'
 import {
   Bold, Italic, Strikethrough, Heading2, Heading3, List, ListOrdered,
-  Quote, Code, Link2, ImagePlus, Youtube as YoutubeIcon, Undo2, Redo2, Minus,
+  Quote, Code, Link2, ImagePlus, Youtube as YoutubeIcon, Undo2, Redo2, Minus, Pencil,
 } from 'lucide-react'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { cn } from '@/lib/utils'
@@ -67,15 +67,27 @@ function Toolbar({ editor }: { editor: Editor }) {
     editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
   }
 
+  function editImageAlt() {
+    if (!editor.isActive('image')) return
+    const current = (editor.getAttributes('image').alt as string | undefined) ?? ''
+    const alt = window.prompt('Edit image description (alt text — SEO & accessibility):', current)
+    if (alt === null) return
+    editor.chain().focus().updateAttributes('image', { alt }).run()
+  }
+
   function addVideo() {
     const url = window.prompt('Paste a YouTube video URL (best for SEO). Drive/Telegram links will be added as a link:', 'https://')
     if (!url) return
+    const caption = (window.prompt('Video title / caption (optional — shown under the video):', '') ?? '').trim()
+    const safeCaption = caption.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
     if (/youtu\.?be/.test(url)) {
       editor.commands.setYoutubeVideo({ src: url })
+      if (safeCaption) editor.chain().focus().insertContent(`<p class="blog-caption">${safeCaption}</p>`).run()
     } else {
       // Non-YouTube: insert a prominent clickable link (inline players for
       // Drive/Telegram can be added later; the link keeps the video reachable).
-      editor.chain().focus().insertContent(`<p>📹 <a href="${url}" target="_blank" rel="noopener">Watch video</a></p>`).run()
+      const safeUrl = url.replace(/"/g, '%22')
+      editor.chain().focus().insertContent(`<p>📹 <a href="${safeUrl}" target="_blank" rel="noopener">${safeCaption || 'Watch video'}</a></p>`).run()
     }
   }
 
@@ -96,6 +108,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       <span className="w-px h-5 bg-border mx-1" />
       <ToolbarButton title="Link" active={editor.isActive('link')} onClick={addLink}><Link2 size={16} /></ToolbarButton>
       <ToolbarButton title={uploading ? 'Uploading…' : 'Insert image'} disabled={uploading} onClick={() => fileRef.current?.click()}><ImagePlus size={16} /></ToolbarButton>
+      <ToolbarButton title="Edit selected image's alt text" disabled={!editor.isActive('image')} onClick={editImageAlt}><Pencil size={16} /></ToolbarButton>
       <ToolbarButton title="Embed video" onClick={addVideo}><YoutubeIcon size={16} /></ToolbarButton>
       <span className="w-px h-5 bg-border mx-1" />
       <ToolbarButton title="Undo" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={16} /></ToolbarButton>
