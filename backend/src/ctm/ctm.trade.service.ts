@@ -14,6 +14,7 @@ import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute 
 import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
+import { awardTradePointsTx } from '../services/airdrop.service'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -402,6 +403,9 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
 
     // Bump the combined buyer↔seller streak (shared with USDT P2P), atomic with completion.
     streakResult = await incrementTradeStreak(tx, buyerId, trade.sellerId)
+
+    // Award airdrop points to both sides (idempotent; no-op when the flag is off).
+    await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
   })
 
   // Trade completed cleanly → release the maker's bond (idempotent; no-op when off).

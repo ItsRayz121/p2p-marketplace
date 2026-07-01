@@ -63,6 +63,14 @@ export const FLAGS = {
    * approval, or buyer auto-discount runs; referral codes behave exactly as today.
    */
   GAS_AFFILIATE: 'gas_affiliate_enabled',
+  /**
+   * Airdrop / points loyalty system master switch. When ON, platform activity
+   * (USDT/CTM trades, Gas orders, referrals, streak) accrues non-transferable
+   * points into the append-only AirdropLedger, and the Airdrop tab unlocks. OFF
+   * (default) = no points are ever awarded and the tab shows a "Coming soon"
+   * locked state, even though it is visible in the account dropdown.
+   */
+  AIRDROP: 'airdrop_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]
@@ -100,4 +108,14 @@ export async function getNumberConfig(key: string, fallback: number): Promise<nu
   if (!row) return fallback
   const n = parseFloat(row.value)
   return Number.isFinite(n) ? n : fallback
+}
+
+/**
+ * Read a boolean PlatformConfig value by ARBITRARY key (not one of the typed
+ * FLAGS), falling back when the key is missing. Uncached — use for cold-path
+ * config like `airdrop_require_kyc`, not hot per-request checks.
+ */
+export async function getBoolConfig(key: string, fallback: boolean): Promise<boolean> {
+  const row = await db.platformConfig.findUnique({ where: { key } })
+  return parseFlag(row?.value, fallback)
 }

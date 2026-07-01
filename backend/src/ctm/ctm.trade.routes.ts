@@ -28,6 +28,7 @@ import {
 import { db } from '../lib/prisma'
 import { releaseMakerBond } from '../services/makerBond.service'
 import { incrementTradeStreak } from '../services/tradeStreak.service'
+import { awardTradePointsTx } from '../services/airdrop.service'
 import { logger } from '../lib/logger'
 
 const disputeSchema = z.object({
@@ -324,6 +325,7 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
       const claimed = await tx.ctmTrade.updateMany({ where: { tradeRef: ref, status: { not: 'completed' } }, data: { status: 'completed', completedAt: new Date() } })
       if (claimed.count > 0) {
         await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
+        await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
       }
     })
     await db.auditLog.create({

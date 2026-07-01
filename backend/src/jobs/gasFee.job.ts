@@ -12,6 +12,7 @@ import { selectHotWallet } from '../lib/gas/gasWalletService'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { recordGasAudit } from '../lib/gas/gas.matching'
 import { accrueReferralForDelivery } from '../lib/gas/gas.referral'
+import { awardGasPointsForDelivery } from '../services/airdrop.service'
 import { REFUND_WINDOW_MS, AUTO_REFUND_SAFETY_MS, RETRY_INTERVAL_MS } from '../lib/gas/gas.refundWindow'
 import type { GasFeeOrder } from '@prisma/client'
 
@@ -77,6 +78,8 @@ async function finalizeDeliverySuccess(
   // Gas referral: accrue the referrer's share of the realized margin (best-effort,
   // idempotent, no-op unless the flag is ON and the buyer is a bound referred user).
   await accrueReferralForDelivery(order).catch((e) => logger.warn({ err: e, orderId }, 'gas referral accrual failed'))
+  // Airdrop: award a flat point per delivered paid gas order (idempotent, no-op when off).
+  await awardGasPointsForDelivery(order).catch((e) => logger.warn({ err: e, orderId }, 'airdrop gas award failed'))
   // Gas orders count toward user trade stats — trigger unified badge recalculate
   if (order.userId) {
     queues.badgeRecalculate.add('recalc', { userId: order.userId }).catch(() => {})

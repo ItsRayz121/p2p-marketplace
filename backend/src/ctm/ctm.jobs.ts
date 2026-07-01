@@ -4,6 +4,7 @@ import https from 'node:https'
 import { notify as centralNotify } from '../lib/notify'
 import { releaseMakerBond } from '../services/makerBond.service'
 import { incrementTradeStreak, ordinal } from '../services/tradeStreak.service'
+import { awardTradePointsTx } from '../services/airdrop.service'
 import { postCtmSystemMessage } from './ctm.trade.service'
 
 /** Human-readable trade label for user-facing notifications — never exposes the raw cuid. */
@@ -143,6 +144,8 @@ export async function runCtmProofDeadline() {
         })
         // Bump the combined buyer↔seller streak, atomic with the auto-completion.
         streakResult = await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
+        // Award airdrop points to both sides (idempotent; no-op when the flag is off).
+        await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
       })
 
       // Buyer confirmed in the same instant — that path owns the completion side effects.

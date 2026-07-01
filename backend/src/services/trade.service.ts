@@ -22,6 +22,7 @@ import {
 import { logger } from '../lib/logger'
 import { validateAddressForNetwork } from '../lib/addressValidation'
 import { incrementTradeStreak, getTradeStreak, ordinal } from './tradeStreak.service'
+import { awardTradePointsTx } from './airdrop.service'
 
 // ─── Payment-method resolution ──────────────────────────────────────────────
 // A trade stores `paymentMethod` as the buyer's selection. For current trades
@@ -937,6 +938,10 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     // Bump the buyer↔seller combined trade streak (USDT + CTM). Atomic with the
     // release so the count can never drift from the trades that produced it.
     streakResult = await incrementTradeStreak(tx, rows.buyerId, rows.sellerId)
+
+    // Award airdrop points to both sides (atomic + idempotent; no-op when the flag
+    // is off). Runs inside this CAS-guarded release tx so it can never double-count.
+    await awardTradePointsTx(tx, { tradeType: 'usdt', tradeId, buyerId: rows.buyerId, sellerId: rows.sellerId, fiatAmountPKR: rows.fiatAmount })
   })
 
   // Trade completed cleanly → release the maker's collateral bond (idempotent;

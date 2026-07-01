@@ -2653,4 +2653,83 @@ model LogoRegistry {
   @@index([type])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AIRDROP / POINTS SYSTEM  (Phase 1 — earning engine)
+//
+// Users earn NON-TRANSFERABLE loyalty POINTS for platform activity (USDT trades,
+// CTM trades, Gas orders, referrals; streak/check-in added in Phase 3). Points are
+// SHARE-OF-A-FIXED-POOL per SEASON: at TGE, tokens = (your points / total season
+// points) × season pool, so total issuance can NEVER inflate no matter how many
+// points are minted.
+//
+// The whole system is INERT unless the PlatformConfig flag `airdrop_enabled` is ON
+// (default OFF) — so pushing to main / auto-deploy never starts awarding until an
+// admin flips it. The ledger is APPEND-ONLY and every award is IDEMPOTENT on
+// `eventKey`, so the platform's overlapping poller / webhook / reconciliation paths
+// can never double-award ("double sort"). Reversals are negative rows, never edits.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AirdropSeasonStatus {
+  active
+  closed
+}
+
+enum AirdropSource {
+  usdt_trade
+  ctm_trade
+  gas_order
+  referral
+  checkin
+  social
+  streak_bonus
+  admin_adjust
+  clawback
+}
+
+model AirdropSeason {
+  id        String              @id @default(cuid())
+  index     Int                 @unique // 1, 2, 3 … ordering + human season number
+  name      String
+  status    AirdropSeasonStatus @default(active)
+  tokenPool Decimal?            @db.Decimal(38, 8) // token allocation for this season (set at/before TGE)
+  startedAt DateTime            @default(now())
+  endedAt   DateTime?
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+}
+
+// Cached per-(user, season) point total. Source of truth is AirdropLedger; this is
+// kept in sync inside the same transaction as every ledger write so leaderboards /
+// summaries never have to SUM the whole ledger.
+model AirdropAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  seasonId    String
+  totalPoints Decimal  @default(0) @db.Decimal(18, 4)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, seasonId])
+  @@index([seasonId, totalPoints])
+}
+
+// Append-only. One row per awarded (or reversed) event. `eventKey` is globally
+// unique — that unique constraint IS the anti-double-count guard.
+model AirdropLedger {
+  id        String        @id @default(cuid())
+  userId    String
+  seasonId  String
+  source    AirdropSource
+  points    Decimal       @db.Decimal(18, 4) // may be negative (clawback / admin_adjust)
+  eventKey  String        @unique // e.g. "usdt_trade:<tradeId>:buyer", "gas_order:<id>"
+  pairKey   String? // canonical counterparty pair "a|b" — drives wash-trade decay
+  metadata  Json          @default("{}")
+  createdAt DateTime      @default(now())
+
+  @@index([userId, seasonId])
+  @@index([userId, source, createdAt])
+  @@index([seasonId, createdAt])
+  @@index([pairKey])
+}
+
 
