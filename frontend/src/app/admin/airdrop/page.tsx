@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   adminAirdropApi,
+  fetchAirdropAllocationsCsv,
   type AdminAirdropSeason,
   type AdminAllocation,
 } from '@/lib/api'
@@ -16,7 +17,7 @@ export default function AdminAirdropPage() {
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
   const [poolInputs, setPoolInputs] = useState<Record<string, string>>({})
-  const [alloc, setAlloc] = useState<{ seasonId: string; rows: AdminAllocation[]; pool: number | null; totalPoints: number } | null>(null)
+  const [alloc, setAlloc] = useState<{ seasonId: string; rows: AdminAllocation[]; pool: number | null; totalPoints: number; truncated: boolean } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -74,26 +75,28 @@ export default function AdminAirdropPage() {
     setBusy(true)
     try {
       const r = await adminAirdropApi.allocations(id)
-      setAlloc({ seasonId: id, rows: r.allocations, pool: r.pool, totalPoints: r.totalPoints })
+      setAlloc({ seasonId: id, rows: r.allocations, pool: r.pool, totalPoints: r.totalPoints, truncated: r.truncated })
     } catch (e) {
       toast.error('Failed to compute allocations', e instanceof Error ? e.message : undefined)
     } finally { setBusy(false) }
   }
 
-  const downloadCsv = () => {
+  // Downloads the COMPLETE server-generated CSV (all participants), not the capped
+  // preview table shown above.
+  const downloadCsv = async () => {
     if (!alloc) return
-    const header = 'userId,username,email,points,sharePct,tokenAllocation'
-    const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
-    const body = alloc.rows.map((a) =>
-      [a.userId, esc(a.username), esc(a.email), a.points, a.sharePct, a.tokenAllocation ?? ''].join(','),
-    )
-    const blob = new Blob([[header, ...body].join('\n')], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `airdrop-allocations-${alloc.seasonId}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    try {
+      const csv = await fetchAirdropAllocationsCsv(alloc.seasonId)
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `airdrop-allocations-${alloc.seasonId}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error('Download failed', e instanceof Error ? e.message : undefined)
+    }
   }
 
   if (loading) return <LoadingState />
@@ -184,7 +187,7 @@ export default function AdminAirdropPage() {
             <div>
               <h2 className="font-bold text-text-primary">Allocations</h2>
               <p className="text-xs text-text-muted">
-                {alloc.rows.length.toLocaleString()} users · pool {alloc.pool != null ? fmt(alloc.pool) : '— (set a pool to see token amounts)'} · {fmt(alloc.totalPoints)} total points
+                {alloc.truncated ? `top ${alloc.rows.length.toLocaleString()} shown` : `${alloc.rows.length.toLocaleString()} users`} · pool {alloc.pool != null ? fmt(alloc.pool) : '— (set a pool to see token amounts)'} · {fmt(alloc.totalPoints)} total points
               </p>
             </div>
             <button onClick={downloadCsv} className="px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover">
@@ -212,8 +215,8 @@ export default function AdminAirdropPage() {
                 ))}
               </tbody>
             </table>
-            {alloc.rows.length > 500 && (
-              <p className="text-xs text-text-muted mt-2">Showing first 500 rows — download the CSV for the full list.</p>
+            {(alloc.truncated || alloc.rows.length > 500) && (
+              <p className="text-xs text-text-muted mt-2">Preview is capped — the CSV download contains every participant.</p>
             )}
           </div>
         </div>

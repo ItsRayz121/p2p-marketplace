@@ -98,16 +98,36 @@ export interface Allocation {
  * total, tokenAllocation = sharePct × pool (null until a pool is set). This is the
  * exact table you'd hand to the TGE distribution step.
  */
-export async function computeAllocations(seasonId: string, limit = 5000): Promise<{ season: SeasonSummary; totalPoints: number; pool: number | null; allocations: Allocation[] }> {
+function toAllocation(userId: string, totalPointsForUser: number, seasonTotal: number, pool: number | null, u?: { username: string; email: string }): Allocation {
+  const sharePct = seasonTotal > 0 ? (totalPointsForUser / seasonTotal) * 100 : 0
+  const tokenAllocation = pool != null && seasonTotal > 0 ? (totalPointsForUser / seasonTotal) * pool : null
+  return {
+    userId,
+    username: u?.username ?? '(unknown)',
+    email: u?.email ?? '',
+    points: totalPointsForUser,
+    sharePct: Math.round(sharePct * 1e6) / 1e6,
+    tokenAllocation: tokenAllocation != null ? Math.round(tokenAllocation * 1e8) / 1e8 : null,
+  }
+}
+
+/**
+ * UI-facing allocation preview: the top `limit` earners plus a `truncated` flag so
+ * the admin knows the table is partial (the CSV export is always complete). Shares
+ * are always computed against the FULL season total, so a row's % is correct even
+ * when the list is truncated.
+ */
+export async function computeAllocations(seasonId: string, limit = 1000): Promise<{ season: SeasonSummary; totalPoints: number; pool: number | null; allocations: Allocation[]; truncated: boolean }> {
   const season = await db.airdropSeason.findUnique({ where: { id: seasonId } })
   if (!season) throw new AppError('NOT_FOUND', 'Season not found.', 404)
   const { participants, totalPoints } = await seasonTotals(seasonId)
   const pool = season.tokenPool ? Number(season.tokenPool) : null
+  const take = Math.min(Math.max(limit, 1), 5000)
 
   const accounts = await db.airdropAccount.findMany({
     where: { seasonId, totalPoints: { gt: 0 } },
     orderBy: { totalPoints: 'desc' },
-    take: Math.min(Math.max(limit, 1), 20_000),
+    take,
     select: { userId: true, totalPoints: true },
   })
   const users = await db.user.findMany({
@@ -115,37 +135,53 @@ export async function computeAllocations(seasonId: string, limit = 5000): Promis
     select: { id: true, username: true, email: true },
   })
   const uMap = new Map(users.map((u) => [u.id, u]))
-
-  const allocations: Allocation[] = accounts.map((a) => {
-    const points = Number(a.totalPoints)
-    const sharePct = totalPoints > 0 ? (points / totalPoints) * 100 : 0
-    const tokenAllocation = pool != null && totalPoints > 0 ? (points / totalPoints) * pool : null
-    const u = uMap.get(a.userId)
-    return {
-      userId: a.userId,
-      username: u?.username ?? '(unknown)',
-      email: u?.email ?? '',
-      points,
-      sharePct: Math.round(sharePct * 1e6) / 1e6,
-      tokenAllocation: tokenAllocation != null ? Math.round(tokenAllocation * 1e8) / 1e8 : null,
-    }
-  })
+  const allocations = accounts.map((a) => toAllocation(a.userId, Number(a.totalPoints), totalPoints, pool, uMap.get(a.userId)))
 
   const summary: SeasonSummary = {
     id: season.id, index: season.index, name: season.name, status: season.status,
     tokenPool: season.tokenPool ? season.tokenPool.toString() : null,
     participants, totalPoints, startedAt: season.startedAt, endedAt: season.endedAt,
   }
-  return { season: summary, totalPoints, pool, allocations }
+  return { season: summary, totalPoints, pool, allocations, truncated: participants > accounts.length }
 }
 
-/** CSV of the allocation table, for the manual TGE distribution step. */
+/**
+ * COMPLETE CSV of the allocation table for the manual TGE distribution — pages
+ * through EVERY participant in batches (never truncated), computing each share
+ * against the full season total. This is the artifact you actually distribute from.
+ */
 export async function exportAllocationsCsv(seasonId: string): Promise<string> {
-  const { allocations } = await computeAllocations(seasonId, 20_000)
+  const season = await db.airdropSeason.findUnique({ where: { id: seasonId } })
+  if (!season) throw new AppError('NOT_FOUND', 'Season not found.', 404)
+  const { totalPoints } = await seasonTotals(seasonId)
+  const pool = season.tokenPool ? Number(season.tokenPool) : null
+
   const header = 'userId,username,email,points,sharePct,tokenAllocation'
   const escape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
-  const rows = allocations.map((a) =>
-    [a.userId, escape(a.username), escape(a.email), a.points, a.sharePct, a.tokenAllocation ?? ''].join(','),
-  )
-  return [header, ...rows].join('\n')
+  const lines = [header]
+
+  const BATCH = 5000
+  let cursor: string | undefined
+  for (;;) {
+    const batch = await db.airdropAccount.findMany({
+      where: { seasonId, totalPoints: { gt: 0 } },
+      orderBy: { id: 'asc' },
+      take: BATCH,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      select: { id: true, userId: true, totalPoints: true },
+    })
+    if (batch.length === 0) break
+    const users = await db.user.findMany({
+      where: { id: { in: batch.map((b) => b.userId) } },
+      select: { id: true, username: true, email: true },
+    })
+    const uMap = new Map(users.map((u) => [u.id, u]))
+    for (const b of batch) {
+      const a = toAllocation(b.userId, Number(b.totalPoints), totalPoints, pool, uMap.get(b.userId))
+      lines.push([a.userId, escape(a.username), escape(a.email), a.points, a.sharePct, a.tokenAllocation ?? ''].join(','))
+    }
+    cursor = batch[batch.length - 1]!.id
+    if (batch.length < BATCH) break
+  }
+  return lines.join('\n')
 }

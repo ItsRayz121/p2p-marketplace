@@ -1321,9 +1321,21 @@ export const adminAirdropApi = {
   closeSeason: (id: string) =>
     apiRequest<Record<string, never>>(`/admin/airdrop/seasons/${id}/close`, { method: 'POST' }),
   allocations: (id: string) =>
-    apiRequest<{ season: AdminAirdropSeason; totalPoints: number; pool: number | null; allocations: AdminAllocation[] }>(
+    apiRequest<{ season: AdminAirdropSeason; totalPoints: number; pool: number | null; allocations: AdminAllocation[]; truncated: boolean }>(
       `/admin/airdrop/seasons/${id}/allocations`,
     ),
+}
+
+/** Download the COMPLETE allocation CSV (authed raw fetch — the endpoint returns
+ *  text/csv, not JSON, so it bypasses apiRequest's JSON parsing). */
+export async function fetchAirdropAllocationsCsv(seasonId: string): Promise<string> {
+  const token = useAuthStore.getState().accessToken
+  const res = await fetch(`${API_BASE}/api/v1/admin/airdrop/seasons/${seasonId}/allocations.csv`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
+  })
+  if (!res.ok) throw new Error('Failed to download allocations CSV')
+  return res.text()
 }
 
 export const leaderboardApi = {
