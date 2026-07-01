@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { ArrowRight, Eye } from 'lucide-react'
+import { Eye } from 'lucide-react'
 import { MarketingHeader } from '@/components/layout/MarketingHeader'
 import Footer from '@/components/layout/Footer'
 import { BlogViewPing } from '@/components/blog/BlogViewPing'
 import { ReadingProgress } from '@/components/blog/ReadingProgress'
 import { ArticleToc } from '@/components/blog/ArticleToc'
+import { BlogPromoCard } from '@/components/blog/BlogPromoCard'
 import { NewsletterSignup } from '@/components/blog/NewsletterSignup'
 import { BlogSearchBox } from '@/components/blog/BlogSearchBox'
 import { extractHeadings } from '@/lib/blogHeadings'
@@ -165,19 +166,8 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
                 </div>
               )}
 
-              {/* Call to action */}
-              <div className="rounded-xl border border-border bg-gradient-to-br from-slate-900 to-blue-950 p-5 text-white">
-                <p className="text-sm font-bold">Trade USDT the safe way</p>
-                <p className="mt-1 text-xs text-slate-300">
-                  KYC-verified traders, on-chain proof, and dispute protection — buy &amp; sell with JazzCash, Easypaisa &amp; bank.
-                </p>
-                <Link
-                  href="/register"
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-hover"
-                >
-                  Get started free <ArrowRight size={15} />
-                </Link>
-              </div>
+              {/* Call to action — rotates across USDT / Community Tokens / Gas */}
+              <BlogPromoCard />
 
               <NewsletterSignup source={`blog:${post.slug}`} />
             </div>
