@@ -10,6 +10,7 @@ import {
   computeAllocations,
   exportAllocationsCsv,
 } from '../services/airdropAdmin.service'
+import { clawbackTradePoints } from '../services/airdrop.service'
 
 export async function airdropAdminRoutes(app: FastifyInstance) {
   const superAdmin = requireRole('super_admin')
@@ -61,5 +62,21 @@ export async function airdropAdminRoutes(app: FastifyInstance) {
     reply.header('Content-Type', 'text/csv')
     reply.header('Content-Disposition', `attachment; filename="airdrop-allocations-${id}.csv"`)
     return reply.send(csv)
+  })
+
+  // POST /api/v1/admin/airdrop/clawback — manually reverse points for a trade later
+  // found fraudulent. onlyUserId (optional) claws just that party; omit for both.
+  app.post('/admin/airdrop/clawback', { preHandler: [authenticate, superAdmin] }, async (req, reply) => {
+    const parsed = z.object({
+      tradeType: z.enum(['usdt', 'ctm']),
+      tradeId: z.string().min(1),
+      reason: z.string().min(1).max(500),
+      onlyUserId: z.string().optional(),
+    }).safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ success: false, error: 'Invalid input' })
+    const { tradeType, tradeId, reason, onlyUserId } = parsed.data
+    await clawbackTradePoints(tradeType, tradeId, reason, onlyUserId)
+    await recordAuditLog(req.user!.id, 'AIRDROP_CLAWBACK', 'AirdropLedger', tradeId, { tradeType, reason, onlyUserId })
+    return reply.send({ success: true })
   })
 }

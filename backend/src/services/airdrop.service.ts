@@ -73,6 +73,66 @@ const DEF = {
   levelDiscountCap: 50,
 }
 
+// JSON-array config keys (admin-tunable tier tables; fall back to the defaults).
+const CFG_STREAK_TIERS = 'airdrop_streak_multiplier_tiers'
+const CFG_LEVEL_TIERS = 'airdrop_level_tiers'
+
+export interface StreakTier { min: number; mult: number }
+
+// Streak multiplier PLATEAUS at 2.0× (day 366) so late joiners stay viable.
+const DEFAULT_STREAK_TIERS: StreakTier[] = [
+  { min: 366, mult: 2.0 },
+  { min: 101, mult: 1.75 },
+  { min: 31, mult: 1.5 },
+  { min: 8, mult: 1.25 },
+  { min: 0, mult: 1.0 },
+]
+
+async function getRawConfig(key: string): Promise<string | undefined> {
+  const row = await db.platformConfig.findUnique({ where: { key } })
+  return row?.value
+}
+
+/** Parse a JSON-array config value into a validated, ordered tier list; fall back
+ *  to `fallback` on any missing/invalid/empty value so a bad admin edit is inert. */
+function parseTiersJson<T>(raw: string | undefined, fallback: T[], validate: (o: unknown) => T | null): T[] {
+  if (!raw) return fallback
+  try {
+    const arr: unknown = JSON.parse(raw)
+    if (!Array.isArray(arr)) return fallback
+    const out: T[] = []
+    for (const o of arr) { const v = validate(o); if (v) out.push(v) }
+    return out.length ? out : fallback
+  } catch { return fallback }
+}
+
+async function loadStreakTiers(): Promise<StreakTier[]> {
+  const tiers = parseTiersJson<StreakTier>(await getRawConfig(CFG_STREAK_TIERS), DEFAULT_STREAK_TIERS, (o) => {
+    const r = o as Record<string, unknown>
+    const min = Number(r?.min), mult = Number(r?.mult)
+    if (!Number.isFinite(min) || min < 0 || !Number.isFinite(mult) || mult <= 0) return null
+    return { min, mult }
+  })
+  return [...tiers].sort((a, b) => b.min - a.min) // high → low
+}
+
+async function loadLevelTiers(): Promise<LevelTier[]> {
+  const tiers = parseTiersJson<LevelTier>(await getRawConfig(CFG_LEVEL_TIERS), LEVEL_TIERS, (o) => {
+    const r = o as Record<string, unknown>
+    const name = String(r?.name ?? '').trim()
+    const min = Number(r?.min), discountPct = Number(r?.discountPct)
+    if (!name || !Number.isFinite(min) || min < 0 || !Number.isFinite(discountPct) || discountPct < 0) return null
+    return { key: name.toLowerCase(), name, min, discountPct }
+  })
+  return [...tiers].sort((a, b) => b.min - a.min) // high → low
+}
+
+/** Multiplier for a streak count from an ordered (high→low) tier table. */
+export function streakMultiplierFrom(count: number, tiers: StreakTier[]): number {
+  for (const t of tiers) if (count >= t.min) return t.mult
+  return 1.0
+}
+
 export interface AirdropConfig {
   pkrPerPoint: number
   minTradePkr: number
@@ -92,14 +152,27 @@ export interface AirdropConfig {
   freezeMax: number
   freezeEarnEvery: number
   levelDiscountCap: number
+  streakTiers: StreakTier[]
+  levelTiers: LevelTier[]
 }
 
+// Short in-memory TTL cache so hot paths (every trade completion / gas order)
+// don't fire ~19 PlatformConfig reads. Matches the flag cache window, so an admin
+// edit propagates within ~15s.
+const CFG_TTL_MS = 15_000
+let cfgCache: { value: AirdropConfig; expires: number } | null = null
+
+/** Drop the airdrop config cache (tests / immediate propagation after an edit). */
+export function clearAirdropConfigCache(): void { cfgCache = null }
+
 export async function loadAirdropConfig(): Promise<AirdropConfig> {
+  const now = Date.now()
+  if (cfgCache && cfgCache.expires > now) return cfgCache.value
   const [
     pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin,
     gasPerOrder, gasMinUsd, gasDailyCap, referralPct, targetUsers, requireKyc,
     checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
-    levelDiscountCap,
+    levelDiscountCap, streakTiers, levelTiers,
   ] = await Promise.all([
     getNumberConfig(CFG.pkrPerPoint, DEF.pkrPerPoint),
     getNumberConfig(CFG.minTradePkr, DEF.minTradePkr),
@@ -119,13 +192,17 @@ export async function loadAirdropConfig(): Promise<AirdropConfig> {
     getNumberConfig(CFG.freezeMax, DEF.freezeMax),
     getNumberConfig(CFG.freezeEarnEvery, DEF.freezeEarnEvery),
     getNumberConfig(CFG.levelDiscountCap, DEF.levelDiscountCap),
+    loadStreakTiers(),
+    loadLevelTiers(),
   ])
-  return {
+  const value: AirdropConfig = {
     pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin, gasPerOrder, gasMinUsd, gasDailyCap,
     referralPct, requireKyc, targetUsers,
     checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
-    levelDiscountCap,
+    levelDiscountCap, streakTiers, levelTiers,
   }
+  cfgCache = { value, expires: now + CFG_TTL_MS }
+  return value
 }
 
 // ── Levels — cumulative lifetime points unlock a fee discount. Levels are PERKS,
@@ -161,23 +238,23 @@ async function cumulativePoints(userId: string): Promise<number> {
   return Math.max(0, Number(agg._sum.totalPoints ?? 0))
 }
 
-function tierFor(points: number, cap: number): { tier: LevelTier; next: LevelTier | null } {
-  // LEVEL_TIERS is high→low; the first whose min we meet is our level.
-  for (let i = 0; i < LEVEL_TIERS.length; i++) {
-    const t = LEVEL_TIERS[i]!
+function tierFor(points: number, cap: number, tiers: LevelTier[]): { tier: LevelTier; next: LevelTier | null } {
+  // `tiers` is high→low; the first whose min we meet is our level.
+  for (let i = 0; i < tiers.length; i++) {
+    const t = tiers[i]!
     if (points >= t.min) {
-      const next = i > 0 ? LEVEL_TIERS[i - 1]! : null
+      const next = i > 0 ? tiers[i - 1]! : null
       return { tier: { ...t, discountPct: Math.min(t.discountPct, cap) }, next }
     }
   }
-  const last = LEVEL_TIERS[LEVEL_TIERS.length - 1]!
-  return { tier: last, next: LEVEL_TIERS[LEVEL_TIERS.length - 2] ?? null }
+  const last = tiers[tiers.length - 1]!
+  return { tier: last, next: tiers[tiers.length - 2] ?? null }
 }
 
 export async function getUserLevel(userId: string): Promise<UserLevel> {
-  const cap = await getNumberConfig(CFG.levelDiscountCap, DEF.levelDiscountCap)
+  const cfg = await loadAirdropConfig()
   const points = await cumulativePoints(userId)
-  const { tier, next } = tierFor(points, cap)
+  const { tier, next } = tierFor(points, cfg.levelDiscountCap, cfg.levelTiers)
   return {
     level: tier.key,
     levelName: tier.name,
@@ -218,16 +295,6 @@ export async function airdropLevelOrderDiscount(
   if (room <= 0) return { discountUsdt: 0 }
   const raw = Math.round((pct / 100) * marginUsdt * 100) / 100
   return { discountUsdt: Math.min(raw, Math.round(room * 100) / 100) }
-}
-
-// ── Streak multiplier — PLATEAUS at 2.0× so late joiners stay viable (the 1000-day
-//    badge is cosmetic; the point advantage caps here). Applies to earned points. ──
-export function streakMultiplier(count: number): number {
-  if (count >= 366) return 2.0
-  if (count >= 101) return 1.75
-  if (count >= 31) return 1.5
-  if (count >= 8) return 1.25
-  return 1.0
 }
 
 export function isAirdropEnabled(): Promise<boolean> {
@@ -296,30 +363,32 @@ async function applyStreakTouch(tx: Tx, userId: string, seasonId: string, cfg: A
   })
   const today = startOfUtcDay()
   const last = acc.lastActiveDay ? startOfUtcDayOf(acc.lastActiveDay) : null
-  if (last && last.getTime() === today.getTime()) return streakMultiplier(acc.streakCount) // already active today
+  if (last && last.getTime() === today.getTime()) return streakMultiplierFrom(acc.streakCount, cfg.streakTiers) // already active today
 
   let streakCount = acc.streakCount
   let freezes = acc.freezes
   let preBreakStreak = acc.preBreakStreak
   let streakBrokenAt = acc.streakBrokenAt
+  let advanced = false // did the streak count actually increase this touch?
 
   const gap = last ? Math.round((today.getTime() - last.getTime()) / 86_400_000) : null
   if (gap === null || streakCount === 0) {
-    streakCount = 1
+    streakCount = 1; advanced = true
   } else if (gap === 1) {
-    streakCount += 1
+    streakCount += 1; advanced = true
   } else if (gap === 2) {
-    if (freezes > 0) { freezes -= 1; streakCount += 1 } // freeze covers the single missed day
+    if (freezes > 0) { freezes -= 1; streakCount += 1; advanced = true } // freeze covers the single missed day
     // else auto-grace: hold — no advance, no break
   } else {
     // Two or more missed days → break, remember the pre-break value for repair.
     preBreakStreak = streakCount
     streakBrokenAt = new Date()
-    streakCount = 1
+    streakCount = 1; advanced = true
   }
 
-  // Earn a freeze every N streak days (up to the cap).
-  if (cfg.freezeEarnEvery > 0 && streakCount > 0 && streakCount % cfg.freezeEarnEvery === 0 && freezes < cfg.freezeMax) {
+  // Earn a freeze every N streak days — ONLY when the streak actually advanced, so
+  // sitting on a multiple (e.g. hold days) can't re-mint freezes each active day.
+  if (advanced && cfg.freezeEarnEvery > 0 && streakCount > 0 && streakCount % cfg.freezeEarnEvery === 0 && freezes < cfg.freezeMax) {
     freezes += 1
   }
   const longestStreak = Math.max(acc.longestStreak, streakCount)
@@ -328,7 +397,7 @@ async function applyStreakTouch(tx: Tx, userId: string, seasonId: string, cfg: A
     where: { userId_seasonId: { userId, seasonId } },
     data: { streakCount, longestStreak, freezes, preBreakStreak, streakBrokenAt, lastActiveDay: today },
   })
-  return streakMultiplier(streakCount)
+  return streakMultiplierFrom(streakCount, cfg.streakTiers)
 }
 
 /**
@@ -482,11 +551,22 @@ export async function awardGasPointsForDelivery(order: GasFeeOrder): Promise<voi
 
 // ── Public: clawback (reversal on dispute-loss / admin reversal) ────────────────
 /**
- * Reverse every positive award tied to a trade (and its referral overrides) by
- * writing offsetting negative rows. Idempotent — a clawback that already exists is
- * skipped, so calling this twice is safe. No-op if the flag is off.
+ * Reverse points awarded for a trade by writing offsetting negative rows.
+ * Idempotent — an existing clawback is skipped, so calling twice is safe. No-op if
+ * the flag is off or no points were ever awarded (the common case: the trade was
+ * disputed before it ever completed).
+ *
+ * When `onlyUserId` is given (e.g. the party who LOST a dispute), only that user's
+ * direct award AND the referral override earned on that user's activity are clawed
+ * — the winner keeps their legitimately-earned points. Omit it to reverse the whole
+ * trade (both sides).
  */
-export async function clawbackTradePoints(tradeType: TradeType, tradeId: string, reason: string): Promise<void> {
+export async function clawbackTradePoints(
+  tradeType: TradeType,
+  tradeId: string,
+  reason: string,
+  onlyUserId?: string,
+): Promise<void> {
   try {
     if (!(await isAirdropEnabled())) return
     const source: AirdropSource = tradeType === 'usdt' ? 'usdt_trade' : 'ctm_trade'
@@ -499,6 +579,14 @@ export async function clawbackTradePoints(tradeType: TradeType, tradeId: string,
         },
       })
       for (const r of rows) {
+        if (onlyUserId) {
+          // Direct trade award → matches when the row's user is the target. Referral
+          // override → the earner is the referrer, so match on the referred user in
+          // metadata instead.
+          const referredId = (r.metadata as { referredId?: string } | null)?.referredId
+          const relevant = r.source === 'referral' ? referredId === onlyUserId : r.userId === onlyUserId
+          if (!relevant) continue
+        }
         const clawKey = `clawback:${r.eventKey}`
         const exists = await tx.airdropLedger.findUnique({ where: { eventKey: clawKey }, select: { id: true } })
         if (exists) continue
@@ -655,7 +743,7 @@ export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
   const streak: AirdropStreak = {
     count: streakCount,
     longest: account?.longestStreak ?? 0,
-    multiplier: streakMultiplier(streakCount),
+    multiplier: streakMultiplierFrom(streakCount, cfg.streakTiers),
     freezes: account?.freezes ?? 0,
     brokenAt: account?.streakBrokenAt ? account.streakBrokenAt.toISOString() : null,
     preBreakStreak: account?.preBreakStreak ?? 0,

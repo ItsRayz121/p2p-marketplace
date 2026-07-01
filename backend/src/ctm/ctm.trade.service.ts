@@ -14,7 +14,7 @@ import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute 
 import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
-import { awardTradePointsTx } from '../services/airdrop.service'
+import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -538,6 +538,13 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   const loserUserId  = data.winner === 'buyer' ? trade.sellerId : data.winner === 'seller' ? trade.buyerId : null
   await resolveBondOnDispute({ tradeType: 'ctm', tradeId: trade.id, loserId: loserUserId, winnerId: winnerUserId })
     .catch((err) => logger.error({ err, tradeId: trade.id }, 'Failed to resolve maker bond on CTM dispute'))
+
+  // Airdrop clawback: pull back the loser's points if the trade had completed and
+  // awarded any (no-op otherwise). 'split' has no single loser → skip. Best-effort.
+  if (loserUserId) {
+    await clawbackTradePoints('ctm', trade.id, 'dispute_lost', loserUserId)
+      .catch((err) => logger.error({ err, tradeId: trade.id }, 'Failed to claw back airdrop points on CTM dispute'))
+  }
 
   notify(trade.buyerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
   notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })

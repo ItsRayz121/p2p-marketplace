@@ -11,6 +11,7 @@ import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../servi
 import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.service'
+import { clawbackTradePoints } from '../services/airdrop.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
@@ -1886,6 +1887,12 @@ export async function adminRoutes(app: FastifyInstance) {
     // Outside the resolve tx — a bond hiccup must never block the ruling.
     await resolveBondOnDispute({ tradeType: 'usdt', tradeId: dispute.tradeId, loserId, winnerId })
       .catch((err) => log.error({ err, tradeId: dispute.tradeId }, 'Failed to resolve maker bond on dispute'))
+
+    // Airdrop clawback: if the trade had already completed and awarded points, pull
+    // back the LOSER's points (and any referral override earned on them). No-op when
+    // airdrop is off or the trade never completed (the usual case). Best-effort.
+    await clawbackTradePoints('usdt', dispute.tradeId, 'dispute_lost', loserId)
+      .catch((err) => log.error({ err, tradeId: dispute.tradeId }, 'Failed to claw back airdrop points on dispute'))
 
     // Optional escalation against the losing party, via the proper moderation
     // pipeline (so it shows up in ModerationAction history like a normal ban).
