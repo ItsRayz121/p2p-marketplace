@@ -46,11 +46,12 @@ export interface BlogList {
   pageSize: number
 }
 
-export async function fetchBlogList(params: { page?: number; category?: string; tag?: string } = {}): Promise<BlogList> {
+export async function fetchBlogList(params: { page?: number; category?: string; tag?: string; q?: string } = {}): Promise<BlogList> {
   const qs = new URLSearchParams()
   if (params.page) qs.set('page', String(params.page))
   if (params.category) qs.set('category', params.category)
   if (params.tag) qs.set('tag', params.tag)
+  if (params.q) qs.set('q', params.q)
   const url = `${API}/api/v1/blog?${qs.toString()}`
   try {
     const res = await fetch(url, { cache: 'no-store' })

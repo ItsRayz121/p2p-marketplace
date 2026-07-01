@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
 import {
   createPost, updatePost, deletePost, listAdmin, getAdminById,
-  listPublic, getPublicBySlug, recordView,
+  listPublic, getPublicBySlug, recordView, subscribeNewsletter,
 } from '../services/blog.service'
 
 const adminGuard = [authenticate, requireRole('admin', 'super_admin')]
@@ -54,6 +54,16 @@ export async function blogRoutes(app: FastifyInstance) {
   app.post('/blog/post/:slug/view', async (req, reply) => {
     const { slug } = req.params as { slug: string }
     await recordView(slug)
+    return reply.send({ success: true })
+  })
+
+  // Public newsletter opt-in from the blog sidebar (CSRF-exempt; guest form).
+  app.post('/blog/subscribe', async (req, reply) => {
+    const parsed = z
+      .object({ email: z.string().min(3).max(200), source: z.string().max(120).optional() })
+      .safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Enter a valid email address', 400)
+    await subscribeNewsletter(parsed.data.email, parsed.data.source)
     return reply.send({ success: true })
   })
 

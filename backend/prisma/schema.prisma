@@ -1156,6 +1156,18 @@ model BlogPost {
   @@index([category])
 }
 
+// Newsletter opt-ins captured from the public blog sidebar. Email-only, no
+// account required; `source` records which surface the signup came from.
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  source    String?  // e.g. "blog", "blog:<slug>"
+  confirmed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // ── LIVE SUPPORT CHAT ──────────────────────────────────────────────────────
 // User-to-admin support conversations. One open conversation per user; admins
 // reply from the admin panel. Delivery is via polling (see support routes).

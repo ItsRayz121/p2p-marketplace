@@ -78,6 +78,15 @@ export async function csrfHook(req: FastifyRequest, reply: FastifyReply): Promis
   const pathname = req.url.split('?')[0] ?? req.url
   if (CSRF_EXEMPT.has(pathname)) return
 
+  // Public blog endpoints that a guest browser hits without a CSRF token:
+  //  • the per-visit view ping (a keepalive beacon that can't attach a token),
+  //  • the newsletter subscribe form.
+  // Neither moves funds or mutates a user session — the worst case is a view
+  // increment or a subscriber row — so they're safe to exempt. The view path
+  // is matched by pattern because the slug is dynamic.
+  if (pathname === '/api/v1/blog/subscribe') return
+  if (/^\/api\/v1\/blog\/post\/[^/]+\/view$/.test(pathname)) return
+
   const token = req.headers['x-csrf-token']
   // This hook runs at onRequest, BEFORE the authenticate preHandler — req.user
   // is always undefined here, so validation is always guest-scoped. Tokens are

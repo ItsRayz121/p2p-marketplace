@@ -2586,6 +2586,7 @@ export interface BlogPostSummary {
   authorName: string
   publishedAt: string | null
   readingMinutes: number
+  viewCount?: number
 }
 
 export interface BlogPost extends BlogPostSummary {
@@ -2632,6 +2633,11 @@ export const blogApi = {
     apiRequest<{ posts: BlogPostSummary[]; total: number; page: number; pageSize: number }>('/blog' + buildQs(params)),
   getBySlug: (slug: string) =>
     apiRequest<BlogPost>(`/blog/post/${encodeURIComponent(slug)}`),
+  subscribe: (email: string, source?: string) =>
+    apiRequest<{ success: boolean }>('/blog/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ email, ...(source ? { source } : {}) }),
+    }),
   // Admin
   adminList: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ posts: BlogPost[]; total: number; page: number; pageSize: number }>('/blog/admin' + buildQs(params)),

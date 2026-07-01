@@ -217,7 +217,12 @@ export async function getAdminById(id: string) {
 export async function listPublic(opts: { page?: number | undefined; pageSize?: number | undefined; category?: string | undefined; tag?: string | undefined; q?: string | undefined }) {
   const page = Math.max(1, opts.page ?? 1)
   const pageSize = Math.min(50, Math.max(1, opts.pageSize ?? 12))
-  const where: Record<string, unknown> = { status: 'published', noindex: false }
+  // Only gate on publish status. `noindex` is a search-engine directive (keep a
+  // post out of Google), NOT a "hide from humans" flag — a noindex post must
+  // still appear in the on-site blog listing. (Previously filtering noindex here
+  // made published-but-noindex posts vanish from /blog while still loading at
+  // their direct URL.) The sitemap still excludes noindex — see listPublishedSlugs.
+  const where: Record<string, unknown> = { status: 'published' }
   if (opts.category) where.category = opts.category
   if (opts.tag) where.tags = { has: opts.tag }
   if (opts.q) {
@@ -235,6 +240,7 @@ export async function listPublic(opts: { page?: number | undefined; pageSize?: n
       select: {
         slug: true, title: true, excerpt: true, coverImageUrl: true, coverImageAlt: true,
         category: true, tags: true, authorName: true, publishedAt: true, readingMinutes: true,
+        viewCount: true,
       },
     }),
     db.blogPost.count({ where }),
@@ -260,6 +266,23 @@ export async function recordView(slug: string): Promise<void> {
   await db.blogPost
     .updateMany({ where: { slug, status: 'published' }, data: { viewCount: { increment: 1 } } })
     .catch(() => {})
+}
+
+/**
+ * Record a newsletter opt-in from the public blog. Idempotent: re-subscribing
+ * an existing email is a silent success (no duplicate, no error leaked to the
+ * form). Returns nothing useful — the caller just needs to know it didn't throw.
+ */
+export async function subscribeNewsletter(emailRaw: string, source?: string): Promise<void> {
+  const email = emailRaw.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) {
+    throw new AppError('VALIDATION_ERROR', 'Enter a valid email address', 400)
+  }
+  await db.newsletterSubscriber.upsert({
+    where: { email },
+    create: { email, source: source ?? 'blog' },
+    update: {}, // already subscribed → no-op
+  })
 }
 
 /** All published slugs for sitemap generation. */

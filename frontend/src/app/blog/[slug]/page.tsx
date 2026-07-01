@@ -1,9 +1,15 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { ArrowRight, Eye } from 'lucide-react'
 import { MarketingHeader } from '@/components/layout/MarketingHeader'
 import Footer from '@/components/layout/Footer'
 import { BlogViewPing } from '@/components/blog/BlogViewPing'
+import { ReadingProgress } from '@/components/blog/ReadingProgress'
+import { ArticleToc } from '@/components/blog/ArticleToc'
+import { NewsletterSignup } from '@/components/blog/NewsletterSignup'
+import { BlogSearchBox } from '@/components/blog/BlogSearchBox'
+import { extractHeadings } from '@/lib/blogHeadings'
 import { fetchBlogPost } from '@/lib/blogFetch'
 
 // Render on each request: a freshly published post must be live immediately,
@@ -55,6 +61,10 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   const description = post.metaDescription || post.excerpt || post.title
   const image = post.ogImageUrl || post.coverImageUrl || `${BASE_URL}/opengraph-image`
 
+  // Inject heading ids + build the "On this page" list from the stored HTML.
+  const { html, headings } = extractHeadings(post.bodyHtml)
+  const views = typeof post.viewCount === 'number' ? post.viewCount : 0
+
   const jsonLd = [
     {
       '@context': 'https://schema.org',
@@ -86,50 +96,94 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   return (
     <div className="min-h-screen bg-surface">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <ReadingProgress />
       <BlogViewPing slug={post.slug} />
       <MarketingHeader />
 
-      <article className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <nav className="text-xs text-text-muted mb-4">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <nav className="text-xs text-text-muted">
           <Link href="/" className="hover:text-primary">Home</Link>
           <span className="mx-1.5">/</span>
           <Link href="/blog" className="hover:text-primary">Blog</Link>
         </nav>
 
-        {post.category && <span className="text-[11px] font-bold uppercase tracking-wide text-primary">{post.category}</span>}
-        <h1 className="mt-1.5 text-3xl sm:text-4xl font-bold text-text-primary leading-tight">{post.title}</h1>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-muted">
-          <span>By {post.authorName}</span>
-          {post.publishedAt && <><span>·</span><span>{fmtDate(post.publishedAt)}</span></>}
-          <span>·</span>
-          <span>{post.readingMinutes} min read</span>
-        </div>
+        <div className="mt-5 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_17rem]">
+          {/* ── Article ───────────────────────────────────────────────── */}
+          <article className="min-w-0">
+            {post.category && <span className="text-[11px] font-bold uppercase tracking-wide text-primary">{post.category}</span>}
+            <h1 className="mt-1.5 text-3xl font-bold leading-tight text-text-primary sm:text-4xl">{post.title}</h1>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-muted">
+              <span>By {post.authorName}</span>
+              {post.publishedAt && <><span>·</span><span>{fmtDate(post.publishedAt)}</span></>}
+              <span>·</span>
+              <span>{post.readingMinutes} min read</span>
+              <span>·</span>
+              <span className="inline-flex items-center gap-1"><Eye size={14} /> {views.toLocaleString('en-US')} views</span>
+            </div>
 
-        {post.coverImageUrl && (
-          <figure className="mt-6">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={post.coverImageUrl} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border" />
-            {post.coverImageCaption && (
-              <figcaption className="mt-2 text-center text-sm italic text-text-muted">{post.coverImageCaption}</figcaption>
+            {post.coverImageUrl && (
+              <figure className="mt-6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={post.coverImageUrl} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border" />
+                {post.coverImageCaption && (
+                  <figcaption className="mt-2 text-center text-sm italic text-text-muted">{post.coverImageCaption}</figcaption>
+                )}
+              </figure>
             )}
-          </figure>
-        )}
 
-        <div className="blog-article mt-8" dangerouslySetInnerHTML={{ __html: post.bodyHtml }} />
+            {/* Mobile "On this page" — sits above the content where it's useful. */}
+            {headings.length > 0 && (
+              <div className="mt-6 lg:hidden">
+                <ArticleToc headings={headings} variant="mobile" />
+              </div>
+            )}
 
-        {post.tags.length > 0 && (
-          <div className="mt-10 flex flex-wrap gap-2">
-            {post.tags.map((t) => (
-              <span key={t} className="text-xs font-medium text-text-secondary bg-surface-alt border border-border rounded-full px-2.5 py-1">#{t}</span>
-            ))}
-          </div>
-        )}
+            <div className="blog-article mt-8" dangerouslySetInnerHTML={{ __html: html }} />
 
-        <div className="mt-10 pt-6 border-t border-border flex items-center justify-between">
-          <Link href="/blog" className="text-sm font-semibold text-primary hover:underline">← All posts</Link>
-          <Link href="/register" className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary-hover">Start trading on RupChain</Link>
+            {post.tags.length > 0 && (
+              <div className="mt-10 flex flex-wrap gap-2">
+                {post.tags.map((t) => (
+                  <span key={t} className="rounded-full border border-border bg-surface-alt px-2.5 py-1 text-xs font-medium text-text-secondary">#{t}</span>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-10 flex items-center justify-between border-t border-border pt-6">
+              <Link href="/blog" className="text-sm font-semibold text-primary hover:underline">← All posts</Link>
+              <Link href="/register" className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white hover:bg-primary-hover">Start trading on RupChain</Link>
+            </div>
+          </article>
+
+          {/* ── Sidebar ───────────────────────────────────────────────── */}
+          <aside className="lg:pl-2">
+            <div className="space-y-5 lg:sticky lg:top-24">
+              <BlogSearchBox />
+
+              {headings.length > 0 && (
+                <div className="hidden rounded-xl border border-border bg-canvas p-4 lg:block">
+                  <ArticleToc headings={headings} variant="desktop" />
+                </div>
+              )}
+
+              {/* Call to action */}
+              <div className="rounded-xl border border-border bg-gradient-to-br from-slate-900 to-blue-950 p-5 text-white">
+                <p className="text-sm font-bold">Trade USDT the safe way</p>
+                <p className="mt-1 text-xs text-slate-300">
+                  KYC-verified traders, on-chain proof, and dispute protection — buy &amp; sell with JazzCash, Easypaisa &amp; bank.
+                </p>
+                <Link
+                  href="/register"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-hover"
+                >
+                  Get started free <ArrowRight size={15} />
+                </Link>
+              </div>
+
+              <NewsletterSignup source={`blog:${post.slug}`} />
+            </div>
+          </aside>
         </div>
-      </article>
+      </div>
 
       <Footer />
     </div>

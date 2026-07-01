@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { BrandLogo } from '@/components/ui/BrandLogo'
+import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { useAuthStore } from '@/store/auth.store'
 
 // Lightweight header for public marketing pages (homepage). Unlike the
@@ -37,6 +38,7 @@ export function MarketingHeader() {
         </nav>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          <ThemeToggle className="text-slate-300 hover:text-white hover:bg-slate-800" />
           {/* While auth hydrates, reserve space without flashing the wrong CTA */}
           {isLoading ? (
             <div className="w-36 h-9" aria-hidden />
