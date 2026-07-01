@@ -192,7 +192,7 @@ export default function Navbar() {
                       className="z-50 w-56 bg-surface rounded-xl border border-border shadow-card-lg py-1 animate-fade-in"
                     >
                       {/* User info header */}
-                      <div className="px-3 py-2.5 border-b border-border">
+                      <div className="px-3 py-2 border-b border-border">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-text-primary truncate">
                             {user.fullName || user.username || 'No username'}
@@ -210,7 +210,7 @@ export default function Navbar() {
                       {DROPDOWN_ITEMS.map(({ href, Icon, label, iconCls, bgCls, group }, i) => (
                         <Fragment key={href}>
                           {i > 0 && group !== DROPDOWN_ITEMS[i - 1].group && (
-                            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                            <DropdownMenu.Separator className="my-0.5 h-px bg-border" />
                           )}
                           <DropdownMenu.Item asChild>
                             <Link href={href} className={dropdownItemCls}>
@@ -223,7 +223,7 @@ export default function Navbar() {
                         </Fragment>
                       ))}
 
-                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                      <DropdownMenu.Separator className="my-0.5 h-px bg-border" />
 
                       <DropdownMenu.Item
                         onSelect={() => logout()}
@@ -247,4 +247,4 @@ export default function Navbar() {
 }
 
 const dropdownItemCls =
-  'flex items-center gap-2.5 px-3 py-2 text-sm text-text-primary hover:bg-surface-alt rounded-lg mx-1 cursor-pointer outline-none focus:bg-surface-alt transition-colors'
+  'flex items-center gap-2.5 px-3 py-1.5 text-sm text-text-primary hover:bg-surface-alt rounded-lg mx-1 cursor-pointer outline-none focus:bg-surface-alt transition-colors'
