@@ -430,6 +430,16 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
+        label: 'Subscribers',
+        href: '/admin/subscribers',
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        ),
+      },
+      {
         label: 'Promo Codes',
         href: '/admin/gas/promo-codes',
         roles: ['admin', 'super_admin'],

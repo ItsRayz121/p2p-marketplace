@@ -2627,6 +2627,14 @@ export interface BlogUpsert {
   noindex?: boolean
 }
 
+export interface NewsletterSubscriber {
+  id: string
+  email: string
+  source: string | null
+  confirmed: boolean
+  createdAt: string
+}
+
 export const blogApi = {
   // Public
   list: (params?: Record<string, string | number | undefined>) =>
@@ -2649,6 +2657,8 @@ export const blogApi = {
     apiRequest<BlogPost>(`/blog/admin/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   adminDelete: (id: string) =>
     apiRequest<{ id: string }>(`/blog/admin/${id}`, { method: 'DELETE' }),
+  adminSubscribers: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ subscribers: NewsletterSubscriber[]; total: number; page: number; pageSize: number }>('/blog/subscribers' + buildQs(params)),
 }
 
 // ─── Community Token Market ───────────────────────────────────────────────────

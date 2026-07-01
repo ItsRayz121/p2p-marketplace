@@ -285,6 +285,34 @@ export async function subscribeNewsletter(emailRaw: string, source?: string): Pr
   })
 }
 
+/**
+ * Admin: paginated newsletter subscriber list, newest first, with optional
+ * email search. Returns rows + total for the admin table.
+ */
+export async function listSubscribers(opts: { page?: number | undefined; pageSize?: number | undefined; q?: string | undefined }) {
+  const page = Math.max(1, opts.page ?? 1)
+  const pageSize = Math.min(200, Math.max(1, opts.pageSize ?? 50))
+  const where = opts.q ? { email: { contains: opts.q.trim().toLowerCase() } } : {}
+  const [subscribers, total] = await Promise.all([
+    db.newsletterSubscriber.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    db.newsletterSubscriber.count({ where }),
+  ])
+  return { subscribers, total, page, pageSize }
+}
+
+/** Admin: every subscriber email + signup date, for CSV export (no paging). */
+export async function listAllSubscribers() {
+  return db.newsletterSubscriber.findMany({
+    orderBy: { createdAt: 'desc' },
+    select: { email: true, source: true, createdAt: true },
+  })
+}
+
 /** All published slugs for sitemap generation. */
 export async function listPublishedSlugs() {
   return db.blogPost.findMany({

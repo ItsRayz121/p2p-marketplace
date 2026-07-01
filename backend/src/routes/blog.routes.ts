@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors'
 import {
   createPost, updatePost, deletePost, listAdmin, getAdminById,
   listPublic, getPublicBySlug, recordView, subscribeNewsletter,
+  listSubscribers, listAllSubscribers,
 } from '../services/blog.service'
 
 const adminGuard = [authenticate, requireRole('admin', 'super_admin')]
@@ -76,6 +77,30 @@ export async function blogRoutes(app: FastifyInstance) {
       pageSize: q.pageSize ? Number(q.pageSize) : undefined,
     })
     return reply.send({ success: true, data })
+  })
+
+  // Newsletter subscribers — list + CSV export for the admin panel.
+  app.get('/blog/subscribers', { preHandler: adminGuard }, async (req, reply) => {
+    const q = req.query as Record<string, string | undefined>
+    const data = await listSubscribers({
+      page: q.page ? Number(q.page) : undefined,
+      pageSize: q.pageSize ? Number(q.pageSize) : undefined,
+      q: q.q,
+    })
+    return reply.send({ success: true, data })
+  })
+
+  app.get('/blog/subscribers/export', { preHandler: adminGuard }, async (_req, reply) => {
+    const rows = await listAllSubscribers()
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const csv = [
+      'email,source,subscribed_at',
+      ...rows.map((r) => [esc(r.email), esc(r.source ?? ''), esc(r.createdAt.toISOString())].join(',')),
+    ].join('\n')
+    return reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="newsletter-subscribers-${new Date().toISOString().slice(0, 10)}.csv"`)
+      .send(csv)
   })
 
   app.get('/blog/admin/:id', { preHandler: adminGuard }, async (req, reply) => {
