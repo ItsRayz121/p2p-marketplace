@@ -1291,6 +1291,41 @@ export const airdropApi = {
   resetStreak: () => apiRequest<Record<string, never>>('/airdrop/streak/reset', { method: 'POST' }),
 }
 
+export interface AdminAirdropSeason {
+  id: string
+  index: number
+  name: string
+  status: string
+  tokenPool: string | null
+  participants: number
+  totalPoints: number
+  startedAt: string
+  endedAt: string | null
+}
+
+export interface AdminAllocation {
+  userId: string
+  username: string
+  email: string
+  points: number
+  sharePct: number
+  tokenAllocation: number | null
+}
+
+export const adminAirdropApi = {
+  listSeasons: () => apiRequest<{ seasons: AdminAirdropSeason[] }>('/admin/airdrop/seasons'),
+  createSeason: (name: string) =>
+    apiRequest<AdminAirdropSeason>('/admin/airdrop/seasons', { method: 'POST', body: JSON.stringify({ name }) }),
+  setPool: (id: string, tokenPool: number) =>
+    apiRequest<Record<string, never>>(`/admin/airdrop/seasons/${id}/pool`, { method: 'PATCH', body: JSON.stringify({ tokenPool }) }),
+  closeSeason: (id: string) =>
+    apiRequest<Record<string, never>>(`/admin/airdrop/seasons/${id}/close`, { method: 'POST' }),
+  allocations: (id: string) =>
+    apiRequest<{ season: AdminAirdropSeason; totalPoints: number; pool: number | null; allocations: AdminAllocation[] }>(
+      `/admin/airdrop/seasons/${id}/allocations`,
+    ),
+}
+
 export const leaderboardApi = {
   getTop: (params?: { period?: string; limit?: number; tradeType?: string }) => {
     const qs = params
