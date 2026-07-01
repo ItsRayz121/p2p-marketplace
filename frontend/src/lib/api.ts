@@ -1239,12 +1239,26 @@ export const referralApi = {
   },
 }
 
+export interface AirdropStreak {
+  count: number
+  longest: number
+  multiplier: number
+  freezes: number
+  brokenAt: string | null
+  preBreakStreak: number
+  canRepair: boolean
+  repairCost: number
+  repairsLeft: number
+  checkedInToday: boolean
+}
+
 export interface AirdropStatus {
   enabled: boolean
   season: { index: number; name: string } | null
   totalPoints: number
   breakdown: { source: string; points: number }[]
   milestone: { current: number; target: number }
+  streak: AirdropStreak | null
 }
 
 export interface AirdropLedgerEntry {
@@ -1258,6 +1272,12 @@ export interface AirdropLedgerEntry {
 export const airdropApi = {
   getStatus: () => apiRequest<AirdropStatus>('/airdrop'),
   getLedger: () => apiRequest<{ entries: AirdropLedgerEntry[] }>('/airdrop/ledger'),
+  checkin: () =>
+    apiRequest<{ streak: number; multiplier: number; alreadyToday: boolean; pointsAwarded: number }>(
+      '/airdrop/checkin', { method: 'POST' },
+    ),
+  repairStreak: () => apiRequest<{ restored: number; cost: number }>('/airdrop/streak/repair', { method: 'POST' }),
+  resetStreak: () => apiRequest<Record<string, never>>('/airdrop/streak/reset', { method: 'POST' }),
 }
 
 export const leaderboardApi = {

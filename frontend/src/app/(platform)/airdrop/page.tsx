@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { airdropApi, type AirdropStatus, type AirdropLedgerEntry } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { toast } from '@/lib/toast'
 import {
   Sparkles,
   ArrowLeftRight,
@@ -16,6 +17,8 @@ import {
   RotateCcw,
   Rocket,
   Lock,
+  Snowflake,
+  Wrench,
 } from 'lucide-react'
 
 // ─── Source presentation ────────────────────────────────────────────────────
@@ -107,6 +110,118 @@ function ComingSoon({ status }: { status: AirdropStatus | null }) {
   )
 }
 
+// ─── Streak card ──────────────────────────────────────────────────────────────
+function StreakCard({ status, onChange }: { status: AirdropStatus; onChange: () => void }) {
+  const s = status.streak
+  const [busy, setBusy] = useState<'checkin' | 'repair' | 'reset' | null>(null)
+  if (!s) return null
+
+  const doCheckin = async () => {
+    setBusy('checkin')
+    try {
+      const r = await airdropApi.checkin()
+      toast.success(
+        r.alreadyToday ? 'Already checked in today' : `Checked in! ${s.count === 0 ? 'Streak started' : `Day ${r.streak}`}`,
+        r.pointsAwarded > 0 ? `+${r.pointsAwarded} points` : undefined,
+      )
+      onChange()
+    } catch (e) {
+      toast.error('Check-in failed', e instanceof Error ? e.message : undefined)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const doRepair = async () => {
+    setBusy('repair')
+    try {
+      const r = await airdropApi.repairStreak()
+      toast.success(`Streak restored to ${r.restored}`, `−${r.cost} points`)
+      onChange()
+    } catch (e) {
+      toast.error('Repair failed', e instanceof Error ? e.message : undefined)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const doReset = async () => {
+    if (!confirm('Reset your streak to zero? This cannot be undone.')) return
+    setBusy('reset')
+    try {
+      await airdropApi.resetStreak()
+      toast.success('Streak reset')
+      onChange()
+    } catch (e) {
+      toast.error('Reset failed', e instanceof Error ? e.message : undefined)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-3">
+        <span className="flex items-center justify-center w-12 h-12 rounded-xl bg-red-500/10 flex-shrink-0">
+          <Flame className="w-6 h-6 text-red-500" aria-hidden />
+        </span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black text-text-primary tabular-nums">{s.count}</span>
+            <span className="text-sm text-text-muted">day streak</span>
+            <span className="ml-auto text-xs font-bold text-fuchsia-500 bg-fuchsia-500/10 px-2 py-1 rounded-full">
+              {s.multiplier.toFixed(2)}× points
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
+            <span>Best: {s.longest}</span>
+            <span className="inline-flex items-center gap-1">
+              <Snowflake className="w-3 h-3 text-sky-400" aria-hidden /> {s.freezes} freeze{s.freezes === 1 ? '' : 's'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mt-4">
+        <button
+          onClick={doCheckin}
+          disabled={s.checkedInToday || busy !== null}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <CalendarCheck className="w-4 h-4" aria-hidden />
+          {s.checkedInToday ? 'Checked in today' : 'Daily check-in'}
+        </button>
+
+        {s.brokenAt && s.canRepair && (
+          <button
+            onClick={doRepair}
+            disabled={busy !== null}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg border border-border text-text-primary hover:bg-surface-alt disabled:opacity-50 transition-colors"
+          >
+            <Wrench className="w-4 h-4" aria-hidden />
+            Repair streak ({s.repairCost} pts, {s.repairsLeft} left)
+          </button>
+        )}
+
+        {s.count > 0 && (
+          <button
+            onClick={doReset}
+            disabled={busy !== null}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-alt disabled:opacity-50 transition-colors ml-auto"
+          >
+            <RotateCcw className="w-3.5 h-3.5" aria-hidden />
+            Reset
+          </button>
+        )}
+      </div>
+
+      {s.brokenAt && !s.canRepair && s.preBreakStreak > s.count && (
+        <p className="mt-3 text-xs text-text-muted">
+          Your {s.preBreakStreak}-day streak broke. {s.repairsLeft > 0 ? 'The repair window has closed or you need more points.' : 'No repairs left this season.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AirdropPage() {
   const [status, setStatus] = useState<AirdropStatus | null>(null)
@@ -159,6 +274,9 @@ export default function AirdropPage() {
         <p className="text-4xl font-black text-text-primary tabular-nums">{fmtPoints(status.totalPoints)}</p>
         <p className="text-sm text-text-muted mt-1">points earned this season</p>
       </div>
+
+      {/* Streak */}
+      <StreakCard status={status} onChange={fetchData} />
 
       {/* Milestone */}
       <MilestoneBar current={status.milestone.current} target={status.milestone.target} />

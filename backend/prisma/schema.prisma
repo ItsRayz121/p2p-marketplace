@@ -2706,6 +2706,16 @@ model AirdropAccount {
   userId      String
   seasonId    String
   totalPoints Decimal  @default(0) @db.Decimal(18, 4)
+
+  // ── Streak state (Phase 3) ──
+  streakCount    Int       @default(0) // current consecutive-active-day streak
+  longestStreak  Int       @default(0)
+  lastActiveDay  DateTime? // UTC-midnight of the last qualifying day (trade / gas / check-in)
+  freezes        Int       @default(0) // banked freeze tokens (auto-protect a missed day)
+  streakBrokenAt DateTime? // when the streak last broke (opens the repair window)
+  preBreakStreak Int       @default(0) // streak value just before the last break (restore target)
+  repairsUsed    Int       @default(0) // repairs consumed this season
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

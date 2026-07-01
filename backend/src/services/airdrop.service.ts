@@ -22,6 +22,7 @@ import { db } from '../lib/prisma'
 import { Prisma } from '@prisma/client'
 import { isFlagEnabled, FLAGS, getNumberConfig, getBoolConfig } from './platformFlags.service'
 import { logger } from '../lib/logger'
+import { AppError } from '../lib/errors'
 import type { GasFeeOrder, AirdropSource } from '@prisma/client'
 
 type Tx = Prisma.TransactionClient
@@ -40,6 +41,13 @@ const CFG = {
   referralPct: 'airdrop_referral_pct',             // referrer earns this % of referred user's points
   requireKyc: 'airdrop_require_kyc',               // only KYC'd users earn ("true"/"false")
   targetUsers: 'airdrop_target_users',             // milestone denominator for the progress bar
+  // ── Streak (Phase 3) ──
+  checkinPoints: 'airdrop_checkin_points',                 // points for a daily check-in
+  repairCost: 'airdrop_streak_repair_cost',               // points to restore a broken streak
+  repairWindowDays: 'airdrop_streak_repair_window_days',   // days after a break you may repair
+  repairMax: 'airdrop_streak_repair_max',                  // repairs allowed per season
+  freezeMax: 'airdrop_streak_freeze_max',                  // max banked freeze tokens
+  freezeEarnEvery: 'airdrop_streak_freeze_earn_every',     // earn 1 freeze every N streak days
 } as const
 
 const DEF = {
@@ -54,6 +62,12 @@ const DEF = {
   referralPct: 10,
   requireKyc: true,
   targetUsers: 1_000_000,
+  checkinPoints: 1,
+  repairCost: 500,
+  repairWindowDays: 3,
+  repairMax: 2,
+  freezeMax: 3,
+  freezeEarnEvery: 30,
 }
 
 export interface AirdropConfig {
@@ -68,12 +82,19 @@ export interface AirdropConfig {
   referralPct: number
   requireKyc: boolean
   targetUsers: number
+  checkinPoints: number
+  repairCost: number
+  repairWindowDays: number
+  repairMax: number
+  freezeMax: number
+  freezeEarnEvery: number
 }
 
 export async function loadAirdropConfig(): Promise<AirdropConfig> {
   const [
     pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin,
     gasPerOrder, gasMinUsd, gasDailyCap, referralPct, targetUsers, requireKyc,
+    checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
   ] = await Promise.all([
     getNumberConfig(CFG.pkrPerPoint, DEF.pkrPerPoint),
     getNumberConfig(CFG.minTradePkr, DEF.minTradePkr),
@@ -86,8 +107,28 @@ export async function loadAirdropConfig(): Promise<AirdropConfig> {
     getNumberConfig(CFG.referralPct, DEF.referralPct),
     getNumberConfig(CFG.targetUsers, DEF.targetUsers),
     getBoolConfig(CFG.requireKyc, DEF.requireKyc),
+    getNumberConfig(CFG.checkinPoints, DEF.checkinPoints),
+    getNumberConfig(CFG.repairCost, DEF.repairCost),
+    getNumberConfig(CFG.repairWindowDays, DEF.repairWindowDays),
+    getNumberConfig(CFG.repairMax, DEF.repairMax),
+    getNumberConfig(CFG.freezeMax, DEF.freezeMax),
+    getNumberConfig(CFG.freezeEarnEvery, DEF.freezeEarnEvery),
   ])
-  return { pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin, gasPerOrder, gasMinUsd, gasDailyCap, referralPct, requireKyc, targetUsers }
+  return {
+    pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin, gasPerOrder, gasMinUsd, gasDailyCap,
+    referralPct, requireKyc, targetUsers,
+    checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
+  }
+}
+
+// ── Streak multiplier — PLATEAUS at 2.0× so late joiners stay viable (the 1000-day
+//    badge is cosmetic; the point advantage caps here). Applies to earned points. ──
+export function streakMultiplier(count: number): number {
+  if (count >= 366) return 2.0
+  if (count >= 101) return 1.75
+  if (count >= 31) return 1.5
+  if (count >= 8) return 1.25
+  return 1.0
 }
 
 export function isAirdropEnabled(): Promise<boolean> {
@@ -121,6 +162,74 @@ async function resolveActiveSeasonId(client: Tx | typeof db): Promise<string | n
 async function isKycOk(client: Tx | typeof db, userId: string): Promise<boolean> {
   const u = await client.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
   return !!u && u.kycLevel !== 'none'
+}
+
+function startOfUtcDayOf(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+}
+
+/** Make sure a zero-row account exists so streak fields can be updated before the
+ *  first point award. */
+async function ensureAccount(tx: Tx, userId: string, seasonId: string): Promise<void> {
+  await tx.airdropAccount.upsert({
+    where: { userId_seasonId: { userId, seasonId } },
+    create: { userId, seasonId, totalPoints: new Prisma.Decimal(0) },
+    update: {},
+  })
+}
+
+/**
+ * Record that the user was active today and advance their streak. Returns the
+ * streak multiplier to apply to points earned by this same action. Idempotent per
+ * UTC day — a second qualifying action the same day returns the multiplier without
+ * advancing again, so trading + gas + check-in on one day counts once.
+ *
+ * Grace model: consecutive day → +1. Skipped exactly one day → a banked freeze (if
+ * any) covers it and the streak advances, else auto-grace HOLDS the streak (no
+ * break). Skipped two or more days → the streak breaks (recording the pre-break
+ * value so it can be repaired) and restarts at 1.
+ */
+async function applyStreakTouch(tx: Tx, userId: string, seasonId: string, cfg: AirdropConfig): Promise<number> {
+  await ensureAccount(tx, userId, seasonId)
+  const acc = await tx.airdropAccount.findUniqueOrThrow({
+    where: { userId_seasonId: { userId, seasonId } },
+    select: { streakCount: true, longestStreak: true, lastActiveDay: true, freezes: true, streakBrokenAt: true, preBreakStreak: true },
+  })
+  const today = startOfUtcDay()
+  const last = acc.lastActiveDay ? startOfUtcDayOf(acc.lastActiveDay) : null
+  if (last && last.getTime() === today.getTime()) return streakMultiplier(acc.streakCount) // already active today
+
+  let streakCount = acc.streakCount
+  let freezes = acc.freezes
+  let preBreakStreak = acc.preBreakStreak
+  let streakBrokenAt = acc.streakBrokenAt
+
+  const gap = last ? Math.round((today.getTime() - last.getTime()) / 86_400_000) : null
+  if (gap === null || streakCount === 0) {
+    streakCount = 1
+  } else if (gap === 1) {
+    streakCount += 1
+  } else if (gap === 2) {
+    if (freezes > 0) { freezes -= 1; streakCount += 1 } // freeze covers the single missed day
+    // else auto-grace: hold — no advance, no break
+  } else {
+    // Two or more missed days → break, remember the pre-break value for repair.
+    preBreakStreak = streakCount
+    streakBrokenAt = new Date()
+    streakCount = 1
+  }
+
+  // Earn a freeze every N streak days (up to the cap).
+  if (cfg.freezeEarnEvery > 0 && streakCount > 0 && streakCount % cfg.freezeEarnEvery === 0 && freezes < cfg.freezeMax) {
+    freezes += 1
+  }
+  const longestStreak = Math.max(acc.longestStreak, streakCount)
+
+  await tx.airdropAccount.update({
+    where: { userId_seasonId: { userId, seasonId } },
+    data: { streakCount, longestStreak, freezes, preBreakStreak, streakBrokenAt, lastActiveDay: today },
+  })
+  return streakMultiplier(streakCount)
 }
 
 /**
@@ -221,12 +330,13 @@ export async function awardTradePointsTx(
 
   for (const [userId, role] of roles) {
     if (cfg.requireKyc && !(await isKycOk(tx, userId))) continue
+    const mult = await applyStreakTouch(tx, userId, seasonId, cfg)
     const base = pkr / cfg.pkrPerPoint
-    const decayed = base * (await counterpartyDecay(tx, userId, seasonId, pairKey, cfg))
+    const decayed = base * (await counterpartyDecay(tx, userId, seasonId, pairKey, cfg)) * mult
     const pts = await clampDailyTrade(tx, userId, seasonId, decayed, cfg.dailyTradeCap)
     if (pts <= 0) continue
     const eventKey = `${source}:${opts.tradeId}:${role}`
-    await writeLedger(tx, { userId, seasonId, source, points: pts, eventKey, pairKey, metadata: { tradeId: opts.tradeId, role, pkr } })
+    await writeLedger(tx, { userId, seasonId, source, points: pts, eventKey, pairKey, metadata: { tradeId: opts.tradeId, role, pkr, streakMult: mult } })
     await awardReferralOverride(tx, { earnerUserId: userId, basePoints: pts, seasonId, sourceEventKey: eventKey, cfg })
   }
 }
@@ -251,17 +361,19 @@ export async function awardGasPointsForDelivery(order: GasFeeOrder): Promise<voi
       if (!seasonId) return
       if (cfg.requireKyc && !(await isKycOk(tx, userId))) return
 
+      const mult = await applyStreakTouch(tx, userId, seasonId, cfg)
+      const gasBase = cfg.gasPerOrder * mult
       // Daily cap on gas points.
       const agg = await tx.airdropLedger.aggregate({
         where: { userId, seasonId, source: 'gas_order', createdAt: { gte: startOfUtcDay() } },
         _sum: { points: true },
       })
       const used = Number(agg._sum.points ?? 0)
-      const pts = cfg.gasDailyCap > 0 ? Math.max(0, Math.min(cfg.gasPerOrder, cfg.gasDailyCap - used)) : cfg.gasPerOrder
+      const pts = cfg.gasDailyCap > 0 ? Math.max(0, Math.min(gasBase, cfg.gasDailyCap - used)) : gasBase
       if (pts <= 0) return
 
       const eventKey = `gas_order:${order.id}`
-      await writeLedger(tx, { userId, seasonId, source: 'gas_order', points: pts, eventKey, metadata: { orderRef: order.orderRef, usd } })
+      await writeLedger(tx, { userId, seasonId, source: 'gas_order', points: pts, eventKey, metadata: { orderRef: order.orderRef, usd, streakMult: mult } })
       await awardReferralOverride(tx, { earnerUserId: userId, basePoints: pts, seasonId, sourceEventKey: eventKey, cfg })
     })
   } catch (e) {
@@ -305,13 +417,106 @@ export async function clawbackTradePoints(tradeType: TradeType, tradeId: string,
   }
 }
 
-// ── Public: read model for the Airdrop tab (Phase 2 consumes this) ──────────────
+// ── Public: daily check-in ──────────────────────────────────────────────────
+export interface CheckinResult {
+  streak: number
+  multiplier: number
+  alreadyToday: boolean
+  pointsAwarded: number
+}
+
+export async function dailyCheckin(userId: string): Promise<CheckinResult> {
+  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  const cfg = await loadAirdropConfig()
+  return db.$transaction(async (tx) => {
+    const seasonId = await resolveActiveSeasonId(tx)
+    if (!seasonId) throw new AppError('AIRDROP_OFF', 'No active airdrop season.', 400)
+    if (cfg.requireKyc && !(await isKycOk(tx, userId))) {
+      throw new AppError('KYC_REQUIRED', 'Complete identity verification (KYC) to earn airdrop points.', 403)
+    }
+    const dayStr = startOfUtcDay().toISOString().slice(0, 10)
+    const eventKey = `checkin:${userId}:${dayStr}`
+    const existing = await tx.airdropLedger.findUnique({ where: { eventKey }, select: { id: true } })
+
+    const mult = await applyStreakTouch(tx, userId, seasonId, cfg)
+    let pointsAwarded = 0
+    if (!existing && cfg.checkinPoints > 0) {
+      pointsAwarded = cfg.checkinPoints
+      await writeLedger(tx, { userId, seasonId, source: 'checkin', points: pointsAwarded, eventKey, metadata: { day: dayStr } })
+    }
+    const acc = await tx.airdropAccount.findUniqueOrThrow({ where: { userId_seasonId: { userId, seasonId } }, select: { streakCount: true } })
+    return { streak: acc.streakCount, multiplier: mult, alreadyToday: !!existing, pointsAwarded }
+  })
+}
+
+// ── Public: repair a broken streak (spend points) ───────────────────────────
+export async function repairStreak(userId: string): Promise<{ restored: number; cost: number }> {
+  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  const cfg = await loadAirdropConfig()
+  return db.$transaction(async (tx) => {
+    const seasonId = await resolveActiveSeasonId(tx)
+    if (!seasonId) throw new AppError('AIRDROP_OFF', 'No active airdrop season.', 400)
+    const acc = await tx.airdropAccount.findUnique({
+      where: { userId_seasonId: { userId, seasonId } },
+      select: { streakCount: true, preBreakStreak: true, streakBrokenAt: true, repairsUsed: true, totalPoints: true, longestStreak: true },
+    })
+    if (!acc || !acc.streakBrokenAt) throw new AppError('NO_BROKEN_STREAK', 'There is no broken streak to repair.', 400)
+    if (Date.now() - acc.streakBrokenAt.getTime() > cfg.repairWindowDays * 86_400_000) {
+      throw new AppError('REPAIR_WINDOW_CLOSED', `The repair window (${cfg.repairWindowDays} days) has closed.`, 400)
+    }
+    if (acc.repairsUsed >= cfg.repairMax) throw new AppError('REPAIR_LIMIT', `You've used all ${cfg.repairMax} repairs this season.`, 400)
+    if (acc.preBreakStreak <= acc.streakCount) throw new AppError('NOTHING_TO_RESTORE', 'Your current streak is already at or above the pre-break value.', 400)
+    if (Number(acc.totalPoints) < cfg.repairCost) {
+      throw new AppError('INSUFFICIENT_POINTS', `You need ${cfg.repairCost} points to repair your streak.`, 400)
+    }
+    const eventKey = `repair:${userId}:${Date.now()}`
+    await writeLedger(tx, { userId, seasonId, source: 'admin_adjust', points: -cfg.repairCost, eventKey, metadata: { reason: 'streak_repair' } })
+    await tx.airdropAccount.update({
+      where: { userId_seasonId: { userId, seasonId } },
+      data: {
+        streakCount: acc.preBreakStreak,
+        longestStreak: Math.max(acc.longestStreak, acc.preBreakStreak),
+        streakBrokenAt: null,
+        repairsUsed: acc.repairsUsed + 1,
+        lastActiveDay: startOfUtcDay(),
+      },
+    })
+    return { restored: acc.preBreakStreak, cost: cfg.repairCost }
+  })
+}
+
+// ── Public: voluntary reset to zero ─────────────────────────────────────────
+export async function resetStreak(userId: string): Promise<void> {
+  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  const seasonId = await resolveActiveSeasonId(db)
+  if (!seasonId) return
+  await db.airdropAccount.updateMany({
+    where: { userId, seasonId },
+    data: { streakCount: 0, preBreakStreak: 0, streakBrokenAt: null, lastActiveDay: null },
+  })
+}
+
+// ── Public: read model for the Airdrop tab ──────────────────────────────────────
+export interface AirdropStreak {
+  count: number
+  longest: number
+  multiplier: number
+  freezes: number
+  brokenAt: string | null
+  preBreakStreak: number
+  canRepair: boolean
+  repairCost: number
+  repairsLeft: number
+  checkedInToday: boolean
+}
+
 export interface AirdropStatus {
   enabled: boolean
   season: { index: number; name: string } | null
   totalPoints: number
   breakdown: { source: string; points: number }[]
   milestone: { current: number; target: number }
+  streak: AirdropStreak | null
 }
 
 export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
@@ -319,14 +524,19 @@ export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
   const season = await db.airdropSeason.findFirst({ where: { status: 'active' }, orderBy: { index: 'desc' } })
   if (!enabled || !season) {
     const target = await getNumberConfig(CFG.targetUsers, DEF.targetUsers)
-    return { enabled, season: season ? { index: season.index, name: season.name } : null, totalPoints: 0, breakdown: [], milestone: { current: 0, target } }
+    return { enabled, season: season ? { index: season.index, name: season.name } : null, totalPoints: 0, breakdown: [], milestone: { current: 0, target }, streak: null }
   }
 
-  const [account, grouped, userCount, target] = await Promise.all([
-    db.airdropAccount.findUnique({ where: { userId_seasonId: { userId, seasonId: season.id } }, select: { totalPoints: true } }),
+  const cfg = await loadAirdropConfig()
+  const dayStr = startOfUtcDay().toISOString().slice(0, 10)
+  const [account, grouped, userCount, checkin] = await Promise.all([
+    db.airdropAccount.findUnique({
+      where: { userId_seasonId: { userId, seasonId: season.id } },
+      select: { totalPoints: true, streakCount: true, longestStreak: true, freezes: true, streakBrokenAt: true, preBreakStreak: true, repairsUsed: true },
+    }),
     db.airdropLedger.groupBy({ by: ['source'], where: { userId, seasonId: season.id }, _sum: { points: true } }),
     db.user.count(),
-    getNumberConfig(CFG.targetUsers, DEF.targetUsers),
+    db.airdropLedger.findUnique({ where: { eventKey: `checkin:${userId}:${dayStr}` }, select: { id: true } }),
   ])
 
   const breakdown = grouped
@@ -334,12 +544,31 @@ export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
     .filter((b) => b.points !== 0)
     .sort((a, b) => b.points - a.points)
 
+  const streakCount = account?.streakCount ?? 0
+  const withinWindow = account?.streakBrokenAt
+    ? Date.now() - account.streakBrokenAt.getTime() <= cfg.repairWindowDays * 86_400_000
+    : false
+  const repairsLeft = Math.max(0, cfg.repairMax - (account?.repairsUsed ?? 0))
+  const streak: AirdropStreak = {
+    count: streakCount,
+    longest: account?.longestStreak ?? 0,
+    multiplier: streakMultiplier(streakCount),
+    freezes: account?.freezes ?? 0,
+    brokenAt: account?.streakBrokenAt ? account.streakBrokenAt.toISOString() : null,
+    preBreakStreak: account?.preBreakStreak ?? 0,
+    canRepair: withinWindow && repairsLeft > 0 && (account?.preBreakStreak ?? 0) > streakCount && Number(account?.totalPoints ?? 0) >= cfg.repairCost,
+    repairCost: cfg.repairCost,
+    repairsLeft,
+    checkedInToday: !!checkin,
+  }
+
   return {
     enabled: true,
     season: { index: season.index, name: season.name },
     totalPoints: Number(account?.totalPoints ?? 0),
     breakdown,
-    milestone: { current: userCount, target },
+    milestone: { current: userCount, target: cfg.targetUsers },
+    streak,
   }
 }
 
