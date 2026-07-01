@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { BrandLogo } from '@/components/ui/BrandLogo'
+import { CommunityIconLinks } from '@/components/layout/CommunityChannels'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 
 export default function Footer() {
@@ -20,6 +21,7 @@ export default function Footer() {
             <p className="text-xs text-text-muted mt-3">
               Proudly built in Pakistan · {SUPPORT_EMAIL}
             </p>
+            <CommunityIconLinks className="mt-4" />
           </div>
 
           {/* Products */}
@@ -51,6 +53,7 @@ export default function Footer() {
             <h3 className="text-xs font-bold text-text-primary uppercase tracking-wide mb-3">Company</h3>
             <nav className="space-y-2">
               <FooterLink href="/about">About Us</FooterLink>
+              <FooterLink href="/community">Community</FooterLink>
               <FooterLink href="/help">Help Center</FooterLink>
               <FooterLink href="/terms">Terms of Service</FooterLink>
               <FooterLink href="/privacy">Privacy Policy</FooterLink>

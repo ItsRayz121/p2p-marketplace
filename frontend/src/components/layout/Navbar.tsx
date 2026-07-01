@@ -27,6 +27,7 @@ import {
   ChevronDown,
   Heart,
   HelpCircle,
+  Users,
 } from 'lucide-react'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; ic
   { href: '/leaderboard', Icon: Trophy,                    label: 'Leaderboard',      iconCls: 'text-yellow-500',  bgCls: 'bg-yellow-500/10' },
   { href: '/referral',    Icon: Gift,                      label: 'Referral',         iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10'   },
   { href: '/favorites',   Icon: Heart,                     label: 'Favorites',        iconCls: 'text-red-500',     bgCls: 'bg-red-500/10'    },
+  { href: '/community',   Icon: Users,                     label: 'Community',        iconCls: 'text-teal-500',    bgCls: 'bg-teal-500/10'   },
   { href: '/help',        Icon: HelpCircle,                label: 'Help Center',      iconCls: 'text-sky-500',     bgCls: 'bg-sky-500/10'    },
 ]
 

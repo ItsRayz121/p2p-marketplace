@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: '/marketplace', label: 'Marketplace' },
   { href: '/ctm', label: 'Community Tokens' },
   { href: '/gas', label: 'Gas Fees' },
+  { href: '/community', label: 'Community' },
 ]
 
 export function MarketingHeader() {

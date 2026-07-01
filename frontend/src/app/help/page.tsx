@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
 import { openSupportChat } from '@/lib/supportChat'
+import { CommunityChannels } from '@/components/layout/CommunityChannels'
 
 const FAQS = [
   {
@@ -157,6 +158,15 @@ export default function HelpPage() {
             Email Us
           </a>
         </div>
+      </div>
+
+      {/* Join our community */}
+      <div className="mb-10">
+        <h2 className="text-base font-bold text-text-primary mb-1">Join our community</h2>
+        <p className="text-sm text-text-muted mb-4">
+          Chat with other traders and stay up to date with official announcements.
+        </p>
+        <CommunityChannels />
       </div>
 
       {/* FAQ sections */}
