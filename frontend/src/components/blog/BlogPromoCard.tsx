@@ -38,7 +38,7 @@ const PROMOS: Promo[] = [
   {
     key: 'gas',
     title: 'Top up gas in seconds',
-    body: 'Pay in PKR or USD via JazzCash or Easypaisa and get gas delivered straight to your wallet.',
+    body: 'Pay in USD or PKR via JazzCash or Easypaisa and get gas delivered straight to your wallet.',
     cta: 'Buy gas fees',
     href: '/gas',
   },
