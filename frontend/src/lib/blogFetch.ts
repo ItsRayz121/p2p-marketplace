@@ -10,7 +10,21 @@ import type { BlogPost, BlogPostSummary } from './api'
 // NOT NEXT_PUBLIC_) to the backend's raw origin (e.g. the *.up.railway.app URL)
 // so SSR talks to the origin directly and bypasses Cloudflare. Falls back to
 // the public URL when unset, so existing setups keep working.
-const API = (process.env.BACKEND_ORIGIN_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '')
+// Normalise the configured origin: strip a trailing slash and, if someone set
+// BACKEND_ORIGIN_URL to a bare host (e.g. "foo.up.railway.app" with no scheme),
+// prepend https:// so `fetch` gets an absolute URL instead of throwing.
+function normaliseOrigin(raw: string): string {
+  let v = raw.trim().replace(/\/$/, '')
+  if (v && !/^https?:\/\//i.test(v)) v = `https://${v}`
+  return v
+}
+
+const API = normaliseOrigin(process.env.BACKEND_ORIGIN_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001')
+
+// One-time visibility into which origin SSR is using (server logs only). Helps
+// confirm whether BACKEND_ORIGIN_URL took effect on the deployment vs. silently
+// falling back to the Cloudflare-fronted public host.
+const USING_ORIGIN_OVERRIDE = !!process.env.BACKEND_ORIGIN_URL
 
 async function unwrap<T>(res: Response): Promise<T | null> {
   if (!res.ok) return null
@@ -37,22 +51,28 @@ export async function fetchBlogList(params: { page?: number; category?: string; 
   if (params.page) qs.set('page', String(params.page))
   if (params.category) qs.set('category', params.category)
   if (params.tag) qs.set('tag', params.tag)
+  const url = `${API}/api/v1/blog?${qs.toString()}`
   try {
-    const res = await fetch(`${API}/api/v1/blog?${qs.toString()}`, { cache: 'no-store' })
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) console.error(`[blogFetch] list ${res.status} from ${url} (originOverride=${USING_ORIGIN_OVERRIDE})`)
     return (await unwrap<BlogList>(res)) ?? { posts: [], total: 0, page: 1, pageSize: 12 }
-  } catch {
+  } catch (err) {
+    console.error(`[blogFetch] list threw for ${url} (originOverride=${USING_ORIGIN_OVERRIDE}):`, err)
     return { posts: [], total: 0, page: 1, pageSize: 12 }
   }
 }
 
 export async function fetchBlogPost(slug: string): Promise<BlogPost | null> {
+  // `no-store`: never cache an individual post (especially a "not found"
+  // result). Without this, opening a slug before it was published cached the
+  // 404 for the whole revalidate window, so publishing didn't make it live.
+  const url = `${API}/api/v1/blog/post/${encodeURIComponent(slug)}`
   try {
-    // `no-store`: never cache an individual post (especially a "not found"
-    // result). Without this, opening a slug before it was published cached the
-    // 404 for the whole revalidate window, so publishing didn't make it live.
-    const res = await fetch(`${API}/api/v1/blog/post/${encodeURIComponent(slug)}`, { cache: 'no-store' })
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) console.error(`[blogFetch] post ${res.status} from ${url} (originOverride=${USING_ORIGIN_OVERRIDE})`)
     return await unwrap<BlogPost>(res)
-  } catch {
+  } catch (err) {
+    console.error(`[blogFetch] post threw for ${url} (originOverride=${USING_ORIGIN_OVERRIDE}):`, err)
     return null
   }
 }
