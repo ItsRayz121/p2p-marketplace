@@ -1239,6 +1239,27 @@ export const referralApi = {
   },
 }
 
+export interface AirdropStatus {
+  enabled: boolean
+  season: { index: number; name: string } | null
+  totalPoints: number
+  breakdown: { source: string; points: number }[]
+  milestone: { current: number; target: number }
+}
+
+export interface AirdropLedgerEntry {
+  id: string
+  source: string
+  points: number
+  createdAt: string
+  metadata?: unknown
+}
+
+export const airdropApi = {
+  getStatus: () => apiRequest<AirdropStatus>('/airdrop'),
+  getLedger: () => apiRequest<{ entries: AirdropLedgerEntry[] }>('/airdrop/ledger'),
+}
+
 export const leaderboardApi = {
   getTop: (params?: { period?: string; limit?: number; tradeType?: string }) => {
     const qs = params
