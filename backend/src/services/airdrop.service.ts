@@ -48,6 +48,8 @@ const CFG = {
   repairMax: 'airdrop_streak_repair_max',                  // repairs allowed per season
   freezeMax: 'airdrop_streak_freeze_max',                  // max banked freeze tokens
   freezeEarnEvery: 'airdrop_streak_freeze_earn_every',     // earn 1 freeze every N streak days
+  // ── Levels (Phase 4) ──
+  levelDiscountCap: 'airdrop_level_discount_cap',          // hard ceiling on level fee discount %
 } as const
 
 const DEF = {
@@ -68,6 +70,7 @@ const DEF = {
   repairMax: 2,
   freezeMax: 3,
   freezeEarnEvery: 30,
+  levelDiscountCap: 50,
 }
 
 export interface AirdropConfig {
@@ -88,6 +91,7 @@ export interface AirdropConfig {
   repairMax: number
   freezeMax: number
   freezeEarnEvery: number
+  levelDiscountCap: number
 }
 
 export async function loadAirdropConfig(): Promise<AirdropConfig> {
@@ -95,6 +99,7 @@ export async function loadAirdropConfig(): Promise<AirdropConfig> {
     pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin,
     gasPerOrder, gasMinUsd, gasDailyCap, referralPct, targetUsers, requireKyc,
     checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
+    levelDiscountCap,
   ] = await Promise.all([
     getNumberConfig(CFG.pkrPerPoint, DEF.pkrPerPoint),
     getNumberConfig(CFG.minTradePkr, DEF.minTradePkr),
@@ -113,12 +118,106 @@ export async function loadAirdropConfig(): Promise<AirdropConfig> {
     getNumberConfig(CFG.repairMax, DEF.repairMax),
     getNumberConfig(CFG.freezeMax, DEF.freezeMax),
     getNumberConfig(CFG.freezeEarnEvery, DEF.freezeEarnEvery),
+    getNumberConfig(CFG.levelDiscountCap, DEF.levelDiscountCap),
   ])
   return {
     pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin, gasPerOrder, gasMinUsd, gasDailyCap,
     referralPct, requireKyc, targetUsers,
     checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
+    levelDiscountCap,
   }
+}
+
+// ── Levels — cumulative lifetime points unlock a fee discount. Levels are PERKS,
+//    separate from the streak multiplier, so the two never compound into a runaway.
+//    Discount is CAPPED at 50% (airdrop_level_discount_cap) to protect revenue. ──
+export interface LevelTier {
+  key: string
+  name: string
+  min: number
+  discountPct: number
+}
+
+export const LEVEL_TIERS: LevelTier[] = [
+  { key: 'diamond',  name: 'Diamond',  min: 300_000, discountPct: 50 },
+  { key: 'platinum', name: 'Platinum', min: 100_000, discountPct: 35 },
+  { key: 'gold',     name: 'Gold',     min: 25_000,  discountPct: 20 },
+  { key: 'silver',   name: 'Silver',   min: 5_000,   discountPct: 10 },
+  { key: 'bronze',   name: 'Bronze',   min: 0,       discountPct: 0 },
+]
+
+export interface UserLevel {
+  level: string
+  levelName: string
+  discountPct: number
+  cumulativePoints: number
+  nextLevel: string | null
+  pointsToNext: number | null
+}
+
+/** Cumulative lifetime points = net total across all of a user's season accounts. */
+async function cumulativePoints(userId: string): Promise<number> {
+  const agg = await db.airdropAccount.aggregate({ where: { userId }, _sum: { totalPoints: true } })
+  return Math.max(0, Number(agg._sum.totalPoints ?? 0))
+}
+
+function tierFor(points: number, cap: number): { tier: LevelTier; next: LevelTier | null } {
+  // LEVEL_TIERS is high→low; the first whose min we meet is our level.
+  for (let i = 0; i < LEVEL_TIERS.length; i++) {
+    const t = LEVEL_TIERS[i]!
+    if (points >= t.min) {
+      const next = i > 0 ? LEVEL_TIERS[i - 1]! : null
+      return { tier: { ...t, discountPct: Math.min(t.discountPct, cap) }, next }
+    }
+  }
+  const last = LEVEL_TIERS[LEVEL_TIERS.length - 1]!
+  return { tier: last, next: LEVEL_TIERS[LEVEL_TIERS.length - 2] ?? null }
+}
+
+export async function getUserLevel(userId: string): Promise<UserLevel> {
+  const cap = await getNumberConfig(CFG.levelDiscountCap, DEF.levelDiscountCap)
+  const points = await cumulativePoints(userId)
+  const { tier, next } = tierFor(points, cap)
+  return {
+    level: tier.key,
+    levelName: tier.name,
+    discountPct: tier.discountPct,
+    cumulativePoints: points,
+    nextLevel: next?.name ?? null,
+    pointsToNext: next ? Math.max(0, next.min - points) : null,
+  }
+}
+
+/**
+ * The fee-discount % a user's level currently grants. Returns 0 unless BOTH
+ * airdrop_enabled AND airdrop_levels_enabled are ON — so points can accrue for
+ * weeks before any live fee is touched. Capped at airdrop_level_discount_cap.
+ */
+export async function getAirdropFeeDiscountPct(userId: string | null): Promise<number> {
+  if (!userId) return 0
+  if (!(await isFlagEnabled(FLAGS.AIRDROP))) return 0
+  if (!(await isFlagEnabled(FLAGS.AIRDROP_LEVELS))) return 0
+  const { discountPct } = await getUserLevel(userId)
+  return discountPct
+}
+
+/**
+ * Margin-only discount for a gas order from the buyer's airdrop level. Mirrors the
+ * affiliate/promo flooring: the discount is `levelPct% × margin`, but never more
+ * than the margin left after any promo/affiliate discount already applied — so it
+ * can never push the user below the base gas cost. Returns 0 when levels are off.
+ */
+export async function airdropLevelOrderDiscount(
+  userId: string | null,
+  marginUsdt: number,
+  alreadyDiscountedUsdt: number,
+): Promise<{ discountUsdt: number }> {
+  const pct = await getAirdropFeeDiscountPct(userId)
+  if (pct <= 0) return { discountUsdt: 0 }
+  const room = Math.max(0, marginUsdt - alreadyDiscountedUsdt)
+  if (room <= 0) return { discountUsdt: 0 }
+  const raw = Math.round((pct / 100) * marginUsdt * 100) / 100
+  return { discountUsdt: Math.min(raw, Math.round(room * 100) / 100) }
 }
 
 // ── Streak multiplier — PLATEAUS at 2.0× so late joiners stay viable (the 1000-day
@@ -517,6 +616,8 @@ export interface AirdropStatus {
   breakdown: { source: string; points: number }[]
   milestone: { current: number; target: number }
   streak: AirdropStreak | null
+  level: UserLevel | null
+  levelsLive: boolean // whether the level discount is actually applied to fees yet
 }
 
 export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
@@ -524,12 +625,12 @@ export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
   const season = await db.airdropSeason.findFirst({ where: { status: 'active' }, orderBy: { index: 'desc' } })
   if (!enabled || !season) {
     const target = await getNumberConfig(CFG.targetUsers, DEF.targetUsers)
-    return { enabled, season: season ? { index: season.index, name: season.name } : null, totalPoints: 0, breakdown: [], milestone: { current: 0, target }, streak: null }
+    return { enabled, season: season ? { index: season.index, name: season.name } : null, totalPoints: 0, breakdown: [], milestone: { current: 0, target }, streak: null, level: null, levelsLive: false }
   }
 
   const cfg = await loadAirdropConfig()
   const dayStr = startOfUtcDay().toISOString().slice(0, 10)
-  const [account, grouped, userCount, checkin] = await Promise.all([
+  const [account, grouped, userCount, checkin, level, levelsLive] = await Promise.all([
     db.airdropAccount.findUnique({
       where: { userId_seasonId: { userId, seasonId: season.id } },
       select: { totalPoints: true, streakCount: true, longestStreak: true, freezes: true, streakBrokenAt: true, preBreakStreak: true, repairsUsed: true },
@@ -537,6 +638,8 @@ export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
     db.airdropLedger.groupBy({ by: ['source'], where: { userId, seasonId: season.id }, _sum: { points: true } }),
     db.user.count(),
     db.airdropLedger.findUnique({ where: { eventKey: `checkin:${userId}:${dayStr}` }, select: { id: true } }),
+    getUserLevel(userId),
+    isFlagEnabled(FLAGS.AIRDROP_LEVELS),
   ])
 
   const breakdown = grouped
@@ -569,6 +672,8 @@ export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
     breakdown,
     milestone: { current: userCount, target: cfg.targetUsers },
     streak,
+    level,
+    levelsLive,
   }
 }
 

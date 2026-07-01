@@ -34,6 +34,7 @@ import {
   type PromoResolution,
 } from '../lib/gas/gas.promo'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
+import { airdropLevelOrderDiscount } from '../services/airdrop.service'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
   getAffiliateQuote,
@@ -674,7 +675,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoDisc = promoRes?.discountUsdt ?? 0
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
-    const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
+    // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
+    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
     const finalPaymentAmount = Math.round((paymentAmount - totalDiscount) * 100) / 100
 
     const order = await (async () => {
@@ -1167,7 +1170,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoDisc = promoRes?.discountUsdt ?? 0
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
-    const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
+    // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
+    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
     const finalPkrAmount = finalPaymentUsd * usdPkrRate
 
@@ -1390,7 +1395,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoDisc = promoRes?.discountUsdt ?? 0
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
-    const totalDiscount = Math.round((promoDisc + affDisc) * 100) / 100
+    // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
+    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
     const discountedBase = Math.round((baseCharge - totalDiscount) * 100) / 100
     // Assign the unique amount AND create the order inside the same guarded block, so
     // ANY failure after the promo reservation (incl. assignUnique) releases the slot.

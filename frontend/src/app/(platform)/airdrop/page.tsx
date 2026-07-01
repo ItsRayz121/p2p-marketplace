@@ -19,7 +19,17 @@ import {
   Lock,
   Snowflake,
   Wrench,
+  Trophy,
+  Percent,
 } from 'lucide-react'
+
+const LEVEL_COLORS: Record<string, string> = {
+  bronze: 'text-amber-700 bg-amber-700/10',
+  silver: 'text-slate-400 bg-slate-400/10',
+  gold: 'text-yellow-500 bg-yellow-500/10',
+  platinum: 'text-cyan-400 bg-cyan-400/10',
+  diamond: 'text-fuchsia-400 bg-fuchsia-400/10',
+}
 
 // ─── Source presentation ────────────────────────────────────────────────────
 const SOURCE_META: Record<string, { label: string; Icon: React.ElementType; cls: string; bg: string }> = {
@@ -222,6 +232,52 @@ function StreakCard({ status, onChange }: { status: AirdropStatus; onChange: () 
   )
 }
 
+// ─── Level card ───────────────────────────────────────────────────────────────
+function LevelCard({ status }: { status: AirdropStatus }) {
+  const lvl = status.level
+  if (!lvl) return null
+  const colorCls = LEVEL_COLORS[lvl.level] ?? 'text-primary bg-primary/10'
+  const progress =
+    lvl.pointsToNext != null && lvl.pointsToNext > 0
+      ? (lvl.cumulativePoints / (lvl.cumulativePoints + lvl.pointsToNext)) * 100
+      : 100
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-3">
+        <span className={`flex items-center justify-center w-12 h-12 rounded-xl flex-shrink-0 ${colorCls}`}>
+          <Trophy className="w-6 h-6" aria-hidden />
+        </span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-black text-text-primary">{lvl.levelName}</span>
+            {lvl.discountPct > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-full">
+                <Percent className="w-3 h-3" aria-hidden /> {lvl.discountPct}% fee discount
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-text-muted mt-0.5">
+            {fmtPoints(lvl.cumulativePoints)} lifetime points
+            {!status.levelsLive && lvl.discountPct > 0 && ' · discount activates at token launch'}
+          </p>
+        </div>
+      </div>
+
+      {lvl.nextLevel && lvl.pointsToNext != null && (
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-text-muted mb-1">
+            <span>Progress to {lvl.nextLevel}</span>
+            <span>{fmtPoints(lvl.pointsToNext)} points to go</span>
+          </div>
+          <div className="h-2 w-full rounded-full bg-surface-alt overflow-hidden">
+            <div className="h-full rounded-full bg-gradient-to-r from-primary to-fuchsia-500" style={{ width: `${Math.max(progress, 2)}%` }} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AirdropPage() {
   const [status, setStatus] = useState<AirdropStatus | null>(null)
@@ -274,6 +330,9 @@ export default function AirdropPage() {
         <p className="text-4xl font-black text-text-primary tabular-nums">{fmtPoints(status.totalPoints)}</p>
         <p className="text-sm text-text-muted mt-1">points earned this season</p>
       </div>
+
+      {/* Level */}
+      <LevelCard status={status} />
 
       {/* Streak */}
       <StreakCard status={status} onChange={fetchData} />

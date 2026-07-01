@@ -1252,6 +1252,15 @@ export interface AirdropStreak {
   checkedInToday: boolean
 }
 
+export interface AirdropLevel {
+  level: string
+  levelName: string
+  discountPct: number
+  cumulativePoints: number
+  nextLevel: string | null
+  pointsToNext: number | null
+}
+
 export interface AirdropStatus {
   enabled: boolean
   season: { index: number; name: string } | null
@@ -1259,6 +1268,8 @@ export interface AirdropStatus {
   breakdown: { source: string; points: number }[]
   milestone: { current: number; target: number }
   streak: AirdropStreak | null
+  level: AirdropLevel | null
+  levelsLive: boolean
 }
 
 export interface AirdropLedgerEntry {

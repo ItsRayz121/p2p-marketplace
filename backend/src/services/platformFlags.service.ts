@@ -71,6 +71,14 @@ export const FLAGS = {
    * locked state, even though it is visible in the account dropdown.
    */
   AIRDROP: 'airdrop_enabled',
+  /**
+   * Airdrop LEVEL fee discounts. When ON (and airdrop_enabled is ON), a user's
+   * airdrop level grants a margin-only discount on gas orders (capped, floored at
+   * the base cost — never a subsidy). OFF (default) = levels are display-only and
+   * fees are exactly as today. Separate from AIRDROP so points can accrue for
+   * weeks before any discount goes live.
+   */
+  AIRDROP_LEVELS: 'airdrop_levels_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]
