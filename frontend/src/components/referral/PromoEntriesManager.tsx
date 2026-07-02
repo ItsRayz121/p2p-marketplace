@@ -107,6 +107,7 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
             <thead className="text-text-muted border-b border-border">
               <tr>
                 <th className="text-left py-1.5 pr-3">User</th>
+                {(giveaway.collectName || giveaway.collectWhatsapp) && <th className="text-left py-1.5 pr-3">Contact</th>}
                 <th className="text-left py-1.5 pr-3">Address</th>
                 <th className="text-left py-1.5 pr-3">Status</th>
                 <th className="text-left py-1.5">Entered</th>
@@ -116,6 +117,13 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
               {entries.map((e) => (
                 <tr key={e.id}>
                   <td className="py-1.5 pr-3 text-text-primary align-top">{e.username ?? '—'}</td>
+                  {(giveaway.collectName || giveaway.collectWhatsapp) && (
+                    <td className="py-1.5 pr-3 text-text-secondary align-top whitespace-nowrap">
+                      {e.entrantName && <span className="block text-text-primary">{e.entrantName}</span>}
+                      {e.whatsapp && <span className="block text-text-muted">{e.whatsapp}</span>}
+                      {!e.entrantName && !e.whatsapp && '—'}
+                    </td>
+                  )}
                   <td className="py-1.5 pr-3 font-mono text-text-secondary break-all align-top">{e.receivingAddress}</td>
                   <td className="py-1.5 pr-3 align-top">
                     <select

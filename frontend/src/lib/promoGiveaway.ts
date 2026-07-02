@@ -13,6 +13,13 @@ export interface PromoWinner {
   address: string // already masked server-side
 }
 
+export interface PromoParticipant {
+  username: string
+  address: string // masked server-side
+  status: string
+  enteredAt: string
+}
+
 export interface PromoGiveawayPublic {
   code: string
   title: string
@@ -119,6 +126,7 @@ export const promoGiveawayApi = {
   updateEntry: (id: string, entryId: string, body: { status: PromoEntryStatus; note?: string }) =>
     apiRequest<unknown>(`/promo-giveaways/${id}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   publicInfo: (code: string) => apiRequest<PromoGiveawayPublic>(`/promo-giveaways/public/${code}`),
+  participants: (code: string) => apiRequest<PromoParticipant[]>(`/promo-giveaways/public/${code}/participants`),
   enter: (code: string, body: { receivingAddress: string; email?: string; entrantName?: string; whatsapp?: string; ackTasks: string[] }) =>
     apiRequest<{ entered: boolean }>(`/promo-giveaways/public/${code}/enter`, {
       method: 'POST',

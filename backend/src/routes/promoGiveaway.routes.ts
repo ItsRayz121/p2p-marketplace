@@ -325,6 +325,29 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /promo-giveaways/public/:code/participants — public entrant list (masked)
+  app.get('/promo-giveaways/public/:code/participants', { preHandler: [optionalAuth] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.PROMO_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not available right now.', 400)
+    const { code } = req.params as { code: string }
+    const g = await db.promoGiveaway.findUnique({ where: { code: code.trim().toUpperCase() }, select: { id: true, isActive: true } })
+    if (!g || !g.isActive) throw Errors.NOT_FOUND('Giveaway')
+    const rows = await db.promoGiveawayEntry.findMany({
+      where: { giveawayId: g.id },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      select: { username: true, receivingAddress: true, status: true, createdAt: true },
+    })
+    return reply.send({
+      success: true,
+      data: rows.map((r) => ({
+        username: r.username || 'Anonymous',
+        address: maskAddress(r.receivingAddress),
+        status: r.status,
+        enteredAt: r.createdAt.toISOString(),
+      })),
+    })
+  })
+
   // POST /promo-giveaways/public/:code/enter — submit an entry (login required)
   app.post(
     '/promo-giveaways/public/:code/enter',
