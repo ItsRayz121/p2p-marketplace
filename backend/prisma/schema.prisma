@@ -1795,6 +1795,15 @@ model PromoGiveaway {
   winnerCount   Int                  @default(0)          // target winners (ignored when rewardAll)
   rewardAll     Boolean              @default(false)      // everyone who entered wins
   requireKyc    Boolean              @default(false)
+  // Off-platform reward metadata (display-only — no funds move). Lets the creator
+  // spell out what winners receive: amount + token + chain (chain may be a custom
+  // "Other" value not in the platform's gas list).
+  rewardAmount  String?                                   // e.g. "500" or "0.5"
+  rewardToken   String?                                   // token symbol / title, e.g. "USDT", "PKR"
+  rewardChain   String?                                   // chain label, e.g. "BEP20", "TRON", or custom
+  // Optional entrant fields the creator can collect at entry time.
+  collectName   Boolean              @default(false)      // ask entrant for a name / username
+  collectWhatsapp Boolean            @default(false)      // ask entrant for a WhatsApp number
   entryDeadline DateTime?
   status        String               @default("open")     // open | closed
   isActive      Boolean              @default(true)       // admin kill switch
@@ -1817,6 +1826,8 @@ model PromoGiveawayEntry {
   userId           String                              // entrant (plain ref)
   username         String?                             // snapshot for CSV export
   email            String?
+  entrantName      String?                             // optional name/username the entrant supplied
+  whatsapp         String?                             // optional WhatsApp number the entrant supplied
   receivingAddress String
   ackTasks         Json?                               // task ids the entrant confirmed
   status           String        @default("entered")   // entered | pending | sent | rejected

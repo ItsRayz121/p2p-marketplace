@@ -31,6 +31,13 @@ const createSchema = z.object({
   winnerCount: z.number().int().min(0).max(100000).default(0),
   rewardAll: z.boolean().default(false),
   requireKyc: z.boolean().default(false),
+  // Off-platform reward metadata (display-only).
+  rewardAmount: z.string().trim().max(40).optional(),
+  rewardToken: z.string().trim().max(40).optional(),
+  rewardChain: z.string().trim().max(60).optional(),
+  // Optional entrant-collection toggles.
+  collectName: z.boolean().default(false),
+  collectWhatsapp: z.boolean().default(false),
   entryDeadline: z.string().datetime().optional(),
   code: z.string().trim().min(3).max(24).regex(/^[A-Za-z0-9_-]+$/, 'Code may only contain letters, numbers, - and _').optional(),
 })
@@ -38,6 +45,8 @@ const createSchema = z.object({
 const enterSchema = z.object({
   receivingAddress: z.string().trim().min(4).max(200),
   email: z.string().email().optional(),
+  entrantName: z.string().trim().max(80).optional(),
+  whatsapp: z.string().trim().max(40).optional(),
   ackTasks: z.array(z.string().min(1).max(40)).max(24).default([]),
 })
 
@@ -135,6 +144,11 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
         winnerCount: p.rewardAll ? 0 : p.winnerCount,
         rewardAll: p.rewardAll,
         requireKyc: p.requireKyc,
+        rewardAmount: p.rewardAmount || null,
+        rewardToken: p.rewardToken || null,
+        rewardChain: p.rewardChain || null,
+        collectName: p.collectName,
+        collectWhatsapp: p.collectWhatsapp,
         createdById: req.user!.id,
         createdByRole: roleSnapshot,
         createdByName,
@@ -180,6 +194,8 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
         id: e.id,
         username: e.username,
         email: e.email,
+        entrantName: e.entrantName,
+        whatsapp: e.whatsapp,
         receivingAddress: e.receivingAddress,
         status: e.status,
         note: e.note,
@@ -193,11 +209,13 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const g = await requireOwnedOrAdmin(id, req.user!.id, req.user!.role)
     const entries = await db.promoGiveawayEntry.findMany({ where: { giveawayId: g.id }, orderBy: { createdAt: 'asc' } })
-    const header = ['Username', 'Email', 'Address', 'Status', 'Entered At']
+    const header = ['Username', 'Name', 'WhatsApp', 'Email', 'Address', 'Status', 'Entered At']
     const lines = [header.join(',')]
     for (const e of entries) {
       lines.push([
         csvCell(e.username),
+        csvCell(e.entrantName),
+        csvCell(e.whatsapp),
         csvCell(e.email),
         csvCell(e.receivingAddress),
         csvCell(e.status),
@@ -288,6 +306,11 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
         rewardAll: g.rewardAll,
         winnerCount: g.winnerCount,
         requireKyc: g.requireKyc,
+        rewardAmount: g.rewardAmount,
+        rewardToken: g.rewardToken,
+        rewardChain: g.rewardChain,
+        collectName: g.collectName,
+        collectWhatsapp: g.collectWhatsapp,
         entryDeadline: g.entryDeadline?.toISOString() ?? null,
         status: g.status,
         open,
@@ -295,6 +318,7 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
         alreadyEntered: !!myEntry,
         myStatus: myEntry?.status ?? null,
         myNote: myEntry?.note ?? null,
+        myAddress: myEntry?.receivingAddress ?? null,
         winners,
         createdByName: g.createdByName,
       },
@@ -310,12 +334,16 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
       const { code } = req.params as { code: string }
       const parsed = enterSchema.safeParse(req.body)
       if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-      const { receivingAddress, email, ackTasks } = parsed.data
+      const { receivingAddress, email, entrantName, whatsapp, ackTasks } = parsed.data
 
       const g = await db.promoGiveaway.findUnique({ where: { code: code.trim().toUpperCase() } })
       if (!g || !g.isActive) throw new AppError('GIVEAWAY_INVALID', 'This giveaway is not available.', 400)
       if (g.status !== 'open') throw new AppError('GIVEAWAY_CLOSED', 'This giveaway is no longer accepting entries.', 400)
       if (g.entryDeadline && g.entryDeadline.getTime() < Date.now()) throw new AppError('GIVEAWAY_CLOSED', 'This giveaway has closed.', 400)
+
+      // Enforce optional-but-required-when-enabled entrant fields.
+      if (g.collectName && !entrantName?.trim()) throw new AppError('NAME_REQUIRED', 'Please enter your name to join this giveaway.', 400)
+      if (g.collectWhatsapp && !whatsapp?.trim()) throw new AppError('WHATSAPP_REQUIRED', 'Please enter your WhatsApp number to join this giveaway.', 400)
 
       // All REQUIRED tasks must be confirmed (self-attested).
       const required = parseTasks(g.tasks).filter((t) => t.required).map((t) => t.id)
@@ -342,8 +370,16 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
           receivingAddress,
           ackTasks: ackTasks as unknown as object[],
           ...(contactEmail ? { email: contactEmail } : {}),
+          ...(entrantName?.trim() ? { entrantName: entrantName.trim() } : {}),
+          ...(whatsapp?.trim() ? { whatsapp: whatsapp.trim() } : {}),
         },
-        update: { receivingAddress, ackTasks: ackTasks as unknown as object[], ...(contactEmail ? { email: contactEmail } : {}) },
+        update: {
+          receivingAddress,
+          ackTasks: ackTasks as unknown as object[],
+          ...(contactEmail ? { email: contactEmail } : {}),
+          ...(entrantName?.trim() ? { entrantName: entrantName.trim() } : {}),
+          ...(whatsapp?.trim() ? { whatsapp: whatsapp.trim() } : {}),
+        },
       })
       return reply.send({ success: true, data: { entered: true } })
     },
@@ -409,6 +445,11 @@ function serializeOwner(g: any) {
     winnerCount: g.winnerCount,
     rewardAll: g.rewardAll,
     requireKyc: g.requireKyc,
+    rewardAmount: g.rewardAmount ?? null,
+    rewardToken: g.rewardToken ?? null,
+    rewardChain: g.rewardChain ?? null,
+    collectName: g.collectName ?? false,
+    collectWhatsapp: g.collectWhatsapp ?? false,
     entryDeadline: g.entryDeadline ? new Date(g.entryDeadline).toISOString() : null,
     status: g.status,
     isActive: g.isActive,

@@ -15,6 +15,9 @@ interface DraftTask { id: string; label: string; url: string; required: boolean 
 
 const STAFF = new Set(['admin', 'super_admin'])
 
+// Common networks for the (display-only) reward metadata. "Other" reveals a free-text field.
+const REWARD_CHAINS = ['BEP20 (BSC)', 'TRC20 (TRON)', 'ERC20 (Ethereum)', 'Polygon', 'Solana', 'Aptos', 'TON', 'SUI', 'Bitcoin', 'Other']
+
 export function CommunityGiveaways() {
   const { user } = useAuth()
   const [mine, setMine] = useState<PromoGiveaway[]>([])
@@ -152,6 +155,12 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const [rewardAll, setRewardAll] = useState(false)
   const [winnerCount, setWinnerCount] = useState('10')
   const [requireKyc, setRequireKyc] = useState(false)
+  const [rewardAmount, setRewardAmount] = useState('')
+  const [rewardToken, setRewardToken] = useState('')
+  const [rewardChain, setRewardChain] = useState('')
+  const [chainOther, setChainOther] = useState('')
+  const [collectName, setCollectName] = useState(false)
+  const [collectWhatsapp, setCollectWhatsapp] = useState(false)
   const [entryDeadline, setEntryDeadline] = useState('')
   const [tasks, setTasks] = useState<DraftTask[]>([])
   const [saving, setSaving] = useState(false)
@@ -183,6 +192,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       .map((t) => ({ id: t.id, label: t.label.trim(), required: t.required, ...(t.url.trim() ? { url: t.url.trim() } : {}) }))
     const winners = parseInt(winnerCount, 10)
     if (!rewardAll && (!Number.isFinite(winners) || winners < 1)) { toast.error('Set a winner count or choose "everyone wins".'); return }
+    const chain = rewardChain === 'Other' ? chainOther.trim() : rewardChain
     setSaving(true)
     try {
       await promoGiveawayApi.create({
@@ -194,6 +204,11 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         rewardAll,
         winnerCount: rewardAll ? 0 : winners,
         requireKyc,
+        rewardAmount: rewardAmount.trim() || undefined,
+        rewardToken: rewardToken.trim() || undefined,
+        rewardChain: chain || undefined,
+        collectName,
+        collectWhatsapp,
         entryDeadline: entryDeadline ? new Date(entryDeadline).toISOString() : undefined,
       })
       toast.success('Giveaway created 🎉')
@@ -236,6 +251,32 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         </div>
       </div>
 
+      {/* Reward (optional, display-only — no platform funds move) */}
+      <div className="rounded-lg border border-border bg-surface p-3 space-y-2">
+        <p className="text-xs font-semibold text-text-primary">Reward per winner (optional)</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[11px] font-medium text-text-muted">Amount</label>
+            <input value={rewardAmount} onChange={(e) => setRewardAmount(e.target.value)} placeholder="e.g. 500" inputMode="decimal" className={`mt-1 ${inputCls}`} />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-text-muted">Token / title</label>
+            <input value={rewardToken} onChange={(e) => setRewardToken(e.target.value)} placeholder="e.g. PKR, USDT, BNB" className={`mt-1 ${inputCls}`} />
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-text-muted">Chain / network</label>
+          <select value={rewardChain} onChange={(e) => setRewardChain(e.target.value)} className={`mt-1 ${inputCls}`}>
+            <option value="">— none / not applicable —</option>
+            {REWARD_CHAINS.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {rewardChain === 'Other' && (
+            <input value={chainOther} onChange={(e) => setChainOther(e.target.value)} placeholder="Type the chain / network" className={`mt-2 ${inputCls}`} />
+          )}
+        </div>
+        <p className="text-[11px] text-text-muted">Shown to entrants so they know what they&apos;ll receive. You send the reward yourself — no platform funds are used.</p>
+      </div>
+
       {/* Tasks */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-text-muted">Entry tasks (self-attested — entrants confirm they did them)</label>
@@ -269,9 +310,17 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         {!rewardAll && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-text-muted">Winners</span>
-            <select value={winnerCount} onChange={(e) => setWinnerCount(e.target.value)} className="px-2 py-1.5 text-sm border border-border rounded-lg bg-canvas text-text-primary">
-              {['5', '10', '20', '50', '100'].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <input
+              type="number"
+              min={1}
+              max={100000}
+              inputMode="numeric"
+              value={winnerCount}
+              onChange={(e) => setWinnerCount(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder="e.g. 100"
+              className="w-28 px-2 py-1.5 text-sm border border-border rounded-lg bg-canvas text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <span className="text-[11px] text-text-muted">any number</span>
           </div>
         )}
       </div>
@@ -280,6 +329,14 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         <label className="inline-flex items-center gap-2 text-sm text-text-primary">
           <input type="checkbox" checked={requireKyc} onChange={(e) => setRequireKyc(e.target.checked)} className="accent-primary" />
           Require verified (KYC) accounts
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-text-primary">
+          <input type="checkbox" checked={collectName} onChange={(e) => setCollectName(e.target.checked)} className="accent-primary" />
+          Ask entrants for their name
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-text-primary">
+          <input type="checkbox" checked={collectWhatsapp} onChange={(e) => setCollectWhatsapp(e.target.checked)} className="accent-primary" />
+          Ask entrants for WhatsApp
         </label>
       </div>
 

@@ -24,6 +24,11 @@ export interface PromoGiveawayPublic {
   rewardAll: boolean
   winnerCount: number
   requireKyc: boolean
+  rewardAmount: string | null
+  rewardToken: string | null
+  rewardChain: string | null
+  collectName: boolean
+  collectWhatsapp: boolean
   entryDeadline: string | null
   status: string
   open: boolean
@@ -31,6 +36,7 @@ export interface PromoGiveawayPublic {
   alreadyEntered: boolean
   myStatus: string | null
   myNote: string | null
+  myAddress: string | null
   winners: PromoWinner[]
   createdByName: string | null
 }
@@ -47,6 +53,11 @@ export interface PromoGiveaway {
   winnerCount: number
   rewardAll: boolean
   requireKyc: boolean
+  rewardAmount: string | null
+  rewardToken: string | null
+  rewardChain: string | null
+  collectName: boolean
+  collectWhatsapp: boolean
   entryDeadline: string | null
   status: string
   isActive: boolean
@@ -62,6 +73,8 @@ export interface PromoEntry {
   id: string
   username: string | null
   email: string | null
+  entrantName?: string | null
+  whatsapp?: string | null
   receivingAddress: string
   status: string
   note?: string | null
@@ -86,6 +99,11 @@ export interface CreatePromoPayload {
   winnerCount: number
   rewardAll: boolean
   requireKyc: boolean
+  rewardAmount?: string
+  rewardToken?: string
+  rewardChain?: string
+  collectName?: boolean
+  collectWhatsapp?: boolean
   entryDeadline?: string
   code?: string
 }
@@ -101,7 +119,7 @@ export const promoGiveawayApi = {
   updateEntry: (id: string, entryId: string, body: { status: PromoEntryStatus; note?: string }) =>
     apiRequest<unknown>(`/promo-giveaways/${id}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   publicInfo: (code: string) => apiRequest<PromoGiveawayPublic>(`/promo-giveaways/public/${code}`),
-  enter: (code: string, body: { receivingAddress: string; email?: string; ackTasks: string[] }) =>
+  enter: (code: string, body: { receivingAddress: string; email?: string; entrantName?: string; whatsapp?: string; ackTasks: string[] }) =>
     apiRequest<{ entered: boolean }>(`/promo-giveaways/public/${code}/enter`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -118,10 +136,10 @@ function csvCell(v: unknown): string {
 }
 
 export function entriesToCsv(entries: PromoEntry[]): string {
-  const rows = [['Username', 'Email', 'Address', 'Status', 'Entered At'].join(',')]
+  const rows = [['Username', 'Name', 'WhatsApp', 'Email', 'Address', 'Status', 'Entered At'].join(',')]
   for (const e of entries) {
     rows.push(
-      [csvCell(e.username), csvCell(e.email), csvCell(e.receivingAddress), csvCell(e.status), csvCell(new Date(e.createdAt).toISOString())].join(','),
+      [csvCell(e.username), csvCell(e.entrantName), csvCell(e.whatsapp), csvCell(e.email), csvCell(e.receivingAddress), csvCell(e.status), csvCell(new Date(e.createdAt).toISOString())].join(','),
     )
   }
   return rows.join('\n')
