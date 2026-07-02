@@ -1,8 +1,11 @@
 'use client'
+import { useState } from 'react'
+import { Calculator } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader, TokenLogo } from './GasPrimitives'
+import { GasCalcPopup } from './GasCalcPopup'
 import { supportMailto } from '@/lib/contact'
 
 export function GasAmountStep() {
@@ -14,11 +17,37 @@ export function GasAmountStep() {
     amountNum, maxUsd, minAmount, usdExceeded,
   } = useGasCtx()
 
+  const [calcOpen, setCalcOpen] = useState(false)
+
   if (!selectedChain || !selectedToken) return null
 
   return (
     <div className="p-5 space-y-4">
-      <CardHeader onBack={() => setPhase(PHASE.TOKEN)} title="Choose Amount" />
+      <CardHeader
+        onBack={() => setPhase(PHASE.TOKEN)}
+        title="Choose Amount"
+        right={
+          <button
+            type="button"
+            onClick={() => setCalcOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-alt hover:text-primary transition-colors"
+            aria-label="Open amount calculator"
+            title="Calculate PKR / USDT / token amounts"
+          >
+            <Calculator className="w-3.5 h-3.5" /> Calculator
+          </button>
+        }
+      />
+
+      {calcOpen && (
+        <GasCalcPopup
+          symbol={selectedToken.symbol}
+          priceUsd={priceUsd}
+          pkrPerUsd={usdPkrRate}
+          onUse={(native) => { setAmount(native); validateAmountField(native) }}
+          onClose={() => setCalcOpen(false)}
+        />
+      )}
 
       <div className="flex items-center justify-between bg-surface-alt rounded-xl px-4 py-3 text-sm">
         <div className="flex items-center gap-3">

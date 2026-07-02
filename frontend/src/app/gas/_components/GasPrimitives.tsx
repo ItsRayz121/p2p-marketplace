@@ -367,7 +367,7 @@ export function BackBtn({ onClick }: { onClick: () => void }) {
 
 // ─── Card step header ─────────────────────────────────────────────────────────
 
-export function CardHeader({ onBack, title, sub }: { onBack?: () => void; title: string; sub?: string }) {
+export function CardHeader({ onBack, title, sub, right }: { onBack?: () => void; title: string; sub?: string; right?: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 pb-3 border-b border-border">
       {onBack && <BackBtn onClick={onBack} />}
@@ -375,6 +375,7 @@ export function CardHeader({ onBack, title, sub }: { onBack?: () => void; title:
         <p className="text-sm font-bold text-text-primary">{title}</p>
         {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
       </div>
+      {right && <div className="ml-auto">{right}</div>}
     </div>
   )
 }
