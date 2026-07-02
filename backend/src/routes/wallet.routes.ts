@@ -285,7 +285,7 @@ export async function walletRoutes(app: FastifyInstance) {
       const userRow = await db.user.findUnique({ where: { id: userId }, select: { username: true } })
       const userLabel = userRow?.username ?? userId
       void createAdminNotif({
-        category: 'SYSTEM',
+        category: 'WITHDRAWAL',
         title:    'Withdrawal Requested',
         body:     `User ${userLabel} requested a withdrawal of ${parsed.data.amount} ${parsed.data.coin}`,
         href:     `/admin/withdrawals`,

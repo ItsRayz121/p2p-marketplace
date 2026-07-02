@@ -6,6 +6,39 @@ import { getAllChains, getRpcUrl } from './chainRegistry.service'
 import type { ChainConfig } from '../lib/chains'
 import { findUserByDepositAddress } from './depositAddress.service'
 import { getBlockNumber, getTransactionReceipt } from '../lib/evmRpc'
+import { createAdminNotif } from './adminNotification.service'
+
+/**
+ * Fire-and-forget admin notification for a freshly-credited deposit. Called only
+ * on the winning credit path (never on re-sightings / already-credited peers) so
+ * each deposit produces exactly one "Deposit Credited" notification. Resolves the
+ * depositor's username for a friendlier body, best-effort.
+ */
+async function notifyDepositCredited(args: {
+  userId: string
+  symbol: string
+  amount: string
+  chain: string
+  txHash: string
+}): Promise<void> {
+  const userRow = await db.user
+    .findUnique({ where: { id: args.userId }, select: { username: true } })
+    .catch(() => null)
+  const userLabel = userRow?.username ?? args.userId.slice(-8)
+  void createAdminNotif({
+    category: 'DEPOSIT',
+    title:    `Deposit Credited: ${args.amount} ${args.symbol}`,
+    body:     `User ${userLabel} received ${args.amount} ${args.symbol} on ${args.chain}. TX: ${args.txHash.slice(0, 18)}…`,
+    href:     '/admin/deposits',
+    metadata: {
+      userId: args.userId,
+      amount: args.amount,
+      symbol: args.symbol,
+      chain:  args.chain,
+      txHash: args.txHash,
+    },
+  })
+}
 
 /**
  * Verify a deposit's real confirmation count on-chain (EVM only). Moralis Streams
@@ -332,6 +365,14 @@ export async function processDepositEvent(event: NormalizedDepositEvent): Promis
       'Deposit credited to internal balance',
     )
 
+    void notifyDepositCredited({
+      userId,
+      symbol: asset.symbol,
+      amount: humanAmount,
+      chain:  chain.id,
+      txHash: event.txHash,
+    })
+
     return {
       status: 'credited',
       depositId: deposit.id,
@@ -588,6 +629,13 @@ export async function creditDetectedDeposit(
       { depositId, userId, chain: deposit.chain, symbol, amount: amountStr, txHash: deposit.txHash, source: opts.source },
       'Deposit credited',
     )
+    void notifyDepositCredited({
+      userId,
+      symbol,
+      amount: amountStr,
+      chain:  deposit.chain,
+      txHash: deposit.txHash,
+    })
     return {
       status: 'credited',
       depositId,

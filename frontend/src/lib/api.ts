@@ -450,7 +450,7 @@ export interface TrustedDevice {
   current: boolean
 }
 
-export type AdminNotifCategory = 'KYC' | 'TRADE' | 'GAS' | 'DISPUTE' | 'CTM' | 'SYSTEM'
+export type AdminNotifCategory = 'KYC' | 'TRADE' | 'GAS' | 'DISPUTE' | 'CTM' | 'SYSTEM' | 'DEPOSIT' | 'WITHDRAWAL'
 
 export interface AdminNotif {
   id: string
@@ -2013,6 +2013,17 @@ export const adminApi = {
     apiRequest<void>(`/admin/instant-buy/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
   rejectInstantBuy: (id: string, data: { reason: string }) =>
     apiRequest<void>(`/admin/instant-buy/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Deposits — on-chain deposit history (credited / pending / rejected)
+  // Backend returns { deposits: [...], pagination: { page, limit, total, pages } }
+  getDeposits: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ deposits: unknown[]; pagination: { page: number; limit: number; total: number; pages: number } }>('/admin/deposits' + buildQs(params)),
+  forceCreditDeposit: (id: string, data: { reason: string; skipChainVerification?: boolean }) =>
+    apiRequest<unknown>(`/admin/deposits/${id}/force-credit`, { method: 'POST', body: JSON.stringify(data) }),
+  refreshDepositConfirmations: (id: string) =>
+    apiRequest<unknown>(`/admin/deposits/${id}/refresh-confirmations`, { method: 'POST' }),
+  rejectDeposit: (id: string, data: { reason: string }) =>
+    apiRequest<void>(`/admin/deposits/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Withdrawals
   // Backend returns { withdrawals: [...], pagination: { page, limit, total, pages } }

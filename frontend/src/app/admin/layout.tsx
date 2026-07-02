@@ -325,6 +325,16 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
+        label: 'Deposits',
+        href: '/admin/deposits',
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
+          </svg>
+        ),
+      },
+      {
         label: 'Withdrawals',
         href: '/admin/withdrawals',
         roles: ['admin', 'super_admin'],
@@ -649,12 +659,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   const CATEGORY_COLORS: Record<AdminNotifCategory, string> = {
-    KYC:     'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-    TRADE:   'bg-purple-500/15 text-purple-700 dark:text-purple-300',
-    GAS:     'bg-orange-500/15 text-orange-700 dark:text-orange-300',
-    DISPUTE: 'bg-red-500/15 text-red-700 dark:text-red-300',
-    CTM:     'bg-teal-500/15 text-teal-700 dark:text-teal-300',
-    SYSTEM:  'bg-surface-alt text-text-secondary',
+    KYC:        'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+    TRADE:      'bg-purple-500/15 text-purple-700 dark:text-purple-300',
+    GAS:        'bg-orange-500/15 text-orange-700 dark:text-orange-300',
+    DISPUTE:    'bg-red-500/15 text-red-700 dark:text-red-300',
+    CTM:        'bg-teal-500/15 text-teal-700 dark:text-teal-300',
+    SYSTEM:     'bg-surface-alt text-text-secondary',
+    DEPOSIT:    'bg-green-500/15 text-green-700 dark:text-green-300',
+    WITHDRAWAL: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
   }
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {

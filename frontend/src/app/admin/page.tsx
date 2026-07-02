@@ -26,12 +26,14 @@ const RANGE_TABS: { value: StatsRange; label: string; prefix: string }[] = [
 ]
 
 const CATEGORY_COLORS: Record<AdminNotifCategory, string> = {
-  KYC:     'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-  TRADE:   'bg-purple-500/15 text-purple-700 dark:text-purple-300',
-  GAS:     'bg-orange-500/15 text-orange-700 dark:text-orange-300',
-  DISPUTE: 'bg-red-500/15 text-red-700 dark:text-red-300',
-  CTM:     'bg-teal-500/15 text-teal-700 dark:text-teal-300',
-  SYSTEM:  'bg-surface-alt text-text-secondary',
+  KYC:        'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  TRADE:      'bg-purple-500/15 text-purple-700 dark:text-purple-300',
+  GAS:        'bg-orange-500/15 text-orange-700 dark:text-orange-300',
+  DISPUTE:    'bg-red-500/15 text-red-700 dark:text-red-300',
+  CTM:        'bg-teal-500/15 text-teal-700 dark:text-teal-300',
+  SYSTEM:     'bg-surface-alt text-text-secondary',
+  DEPOSIT:    'bg-green-500/15 text-green-700 dark:text-green-300',
+  WITHDRAWAL: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
 }
 
 function greeting() {

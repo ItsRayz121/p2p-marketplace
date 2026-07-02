@@ -134,7 +134,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
   if (!env.GAS_SEED_CIPHERTEXT) {
     log.warn({ withdrawalId: wd.id }, 'sendWithdrawalOnChain: GAS_SEED_CIPHERTEXT not set, skipping auto-send')
     void createAdminNotif({
-      category: 'SYSTEM',
+      category: 'WITHDRAWAL',
       title:    'Auto-withdrawal skipped — hot wallet not configured',
       body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) is auto-approved but GAS_SEED_CIPHERTEXT is not set. Send manually from your wallet, then open the withdrawal in the admin panel → Review → Mark Sent (Manual Fallback).`,
       href:     '/admin/withdrawals',
@@ -171,7 +171,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
           'sendWithdrawalOnChain: insufficient gas balance — skipping auto-send',
         )
         void createAdminNotif({
-          category: 'SYSTEM',
+          category: 'WITHDRAWAL',
           title:    `Auto-withdrawal skipped — hot wallet low on ${nativeSymbol} gas`,
           body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) cannot be auto-sent: hot wallet has ${nativeBalance.toFixed(6)} ${nativeSymbol} but needs at least ${minimumBalance.toFixed(6)} ${nativeSymbol} for gas. Top up the hot wallet (${hotAddress}), then the withdrawal will retry automatically or you can Mark Sent manually after sending.`,
           href:     '/admin/withdrawals',
@@ -217,7 +217,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
     log.error({ err, withdrawalId: wd.id }, 'sendWithdrawalOnChain: on-chain send failed')
     void createAdminNotif({
-      category: 'SYSTEM',
+      category: 'WITHDRAWAL',
       title:    'Auto-withdrawal send FAILED — manual action required',
       body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) failed to send automatically: ${msg}. Send manually from the hot wallet, then open the withdrawal → Review → Mark Sent (Manual Fallback). Or reject to refund the user.`,
       href:     '/admin/withdrawals',
@@ -291,7 +291,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     }).catch(() => null)
     const userLabel = userRow?.username ?? wd.userId.slice(-8)
     void createAdminNotif({
-      category: 'SYSTEM',
+      category: 'WITHDRAWAL',
       title:    `Withdrawal Sent: ${wd.amount} ${wd.coin}`,
       body:     `User ${userLabel} auto-withdrawal of ${wd.amount} ${wd.coin} (${wd.network}) sent on-chain. TX: ${txHash.slice(0, 18)}...`,
       href:     '/admin/withdrawals?tab=sent',
@@ -301,7 +301,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     // On-chain tx is already broadcast — log the DB failure but don't throw
     log.error({ err, withdrawalId: wd.id, txHash }, 'sendWithdrawalOnChain: DB update failed after successful on-chain send')
     void createAdminNotif({
-      category: 'SYSTEM',
+      category: 'WITHDRAWAL',
       title:    'Auto-withdrawal sent on-chain but DB update failed',
       body:     `Withdrawal ${wd.id} txHash ${txHash} was broadcast but the DB could not be updated. Update the status manually.`,
       href:     '/admin/withdrawals',

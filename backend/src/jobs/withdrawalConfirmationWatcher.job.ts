@@ -119,7 +119,7 @@ async function checkWithdrawal(
       })
       await recordAuditLog(wd.userId, 'WITHDRAWAL_TX_REVERTED', 'Withdrawal', wd.id, { txHash, chain: chain.id, confirmations })
       await createAdminNotif({
-        category: 'SYSTEM',
+        category: 'WITHDRAWAL',
         title: `⚠ Withdrawal TX Reverted — ${wd.orderRef}`,
         body: `Withdrawal ${wd.orderRef} tx ${txHash.slice(0, 18)}… was REVERTED on-chain. Funds were NOT sent. Manual review required — may need to resend or refund user.`,
         href: `/admin/withdrawals`,
@@ -207,7 +207,7 @@ async function alertStaleWithdrawal(
 ): Promise<void> {
   logger.warn({ withdrawalId: wd.id, reason }, 'withdrawalConfirmationWatcher: stale withdrawal')
   await createAdminNotif({
-    category: 'SYSTEM',
+    category: 'WITHDRAWAL',
     title: `Withdrawal Stuck — ${wd.orderRef}`,
     body: `Withdrawal ${wd.orderRef} has been in status=sent for 2+ hours. Reason: ${reason}. Tx: ${wd.txHash?.slice(0, 18)}… Network: ${wd.network}`,
     href: `/admin/withdrawals`,

@@ -1264,6 +1264,8 @@ enum AdminNotifCategory {
   DISPUTE
   CTM
   SYSTEM
+  DEPOSIT
+  WITHDRAWAL
 }
 
 model AdminNotification {
