@@ -149,6 +149,7 @@ export default function UsersPage() {
           <option value="">All Roles</option>
           <option value="user">User</option>
           <option value="kyc_reviewer">KYC Reviewer</option>
+          <option value="support_agent">Support Agent</option>
           <option value="admin">Admin</option>
           <option value="super_admin">Super Admin</option>
         </select>

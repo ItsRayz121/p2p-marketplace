@@ -13,7 +13,7 @@ const MAX_AGE_SECONDS = 7 * 24 * 60 * 60 // 7 days, matches refresh-token lifeti
 // Staff roles land in the admin panel by default. Stored in the hint cookie's
 // value ("admin") so the Vercel middleware can route them on the bare homepage
 // without waiting for client hydration. Still NOT a security boundary.
-const ADMIN_HINT_ROLES = new Set(['admin', 'super_admin', 'kyc_reviewer', 'dispute_agent'])
+const ADMIN_HINT_ROLES = new Set(['admin', 'super_admin', 'kyc_reviewer', 'dispute_agent', 'support_agent'])
 
 export function setAuthHint(role?: string): void {
   if (typeof document === 'undefined') return

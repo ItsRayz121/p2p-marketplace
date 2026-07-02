@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiRequest } from '@/lib/api'
 import { fmtDateTime, fmtTime } from '@/lib/fmt'
 import { buildChatTimeline } from '@/lib/supportChat'
-import { ChatDivider, SupportRatingChip } from '@/components/support/ChatDivider'
+import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -188,7 +188,11 @@ export default function AdminSupportPage() {
                   item.kind !== 'message' ? (
                     <ChatDivider key={item.key} kind={item.kind} at={item.at} />
                   ) : item.msg.sender === 'system' ? (
-                    <SupportRatingChip key={item.key} rating={item.msg.rating} at={item.msg.createdAt} />
+                    item.msg.rating != null ? (
+                      <SupportRatingChip key={item.key} rating={item.msg.rating} at={item.msg.createdAt} />
+                    ) : (
+                      <SupportSystemNote key={item.key} body={item.msg.body} at={item.msg.createdAt} />
+                    )
                   ) : (
                     <div key={item.key} className={`flex ${item.msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
                       <div

@@ -5,7 +5,7 @@ import { X, Send } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSSE } from '@/hooks/useSSE'
 import { supportChatApi, SUPPORT_CHAT_OPEN_EVENT, SUPPORT_RATINGS, buildChatTimeline, type SupportMessage } from '@/lib/supportChat'
-import { ChatDivider, SupportRatingChip } from '@/components/support/ChatDivider'
+import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 import { fmtTime } from '@/lib/fmt'
 
@@ -20,10 +20,19 @@ export default function SupportChatWidget() {
   const [rating, setRating] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // The current (closed) session can be rated once — until the user replies again
-  // (which reopens it) or a rating has already been recorded as the last message.
-  const lastMessage = messages[messages.length - 1]
-  const canRate = status === 'closed' && !!lastMessage && lastMessage.sender !== 'system'
+  // The current (closed) session can be rated once. Scan the trailing block of
+  // system notes (e.g. the survey message) from newest: a system message WITH a
+  // rating means it's already scored; the first real message ends the session.
+  const canRate = (() => {
+    if (status !== 'closed') return false
+    let sawReal = false
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!
+      if (m.sender !== 'system') { sawReal = true; break }
+      if (m.rating != null) return false // already rated
+    }
+    return sawReal
+  })()
 
   const refresh = useCallback(async () => {
     try {
@@ -151,7 +160,11 @@ export default function SupportChatWidget() {
                 item.kind !== 'message' ? (
                   <ChatDivider key={item.key} kind={item.kind} at={item.at} />
                 ) : item.msg.sender === 'system' ? (
-                  <SupportRatingChip key={item.key} rating={item.msg.rating} at={item.msg.createdAt} />
+                  item.msg.rating != null ? (
+                    <SupportRatingChip key={item.key} rating={item.msg.rating} at={item.msg.createdAt} />
+                  ) : (
+                    <SupportSystemNote key={item.key} body={item.msg.body} at={item.msg.createdAt} />
+                  )
                 ) : (
                   <div key={item.key} className={`flex ${item.msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div

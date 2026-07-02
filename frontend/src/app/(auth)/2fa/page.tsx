@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 const OTP_LENGTH = 6
 
 function getRoleRedirect(role: string | undefined): string {
-  if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent') {
+  if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent' || role === 'support_agent') {
     return '/admin'
   }
   return '/dashboard'

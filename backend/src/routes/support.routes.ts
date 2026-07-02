@@ -12,7 +12,7 @@ import { notify } from '../lib/notify'
 async function emitToAdmins(data: unknown): Promise<void> {
   try {
     const admins = await db.user.findMany({
-      where: { role: { in: ['admin', 'super_admin'] } },
+      where: { role: { in: ['admin', 'super_admin', 'support_agent'] } },
       select: { id: true },
     })
     for (const a of admins) sseEmit(a.id, data)
@@ -32,6 +32,23 @@ const rateSchema = z.object({
 })
 
 const RATING_LABELS: Record<number, string> = { 1: 'Rated support 😞 Bad', 2: 'Rated support 😐 Okay', 3: 'Rated support 😊 Great' }
+
+const DEFAULT_CLOSE_SURVEY =
+  'Thanks for contacting RupChain Support! Before you go — how did we do? Tap an emoji below to rate your experience. 👇'
+
+// Admin-editable closing/survey message (Platform Config key
+// `support_close_survey_message`); falls back to the friendly default. Upserts
+// the default when missing so the key surfaces in Admin → Config → Advanced
+// Settings for editing (never overwrites an admin's custom value).
+async function getCloseSurveyMessage(): Promise<string> {
+  const row = await db.platformConfig.upsert({
+    where: { key: 'support_close_survey_message' },
+    update: {},
+    create: { key: 'support_close_survey_message', value: DEFAULT_CLOSE_SURVEY },
+  })
+  const v = row.value?.trim()
+  return v && v.length > 0 ? v : DEFAULT_CLOSE_SURVEY
+}
 
 // Display name priority: fullName > merchant business name > username > email prefix
 function displayName(u: { fullName: string | null; username: string | null; email: string }): string {
@@ -152,15 +169,17 @@ export async function supportRoutes(app: FastifyInstance) {
     const conversation = await db.supportConversation.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: { messages: { orderBy: { createdAt: 'desc' }, take: 8 } },
     })
-    // Only a finished (closed) session can be rated, and only once — if the most
-    // recent message is already a system rating, the current session is rated.
     if (!conversation || conversation.status !== 'closed') {
       throw Errors.VALIDATION_ERROR('No closed conversation to rate')
     }
-    if (conversation.messages[0]?.sender === 'system') {
-      return reply.send({ success: true }) // idempotent: already rated
+    // Already rated? Scan the trailing block of system notes/ratings; a system
+    // message with a rating means this session was already scored. Stop at the
+    // first real (user/admin) message — that's the session boundary.
+    for (const m of conversation.messages) {
+      if (m.sender !== 'system') break
+      if (m.rating != null) return reply.send({ success: true }) // idempotent
     }
 
     const message = await db.supportMessage.create({
@@ -192,7 +211,7 @@ export async function supportRoutes(app: FastifyInstance) {
   // GET /admin/support/conversations — inbox list
   app.get(
     '/admin/support/conversations',
-    { preHandler: [authenticate, requireRole('admin', 'super_admin')] },
+    { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
     async (_req, reply) => {
       const conversations = await db.supportConversation.findMany({
         orderBy: [{ unreadByAdmin: 'desc' }, { lastMessageAt: 'desc' }],
@@ -224,7 +243,7 @@ export async function supportRoutes(app: FastifyInstance) {
   // GET /admin/support/conversations/:id — full thread (marks read for admin)
   app.get(
     '/admin/support/conversations/:id',
-    { preHandler: [authenticate, requireRole('admin', 'super_admin')] },
+    { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const conversation = await db.supportConversation.findUnique({
@@ -268,7 +287,7 @@ export async function supportRoutes(app: FastifyInstance) {
   // POST /admin/support/conversations/:id/messages — admin reply
   app.post(
     '/admin/support/conversations/:id/messages',
-    { preHandler: [authenticate, requireRole('admin', 'super_admin')] },
+    { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const { body } = sendSchema.parse(req.body)
@@ -312,13 +331,40 @@ export async function supportRoutes(app: FastifyInstance) {
     },
   )
 
-  // POST /admin/support/conversations/:id/close
+  // POST /admin/support/conversations/:id/close — closes + posts a prebuilt
+  // survey message so the user is invited to rate without the admin retyping it.
   app.post(
     '/admin/support/conversations/:id/close',
-    { preHandler: [authenticate, requireRole('admin', 'super_admin')] },
+    { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      await db.supportConversation.update({ where: { id }, data: { status: 'closed' } })
+      const conversation = await db.supportConversation.findUnique({ where: { id } })
+      if (!conversation) throw Errors.NOT_FOUND('Conversation')
+
+      // Idempotent: closing an already-closed chat must not post a second survey.
+      if (conversation.status === 'closed') return reply.send({ success: true })
+
+      const surveyBody = await getCloseSurveyMessage()
+      const message = await db.supportMessage.create({
+        data: { conversationId: id, sender: 'system', senderId: req.user!.id, body: surveyBody },
+      })
+      await db.supportConversation.update({
+        where: { id },
+        // System survey note doesn't count as "unanswered" — but surface it to the
+        // user (unreadByUser) so they see the prompt. lastMessageAt is bumped so
+        // the closed session sorts naturally; status stays closed (awaiting rating).
+        data: { status: 'closed', lastMessageAt: new Date(), unreadByUser: true },
+      })
+
+      sseEmit(conversation.userId, {
+        type: 'support_message',
+        payload: {
+          scope: 'user',
+          conversationId: id,
+          message: { id: message.id, sender: 'system', body: message.body, rating: null, createdAt: message.createdAt },
+        },
+      })
+
       return reply.send({ success: true })
     },
   )

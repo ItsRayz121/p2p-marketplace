@@ -4,6 +4,22 @@ import { SUPPORT_RATINGS } from '@/lib/supportChat'
 type DividerKind = 'day' | 'session' | 'closed'
 
 /**
+ * A centered note for an automated system message that isn't a rating — e.g. the
+ * prebuilt "how did we do?" survey message posted when a chat is closed. Shown
+ * identically in the user widget and the admin inbox.
+ */
+export function SupportSystemNote({ body, at }: { body: string; at: string }) {
+  return (
+    <div className="flex justify-center my-2">
+      <div className="max-w-[90%] px-3 py-2 rounded-xl bg-canvas border border-border text-center">
+        <p className="text-xs text-text-primary whitespace-pre-wrap break-words">{body}</p>
+        <span className="block text-[10px] text-text-muted/70 mt-0.5">{fmtTime(at)}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
  * A centered chip for a satisfaction rating (sender="system" message). Shown in
  * both the user widget and the admin inbox so support quality is visible inline.
  */

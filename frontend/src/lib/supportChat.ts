@@ -67,54 +67,48 @@ export function buildChatTimeline<M extends { id: string; createdAt: string; sen
 ): ChatTimelineItem<M>[] {
   const idleMs = (opts?.idleMinutes ?? SUPPORT_IDLE_CLOSE_MINUTES) * 60_000
   const items: ChatTimelineItem<M>[] = []
-  let prev: Date | null = null
-
-  // System messages (satisfaction ratings) render inline but never start a new
-  // session/day — and a rating happens AFTER a session closes, so it must render
-  // below its "Chat closed" marker. We buffer them and flush after the marker.
-  let pendingSystem: M[] = []
-  const flushSystem = () => {
-    for (const s of pendingSystem) items.push({ kind: 'message', msg: s, key: s.id })
-    pendingSystem = []
-  }
+  // `prevReal` drives session/day boundaries (system notes/ratings don't count);
+  // `lastAnyAt` stamps the "Chat closed" marker at the session's last activity so
+  // it always sits below (never above) a trailing survey note or rating.
+  let prevReal: Date | null = null
+  let lastAnyAt: string | null = null
 
   for (const m of messages) {
+    // System messages (survey note + rating) render inline in chronological
+    // order but never open a new session/day.
     if (m.sender === 'system') {
-      pendingSystem.push(m)
+      items.push({ kind: 'message', msg: m, key: m.id })
+      lastAnyAt = m.createdAt
       continue
     }
 
     const t = new Date(m.createdAt)
     const valid = !isNaN(t.getTime())
 
-    if (!prev) {
+    if (!prevReal) {
       if (valid) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
-      flushSystem()
     } else if (valid) {
-      const gap = t.getTime() - prev.getTime()
-      const sameDay = isSameLocalDay(prev, t)
+      const gap = t.getTime() - prevReal.getTime()
+      const sameDay = isSameLocalDay(prevReal, t)
       if (gap > idleMs) {
-        items.push({ kind: 'closed', at: prev.toISOString(), key: `closed-${m.id}` })
-        flushSystem() // the just-closed session's rating renders after its marker
+        items.push({ kind: 'closed', at: lastAnyAt ?? prevReal.toISOString(), key: `closed-${m.id}` })
         if (!sameDay) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
         items.push({ kind: 'session', at: m.createdAt, key: `session-${m.id}` })
-      } else {
-        flushSystem()
-        if (!sameDay) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
+      } else if (!sameDay) {
+        items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
       }
-    } else {
-      flushSystem()
     }
 
     items.push({ kind: 'message', msg: m, key: m.id })
-    if (valid) prev = t
+    lastAnyAt = m.createdAt
+    if (valid) prevReal = t
   }
 
-  // Close the final session (if closed) BEFORE flushing its trailing rating.
-  if (opts?.status === 'closed' && prev) {
-    items.push({ kind: 'closed', at: prev.toISOString(), key: 'closed-final' })
+  // Trailing "Chat closed" marker for the current (closed) session — stamped at
+  // the last activity so it renders below any survey note / rating chip.
+  if (opts?.status === 'closed' && prevReal) {
+    items.push({ kind: 'closed', at: lastAnyAt ?? prevReal.toISOString(), key: 'closed-final' })
   }
-  flushSystem()
 
   return items
 }

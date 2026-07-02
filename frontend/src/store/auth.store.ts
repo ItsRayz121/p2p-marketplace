@@ -7,7 +7,7 @@ export interface AuthUser {
   email: string
   fullName: string
   username: string
-  role: 'user' | 'merchant' | 'kyc_reviewer' | 'dispute_agent' | 'admin' | 'super_admin'
+  role: 'user' | 'merchant' | 'kyc_reviewer' | 'dispute_agent' | 'support_agent' | 'admin' | 'super_admin'
   kycStatus: 'none' | 'pending' | 'approved' | 'rejected'
   kycLevel: 'none' | 'basic' | 'enhanced'
   referralCode: string

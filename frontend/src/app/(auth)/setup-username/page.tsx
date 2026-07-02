@@ -13,7 +13,7 @@ const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/
 type AvailabilityState = 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
 
 function getRoleRedirect(role: string | undefined): string {
-  if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent') {
+  if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent' || role === 'support_agent') {
     return '/admin'
   }
   return '/dashboard'

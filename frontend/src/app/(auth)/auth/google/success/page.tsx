@@ -35,7 +35,7 @@ function GoogleSuccessInner() {
       setUser(user)
       window.history.replaceState({}, '', '/auth/google/success')
       const role = user.role
-      if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent') {
+      if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent' || role === 'support_agent') {
         router.replace('/admin')
       } else {
         router.replace('/dashboard')

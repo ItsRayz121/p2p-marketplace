@@ -87,7 +87,7 @@ function LoginInner() {
       if (res.user) {
         setUser(res.user)
         const role = res.user.role
-        if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent') {
+        if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent' || role === 'support_agent') {
           router.push('/admin')
         } else {
           router.push('/dashboard')

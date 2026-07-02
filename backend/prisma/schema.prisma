@@ -24,6 +24,7 @@ enum UserRole {
   merchant
   kyc_reviewer
   dispute_agent
+  support_agent
   admin
   super_admin
 }
