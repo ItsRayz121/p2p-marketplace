@@ -56,6 +56,9 @@ export function ReferralEarnings() {
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
   })
+  // The whole created-links list collapses under a header chevron, keeping the
+  // card tidy once you have links — the create-a-link form stays the focus.
+  const [linksListOpen, setLinksListOpen] = useState(true)
   // Inline split editor for an existing affiliate link (replaces window.prompt).
   const [editSplit, setEditSplit] = useState<{ id: string; userDiscountPct: string; commissionPct: string } | null>(null)
 
@@ -81,6 +84,7 @@ export function ReferralEarnings() {
     const created = fresh?.links?.find((l) => !prevIds.has(l.id))
     if (created) {
       setJustCreatedId(created.id)
+      setLinksListOpen(true)
       setOpenLinks((prev) => new Set(prev).add(created.id))
     }
   }, [data?.links, load])
@@ -235,24 +239,36 @@ export function ReferralEarnings() {
       {/* Custom referral links — approved affiliates only */}
       {data.enabled && caps && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link2 size={16} className="text-primary" />
-            <h3 className="text-sm font-bold text-text-primary">Your custom links</h3>
-            {caps && (
-              <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success">
-                Affiliate
-              </span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <Link2 size={16} className="text-primary shrink-0" />
+              <h3 className="text-sm font-bold text-text-primary">Your custom links</h3>
+              {caps && (
+                <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success">
+                  Affiliate
+                </span>
+              )}
+            </div>
+            {data.links.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setLinksListOpen((v) => !v)}
+                aria-expanded={linksListOpen}
+                aria-label={linksListOpen ? 'Hide your links' : 'Show your links'}
+                className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-medium text-text-muted hover:bg-surface-alt transition-colors shrink-0"
+              >
+                {data.links.length} {data.links.length === 1 ? 'link' : 'links'}
+                <ChevronDown size={16} className={`transition-transform ${linksListOpen ? 'rotate-180' : ''}`} />
+              </button>
             )}
           </div>
-          <p className="text-xs text-text-muted">
-            {caps
-              ? `You're an approved affiliate. Each link splits your ${caps.maxMarginPct}% margin allowance between an audience discount (min ${caps.minUserDiscountPct}%) and your own commission.`
-              : `Create up to ${policy.maxLinks} named links — each gives your friend ${policy.userDiscountPct}% off their gas fee and earns you ${policy.commissionPct}%, paid in USDT.`}
-          </p>
 
-          {[...data.links]
-            .sort((a, b) => (a.id === justCreatedId ? -1 : b.id === justCreatedId ? 1 : 0))
-            .map((link) => {
+          {/* Your created links — pinned right under the header, collapsible via the chevron above. */}
+          {data.links.length > 0 && linksListOpen && (
+            <div className="space-y-3">
+              {[...data.links]
+                .sort((a, b) => (a.id === justCreatedId ? -1 : b.id === justCreatedId ? 1 : 0))
+                .map((link) => {
             const open = openLinks.has(link.id)
             const isNew = link.id === justCreatedId
             return (
@@ -314,6 +330,14 @@ export function ReferralEarnings() {
               </div>
             )
           })}
+            </div>
+          )}
+
+          <p className="text-xs text-text-muted">
+            {caps
+              ? `You're an approved affiliate. Each link splits your ${caps.maxMarginPct}% margin allowance between an audience discount (min ${caps.minUserDiscountPct}%) and your own commission.`
+              : `Create up to ${policy.maxLinks} named links — each gives your friend ${policy.userDiscountPct}% off their gas fee and earns you ${policy.commissionPct}%, paid in USDT.`}
+          </p>
 
           {policy.canCreate ? (
             <div className="space-y-2">
