@@ -8,11 +8,17 @@ export interface PromoTask {
   required: boolean
 }
 
+export interface PromoWinner {
+  username: string | null
+  address: string // already masked server-side
+}
+
 export interface PromoGiveawayPublic {
   code: string
   title: string
   description: string | null
   thumbnailUrl: string | null
+  resultsSheetUrl: string | null
   tasks: PromoTask[]
   addressLabel: string | null
   rewardAll: boolean
@@ -23,6 +29,9 @@ export interface PromoGiveawayPublic {
   open: boolean
   entryCount: number
   alreadyEntered: boolean
+  myStatus: string | null
+  myNote: string | null
+  winners: PromoWinner[]
   createdByName: string | null
 }
 
@@ -32,6 +41,7 @@ export interface PromoGiveaway {
   title: string
   description: string | null
   thumbnailUrl: string | null
+  resultsSheetUrl: string | null
   tasks: PromoTask[]
   addressLabel: string | null
   winnerCount: number
@@ -54,8 +64,18 @@ export interface PromoEntry {
   email: string | null
   receivingAddress: string
   status: string
+  note?: string | null
   createdAt: string
 }
+
+export type PromoEntryStatus = 'entered' | 'pending' | 'sent' | 'rejected'
+
+export const PROMO_ENTRY_STATUSES: { value: PromoEntryStatus; label: string }[] = [
+  { value: 'entered', label: 'Entered' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'sent', label: 'Reward sent' },
+  { value: 'rejected', label: 'Rejected' },
+]
 
 export interface CreatePromoPayload {
   title: string
@@ -76,6 +96,10 @@ export const promoGiveawayApi = {
   listMine: () => apiRequest<PromoGiveaway[]>('/promo-giveaways/mine'),
   entries: (id: string) => apiRequest<PromoEntry[]>(`/promo-giveaways/${id}/entries`),
   close: (id: string) => apiRequest<unknown>(`/promo-giveaways/${id}/close`, { method: 'POST' }),
+  setResults: (id: string, resultsSheetUrl: string | null) =>
+    apiRequest<unknown>(`/promo-giveaways/${id}/results`, { method: 'PATCH', body: JSON.stringify({ resultsSheetUrl }) }),
+  updateEntry: (id: string, entryId: string, body: { status: PromoEntryStatus; note?: string }) =>
+    apiRequest<unknown>(`/promo-giveaways/${id}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   publicInfo: (code: string) => apiRequest<PromoGiveawayPublic>(`/promo-giveaways/public/${code}`),
   enter: (code: string, body: { receivingAddress: string; email?: string; ackTasks: string[] }) =>
     apiRequest<{ entered: boolean }>(`/promo-giveaways/public/${code}/enter`, {

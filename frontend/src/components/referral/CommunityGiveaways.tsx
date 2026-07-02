@@ -7,14 +7,9 @@ import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
-import {
-  promoGiveawayApi,
-  entriesToCsv,
-  downloadCsv,
-  type PromoGiveaway,
-  type PromoTask,
-} from '@/lib/promoGiveaway'
-import { Gift, Plus, Trash2, Download, X, ChevronDown } from 'lucide-react'
+import { promoGiveawayApi, type PromoGiveaway, type PromoTask } from '@/lib/promoGiveaway'
+import { PromoEntriesManager } from '@/components/referral/PromoEntriesManager'
+import { Gift, Plus, Trash2, X, ChevronDown } from 'lucide-react'
 
 interface DraftTask { id: string; label: string; url: string; required: boolean }
 
@@ -97,23 +92,11 @@ export function CommunityGiveaways() {
   )
 }
 
-// ─── One giveaway row (share, export, close) ─────────────────────────────────
+// ─── One giveaway row (share, manage entries, close) ─────────────────────────
 function GiveawayRow({ g, onChanged }: { g: PromoGiveaway; onChanged: () => void }) {
   const [busy, setBusy] = useState(false)
+  const [managing, setManaging] = useState(false)
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/giveaway/${g.code}`
-
-  async function exportCsv() {
-    setBusy(true)
-    try {
-      const entries = await promoGiveawayApi.entries(g.id)
-      if (entries.length === 0) { toast.error('No entries yet.'); return }
-      downloadCsv(`giveaway-${g.code}-entries.csv`, entriesToCsv(entries))
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Export failed')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function close() {
     if (!window.confirm(`Close "${g.title}"? It will stop accepting entries.`)) return
@@ -145,11 +128,16 @@ function GiveawayRow({ g, onChanged }: { g: PromoGiveaway; onChanged: () => void
         <CopyButton text={shareUrl} />
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" onClick={exportCsv} loading={busy} className="inline-flex items-center gap-1"><Download size={13} /> Export CSV</Button>
+        <Button size="sm" variant="secondary" onClick={() => setManaging((v) => !v)}>{managing ? 'Hide entries' : 'Manage entries'}</Button>
         {g.status === 'open' && g.isActive && (
           <Button size="sm" variant="ghost" onClick={close} disabled={busy}>Close</Button>
         )}
       </div>
+      {managing && (
+        <div className="pt-2 border-t border-border">
+          <PromoEntriesManager giveaway={g} onChanged={onChanged} />
+        </div>
+      )}
     </div>
   )
 }

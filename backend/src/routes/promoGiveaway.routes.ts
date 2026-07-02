@@ -86,6 +86,17 @@ function csvCell(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+// Fulfillment statuses the creator can set on an entry.
+const ENTRY_STATUSES = ['entered', 'pending', 'sent', 'rejected'] as const
+
+// Mask a wallet address for the PUBLIC winners list — proves a real payout target
+// without exposing everyone's full address (e.g. 0x1234…ab9c).
+function maskAddress(a: string): string {
+  if (!a) return ''
+  if (a.length <= 12) return a
+  return `${a.slice(0, 6)}…${a.slice(-4)}`
+}
+
 export async function promoGiveawayRoutes(app: FastifyInstance) {
   // ─── CREATOR ENDPOINTS (affiliate / admin) ───────────────────────────────
 
@@ -171,6 +182,7 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
         email: e.email,
         receivingAddress: e.receivingAddress,
         status: e.status,
+        note: e.note,
         createdAt: e.createdAt,
       })),
     })
@@ -206,6 +218,38 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
+  // PATCH /promo-giveaways/:id/results — set/clear the public proof sheet (owner/admin)
+  app.patch('/promo-giveaways/:id/results', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const g = await requireOwnedOrAdmin(id, req.user!.id, req.user!.role)
+    const body = z.object({ resultsSheetUrl: z.string().trim().url().max(500).nullable() }).safeParse(req.body)
+    if (!body.success) throw new AppError('VALIDATION_ERROR', 'A valid image URL is required', 400)
+    await db.promoGiveaway.update({ where: { id: g.id }, data: { resultsSheetUrl: body.data.resultsSheetUrl } })
+    return reply.send({ success: true })
+  })
+
+  // PATCH /promo-giveaways/:id/entries/:entryId — set fulfillment status (owner/admin).
+  // "rejected" requires a justification note.
+  app.patch('/promo-giveaways/:id/entries/:entryId', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id, entryId } = req.params as { id: string; entryId: string }
+    const g = await requireOwnedOrAdmin(id, req.user!.id, req.user!.role)
+    const body = z
+      .object({ status: z.enum(ENTRY_STATUSES), note: z.string().trim().max(300).optional() })
+      .safeParse(req.body)
+    if (!body.success) throw new AppError('VALIDATION_ERROR', body.error.errors[0]?.message ?? 'Invalid input', 400)
+    if (body.data.status === 'rejected' && !body.data.note?.trim()) {
+      throw new AppError('VALIDATION_ERROR', 'Please add a reason when rejecting an entry.', 400)
+    }
+    const entry = await db.promoGiveawayEntry.findUnique({ where: { id: entryId } })
+    if (!entry || entry.giveawayId !== g.id) throw Errors.NOT_FOUND('Entry')
+    await db.promoGiveawayEntry.update({
+      where: { id: entryId },
+      // Clear the note unless we're rejecting, so a stale reason doesn't linger.
+      data: { status: body.data.status, note: body.data.status === 'rejected' ? body.data.note!.trim() : null },
+    })
+    return reply.send({ success: true })
+  })
+
   // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────
 
   // GET /promo-giveaways/public/:code — entry page info
@@ -216,10 +260,20 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
     if (!g || !g.isActive) throw Errors.NOT_FOUND('Giveaway')
 
     const entryCount = await db.promoGiveawayEntry.count({ where: { giveawayId: g.id } })
-    const alreadyEntered = req.user
-      ? !!(await db.promoGiveawayEntry.findUnique({ where: { giveawayId_userId: { giveawayId: g.id, userId: req.user.id } } }))
-      : false
+    const myEntry = req.user
+      ? await db.promoGiveawayEntry.findUnique({ where: { giveawayId_userId: { giveawayId: g.id, userId: req.user.id } } })
+      : null
     const open = g.status === 'open' && (!g.entryDeadline || g.entryDeadline.getTime() > Date.now())
+
+    // Public winners list (transparency): entries the creator marked "sent",
+    // with masked addresses so full wallets aren't published.
+    const sent = await db.promoGiveawayEntry.findMany({
+      where: { giveawayId: g.id, status: 'sent' },
+      orderBy: { createdAt: 'asc' },
+      take: 500,
+      select: { username: true, receivingAddress: true },
+    })
+    const winners = sent.map((w) => ({ username: w.username, address: maskAddress(w.receivingAddress) }))
 
     return reply.send({
       success: true,
@@ -228,6 +282,7 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
         title: g.title,
         description: g.description,
         thumbnailUrl: g.thumbnailUrl,
+        resultsSheetUrl: g.resultsSheetUrl,
         tasks: parseTasks(g.tasks),
         addressLabel: g.addressLabel,
         rewardAll: g.rewardAll,
@@ -237,7 +292,10 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
         status: g.status,
         open,
         entryCount,
-        alreadyEntered,
+        alreadyEntered: !!myEntry,
+        myStatus: myEntry?.status ?? null,
+        myNote: myEntry?.note ?? null,
+        winners,
         createdByName: g.createdByName,
       },
     })
@@ -345,6 +403,7 @@ function serializeOwner(g: any) {
     title: g.title,
     description: g.description,
     thumbnailUrl: g.thumbnailUrl,
+    resultsSheetUrl: g.resultsSheetUrl,
     tasks: parseTasks(g.tasks),
     addressLabel: g.addressLabel,
     winnerCount: g.winnerCount,

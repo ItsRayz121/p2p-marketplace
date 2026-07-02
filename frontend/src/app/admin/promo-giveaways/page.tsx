@@ -6,21 +6,15 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import {
-  promoGiveawayApi,
-  entriesToCsv,
-  downloadCsv,
-  type PromoGiveaway,
-  type PromoEntry,
-} from '@/lib/promoGiveaway'
-import { Download, ExternalLink } from 'lucide-react'
+import { promoGiveawayApi, type PromoGiveaway } from '@/lib/promoGiveaway'
+import { PromoEntriesManager } from '@/components/referral/PromoEntriesManager'
+import { ExternalLink } from 'lucide-react'
 
 export default function AdminPromoGiveawaysPage() {
   const [rows, setRows] = useState<PromoGiveaway[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [entries, setEntries] = useState<Record<string, PromoEntry[]>>({})
 
   const load = useCallback(async () => {
     try {
@@ -47,23 +41,8 @@ export default function AdminPromoGiveawaysPage() {
     }
   }
 
-  async function viewEntries(g: PromoGiveaway) {
-    if (expanded === g.id) { setExpanded(null); return }
-    setExpanded(g.id)
-    if (!entries[g.id]) {
-      try {
-        const list = await promoGiveawayApi.entries(g.id)
-        setEntries((p) => ({ ...p, [g.id]: list }))
-      } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : 'Failed to load entries')
-      }
-    }
-  }
-
-  function exportCsv(g: PromoGiveaway) {
-    const list = entries[g.id]
-    if (!list || list.length === 0) { toast.error('Open entries first (or no entries yet).'); return }
-    downloadCsv(`giveaway-${g.code}-entries.csv`, entriesToCsv(list))
+  function viewEntries(g: PromoGiveaway) {
+    setExpanded((cur) => (cur === g.id ? null : g.id))
   }
 
   if (loading) return <LoadingState message="Loading giveaways..." />
@@ -112,39 +91,7 @@ export default function AdminPromoGiveawaysPage() {
 
                 {expanded === g.id && (
                   <div className="mt-3 border-t border-border pt-3">
-                    {!entries[g.id] ? (
-                      <p className="text-xs text-text-muted">Loading entries…</p>
-                    ) : entries[g.id]!.length === 0 ? (
-                      <p className="text-xs text-text-muted">No entries yet.</p>
-                    ) : (
-                      <>
-                        <div className="flex justify-end mb-2">
-                          <Button size="sm" variant="secondary" onClick={() => exportCsv(g)} className="inline-flex items-center gap-1"><Download size={13} /> Export CSV</Button>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead className="text-text-muted border-b border-border">
-                              <tr>
-                                <th className="text-left py-1.5 pr-3">User</th>
-                                <th className="text-left py-1.5 pr-3">Address</th>
-                                <th className="text-left py-1.5 pr-3">Email</th>
-                                <th className="text-left py-1.5">Entered</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                              {entries[g.id]!.map((e) => (
-                                <tr key={e.id}>
-                                  <td className="py-1.5 pr-3 text-text-primary">{e.username ?? '—'}</td>
-                                  <td className="py-1.5 pr-3 font-mono text-text-secondary break-all">{e.receivingAddress}</td>
-                                  <td className="py-1.5 pr-3 text-text-muted break-all">{e.email ?? '—'}</td>
-                                  <td className="py-1.5 text-text-muted whitespace-nowrap">{fmtDateTime(e.createdAt)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    )}
+                    <PromoEntriesManager giveaway={g} onChanged={load} />
                   </div>
                 )}
               </div>

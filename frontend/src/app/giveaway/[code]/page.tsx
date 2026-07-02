@@ -7,7 +7,7 @@ import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Button } from '@/components/ui/Button'
 import { promoGiveawayApi, type PromoGiveawayPublic } from '@/lib/promoGiveaway'
-import { ArrowLeft, Gift, CheckCircle2, ExternalLink, Users, Clock } from 'lucide-react'
+import { ArrowLeft, Gift, CheckCircle2, ExternalLink, Users, Clock, Trophy } from 'lucide-react'
 
 export default function PromoGiveawayEntryPage() {
   const router = useRouter()
@@ -123,15 +123,15 @@ export default function PromoGiveawayEntryPage() {
               <p className="text-sm text-text-muted mt-1">Entries are no longer being accepted.</p>
             </div>
           ) : entered ? (
-            <div className="bg-success/5 border border-success/30 rounded-2xl p-6 text-center space-y-2">
-              <CheckCircle2 className="w-10 h-10 text-success mx-auto" />
-              <p className="font-semibold text-text-primary">You&apos;re entered! 🎉</p>
-              <p className="text-sm text-text-muted">The organizer will reach out to winners. You can update your address below if needed.</p>
-              <div className="text-left space-y-2 pt-2">
-                <AddressField label={g.addressLabel} value={address} onChange={setAddress} />
-                <Button onClick={enter} loading={submitting} disabled={address.trim().length < 4} className="w-full">Update address</Button>
-              </div>
-            </div>
+            <MyStatusCard
+              status={g.myStatus}
+              note={g.myNote}
+              addressLabel={g.addressLabel}
+              address={address}
+              setAddress={setAddress}
+              onUpdate={enter}
+              updating={submitting}
+            />
           ) : (
             <div className="bg-surface border border-border rounded-2xl p-5 space-y-4">
               {/* Tasks */}
@@ -197,6 +197,68 @@ export default function PromoGiveawayEntryPage() {
               )}
             </div>
           )}
+
+          {/* Winners (transparency) — entries the organizer marked as sent */}
+          {g.winners.length > 0 && (
+            <div className="bg-surface border border-border rounded-2xl p-5">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-text-primary mb-3">
+                <Trophy className="w-4 h-4 text-primary" /> Winners ({g.winners.length})
+              </p>
+              <div className="divide-y divide-border">
+                {g.winners.map((w, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 py-2 text-sm">
+                    <span className="text-text-primary truncate">{w.username || 'Anonymous'}</span>
+                    <span className="font-mono text-xs text-text-muted">{w.address}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Proof sheet uploaded by the organizer */}
+          {g.resultsSheetUrl && (
+            <div className="bg-surface border border-border rounded-2xl p-5 space-y-2">
+              <p className="text-sm font-semibold text-text-primary">Distribution proof</p>
+              <a href={g.resultsSheetUrl} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={g.resultsSheetUrl} alt="Distribution proof" className="w-full rounded-lg border border-border" />
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MyStatusCard({
+  status, note, addressLabel, address, setAddress, onUpdate, updating,
+}: {
+  status: string | null
+  note: string | null
+  addressLabel: string | null
+  address: string
+  setAddress: (v: string) => void
+  onUpdate: () => void
+  updating: boolean
+}) {
+  const map: Record<string, { cls: string; title: string; sub: string }> = {
+    sent: { cls: 'bg-success/5 border-success/30', title: '🎉 Reward sent!', sub: 'The organizer marked your reward as sent.' },
+    rejected: { cls: 'bg-danger/5 border-danger/30', title: 'Not selected', sub: note || 'Your entry was not selected.' },
+    pending: { cls: 'bg-amber-500/5 border-amber-500/30', title: 'Pending review', sub: 'The organizer is reviewing entries.' },
+    entered: { cls: 'bg-success/5 border-success/30', title: "You're entered! 🎉", sub: 'The organizer will reach out to winners.' },
+  }
+  const s = map[status ?? 'entered'] ?? map.entered!
+  const canUpdate = status !== 'sent' && status !== 'rejected'
+  return (
+    <div className={`border rounded-2xl p-6 text-center space-y-2 ${s.cls}`}>
+      <CheckCircle2 className="w-10 h-10 text-success mx-auto" />
+      <p className="font-semibold text-text-primary">{s.title}</p>
+      <p className="text-sm text-text-muted">{s.sub}</p>
+      {canUpdate && (
+        <div className="text-left space-y-2 pt-2">
+          <AddressField label={addressLabel} value={address} onChange={setAddress} />
+          <Button onClick={onUpdate} loading={updating} disabled={address.trim().length < 4} className="w-full">Update address</Button>
         </div>
       )}
     </div>

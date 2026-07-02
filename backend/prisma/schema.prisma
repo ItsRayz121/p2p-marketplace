@@ -1789,6 +1789,7 @@ model PromoGiveaway {
   thumbnailUrl  String?
   tasks         Json?                                     // [{ id, label, url, required }]
   addressLabel  String?                                   // e.g. "USDT BEP20 wallet address"
+  resultsSheetUrl String?                                 // creator-uploaded proof sheet (public transparency)
   winnerCount   Int                  @default(0)          // target winners (ignored when rewardAll)
   rewardAll     Boolean              @default(false)      // everyone who entered wins
   requireKyc    Boolean              @default(false)
@@ -1816,7 +1817,8 @@ model PromoGiveawayEntry {
   email            String?
   receivingAddress String
   ackTasks         Json?                               // task ids the entrant confirmed
-  status           String        @default("entered")   // entered | won | not_selected
+  status           String        @default("entered")   // entered | pending | sent | rejected
+  note             String?                             // creator note — required justification when rejected
   createdAt        DateTime      @default(now())
 
   @@unique([giveawayId, userId])     // one entry per user per giveaway
