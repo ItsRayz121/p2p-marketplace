@@ -69,7 +69,7 @@ export function validateThreshold(data: ThresholdData): string | null {
 // ── DB chain → GasChainId conversion (for display) ───────────────────────────
 
 const DB_CHAIN_TO_ID: Record<GasChain, GasChainId> = {
-  TRON: 'TRON', BSC: 'BSC', ETH: 'ETHEREUM', SOL: 'SOL',
+  TRON: 'TRON', BSC: 'BSC', OPBNB: 'OPBNB', ETH: 'ETHEREUM', SOL: 'SOL',
   MATIC: 'MATIC', ARB: 'ARB', BASE: 'BASE', OP: 'OP',
   AVAX: 'AVAX', TON: 'TON', SUI: 'SUI',
   // APT (Aptos) is an inbound USDT payment rail only — never a refill/delivery

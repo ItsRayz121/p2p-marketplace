@@ -29,6 +29,7 @@ async function main() {
   const rows = [
     { chain: 'TRON' as const, address: tronHotWallet },
     { chain: 'BSC'  as const, address: evmHotWallet  },
+    { chain: 'OPBNB' as const, address: evmHotWallet }, // opBNB shares the EVM key with BSC
     { chain: 'ETH'  as const, address: evmHotWallet  },
     { chain: 'BASE' as const, address: evmHotWallet  },
     { chain: 'ARB'  as const, address: evmHotWallet  },

@@ -485,7 +485,7 @@ function ChainModal({
                     .filter((c) => c.id !== editing?.id && c.backendChainId)
                     .map((c) => c.backendChainId as string)
                 )
-                const GAS_CHAINS = ['TRON','BSC','ETH','BASE','ARB','OP','MATIC','AVAX','SOL','TON','SUI','APT']
+                const GAS_CHAINS = ['TRON','BSC','OPBNB','ETH','BASE','ARB','OP','MATIC','AVAX','SOL','TON','SUI','APT']
                 return (
                   <select className="w-full border border-border rounded-lg px-3 py-2 text-sm" value={form.backendChainId} onChange={field('backendChainId')}>
                     <option value="">Not deliverable yet</option>

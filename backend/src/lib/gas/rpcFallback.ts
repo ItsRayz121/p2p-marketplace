@@ -30,6 +30,16 @@ const FALLBACK_RPCS: Partial<Record<GasChainId, string[]>> = {
     'https://bsc-rpc.publicnode.com',
     'https://bsc-dataseed1.ninicoin.io',
   ],
+  // opBNB (chainId 204) — free public endpoints. Alchemy does NOT serve opBNB, so
+  // these are the resilient path for auto-delivery/confirmation/balance. Set
+  // OPBNB_RPC_URL to a dedicated QuickNode/NodeReal URL for higher throughput.
+  OPBNB: [
+    'https://opbnb-mainnet-rpc.bnbchain.org',
+    'https://opbnb-rpc.publicnode.com',
+    'https://opbnb.drpc.org',
+    'https://1rpc.io/opbnb',
+    'https://opbnb-mainnet.public.blastapi.io',
+  ],
   BASE: [
     'https://mainnet.base.org',
     'https://base.llamarpc.com',

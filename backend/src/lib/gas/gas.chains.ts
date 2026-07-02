@@ -5,7 +5,7 @@ import { getEvmHotWalletAddress } from './gasWalletService'
 // Note: DB GasChain enum uses 'ETH' (not 'ETHEREUM') and 'SUI'.
 export type GasChainId =
   | 'TRON' | 'BSC' | 'ETHEREUM' | 'BASE' | 'ARB' | 'OP' | 'MATIC' | 'AVAX'
-  | 'SOL' | 'TON' | 'SUI'
+  | 'SOL' | 'TON' | 'SUI' | 'OPBNB'
 
 export interface GasChainConfig {
   id: GasChainId
@@ -54,6 +54,22 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_BEP20 ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BSC,
     getRpcUrl:           () => env.BSC_RPC_URL,
+    deliveryImplemented: true,
+  },
+  OPBNB: {
+    id: 'OPBNB',
+    name: 'opBNB',
+    // opBNB is a BSC L2 whose native gas coin is also BNB — but it lives on a
+    // separate network (chainId 204) with its own RPC + balance. The EVM hot
+    // wallet address is shared with BSC (same key), the funds are NOT.
+    nativeSymbol: 'BNB',
+    networkLabel: 'opBNB',
+    explorerBase: 'https://opbnb.bscscan.com',
+    nativeTierAmounts: { SMALL: 0.005, MEDIUM: 0.02, LARGE: 0.05, XLARGE: 0.1, JUMBO: 0.3 },
+    validateAddress:     (addr) => EVM_RE.test(addr),
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_OPBNB ?? getEvmHotWalletAddress() ?? undefined,
+    getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_OPBNB,
+    getRpcUrl:           () => env.OPBNB_RPC_URL,
     deliveryImplemented: true,
   },
   ETHEREUM: {
@@ -196,7 +212,7 @@ export function explorerTxUrl(chainId: GasChainId, txHash: string): string {
 export const SUPPORTED_GAS_CHAINS = Object.keys(GAS_CHAINS) as GasChainId[]
 
 // EVM chains (secp256k1, shared hot wallet address)
-export const EVM_GAS_CHAINS: GasChainId[] = ['BSC', 'ETHEREUM', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX']
+export const EVM_GAS_CHAINS: GasChainId[] = ['BSC', 'OPBNB', 'ETHEREUM', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX']
 
 // Non-EVM chains (ed25519, separate derivation paths)
 export const NON_EVM_GAS_CHAINS: GasChainId[] = ['SOL', 'TON', 'SUI']
@@ -205,7 +221,7 @@ export const NON_EVM_GAS_CHAINS: GasChainId[] = ['SOL', 'TON', 'SUI']
 // GasChain enum: TRON | BSC | ETH | SOL | MATIC | ARB | BASE | OP | AVAX | TON | SUI
 // GasChainId:    same but 'ETHEREUM' instead of 'ETH'
 
-export type DbGasChain = 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI' | 'APT'
+export type DbGasChain = 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI' | 'APT' | 'OPBNB'
 
 export function toDbChain(chain: GasChainId): DbGasChain {
   if (chain === 'ETHEREUM') return 'ETH'

@@ -1,5 +1,5 @@
 import { createPublicClient, http } from 'viem'
-import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
+import { arbitrum, avalanche, base, bsc, mainnet, opBNB, optimism, polygon } from 'viem/chains'
 import type { Chain } from 'viem'
 import { env } from '../env'
 import type { GasChainId } from './gas.chains'
@@ -152,6 +152,8 @@ export async function checkTxConfirmed(chain: GasChainId | string, txHash: strin
       return checkTronTxConfirmed(txHash)
     case 'BSC':
       return checkEvmTxConfirmed('BSC', bsc,       env.BSC_RPC_URL,       txHash)
+    case 'OPBNB':
+      return checkEvmTxConfirmed('OPBNB', opBNB,   env.OPBNB_RPC_URL,     txHash)
     // DB enum uses 'ETH'; GasChainId uses 'ETHEREUM' — handle both
     case 'ETH':
     case 'ETHEREUM':

@@ -131,16 +131,38 @@ const chains: ChainSeed[] = [
         isActive: true,
         displayOrder: 2,
       },
+      // NOTE: "opBNB Gas" was previously a native token nested here under BSC — a
+      // mismodel (opBNB is its own network, chainId 204). It is now a first-class
+      // chain below (slug OPBNB). Retire the old BSC-nested token in admin.
+    ],
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // opBNB — BSC L2 (chainId 204). Native gas coin is BNB but on its own network.
+  // Shares the EVM hot-wallet address with BSC; funds must be topped up on opBNB.
+  // ─────────────────────────────────────────────────────────────
+  {
+    slug: 'OPBNB',
+    name: 'opBNB',
+    symbol: 'BNB',
+    category: 'bnb',
+    networkLabel: 'opBNB',
+    addressType: 'EVM',
+    explorerBase: 'https://opbnb.bscscan.com',
+    backendChainId: 'OPBNB',
+    isActive: false,
+    displayOrder: 12,
+    tokens: [
       {
-        name: 'opBNB Gas',
-        symbol: 'opBNB',
+        name: 'BNB (opBNB)',
+        symbol: 'BNB',
         tokenType: 'native',
         priceSymbol: 'BNB',
-        minAmount: 0.005,
+        minAmount: 0.0005,
         maxUsdValue: 10,
-        presetAmounts: [0.005, 0.01, 0.02, 0.05],
+        presetAmounts: [0.0005, 0.001, 0.002, 0.005],
         isActive: false,
-        displayOrder: 3,
+        displayOrder: 1,
       },
     ],
   },

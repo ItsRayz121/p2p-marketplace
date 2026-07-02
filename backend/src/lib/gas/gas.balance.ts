@@ -1,6 +1,6 @@
 import type { Chain } from 'viem'
 import { createPublicClient, http, formatEther } from 'viem'
-import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
+import { arbitrum, avalanche, base, bsc, mainnet, opBNB, optimism, polygon } from 'viem/chains'
 import { redis } from '../redis'
 import { env } from '../env'
 import { logger } from '../logger'
@@ -29,6 +29,7 @@ export interface RpcHealthResult {
 const CHAIN_PRICE_SYMBOL: Record<GasChainId, string> = {
   TRON:     'TRX',
   BSC:      'BNB',
+  OPBNB:    'BNB',   // opBNB native gas is BNB
   ETHEREUM: 'ETH',
   BASE:     'ETH',
   ARB:      'ETH',
@@ -50,6 +51,7 @@ const PRICE_SYMBOL_ALIASES: Record<string, string> = {
 const CHAIN_GECKO_IDS: Partial<Record<GasChainId, string>> = {
   TRON:     'tron',
   BSC:      'binancecoin',
+  OPBNB:    'binancecoin',
   ETHEREUM: 'ethereum',
   BASE:     'ethereum',
   ARB:      'ethereum',
@@ -66,6 +68,7 @@ const CHAIN_GECKO_IDS: Partial<Record<GasChainId, string>> = {
 const CHAIN_PAPRIKA_IDS: Partial<Record<GasChainId, string>> = {
   TRON:     'trx-tron',
   BSC:      'bnb-binance-coin',
+  OPBNB:    'bnb-binance-coin',
   ETHEREUM: 'eth-ethereum',
   BASE:     'eth-ethereum',
   ARB:      'eth-ethereum',
@@ -328,6 +331,7 @@ export async function testRpcHealth(chain: GasChainId): Promise<RpcHealthResult>
   switch (chain) {
     case 'TRON':     return checkTronRpc(env.TRON_FULLNODE_URL)
     case 'BSC':      return checkEvmRpc(bsc,       env.BSC_RPC_URL)
+    case 'OPBNB':    return checkEvmRpc(opBNB,     env.OPBNB_RPC_URL)
     case 'ETHEREUM': return checkEvmRpc(mainnet,   env.ETHEREUM_RPC_URL)
     case 'BASE':     return checkEvmRpc(base,      env.BASE_RPC_URL)
     case 'ARB':      return checkEvmRpc(arbitrum,  env.ARBITRUM_RPC_URL)
@@ -347,6 +351,7 @@ export async function getHotWalletBalance(chain: GasChainId, address: string): P
   switch (chain) {
     case 'TRON':     return getTronBalanceTRX(address)
     case 'BSC':      return getEvmNativeBalance(bsc,       env.BSC_RPC_URL,       address)
+    case 'OPBNB':    return getEvmNativeBalance(opBNB,     env.OPBNB_RPC_URL,     address)
     case 'ETHEREUM': return getEvmNativeBalance(mainnet,   env.ETHEREUM_RPC_URL,  address)
     case 'BASE':     return getEvmNativeBalance(base,      env.BASE_RPC_URL,      address)
     case 'ARB':      return getEvmNativeBalance(arbitrum,  env.ARBITRUM_RPC_URL,  address)

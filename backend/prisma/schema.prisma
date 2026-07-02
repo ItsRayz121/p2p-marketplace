@@ -207,6 +207,7 @@ enum GasChain {
   TON
   SUI
   APT
+  OPBNB
 }
 
 enum GasFeeTier {

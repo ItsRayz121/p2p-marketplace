@@ -2,7 +2,7 @@ import type { GasFeeOrder } from '@prisma/client'
 import type { Chain } from 'viem'
 import { createWalletClient, http, parseEther, parseGwei, parseUnits } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
+import { arbitrum, avalanche, base, bsc, mainnet, opBNB, optimism, polygon } from 'viem/chains'
 import { db } from '../prisma'
 import { env } from '../env'
 import { getHotWalletTokenBalance } from './gas.tokenBalance'
@@ -35,7 +35,7 @@ import { getAptosHotWalletAddress } from './aptosWalletService'
 
 // Map GasFeeOrder.chain (GasChain enum) to GasChainId used by balance helpers.
 const CHAIN_TO_BALANCE_ID: Partial<Record<string, GasChainId>> = {
-  TRON: 'TRON', BSC: 'BSC', ETH: 'ETHEREUM', BASE: 'BASE',
+  TRON: 'TRON', BSC: 'BSC', OPBNB: 'OPBNB', ETH: 'ETHEREUM', BASE: 'BASE',
   ARB: 'ARB', OP: 'OP', MATIC: 'MATIC', AVAX: 'AVAX',
   SOL: 'SOL', TON: 'TON', SUI: 'SUI',
 }
@@ -53,6 +53,7 @@ function getHotWalletAddressForChain(chain: string): string | null {
 // EVM chains where ERC-20/BEP-20 token delivery is implemented.
 const EVM_TOKEN_CHAINS: Record<string, { chain: Chain; rpc: string }> = {
   BSC:   { chain: bsc,       rpc: env.BSC_RPC_URL },
+  OPBNB: { chain: opBNB,     rpc: env.OPBNB_RPC_URL },
   ETH:   { chain: mainnet,   rpc: env.ETHEREUM_RPC_URL },
   BASE:  { chain: base,      rpc: env.BASE_RPC_URL },
   ARB:   { chain: arbitrum,  rpc: env.ARBITRUM_RPC_URL },
@@ -396,6 +397,10 @@ async function deliverBsc(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promi
   return deliverEvmMnemonic(order, bsc, env.BSC_RPC_URL, hdIndex)
 }
 
+async function deliverOpBnb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+  return deliverEvmMnemonic(order, opBNB, env.OPBNB_RPC_URL, hdIndex)
+}
+
 async function deliverEth(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
   return deliverEvmMnemonic(order, mainnet, env.ETHEREUM_RPC_URL, hdIndex)
 }
@@ -711,6 +716,7 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX)
   switch (order.chain) {
     case 'TRON':  return deliverTron(order, hdIndex)
     case 'BSC':   return deliverBsc(order, hdIndex)
+    case 'OPBNB': return deliverOpBnb(order, hdIndex)
     case 'ETH':   return deliverEth(order, hdIndex)
     case 'BASE':  return deliverBase(order, hdIndex)
     case 'ARB':   return deliverArb(order, hdIndex)

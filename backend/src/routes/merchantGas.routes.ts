@@ -16,7 +16,7 @@ import { logger } from '../lib/logger'
 // ── Shared rate helper (same as gasFee.routes.ts) ────────────────────────────
 
 const RATE_COIN: Record<GasChainId, string> = {
-  TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH',
+  TRON: 'TRX', BSC: 'BNB', OPBNB: 'BNB', ETHEREUM: 'ETH',
   BASE: 'ETH', ARB: 'ETH', OP: 'ETH', MATIC: 'POL', AVAX: 'AVAX',
   SOL: 'SOL', TON: 'TON', SUI: 'SUI',
 }

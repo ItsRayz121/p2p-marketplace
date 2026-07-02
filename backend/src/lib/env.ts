@@ -104,6 +104,9 @@ const envSchema = z.object({
   OPTIMISM_RPC_URL: z.string().url().default('https://mainnet.optimism.io'),
   BASE_RPC_URL: z.string().url().default('https://mainnet.base.org'),
   AVALANCHE_RPC_URL: z.string().url().default('https://api.avax.network/ext/bc/C/rpc'),
+  // opBNB (BSC L2, chainId 204). Native gas coin is BNB but on a separate network.
+  // Default is the official BNB Chain endpoint; rpcFallback.ts adds public fallbacks.
+  OPBNB_RPC_URL: z.string().url().default('https://opbnb-mainnet-rpc.bnbchain.org'),
 
   // Non-EVM chain RPC endpoints (chains are inactive by default)
   // SOL: Solana JSON-RPC node (Helius, QuickNode, or public mainnet-beta endpoint)
@@ -154,6 +157,10 @@ const envSchema = z.object({
   // Gas Fee System — BSC
   GAS_FEE_DEPOSIT_ADDRESS_BEP20: z.string().optional(),
   GAS_MARKUP_MULTIPLIER_BSC: z.coerce.number().default(1.5),
+
+  // Gas Fee System — opBNB (shares the EVM hot-wallet address with BSC)
+  GAS_FEE_DEPOSIT_ADDRESS_OPBNB: z.string().optional(),
+  GAS_MARKUP_MULTIPLIER_OPBNB: z.coerce.number().default(1.5),
 
   // Gas Fee System — Ethereum
   GAS_FEE_DEPOSIT_ADDRESS_ERC20: z.string().optional(),

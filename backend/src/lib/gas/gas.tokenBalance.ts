@@ -9,7 +9,7 @@
 
 import { createPublicClient, http, formatUnits } from 'viem'
 import type { Chain } from 'viem'
-import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
+import { arbitrum, avalanche, base, bsc, mainnet, opBNB, optimism, polygon } from 'viem/chains'
 import { env } from '../env'
 
 export interface TokenBalanceResult {
@@ -26,6 +26,7 @@ const ERC20_READ_ABI = [
 
 const EVM_MAP: Record<string, { chain: Chain; rpc: string }> = {
   BSC:   { chain: bsc,       rpc: env.BSC_RPC_URL },
+  OPBNB: { chain: opBNB,     rpc: env.OPBNB_RPC_URL },
   ETH:   { chain: mainnet,   rpc: env.ETHEREUM_RPC_URL },
   BASE:  { chain: base,      rpc: env.BASE_RPC_URL },
   ARB:   { chain: arbitrum,  rpc: env.ARBITRUM_RPC_URL },

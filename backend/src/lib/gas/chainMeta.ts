@@ -82,6 +82,17 @@ export const CHAIN_CAPABILITIES: Record<string, ChainCapabilities> = {
     supportsRpcHealthCheck:   true,
     supportsDryRun:           false,
   },
+  OPBNB: {
+    supportsMnemonic:         true,
+    supportsAutoDelivery:     true,
+    supportsStablecoins:      true,
+    supportsRefunds:          false,  // refunds settle on the payment chain, not opBNB
+    supportsConfirmation:     true,
+    supportsDepositAddress:   true,
+    supportsMonitoring:       true,
+    supportsRpcHealthCheck:   true,
+    supportsDryRun:           false,
+  },
   ETH: {
     supportsMnemonic:         true,
     supportsAutoDelivery:     true,
@@ -221,6 +232,13 @@ export const CHAIN_READINESS_MATRIX: ChainReadinessEntry[] = [
     deliveryReady: true,
     blockers: [],
     notes: 'EVM mnemonic derivation active. BEP20 payments + BNB delivery operational.',
+  },
+  {
+    chain: 'OPBNB',
+    recommendedState: 'beta',
+    deliveryReady: true,
+    blockers: [],
+    notes: 'BSC L2 (chainId 204). Shares the EVM hot-wallet address with BSC but funds live on the opBNB network — fund it separately with BNB on opBNB. Admin must: (1) POST /admin/gas/hot-wallets chain=OPBNB (or seed), (2) fund the address with BNB on opBNB, (3) activate the hot wallet row, (4) set the OPBNB GasChainConfig backendChainId=OPBNB + isActive=true + readinessState=beta.',
   },
   {
     chain: 'ETH',
