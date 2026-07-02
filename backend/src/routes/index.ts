@@ -41,6 +41,7 @@ import { announcementRoutes } from './announcement.routes'
 import { blogRoutes } from './blog.routes'
 import { airdropRoutes } from './airdrop.routes'
 import { airdropAdminRoutes } from './airdropAdmin.routes'
+import { promoGiveawayRoutes } from './promoGiveaway.routes'
 
 export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes)
@@ -85,4 +86,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(blogRoutes, { prefix: '/api/v1' })
   await app.register(airdropRoutes, { prefix: '/api/v1' })
   await app.register(airdropAdminRoutes, { prefix: '/api/v1' })
+  await app.register(promoGiveawayRoutes, { prefix: '/api/v1' })
 }

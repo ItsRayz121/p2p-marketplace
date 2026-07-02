@@ -15,7 +15,7 @@ import '../lib/cloudinary'
 
 const presignSchema = z
   .object({
-    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'merchant-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image']),
+    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'merchant-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image', 'giveaway-image']),
     mimeType: z.string(),
   })
   .refine(
@@ -36,6 +36,7 @@ const folderMap: Record<string, string> = {
   'avatar': CLOUDINARY_FOLDERS.AVATAR,
   'chat-image': CLOUDINARY_FOLDERS.CHAT_IMAGE,
   'blog-image': CLOUDINARY_FOLDERS.BLOG_IMAGE,
+  'giveaway-image': CLOUDINARY_FOLDERS.GIVEAWAY_IMAGE,
 }
 
 export async function uploadRoutes(app: FastifyInstance) {

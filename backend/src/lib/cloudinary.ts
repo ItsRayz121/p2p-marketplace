@@ -26,6 +26,7 @@ export const CLOUDINARY_FOLDERS = {
   CHAT_IMAGE: 'rupchain/trade/chat',
   APPEAL_EVIDENCE: 'rupchain/appeals/evidence',
   BLOG_IMAGE: 'rupchain/blog',
+  GIVEAWAY_IMAGE: 'rupchain/giveaways',
 } as const
 
 // Max file sizes in bytes

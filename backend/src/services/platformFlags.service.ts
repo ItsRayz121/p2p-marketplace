@@ -79,6 +79,14 @@ export const FLAGS = {
    * weeks before any discount goes live.
    */
   AIRDROP_LEVELS: 'airdrop_levels_enabled',
+  /**
+   * Community / influencer giveaways (task-gated address collection, off-platform
+   * reward). When ON, affiliates and admins can create PromoGiveaway campaigns
+   * from the Referral page and users can enter them. No platform funds are ever
+   * moved — the creator distributes the reward and exports entrant addresses as
+   * CSV. OFF (default) = create + entry endpoints are rejected.
+   */
+  PROMO_GIVEAWAY: 'promo_giveaway_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

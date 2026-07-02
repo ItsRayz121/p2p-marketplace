@@ -46,7 +46,7 @@ const STRUCTURED_KEYS = new Set([
   'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt_l1', 'noncustodial_max_order_usdt_l2',
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
   'maker_bond_enabled', 'maker_bond_ratio_pct', 'maker_bond_min_usdt',
-  'gas_promo_enabled', 'gas_referral_enabled', 'gas_giveaway_enabled', 'gas_free_grant_enabled',
+  'gas_promo_enabled', 'gas_referral_enabled', 'gas_giveaway_enabled', 'gas_free_grant_enabled', 'promo_giveaway_enabled',
   'usdt_price_margin_pct', 'ctm_price_margin_pct',
   'usdt_bid_margin_pct', 'ctm_bid_margin_pct',
   'max_concurrent_trades', 'max_concurrent_trades_with_dispute', 'trade_limit_bypass_user_ids',
@@ -247,6 +247,7 @@ export default function ConfigPage() {
   const [affiliateFlag, setAffiliateFlag] = useState(false)
   const [giveawayFlag, setGiveawayFlag] = useState(false)
   const [freeGrantFlag, setFreeGrantFlag] = useState(false)
+  const [promoGiveawayFlag, setPromoGiveawayFlag] = useState(false)
   const [mktSaving, setMktSaving] = useState(false)
 
   // ── Homepage Top Offers ─────────────────────────────────────────────────────
@@ -352,6 +353,7 @@ export default function ConfigPage() {
       setReferralFlag(m['gas_referral_enabled'] === 'true')
       setAffiliateFlag(m['gas_affiliate_enabled'] === 'true')
       setGiveawayFlag(m['gas_giveaway_enabled'] === 'true')
+      setPromoGiveawayFlag(m['promo_giveaway_enabled'] === 'true')
       setFreeGrantFlag(m['gas_free_grant_enabled'] === 'true')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
@@ -506,6 +508,7 @@ export default function ConfigPage() {
         { key: 'gas_affiliate_enabled', value: affiliateFlag ? 'true' : 'false' },
         { key: 'gas_giveaway_enabled', value: giveawayFlag ? 'true' : 'false' },
         { key: 'gas_free_grant_enabled', value: freeGrantFlag ? 'true' : 'false' },
+        { key: 'promo_giveaway_enabled', value: promoGiveawayFlag ? 'true' : 'false' },
       ])
       showToast('Marketing & Growth settings saved. Takes effect within ~15s.')
     } catch { showToast('Failed to save marketing settings.', false) }
@@ -654,8 +657,8 @@ export default function ConfigPage() {
         open={mktOpen}
         onToggle={() => setMktOpen((v) => !v)}
         badge={
-          (promoFlag || referralFlag || giveawayFlag || freeGrantFlag)
-            ? <Badge variant="success" size="sm">{[promoFlag, referralFlag, giveawayFlag, freeGrantFlag].filter(Boolean).length} ON</Badge>
+          (promoFlag || referralFlag || giveawayFlag || freeGrantFlag || promoGiveawayFlag)
+            ? <Badge variant="success" size="sm">{[promoFlag, referralFlag, giveawayFlag, freeGrantFlag, promoGiveawayFlag].filter(Boolean).length} ON</Badge>
             : <Badge variant="outline" size="sm">All OFF</Badge>
         }
       >
@@ -695,6 +698,14 @@ export default function ConfigPage() {
             <div>
               <p className="text-sm font-medium text-text-primary">Giveaways <span className="font-mono text-xs text-text-muted">gas_giveaway_enabled</span></p>
               <p className="text-xs text-text-muted mt-0.5">Lets users enter KOL giveaway campaigns and lets admins draw winners (Marketing → Giveaways). Campaigns can be created while OFF, but entry &amp; draw are blocked until ON.</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={promoGiveawayFlag} onChange={(e) => setPromoGiveawayFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Community giveaways <span className="font-mono text-xs text-text-muted">promo_giveaway_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Lets approved affiliates (and admins) create task-gated address-collection giveaways from the Referral page. Off-platform reward only — no platform funds are used. Admin oversight at Marketing → Community Giveaways.</p>
             </div>
           </label>
 

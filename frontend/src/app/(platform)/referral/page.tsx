@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ReferralLinks } from '@/components/referral/ReferralLinks'
 import { ReferralEarnings } from '@/components/referral/ReferralEarnings'
+import { CommunityGiveaways } from '@/components/referral/CommunityGiveaways'
 import { ChevronDown, Users, Send, Globe } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -135,6 +136,9 @@ function ReferralPageInner() {
 
       {/* Live earnings + custom links + affiliate (single source of truth) */}
       <ReferralEarnings />
+
+      {/* Community / influencer giveaways (affiliates + staff) */}
+      <CommunityGiveaways />
 
       {/* Referred Users — collapsible */}
       <section className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">

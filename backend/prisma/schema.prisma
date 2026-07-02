@@ -1776,6 +1776,53 @@ model GasGiveawayEntry {
   @@index([campaignId, status])
 }
 
+// ── Community / Influencer giveaways ─────────────────────────────────────────
+// Off-platform, task-gated address-collection giveaways created self-service by
+// affiliates (and admins). The platform is the entry form + task gate + CSV
+// export; the CREATOR distributes the reward themselves — no platform funds are
+// ever moved here (that stays exclusive to GasGiveawayCampaign, admin-only).
+model PromoGiveaway {
+  id            String               @id @default(cuid())
+  code          String               @unique             // shareable entry code (UPPERCASE)
+  title         String                                    // shown to entrants
+  description   String?                                   // details / reward description
+  thumbnailUrl  String?
+  tasks         Json?                                     // [{ id, label, url, required }]
+  addressLabel  String?                                   // e.g. "USDT BEP20 wallet address"
+  winnerCount   Int                  @default(0)          // target winners (ignored when rewardAll)
+  rewardAll     Boolean              @default(false)      // everyone who entered wins
+  requireKyc    Boolean              @default(false)
+  entryDeadline DateTime?
+  status        String               @default("open")     // open | closed
+  isActive      Boolean              @default(true)       // admin kill switch
+  createdById   String                                    // creator (affiliate or admin) — plain ref
+  createdByRole String                                    // snapshot: affiliate | admin | super_admin
+  createdByName String?                                   // snapshot display name for admin oversight
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  entries       PromoGiveawayEntry[]
+
+  @@index([isActive, status])
+  @@index([createdById])
+}
+
+model PromoGiveawayEntry {
+  id               String        @id @default(cuid())
+  giveawayId       String
+  giveaway         PromoGiveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  userId           String                              // entrant (plain ref)
+  username         String?                             // snapshot for CSV export
+  email            String?
+  receivingAddress String
+  ackTasks         Json?                               // task ids the entrant confirmed
+  status           String        @default("entered")   // entered | won | not_selected
+  createdAt        DateTime      @default(now())
+
+  @@unique([giveawayId, userId])     // one entry per user per giveaway
+  @@index([giveawayId, status])
+}
+
 model GasHotWallet {
   id                   String    @id @default(cuid())
   chain                GasChain

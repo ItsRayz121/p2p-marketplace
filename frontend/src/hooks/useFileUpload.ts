@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react'
 import { apiRequest } from '@/lib/api'
 
-type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video' | 'payment-proof' | 'merchant-proof' | 'avatar' | 'chat-image' | 'blog-image'
+type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video' | 'payment-proof' | 'merchant-proof' | 'avatar' | 'chat-image' | 'blog-image' | 'giveaway-image'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm']
