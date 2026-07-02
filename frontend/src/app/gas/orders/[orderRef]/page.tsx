@@ -269,13 +269,22 @@ function GasOrderTrackingPageInner() {
             </div>
           )}
 
-          <div>
+          {/* Horizontal stepper — circles in a row connected by a progress line,
+              labels underneath. Reads left→right instead of top→bottom. */}
+          <div className="flex items-start">
             {TIMELINE_STEPS.map((s, i) => {
-              const done = !isTerminal && i < step
-              const cur  = !isTerminal && i === step
+              const done   = !isTerminal && i < step
+              const cur    = !isTerminal && i === step
+              const isLast = i === TIMELINE_STEPS.length - 1
+              // Continuous connector fill: the segment leading into a circle is
+              // green once that step is reached; the segment leaving it is green
+              // once the next step is reached.
+              const leftFilled  = !isTerminal && step >= i
+              const rightFilled = !isTerminal && step > i
               return (
-                <div key={s.label} className="flex gap-3">
-                  <div className="flex flex-col items-center">
+                <div key={s.label} className="flex-1 flex flex-col items-center text-center min-w-0">
+                  <div className="flex items-center w-full">
+                    <div className={`h-0.5 flex-1 ${i === 0 ? 'invisible' : leftFilled ? 'bg-green-300' : 'bg-border'}`} />
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
                       done ? 'bg-green-500 text-white'
                       : cur  ? 'bg-primary text-white ring-4 ring-primary/20'
@@ -288,22 +297,15 @@ function GasOrderTrackingPageInner() {
                         : <span className="text-xs font-bold">{i + 1}</span>
                       }
                     </div>
-                    {i < TIMELINE_STEPS.length - 1 && (
-                      <div className={`w-0.5 h-8 my-0.5 ${done ? 'bg-green-300' : 'bg-border'}`} />
-                    )}
+                    <div className={`h-0.5 flex-1 ${isLast ? 'invisible' : rightFilled ? 'bg-green-300' : 'bg-border'}`} />
                   </div>
-                  <div className="pb-3 flex-1 min-w-0 pt-1">
-                    <p className={`text-sm font-semibold ${
-                      done ? 'text-green-700 dark:text-green-300'
-                      : cur  ? 'text-primary'
-                      : 'text-text-muted'
-                    }`}>
-                      {s.label}
-                    </p>
-                    {(done || cur) && (
-                      <p className="text-xs text-text-muted mt-0.5">{s.desc}</p>
-                    )}
-                  </div>
+                  <p className={`mt-2 text-[11px] leading-tight font-semibold px-1 ${
+                    done ? 'text-green-700 dark:text-green-300'
+                    : cur  ? 'text-primary'
+                    : 'text-text-muted'
+                  }`}>
+                    {s.label}
+                  </p>
                 </div>
               )
             })}

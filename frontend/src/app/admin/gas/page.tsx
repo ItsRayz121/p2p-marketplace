@@ -1351,7 +1351,9 @@ export default function GasAdminPage() {
             ))}
           </div>
         </div>
-        <div className="admin-toolbar gap-2">
+        {/* Status chips WRAP onto multiple lines instead of scrolling off-screen,
+            so Expired / Failed / Refund stay visible under the earlier chips. */}
+        <div className="flex flex-wrap gap-2">
           {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refund_pending', 'refunded', 'cancelled'].map((s) => (
             <button
               key={s}

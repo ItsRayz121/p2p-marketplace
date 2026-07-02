@@ -286,9 +286,14 @@ function AddChainPanel({ onSuccess, onCancel }: { onSuccess: (warning?: string) 
         const gasCategory = FAMILY_TO_GAS_CATEGORY[family]
         try {
           const { chains: gasChains } = await adminApi.getGasChains()
-          const existingGas = gasChains.find((c) => c.category === gasCategory)
+          // Dedup by SLUG, not category: many distinct chains share a category
+          // (BSC + opBNB are both "bnb"; ETH/Base/Arb/OP are all "ethereum"), so
+          // matching on category wrongly blocked every new EVM chain as a
+          // "duplicate" of Ethereum. Only a same-slug chain is a real duplicate.
+          const gasSlug = slug.toUpperCase()
+          const existingGas = gasChains.find((c) => c.slug.toUpperCase() === gasSlug)
           if (existingGas) {
-            warning = `Deposit chain created. Gas section already has "${existingGas.name}" (${existingGas.slug}) for this category — no duplicate was created.`
+            warning = `Deposit chain created. Gas section already has "${existingGas.name}" (${existingGas.slug}) — no duplicate was created.`
           } else {
             // Prefer CHAIN_META networkLabel if available (e.g. 'ERC20' for ethereum), else use form value
             const gasNetworkLabel = CHAIN_META[gasCategory]?.networkLabel || networkLabel

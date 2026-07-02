@@ -27,6 +27,7 @@
     "gas:fix-base-logo": "tsx src/scripts/gasFixBaseLogo.ts",
     "gas:diagnose-tokens": "tsx src/scripts/gasDiagnoseTokens.ts",
     "gas:add-aptos-native": "tsx src/scripts/gasAddAptosNative.ts",
+    "gas:add-opbnb": "tsx src/scripts/gasAddOpbnb.ts",
     "gas:probe-sui": "tsx src/scripts/suiDeliveryProbe.ts",
     "gas:resync-hot-wallets": "tsx src/scripts/gasResyncHotWalletAddress.ts",
     "telegram:setup": "tsx src/scripts/telegramSetup.ts",
