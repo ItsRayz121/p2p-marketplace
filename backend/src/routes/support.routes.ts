@@ -222,7 +222,9 @@ export async function supportRoutes(app: FastifyInstance) {
       })
       await db.supportConversation.update({
         where: { id },
-        data: { lastMessageAt: new Date(), unreadByUser: true, unreadByAdmin: false },
+        // An admin reply reopens the thread (e.g. following up on an auto-closed
+        // chat) so it doesn't get swept shut again before the user responds.
+        data: { lastMessageAt: new Date(), unreadByUser: true, unreadByAdmin: false, status: 'open' },
       })
 
       // Instant push to the user's chat widget (SSE)

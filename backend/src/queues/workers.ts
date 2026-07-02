@@ -24,6 +24,7 @@ import { runAptosDepositPoller } from '../jobs/aptosDepositPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
 import { runModerationExpiry } from '../jobs/moderationExpiry.job'
+import { runSupportIdleClose } from '../jobs/supportIdleClose.job'
 import { runAnnouncementBroadcast } from '../services/announcement.service'
 import { env } from '../lib/env'
 
@@ -89,6 +90,16 @@ export function startWorkers() {
 
   createWorker(QUEUE_NAMES.MODERATION_EXPIRY, async () => {
     await runModerationExpiry()
+  }, { max: 1, duration: 60_000 })
+
+  // Support-chat idle-close sweep — auto-close conversations idle > 10 min so
+  // the next user message starts a fresh session divider (every 60s).
+  queues.supportIdleClose
+    .add('support-idle-close-sweep', {}, { repeat: { every: 60_000 }, jobId: 'support-idle-close-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule support idle-close repeatable job'))
+
+  createWorker(QUEUE_NAMES.SUPPORT_IDLE_CLOSE, async () => {
+    await runSupportIdleClose()
   }, { max: 1, duration: 60_000 })
 
   createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {

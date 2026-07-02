@@ -1,7 +1,9 @@
 'use client'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiRequest } from '@/lib/api'
-import { fmtDateTime } from '@/lib/fmt'
+import { fmtDateTime, fmtTime } from '@/lib/fmt'
+import { buildChatTimeline } from '@/lib/supportChat'
+import { ChatDivider } from '@/components/support/ChatDivider'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -39,6 +41,7 @@ export default function AdminSupportPage() {
   const [thread, setThread] = useState<Thread | null>(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [closing, setClosing] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const fetchConversations = useCallback(async () => {
@@ -96,6 +99,19 @@ export default function AdminSupportPage() {
     }
   }
 
+  async function handleClose() {
+    if (!activeId || closing) return
+    setClosing(true)
+    try {
+      await apiRequest(`/admin/support/conversations/${activeId}/close`, { method: 'POST' })
+      await Promise.all([fetchThread(activeId), fetchConversations()])
+    } catch {
+      /* leave state as-is; admin can retry */
+    } finally {
+      setClosing(false)
+    }
+  }
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [thread?.messages.length])
@@ -147,27 +163,44 @@ export default function AdminSupportPage() {
             <>
               <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-shrink-0">
                 <UserAvatar name={thread.user.name} avatarUrl={thread.user.avatarUrl} size="sm" />
-                <div>
-                  <p className="font-semibold text-sm text-text-primary">{thread.user.name}</p>
-                  <p className="text-xs text-text-muted">{thread.user.email}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm text-text-primary truncate">{thread.user.name}</p>
+                  <p className="text-xs text-text-muted truncate">{thread.user.email}</p>
                 </div>
+                {thread.status === 'closed' ? (
+                  <span className="text-[11px] font-semibold text-text-muted px-2 py-1 rounded-lg bg-canvas border border-border flex-shrink-0">
+                    Closed
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleClose}
+                    disabled={closing}
+                    className="text-[11px] font-semibold text-text-muted hover:text-danger px-2 py-1 rounded-lg border border-border hover:border-danger disabled:opacity-40 transition-colors flex-shrink-0"
+                  >
+                    {closing ? 'Closing…' : 'Close chat'}
+                  </button>
+                )}
               </div>
 
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-canvas">
-                {thread.messages.map((m) => (
-                  <div key={m.id} className={`flex ${m.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
-                        m.sender === 'admin'
-                          ? 'bg-primary text-white rounded-br-sm'
-                          : 'bg-surface border border-border text-text-primary rounded-bl-sm'
-                      }`}
-                    >
-                      {m.body}
-                      <span className="block text-[10px] opacity-60 mt-0.5">{fmtDateTime(m.createdAt)}</span>
+                {buildChatTimeline(thread.messages, { status: thread.status }).map((item) =>
+                  item.kind !== 'message' ? (
+                    <ChatDivider key={item.key} kind={item.kind} at={item.at} />
+                  ) : (
+                    <div key={item.key} className={`flex ${item.msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
+                          item.msg.sender === 'admin'
+                            ? 'bg-primary text-white rounded-br-sm'
+                            : 'bg-surface border border-border text-text-primary rounded-bl-sm'
+                        }`}
+                      >
+                        {item.msg.body}
+                        <span className="block text-[10px] opacity-60 mt-0.5">{fmtTime(item.msg.createdAt)}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
 
               <div className="flex items-end gap-2 p-3 border-t border-border flex-shrink-0">

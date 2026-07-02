@@ -44,6 +44,7 @@ export const QUEUE_NAMES = {
   WITHDRAWAL_CONFIRMATION_WATCHER:  'withdrawal-confirmation-watcher',
   MODERATION_EXPIRY:                'moderation-expiry',
   ANNOUNCEMENT_BROADCAST:           'announcement-broadcast',
+  SUPPORT_IDLE_CLOSE:               'support-idle-close',
 } as const
 
 export const queues = {
@@ -133,5 +134,9 @@ export const queues = {
   announcementBroadcast: new Queue(QUEUE_NAMES.ANNOUNCEMENT_BROADCAST, {
     connection,
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
+  }),
+  supportIdleClose: new Queue(QUEUE_NAMES.SUPPORT_IDLE_CLOSE, {
+    connection,
+    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
 }

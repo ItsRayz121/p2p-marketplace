@@ -24,6 +24,72 @@ export interface SupportChatState {
   messages: SupportMessage[]
 }
 
+// Must match SUPPORT_IDLE_CLOSE_MINUTES in the backend idle-close job so the
+// visible session dividers line up with the real backend auto-close.
+export const SUPPORT_IDLE_CLOSE_MINUTES = 10
+
+export type ChatTimelineItem<M> =
+  | { kind: 'day'; at: string; key: string }
+  | { kind: 'session'; at: string; key: string }
+  | { kind: 'closed'; at: string; key: string }
+  | { kind: 'message'; msg: M; key: string }
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+/**
+ * Turn a flat, ascending-by-time message list into a render timeline with
+ * session boundaries. Rules:
+ *  - a date header opens the very first message and any calendar-day change;
+ *  - a gap larger than the idle threshold ends the previous session (a "closed"
+ *    marker) and opens a new one (a "session" time marker);
+ *  - if the conversation is currently `closed`, a trailing "closed" marker is
+ *    added after the last message.
+ * The whole history stays in one continuous thread — dividers just distinguish
+ * each chat by date/time.
+ */
+export function buildChatTimeline<M extends { id: string; createdAt: string }>(
+  messages: M[],
+  opts?: { status?: string; idleMinutes?: number },
+): ChatTimelineItem<M>[] {
+  const idleMs = (opts?.idleMinutes ?? SUPPORT_IDLE_CLOSE_MINUTES) * 60_000
+  const items: ChatTimelineItem<M>[] = []
+  let prev: Date | null = null
+
+  for (const m of messages) {
+    const t = new Date(m.createdAt)
+    const valid = !isNaN(t.getTime())
+
+    if (!prev) {
+      if (valid) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
+    } else if (valid) {
+      const gap = t.getTime() - prev.getTime()
+      const sameDay = isSameLocalDay(prev, t)
+      if (gap > idleMs) {
+        items.push({ kind: 'closed', at: prev.toISOString(), key: `closed-${m.id}` })
+        if (!sameDay) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
+        items.push({ kind: 'session', at: m.createdAt, key: `session-${m.id}` })
+      } else if (!sameDay) {
+        items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
+      }
+    }
+
+    items.push({ kind: 'message', msg: m, key: m.id })
+    if (valid) prev = t
+  }
+
+  if (opts?.status === 'closed' && prev) {
+    items.push({ kind: 'closed', at: prev.toISOString(), key: 'closed-final' })
+  }
+
+  return items
+}
+
 export const supportChatApi = {
   get: () => apiRequest<SupportChatState>('/support/chat'),
   send: (body: string) =>

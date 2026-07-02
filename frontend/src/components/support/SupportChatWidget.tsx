@@ -4,14 +4,17 @@ import { usePathname } from 'next/navigation'
 import { X, Send } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSSE } from '@/hooks/useSSE'
-import { supportChatApi, SUPPORT_CHAT_OPEN_EVENT, type SupportMessage } from '@/lib/supportChat'
+import { supportChatApi, SUPPORT_CHAT_OPEN_EVENT, buildChatTimeline, type SupportMessage } from '@/lib/supportChat'
+import { ChatDivider } from '@/components/support/ChatDivider'
 import { SUPPORT_EMAIL } from '@/lib/contact'
+import { fmtTime } from '@/lib/fmt'
 
 export default function SupportChatWidget() {
   const { isAuthenticated } = useAuth()
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<SupportMessage[]>([])
+  const [status, setStatus] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -20,6 +23,7 @@ export default function SupportChatWidget() {
     try {
       const state = await supportChatApi.get()
       setMessages(state.messages)
+      setStatus(state.conversation?.status ?? null)
     } catch {
       /* ignore — user may be logged out */
     }
@@ -74,6 +78,7 @@ export default function SupportChatWidget() {
       createdAt: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, optimistic])
+    setStatus('open') // sending reopens the conversation — drop any stale closed marker
     try {
       await supportChatApi.send(text)
       await refresh()
@@ -114,19 +119,24 @@ export default function SupportChatWidget() {
                 <p className="text-xs">Prefer email? {SUPPORT_EMAIL}</p>
               </div>
             ) : (
-              messages.map((m) => (
-                <div key={m.id} className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
-                      m.sender === 'user'
-                        ? 'bg-primary text-white rounded-br-sm'
-                        : 'bg-surface border border-border text-text-primary rounded-bl-sm'
-                    }`}
-                  >
-                    {m.body}
+              buildChatTimeline(messages, { status: status ?? undefined }).map((item) =>
+                item.kind !== 'message' ? (
+                  <ChatDivider key={item.key} kind={item.kind} at={item.at} />
+                ) : (
+                  <div key={item.key} className={`flex ${item.msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
+                        item.msg.sender === 'user'
+                          ? 'bg-primary text-white rounded-br-sm'
+                          : 'bg-surface border border-border text-text-primary rounded-bl-sm'
+                      }`}
+                    >
+                      {item.msg.body}
+                      <span className="block text-[10px] opacity-60 mt-0.5">{fmtTime(item.msg.createdAt)}</span>
+                    </div>
                   </div>
-                </div>
-              ))
+                ),
+              )
             )}
           </div>
 
