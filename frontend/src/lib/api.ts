@@ -19,25 +19,6 @@ const API_BASE = resolveApiBase()
 import { useAuthStore } from '../store/auth.store'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
-
-// Very short client cache for the 2FA step-up code. Its only job is to cover
-// stragglers in a single "save" burst that fans out into parallel requests, so
-// the box appears once. Kept under the ~30s TOTP validity window on purpose: the
-// backend grants its own multi-minute step-up window (during which it won't
-// re-challenge), so a longer cache would risk sending a stale code afterwards.
-const TOTP_CACHE_MS = 25_000
-let _totpCode: { code: string; exp: number } | null = null
-function cachedTotpCode(): string | null {
-  if (_totpCode && _totpCode.exp > Date.now()) return _totpCode.code
-  _totpCode = null
-  return null
-}
-function setCachedTotpCode(code: string): void {
-  _totpCode = { code, exp: Date.now() + TOTP_CACHE_MS }
-}
-function clearCachedTotpCode(): void {
-  _totpCode = null
-}
 import { isTelegramMiniApp, getInitData } from './telegram'
 
 export class ApiError extends Error {
@@ -361,43 +342,49 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       )
     }
 
-    // TOTP step-up — the backend demands a 2FA code for this action. We show a
-    // single shared prompt (see lib/totpPrompt) and cache the code briefly, so a
+    // TOTP step-up — the backend demands a 2FA code for this action. A single
+    // shared prompt (see lib/totpPrompt) serves all concurrent callers, so a
     // "save" that fans out into several parallel requests asks ONCE, not per
-    // request. Flows with their own inline TOTP field (wallet withdraw / trusted
-    // address) pre-send the header, so this only fires for flows without one.
+    // request. We do NOT cache/re-send the code: it's single-use (the backend
+    // replay-guards it), and a verified code opens a multi-minute backend "grace
+    // window" during which further admin requests need no code at all — so the
+    // next save simply sails through code-less. If a parallel sibling used the
+    // same code first (TOTP_REPLAY), the grace window is already open, so we just
+    // retry this request without a code. Flows with their own inline TOTP field
+    // (wallet withdraw / trusted address) pre-send the header and never reach here.
     if (res.status === 403 && (data as { error?: string }).error === 'TOTP_REQUIRED' && typeof window !== 'undefined') {
-      let code = cachedTotpCode()
-      if (!code) {
-        const entered = await promptForTotp()
-        const trimmed = entered?.trim()
-        if (trimmed && /^\d{6}$/.test(trimmed)) {
-          code = trimmed
-          setCachedTotpCode(trimmed)
-        }
-      }
-      if (code) {
-        headers['X-TOTP-Code'] = code
-        const retryController = new AbortController()
-        const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
-        try {
-          const retryRes = await fetch(url, { ...options, method, headers, credentials: 'include', signal: retryController.signal })
-          const retryData = await retryRes.json()
-          if (!retryRes.ok) {
-            // A wrong / expired code — drop the cache so the next attempt re-prompts.
-            if ((retryData as { error?: string }).error === 'TOTP_REQUIRED' || (retryData as { error?: string }).error === 'INVALID_TOTP') {
-              clearCachedTotpCode()
-            }
-            throw new ApiError(
-              (retryData as { error?: string }).error ?? 'UNKNOWN_ERROR',
-              (retryData as { message?: string }).message ?? 'An error occurred',
-              retryRes.status,
-            )
+      const entered = await promptForTotp()
+      const trimmed = entered?.trim()
+      if (trimmed && /^\d{6}$/.test(trimmed)) {
+        const runRetry = async (withCode: boolean) => {
+          const retryHeaders = { ...headers }
+          if (withCode) retryHeaders['X-TOTP-Code'] = trimmed
+          else delete retryHeaders['X-TOTP-Code']
+          const retryController = new AbortController()
+          const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
+          try {
+            const retryRes = await fetch(url, { ...options, method, headers: retryHeaders, credentials: 'include', signal: retryController.signal })
+            const retryData = await retryRes.json()
+            return { ok: retryRes.ok, status: retryRes.status, data: retryData }
+          } finally {
+            clearTimeout(retryTimeout)
           }
-          return unwrapEnvelope<T>(retryData)
-        } finally {
-          clearTimeout(retryTimeout)
         }
+
+        let r = await runRetry(true)
+        // A sibling request in the same burst already consumed this code and
+        // opened the grace window — retry once more with no code (grace covers us).
+        if (!r.ok && (r.data as { error?: string }).error === 'TOTP_REPLAY') {
+          r = await runRetry(false)
+        }
+        if (!r.ok) {
+          throw new ApiError(
+            (r.data as { error?: string }).error ?? 'UNKNOWN_ERROR',
+            (r.data as { message?: string }).message ?? 'An error occurred',
+            r.status,
+          )
+        }
+        return unwrapEnvelope<T>(r.data)
       }
     }
 

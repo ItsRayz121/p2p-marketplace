@@ -364,9 +364,18 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
       if (g.status !== 'open') throw new AppError('GIVEAWAY_CLOSED', 'This giveaway is no longer accepting entries.', 400)
       if (g.entryDeadline && g.entryDeadline.getTime() < Date.now()) throw new AppError('GIVEAWAY_CLOSED', 'This giveaway has closed.', 400)
 
-      // Enforce optional-but-required-when-enabled entrant fields.
-      if (g.collectName && !entrantName?.trim()) throw new AppError('NAME_REQUIRED', 'Please enter your name to join this giveaway.', 400)
-      if (g.collectWhatsapp && !whatsapp?.trim()) throw new AppError('WHATSAPP_REQUIRED', 'Please enter your WhatsApp number to join this giveaway.', 400)
+      // Enforce the required-when-enabled entrant fields only on the FIRST entry.
+      // A returning entrant updating their address keeps the name/WhatsApp they
+      // already gave (the form doesn't re-show those fields), so re-requiring them
+      // would wrongly block the address update.
+      const existingEntry = await db.promoGiveawayEntry.findUnique({
+        where: { giveawayId_userId: { giveawayId: g.id, userId: req.user!.id } },
+        select: { id: true },
+      })
+      if (!existingEntry) {
+        if (g.collectName && !entrantName?.trim()) throw new AppError('NAME_REQUIRED', 'Please enter your name to join this giveaway.', 400)
+        if (g.collectWhatsapp && !whatsapp?.trim()) throw new AppError('WHATSAPP_REQUIRED', 'Please enter your WhatsApp number to join this giveaway.', 400)
+      }
 
       // All REQUIRED tasks must be confirmed (self-attested).
       const required = parseTasks(g.tasks).filter((t) => t.required).map((t) => t.id)

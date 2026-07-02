@@ -58,15 +58,18 @@ export default function PromoGiveawayEntryPage() {
 
   const requiredIds = (g?.tasks ?? []).filter((t) => t.required).map((t) => t.id)
   const allRequiredDone = requiredIds.every((id) => checked[id])
-  const collectOk = (!g?.collectName || entrantName.trim().length > 0) && (!g?.collectWhatsapp || whatsapp.trim().length > 0)
+  // Name / WhatsApp are only collected on the FIRST entry (the fields aren't shown
+  // once entered), so don't re-require them when a returning entrant updates their
+  // address — the backend keeps the values they already gave.
+  const collectOk = entered || ((!g?.collectName || entrantName.trim().length > 0) && (!g?.collectWhatsapp || whatsapp.trim().length > 0))
   const canSubmit = allRequiredDone && collectOk && address.trim().length >= 4 && !submitting
 
   async function enter() {
     if (!g) return
     if (!canSubmit) {
       if (!allRequiredDone) toast.error('Please complete all required tasks first.')
-      else if (g.collectName && !entrantName.trim()) toast.error('Please enter your name.')
-      else if (g.collectWhatsapp && !whatsapp.trim()) toast.error('Please enter your WhatsApp number.')
+      else if (!entered && g.collectName && !entrantName.trim()) toast.error('Please enter your name.')
+      else if (!entered && g.collectWhatsapp && !whatsapp.trim()) toast.error('Please enter your WhatsApp number.')
       else if (address.trim().length < 4) toast.error('Enter a valid wallet address.')
       return
     }
