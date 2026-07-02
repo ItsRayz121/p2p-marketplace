@@ -1,13 +1,14 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import Image from 'next/image'
 import { gasApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Button } from '@/components/ui/Button'
 import { validateAddress } from '../../_components/GasPrimitives'
-import { ArrowLeft, Gift, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Gift, CheckCircle2, Send, Users, Trophy } from 'lucide-react'
 
 type Campaign = Awaited<ReturnType<typeof gasApi.getGiveaway>>
 
@@ -72,22 +73,36 @@ export default function GiveawayEntryPage() {
       )}
 
       {!loading && campaign && (
-        <div className="rounded-xl border border-border bg-surface p-5 space-y-4">
-          <div className="text-center">
-            <p className="text-xs text-text-muted">Sponsored by</p>
-            <p className="text-base font-bold text-text-primary">{campaign.kolLabel}</p>
-          </div>
+        <div className="space-y-4">
+          {/* Banner */}
+          {campaign.thumbnailUrl && (
+            <div className="relative w-full aspect-[16/9] rounded-2xl overflow-hidden border border-border bg-canvas">
+              <Image src={campaign.thumbnailUrl} alt={campaign.kolLabel} fill sizes="(max-width:768px) 100vw, 28rem" className="object-cover" unoptimized />
+            </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-3 text-center">
-            <div className="rounded-lg bg-surface-alt p-3">
-              <p className="text-lg font-bold text-primary">{campaign.amountNative} {campaign.tokenSymbol}</p>
-              <p className="text-[11px] text-text-muted">per winner{campaign.amountUsd != null ? ` · ≈ $${campaign.amountUsd.toFixed(campaign.amountUsd < 1 ? 4 : 2)}` : ''}</p>
+          <div className="rounded-2xl border border-border bg-surface p-5 space-y-4">
+            {/* Sponsored by — prominent */}
+            <div className="flex flex-col items-center gap-2 text-center">
+              <span className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary text-lg font-black">
+                {campaign.kolLabel.trim().charAt(0).toUpperCase() || 'R'}
+              </span>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-text-muted">Gas giveaway sponsored by</p>
+                <p className="text-lg font-black text-text-primary">{campaign.kolLabel}</p>
+              </div>
             </div>
-            <div className="rounded-lg bg-surface-alt p-3">
-              <p className="text-lg font-bold text-text-primary">{campaign.winnerCount}</p>
-              <p className="text-[11px] text-text-muted">winners · {campaign.entryCount} entered</p>
+
+            <div className="grid grid-cols-2 gap-3 text-center">
+              <div className="rounded-xl bg-primary/5 border border-primary/15 p-3">
+                <p className="text-lg font-bold text-primary">{campaign.amountNative} {campaign.tokenSymbol}</p>
+                <p className="text-[11px] text-text-muted">per winner{campaign.amountUsd != null ? ` · ≈ $${campaign.amountUsd.toFixed(campaign.amountUsd < 1 ? 4 : 2)}` : ''}</p>
+              </div>
+              <div className="rounded-xl bg-surface-alt border border-border p-3">
+                <p className="text-lg font-bold text-text-primary">{campaign.winnerCount}</p>
+                <p className="inline-flex items-center justify-center gap-1 text-[11px] text-text-muted"><Users className="w-3 h-3" />{campaign.winnerCount === 1 ? 'winner' : 'winners'} · {campaign.entryCount} entered</p>
+              </div>
             </div>
-          </div>
 
           {entered ? (
             <div className="rounded-lg border border-green-500/40 bg-green-500/5 p-4 text-center">
@@ -122,13 +137,24 @@ export default function GiveawayEntryPage() {
               <p className="text-[11px] text-text-muted text-center">Free — entering costs nothing. Winners receive gas at no charge.</p>
             </div>
           )}
+          </div>
+
+          {/* Share on Telegram */}
+          <a
+            href={`https://t.me/share/url?url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}&text=${encodeURIComponent(`🎁 Free ${campaign.amountNative} ${campaign.tokenSymbol} gas giveaway by ${campaign.kolLabel} on RupChain`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full rounded-xl border border-[#229ED9]/40 bg-[#229ED9]/5 px-4 py-2.5 text-sm font-medium text-[#229ED9] hover:bg-[#229ED9]/10 transition-colors"
+          >
+            <Send className="w-4 h-4" /> Share on Telegram
+          </a>
         </div>
       )}
 
       {/* Public winners list — transparency once a draw has happened */}
       {!loading && campaign && campaign.winners.length > 0 && (
         <div className="rounded-xl border border-border bg-surface p-5 space-y-3">
-          <h2 className="text-sm font-bold text-text-primary">Winners ({campaign.winners.length})</h2>
+          <h2 className="flex items-center gap-1.5 text-sm font-bold text-text-primary"><Trophy className="w-4 h-4 text-primary" /> Winners ({campaign.winners.length})</h2>
           <div className="space-y-2">
             {campaign.winners.map((w, i) => (
               <div key={i} className="flex items-center gap-2 text-xs border-b border-border last:border-0 pb-2 last:pb-0">

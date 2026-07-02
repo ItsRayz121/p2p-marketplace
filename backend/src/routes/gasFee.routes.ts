@@ -1778,6 +1778,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       data: {
         code: campaign.code,
         kolLabel: campaign.kolLabel,
+        thumbnailUrl: campaign.thumbnailUrl,
         tokenSymbol: tokenCfg?.symbol ?? '',
         networkLabel: tokenCfg?.chain.networkLabel ?? '',
         addressType: tokenCfg?.chain.addressType ?? '',
@@ -1852,6 +1853,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   const giveawayCreateSchema = z.object({
     code:          z.string().trim().min(2).max(40),
     kolLabel:      z.string().trim().min(1).max(120),
+    thumbnailUrl:  z.string().trim().url().max(500).optional().or(z.literal('')),
     tokenConfigId: z.string().min(1),
     amountNative:  z.number().positive(),
     winnerCount:   z.number().int().positive().max(100000),
@@ -1880,6 +1882,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       data: {
         code, kolLabel: p.kolLabel, gasTokenConfigId: p.tokenConfigId,
         amountNative: p.amountNative, winnerCount: p.winnerCount, requireKyc: p.requireKyc,
+        thumbnailUrl: p.thumbnailUrl || null,
         createdById: req.user!.id,
         ...(p.entryDeadline ? { entryDeadline: new Date(p.entryDeadline) } : {}),
       },
@@ -1901,7 +1904,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       else if (row.status === 'won') sentCounts.set(row.campaignId, row._count._all)
     }
     return reply.send({ success: true, data: campaigns.map((c) => ({
-      id: c.id, code: c.code, kolLabel: c.kolLabel, gasTokenConfigId: c.gasTokenConfigId,
+      id: c.id, code: c.code, kolLabel: c.kolLabel, thumbnailUrl: c.thumbnailUrl, gasTokenConfigId: c.gasTokenConfigId,
       amountNative: c.amountNative.toString(), winnerCount: c.winnerCount, drawnCount: c.drawnCount,
       selectedCount: selectedCounts.get(c.id) ?? 0, sentCount: sentCounts.get(c.id) ?? 0,
       entryCount: c._count.entries, entryDeadline: c.entryDeadline, requireKyc: c.requireKyc,

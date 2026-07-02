@@ -1631,7 +1631,7 @@ export const gasApi = {
     apiRequest<{ deleted: true }>(`/gas-fee/referral/custom-links/${codeId}`, { method: 'DELETE' }),
 
   getGiveaway: (code: string) =>
-    apiRequest<{ code: string; kolLabel: string; tokenSymbol: string; networkLabel: string; addressType: string; explorerBase: string | null; amountNative: string; amountUsd: number | null; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean; winners: Array<{ username: string | null; address: string; txHash: string | null; explorerUrl: string | null; delivered: boolean }> }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
+    apiRequest<{ code: string; kolLabel: string; thumbnailUrl: string | null; tokenSymbol: string; networkLabel: string; addressType: string; explorerBase: string | null; amountNative: string; amountUsd: number | null; winnerCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; open: boolean; alreadyEntered: boolean; winners: Array<{ username: string | null; address: string; txHash: string | null; explorerUrl: string | null; delivered: boolean }> }>(`/gas-fee/giveaway/${encodeURIComponent(code)}`),
   enterGiveaway: (data: { code: string; receivingAddress: string; email?: string }) =>
     apiRequest<{ entered: boolean }>('/gas-fee/giveaway/enter', { method: 'POST', body: JSON.stringify(data) }),
 
@@ -2481,8 +2481,8 @@ export const adminApi = {
 
   // Gas giveaways (admin)
   getGasGiveaways: () =>
-    apiRequest<Array<{ id: string; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: string; winnerCount: number; drawnCount: number; selectedCount: number; sentCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; isActive: boolean; createdAt: string }>>('/gas-fee/admin/giveaways'),
-  createGasGiveaway: (data: { code: string; kolLabel: string; tokenConfigId: string; amountNative: number; winnerCount: number; entryDeadline?: string; requireKyc: boolean }) =>
+    apiRequest<Array<{ id: string; code: string; kolLabel: string; thumbnailUrl: string | null; gasTokenConfigId: string; amountNative: string; winnerCount: number; drawnCount: number; selectedCount: number; sentCount: number; entryCount: number; entryDeadline: string | null; requireKyc: boolean; status: string; isActive: boolean; createdAt: string }>>('/gas-fee/admin/giveaways'),
+  createGasGiveaway: (data: { code: string; kolLabel: string; thumbnailUrl?: string; tokenConfigId: string; amountNative: number; winnerCount: number; entryDeadline?: string; requireKyc: boolean }) =>
     apiRequest<unknown>('/gas-fee/admin/giveaways', { method: 'POST', body: JSON.stringify(data) }),
   getGasGiveawayEntries: (id: string) =>
     apiRequest<Array<{ id: string; userId: string; email: string | null; receivingAddress: string; status: string; orderId: string | null; orderStatus: string | null; orderRef: string | null; createdAt: string }>>(`/gas-fee/admin/giveaways/${id}/entries`),

@@ -1746,6 +1746,7 @@ model GasGiveawayCampaign {
   id               String   @id @default(cuid())
   code             String   @unique          // KOL code entrants type; stored UPPERCASE
   kolLabel         String                      // KOL / campaign name (shown to entrants)
+  thumbnailUrl     String?                     // optional banner shown on the public entry page
   gasTokenConfigId String                      // which token winners receive (plain ref)
   amountNative     Decimal  @db.Decimal(18, 8) // fixed gas amount each winner gets
   winnerCount      Int                          // target number of winners

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
+import { useFileUpload } from '@/hooks/useFileUpload'
 import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -27,7 +28,7 @@ function deliveryVariant(s: string | null): 'success' | 'warning' | 'danger' | '
   return 'warning' // payment_detected / sending / etc — in flight
 }
 
-const blankForm = () => ({ code: '', kolLabel: '', tokenConfigId: '', amountNative: '', winnerCount: '10', entryDeadline: '', requireKyc: true })
+const blankForm = () => ({ code: '', kolLabel: '', thumbnailUrl: '', tokenConfigId: '', amountNative: '', winnerCount: '10', entryDeadline: '', requireKyc: true })
 
 export default function GasGiveawaysAdminPage() {
   const router = useRouter()
@@ -38,6 +39,7 @@ export default function GasGiveawaysAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(blankForm())
+  const { upload: uploadThumb, uploading: uploadingThumb } = useFileUpload('giveaway-image')
   const [chains, setChains] = useState<AdminGasChain[]>([])
   const [selChain, setSelChain] = useState<AdminGasChain | null>(null)
   const [tokens, setTokens] = useState<AdminGasToken[]>([])
@@ -90,6 +92,16 @@ export default function GasGiveawaysAdminPage() {
     try { const r = await adminApi.getGasTokens(c.id); setTokens(r.tokens.filter((t) => !t.isArchived)) } catch { /* ignore */ }
   }
 
+  async function onThumb(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const url = await uploadThumb(file)
+      setForm((f) => ({ ...f, thumbnailUrl: url }))
+      toast.success('Image uploaded')
+    } catch { /* hook surfaces the error */ }
+  }
+
   async function create() {
     if (!form.code.trim() || !form.kolLabel.trim() || !form.tokenConfigId || !(parseFloat(form.amountNative) > 0) || !(parseInt(form.winnerCount) > 0)) {
       toast.error('Fill code, KOL, token, amount and winner count'); return
@@ -99,6 +111,7 @@ export default function GasGiveawaysAdminPage() {
       await adminApi.createGasGiveaway({
         code: form.code.trim().toUpperCase(),
         kolLabel: form.kolLabel.trim(),
+        ...(form.thumbnailUrl ? { thumbnailUrl: form.thumbnailUrl } : {}),
         tokenConfigId: form.tokenConfigId,
         amountNative: parseFloat(form.amountNative),
         winnerCount: parseInt(form.winnerCount),
@@ -212,6 +225,21 @@ export default function GasGiveawaysAdminPage() {
               <input value={form.kolLabel} onChange={(e) => setForm({ ...form, kolLabel: e.target.value })} placeholder="Influencer Ali" className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
             </label>
           </div>
+
+          <div>
+            <label className="text-xs font-semibold text-text-primary">Banner image (optional)</label>
+            <div className="mt-1 flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {form.thumbnailUrl && <img src={form.thumbnailUrl} alt="banner" className="w-16 h-16 rounded-lg object-cover border border-border" />}
+              <label className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded-lg cursor-pointer hover:bg-surface-alt">
+                {uploadingThumb ? 'Uploading…' : form.thumbnailUrl ? 'Change image' : 'Upload image'}
+                <input type="file" accept="image/*" onChange={onThumb} className="hidden" disabled={uploadingThumb} />
+              </label>
+              {form.thumbnailUrl && (
+                <button type="button" onClick={() => setForm((f) => ({ ...f, thumbnailUrl: '' }))} className="text-xs text-text-muted hover:text-danger">Remove</button>
+              )}
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="text-xs font-semibold text-text-primary">Chain
               <select
@@ -265,7 +293,7 @@ export default function GasGiveawaysAdminPage() {
             Require KYC to enter (recommended)
           </label>
           <div className="flex gap-2">
-            <Button size="sm" variant="primary" onClick={create} disabled={saving || belowMin}>{saving ? 'Creating…' : 'Create Giveaway'}</Button>
+            <Button size="sm" variant="primary" onClick={create} disabled={saving || belowMin || uploadingThumb}>{saving ? 'Creating…' : 'Create Giveaway'}</Button>
             <Button size="sm" variant="ghost" onClick={() => { setShowCreate(false); setForm(blankForm()) }}>Cancel</Button>
           </div>
         </div>
