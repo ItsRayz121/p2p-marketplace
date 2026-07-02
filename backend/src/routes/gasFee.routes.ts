@@ -19,6 +19,7 @@ import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import { isRefundEligible, refundWaitRemainingMs } from '../lib/gas/gas.refundWindow'
 import { buildGasExplorerTxUrl } from '../lib/gas/gasExplorer'
 import { onPaymentDetected } from '../lib/gas/gas.matching'
+import { createAdminNotif } from '../services/adminNotification.service'
 import {
   gasCancelIdentity,
   assertNotInGasCooldown,
@@ -2072,6 +2073,19 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
 
     logger.info({ orderRef, userId: req.user!.id }, 'PKR payment proof submitted')
+
+    // Alert admins that a PKR proof needs manual review — writes a bell/panel
+    // notification AND fires an OS-level push to opted-in staff (mobile). Without
+    // this the "PKR Proofs Pending" badge increments silently and staff never
+    // get pinged. Fire-and-forget — never blocks the user's response.
+    const pkrAmt = order.pkrAmount != null ? Number(order.pkrAmount) : null
+    void createAdminNotif({
+      category: 'GAS',
+      title:   `PKR Proof Submitted${pkrAmt != null ? ` — PKR ${pkrAmt.toLocaleString('en-PK', { maximumFractionDigits: 0 })}` : ''}`,
+      body:    `Order ${orderRef} has a payment proof awaiting review (${order.pkrPaymentMethod ?? 'PKR'}). Verify the payment to release gas.`,
+      href:    `/admin/gas/orders/${orderRef}`,
+      metadata: { orderRef, orderId: order.id, pkrAmount: pkrAmt, method: order.pkrPaymentMethod ?? null },
+    })
 
     return reply.send({ success: true, data: { orderRef: updated.orderRef, status: updated.status } })
   })
