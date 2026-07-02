@@ -29,6 +29,7 @@
     "gas:add-aptos-native": "tsx src/scripts/gasAddAptosNative.ts",
     "gas:add-opbnb": "tsx src/scripts/gasAddOpbnb.ts",
     "gas:add-opbnb-hotwallet": "tsx src/scripts/gasAddOpbnbHotWallet.ts",
+    "gas:opbnb-go-live": "tsx src/scripts/gasOpbnbGoLive.ts",
     "gas:probe-sui": "tsx src/scripts/suiDeliveryProbe.ts",
     "gas:resync-hot-wallets": "tsx src/scripts/gasResyncHotWalletAddress.ts",
     "telegram:setup": "tsx src/scripts/telegramSetup.ts",
