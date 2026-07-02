@@ -72,6 +72,17 @@ export const FLAGS = {
    */
   AIRDROP: 'airdrop_enabled',
   /**
+   * SILENT point accrual. Deliberately DECOUPLED from `airdrop_enabled` (which
+   * gates the user-facing UI): when this is ON, platform activity keeps writing
+   * points into the append-only AirdropLedger in the background even while the
+   * Airdrop is hidden from users — so that when the airdrop is later revealed,
+   * balances already reflect real history. Unlike every other flag this defaults
+   * ON, because accrual ONLY writes ledger rows and never touches funds, fees, or
+   * UI (level fee-discounts stay separately gated by `airdrop_levels_enabled`).
+   * Set `airdrop_accrual_enabled=false` to stop background counting.
+   */
+  AIRDROP_ACCRUAL: 'airdrop_accrual_enabled',
+  /**
    * Airdrop LEVEL fee discounts. When ON (and airdrop_enabled is ON), a user's
    * airdrop level grants a margin-only discount on gas orders (capped, floored at
    * the base cost — never a subsidy). OFF (default) = levels are display-only and

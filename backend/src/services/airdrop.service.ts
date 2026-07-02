@@ -301,6 +301,19 @@ export function isAirdropEnabled(): Promise<boolean> {
   return isFlagEnabled(FLAGS.AIRDROP)
 }
 
+/**
+ * Whether point ACCRUAL should run right now. Deliberately decoupled from the
+ * user-facing `airdrop_enabled` flag: points accrue SILENTLY in the background
+ * (no UI, no announcement) so a later reveal already reflects real history.
+ * Accrual runs when EITHER the airdrop is live OR the silent-accrual flag is on;
+ * that flag defaults ON because accrual only appends to the ledger and never
+ * touches funds, fees, or UI. Set `airdrop_accrual_enabled=false` to stop it.
+ */
+export async function isAirdropAccruing(): Promise<boolean> {
+  if (await isAirdropEnabled()) return true
+  return isFlagEnabled(FLAGS.AIRDROP_ACCRUAL, true)
+}
+
 // ── Small helpers ───────────────────────────────────────────────────────────
 function dec(n: number | Prisma.Decimal): Prisma.Decimal {
   return new Prisma.Decimal(Number(n).toFixed(4))
@@ -483,7 +496,7 @@ export async function awardTradePointsTx(
   tx: Tx,
   opts: { tradeType: TradeType; tradeId: string; buyerId: string; sellerId: string; fiatAmountPKR: Prisma.Decimal | number },
 ): Promise<void> {
-  if (!(await isAirdropEnabled())) return
+  if (!(await isAirdropAccruing())) return
   if (opts.buyerId === opts.sellerId) return
   const seasonId = await resolveActiveSeasonId(tx)
   if (!seasonId) return
@@ -517,7 +530,7 @@ export async function awardTradePointsTx(
  */
 export async function awardGasPointsForDelivery(order: GasFeeOrder): Promise<void> {
   try {
-    if (!(await isAirdropEnabled())) return
+    if (!(await isAirdropAccruing())) return
     if (!order.userId) return
     const userId = order.userId
     const cfg = await loadAirdropConfig()
@@ -568,7 +581,7 @@ export async function clawbackTradePoints(
   onlyUserId?: string,
 ): Promise<void> {
   try {
-    if (!(await isAirdropEnabled())) return
+    if (!(await isAirdropAccruing())) return
     const source: AirdropSource = tradeType === 'usdt' ? 'usdt_trade' : 'ctm_trade'
     const prefix = `${source}:${tradeId}`
     await db.$transaction(async (tx) => {
