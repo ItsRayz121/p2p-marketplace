@@ -25,6 +25,7 @@
  * Idempotent — safe to re-run. Reversible via the admin Chain/Token config.
  */
 
+import 'dotenv/config' // load backend/.env for local runs (Railway injects env directly)
 import { PrismaClient } from '@prisma/client'
 
 const db = new PrismaClient()
