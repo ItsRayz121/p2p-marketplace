@@ -13,7 +13,7 @@ export default function PromoGiveawayEntryPage() {
   const router = useRouter()
   const params = useParams()
   const code = String(params.code ?? '')
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
 
   const [g, setG] = useState<PromoGiveawayPublic | null>(null)
   const [loading, setLoading] = useState(true)
@@ -53,7 +53,13 @@ export default function PromoGiveawayEntryPage() {
     }
   }, [code])
 
-  useEffect(() => { void load() }, [load])
+  // Wait for the auth bootstrap to finish before loading. The public-info GET runs
+  // through optionalAuth (Bearer-token only), so if it fires before the access token
+  // is restored on a refresh, the server can't see the caller and returns
+  // alreadyEntered:false — leaving an entrant staring at the entry form again. Gating
+  // on !authLoading guarantees the token is attached, so a returning entrant lands on
+  // their "You're entered / Update address" state. Re-runs if auth resolves later.
+  useEffect(() => { if (!authLoading) void load() }, [load, authLoading])
   useEffect(() => { void loadParticipants() }, [loadParticipants])
 
   const requiredIds = (g?.tasks ?? []).filter((t) => t.required).map((t) => t.id)

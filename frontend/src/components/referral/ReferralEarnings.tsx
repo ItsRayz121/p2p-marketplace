@@ -59,6 +59,9 @@ export function ReferralEarnings() {
   // The whole created-links list collapses under a header chevron, keeping the
   // card tidy once you have links — the create-a-link form stays the focus.
   const [linksListOpen, setLinksListOpen] = useState(true)
+  // The entire custom-links card collapses under its header — closed by default so
+  // affiliates can tuck the whole section (links + create form) out of the way.
+  const [customLinksOpen, setCustomLinksOpen] = useState(false)
   // Inline split editor for an existing affiliate link (replaces window.prompt).
   const [editSplit, setEditSplit] = useState<{ id: string; userDiscountPct: string; commissionPct: string } | null>(null)
 
@@ -236,20 +239,35 @@ export function ReferralEarnings() {
         </>
       )}
 
-      {/* Custom referral links — approved affiliates only */}
+      {/* Custom referral links — approved affiliates only. The whole card collapses
+          under its header (closed by default) via the card-level chevron. */}
       {data.enabled && caps && (
-        <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
+        <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setCustomLinksOpen((v) => !v)}
+            aria-expanded={customLinksOpen}
+            aria-label={customLinksOpen ? 'Hide your custom links' : 'Show your custom links'}
+            className="w-full flex items-center justify-between gap-2 px-5 py-3 hover:bg-surface-alt transition-colors"
+          >
+            <span className="flex items-center gap-2 flex-wrap min-w-0">
               <Link2 size={16} className="text-primary shrink-0" />
-              <h3 className="text-sm font-bold text-text-primary">Your custom links</h3>
-              {caps && (
-                <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success">
-                  Affiliate
-                </span>
+              <span className="text-sm font-bold text-text-primary">Your custom links</span>
+              <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success">
+                Affiliate
+              </span>
+              {data.links.length > 0 && (
+                <span className="text-[11px] text-text-muted">· {data.links.length} {data.links.length === 1 ? 'link' : 'links'}</span>
               )}
-            </div>
-            {data.links.length > 0 && (
+            </span>
+            <ChevronDown size={18} className={`text-text-muted shrink-0 transition-transform ${customLinksOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+        {customLinksOpen && (
+        <div className="px-5 pb-5 space-y-3">
+          {/* The created-links list has its own inner collapse toggle. */}
+          {data.links.length > 0 && (
+            <div className="flex justify-end">
               <button
                 type="button"
                 onClick={() => setLinksListOpen((v) => !v)}
@@ -260,8 +278,8 @@ export function ReferralEarnings() {
                 {data.links.length} {data.links.length === 1 ? 'link' : 'links'}
                 <ChevronDown size={16} className={`transition-transform ${linksListOpen ? 'rotate-180' : ''}`} />
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Your created links — pinned right under the header, collapsible via the chevron above. */}
           {data.links.length > 0 && linksListOpen && (
@@ -379,6 +397,8 @@ export function ReferralEarnings() {
           ) : (
             <p className="text-xs text-text-muted">You&apos;ve reached your {policy.maxLinks}-link limit. Delete a link to create another.</p>
           )}
+        </div>
+        )}
         </div>
       )}
 
