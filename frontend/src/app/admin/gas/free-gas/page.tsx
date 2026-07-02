@@ -5,6 +5,7 @@ import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/Button'
+import { GasAmountConverter } from '@/components/admin/GasAmountConverter'
 import { ArrowLeft, Gift, Plus, X, ChevronDown, History } from 'lucide-react'
 
 // Admin-only tool to send fully platform-funded (free) gas deliveries. The platform
@@ -76,6 +77,7 @@ export default function AdminFreeGasPage() {
   )
 
   const selChain = chains.find((c) => c.id === chainId) ?? null
+  const selToken = tokens.find((t) => t.id === tokenId) ?? null
   const addrPlaceholder = selChain?.addressType === 'tron' ? 'T…' : selChain?.addressType === 'aptos' ? '0x…(Aptos)' : '0x…'
 
   const setRow = (i: number, v: string) => setAddressRows((rows) => rows.map((r, idx) => (idx === i ? v : r)))
@@ -154,9 +156,14 @@ export default function AdminFreeGasPage() {
           </label>
         </div>
 
-        <label className="block text-xs font-semibold text-text-primary">Amount per address (native)
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.5" inputMode="decimal" className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
-        </label>
+        <GasAmountConverter
+          label="Amount per address"
+          value={amount}
+          onChange={setAmount}
+          priceSymbol={selToken?.priceSymbol}
+          symbol={selToken?.symbol}
+          placeholder="0.5"
+        />
 
         <div className="space-y-2">
           <p className="text-xs font-semibold text-text-primary">Recipient address(es) <span className="font-normal text-text-muted">— same amount goes to each</span></p>
