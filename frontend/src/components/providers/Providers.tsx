@@ -6,6 +6,7 @@ import { authApi, miniAppAuthenticate } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { initPostHog, identifyUser } from '@/lib/analytics'
 import { isTelegramMiniApp } from '@/lib/telegram'
+import { TotpPrompt } from '@/components/providers/TotpPrompt'
 
 interface ProvidersProps {
   children: React.ReactNode
@@ -103,6 +104,7 @@ export default function Providers({ children }: ProvidersProps) {
   return (
     <ToastPrimitive.Provider swipeDirection="right">
       {children}
+      <TotpPrompt />
     </ToastPrimitive.Provider>
   )
 }

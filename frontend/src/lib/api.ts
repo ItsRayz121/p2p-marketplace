@@ -18,6 +18,26 @@ const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
 import type { AuthUser } from '../store/auth.store'
+import { promptForTotp } from './totpPrompt'
+
+// Very short client cache for the 2FA step-up code. Its only job is to cover
+// stragglers in a single "save" burst that fans out into parallel requests, so
+// the box appears once. Kept under the ~30s TOTP validity window on purpose: the
+// backend grants its own multi-minute step-up window (during which it won't
+// re-challenge), so a longer cache would risk sending a stale code afterwards.
+const TOTP_CACHE_MS = 25_000
+let _totpCode: { code: string; exp: number } | null = null
+function cachedTotpCode(): string | null {
+  if (_totpCode && _totpCode.exp > Date.now()) return _totpCode.code
+  _totpCode = null
+  return null
+}
+function setCachedTotpCode(code: string): void {
+  _totpCode = { code, exp: Date.now() + TOTP_CACHE_MS }
+}
+function clearCachedTotpCode(): void {
+  _totpCode = null
+}
 import { isTelegramMiniApp, getInitData } from './telegram'
 
 export class ApiError extends Error {
@@ -341,20 +361,33 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       )
     }
 
-    // TOTP step-up — the backend demands a 2FA code for this action. Prompt
-    // for the code and retry once with it attached. Flows with their own
-    // inline TOTP field (wallet withdraw / trusted address) pre-send the
-    // header, so this prompt only fires for flows without one (admin actions).
+    // TOTP step-up — the backend demands a 2FA code for this action. We show a
+    // single shared prompt (see lib/totpPrompt) and cache the code briefly, so a
+    // "save" that fans out into several parallel requests asks ONCE, not per
+    // request. Flows with their own inline TOTP field (wallet withdraw / trusted
+    // address) pre-send the header, so this only fires for flows without one.
     if (res.status === 403 && (data as { error?: string }).error === 'TOTP_REQUIRED' && typeof window !== 'undefined') {
-      const code = window.prompt('This action requires your 2FA code.\nEnter the 6-digit code from your authenticator app.\n(You won’t be asked again for a few minutes.)')
-      if (code && /^\d{6}$/.test(code.trim())) {
-        headers['X-TOTP-Code'] = code.trim()
+      let code = cachedTotpCode()
+      if (!code) {
+        const entered = await promptForTotp()
+        const trimmed = entered?.trim()
+        if (trimmed && /^\d{6}$/.test(trimmed)) {
+          code = trimmed
+          setCachedTotpCode(trimmed)
+        }
+      }
+      if (code) {
+        headers['X-TOTP-Code'] = code
         const retryController = new AbortController()
         const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
         try {
           const retryRes = await fetch(url, { ...options, method, headers, credentials: 'include', signal: retryController.signal })
           const retryData = await retryRes.json()
           if (!retryRes.ok) {
+            // A wrong / expired code — drop the cache so the next attempt re-prompts.
+            if ((retryData as { error?: string }).error === 'TOTP_REQUIRED' || (retryData as { error?: string }).error === 'INVALID_TOTP') {
+              clearCachedTotpCode()
+            }
             throw new ApiError(
               (retryData as { error?: string }).error ?? 'UNKNOWN_ERROR',
               (retryData as { message?: string }).message ?? 'An error occurred',
