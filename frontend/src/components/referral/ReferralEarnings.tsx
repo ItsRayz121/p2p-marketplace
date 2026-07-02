@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import { CopyButton } from '@/components/ui/CopyButton'
-import { Gift, Trash2, Link2, ChevronDown, Send, Globe } from 'lucide-react'
+import { Gift, Trash2, Link2, ChevronDown, Send, Globe, UserPlus } from 'lucide-react'
 
 // The single earnings + links hub for the Referral page. Shows live (USDT) gas referral
 // earnings, the user's custom referral links (open to everyone — standard friend-discount
@@ -465,7 +465,10 @@ export function ReferralEarnings() {
             className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-alt transition-colors"
             aria-expanded={showWasReferred}
           >
-            <span className="text-sm font-bold text-text-primary">Were you referred?</span>
+            <span className="flex items-center gap-2 text-sm font-bold text-text-primary">
+              <UserPlus size={16} className="text-primary" />
+              Were you referred?
+            </span>
             <ChevronDown size={18} className={`text-text-muted transition-transform ${showWasReferred ? 'rotate-180' : ''}`} />
           </button>
           {showWasReferred && (
