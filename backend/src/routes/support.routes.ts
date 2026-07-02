@@ -6,6 +6,7 @@ import { Errors } from '../lib/errors'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { sseEmit } from '../lib/sse'
 import { notify } from '../lib/notify'
+import { mergeDuplicateSupportConversations } from '../services/supportMaintenance.service'
 
 // Push a support-chat SSE event to every connected admin / super-admin so the
 // admin inbox updates instantly when a user sends a message.
@@ -328,6 +329,17 @@ export async function supportRoutes(app: FastifyInstance) {
         success: true,
         data: { id: message.id, sender: 'admin', body: message.body, createdAt: message.createdAt },
       })
+    },
+  )
+
+  // POST /admin/support/merge-conversations — one-off maintenance: collapse each
+  // user's duplicate conversations into one (runs in-cluster; no CLI needed).
+  app.post(
+    '/admin/support/merge-conversations',
+    { preHandler: [authenticate, requireRole('super_admin')] },
+    async (_req, reply) => {
+      const result = await mergeDuplicateSupportConversations()
+      return reply.send({ success: true, data: result })
     },
   )
 

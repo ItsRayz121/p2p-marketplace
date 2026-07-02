@@ -2,6 +2,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiRequest } from '@/lib/api'
 import { fmtDateTime, fmtTime } from '@/lib/fmt'
+import { useAuth } from '@/hooks/useAuth'
+import { toast } from '@/lib/toast'
+import { Button } from '@/components/ui/Button'
 import { buildChatTimeline } from '@/lib/supportChat'
 import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { usePolling } from '@/hooks/usePolling'
@@ -43,7 +46,23 @@ export default function AdminSupportPage() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [closing, setClosing] = useState(false)
+  const [merging, setMerging] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { user } = useAuth()
+
+  async function mergeConversations() {
+    if (!window.confirm('Merge every user’s duplicate support conversations into one? This is safe and idempotent.')) return
+    setMerging(true)
+    try {
+      const res = await apiRequest<{ usersMerged: number; rowsDeleted: number }>('/admin/support/merge-conversations', { method: 'POST' })
+      toast.success(`Done — ${res.usersMerged} user(s) consolidated, ${res.rowsDeleted} duplicate row(s) removed.`)
+      await fetchConversations()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Merge failed')
+    } finally {
+      setMerging(false)
+    }
+  }
 
   const fetchConversations = useCallback(async () => {
     try {
@@ -121,9 +140,16 @@ export default function AdminSupportPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-black text-text-primary">Support Chat</h1>
-        <p className="text-sm text-text-muted">Reply to users live. New messages appear automatically.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-black text-text-primary">Support Chat</h1>
+          <p className="text-sm text-text-muted">Reply to users live. New messages appear automatically.</p>
+        </div>
+        {user?.role === 'super_admin' && (
+          <Button size="sm" variant="secondary" onClick={mergeConversations} loading={merging} className="flex-shrink-0">
+            Merge duplicates
+          </Button>
+        )}
       </div>
 
       <div className="grid md:grid-cols-[20rem_1fr] gap-4 h-[calc(100vh-12rem)]">
