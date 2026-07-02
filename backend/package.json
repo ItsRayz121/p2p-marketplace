@@ -19,6 +19,7 @@
     "moralis:backfill": "prisma generate && tsx src/scripts/moralisBackfill.ts",
     "stats:backfill": "tsx src/scripts/backfillTradeStats.ts",
     "streaks:backfill": "tsx src/scripts/backfillTradeStreaks.ts",
+    "support:merge-conversations": "tsx src/scripts/mergeSupportConversations.ts",
     "referral:unify-backfill": "tsx src/scripts/unifyReferrals.ts",
     "referral:enable": "tsx src/scripts/enableReferralProgram.ts",
     "users:backfill-country": "tsx src/scripts/backfillUserCountry.ts",

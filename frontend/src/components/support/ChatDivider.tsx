@@ -1,6 +1,22 @@
 import { fmtDate, fmtTime } from '@/lib/fmt'
+import { SUPPORT_RATINGS } from '@/lib/supportChat'
 
 type DividerKind = 'day' | 'session' | 'closed'
+
+/**
+ * A centered chip for a satisfaction rating (sender="system" message). Shown in
+ * both the user widget and the admin inbox so support quality is visible inline.
+ */
+export function SupportRatingChip({ rating, at }: { rating: number | null | undefined; at: string }) {
+  const r = SUPPORT_RATINGS.find((x) => x.score === rating)
+  return (
+    <div className="flex items-center justify-center my-2">
+      <span className="px-3 py-1 rounded-full bg-canvas border border-border text-[11px] font-medium text-text-muted">
+        {r ? `${r.emoji} Rated “${r.label}”` : 'Rated support'} · {fmtTime(at)}
+      </span>
+    </div>
+  )
+}
 
 /**
  * A centered separator between messages that marks a session boundary in the

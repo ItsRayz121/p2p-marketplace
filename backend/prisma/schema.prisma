@@ -1191,9 +1191,10 @@ model SupportMessage {
   id             String              @id @default(cuid())
   conversationId String
   conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         String              // "user" | "admin"
+  sender         String              // "user" | "admin" | "system"
   senderId       String?
   body           String
+  rating         Int?                // 1=bad 2=okay 3=great — only on sender="system" satisfaction messages
   createdAt      DateTime            @default(now())
 
   @@index([conversationId, createdAt])

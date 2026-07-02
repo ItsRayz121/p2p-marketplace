@@ -14,8 +14,9 @@ export function openSupportChat(): void {
 
 export interface SupportMessage {
   id: string
-  sender: 'user' | 'admin'
+  sender: 'user' | 'admin' | 'system'
   body: string
+  rating?: number | null
   createdAt: string
 }
 
@@ -23,6 +24,13 @@ export interface SupportChatState {
   conversation: { id: string; status: string; unreadByUser: boolean; lastMessageAt: string } | null
   messages: SupportMessage[]
 }
+
+// Satisfaction rating display: 1=bad, 2=okay, 3=great.
+export const SUPPORT_RATINGS: { score: number; emoji: string; label: string }[] = [
+  { score: 1, emoji: '😞', label: 'Bad' },
+  { score: 2, emoji: '😐', label: 'Okay' },
+  { score: 3, emoji: '😊', label: 'Great' },
+]
 
 // Must match SUPPORT_IDLE_CLOSE_MINUTES in the backend idle-close job so the
 // visible session dividers line up with the real backend auto-close.
@@ -53,7 +61,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
  * The whole history stays in one continuous thread — dividers just distinguish
  * each chat by date/time.
  */
-export function buildChatTimeline<M extends { id: string; createdAt: string }>(
+export function buildChatTimeline<M extends { id: string; createdAt: string; sender?: string }>(
   messages: M[],
   opts?: { status?: string; idleMinutes?: number },
 ): ChatTimelineItem<M>[] {
@@ -62,6 +70,13 @@ export function buildChatTimeline<M extends { id: string; createdAt: string }>(
   let prev: Date | null = null
 
   for (const m of messages) {
+    // System messages (satisfaction ratings) render inline but never start a new
+    // session or day — they close one. Keep them out of the gap/day math.
+    if (m.sender === 'system') {
+      items.push({ kind: 'message', msg: m, key: m.id })
+      continue
+    }
+
     const t = new Date(m.createdAt)
     const valid = !isNaN(t.getTime())
 
@@ -98,4 +113,9 @@ export const supportChatApi = {
       body: JSON.stringify({ body }),
     }),
   markRead: () => apiRequest<unknown>('/support/chat/read', { method: 'POST' }),
+  rate: (score: number) =>
+    apiRequest<unknown>('/support/chat/rate', {
+      method: 'POST',
+      body: JSON.stringify({ score }),
+    }),
 }

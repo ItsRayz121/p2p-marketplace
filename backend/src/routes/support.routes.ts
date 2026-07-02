@@ -27,6 +27,12 @@ const sendSchema = z.object({
   body: z.string().trim().min(1).max(MAX_BODY),
 })
 
+const rateSchema = z.object({
+  score: z.number().int().min(1).max(3), // 1=bad 2=okay 3=great
+})
+
+const RATING_LABELS: Record<number, string> = { 1: 'Rated support 😞 Bad', 2: 'Rated support 😐 Okay', 3: 'Rated support 😊 Great' }
+
 // Display name priority: fullName > merchant business name > username > email prefix
 function displayName(u: { fullName: string | null; username: string | null; email: string }): string {
   if (u.fullName?.trim()) return u.fullName.trim()
@@ -63,6 +69,7 @@ export async function supportRoutes(app: FastifyInstance) {
           id: m.id,
           sender: m.sender,
           body: m.body,
+          rating: m.rating,
           createdAt: m.createdAt,
         })),
       },
@@ -74,8 +81,12 @@ export async function supportRoutes(app: FastifyInstance) {
     const userId = req.user!.id
     const { body } = sendSchema.parse(req.body)
 
+    // One conversation box per user, forever: reuse the user's most recent
+    // conversation regardless of status. A closed conversation is reopened below
+    // (status:'open'), so a returning user continues in the SAME thread — each
+    // visit is separated by a session divider, not a new inbox row.
     let conversation = await db.supportConversation.findFirst({
-      where: { userId, status: 'open' },
+      where: { userId },
       orderBy: { createdAt: 'desc' },
     })
     if (!conversation) {
@@ -129,6 +140,49 @@ export async function supportRoutes(app: FastifyInstance) {
       data: { unreadByUser: false },
     })
     return reply.send({ success: true })
+  })
+
+  // POST /support/chat/rate — user rates the just-closed session (😞😐😊)
+  app.post('/support/chat/rate', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { score } = rateSchema.parse(req.body)
+
+    const conversation = await db.supportConversation.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    })
+    // Only a finished (closed) session can be rated, and only once — if the most
+    // recent message is already a system rating, the current session is rated.
+    if (!conversation || conversation.status !== 'closed') {
+      throw Errors.VALIDATION_ERROR('No closed conversation to rate')
+    }
+    if (conversation.messages[0]?.sender === 'system') {
+      return reply.send({ success: true }) // idempotent: already rated
+    }
+
+    const message = await db.supportMessage.create({
+      data: {
+        conversationId: conversation.id,
+        sender: 'system',
+        senderId: userId,
+        rating: score,
+        body: RATING_LABELS[score] ?? 'Rated support',
+      },
+    })
+    // Deliberately does NOT bump lastMessageAt or reopen — a rating ends a
+    // session, it doesn't start a new one.
+
+    // Let admins see fresh feedback appear live in an open thread.
+    void emitToAdmins({
+      type: 'support_message',
+      payload: { scope: 'admin', conversationId: conversation.id, sender: 'system' },
+    })
+
+    return reply.send({
+      success: true,
+      data: { id: message.id, sender: 'system', rating: score, body: message.body, createdAt: message.createdAt },
+    })
   })
 
   // ─── ADMIN ENDPOINTS ─────────────────────────────────────────────────────
@@ -199,6 +253,7 @@ export async function supportRoutes(app: FastifyInstance) {
             id: m.id,
             sender: m.sender,
             body: m.body,
+            rating: m.rating,
             createdAt: m.createdAt,
           })),
         },
