@@ -69,11 +69,18 @@ export function buildChatTimeline<M extends { id: string; createdAt: string; sen
   const items: ChatTimelineItem<M>[] = []
   let prev: Date | null = null
 
+  // System messages (satisfaction ratings) render inline but never start a new
+  // session/day — and a rating happens AFTER a session closes, so it must render
+  // below its "Chat closed" marker. We buffer them and flush after the marker.
+  let pendingSystem: M[] = []
+  const flushSystem = () => {
+    for (const s of pendingSystem) items.push({ kind: 'message', msg: s, key: s.id })
+    pendingSystem = []
+  }
+
   for (const m of messages) {
-    // System messages (satisfaction ratings) render inline but never start a new
-    // session or day — they close one. Keep them out of the gap/day math.
     if (m.sender === 'system') {
-      items.push({ kind: 'message', msg: m, key: m.id })
+      pendingSystem.push(m)
       continue
     }
 
@@ -82,25 +89,32 @@ export function buildChatTimeline<M extends { id: string; createdAt: string; sen
 
     if (!prev) {
       if (valid) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
+      flushSystem()
     } else if (valid) {
       const gap = t.getTime() - prev.getTime()
       const sameDay = isSameLocalDay(prev, t)
       if (gap > idleMs) {
         items.push({ kind: 'closed', at: prev.toISOString(), key: `closed-${m.id}` })
+        flushSystem() // the just-closed session's rating renders after its marker
         if (!sameDay) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
         items.push({ kind: 'session', at: m.createdAt, key: `session-${m.id}` })
-      } else if (!sameDay) {
-        items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
+      } else {
+        flushSystem()
+        if (!sameDay) items.push({ kind: 'day', at: m.createdAt, key: `day-${m.id}` })
       }
+    } else {
+      flushSystem()
     }
 
     items.push({ kind: 'message', msg: m, key: m.id })
     if (valid) prev = t
   }
 
+  // Close the final session (if closed) BEFORE flushing its trailing rating.
   if (opts?.status === 'closed' && prev) {
     items.push({ kind: 'closed', at: prev.toISOString(), key: 'closed-final' })
   }
+  flushSystem()
 
   return items
 }

@@ -49,7 +49,9 @@ export async function supportRoutes(app: FastifyInstance) {
     const conversation = await db.supportConversation.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      include: { messages: { orderBy: { createdAt: 'asc' }, take: 200 } },
+      // Most recent 200 — the box is now permanent per user, so take the newest
+      // (desc) and flip back to chronological for rendering, not the oldest 200.
+      include: { messages: { orderBy: { createdAt: 'desc' }, take: 200 } },
     })
 
     if (!conversation) {
@@ -65,7 +67,7 @@ export async function supportRoutes(app: FastifyInstance) {
           unreadByUser: conversation.unreadByUser,
           lastMessageAt: conversation.lastMessageAt,
         },
-        messages: conversation.messages.map((m) => ({
+        messages: [...conversation.messages].reverse().map((m) => ({
           id: m.id,
           sender: m.sender,
           body: m.body,
@@ -229,7 +231,9 @@ export async function supportRoutes(app: FastifyInstance) {
         where: { id },
         include: {
           user: { select: { id: true, fullName: true, username: true, email: true, avatarUrl: true } },
-          messages: { orderBy: { createdAt: 'asc' }, take: 500 },
+          // Most recent 500 (desc), flipped to chronological below — the box is
+          // permanent per user, so don't cap at the oldest 500.
+          messages: { orderBy: { createdAt: 'desc' }, take: 500 },
         },
       })
       if (!conversation) throw Errors.NOT_FOUND('Conversation')
@@ -249,7 +253,7 @@ export async function supportRoutes(app: FastifyInstance) {
             email: conversation.user.email,
             avatarUrl: conversation.user.avatarUrl,
           },
-          messages: conversation.messages.map((m) => ({
+          messages: [...conversation.messages].reverse().map((m) => ({
             id: m.id,
             sender: m.sender,
             body: m.body,
