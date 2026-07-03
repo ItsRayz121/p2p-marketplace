@@ -12,6 +12,7 @@ import { ClipboardList, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Input } from '@/components/ui/Input'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 
 interface AdminTrade {
   id: string
@@ -135,7 +136,7 @@ export default function TradesPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Trades</h1>
+        <h1 className="text-2xl font-bold text-text-primary">USDT Trades</h1>
         <p className="text-text-muted text-sm mt-0.5">{total.toLocaleString()} trades</p>
       </div>
 
@@ -240,7 +241,12 @@ export default function TradesPage() {
                     <td className="px-4 py-3" data-label="Seller">
                       <p className="text-text-primary">{t.seller?.username || t.sellerId.slice(0, 8)}</p>
                     </td>
-                    <td className="px-4 py-3 font-medium text-text-primary" data-label="Coin">{t.coin}</td>
+                    <td className="px-4 py-3" data-label="Coin">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                        <EntityLogo type="token" slug={t.coin} size="sm" />
+                        {t.coin}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 font-medium text-text-primary" data-label="Amount">{t.amount}</td>
                     <td className="px-4 py-3" data-label="Status">
                       <Badge variant={statusVariant(t.status)} size="sm">{tradeStatusLabel(t.status)}</Badge>
