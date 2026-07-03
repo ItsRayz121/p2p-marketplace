@@ -1328,6 +1328,7 @@ export interface AdminAllocation {
   username: string
   email: string
   points: number
+  level: string
   sharePct: number
   tokenAllocation: number | null
 }

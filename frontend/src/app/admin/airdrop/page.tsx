@@ -199,6 +199,7 @@ export default function AdminAirdropPage() {
               <thead className="text-left text-xs text-text-muted sticky top-0 bg-surface">
                 <tr>
                   <th className="py-2 pr-3">User</th>
+                  <th className="py-2 pr-3">Level</th>
                   <th className="py-2 pr-3 text-right">Points</th>
                   <th className="py-2 pr-3 text-right">Share %</th>
                   <th className="py-2 text-right">Token allocation</th>
@@ -208,6 +209,9 @@ export default function AdminAirdropPage() {
                 {alloc.rows.slice(0, 500).map((a) => (
                   <tr key={a.userId}>
                     <td className="py-1.5 pr-3 text-text-primary">{a.username}</td>
+                    <td className="py-1.5 pr-3">
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-surface-alt text-text-secondary">{a.level}</span>
+                    </td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{fmt(a.points)}</td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{a.sharePct.toFixed(4)}%</td>
                     <td className="py-1.5 text-right tabular-nums">{a.tokenAllocation != null ? fmt(a.tokenAllocation) : '—'}</td>

@@ -11,6 +11,15 @@
 import { db } from '../lib/prisma'
 import { Prisma } from '@prisma/client'
 import { AppError } from '../lib/errors'
+import { LEVEL_TIERS } from './airdrop.service'
+
+// Level name for a points balance, from the shared tier table (ordered high→low).
+// Season points ≈ cumulative lifetime points in the common single-season case, so
+// this gives an accurate leaderboard level without an extra per-user query.
+function levelNameForPoints(points: number): string {
+  for (const t of LEVEL_TIERS) if (points >= t.min) return t.name
+  return LEVEL_TIERS[LEVEL_TIERS.length - 1]?.name ?? 'Bronze'
+}
 
 export interface SeasonSummary {
   id: string
@@ -89,6 +98,7 @@ export interface Allocation {
   username: string
   email: string
   points: number
+  level: string
   sharePct: number
   tokenAllocation: number | null
 }
@@ -106,6 +116,7 @@ function toAllocation(userId: string, totalPointsForUser: number, seasonTotal: n
     username: u?.username ?? '(unknown)',
     email: u?.email ?? '',
     points: totalPointsForUser,
+    level: levelNameForPoints(totalPointsForUser),
     sharePct: Math.round(sharePct * 1e6) / 1e6,
     tokenAllocation: tokenAllocation != null ? Math.round(tokenAllocation * 1e8) / 1e8 : null,
   }
@@ -156,7 +167,7 @@ export async function exportAllocationsCsv(seasonId: string): Promise<string> {
   const { totalPoints } = await seasonTotals(seasonId)
   const pool = season.tokenPool ? Number(season.tokenPool) : null
 
-  const header = 'userId,username,email,points,sharePct,tokenAllocation'
+  const header = 'userId,username,email,points,level,sharePct,tokenAllocation'
   const escape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
   const lines = [header]
 
@@ -178,7 +189,7 @@ export async function exportAllocationsCsv(seasonId: string): Promise<string> {
     const uMap = new Map(users.map((u) => [u.id, u]))
     for (const b of batch) {
       const a = toAllocation(b.userId, Number(b.totalPoints), totalPoints, pool, uMap.get(b.userId))
-      lines.push([a.userId, escape(a.username), escape(a.email), a.points, a.sharePct, a.tokenAllocation ?? ''].join(','))
+      lines.push([a.userId, escape(a.username), escape(a.email), a.points, escape(a.level), a.sharePct, a.tokenAllocation ?? ''].join(','))
     }
     cursor = batch[batch.length - 1]!.id
     if (batch.length < BATCH) break
