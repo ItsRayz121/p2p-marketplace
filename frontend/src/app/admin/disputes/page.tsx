@@ -155,7 +155,7 @@ export default function DisputesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('open')
+  const [statusFilter, setStatusFilter] = useState('all')
 
   const [selected, setSelected] = useState<DisputeRecord | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -271,10 +271,10 @@ export default function DisputesPage() {
       {/* Filters */}
       <div className="bg-surface shadow-card p-4 rounded-xl border border-border admin-toolbar gap-2">
         {[
+          { value: 'all', label: 'All' },
           { value: 'open', label: 'Open' },
           { value: 'resolved', label: 'Resolved' },
           { value: 'escalated', label: 'Escalated' },
-          { value: 'all', label: 'All' },
         ].map((f) => (
           <button
             key={f.value}

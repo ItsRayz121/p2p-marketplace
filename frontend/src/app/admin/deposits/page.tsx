@@ -44,10 +44,10 @@ interface DepositsResponse {
 type StatusFilter = 'all' | 'detected' | 'credited' | 'rejected'
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
+  { value: 'all',      label: 'All' },
   { value: 'credited', label: 'Credited' },
   { value: 'detected', label: 'Pending' },
   { value: 'rejected', label: 'Rejected' },
-  { value: 'all',      label: 'All' },
 ]
 
 const statusVariant = (s: DepositStatus): 'default' | 'success' | 'warning' | 'danger' | 'outline' => {

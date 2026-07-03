@@ -27,7 +27,7 @@ export default function AppealsPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<StatusFilter>('pending')
+  const [status, setStatus] = useState<StatusFilter>('')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [searching, setSearching] = useState(false)

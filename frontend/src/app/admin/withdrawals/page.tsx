@@ -65,13 +65,13 @@ interface WithdrawalsResponse {
 type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved,sent,completed' | 'on_hold' | 'rejected,cancelled' | 'all'
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
+  { value: 'all',                          label: 'All' },
   { value: 'pending',                       label: 'Pending' },
   { value: 'first_approved',               label: '1st Approved' },
   { value: 'approved',                     label: 'Ready to Send' },
   { value: 'auto_approved,sent,completed', label: 'Completed' },
   { value: 'on_hold',                      label: 'On Hold' },
   { value: 'rejected,cancelled',           label: 'Rejected' },
-  { value: 'all',                          label: 'All' },
 ]
 
 const statusVariant = (s: WithdrawalStatus): 'default' | 'success' | 'warning' | 'danger' | 'outline' => {
