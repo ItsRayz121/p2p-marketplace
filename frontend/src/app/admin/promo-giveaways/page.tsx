@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { fmtDateTime } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -72,7 +73,15 @@ export default function AdminPromoGiveawaysPage() {
                       <Badge variant="default" size="sm">{g.createdByRole}</Badge>
                     </div>
                     <p className="text-xs text-text-muted mt-0.5">
-                      Code <span className="font-mono">{g.code}</span> · by {g.createdByName ?? '—'} · {g.entryCount} entered ·{' '}
+                      Code <span className="font-mono">{g.code}</span> · by{' '}
+                      {g.createdById ? (
+                        <Link href={`/admin/users/${g.createdById}`} className="text-primary hover:underline font-medium">
+                          {g.createdByName ?? 'user'}
+                        </Link>
+                      ) : (
+                        g.createdByName ?? '—'
+                      )}
+                      {' '}· {g.entryCount} entered ·{' '}
                       {g.rewardAll ? 'all win' : `${g.winnerCount} winners`} · {fmtDateTime(g.createdAt)}
                     </p>
                     <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">

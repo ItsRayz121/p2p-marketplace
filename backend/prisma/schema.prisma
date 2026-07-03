@@ -1164,6 +1164,11 @@ model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
   source    String?  // e.g. "blog", "blog:<slug>"
+  // Signup geo — best-effort, captured once at opt-in for email-marketing
+  // segmentation. Null for rows created before this was added, or when the
+  // client IP could not be geolocated.
+  country   String?
+  ipAddress String?
   confirmed Boolean  @default(false)
   createdAt DateTime @default(now())
 

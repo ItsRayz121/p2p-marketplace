@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { Modal } from '@/components/ui/Modal'
@@ -7,17 +7,34 @@ import { Modal } from '@/components/ui/Modal'
 interface TokenRequest {
   id: string; tokenName: string; tokenSymbol: string; description: string
   officialWebsite?: string; evidenceUrl?: string; status: string; adminNote?: string
-  createdAt: string; user: { id: string; username: string; email: string }
+  reviewedAt?: string; createdAt: string; user: { id: string; username: string; email: string }
 }
 
 const SETTLEMENT_TYPES = ['MANUAL', 'ON_CHAIN', 'HYBRID']
 const RISK_TIERS = ['low', 'medium', 'high', 'extreme']
+
+// Status filter tabs — "All" first + default so the admin sees the full history
+// (pending, approved, rejected), not just the actionable queue.
+const STATUS_TABS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+]
+
+const STATUS_BADGE: Record<string, string> = {
+  pending:  'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300',
+  approved: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+  rejected: 'bg-red-500/15 text-red-700 dark:text-red-300',
+}
+const statusBadgeClass = (s: string) => STATUS_BADGE[s] ?? 'bg-surface-alt text-text-secondary'
 
 export default function AdminTokenQueuePage() {
   const [requests, setRequests] = useState<TokenRequest[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
+  const [statusTab, setStatusTab] = useState('all')
   const [approveModal, setApproveModal] = useState<TokenRequest | null>(null)
   const [rejectModal, setRejectModal] = useState<TokenRequest | null>(null)
   const [rejectNote, setRejectNote] = useState('')
@@ -28,9 +45,9 @@ export default function AdminTokenQueuePage() {
     maxListingAmount: '', minTradeAmountPkr: '',
   })
 
-  const fetchQueue = async () => {
+  const fetchQueue = useCallback(async () => {
     try {
-      const res = await ctmApi.adminGetTokenQueue({ status: 'pending', page, limit: 20 })
+      const res = await ctmApi.adminGetTokenQueue({ status: statusTab, page, limit: 20 })
       const data = res as { requests: TokenRequest[]; total: number }
       setRequests(data.requests ?? [])
       setTotal(data.total ?? 0)
@@ -39,7 +56,11 @@ export default function AdminTokenQueuePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [statusTab, page])
+
+  // Immediate refetch when the tab or page changes (usePolling only refreshes on
+  // its interval, so without this a filter change would lag up to 30s).
+  useEffect(() => { void fetchQueue() }, [fetchQueue])
 
   usePolling(fetchQueue, 30000)
 
@@ -86,10 +107,29 @@ export default function AdminTokenQueuePage() {
         <h1 className="text-2xl font-bold text-text-primary">Token Request Queue ({total})</h1>
       </div>
 
+      {/* Status filter tabs */}
+      <div className="admin-toolbar gap-2">
+        {STATUS_TABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => { setStatusTab(t.value); setPage(1) }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+              statusTab === t.value
+                ? 'bg-primary text-white border-primary'
+                : 'bg-surface text-text-secondary border-border hover:bg-surface-alt'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : requests.length === 0 ? (
-        <div className="text-center py-16 text-text-muted">No pending token requests.</div>
+        <div className="text-center py-16 text-text-muted">
+          {statusTab === 'all' ? 'No token requests yet.' : `No ${statusTab} token requests.`}
+        </div>
       ) : (
         <div className="space-y-4">
           {requests.map((r) => (
@@ -98,20 +138,28 @@ export default function AdminTokenQueuePage() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-bold text-text-primary">{r.tokenName} ({r.tokenSymbol})</h3>
-                    <span className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 px-2 py-0.5 rounded-full">pending</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${statusBadgeClass(r.status)}`}>{r.status}</span>
                   </div>
                   <p className="text-sm text-text-muted mb-2">{r.description}</p>
                   <div className="flex flex-wrap gap-3 text-xs text-text-muted">
                     <span>By: {r.user.username} ({r.user.email})</span>
                     {r.officialWebsite && <a href={r.officialWebsite} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Website</a>}
                     {r.evidenceUrl && <a href={r.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Evidence</a>}
-                    <span>{new Date(r.createdAt).toLocaleDateString()}</span>
+                    <span>Requested {new Date(r.createdAt).toLocaleDateString()}</span>
+                    {r.reviewedAt && <span>Reviewed {new Date(r.reviewedAt).toLocaleDateString()}</span>}
                   </div>
+                  {r.status === 'rejected' && r.adminNote && (
+                    <p className="mt-2 text-xs text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                      <span className="font-semibold">Rejection reason:</span> {r.adminNote}
+                    </p>
+                  )}
                 </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => { setRejectModal(r); setRejectNote('') }} className="border border-red-500/30 text-red-600 dark:text-red-400 text-sm px-3 py-1.5 rounded-lg hover:bg-red-500/10">Reject</button>
-                  <button onClick={() => openApprove(r)} className="bg-green-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-green-700">Approve & Create Token</button>
-                </div>
+                {r.status === 'pending' && (
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => { setRejectModal(r); setRejectNote('') }} className="border border-red-500/30 text-red-600 dark:text-red-400 text-sm px-3 py-1.5 rounded-lg hover:bg-red-500/10">Reject</button>
+                    <button onClick={() => openApprove(r)} className="bg-green-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-green-700">Approve & Create Token</button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

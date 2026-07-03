@@ -93,11 +93,14 @@ export async function ctmTokenRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: result })
   })
 
-  // GET /ctm/tokens/admin/queue — pending token requests
+  // GET /ctm/tokens/admin/queue — token requests (default pending; 'all' = every status)
   app.get('/ctm/tokens/admin/queue', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
     const q = req.query as Record<string, string>
+    // 'all' (or empty) removes the status filter so the admin can review the full
+    // history — pending, approved, and rejected requests alike.
+    const status = q.status === 'all' ? undefined : (q.status ?? 'pending')
     const result = await listTokenRequests({
-      status: q.status ?? 'pending',
+      status,
       page: q.page ? parseInt(q.page, 10) : 1,
       limit: q.limit ? parseInt(q.limit, 10) : 20,
     })

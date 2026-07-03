@@ -119,6 +119,7 @@ export default function AdminSubscribersPage() {
                 <tr className="border-b border-border bg-surface-alt/50 text-left text-xs font-semibold uppercase tracking-wide text-text-muted">
                   <th className="px-4 py-3">Email</th>
                   <th className="hidden px-4 py-3 sm:table-cell">Source</th>
+                  <th className="hidden px-4 py-3 sm:table-cell">Country</th>
                   <th className="px-4 py-3 text-right">Subscribed</th>
                 </tr>
               </thead>
@@ -129,6 +130,7 @@ export default function AdminSubscribersPage() {
                       <a href={`mailto:${r.email}`} className="hover:text-primary hover:underline">{r.email}</a>
                     </td>
                     <td className="hidden px-4 py-3 text-text-muted sm:table-cell">{r.source ?? '—'}</td>
+                    <td className="hidden px-4 py-3 text-text-muted sm:table-cell">{r.country ?? '—'}</td>
                     <td className="px-4 py-3 text-right text-text-muted">{fmtDate(r.createdAt)}</td>
                   </tr>
                 ))}

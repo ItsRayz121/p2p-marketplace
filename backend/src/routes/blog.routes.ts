@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
+import { resolveClientIp } from '../lib/requestContext'
+import { logger } from '../lib/logger'
 import {
   createPost, updatePost, deletePost, listAdmin, getAdminById,
   listPublic, getPublicBySlug, recordView, subscribeNewsletter,
@@ -9,6 +11,33 @@ import {
 } from '../services/blog.service'
 
 const adminGuard = [authenticate, requireRole('admin', 'super_admin')]
+
+// Private / loopback ranges we never bother geolocating.
+const PRIVATE_IP = /^(127\.|10\.|192\.168\.|169\.254\.|::1|fc00:|fe80:|172\.(1[6-9]|2\d|3[01])\.)/i
+
+/**
+ * Best-effort country for a newsletter signup. Prefers Cloudflare's zero-latency
+ * `cf-ipcountry` header; otherwise does one short IP-geolocation lookup. Always
+ * resolves (never throws) — geo is a nice-to-have, not a gate on subscribing.
+ */
+async function resolveSignupCountry(headers: Record<string, unknown>, ip?: string): Promise<string | undefined> {
+  const cf = headers['cf-ipcountry']
+  if (typeof cf === 'string' && cf.trim() && !['XX', 'T1'].includes(cf.trim().toUpperCase())) {
+    return cf.trim().toUpperCase()
+  }
+  if (!ip || PRIVATE_IP.test(ip)) return undefined
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 1500)
+    const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/country_name/`, { signal: ctrl.signal })
+    clearTimeout(timer)
+    if (!res.ok) return undefined
+    const name = (await res.text()).trim()
+    return name && name.length > 0 && name.length <= 60 && !name.startsWith('{') ? name : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const upsertSchema = z.object({
   title: z.string().min(1).max(200),
@@ -64,7 +93,14 @@ export async function blogRoutes(app: FastifyInstance) {
       .object({ email: z.string().min(3).max(200), source: z.string().max(120).optional() })
       .safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Enter a valid email address', 400)
-    await subscribeNewsletter(parsed.data.email, parsed.data.source)
+    const ip = resolveClientIp(req.headers as Record<string, unknown>, req.ip)
+    let country: string | undefined
+    try {
+      country = await resolveSignupCountry(req.headers as Record<string, unknown>, ip)
+    } catch (e) {
+      logger.warn({ err: e }, 'newsletter geo lookup failed')
+    }
+    await subscribeNewsletter(parsed.data.email, parsed.data.source, { country, ipAddress: ip })
     return reply.send({ success: true })
   })
 
@@ -94,8 +130,8 @@ export async function blogRoutes(app: FastifyInstance) {
     const rows = await listAllSubscribers()
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
     const csv = [
-      'email,source,subscribed_at',
-      ...rows.map((r) => [esc(r.email), esc(r.source ?? ''), esc(r.createdAt.toISOString())].join(',')),
+      'email,source,country,subscribed_at',
+      ...rows.map((r) => [esc(r.email), esc(r.source ?? ''), esc(r.country ?? ''), esc(r.createdAt.toISOString())].join(',')),
     ].join('\n')
     return reply
       .header('Content-Type', 'text/csv; charset=utf-8')

@@ -149,7 +149,7 @@ export async function submitTokenRequest(userId: string, data: {
   return db.ctmTokenRequest.create({ data: { userId, ...data } })
 }
 
-export async function listTokenRequests(filters: { status?: string; page?: number; limit?: number } = {}) {
+export async function listTokenRequests(filters: { status?: string | undefined; page?: number | undefined; limit?: number | undefined } = {}) {
   const { status, page = 1, limit = 20 } = filters
   const where = status ? { status } : {}
   const skip = (page - 1) * limit

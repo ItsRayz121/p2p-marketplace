@@ -2761,6 +2761,8 @@ export interface NewsletterSubscriber {
   id: string
   email: string
   source: string | null
+  country: string | null
+  ipAddress: string | null
   confirmed: boolean
   createdAt: string
 }

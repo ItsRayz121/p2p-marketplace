@@ -273,14 +273,19 @@ export async function recordView(slug: string): Promise<void> {
  * an existing email is a silent success (no duplicate, no error leaked to the
  * form). Returns nothing useful — the caller just needs to know it didn't throw.
  */
-export async function subscribeNewsletter(emailRaw: string, source?: string): Promise<void> {
+export async function subscribeNewsletter(
+  emailRaw: string,
+  source?: string,
+  meta?: { country?: string | undefined; ipAddress?: string | undefined },
+): Promise<void> {
   const email = emailRaw.trim().toLowerCase()
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) {
     throw new AppError('VALIDATION_ERROR', 'Enter a valid email address', 400)
   }
   await db.newsletterSubscriber.upsert({
     where: { email },
-    create: { email, source: source ?? 'blog' },
+    // Geo is captured once, at first opt-in (best-effort — may be null).
+    create: { email, source: source ?? 'blog', country: meta?.country ?? null, ipAddress: meta?.ipAddress ?? null },
     update: {}, // already subscribed → no-op
   })
 }
@@ -305,11 +310,11 @@ export async function listSubscribers(opts: { page?: number | undefined; pageSiz
   return { subscribers, total, page, pageSize }
 }
 
-/** Admin: every subscriber email + signup date, for CSV export (no paging). */
+/** Admin: every subscriber email + signup date + geo, for CSV export (no paging). */
 export async function listAllSubscribers() {
   return db.newsletterSubscriber.findMany({
     orderBy: { createdAt: 'desc' },
-    select: { email: true, source: true, createdAt: true },
+    select: { email: true, source: true, country: true, createdAt: true },
   })
 }
 
