@@ -197,6 +197,11 @@ export default function AdminLogosPage() {
   const [searchCandidates, setSearchCandidates] = useState<LogoCandidate[]>([])
   const [hasSearched,      setHasSearched]      = useState(false)
 
+  // Collapsible panels — both start collapsed so the Registry table is the focus;
+  // editing a row auto-expands the Add/Replace form (see startEdit).
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [formOpen,   setFormOpen]   = useState(false)
+
   const { upload, uploading, error: uploadError } = useAdminLogoUpload()
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -223,7 +228,9 @@ export default function AdminLogosPage() {
     setFormSlug(entry.slug)
     setFormUrl(entry.logoUrl)
     setSaveMsg(null)
-    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setFormOpen(true)
+    // Let the panel expand before scrolling to it.
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
   function cancelEdit() {
@@ -338,13 +345,21 @@ export default function AdminLogosPage() {
 
       {/* ── Search logos from web ───────────────────────────────────────────── */}
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-5 space-y-4">
-        <div>
-          <h2 className="font-semibold text-blue-900 dark:text-blue-200">Search Logos from Web</h2>
-          <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
-            Type a brand name or domain — we try multiple sources and show what's available. Click "Use this" to fill the form below.
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => setSearchOpen((v) => !v)}
+          className="w-full flex items-start justify-between gap-3 text-left"
+        >
+          <div>
+            <h2 className="font-semibold text-blue-900 dark:text-blue-200">Search Logos from Web</h2>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
+              Type a brand name or domain — we try multiple sources and show what&apos;s available. Click &quot;Use this&quot; to fill the form below.
+            </p>
+          </div>
+          <span className={`text-blue-700 dark:text-blue-300 shrink-0 transition-transform ${searchOpen ? 'rotate-180' : ''}`}>▾</span>
+        </button>
 
+        {searchOpen && (<>
         <div className="flex gap-2">
           <input
             type="text"
@@ -383,6 +398,7 @@ export default function AdminLogosPage() {
             </p>
           </div>
         )}
+        </>)}
       </div>
 
       {/* ── Add / Edit form ─────────────────────────────────────────────────── */}
@@ -395,27 +411,35 @@ export default function AdminLogosPage() {
         }`}
       >
         {/* Mode header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-text-primary">
-              {isEditing ? 'Edit Logo' : 'Add / Replace Logo'}
-            </h2>
-            {isEditing && editingEntry && (
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-                Editing: <span className="font-mono font-semibold">{editingEntry.type} / {editingEntry.slug}</span>
-              </p>
-            )}
-          </div>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setFormOpen((v) => !v)}
+            className="flex items-start gap-2 text-left min-w-0"
+          >
+            <span className={`text-text-muted mt-0.5 shrink-0 transition-transform ${formOpen ? 'rotate-180' : ''}`}>▾</span>
+            <span className="min-w-0">
+              <span className="block font-semibold text-text-primary">
+                {isEditing ? 'Edit Logo' : 'Add / Replace Logo'}
+              </span>
+              {isEditing && editingEntry && (
+                <span className="block text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                  Editing: <span className="font-mono font-semibold">{editingEntry.type} / {editingEntry.slug}</span>
+                </span>
+              )}
+            </span>
+          </button>
           {isEditing && (
             <button
               onClick={cancelEdit}
-              className="text-xs text-text-muted hover:text-text-primary border border-border rounded-lg px-3 py-1.5 transition-colors"
+              className="text-xs text-text-muted hover:text-text-primary border border-border rounded-lg px-3 py-1.5 transition-colors shrink-0"
             >
               Cancel edit
             </button>
           )}
         </div>
 
+        {formOpen && (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1">Entity type</label>
@@ -506,6 +530,7 @@ export default function AdminLogosPage() {
             </button>
           )}
         </div>
+        </>)}
       </div>
 
       {/* ── Registry table ─────────────────────────────────────────────────── */}

@@ -1959,49 +1959,52 @@ export default function GasChainsAdminPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-surface border-b border-border">
                     <tr>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Chain</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Slug</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Backend</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Default Fee</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Default Limits</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Tokens</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Readiness</th>
-                      <th className="px-4 py-3 text-right font-medium text-text-muted">Actions</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Chain</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Slug</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Backend</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Default Fee</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Default Limits</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Tokens</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Status</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Readiness</th>
+                      <th className="px-3 py-2 text-right font-medium text-text-muted">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {activeChains.map((c) => (
-                      <tr key={c.id} className="hover:bg-surface/50 transition-colors">
-                        <td className="px-4 py-3">
+                      <tr key={c.id} className="align-middle hover:bg-surface/50 transition-colors">
+                        <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <EntityLogo type="chain" slug={c.slug} logoUrl={c.logoUrl} size="sm" />
                             <span className="font-medium text-text-primary">{c.name}</span>
                             <span className="text-text-muted text-xs">({c.symbol})</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <code className="text-xs bg-surface px-1.5 py-0.5 rounded">{c.slug}</code>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           {c.backendChainId
                             ? <Badge variant="success" size="sm">{c.backendChainId}</Badge>
                             : <Badge variant="default" size="sm">Not Set</Badge>}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <div className="text-sm font-semibold text-text-primary">${c.platformFeeUsdt ?? 0.25} USDT</div>
                           {c.alertThresholdUsd != null && (
                             <div className="text-xs text-text-muted">Alert ${c.alertThresholdUsd} / Pause ${c.pauseThresholdUsd ?? '—'}</div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-xs text-text-muted">
-                          {c.defaultMinAmount != null && <div>Min: {c.defaultMinAmount}</div>}
-                          {c.defaultMaxUsdValue != null && <div>Max: ${c.defaultMaxUsdValue}</div>}
-                          {c.defaultMinAmount == null && c.defaultMaxUsdValue == null && <span className="text-text-muted/50">—</span>}
+                        <td className="px-3 py-2 text-xs text-text-muted">
+                          {(c.defaultMinAmount != null || c.defaultMaxUsdValue != null)
+                            ? [
+                                c.defaultMinAmount != null ? `Min: ${c.defaultMinAmount}` : null,
+                                c.defaultMaxUsdValue != null ? `Max: $${c.defaultMaxUsdValue}` : null,
+                              ].filter(Boolean).join(' · ')
+                            : <span className="text-text-muted/50">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-text-muted">{c._count?.tokens ?? c.tokens?.length ?? 0}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col gap-1">
+                        <td className="px-3 py-2 text-text-muted">{c._count?.tokens ?? c.tokens?.length ?? 0}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-1">
                             <Badge variant={c.isActive ? 'success' : 'default'} size="sm">
                               {c.isActive ? 'Active' : 'Inactive'}
                             </Badge>
@@ -2010,7 +2013,7 @@ export default function GasChainsAdminPage() {
                             </Badge>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           {c.readinessState === 'stable'
                             ? <Badge variant="success" size="sm">Stable</Badge>
                             : c.readinessState === 'beta'
@@ -2020,8 +2023,8 @@ export default function GasChainsAdminPage() {
                             : <Badge variant="default" size="sm">Inactive</Badge>
                           }
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
                             <Button size="sm" variant="ghost" onClick={() => openEditChain(c)}>Edit</Button>
                             <Button size="sm" variant="ghost" onClick={() => { setTab('tokens'); openAddToken(c.id) }}>
                               + Token
@@ -2106,41 +2109,41 @@ export default function GasChainsAdminPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-surface border-b border-border">
                     <tr>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Token</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Chain</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Type</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Platform Fee</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Min Amount</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Max USD</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Presets</th>
-                      <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
-                      <th className="px-4 py-3 text-right font-medium text-text-muted">Actions</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Token</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Chain</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Type</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Platform Fee</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Min Amount</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Max USD</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Presets</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-muted">Status</th>
+                      <th className="px-3 py-2 text-right font-medium text-text-muted">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {activeTokens.map((t) => (
-                      <tr key={t.id} className="hover:bg-surface/50 transition-colors">
-                        <td className="px-4 py-3">
+                      <tr key={t.id} className="align-middle hover:bg-surface/50 transition-colors">
+                        <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <EntityLogo type="token" slug={t.symbol} logoUrl={t.logoUrl} size="sm" />
                             <span className="font-medium text-text-primary">{t.name}</span>
                             <span className="text-text-muted text-xs">({t.symbol})</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <code className="text-xs bg-surface px-1.5 py-0.5 rounded">{t.chain?.slug}</code>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <Badge variant={t.tokenType === 'native' ? 'success' : 'default'} size="sm">
                             {t.tokenType}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3 text-xs text-text-muted">{getEffectiveFee(t)}</td>
-                        <td className="px-4 py-3 text-xs text-text-muted">{getEffectiveMin(t)}</td>
-                        <td className="px-4 py-3 text-xs text-text-muted">{getEffectiveMax(t)}</td>
-                        <td className="px-4 py-3 text-text-muted text-xs">{presetDisplay(t.presetAmounts)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col gap-1">
+                        <td className="px-3 py-2 text-xs text-text-muted">{getEffectiveFee(t)}</td>
+                        <td className="px-3 py-2 text-xs text-text-muted">{getEffectiveMin(t)}</td>
+                        <td className="px-3 py-2 text-xs text-text-muted">{getEffectiveMax(t)}</td>
+                        <td className="px-3 py-2 text-text-muted text-xs">{presetDisplay(t.presetAmounts)}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-1">
                             <Badge variant={t.isActive ? 'success' : 'default'} size="sm">
                               {t.isActive ? 'Active' : 'Inactive'}
                             </Badge>
@@ -2154,8 +2157,8 @@ export default function GasChainsAdminPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
                             <Button size="sm" variant="ghost" onClick={() => openEditToken(t)}>Edit</Button>
                             <Button
                               size="sm"
