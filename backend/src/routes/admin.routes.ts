@@ -4232,6 +4232,13 @@ export async function adminRoutes(app: FastifyInstance) {
       const aptUsdPrice = aptUsdRaw
         ? (() => { try { return (JSON.parse(aptUsdRaw) as { usdPrice?: number }).usdPrice ?? 0 } catch { return 0 } })()
         : 0
+      // Explicit health status so a failed read renders as "Balance Unknown"
+      // (never a misleading 0): null balance => unavailable; below the APT gas
+      // floor => low; otherwise healthy.
+      const aptStatus: 'healthy' | 'low' | 'unavailable' =
+        aptBalance === null ? 'unavailable'
+        : aptBalance < env.GAS_APTOS_MIN_APT ? 'low'
+        : 'healthy'
       const aptEntry = {
         chain: 'APT' as string,
         address: aptAddr,
@@ -4239,9 +4246,11 @@ export async function adminRoutes(app: FastifyInstance) {
         balance: aptBalance as number | null,
         balanceUsd: (aptBalance !== null && aptUsdPrice > 0 ? aptBalance * aptUsdPrice : null) as number | null,
         nativeSymbol: 'APT',
+        status: aptStatus,
+        pauseReason: null as string | null,
         tokens: [] as Array<{ symbol: string; name: string; balanceFormatted: number; tokenAddress: string }>,
         fetchedAt: new Date().toISOString(),
-        error: null as string | null,
+        error: aptBalance === null ? 'Balance temporarily unavailable — Aptos node unreachable' : null,
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       allBalances = [...balances, aptEntry as any]
