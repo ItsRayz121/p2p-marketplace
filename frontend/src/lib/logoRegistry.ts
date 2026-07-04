@@ -83,17 +83,63 @@ const BANK_ALIASES: Record<string, string> = {
   'bank of punjab':                 'bank_of_punjab',
   'silk bank':                      'silk_bank',
   'soneri bank':                    'soneri',
+  'soneri':                         'soneri',
   'summit bank':                    'summit_bank',
   'national bank of pakistan (nbp)':'nbp',
   'national bank of pakistan':      'nbp',
+  'nbp':                            'nbp',
   'habib bank limited':             'hbl',
+  'hbl':                            'hbl',
   'muslim commercial bank':         'mcb',
+  'mcb':                            'mcb',
   'united bank limited':            'ubl',
+  'ubl':                            'ubl',
+}
+
+// Slugify any label into an underscore key: lowercase, drop parentheticals,
+// collapse everything non-alphanumeric to single underscores.
+function slugifyKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+// Bank display names arrive in many shapes across the app: short pills ("UBL"),
+// full names ("United Bank Limited"), "CODE — Full Name" combos
+// ("UBL — United Bank Limited"), and parenthetical codes ("… (NBP)"). Produce an
+// ordered, deduped list of candidate slugs so a logo added to the registry or the
+// static map under ANY reasonable form still resolves — this is what makes
+// admin-uploaded bank logos actually show up everywhere the name appears.
+export function bankSlugCandidates(name: string): string[] {
+  const out: string[] = []
+  const push = (v: string | null | undefined) => { if (v && !out.includes(v)) out.push(v) }
+
+  const applyForms = (base: string) => {
+    const lower = base.toLowerCase().trim()
+    if (!lower) return
+    push(BANK_ALIASES[lower])   // explicit alias → canonical slug
+    push(lower)                 // raw lowercase (may contain spaces)
+    push(slugifyKey(base))      // underscored slug
+    // Parenthetical code, e.g. "National Bank of Pakistan (NBP)" → "nbp"
+    const paren = base.match(/\(([^)]+)\)/)
+    if (paren?.[1]) { push(BANK_ALIASES[paren[1].toLowerCase().trim()]); push(slugifyKey(paren[1])) }
+    // Same label without its parenthetical
+    const noParen = base.replace(/\([^)]*\)/g, '').trim()
+    if (noParen && noParen.toLowerCase() !== lower) {
+      push(BANK_ALIASES[noParen.toLowerCase()]); push(slugifyKey(noParen))
+    }
+  }
+
+  applyForms(name)
+  // Split "CODE — Full Name" (em/en/hyphen dash with surrounding spaces) and try each side.
+  for (const part of name.split(/\s+[—–-]\s+/)) applyForms(part)
+  return out
 }
 
 export function normalizeBank(slug: string): string {
-  const lower = slug.toLowerCase()
-  return BANK_ALIASES[lower] ?? lower
+  return bankSlugCandidates(slug)[0] ?? slug.toLowerCase()
 }
 
 // ── Self-hosted local fallbacks ────────────────────────────────────────────────
@@ -222,8 +268,10 @@ export function resolveLogoDbOnly(
       return dbMap.payment_method[key] ?? dbMap.payment_method[slug.toLowerCase()] ?? null
     }
     case 'bank': {
-      const key = normalizeBank(slug)
-      return dbMap.bank[key] ?? dbMap.bank[slug.toLowerCase()] ?? null
+      for (const key of bankSlugCandidates(slug)) {
+        if (dbMap.bank[key]) return dbMap.bank[key]
+      }
+      return null
     }
     case 'wallet_provider': return dbMap.wallet_provider[slug.toLowerCase()] ?? null
     default: return null
@@ -248,8 +296,10 @@ export function resolveLogoStatic(type: EntityType, slug: string): string | null
       return PAYMENT_METHOD_LOGO_STATIC[key] ?? PAYMENT_METHOD_LOGO_STATIC[slug.toLowerCase()] ?? null
     }
     case 'bank': {
-      const key = normalizeBank(slug)
-      return BANK_LOGO_STATIC[key] ?? BANK_LOGO_STATIC[slug.toLowerCase()] ?? null
+      for (const key of bankSlugCandidates(slug)) {
+        if (BANK_LOGO_STATIC[key]) return BANK_LOGO_STATIC[key]
+      }
+      return null
     }
     default: return null
   }

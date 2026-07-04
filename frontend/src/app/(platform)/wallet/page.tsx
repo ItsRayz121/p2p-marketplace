@@ -737,6 +737,7 @@ function TrustedAddressesSection({ twoFaEnabled }: { twoFaEnabled: boolean }) {
             const wait = hoursLeft(a)
             return (
               <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                <EntityLogo type="token" slug={a.coin} size="sm" className="flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-text-primary">{a.label}</span>
