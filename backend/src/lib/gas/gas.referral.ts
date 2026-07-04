@@ -17,6 +17,7 @@ import { Prisma } from '@prisma/client'
 import { AppError } from '../errors'
 import { logger } from '../logger'
 import { isFlagEnabled, FLAGS, getNumberConfig } from '../../services/platformFlags.service'
+import { notify } from '../notify'
 import type { GasFeeOrder } from '@prisma/client'
 
 const DEFAULT_PCT_CONFIG = 'gas_referral_default_pct'
@@ -155,10 +156,11 @@ export async function bindReferral(referredUserId: string, rawCode?: string): Pr
   if (ownerId === referredUserId) return { bound: false, referrerId: ownerId } // safety: never self-bind
 
   let didBind = false
+  let signupNewlyBound = false
   // Heal the signup side (first-touch: only when not already set).
   if (!user?.referredById) {
     const res = await db.user.updateMany({ where: { id: referredUserId, referredById: null }, data: { referredById: ownerId } })
-    if (res.count > 0) didBind = true
+    if (res.count > 0) { didBind = true; signupNewlyBound = true }
   }
   // Heal the gas side. GasReferral.codeId is required, so attach the matched
   // affiliate code (preserving its split) or fall back to the owner's default code.
@@ -169,6 +171,29 @@ export async function bindReferral(referredUserId: string, rawCode?: string): Pr
       didBind = true
     } catch { /* unique race — already bound concurrently */ }
   }
+
+  // Notify the referrer that a new person joined via their link — fires exactly
+  // once, when the canonical signup binding is first established. Bell + push +
+  // Telegram DM (a positive, low-volume, user-initiated event worth surfacing).
+  if (signupNewlyBound && ownerId) {
+    const owner = ownerId
+    db.user.findUnique({ where: { id: referredUserId }, select: { username: true } })
+      .then((ru) => {
+        const who = ru?.username ? `@${ru.username}` : 'Someone new'
+        notify(
+          owner,
+          'referral',
+          'New referral joined 🎉',
+          `${who} just signed up with your referral link. You'll earn rewards when they trade or top up gas.`,
+          { referredUserId },
+          undefined,
+          '/referral',
+          { telegram: true },
+        )
+      })
+      .catch(() => { /* best-effort */ })
+  }
+
   return { bound: didBind, referrerId: ownerId }
 }
 
