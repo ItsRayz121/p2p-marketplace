@@ -7,6 +7,7 @@ import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Button } from '@/components/ui/Button'
 import { promoGiveawayApi, type PromoGiveawayPublic, type PromoParticipant } from '@/lib/promoGiveaway'
+import { isTelegramMiniApp } from '@/lib/telegram'
 import { ArrowLeft, Gift, CheckCircle2, ExternalLink, Users, Clock, Trophy, ChevronDown, XCircle, type LucideIcon } from 'lucide-react'
 
 export default function PromoGiveawayEntryPage() {
@@ -260,8 +261,19 @@ export default function PromoGiveawayEntryPage() {
                   {allRequiredDone ? 'Submit entry' : 'Complete required tasks'}
                 </Button>
               ) : (
-                <Button onClick={() => router.push(`/login?next=/giveaway/${g.code}`)} className="w-full">
-                  Log in to enter
+                // Platform-aware auth path: inside Telegram, bounce through the
+                // Mini App bridge which auto-signs-in and returns to this giveaway;
+                // on the web, send to login/register carrying the return path so a
+                // brand-new user lands right back here after signing up.
+                <Button
+                  onClick={() => router.push(
+                    isTelegramMiniApp()
+                      ? `/mini-app?path=${encodeURIComponent(`/giveaway/${g.code}`)}`
+                      : `/login?next=${encodeURIComponent(`/giveaway/${g.code}`)}`,
+                  )}
+                  className="w-full"
+                >
+                  {isTelegramMiniApp() ? 'Continue with Telegram to enter' : 'Create account or log in to enter'}
                 </Button>
               )}
             </div>

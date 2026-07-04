@@ -4,6 +4,7 @@ import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { gasApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
+import { isTelegramMiniApp } from '@/lib/telegram'
 import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Button } from '@/components/ui/Button'
@@ -114,8 +115,18 @@ export default function GiveawayEntryPage() {
             <div className="rounded-lg bg-surface-alt p-4 text-center text-sm text-text-muted">This giveaway is closed.</div>
           ) : !user ? (
             <div className="text-center space-y-2">
-              <p className="text-xs text-text-muted">Log in to enter this giveaway.</p>
-              <Button size="sm" variant="primary" onClick={() => router.push('/login')}>Log in</Button>
+              <p className="text-xs text-text-muted">Sign in to enter this giveaway and get notified if you win.</p>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => router.push(
+                  isTelegramMiniApp()
+                    ? `/mini-app?path=${encodeURIComponent(`/gas/giveaway/${campaign.code}`)}`
+                    : `/login?next=${encodeURIComponent(`/gas/giveaway/${campaign.code}`)}`,
+                )}
+              >
+                {isTelegramMiniApp() ? 'Continue with Telegram' : 'Create account or log in'}
+              </Button>
             </div>
           ) : campaign.requireKyc && user.kycLevel === 'none' ? (
             <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-center space-y-2">

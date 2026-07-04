@@ -20,6 +20,8 @@ function GoogleSuccessInner() {
   useEffect(() => {
     const token = params.get('token')
     const error = params.get('error')
+    const nextRaw = params.get('next')
+    const next = nextRaw && nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : null
 
     if (error || !token) {
       const msg =
@@ -35,10 +37,13 @@ function GoogleSuccessInner() {
       setUser(user)
       window.history.replaceState({}, '', '/auth/google/success')
       const role = user.role
-      if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent' || role === 'support_agent') {
+      const isStaff = role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent' || role === 'support_agent'
+      // A post-login destination (e.g. a giveaway a new user opened) wins for
+      // regular users; staff always land in the admin console.
+      if (isStaff) {
         router.replace('/admin')
       } else {
-        router.replace('/dashboard')
+        router.replace(next ?? '/dashboard')
       }
     }).catch(() => {
       router.replace('/login?googleError=' + encodeURIComponent('Failed to load your account. Please try again.'))

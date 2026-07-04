@@ -87,10 +87,22 @@ export default function RegisterPage() {
   // Carry the stored referral code into the Google OAuth flow so a Google signup
   // credits the referrer just like an email/password signup does.
   const [googleRef, setGoogleRef] = useState('')
+  // Post-signup destination (e.g. a giveaway a new user opened) — read client-side
+  // (no useSearchParams → no Suspense boundary needed) and threaded into Google +
+  // the "Sign in" link so they return there after authenticating.
+  const [nextPath, setNextPath] = useState<string | null>(null)
   useEffect(() => {
-    if (typeof window !== 'undefined') setGoogleRef(localStorage.getItem('referralCode') ?? '')
+    if (typeof window !== 'undefined') {
+      setGoogleRef(localStorage.getItem('referralCode') ?? '')
+      const n = new URLSearchParams(window.location.search).get('next')
+      setNextPath(n && n.startsWith('/') && !n.startsWith('//') ? n : null)
+    }
   }, [])
-  const googleHref = `${API_BASE}/api/v1/auth/google${googleRef ? `?ref=${encodeURIComponent(googleRef)}` : ''}`
+  const googleParams = new URLSearchParams()
+  if (googleRef) googleParams.set('ref', googleRef)
+  if (nextPath) googleParams.set('next', nextPath)
+  const googleHref = `${API_BASE}/api/v1/auth/google${googleParams.toString() ? `?${googleParams.toString()}` : ''}`
+  const loginHref = nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : '/login'
 
   return (
     <div>
@@ -223,7 +235,7 @@ export default function RegisterPage() {
             <p className="font-medium">An account with this email already exists.</p>
             <p>If you haven&apos;t verified your email yet, check your inbox or resend the verification email.</p>
             <div className="flex flex-wrap gap-3 pt-1">
-              <Link href="/login" className="font-medium underline hover:no-underline">Sign in</Link>
+              <Link href={loginHref} className="font-medium underline hover:no-underline">Sign in</Link>
               <button
                 type="button"
                 className="font-medium underline hover:no-underline"
@@ -252,7 +264,7 @@ export default function RegisterPage() {
 
       <p className="text-center text-sm text-text-muted mt-6">
         Already have an account?{' '}
-        <Link href="/login" className="text-primary font-medium hover:underline">
+        <Link href={loginHref} className="text-primary font-medium hover:underline">
           Sign in
         </Link>
       </p>

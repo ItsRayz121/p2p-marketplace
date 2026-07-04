@@ -557,9 +557,12 @@ export async function authRoutes(app: FastifyInstance) {
       // Redirect to a friendly login error instead of dead-ending on raw JSON.
       return reply.redirect(`${env.FRONTEND_URL}/login?error=google_not_configured`)
     }
-    // Carry an inbound referral code (?ref=CODE) through the OAuth round-trip via the
-    // `state` param so a Google signup credits the referrer (Google returns state as-is).
+    // Carry an inbound referral code (?ref=CODE) and a post-login destination
+    // (?next=/path) through the OAuth round-trip via the `state` param (Google
+    // returns it as-is). Encoded as base64url JSON so both survive; the callback
+    // falls back to treating a legacy raw-string state as the referral code.
     const ref = (req.query as { ref?: string }).ref
+    const next = (req.query as { next?: string }).next
     const params = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
       redirect_uri: env.GOOGLE_CALLBACK_URL,
@@ -568,7 +571,12 @@ export async function authRoutes(app: FastifyInstance) {
       access_type: 'offline',
       prompt: 'select_account',
     })
-    if (ref && typeof ref === 'string') params.set('state', ref.trim().slice(0, 64))
+    const statePayload: Record<string, string> = {}
+    if (ref && typeof ref === 'string') statePayload.r = ref.trim().slice(0, 64)
+    if (next && typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')) statePayload.n = next.slice(0, 200)
+    if (Object.keys(statePayload).length > 0) {
+      params.set('state', Buffer.from(JSON.stringify(statePayload)).toString('base64url'))
+    }
     return reply.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`)
   })
 
@@ -579,6 +587,20 @@ export async function authRoutes(app: FastifyInstance) {
 
     if (error || !code) {
       return reply.redirect(`${frontendUrl}/login?error=google_cancelled`)
+    }
+
+    // Decode the combined state → referral code + post-login destination. Legacy
+    // states were the bare referral code, so a decode failure falls back to that.
+    let refCode: string | undefined
+    let nextPath: string | undefined
+    if (state && typeof state === 'string') {
+      try {
+        const decoded = JSON.parse(Buffer.from(state, 'base64url').toString()) as { r?: string; n?: string }
+        if (decoded.r) refCode = decoded.r
+        if (decoded.n && decoded.n.startsWith('/') && !decoded.n.startsWith('//')) nextPath = decoded.n
+      } catch {
+        refCode = state
+      }
     }
 
     try {
@@ -617,7 +639,7 @@ export async function authRoutes(app: FastifyInstance) {
         googleUser.name ?? (googleUser.email.split('@')[0] ?? 'user'),
         req.headers['user-agent'],
         req.ip,
-        state && typeof state === 'string' ? state : undefined,
+        refCode,
       )
 
       // Banned / suspended Google users → restricted appeal flow.
@@ -626,7 +648,8 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       if (result.refreshToken) reply.setCookie('refresh_token', result.refreshToken, COOKIE_OPTIONS)
-      return reply.redirect(`${frontendUrl}/auth/google/success?token=${encodeURIComponent(result.accessToken ?? '')}`)
+      const nextQuery = nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''
+      return reply.redirect(`${frontendUrl}/auth/google/success?token=${encodeURIComponent(result.accessToken ?? '')}${nextQuery}`)
     } catch (err) {
       logger.error({ err }, 'Google OAuth callback error')
       const msg = err instanceof Error && err.message.includes('suspended') ? 'account_suspended' : 'google_failed'

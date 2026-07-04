@@ -50,7 +50,14 @@ function LoginInner() {
   useEffect(() => {
     if (typeof window !== 'undefined') setGoogleRef(localStorage.getItem('referralCode') ?? '')
   }, [])
-  const googleHref = `${API_BASE}/api/v1/auth/google${googleRef ? `?ref=${encodeURIComponent(googleRef)}` : ''}`
+  // A post-login destination (e.g. a giveaway a new user opened) — carried through
+  // email login, Google OAuth, and the register link so they return there.
+  const nextRaw = searchParams.get('next')
+  const nextPath = nextRaw && nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : null
+  const googleParams = new URLSearchParams()
+  if (googleRef) googleParams.set('ref', googleRef)
+  if (nextPath) googleParams.set('next', nextPath)
+  const googleHref = `${API_BASE}/api/v1/auth/google${googleParams.toString() ? `?${googleParams.toString()}` : ''}`
 
   const {
     register,
@@ -90,10 +97,10 @@ function LoginInner() {
         if (role === 'admin' || role === 'super_admin' || role === 'kyc_reviewer' || role === 'dispute_agent' || role === 'support_agent') {
           router.push('/admin')
         } else {
-          router.push('/dashboard')
+          router.push(nextPath ?? '/dashboard')
         }
       } else {
-        router.push('/dashboard')
+        router.push(nextPath ?? '/dashboard')
       }
     } catch (err) {
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
@@ -277,7 +284,7 @@ function LoginInner() {
 
       <p className="text-center text-sm text-text-muted mt-6">
         Don&apos;t have an account?{' '}
-        <Link href="/register" className="text-primary font-medium hover:underline">
+        <Link href={nextPath ? `/register?next=${encodeURIComponent(nextPath)}` : '/register'} className="text-primary font-medium hover:underline">
           Create one
         </Link>
       </p>
