@@ -2386,8 +2386,8 @@ model CtmMerchantProfile {
   id                     String          @id @default(cuid())
   userId                 String          @unique
   user                   User            @relation(fields: [userId], references: [id], onDelete: Restrict)
-  merchantId             String          @unique
-  merchant               Merchant        @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  merchantId             String?         @unique
+  merchant               Merchant?       @relation(fields: [merchantId], references: [id], onDelete: Restrict)
   tier                   CtmMerchantTier @default(new)
   collateralAmount       Decimal         @default(0) @db.Decimal(18, 8)
   collateralCoin         String          @default("USDT")

@@ -69,11 +69,24 @@ export interface ListingsFilter {
 }
 
 export async function createListing(userId: string, data: CreateListingInput) {
-  const merchantProfile = await db.ctmMerchantProfile.findUnique({
+  let merchantProfile = await db.ctmMerchantProfile.findUnique({
     where: { userId },
     include: { merchant: { select: { status: true } } },
   })
-  if (!merchantProfile) throw new AppError('FORBIDDEN', 'You must be a registered CTM merchant to create listings', 403)
+  // Self-service CTM makers: any KYC-approved user may create listings without the
+  // legacy Merchant-approval funnel (100 USDT collateral + admin sign-off). If no
+  // profile exists yet, auto-provision an active one on first listing. The per-tier
+  // and Level 1/Level 2 caps below still bound how much a maker can list.
+  if (!merchantProfile) {
+    const kyc = await db.user.findUnique({ where: { id: userId }, select: { kycStatus: true } })
+    if (kyc?.kycStatus !== 'approved') {
+      throw new AppError('KYC_REQUIRED', 'Complete KYC verification to create CTM listings', 403)
+    }
+    merchantProfile = await db.ctmMerchantProfile.create({
+      data: { userId, settlementInstructions: {}, isActive: true },
+      include: { merchant: { select: { status: true } } },
+    })
+  }
   if (!merchantProfile.isActive) throw new AppError('FORBIDDEN', 'Your CTM merchant profile is suspended', 403)
 
   const user = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
