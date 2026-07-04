@@ -15,7 +15,6 @@ interface NavItem {
   href: string
   label: string
   icon: React.ReactNode
-  primary?: boolean
 }
 
 const baseNavItems: NavItem[] = [
@@ -33,7 +32,6 @@ const baseNavItems: NavItem[] = [
     href: '/gas',
     label: 'Gas',
     icon: <Fuel className="w-6 h-6" />,
-    primary: true,
   },
   {
     href: '/wallet',
@@ -56,11 +54,12 @@ const ctmNavItem: NavItem = {
 export default function BottomNav() {
   const pathname = usePathname()
 
-  // CTM is always visible (prominently) for every user — no KYC gating and no
-  // dependence on the async `user` load, which previously caused the tab to be
-  // missing on the Telegram Mini App and to flicker in/out until a refresh on
-  // mobile. Order: Home · Market · Gas (center) · Wallet · CTM · Orders.
-  const navItems = [...baseNavItems.slice(0, 4), ctmNavItem, baseNavItems[4]]
+  // CTM is always visible for every user — no KYC gating and no dependence on
+  // the async `user` load, which previously caused the tab to be missing on the
+  // Telegram Mini App and to flicker in/out until a refresh on mobile.
+  // Order groups the trading trio together: Home · Market · Gas · CTM · Wallet · Orders.
+  // Gas is styled like every other tab (no longer a raised center FAB).
+  const navItems = [...baseNavItems.slice(0, 3), ctmNavItem, ...baseNavItems.slice(3)]
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
@@ -73,28 +72,7 @@ export default function BottomNav() {
         {navItems.map((item) => {
           const active = isActive(item.href)
 
-          // Gas is the center action — a raised circle that stays distinct by its
-          // filled primary color, but sized in line with the other tabs (no
-          // longer an oversized bulge) so all six items read evenly.
-          if (item.primary) {
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-label={item.label}
-                className="relative flex flex-col items-center justify-center flex-1 h-full"
-              >
-                <span className="absolute -top-3.5 flex items-center justify-center w-11 h-11 bg-primary rounded-full text-white shadow-md transition-transform duration-150 active:scale-95">
-                  <Fuel className="w-5 h-5" />
-                </span>
-                <span className={cn('text-[10px] font-medium mt-7', active ? 'text-primary' : 'text-text-muted')}>
-                  {item.label}
-                </span>
-              </Link>
-            )
-          }
-
-          // Every other tab: when active, the icon lifts into a raised circular
+          // Every tab (Gas included): when active, the icon lifts into a raised circular
           // badge (ring-surface punches it through the top edge) so the current
           // tab "pops" like the Gas FAB. Smoothly animated.
           return (
