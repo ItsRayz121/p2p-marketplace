@@ -5,7 +5,6 @@ import { getHotWalletBalance, getNativeUsdPrice } from '../lib/gas/gas.balance'
 import { fromDbChain } from '../lib/gas/gas.chains'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { getAptosNativeBalance } from '../lib/gas/aptosRefund'
-import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { createAdminNotif } from '../services/adminNotification.service'
@@ -84,17 +83,10 @@ async function monitorAptosGasBalance(): Promise<void> {
       void createAdminNotif({
         category: 'GAS',
         title:    `WARNING: Aptos Hot Wallet Low on APT Gas`,
-        body:     `APT balance ${apt.toFixed(4)} is below ${minApt} APT. Aptos USDT refunds need APT for gas — top up to avoid failures.`,
+        body:     `APT balance ${apt.toFixed(4)} is below ${minApt} APT. Aptos USDT refunds need APT for gas — top up to avoid failures.\nTop up APT to: ${address}`,
         href:     '/admin/gas',
         metadata: { apt, minApt, address },
       })
-      await sendAdminAlertEmail(
-        'WARNING: Aptos Gas Hot Wallet Low on APT',
-        `The Aptos hot wallet is low on native APT (used to pay gas for USDT refunds).\n\n` +
-        `  APT balance:  ${apt.toFixed(6)} APT\n` +
-        `  Alert floor:  ${minApt} APT\n\n` +
-        `Aptos USDT refunds will fail once APT runs out. Top up APT to:\n${address}`,
-      )
     }
   } else {
     // Recovered — clear the dedupe flag so a future dip alerts again.
@@ -243,36 +235,20 @@ async function monitorChain(
     void createAdminNotif({
       category: 'GAS',
       title:    `CRITICAL: ${chain} Hot Wallet Below Pause Threshold`,
-      body:     `${chain} balance $${balanceUsd.toFixed(2)} is below pause threshold $${pauseThresholdUsd}. New orders paused.`,
+      body:     `${chain} balance $${balanceUsd.toFixed(2)} (${balance.toFixed(6)} native) is below pause threshold $${pauseThresholdUsd}. New orders paused — top up immediately.\nWallet: ${address}`,
       href:     `/admin/gas`,
-      metadata: { chain, balanceUsd, pauseThresholdUsd },
+      metadata: { chain, balanceUsd, pauseThresholdUsd, address },
     })
-    await sendAdminAlertEmail(
-      `CRITICAL: ${chain} Gas Hot Wallet Below Pause Threshold`,
-      `${chain} hot wallet\n` +
-      `  Balance:         $${balanceUsd.toFixed(2)} USD (${balance.toFixed(6)} native)\n` +
-      `  Pause threshold: $${pauseThresholdUsd} USD\n\n` +
-      `New gas orders on ${chain} are now automatically paused. Please top up the hot wallet immediately.\n\n` +
-      `Wallet address: ${address}`,
-    )
   } else if (alertThresholdUsd !== null && balanceUsd <= alertThresholdUsd) {
     await redis.del(pausedKey)
     logger.warn({ balanceUsd, alertThresholdUsd, chain }, 'Gas hot wallet LOW — below alert threshold (USD)')
     void createAdminNotif({
       category: 'GAS',
       title:    `WARNING: ${chain} Hot Wallet Low Balance`,
-      body:     `${chain} balance $${balanceUsd.toFixed(2)} is below alert threshold $${alertThresholdUsd}.`,
+      body:     `${chain} balance $${balanceUsd.toFixed(2)} (${balance.toFixed(6)} native) is below alert threshold $${alertThresholdUsd}. Top up soon to avoid interruption.\nWallet: ${address}`,
       href:     `/admin/gas`,
-      metadata: { chain, balanceUsd, alertThresholdUsd },
+      metadata: { chain, balanceUsd, alertThresholdUsd, address },
     })
-    await sendAdminAlertEmail(
-      `WARNING: ${chain} Gas Hot Wallet Low Balance`,
-      `${chain} hot wallet\n` +
-      `  Balance:         $${balanceUsd.toFixed(2)} USD (${balance.toFixed(6)} native)\n` +
-      `  Alert threshold: $${alertThresholdUsd} USD\n\n` +
-      `Please top up the hot wallet soon to avoid service interruption.\n\n` +
-      `Wallet address: ${address}`,
-    )
   } else {
     await redis.del(pausedKey)
   }

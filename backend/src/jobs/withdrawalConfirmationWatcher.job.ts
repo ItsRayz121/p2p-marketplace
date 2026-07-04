@@ -15,7 +15,6 @@ import { logger } from '../lib/logger'
 import { getTransactionReceipt, getBlockNumber, EvmRpcError } from '../lib/evmRpc'
 import { getChainByNetworkLabel, getRpcUrl } from '../services/chainRegistry.service'
 import { createAdminNotif } from '../services/adminNotification.service'
-import { sendAdminAlertEmail } from '../services/email.service'
 import { recordAuditLog } from '../lib/audit'
 import { sendWithdrawalOnChain } from '../lib/withdrawal.sender'
 
@@ -125,10 +124,6 @@ async function checkWithdrawal(
         href: `/admin/withdrawals`,
         metadata: { withdrawalId: wd.id, txHash, chain: chain.id },
       })
-      await sendAdminAlertEmail(
-        `URGENT: Withdrawal TX Reverted — ${wd.orderRef}`,
-        `Withdrawal ${wd.orderRef}\nUser: ${wd.userId}\nAmount: ${wd.amount}\nTx: ${txHash}\nChain: ${chain.id}\n\nThe on-chain transaction was reverted. The user did NOT receive funds. Investigate and either resend or refund.`,
-      ).catch(() => {})
       return
     }
 
