@@ -5,7 +5,6 @@ import { adsApi, marketplaceApi, apiRequest, savedTermsApi, walletApi } from '@/
 import type { CreateAdPayload, UpdateAdPayload, SavedTerms, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { CreateAdReferralCard } from '@/components/referral/CreateAdReferralCard'
 import { validateAddressForNetwork } from '@/lib/addressValidation'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -361,8 +360,6 @@ function CreateListingPageContent() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-text-primary mb-6">{editId ? 'Edit Listing' : 'Create Listing'}</h1>
-
-      <CreateAdReferralCard />
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {submitError && <div className="bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 rounded-xl p-3 text-sm">{submitError}</div>}
