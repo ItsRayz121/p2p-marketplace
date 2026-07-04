@@ -66,6 +66,7 @@ export interface ListingsFilter {
   tier?: string
   sortBy?: string
   sortDir?: 'asc' | 'desc'
+  seller?: string
 }
 
 export async function createListing(userId: string, data: CreateListingInput) {
@@ -199,7 +200,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
 }
 
 export async function getListings(filters: ListingsFilter = {}) {
-  const { tokenId, side, paymentMethod, page = 1, limit = 20, merchantProfileId, status, adminView = false, tier, sortBy, sortDir = 'desc' } = filters
+  const { tokenId, side, paymentMethod, page = 1, limit = 20, merchantProfileId, status, adminView = false, tier, sortBy, sortDir = 'desc', seller } = filters
   const skip = (page - 1) * limit
 
   const where: Record<string, unknown> = adminView ? {} : { status: 'active' }
@@ -213,7 +214,21 @@ export async function getListings(filters: ListingsFilter = {}) {
     const pmIds = await resolvePaymentMethodIdsByLabel(paymentMethod)
     where.paymentMethods = pmIds.length > 0 ? { hasSome: pmIds } : { has: '__no-match__' }
   }
-  if (tier) where.merchantProfile = { is: { tier: tier as never } }
+  // Combine tier + seller-name search on the merchant profile relation.
+  const merchantProfileIs: Record<string, unknown> = {}
+  if (tier) merchantProfileIs.tier = tier as never
+  if (seller?.trim()) {
+    const q = seller.trim()
+    merchantProfileIs.user = {
+      is: {
+        OR: [
+          { username: { contains: q, mode: 'insensitive' } },
+          { fullName: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+    }
+  }
+  if (Object.keys(merchantProfileIs).length) where.merchantProfile = { is: merchantProfileIs }
 
   const ALLOWED_SORT_FIELDS: Record<string, object> = {
     createdAt: { createdAt: sortDir },

@@ -102,6 +102,7 @@ export interface GetAdsParams {
   page?: number
   limit?: number
   merchantId?: string
+  seller?: string
 }
 
 export interface PaginatedResult<T> {
@@ -534,6 +535,21 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     paymentMethodIdFilter = await resolvePaymentMethodIdsByLabel(params.paymentMethod)
   }
 
+  // Seller/merchant search: match by username, legal name, or merchant business
+  // name (case-insensitive) so users can find a trusted counterparty by name.
+  const userAnd: Prisma.UserWhereInput[] = []
+  if (params.merchantId) userAnd.push({ merchant: { id: params.merchantId } })
+  if (params.seller?.trim()) {
+    const q = params.seller.trim()
+    userAnd.push({
+      OR: [
+        { username: { contains: q, mode: 'insensitive' } },
+        { fullName: { contains: q, mode: 'insensitive' } },
+        { merchant: { businessName: { contains: q, mode: 'insensitive' } } },
+      ],
+    })
+  }
+
   const where: Prisma.AdWhereInput = {
     status: 'active',
     coin: 'USDT',
@@ -546,13 +562,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       : {}),
     ...(params.minAmount !== undefined ? { minOrder: { lte: new Prisma.Decimal(params.minAmount) } } : {}),
     ...(params.maxAmount !== undefined ? { maxOrder: { gte: new Prisma.Decimal(params.maxAmount) } } : {}),
-    ...(params.merchantId
-      ? {
-          user: {
-            merchant: { id: params.merchantId },
-          },
-        }
-      : {}),
+    ...(userAnd.length ? { user: { AND: userAnd } } : {}),
   }
 
   const sellerInclude = {

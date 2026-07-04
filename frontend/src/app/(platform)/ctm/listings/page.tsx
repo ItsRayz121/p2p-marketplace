@@ -5,6 +5,7 @@ import { ctmApi } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPaymentLabels } from '@/lib/pkPaymentMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
+import { Search, X } from 'lucide-react'
 
 const PAYMENT_METHODS = ALL_PAYMENT_METHODS
 const TIERS = ['new', 'basic', 'verified', 'elite']
@@ -57,6 +58,14 @@ export default function BrowseListingsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
   const [profileUserId, setProfileUserId] = useState<string | null>(null)
+  // Seller search — debounced so we don't refetch on every keystroke.
+  const [seller, setSeller] = useState('')
+  const [sellerInput, setSellerInput] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => { setSeller(sellerInput.trim()); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [sellerInput])
 
   const fetchListings = useCallback(async () => {
     setLoading(true)
@@ -68,6 +77,7 @@ export default function BrowseListingsPage() {
         tier: tierFilter || undefined,
         sortBy: sortBy || undefined,
         sortDir: sortDir || undefined,
+        seller: seller || undefined,
         page,
         limit: 20,
       })
@@ -79,7 +89,7 @@ export default function BrowseListingsPage() {
     } finally {
       setLoading(false)
     }
-  }, [side, paymentMethod, tierFilter, sortBy, sortDir, page])
+  }, [side, paymentMethod, tierFilter, sortBy, sortDir, seller, page])
 
   useEffect(() => {
     fetchListings()
@@ -96,13 +106,50 @@ export default function BrowseListingsPage() {
     <div className="max-w-5xl mx-auto px-4 py-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Browse Listings</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-text-primary">Browse Listings</h1>
+            <button
+              type="button"
+              onClick={() => setSearchOpen((v) => !v)}
+              aria-label="Search by seller name"
+              aria-expanded={searchOpen}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg border transition-colors ${
+                searchOpen || seller ? 'border-primary text-primary bg-primary/5' : 'border-border text-text-muted hover:text-text-primary'
+              }`}
+            >
+              <Search size={16} />
+            </button>
+          </div>
           <p className="text-text-muted text-sm">{total} listings available</p>
         </div>
         <Link href="/ctm/listings/create" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center">
           + Create Listing
         </Link>
       </div>
+
+      {(searchOpen || seller) && (
+        <div className="relative mb-6">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+          <input
+            autoFocus
+            type="text"
+            value={sellerInput}
+            onChange={(e) => setSellerInput(e.target.value)}
+            placeholder="Search by seller or buyer name / username…"
+            className="w-full border border-border rounded-lg pl-9 pr-9 py-2.5 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          />
+          {sellerInput && (
+            <button
+              type="button"
+              onClick={() => { setSellerInput(''); setSearchOpen(false) }}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">

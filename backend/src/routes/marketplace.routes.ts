@@ -73,6 +73,7 @@ export async function marketplaceRoutes(app: FastifyInstance) {
       ...(query.minAmount ? { minAmount: parseFloat(query.minAmount) } : {}),
       ...(query.maxAmount ? { maxAmount: parseFloat(query.maxAmount) } : {}),
       ...(query.merchantId ? { merchantId: query.merchantId } : {}),
+      ...(query.seller ? { seller: query.seller } : {}),
     })
     return reply.send({ success: true, data })
   })

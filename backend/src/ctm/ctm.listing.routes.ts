@@ -102,6 +102,7 @@ export async function ctmListingRoutes(app: FastifyInstance) {
       ...(q.tier ? { tier: q.tier } : {}),
       ...(q.sortBy ? { sortBy: q.sortBy } : {}),
       ...(q.sortDir === 'asc' || q.sortDir === 'desc' ? { sortDir: q.sortDir } : {}),
+      ...(q.seller ? { seller: q.seller } : {}),
       page: q.page ? parseInt(q.page, 10) : 1,
       limit: q.limit ? parseInt(q.limit, 10) : 20,
     })

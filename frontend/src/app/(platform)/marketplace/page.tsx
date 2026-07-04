@@ -13,7 +13,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
-import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, History } from 'lucide-react'
+import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, History, Search, X } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
@@ -32,6 +32,7 @@ interface Filters {
   paymentMethod: string
   minAmount: string
   maxAmount: string
+  seller: string
 }
 
 
@@ -520,7 +521,17 @@ export default function MarketplacePage() {
     paymentMethod: '',
     minAmount: '',
     maxAmount: '',
+    seller: '',
   })
+  // Seller search: debounced input so we don't refetch on every keystroke.
+  const [sellerInput, setSellerInput] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters((f) => (f.seller === sellerInput.trim() ? f : { ...f, seller: sellerInput.trim() }))
+    }, 350)
+    return () => clearTimeout(t)
+  }, [sellerInput])
   const [ads, setAds] = useState<MarketplaceAd[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -549,6 +560,7 @@ export default function MarketplacePage() {
       if (filters.paymentMethod) params.paymentMethod = filters.paymentMethod
       if (filters.minAmount) params.minAmount = filters.minAmount
       if (filters.maxAmount) params.maxAmount = filters.maxAmount
+      if (filters.seller) params.seller = filters.seller
 
       const res = await marketplaceApi.getAds(params)
       setAds((prev) => (append ? [...prev, ...res.ads] : res.ads))
@@ -578,6 +590,7 @@ export default function MarketplacePage() {
       if (filters.paymentMethod) params.paymentMethod = filters.paymentMethod
       if (filters.minAmount) params.minAmount = filters.minAmount
       if (filters.maxAmount) params.maxAmount = filters.maxAmount
+      if (filters.seller) params.seller = filters.seller
       const res = await marketplaceApi.getAds(params)
       setAds(res.ads)
       setTotal(res.total)
@@ -638,13 +651,52 @@ export default function MarketplacePage() {
           Notifications. */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-text-primary">USDT Marketplace</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-text-primary">USDT Marketplace</h1>
+            {/* Search toggle — find a trusted seller/buyer by name */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen((v) => !v)}
+              aria-label="Search by seller name"
+              aria-expanded={searchOpen}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg border transition-colors ${
+                searchOpen || filters.seller ? 'border-primary text-primary bg-primary/5' : 'border-border text-text-muted hover:text-text-primary'
+              }`}
+            >
+              <Search size={16} />
+            </button>
+          </div>
           <p className="text-text-muted text-sm">{total} listings available</p>
         </div>
         <Link href="/create-ad" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center">
           + Create Listing
         </Link>
       </div>
+
+      {/* Seller search field (revealed by the header search icon) */}
+      {(searchOpen || filters.seller) && (
+        <div className="relative mb-4">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+          <input
+            autoFocus
+            type="text"
+            value={sellerInput}
+            onChange={(e) => setSellerInput(e.target.value)}
+            placeholder="Search by seller or buyer name / username…"
+            className="w-full border border-border rounded-lg pl-9 pr-9 py-2.5 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          />
+          {sellerInput && (
+            <button
+              type="button"
+              onClick={() => { setSellerInput(''); setSearchOpen(false) }}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Stats strip */}
       {marketStats && <MarketplaceStatsStrip stats={{ ...marketStats, totalListings: total }} />}
@@ -708,7 +760,7 @@ export default function MarketplacePage() {
         />
 
         <button
-          onClick={() => setFilters({ side: 'buy', network: '', paymentMethod: '', minAmount: '', maxAmount: '' })}
+          onClick={() => { setFilters({ side: 'buy', network: '', paymentMethod: '', minAmount: '', maxAmount: '', seller: '' }); setSellerInput(''); setSearchOpen(false) }}
           className="col-span-2 sm:w-auto border border-border rounded-lg px-3 py-2 text-sm bg-surface hover:bg-surface-alt text-text-secondary hover:text-text-primary transition-colors"
         >
           Clear
