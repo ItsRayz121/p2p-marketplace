@@ -282,15 +282,18 @@ export default function PromoGiveawayEntryPage() {
               </button>
               {participantsOpen && (
                 <div className="border-t border-border max-h-72 overflow-y-auto divide-y divide-border">
-                  {participants.map((p, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
-                      <span className="flex items-center gap-2 min-w-0">
-                        <span className="text-text-primary truncate">{p.username}</span>
-                        {p.status === 'sent' && <span className="text-[10px] font-bold uppercase text-success shrink-0">Won</span>}
-                      </span>
-                      <span className="font-mono text-xs text-text-muted shrink-0">{p.address}</span>
-                    </div>
-                  ))}
+                  {participants.map((p, i) => {
+                    const chip = PARTICIPANT_STATUS_CHIP[p.status] ?? PARTICIPANT_STATUS_CHIP.entered!
+                    return (
+                      <div key={i} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="text-text-primary truncate">{p.username}</span>
+                          <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0 ${chip.cls}`}>{chip.label}</span>
+                        </span>
+                        <span className="font-mono text-xs text-text-muted shrink-0">{p.address}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -330,6 +333,16 @@ export default function PromoGiveawayEntryPage() {
 }
 
 const inputCls = 'mt-1 w-full px-3 py-2 border border-border rounded-lg text-sm bg-canvas text-text-primary focus:outline-none focus:ring-2 focus:ring-primary'
+
+// Public participant-list status chip. Mirrors the fulfillment lifecycle the
+// organizer drives: entered → pending → (sent | rejected). The private rejection
+// reason is never shown here — only on the entrant's own MyStatusCard.
+const PARTICIPANT_STATUS_CHIP: Record<string, { label: string; cls: string }> = {
+  entered:  { label: 'Entered',  cls: 'bg-surface-alt text-text-muted' },
+  pending:  { label: 'Pending',  cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  sent:     { label: 'Won',      cls: 'bg-success/10 text-success' },
+  rejected: { label: 'Rejected', cls: 'bg-danger/10 text-danger' },
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
