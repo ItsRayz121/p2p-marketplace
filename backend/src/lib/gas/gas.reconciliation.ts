@@ -12,7 +12,7 @@ import type { GasChain } from '@prisma/client'
 import { parseEther } from 'viem'
 import { db } from '../prisma'
 import { logger } from '../logger'
-import { sendAdminAlertEmail } from '../../services/email.service'
+import { createAdminNotif } from '../../services/adminNotification.service'
 import { checkTxConfirmed } from './gas.confirmation'
 import type { GasChainId } from './gas.chains'
 import { fromDbChain } from './gas.chains'
@@ -126,12 +126,14 @@ export async function runReconciliation(chain?: GasChain) {
     )
 
     if (discrepancies.length > 0) {
-      await sendAdminAlertEmail(
-        `Gas Reconciliation: ${discrepancies.length} discrepancies found`,
-        `Reconciliation run ${run.id} found ${discrepancies.length} discrepancies.\n\n` +
-        discrepancies.map((d) => `[${d.type}] Order ${d.orderId ?? 'N/A'}: ${d.description}`).join('\n') +
-        `\n\nView details at /admin/gas/reconciliation/${run.id}`,
-      ).catch(() => {})
+      void createAdminNotif({
+        category: 'GAS',
+        title: `Gas Reconciliation: ${discrepancies.length} discrepancies found`,
+        body: `Reconciliation run ${run.id} found ${discrepancies.length} discrepancies.\n\n` +
+          discrepancies.map((d) => `[${d.type}] Order ${d.orderId ?? 'N/A'}: ${d.description}`).join('\n'),
+        href: `/admin/gas/reconciliation/${run.id}`,
+        telegram: true,
+      })
     }
 
     return updated

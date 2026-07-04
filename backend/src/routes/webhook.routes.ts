@@ -11,7 +11,7 @@ import {
   normalizeMoralisEvent,
   processDepositEvent,
 } from '../services/depositWatcher.service'
-import { sendAdminAlertEmail } from '../services/email.service'
+import { createAdminNotif } from '../services/adminNotification.service'
 import { getEffectiveDepositAddress } from '../lib/gas/gasWalletService'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 import { fromDbChain, toDbChain, GAS_CHAINS, paymentNetworkSettlementChain } from '../lib/gas/gas.chains'
@@ -568,10 +568,13 @@ export async function webhookRoutes(app: FastifyInstance) {
               { txHash, amount: incomingAmount, coin, network: payload.network, candidateCount: candidates.length },
               'InstantBuy payment matches multiple pending orders — flagging for manual review, NOT auto-crediting',
             )
-            sendAdminAlertEmail(
-              'Ambiguous InstantBuy Payment — manual review',
-              `A ${coin} payment (${incomingAmount}) on ${payload.network} matched ${candidates.length} pending orders by amount.\n\nTX: ${txHash}\n\nAuto-credit was skipped to avoid crediting the wrong user. Attribute manually at /admin/instant-buy.`,
-            ).catch(() => {})
+            void createAdminNotif({
+              category: 'TRADE',
+              title: 'Ambiguous InstantBuy Payment — manual review',
+              body: `A ${coin} payment (${incomingAmount}) on ${payload.network} matched ${candidates.length} pending orders by amount.\n\nTX: ${txHash}\n\nAuto-credit was skipped to avoid crediting the wrong user. Attribute manually.`,
+              href: '/admin/instant-buy',
+              telegram: true,
+            })
           } else if (candidates.length === 1) {
             const instantOrder = candidates[0]!
             // Optimistic lock: only claim if still payment_pending with no txHash
@@ -666,10 +669,13 @@ export async function webhookRoutes(app: FastifyInstance) {
             { txHash, amount: incoming, network: matchedDeposit.network, candidateCount: gasCandidates.length },
             'Gas payment matches multiple pending orders — flagged unattributed, NOT auto-crediting',
           )
-          sendAdminAlertEmail(
-            'Ambiguous Gas Fee Payment — manual review',
-            `A USDT payment (${incoming}) on ${matchedDeposit.network} matched ${gasCandidates.length} pending gas orders by amount.\n\nTX: ${txHash}\n\nAuto-credit was skipped to avoid crediting the wrong user. Attribute manually at /admin/gas.`,
-          ).catch(() => {})
+          void createAdminNotif({
+            category: 'GAS',
+            title: 'Ambiguous Gas Fee Payment — manual review',
+            body: `A USDT payment (${incoming}) on ${matchedDeposit.network} matched ${gasCandidates.length} pending gas orders by amount.\n\nTX: ${txHash}\n\nAuto-credit was skipped to avoid crediting the wrong user. Attribute manually.`,
+            href: '/admin/gas',
+            telegram: true,
+          })
           return reply.send({ success: true })
         }
 
@@ -740,10 +746,13 @@ export async function webhookRoutes(app: FastifyInstance) {
                 relatedOrderId: expiredOrder.id,
               }).catch((e) => logger.warn({ err: e, orderId: expiredOrder.id }, 'Failed to write order_payment ledger entry'))
               logger.info({ txHash, orderId: expiredOrder.id, paymentNetwork: matchedDeposit.network }, 'Late webhook — expired order resurrected (payment was on-time)')
-              sendAdminAlertEmail(
-                `Gas Order Resurrected — Late Moralis Webhook`,
-                `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${matchedDeposit.network}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nMoralis webhook arrived after the order expired. The order was resurrected and delivery queued.`,
-              ).catch(() => {})
+              void createAdminNotif({
+                category: 'GAS',
+                title: `Gas Order Resurrected — Late Moralis Webhook`,
+                body: `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${matchedDeposit.network}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nMoralis webhook arrived after the order expired. The order was resurrected and delivery queued.`,
+                href: `/admin/gas/orders/${expiredOrder.orderRef}`,
+                telegram: true,
+              })
             }
           } else {
             // No matching active or recently-expired order — log for admin review
@@ -774,10 +783,13 @@ export async function webhookRoutes(app: FastifyInstance) {
             await redis.zadd('gas_unattributed', Date.now(), member)
             await redis.zremrangebyrank('gas_unattributed', 0, -101) // keep newest 100
             logger.warn({ txHash, amount: incoming, paymentNote, network: matchedDeposit.network }, 'Unattributed gas fee payment received')
-            sendAdminAlertEmail(
-              `Unattributed Gas Fee Payment — ${paymentNote}`,
-              `A USDT payment arrived at the ${matchedDeposit.network} gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${matchedDeposit.network}\nNote: ${paymentNote}\n\nReview at /admin/gas and attribute manually.`,
-            ).catch(() => {})
+            void createAdminNotif({
+              category: 'GAS',
+              title: `Unattributed Gas Fee Payment — ${paymentNote}`,
+              body: `A USDT payment arrived at the ${matchedDeposit.network} gas fee deposit address with no matching order.\n\nTX Hash: ${txHash}\nAmount: ${(payload as { amount?: string }).amount} USDT\nNetwork: ${matchedDeposit.network}\nNote: ${paymentNote}\n\nReview and attribute manually.`,
+              href: '/admin/gas',
+              telegram: true,
+            })
           }
         }
       }

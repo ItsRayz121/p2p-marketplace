@@ -7,7 +7,7 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
 import { AppError, Errors } from '../lib/errors'
-import { sendKycEmail, sendWithdrawalEmail, sendAdminAlertEmail } from '../services/email.service'
+import { sendKycEmail, sendWithdrawalEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.service'
@@ -1960,13 +1960,17 @@ export async function adminRoutes(app: FastifyInstance) {
     notify(winnerId, 'dispute', 'Dispute Resolved', `The dispute on trade #${dispute.trade.orderRef} was resolved in your favour. The platform does not move funds — settle directly with your counterparty per the ruling.`, { tradeId: dispute.tradeId }, dispute.tradeId)
     notify(loserId, 'dispute', 'Dispute Resolved', `The dispute on trade #${dispute.trade.orderRef} was resolved in favour of the other party. Resolution: ${parsed.data.resolution}`, { tradeId: dispute.tradeId }, dispute.tradeId)
 
-    await Promise.allSettled([
-      // Simple notification emails — reuse admin alert as fallback
-      sendAdminAlertEmail(
-        `Dispute ${id} resolved`,
-        `Trade: ${dispute.trade.orderRef}\nWinner: ${parsed.data.winner}\nResolution: ${parsed.data.resolution}\nLoser penalty: ${parsed.data.loserPenalty}`,
-      ),
-    ])
+    // Record the resolution as an admin notification (both parties already
+    // notified above). No Telegram DM — the acting admin just performed this.
+    await import('../services/adminNotification.service').then(({ createAdminNotif }) =>
+      createAdminNotif({
+        category: 'DISPUTE',
+        title: `Dispute ${id} resolved`,
+        body: `Trade: ${dispute.trade.orderRef}\nWinner: ${parsed.data.winner}\nResolution: ${parsed.data.resolution}\nLoser penalty: ${parsed.data.loserPenalty}`,
+        href: '/admin/disputes',
+        telegram: false,
+      }),
+    )
 
     return reply.send({ success: true })
   })

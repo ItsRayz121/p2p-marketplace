@@ -15,7 +15,7 @@ import { fireGasWebhook } from '../jobs/gasWebhook.job'
 import { runRefillJob } from '../lib/gas/gas.refill'
 import { runReconciliation } from '../lib/gas/gas.reconciliation'
 import { runMerchantSettlementJob } from '../jobs/gasMerchantSettlement.job'
-import { sendAdminAlertEmail } from '../services/email.service'
+import { createAdminNotif } from '../services/adminNotification.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
@@ -45,10 +45,13 @@ export function createWorker(queueName: string, processor: Processor<any, any, s
       // Only include safe, non-sensitive fields from job.data in the alert email.
       // Never serialize the full data object — it may contain private keys or credentials.
       const safeData = { orderId: (job.data as Record<string, unknown>)?.orderId ?? '(none)' }
-      sendAdminAlertEmail(
-        `Background job failed permanently: ${queueName}/${job.id}`,
-        `Queue: ${queueName}\nJob ID: ${job.id}\nJob name: ${job.name}\nAttempts: ${job.attemptsMade}\nOrder ID: ${safeData.orderId}\nError: ${err?.message ?? 'Unknown error'}`,
-      ).catch((emailErr) => logger.warn({ emailErr, jobId: job.id, queue: queueName }, 'Failed to send permanent-failure alert email'))
+      void createAdminNotif({
+        category: 'SYSTEM',
+        title: `Background job failed permanently: ${queueName}/${job.id}`,
+        body: `Queue: ${queueName}\nJob ID: ${job.id}\nJob name: ${job.name}\nAttempts: ${job.attemptsMade}\nOrder ID: ${safeData.orderId}\nError: ${err?.message ?? 'Unknown error'}`,
+        href: '/admin',
+        telegram: true,
+      })
     }
   })
 

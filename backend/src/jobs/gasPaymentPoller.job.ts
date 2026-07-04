@@ -23,7 +23,7 @@ import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { getEvmHotWalletAddress } from '../lib/gas/gasWalletService'
 import { matchAndDeliverGasPayment } from '../lib/gas/gas.matching'
 import { getWalletErc20Transfers } from '../lib/moralisClient'
-import { sendAdminAlertEmail } from '../services/email.service'
+import { createAdminNotif } from '../services/adminNotification.service'
 
 // ERC20 Transfer(from, to, value) — indexed from + to allow topic-filter on 'to'
 const TRANSFER_EVENT = parseAbiItem(
@@ -448,12 +448,15 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
       const deltaUsdt = Number(currentBalance - baselineBalance) / Math.pow(10, cfg.usdtDecimals)
       watchdogNote = ` — ⚠️ balance rose ~${deltaUsdt} USDT while blind (admin alerted)`
       logger.error({ network: cfg.paymentNetwork, deltaUsdt }, 'gasPaymentPoller: BALANCE ROSE while getLogs unavailable — possible undetected payment')
-      await sendAdminAlertEmail(
-        `⚠️ Gas ${cfg.paymentNetwork}: payment may be undetected (getLogs down)`,
-        `The ${cfg.paymentNetwork} deposit balance increased by ~${deltaUsdt} USDT, but getLogs is failing on every provider so the poller could not attribute it automatically.\n\n` +
-        `Deposit address: ${depositAddress}\nBlind range: ${effectiveFrom}-${safeToBlock}\nUnderlying error: ${(err as Error)?.message ?? 'unknown'}\n\n` +
-        `Detection auto-recovers once any getLogs provider responds (the block cursor was not advanced). If it doesn't clear shortly, attribute the payment manually in Admin → Gas.`,
-      ).catch(() => {})
+      void createAdminNotif({
+        category: 'GAS',
+        title: `⚠️ Gas ${cfg.paymentNetwork}: payment may be undetected (getLogs down)`,
+        body: `The ${cfg.paymentNetwork} deposit balance increased by ~${deltaUsdt} USDT, but getLogs is failing on every provider so the poller could not attribute it automatically.\n\n` +
+          `Deposit address: ${depositAddress}\nBlind range: ${effectiveFrom}-${safeToBlock}\nUnderlying error: ${(err as Error)?.message ?? 'unknown'}\n\n` +
+          `Detection auto-recovers once any getLogs provider responds (the block cursor was not advanced). If it doesn't clear shortly, attribute the payment manually in Admin → Gas.`,
+        href: '/admin/gas',
+        telegram: true,
+      })
     }
     // Re-baseline so we alert at most once per balance increment, not every 60s tick.
     if (currentBalance != null) await redis.set(balanceKey, currentBalance.toString())

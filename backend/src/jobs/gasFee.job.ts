@@ -1,7 +1,6 @@
 import type { Job } from 'bullmq'
 import { db } from '../lib/prisma'
 import { deliverGas, describeDeliveryError } from '../lib/gas/gas.delivery'
-import { sendAdminAlertEmail } from '../services/email.service'
 import { logger } from '../lib/logger'
 import { queues } from '../queues/definitions'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
@@ -171,10 +170,13 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
         where: { id: orderId },
         data: { status: 'payment_detected', failureReason: errMsg },
       })
-      await sendAdminAlertEmail(
-        `Gas Delivery Paused — Insufficient Hot Wallet Balance`,
-        `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\n\nThe hot wallet does not have enough native balance to deliver this order. A refill request should be raised. Delivery will resume once the balance is restored.\n\nError: ${errMsg}`,
-      ).catch(() => {})
+      void createAdminNotif({
+        category: 'GAS',
+        title: `Gas Delivery Paused — Insufficient Hot Wallet Balance`,
+        body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\n\nThe hot wallet does not have enough native balance to deliver this order. A refill request should be raised. Delivery will resume once the balance is restored.\n\nError: ${errMsg}`,
+        href: `/admin/gas/orders/${order.orderRef}`,
+        telegram: true,
+      })
       return
     }
 
@@ -208,10 +210,13 @@ async function enterRefundWindow(orderId: string, order: GasFeeOrder, errMsg: st
       data: { status: 'failed', failureReason: errMsg, retryCount: maxAttempts },
     })
     await notifyMerchantWebhook(orderId, 'failed')
-    await sendAdminAlertEmail(
-      `Gas Fee Delivery Failed After ${maxAttempts} Attempts`,
-      `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\nError: ${errMsg}\nNext status: failed (no payment on record)`,
-    )
+    void createAdminNotif({
+      category: 'GAS',
+      title: `Gas Fee Delivery Failed After ${maxAttempts} Attempts`,
+      body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\nError: ${errMsg}\nNext status: failed (no payment on record)`,
+      href: `/admin/gas/orders/${order.orderRef}`,
+      telegram: true,
+    })
     return
   }
 
@@ -235,10 +240,13 @@ async function enterRefundWindow(orderId: string, order: GasFeeOrder, errMsg: st
     detail: `Delivery failed after ${maxAttempts} attempts — still retrying; refund available at ${refundEligibleAt.toISOString()}`,
   })
   await notifyMerchantWebhook(orderId, 'awaiting_refund')
-  await sendAdminAlertEmail(
-    `Gas Fee Delivery Failed — Awaiting Refund Window`,
-    `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\nError: ${errMsg}\n\nThe system will keep retrying delivery for ${Math.round(REFUND_WINDOW_MS / 60000)} min. The user can request a refund after that; an automatic refund fires at ${Math.round(AUTO_REFUND_SAFETY_MS / 60000)} min if not delivered.`,
-  )
+  void createAdminNotif({
+    category: 'GAS',
+    title: `Gas Fee Delivery Failed — Awaiting Refund Window`,
+    body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\nError: ${errMsg}\n\nThe system will keep retrying delivery for ${Math.round(REFUND_WINDOW_MS / 60000)} min. The user can request a refund after that; an automatic refund fires at ${Math.round(AUTO_REFUND_SAFETY_MS / 60000)} min if not delivered.`,
+    href: `/admin/gas/orders/${order.orderRef}`,
+    telegram: true,
+  })
 }
 
 // In-window delivery retry. Single attempt; on failure it reverts to

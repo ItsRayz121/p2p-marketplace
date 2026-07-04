@@ -14,7 +14,6 @@ import { db } from '../prisma'
 import { redis } from '../redis'
 import { logger } from '../logger'
 import { queues } from '../../queues/definitions'
-import { sendAdminAlertEmail } from '../../services/email.service'
 import { createAdminNotif } from '../../services/adminNotification.service'
 import { appendLedgerEntry } from './gas.ledger'
 import { fromDbChain, paymentNetworkSettlementChain } from './gas.chains'
@@ -220,10 +219,13 @@ export async function matchAndDeliverGasPayment(p: MatchParams): Promise<MatchRe
     await parkUnattributed(txHash, incoming, paymentNetwork, depositAddress, 'ambiguous_multiple_matches')
     await recordGasAudit({ txHash }, { source, event: 'parked', paymentNetwork, txHash, detectedAmount: incoming, reason: 'ambiguous_multiple_matches', detail: `${candidates.length} candidates` })
     logger.warn({ txHash, incoming, paymentNetwork, candidateCount: candidates.length }, 'gas.matching: ambiguous amount match — parked, NOT auto-delivering')
-    sendAdminAlertEmail(
-      'Ambiguous Gas Fee Payment — manual review',
-      `A USDT payment (${incoming}) on ${paymentNetwork} matched ${candidates.length} pending gas orders by amount.\n\nTX: ${txHash}\n\nAuto-delivery was skipped to avoid crediting the wrong user. Attribute manually at /admin/gas.`,
-    ).catch(() => {})
+    void createAdminNotif({
+      category: 'GAS',
+      title: 'Ambiguous Gas Fee Payment — manual review',
+      body: `A USDT payment (${incoming}) on ${paymentNetwork} matched ${candidates.length} pending gas orders by amount.\n\nTX: ${txHash}\n\nAuto-delivery was skipped to avoid crediting the wrong user. Attribute manually.`,
+      href: '/admin/gas',
+      telegram: true,
+    })
     return { matched: false, reason: 'ambiguous_multiple_matches' }
   }
 
@@ -292,10 +294,13 @@ export async function matchAndDeliverGasPayment(p: MatchParams): Promise<MatchRe
           detail: 'resurrected expired order — payment was on time',
         })
         await onPaymentDetected(expiredOrder.id, expiredOrder.orderRef, expiredOrder.chain, txHash, incoming, confirmations, paymentNetwork, senderAddress, source)
-        sendAdminAlertEmail(
-          `Gas Order Resurrected — Late Payment Detection`,
-          `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but the webhook never fired. ${source} detected, attributed, and queued delivery automatically.`,
-        ).catch(() => {})
+        void createAdminNotif({
+          category: 'GAS',
+          title: `Gas Order Resurrected — Late Payment Detection`,
+          body: `Order ref: ${expiredOrder.orderRef}\nOrder ID: ${expiredOrder.id}\nNetwork: ${paymentNetwork}\nAmount: ${incoming} USDT\nTx Hash: ${txHash}\n\nPayment was on-chain before expiry but the webhook never fired. ${source} detected, attributed, and queued delivery automatically.`,
+          href: `/admin/gas/orders/${expiredOrder.orderRef}`,
+          telegram: true,
+        })
       }
       return { matched: true, orderId: expiredOrder.id, orderRef: expiredOrder.orderRef }
     }

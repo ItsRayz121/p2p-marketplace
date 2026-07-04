@@ -3,7 +3,7 @@ import { db } from '../lib/prisma'
 import { sendUsdtRefund, getSenderAddressFromTx } from '../lib/gas/gas.refund'
 import { sendAptosUsdtRefund, getAptosSenderFromTx } from '../lib/gas/aptosRefund'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
-import { sendAdminAlertEmail } from '../services/email.service'
+import { createAdminNotif } from '../services/adminNotification.service'
 import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { fromDbChain, paymentNetworkSettlementChain } from '../lib/gas/gas.chains'
@@ -48,10 +48,13 @@ export async function processGasRefund(job: Job<{ orderId: string; toAddressOver
       where: { id: orderId },
       data: { status: 'failed', failureReason: 'refund_skipped: no payment tx hash on record' },
     })
-    await sendAdminAlertEmail(
-      'Gas Refund Skipped — No Payment Tx Hash',
-      `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\n\nThis order has no paymentTxHash. Manual review required.`,
-    )
+    void createAdminNotif({
+      category: 'GAS',
+      title: 'Gas Refund Skipped — No Payment Tx Hash',
+      body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\n\nThis order has no paymentTxHash. Manual review required.`,
+      href: `/admin/gas/orders/${order.orderRef}`,
+      telegram: true,
+    })
     return
   }
 
@@ -65,10 +68,13 @@ export async function processGasRefund(job: Job<{ orderId: string; toAddressOver
       where: { id: orderId },
       data: { status: 'failed', failureReason: `refund_failed: no automated USDT refund for payment network ${order.paymentNetwork} — manual refund required` },
     })
-    await sendAdminAlertEmail(
-      'Gas Refund Needs Manual Action — Unsupported Payment Network',
-      `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nDelivery chain: ${order.chain}\nPayment network: ${order.paymentNetwork}\nAmount: ${order.paymentAmount} USDT\nPayment Tx: ${order.paymentTxHash}\n\nAutomated USDT refund is not implemented for this payment network. Send ${order.paymentAmount} USDT back to the sender manually.`,
-    )
+    void createAdminNotif({
+      category: 'GAS',
+      title: 'Gas Refund Needs Manual Action — Unsupported Payment Network',
+      body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nDelivery chain: ${order.chain}\nPayment network: ${order.paymentNetwork}\nAmount: ${order.paymentAmount} USDT\nPayment Tx: ${order.paymentTxHash}\n\nAutomated USDT refund is not implemented for this payment network. Send ${order.paymentAmount} USDT back to the sender manually.`,
+      href: `/admin/gas/orders/${order.orderRef}`,
+      telegram: true,
+    })
     return
   }
 
@@ -100,10 +106,13 @@ export async function processGasRefund(job: Job<{ orderId: string; toAddressOver
         where: { id: orderId },
         data: { status: 'failed', failureReason: 'refund_failed: could not resolve sender address after all retries' },
       })
-      await sendAdminAlertEmail(
-        'Gas Refund Failed — Sender Address Unresolvable',
-        `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nPayment Tx: ${order.paymentTxHash}\n\nFailed to resolve sender address after ${maxAttempts} attempts. Manual refund required.`,
-      )
+      void createAdminNotif({
+        category: 'GAS',
+        title: 'Gas Refund Failed — Sender Address Unresolvable',
+        body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nPayment Tx: ${order.paymentTxHash}\n\nFailed to resolve sender address after ${maxAttempts} attempts. Manual refund required.`,
+        href: `/admin/gas/orders/${order.orderRef}`,
+        telegram: true,
+      })
     }
     throw new Error('SENDER_ADDRESS_UNRESOLVABLE')
   }
@@ -165,10 +174,13 @@ export async function processGasRefund(job: Job<{ orderId: string; toAddressOver
         data: { status: 'failed', failureReason: `refund_failed after ${maxAttempts} attempts: ${errMsg}` },
       })
       await notifyMerchantWebhook(orderId, 'failed')
-      await sendAdminAlertEmail(
-        'Gas Refund Failed After All Retries',
-        `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nRefund to: ${senderAddress}\nAmount: ${order.paymentAmount} USDT\nError: ${errMsg}\n\nManual refund required.`,
-      )
+      void createAdminNotif({
+        category: 'GAS',
+        title: 'Gas Refund Failed After All Retries',
+        body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nRefund to: ${senderAddress}\nAmount: ${order.paymentAmount} USDT\nError: ${errMsg}\n\nManual refund required.`,
+        href: `/admin/gas/orders/${order.orderRef}`,
+        telegram: true,
+      })
     } else {
       throw err
     }

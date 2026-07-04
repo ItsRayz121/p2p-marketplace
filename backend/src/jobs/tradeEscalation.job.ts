@@ -3,7 +3,6 @@
 
 import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
-import { sendAdminAlertEmail } from '../services/email.service'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
@@ -135,10 +134,13 @@ export async function runTradeEscalation(): Promise<void> {
     where: { status: 'payment_uploaded', updatedAt: { lt: alertBefore } },
   })
   if (awaitingReview > 0) {
-    await sendAdminAlertEmail(
-      `⚠️ ${awaitingReview} trades awaiting payment review for >2 hours`,
-      `${awaitingReview} trades have had payment proof uploaded for more than 2 hours without admin action. Please review: /admin/trades`,
-    ).catch(() => {})
+    void createAdminNotif({
+      category: 'TRADE',
+      title: `⚠️ ${awaitingReview} trades awaiting payment review for >2 hours`,
+      body: `${awaitingReview} trades have had payment proof uploaded for more than 2 hours without admin action. Please review.`,
+      href: '/admin/trades',
+      telegram: true,
+    })
   }
 
   // 3. Escalate disputes older than 48 hours
@@ -147,10 +149,13 @@ export async function runTradeEscalation(): Promise<void> {
     where: { status: { in: ['open', 'under_review'] }, createdAt: { lt: disputeBefore } },
   })
   if (oldDisputes > 0) {
-    await sendAdminAlertEmail(
-      `🚨 ${oldDisputes} disputes unresolved for >48 hours`,
-      `${oldDisputes} disputes have been open for more than 48 hours. Immediate review required: /admin/disputes`,
-    ).catch(() => {})
+    void createAdminNotif({
+      category: 'DISPUTE',
+      title: `🚨 ${oldDisputes} disputes unresolved for >48 hours`,
+      body: `${oldDisputes} disputes have been open for more than 48 hours. Immediate review required.`,
+      href: '/admin/disputes',
+      telegram: true,
+    })
     // Update status to escalated
     await db.dispute.updateMany({
       where: { status: { in: ['open', 'under_review'] }, createdAt: { lt: disputeBefore } },

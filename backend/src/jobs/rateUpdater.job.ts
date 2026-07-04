@@ -48,7 +48,7 @@
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
-import { sendAdminAlertEmail } from '../services/email.service'
+import { createAdminNotif } from '../services/adminNotification.service'
 import { env } from '../lib/env'
 
 const COINGECKO_IDS: Record<string, string> = {
@@ -660,10 +660,13 @@ export async function updateRates(): Promise<void> {
       } else {
         usingHardcodedPkr = true
         logger.error({ usdPkr: HARDCODED_USD_PKR }, 'USD/PKR ExchangeRate API failed AND no Redis cache — using hardcoded fallback')
-        sendAdminAlertEmail(
-          'USD/PKR Rate: Using Hardcoded Fallback',
-          `The ExchangeRate API failed and no cached USD/PKR rate was found in Redis.\n\nAll gas fee prices and trade rate calculations are currently using the hardcoded fallback value of ${HARDCODED_USD_PKR} PKR/USD.\n\nThis will produce incorrect prices if the real rate has changed significantly. Check the ExchangeRate API key and connectivity immediately.`,
-        ).catch((alertErr: unknown) => logger.error({ err: alertErr }, 'Failed to send USD/PKR fallback alert email'))
+        void createAdminNotif({
+          category: 'SYSTEM',
+          title: 'USD/PKR Rate: Using Hardcoded Fallback',
+          body: `The ExchangeRate API failed and no cached USD/PKR rate was found in Redis.\n\nAll gas fee prices and trade rate calculations are currently using the hardcoded fallback value of ${HARDCODED_USD_PKR} PKR/USD.\n\nThis will produce incorrect prices if the real rate has changed significantly. Check the ExchangeRate API key and connectivity immediately.`,
+          href: '/admin',
+          telegram: true,
+        })
       }
     }
     if (usingHardcodedPkr) {
@@ -809,10 +812,13 @@ export async function updateRates(): Promise<void> {
     const failCount = await redis.incr('rate_update_fail_count')
     await redis.expire('rate_update_fail_count', 3600)
     if (failCount === 3) {
-      await sendAdminAlertEmail(
-        'Rate Updater Failed 3 Times',
-        `Rate update has failed 3 times in the last hour. Error: ${err instanceof Error ? err.message : String(err)}`,
-      ).catch(() => {})
+      void createAdminNotif({
+        category: 'SYSTEM',
+        title: 'Rate Updater Failed 3 Times',
+        body: `Rate update has failed 3 times in the last hour. Error: ${err instanceof Error ? err.message : String(err)}`,
+        href: '/admin',
+        telegram: true,
+      })
       await redis.del('rate_update_fail_count')
     }
     throw err
