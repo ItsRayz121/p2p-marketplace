@@ -10,6 +10,40 @@ export function supportMailto(subject?: string): string {
     : `mailto:${SUPPORT_EMAIL}`
 }
 
+/**
+ * Open a support email robustly across every surface.
+ *
+ * A bare `mailto:` link throws `ERR_UNKNOWN_URL_SCHEME` (and shows a broken
+ * error page) inside an Android WebView / installed-app wrapper / Telegram Mini
+ * App, because those webviews have no mail-client handler. In those contexts we
+ * instead copy the address to the clipboard and toast it, so the user always
+ * has a working path. In a normal browser we open the mail client as usual.
+ */
+export function openSupportEmail(subject?: string): void {
+  if (typeof window === 'undefined') return
+  const w = window as unknown as {
+    Telegram?: { WebApp?: unknown }
+    matchMedia?: (q: string) => { matches: boolean }
+    navigator?: { standalone?: boolean }
+  }
+  const inTelegram = Boolean(w.Telegram?.WebApp)
+  const isStandalone =
+    Boolean(w.matchMedia?.('(display-mode: standalone)')?.matches) ||
+    w.navigator?.standalone === true
+
+  // Copy the address as a universal fallback that works even where mailto can't.
+  try { void navigator.clipboard?.writeText(SUPPORT_EMAIL) } catch { /* clipboard may be blocked */ }
+
+  if (inTelegram || isStandalone) {
+    // Lazy import to keep this module free of UI deps on the server.
+    import('./toast').then(({ toast }) => {
+      toast.info(`Email us at ${SUPPORT_EMAIL}`, 'Address copied to your clipboard')
+    }).catch(() => { /* toast unavailable — clipboard copy still happened */ })
+    return
+  }
+  window.location.href = supportMailto(subject)
+}
+
 // Social / messaging support channels.
 // `available: false` channels are shown as "Coming soon" placeholders.
 export interface SupportChannel {

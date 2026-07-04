@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input'
 import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader, TokenLogo } from './GasPrimitives'
 import { GasCalcPopup } from './GasCalcPopup'
-import { supportMailto } from '@/lib/contact'
+import { openSupportEmail } from '@/lib/contact'
 
 export function GasAmountStep() {
   const {
@@ -136,13 +136,14 @@ export function GasAmountStep() {
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           <span className="min-w-0 truncate">Max order value: <span className="font-bold">${maxUsd} USDT</span> per transaction</span>
         </div>
-        <a
-          href={supportMailto('Gas Fee Large Order Request')}
+        <button
+          type="button"
+          onClick={() => openSupportEmail('Gas Fee Large Order Request')}
           title={`Need more than $${maxUsd}? Email us and we'll help you with a larger gas order.`}
-          className="inline-block underline hover:no-underline font-semibold pl-6"
+          className="inline-block underline hover:no-underline font-semibold pl-6 text-left"
         >
           Request higher limit
-        </a>
+        </button>
       </div>
 
       <Button

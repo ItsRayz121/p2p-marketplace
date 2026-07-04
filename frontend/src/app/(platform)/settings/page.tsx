@@ -16,7 +16,7 @@ import { WereYouReferred } from '@/components/referral/WereYouReferred'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { toast } from '@/lib/toast'
 import { Lock, Camera, Mail, Send, Check } from 'lucide-react'
-import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
+import { SUPPORT_EMAIL, openSupportEmail } from '@/lib/contact'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
@@ -899,7 +899,7 @@ export default function SettingsPage() {
             <p className="text-sm font-semibold text-text-primary mb-1">Delete Account</p>
             <p className="text-sm text-text-muted mb-3">
               To request account deletion, please contact our support team at{' '}
-              <a href={supportMailto('Account Deletion Request')} className="text-primary underline">{SUPPORT_EMAIL}</a>{' '}
+              <button type="button" onClick={() => openSupportEmail('Account Deletion Request')} className="text-primary underline">{SUPPORT_EMAIL}</button>{' '}
               from your registered email address.
             </p>
             <Button variant="secondary" disabled className="opacity-50">

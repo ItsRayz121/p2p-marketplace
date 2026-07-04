@@ -12,7 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Clock, ShieldCheck, ShieldPlus } from 'lucide-react'
 import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
-import { supportMailto } from '@/lib/contact'
+import Link from 'next/link'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -475,14 +475,14 @@ export default function KycPage() {
           <div className="bg-surface border border-border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
             <div>
               <p className="text-sm font-semibold text-text-primary">Need help?</p>
-              <p className="text-xs text-text-muted mt-0.5">Contact support if your review takes longer than 24 hours.</p>
+              <p className="text-xs text-text-muted mt-0.5">Visit the Help Center to email us or start a live chat if your review takes longer than 24 hours.</p>
             </div>
-            <a
-              href={supportMailto('KYC Review Inquiry')}
+            <Link
+              href="/help"
               className="flex-shrink-0 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary-hover transition-colors"
             >
               Contact Support
-            </a>
+            </Link>
           </div>
         </div>
       )}

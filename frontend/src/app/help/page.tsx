@@ -1,7 +1,7 @@
 ﻿'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { SUPPORT_EMAIL, supportMailto } from '@/lib/contact'
+import { SUPPORT_EMAIL, openSupportEmail } from '@/lib/contact'
 import { openSupportChat } from '@/lib/supportChat'
 import { CommunityChannels } from '@/components/layout/CommunityChannels'
 
@@ -151,12 +151,13 @@ export default function HelpPage() {
           >
             Live Chat
           </button>
-          <a
-            href={supportMailto('RupChain Support')}
+          <button
+            type="button"
+            onClick={() => openSupportEmail('RupChain Support')}
             className="px-4 py-2 text-sm font-medium border border-border text-text-primary rounded-lg hover:bg-surface transition-colors"
           >
             Email Us
-          </a>
+          </button>
         </div>
       </div>
 
@@ -188,7 +189,7 @@ export default function HelpPage() {
         <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
         <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
         <Link href="/fees" className="hover:text-primary transition-colors">Fee Schedule</Link>
-        <a href={supportMailto('RupChain Support')} className="hover:text-primary transition-colors">{SUPPORT_EMAIL}</a>
+        <button type="button" onClick={() => openSupportEmail('RupChain Support')} className="hover:text-primary transition-colors">{SUPPORT_EMAIL}</button>
       </div>
     </div>
   )
