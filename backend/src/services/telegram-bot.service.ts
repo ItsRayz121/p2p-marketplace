@@ -49,8 +49,38 @@ function miniAppUrl(): string {
   return env.TELEGRAM_MINI_APP_URL ?? `${env.FRONTEND_URL}/mini-app`
 }
 
+// Deep-link a Mini App button to a specific in-app screen. The /mini-app auth
+// bridge honours a ?path= query and forwards there after sign-in.
+function miniAppUrlAt(path: string): string {
+  const base = miniAppUrl()
+  return `${base}${base.includes('?') ? '&' : '?'}path=${encodeURIComponent(path)}`
+}
+
+// Single "Open app" button — used on link/help confirmations.
 function openAppKeyboard() {
   return { inline_keyboard: [[{ text: '🚀 Open RupChain', web_app: { url: miniAppUrl() } }]] }
+}
+
+// Full action menu — the welcome screen. Every button opens the Mini App at the
+// relevant screen (auto sign-in).
+function mainMenuKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '🚀 Open RupChain', web_app: { url: miniAppUrl() } }],
+      [
+        { text: '💱 USDT Market', web_app: { url: miniAppUrlAt('/marketplace') } },
+        { text: '🪙 CTM Tokens', web_app: { url: miniAppUrlAt('/ctm') } },
+      ],
+      [
+        { text: '⛽ Crypto Gas Fees', web_app: { url: miniAppUrlAt('/gas') } },
+        { text: '🎁 Referral', web_app: { url: miniAppUrlAt('/referral') } },
+      ],
+      [
+        { text: '📋 Orders', web_app: { url: miniAppUrlAt('/orders') } },
+        { text: '👛 Wallet', web_app: { url: miniAppUrlAt('/wallet') } },
+      ],
+    ],
+  }
 }
 
 async function sendWelcome(chatId: number, firstName?: string): Promise<void> {
@@ -59,16 +89,17 @@ async function sendWelcome(chatId: number, firstName?: string): Promise<void> {
     chat_id: chatId,
     text:
       `👋 Welcome to RupChain, ${name}!\n\n` +
-      `Pakistan's trusted P2P crypto marketplace — buy & sell USDT with JazzCash, ` +
-      `Easypaisa & bank transfer, escrow-protected.\n\n` +
+      `People's trusted P2P crypto marketplace — buy & sell USDT with JazzCash, ` +
+      `Easypaisa & bank transfer, protected.\n\n` +
       `Inside the app you can:\n` +
       `• 💱 Buy & sell USDT at the best PKR rates\n` +
-      `• 🛡️ Trade safely with escrow + dispute protection\n` +
-      `• ⚡ Instant-buy and the P2P marketplace\n` +
-      `• 🎁 Invite friends and earn referral rewards\n\n` +
-      `Tap below to open the app — you'll be signed in automatically. ` +
+      `• 🪙 Trade community tokens — Sidra, Pi, Interlink & more\n` +
+      `• ⛽ Top up blockchain gas fees on any chain with PKR or crypto\n` +
+      `• 🛡️ Trade safely with on-chain + dispute protection\n` +
+      `• 🎁 Invite friends and earn referral rewards in $ USDT\n\n` +
+      `Tap a button below to jump straight in — you'll be signed in automatically. ` +
       `Send /help any time.`,
-    reply_markup: openAppKeyboard(),
+    reply_markup: mainMenuKeyboard(),
   })
 }
 
