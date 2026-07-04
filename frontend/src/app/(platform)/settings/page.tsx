@@ -753,11 +753,18 @@ function ConnectionsTab() {
 
         {telegramLinked ? (
           <div className="space-y-3">
-            <p className="text-sm text-text-primary flex items-center gap-1.5">
-              <Check size={14} className="text-success" />
-              Linked{user?.telegramUsername ? <> as <strong>@{user.telegramUsername}</strong></> : null}. Open the app in
-              Telegram and you’ll be signed into this same account.
-            </p>
+            <div className="rounded-lg border border-border bg-canvas p-3 space-y-1.5">
+              {user?.telegramUsername && (
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Check size={14} className="text-success flex-shrink-0" />
+                  <span className="text-text-muted">Linked as</span>
+                  <strong className="text-text-primary break-all">@{user.telegramUsername}</strong>
+                </div>
+              )}
+              <p className="text-xs text-text-muted leading-relaxed">
+                Open the app in Telegram and you’ll be signed into this same account.
+              </p>
+            </div>
 
             {!tgUnlinkOpen ? (
               <button

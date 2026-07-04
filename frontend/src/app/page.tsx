@@ -250,7 +250,7 @@ export default async function HomePage() {
       <section className="py-12 bg-canvas border-b border-border">
         <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">What is RupChain?</h2>
-          <p className="mt-4 text-base sm:text-lg text-text-secondary leading-relaxed">
+          <p className="mt-4 max-w-2xl mx-auto text-base sm:text-lg text-text-secondary leading-relaxed text-left sm:text-center [text-wrap:pretty]">
             RupChain is Pakistan&rsquo;s peer-to-peer crypto marketplace &mdash; buy and sell USDT and
             community tokens with JazzCash, Easypaisa, or bank transfer, and top up blockchain gas fees
             on any chain. Sign up free with email, Google, or Telegram, verify your identity, and trade
@@ -268,12 +268,12 @@ export default async function HomePage() {
           <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">
             Most crypto deals are a leap of faith
           </h2>
-          <p className="mt-4 text-base sm:text-lg text-text-secondary leading-relaxed">
+          <p className="mt-4 max-w-2xl mx-auto text-base sm:text-lg text-text-secondary leading-relaxed text-left sm:text-center [text-wrap:pretty]">
             You find a random seller in a group chat, send your money first, and just&hellip; hope.
             No protection. No idea who they really are. Rates that move the second you commit.
             One bad trade and it&rsquo;s gone &mdash; no support, no recourse, no one to call.
           </p>
-          <p className="mt-5 text-base sm:text-lg font-semibold text-text-primary leading-relaxed">
+          <p className="mt-5 max-w-2xl mx-auto text-base sm:text-lg font-semibold text-text-primary leading-relaxed text-left sm:text-center [text-wrap:pretty]">
             RupChain was built to end that. Every trader is identity-verified, every transfer is
             checked on-chain, and a real dispute team has your back &mdash; so you always know who
             you&rsquo;re dealing with and can prove exactly what happened.
