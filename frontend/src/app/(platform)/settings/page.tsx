@@ -565,6 +565,12 @@ function ConnectionsTab() {
   const [tgLink, setTgLink] = useState<string | null>(null)
   const [tgWaiting, setTgWaiting] = useState(false)
 
+  // Telegram DISCONNECT state (fix a wrong Telegram → password-confirmed unlink)
+  const [tgUnlinkOpen, setTgUnlinkOpen] = useState(false)
+  const [tgUnlinkPassword, setTgUnlinkPassword] = useState('')
+  const [tgUnlinkBusy, setTgUnlinkBusy] = useState(false)
+  const [tgUnlinkErr, setTgUnlinkErr] = useState('')
+
   const hasRealEmail = user?.hasRealEmail ?? true
   const telegramLinked = user?.telegramLinked ?? false
 
@@ -625,6 +631,20 @@ function ConnectionsTab() {
     } catch (e) {
       setTgErr(e instanceof Error ? e.message : 'Failed to start Telegram linking')
     } finally { setTgBusy(false) }
+  }
+
+  const disconnectTelegram = async () => {
+    setTgUnlinkBusy(true); setTgUnlinkErr('')
+    try {
+      const updated = await accountApi.unlinkTelegram(tgUnlinkPassword)
+      setUser(updated)
+      // Reset every Telegram sub-state so the section cleanly returns to the
+      // "Link Telegram" flow, ready for the correct account.
+      setTgUnlinkOpen(false); setTgUnlinkPassword('')
+      setTgLink(null); setTgWaiting(false); setTgErr('')
+    } catch (e) {
+      setTgUnlinkErr(e instanceof Error ? e.message : 'Failed to disconnect Telegram')
+    } finally { setTgUnlinkBusy(false) }
   }
 
   return (
@@ -732,11 +752,50 @@ function ConnectionsTab() {
         </div>
 
         {telegramLinked ? (
-          <p className="text-sm text-text-primary flex items-center gap-1.5">
-            <Check size={14} className="text-success" />
-            Linked{user?.telegramUsername ? <> as <strong>@{user.telegramUsername}</strong></> : null}. Open the app in
-            Telegram and you’ll be signed into this same account.
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-text-primary flex items-center gap-1.5">
+              <Check size={14} className="text-success" />
+              Linked{user?.telegramUsername ? <> as <strong>@{user.telegramUsername}</strong></> : null}. Open the app in
+              Telegram and you’ll be signed into this same account.
+            </p>
+
+            {!tgUnlinkOpen ? (
+              <button
+                onClick={() => { setTgUnlinkOpen(true); setTgUnlinkErr('') }}
+                className="text-sm text-danger hover:underline"
+              >
+                Connected the wrong Telegram? Disconnect
+              </button>
+            ) : (
+              <div className="space-y-2 rounded-lg border border-border bg-canvas p-3">
+                <p className="text-xs text-text-muted">
+                  Enter your password to disconnect. You can then link the correct Telegram account.
+                  Only one Telegram can be linked at a time.
+                </p>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={tgUnlinkPassword}
+                  onChange={(e) => setTgUnlinkPassword(e.target.value)}
+                  placeholder="Current password"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                {tgUnlinkErr && <p className="text-sm text-danger">{tgUnlinkErr}</p>}
+                <div className="flex gap-2">
+                  <Button variant="danger" onClick={disconnectTelegram} disabled={tgUnlinkBusy || tgUnlinkPassword.length < 1}>
+                    {tgUnlinkBusy ? <Spinner size="sm" /> : 'Disconnect Telegram'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => { setTgUnlinkOpen(false); setTgUnlinkPassword(''); setTgUnlinkErr('') }}
+                    disabled={tgUnlinkBusy}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <>
             <p className="text-sm text-text-muted">

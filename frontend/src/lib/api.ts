@@ -799,6 +799,11 @@ export const accountApi = {
     apiRequest<{ deepLink: string | null; expiresAt: string }>('/account/telegram/link-token', {
       method: 'POST',
     }),
+  unlinkTelegram: (password: string) =>
+    apiRequest<AuthUser>('/account/telegram/unlink', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
 }
 
 export const marketplaceApi = {

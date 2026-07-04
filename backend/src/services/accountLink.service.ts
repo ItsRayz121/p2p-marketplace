@@ -15,7 +15,7 @@
 import { randomBytes } from 'node:crypto'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
-import { generateOtp, hashOtp, verifyOtp, hashToken, hashPassword } from '../lib/hash'
+import { generateOtp, hashOtp, verifyOtp, hashToken, hashPassword, verifyPassword } from '../lib/hash'
 import { sendOtpEmail } from './email.service'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
@@ -284,4 +284,53 @@ export async function linkTelegramViaToken(input: {
     db.otpCode.update({ where: { id: otp.id }, data: { usedAt: new Date() } }),
   ])
   return { ok: true }
+}
+
+// ─── Telegram unlink (fix a wrong Telegram → disconnect, then re-link) ──────────
+//
+// Strictly reversible counterpart to linking. Clearing telegramId is safe for
+// auto-auth: the freed Telegram, on next Mini-App open, no longer matches any
+// account and simply spawns a fresh stub — it can NEVER re-enter this account.
+//
+// Guardrails (both required):
+//   • Anti-lockout: refuse if Telegram is the account's ONLY way in (a synthetic
+//     email or no password). The user must add + verify a real email with a
+//     password first, or they'd be locked out of their own account.
+//   • Step-up: the current password must be re-entered — disconnecting a login
+//     method is security-sensitive.
+export async function unlinkTelegram(userId: string, password: string): Promise<SafeUser> {
+  const me = await db.user.findUnique({
+    where: { id: userId },
+    select: { telegramId: true, email: true, passwordHash: true },
+  })
+  if (!me) throw new AppError('NOT_FOUND', 'User not found', 404)
+  if (me.telegramId == null) {
+    throw new AppError('VALIDATION_ERROR', 'No Telegram account is linked', 400)
+  }
+
+  // Anti-lockout: an alternative credential (real email + password) must exist.
+  if (isSyntheticEmail(me.email) || !me.passwordHash) {
+    throw new AppError(
+      'TELEGRAM_ONLY_ACCOUNT',
+      'Add and verify an email address with a password before disconnecting Telegram — otherwise you would be locked out of your account.',
+      400,
+    )
+  }
+
+  // Step-up: confirm ownership with the current password.
+  const ok = await verifyPassword(password, me.passwordHash)
+  if (!ok) throw new AppError('INVALID_PASSWORD', 'Incorrect password', 400)
+
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      telegramId: null,
+      telegramUsername: null,
+      telegramPhotoUrl: null,
+      telegramAuthAt: null,
+    },
+  })
+  logger.info({ userId }, 'Telegram disconnected by user')
+
+  return getMe(userId)
 }

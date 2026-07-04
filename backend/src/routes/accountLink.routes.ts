@@ -6,6 +6,7 @@ import {
   startEmailLink,
   verifyEmailLink,
   createTelegramLinkToken,
+  unlinkTelegram,
 } from '../services/accountLink.service'
 
 const emailStartSchema = z.object({
@@ -63,6 +64,20 @@ export async function accountLinkRoutes(app: FastifyInstance) {
         success: true,
         data: { deepLink: result.deepLink, expiresAt: result.expiresAt.toISOString() },
       })
+    },
+  )
+
+  // POST /api/v1/account/telegram/unlink — disconnect Telegram (password-confirmed)
+  app.post(
+    '/account/telegram/unlink',
+    { preHandler: [authenticate], config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } },
+    async (req, reply) => {
+      const parsed = z.object({ password: z.string().min(1).max(128) }).safeParse(req.body)
+      if (!parsed.success) {
+        throw new AppError('VALIDATION_ERROR', 'Your current password is required to disconnect Telegram', 400)
+      }
+      const user = await unlinkTelegram(req.user!.id, parsed.data.password)
+      return reply.send({ success: true, data: user })
     },
   )
 }
