@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RupChain — Investor Pitch Deck</title>
+<style>
+  :root{
+    --bg:#0a0e1a; --bg2:#0f1629; --card:#141d33; --line:#233152;
+    --ink:#eef2ff; --muted:#94a3c4; --brand:#3b82f6; --brand2:#22d3ee;
+    --good:#34d399; --warn:#fbbf24; --accent:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1200px 800px at 70% -10%, #16224a 0%, var(--bg) 55%) fixed;
+    color:var(--ink);
+    font-family:"Segoe UI",Inter,system-ui,-apple-system,Roboto,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  .deck{position:relative;height:100vh;width:100vw}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;
+    padding:6vh 7vw;opacity:0;transition:opacity .35s ease;
+    animation:rise .5s ease both;
+  }
+  .slide.active{display:flex;opacity:1}
+  @keyframes rise{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+  .kicker{
+    font-size:.8rem;letter-spacing:.28em;text-transform:uppercase;
+    color:var(--brand2);font-weight:700;margin-bottom:1.2rem;display:flex;gap:.7rem;align-items:center;
+  }
+  .kicker::before{content:"";width:34px;height:2px;background:linear-gradient(90deg,var(--brand),var(--brand2))}
+  h1{font-size:clamp(2.2rem,5vw,4.6rem);line-height:1.02;letter-spacing:-.02em;font-weight:800}
+  h2{font-size:clamp(1.7rem,3.4vw,3rem);line-height:1.05;letter-spacing:-.015em;font-weight:800;margin-bottom:.4rem}
+  h2 .g{background:linear-gradient(90deg,var(--brand),var(--brand2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  p.lead{font-size:clamp(1rem,1.6vw,1.35rem);color:var(--muted);max-width:60ch;line-height:1.55;margin-top:.8rem}
+  .grid{display:grid;gap:1.1rem;margin-top:2rem}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{
+    background:linear-gradient(180deg,var(--card),var(--bg2));
+    border:1px solid var(--line);border-radius:16px;padding:1.3rem 1.4rem;
+  }
+  .card h3{font-size:1.05rem;margin-bottom:.35rem;font-weight:700}
+  .card p{color:var(--muted);font-size:.92rem;line-height:1.5}
+  .card .ic{font-size:1.5rem;margin-bottom:.6rem;display:block}
+  .stat{display:flex;flex-direction:column;gap:.2rem}
+  .stat .num{font-size:clamp(2rem,4vw,3.2rem);font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(90deg,var(--brand2),var(--good));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .stat .lbl{color:var(--muted);font-size:.9rem;font-weight:600}
+  .ph{color:var(--warn);font-style:italic}
+  .pill{display:inline-block;padding:.3rem .7rem;border:1px solid var(--line);border-radius:999px;
+    font-size:.78rem;color:var(--muted);margin:.2rem .3rem .2rem 0;background:#0e162b}
+  ul.clean{list-style:none;display:flex;flex-direction:column;gap:.7rem;margin-top:1.4rem}
+  ul.clean li{display:flex;gap:.7rem;font-size:1.02rem;color:#d7def6;line-height:1.4}
+  ul.clean li::before{content:"▸";color:var(--brand2);font-weight:800}
+  .foot{position:absolute;left:7vw;right:7vw;bottom:3vh;display:flex;justify-content:space-between;
+    align-items:center;color:var(--muted);font-size:.8rem;border-top:1px solid var(--line);padding-top:1rem}
+  .brand{font-weight:800;letter-spacing:.02em}
+  .brand span{color:var(--brand2)}
+  .bar{height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2));border-radius:999px}
+  .track{height:10px;background:#0e1730;border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+  .roadmap{display:flex;gap:0;margin-top:2rem;position:relative}
+  .rm{flex:1;padding:0 1rem;border-left:2px solid var(--line);position:relative}
+  .rm::before{content:"";position:absolute;left:-7px;top:0;width:12px;height:12px;border-radius:50%;background:var(--brand2)}
+  .rm.done::before{background:var(--good)}
+  .rm h4{font-size:.95rem;margin-bottom:.3rem}
+  .rm span{font-size:.78rem;color:var(--brand2);font-weight:700;letter-spacing:.05em}
+  .rm p{font-size:.85rem;color:var(--muted);margin-top:.4rem;line-height:1.4}
+  .nav{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:50;
+    background:#0c1striped;background:rgba(12,18,36,.8);border:1px solid var(--line);padding:8px 12px;border-radius:999px;backdrop-filter:blur(8px)}
+  .nav button{background:var(--card);border:1px solid var(--line);color:var(--ink);width:34px;height:34px;
+    border-radius:50%;cursor:pointer;font-size:1rem;display:grid;place-items:center}
+  .nav button:hover{border-color:var(--brand2)}
+  .count{color:var(--muted);font-size:.85rem;align-self:center;padding:0 6px;min-width:52px;text-align:center}
+  .dots{position:fixed;top:0;left:0;right:0;height:4px;background:#0e1730;z-index:50}
+  .dots .fill{height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2));transition:width .3s}
+  .two{display:grid;grid-template-columns:1.1fr .9fr;gap:2.5rem;align-items:center;flex:1}
+  .center{align-items:flex-start;justify-content:center}
+  .logo{font-size:clamp(2.6rem,6vw,5rem);font-weight:900;letter-spacing:-.03em}
+  .logo span{background:linear-gradient(90deg,var(--brand),var(--brand2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{color:var(--muted);font-size:1.2rem;margin-top:1rem;max-width:52ch;line-height:1.5}
+  .ask{font-size:clamp(1.8rem,4vw,3.2rem);font-weight:800}
+  .ask .g{background:linear-gradient(90deg,var(--good),var(--brand2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .note{margin-top:2rem;font-size:.82rem;color:var(--warn);opacity:.85}
+  @media(max-width:760px){.two,.g2,.g3,.g4{grid-template-columns:1fr}.roadmap{flex-direction:column;gap:1rem}
+    .rm{border-left:2px solid var(--line);padding-left:1rem}}
+</style>
+</head>
+<body>
+<div class="dots"><div class="fill" id="fill"></div></div>
+<div class="deck" id="deck">
+
+  <!-- 1 COVER -->
+  <section class="slide center">
+    <div class="kicker">Investor Pitch · Confidential</div>
+    <div class="logo">Rup<span>Chain</span></div>
+    <p class="tag">Pakistan's first non-custodial P2P crypto marketplace — trade USDT & community tokens, buy gas, and settle safely with on-chain proof and built-in trade protection.</p>
+    <div class="grid g3" style="margin-top:3rem;max-width:820px">
+      <div class="card stat"><span class="num">Non-custodial</span><span class="lbl">Platform holds zero user funds</span></div>
+      <div class="card stat"><span class="num">Multi-chain</span><span class="lbl">BSC · Aptos · TRON · SOL · TON · SUI</span></div>
+      <div class="card stat"><span class="num">Pakistan-first</span><span class="lbl">Built for PKR rails, not -only</span></div>
+    </div>
+    <div class="foot"><span class="brand">Rup<span>Chain</span></span><span>Fazal Elahi · Founder &amp; Builder</span><span>2026</span></div>
+  </section>
+
+  <!-- 2 PROBLEM -->
+  <section class="slide">
+    <div class="kicker">The Problem</div>
+    <h2>Pakistanis can't trade crypto <span class="g">safely or simply</span></h2>
+    <p class="lead">70M+ crypto-curious users, near-zero compliant local on-ramps, and a market run on trust-me Telegram groups where scams and frozen funds are routine.</p>
+    <div class="grid g3">
+      <div class="card"><span class="ic">🚫</span><h3>No local exchanges</h3><p>Global platforms restrict or ban PK users; banking rails are hostile to crypto flows.</p></div>
+      <div class="card"><span class="ic">⚠️</span><h3>Custodial risk</h3><p>Every "P2P" alternative holds your money — one exit-scam or freeze away from total loss.</p></div>
+      <div class="card"><span class="ic">🕳️</span><h3>Zero recourse</h3><p>Disputes settled in DMs. No KYC, no proof, no protection, no accountability.</p></div>
+    </div>
+  </section>
+
+  <!-- 3 SOLUTION -->
+  <section class="slide">
+    <div class="kicker">The Solution</div>
+    <h2>A marketplace that <span class="g">never touches your funds</span></h2>
+    <p class="lead">RupChain replaces trust with structure: identity, on-chain proof, and algorithmic protection — while assets move peer-to-peer, off-platform.</p>
+    <ul class="clean">
+      <li><b>Non-custodial by design</b> — USDT and community tokens settle wallet-to-wallet; RupChain holds no balances.</li>
+      <li><b>Trade Protection engine</b> — layered KYC (L1/L2 video), maker bonds, tier caps, reputation scoring & dispute resolution.</li>
+      <li><b>On-chain verification</b> — every settlement carries an explorer-linked proof; delivery is provable, not promised.</li>
+      <li><b>Gas Station</b> — buy native gas across 6+ chains instantly with auto-detection & auto-refund.</li>
+    </ul>
+  </section>
+
+  <!-- 4 PRODUCT / PILLARS -->
+  <section class="slide">
+    <div class="kicker">The Product · Three Pillars</div>
+    <h2>One platform, <span class="g">three revenue engines</span></h2>
+    <div class="grid g3" style="margin-top:2rem">
+      <div class="card"><span class="ic">💱</span><h3>P2P USDT Market</h3><p>Non-custodial fiat↔crypto with payment-method matching, escrowed protection & dispute flow.</p></div>
+      <div class="card"><span class="ic">🪙</span><h3>Community Token Market</h3><p>Native marketplace for community/creator tokens (CTM) with price guardrails & ratings.</p></div>
+      <div class="card"><span class="ic">⛽</span><h3>Gas Station</h3><p>Cross-chain gas top-ups with algorithmic detection, refunds & margin-based pricing.</p></div>
+    </div>
+    <p class="lead" style="margin-top:1.6rem">Plus a full growth & retention stack — referral/affiliate engine, points & airdrop seasons, giveaways, live support, and an SEO/AI content system.</p>
+  </section>
+
+  <!-- 5 ALGORITHMIC MOAT -->
+  <section class="slide">
+    <div class="kicker">The Moat · Algorithmic</div>
+    <h2>Trust, <span class="g">automated</span></h2>
+    <p class="lead">The defensibility isn't a feature list — it's the algorithmic layer competitors can't copy overnight.</p>
+    <div class="grid g2">
+      <div class="card"><span class="ic">🔎</span><h3>Multi-chain payment detection</h3><p>Poller-authoritative auto-detection with adaptive block-range splitting & reconciliation across 6 chains — no third-party dependency.</p></div>
+      <div class="card"><span class="ic">🛡️</span><h3>Reputation & risk scoring</h3><p>Mutual trade streaks, tier caps, maker bonds and dispute auto-strikes price risk per user, per trade.</p></div>
+      <div class="card"><span class="ic">📈</span><h3>Reference-rate engine</h3><p>Live PKR pricing from a median of recent completed trades — self-correcting, manipulation-resistant.</p></div>
+      <div class="card"><span class="ic">🎯</span><h3>Points & fee-discount engine</h3><p>Share-of-fixed-pool airdrop seasons + streak multipliers drive retention without inflating rewards.</p></div>
+    </div>
+  </section>
+
+  <!-- 6 TRACTION -->
+  <section class="slide">
+    <div class="kicker">Traction · Early Stage</div>
+    <h2>Live — and <span class="g">onboarding real users</span></h2>
+    <p class="lead">The platform build is complete and we've just opened live testing with our first real users. The product works end-to-end across all three pillars, and early trades are already flowing.</p>
+    <div class="grid g4" style="margin-top:1.5rem">
+      <div class="card stat"><span class="num">35</span><span class="lbl">Registered users</span></div>
+      <div class="card stat"><span class="num">72</span><span class="lbl">Trades completed</span></div>
+      <div class="card stat"><span class="num">PKR 12,000</span><span class="lbl">Trade volume to date</span></div>
+      <div class="card stat"><span class="num" style="font-size:clamp(1.2rem,2.4vw,2rem)">Live Testing</span><span class="lbl">First real users onboarding</span></div>
+    </div>
+    <div style="margin-top:2.2rem;max-width:640px">
+      <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin-bottom:.5rem">
+        <span>Early activity since launch</span><span style="color:var(--good)">▲ growing</span>
+      </div>
+      <div class="track"><div class="bar" style="width:32%"></div></div>
+    </div>
+    <p class="note">Just finished building the platform and started real-user testing — these are live early-stage numbers, not projections.</p>
+  </section>
+
+  <!-- 7 MARKET -->
+  <section class="slide">
+    <div class="kicker">Market</div>
+    <h2>A large, <span class="g">underserved</span> base</h2>
+    <div class="grid g3">
+      <div class="card stat"><span class="num">$20B+</span><span class="lbl">Est. annual PK crypto flow (industry reports)</span></div>
+      <div class="card stat"><span class="num">Top-10</span><span class="lbl">Pakistan in global crypto adoption index</span></div>
+      <div class="card stat"><span class="num">240M</span><span class="lbl">Population · ~65% under 30</span></div>
+    </div>
+    <ul class="clean">
+      <li><b>Beachhead:</b> Pakistan P2P USDT — the daily-driver stablecoin corridor.</li>
+      <li><b>Expand:</b> Community/creator tokens + gas across South Asia &amp; MENA remittance corridors.</li>
+      <li><b>Platform play:</b> the growth stack (referrals, airdrops, content) is white-labelable for new markets.</li>
+    </ul>
+    <p class="note">Cite your own sourced figures where marked before external use.</p>
+  </section>
+
+  <!-- 8 BUSINESS MODEL -->
+  <section class="slide">
+    <div class="kicker">Business Model</div>
+    <h2>Multiple <span class="g">margin lines</span></h2>
+    <div class="grid g2">
+      <div class="card"><span class="ic">💸</span><h3>Trading fees</h3><p>Per-trade fee on P2P &amp; CTM, tiered by volume with algorithmic fee discounts driving retention.</p></div>
+      <div class="card"><span class="ic">⛽</span><h3>Gas margin</h3><p>Spread on every cross-chain gas top-up — high-frequency, low-friction, always-on.</p></div>
+      <div class="card"><span class="ic">🤝</span><h3>Affiliate network</h3><p>Self-service affiliate engine: partners bring users; platform keeps net margin above payout.</p></div>
+      <div class="card"><span class="ic">✨</span><h3>Premium &amp; token</h3><p>Points/airdrop seasons + future premium tiers create long-term monetization &amp; token upside.</p></div>
+    </div>
+  </section>
+
+  <!-- 9 ROADMAP -->
+  <section class="slide">
+    <div class="kicker">Roadmap · Expansion</div>
+    <h2>Built, then <span class="g">scaled</span></h2>
+    <div class="roadmap">
+      <div class="rm done"><span>SHIPPED</span><h4>Core platform</h4><p>Non-custodial P2P, CTM, Gas Station, multi-chain detection, KYC &amp; disputes — live.</p></div>
+      <div class="rm done"><span>SHIPPED</span><h4>Growth stack</h4><p>Referral/affiliate, airdrop seasons, giveaways, live support, SEO/AI blog engine.</p></div>
+      <div class="rm"><span>NEXT</span><h4>Scale &amp; liquidity</h4><p>Deeper order flow, market-maker incentives, mobile app polish, on-ramp partnerships.</p></div>
+      <div class="rm"><span>VISION</span><h4>Regional expansion</h4><p>New corridors (MENA/South Asia), token launch, white-label licensing.</p></div>
+    </div>
+    <p class="lead" style="margin-top:2rem">The hard part — the non-custodial engine and trust layer — is already in production. Capital accelerates distribution, not R&amp;D from zero.</p>
+  </section>
+
+  <!-- 10 ASK -->
+  <section class="slide center">
+    <div class="kicker">The Ask</div>
+    <h1>Raising <span class="g" style="background:linear-gradient(90deg,var(--good),var(--brand2));-webkit-background-clip:text;background-clip:text;color:transparent">PKR 3M</span></h1>
+    <p class="lead" style="margin-top:1.2rem">to turn a shipped, non-custodial marketplace into the default way Pakistan — and the region — trades crypto.</p>
+    <div class="grid g3" style="margin-top:2.4rem;max-width:960px">
+      <div class="card"><h3>40% · Growth</h3><p><b style="color:var(--good)">PKR 1,200,000</b><br>User acquisition, affiliates &amp; marketing.</p></div>
+      <div class="card"><h3>35% · Product</h3><p><b style="color:var(--good)">PKR 1,050,000</b><br>Liquidity, mobile app &amp; on-ramp partnerships.</p></div>
+      <div class="card"><h3>25% · Team &amp; Ops</h3><p><b style="color:var(--good)">PKR 750,000</b><br>Engineering, compliance &amp; support.</p></div>
+    </div>
+    <div class="foot">
+      <span class="brand">Rup<span>Chain</span></span>
+      <span>Fazal Elahi · <a href="mailto:fazalelahi5577@gmail.com" style="color:var(--brand2);text-decoration:none">fazalelahi5577@gmail.com</a></span>
+      <span>Let's talk →</span>
+    </div>
+  </section>
+
+</div>
+
+<div class="nav">
+  <button id="prev" aria-label="Previous">‹</button>
+  <span class="count" id="count">1 / 10</span>
+  <button id="next" aria-label="Next">›</button>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  const show=n=>{
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('count').textContent=(i+1)+' / '+slides.length;
+    document.getElementById('fill').style.width=((i+1)/slides.length*100)+'%';
+  };
+  document.getElementById('next').onclick=()=>show(i+1);
+  document.getElementById('prev').onclick=()=>show(i-1);
+  document.addEventListener('keydown',e=>{
+    if(['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)){e.preventDefault();show(i+1);}
+    if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){e.preventDefault();show(i-1);}
+    if(e.key==='Home')show(0); if(e.key==='End')show(slides.length-1);
+    if(e.key==='f'||e.key==='F'){document.documentElement.requestFullscreen?.();}
+  });
+  show(0);
+</script>
+</body>
+</html>

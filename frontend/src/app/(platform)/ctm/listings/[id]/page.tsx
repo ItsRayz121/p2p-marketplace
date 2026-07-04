@@ -155,6 +155,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [paymentOpen, setPaymentOpen] = useState(true)
   const [payFromOpen, setPayFromOpen] = useState(true)
   const [deliveryOpen, setDeliveryOpen] = useState(true)
+  const [termsOpen, setTermsOpen] = useState(false)
 
   const fetchListing = async () => {
     try {
@@ -527,8 +528,15 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {/* Terms */}
       {listing.terms && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-          <h2 className="font-semibold text-text-primary mb-2">Terms</h2>
-          <p className="text-sm text-text-muted whitespace-pre-wrap">{listing.terms}</p>
+          <button onClick={() => setTermsOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">Terms</h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${termsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {termsOpen && (
+            <p className="text-sm text-text-muted whitespace-pre-wrap mt-3">{listing.terms}</p>
+          )}
         </div>
       )}
 

@@ -130,6 +130,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   const [sellerOpen, setSellerOpen] = useState(true)
   const [paymentOpen, setPaymentOpen] = useState(true)
   const [networkOpen, setNetworkOpen] = useState(true)
+  const [termsOpen, setTermsOpen] = useState(false)
 
   // Buyer's own saved payment methods
   const [myMethods, setMyMethods] = useState<SavedPaymentMethod[]>([])
@@ -475,8 +476,15 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       {/* Terms */}
       {ad.terms && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-          <h2 className="font-semibold text-text-primary mb-2">Terms</h2>
-          <p className="text-sm text-text-muted whitespace-pre-wrap">{ad.terms}</p>
+          <button onClick={() => setTermsOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">Terms</h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${termsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {termsOpen && (
+            <p className="text-sm text-text-muted whitespace-pre-wrap mt-3">{ad.terms}</p>
+          )}
         </div>
       )}
 

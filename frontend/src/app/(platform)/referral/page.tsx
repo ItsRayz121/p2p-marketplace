@@ -45,6 +45,7 @@ function ReferralPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showReferrals, setShowReferrals] = useState(false)
+  const [showHowItWorks, setShowHowItWorks] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -191,21 +192,32 @@ function ReferralPageInner() {
       </section>
 
       {/* How it works */}
-      <section className="bg-surface border border-border rounded-xl p-5 space-y-3">
-        <h2 className="text-base font-semibold text-text-primary">How It Works</h2>
-        {[
-          { step: '1', text: 'Share your referral code or link with friends' },
-          { step: '2', text: 'Friend signs up and tops up gas using your code' },
-          { step: '3', text: 'You earn 5% of the gas fee in USDT; they get 5% off automatically' },
-          { step: '4', text: 'Withdraw your earnings to your USDT balance any time after the hold window' },
-        ].map((item) => (
-          <div key={item.step} className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
-              {item.step}
-            </div>
-            <p className="text-sm text-text-primary">{item.text}</p>
+      <section className="bg-surface border border-border rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowHowItWorks((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-alt transition-colors"
+          aria-expanded={showHowItWorks}
+        >
+          <span className="text-base font-semibold text-text-primary">How It Works</span>
+          <ChevronDown size={18} className={`text-text-muted transition-transform ${showHowItWorks ? 'rotate-180' : ''}`} />
+        </button>
+        {showHowItWorks && (
+          <div className="px-5 pb-5 space-y-3 border-t border-border pt-4">
+            {[
+              { step: '1', text: 'Share your referral code or link with friends' },
+              { step: '2', text: 'Friend signs up and tops up gas using your code' },
+              { step: '3', text: 'You earn 5% of the gas fee in USDT; they get 5% off automatically' },
+              { step: '4', text: 'Withdraw your earnings to your USDT balance any time after the hold window' },
+            ].map((item) => (
+              <div key={item.step} className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                  {item.step}
+                </div>
+                <p className="text-sm text-text-primary">{item.text}</p>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </section>
     </div>
   )
