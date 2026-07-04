@@ -268,6 +268,36 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
     return reply.send({ success: true })
   })
 
+  // PATCH /promo-giveaways/:id/entries/bulk — set the SAME status on every entry
+  // at once (owner/admin). Complements the per-entry endpoint above: individual
+  // control stays, this is the "apply to all" shortcut. By default it skips
+  // entries already marked "rejected" so a deliberate exclusion isn't silently
+  // undone — pass includeRejected:true to override them too.
+  app.patch('/promo-giveaways/:id/entries/bulk', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const g = await requireOwnedOrAdmin(id, req.user!.id, req.user!.role)
+    const body = z
+      .object({
+        status: z.enum(ENTRY_STATUSES),
+        note: z.string().trim().max(300).optional(),
+        includeRejected: z.boolean().optional().default(false),
+      })
+      .safeParse(req.body)
+    if (!body.success) throw new AppError('VALIDATION_ERROR', body.error.errors[0]?.message ?? 'Invalid input', 400)
+    if (body.data.status === 'rejected' && !body.data.note?.trim()) {
+      throw new AppError('VALIDATION_ERROR', 'Please add a reason when rejecting entries.', 400)
+    }
+    const where = {
+      giveawayId: g.id,
+      ...(body.data.includeRejected || body.data.status === 'rejected' ? {} : { status: { not: 'rejected' as const } }),
+    }
+    const result = await db.promoGiveawayEntry.updateMany({
+      where,
+      data: { status: body.data.status, note: body.data.status === 'rejected' ? body.data.note!.trim() : null },
+    })
+    return reply.send({ success: true, data: { updated: result.count } })
+  })
+
   // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────
 
   // GET /promo-giveaways/public/:code — entry page info

@@ -22,6 +22,8 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
   const [entries, setEntries] = useState<PromoEntry[] | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [proofUrl, setProofUrl] = useState(giveaway.resultsSheetUrl ?? '')
+  const [bulkStatus, setBulkStatus] = useState<PromoEntryStatus>('sent')
+  const [bulkBusy, setBulkBusy] = useState(false)
   const { upload, uploading } = useFileUpload('giveaway-image')
 
   const load = useCallback(async () => {
@@ -57,6 +59,40 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
       toast.error(e instanceof Error ? e.message : 'Update failed')
     } finally {
       setSavingId(null)
+    }
+  }
+
+  // Bulk "apply to all" — complements the per-row dropdowns. Skips already-rejected
+  // entries by default so a deliberate exclusion isn't silently undone (unless the
+  // bulk target IS rejected). "Reward sent" and "rejected" both confirm first.
+  async function applyBulk() {
+    if (!entries || entries.length === 0) { toast.error('No entries yet.'); return }
+    const label = PROMO_ENTRY_STATUSES.find((s) => s.value === bulkStatus)?.label ?? bulkStatus
+    let note: string | undefined
+    if (bulkStatus === 'rejected') {
+      const reason = window.prompt('Reason for rejecting ALL entrants (shown to them):', '')
+      if (!reason || !reason.trim()) { toast.error('A reason is required to reject.'); return }
+      note = reason.trim()
+    }
+    const affected = bulkStatus === 'rejected'
+      ? entries.length
+      : entries.filter((e) => e.status !== 'rejected').length
+    if (affected === 0) { toast.error('No eligible entries to update.'); return }
+    const skipsRejected = bulkStatus !== 'rejected' && entries.some((e) => e.status === 'rejected')
+    if (!window.confirm(
+      `Mark ${affected} entrant${affected === 1 ? '' : 's'} as "${label}"? This overrides their current status` +
+      `${skipsRejected ? ' (already-rejected entries are left as-is)' : ''}.`,
+    )) return
+    setBulkBusy(true)
+    try {
+      const res = await promoGiveawayApi.bulkUpdateEntries(giveaway.id, { status: bulkStatus, ...(note ? { note } : {}) })
+      toast.success(`Updated ${res.updated} entr${res.updated === 1 ? 'y' : 'ies'} — now visible to entrants.`)
+      await load()
+      onChanged?.()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Bulk update failed')
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -103,6 +139,22 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
         )}
         <Button size="sm" variant="secondary" onClick={exportCsv} className="inline-flex items-center gap-1 ml-auto"><Download size={13} /> Export CSV</Button>
       </div>
+
+      {/* Bulk "apply to all" — individual per-row dropdowns still work below. */}
+      {entries && entries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+          <span className="text-xs text-text-muted">Apply to all:</span>
+          <select
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value as PromoEntryStatus)}
+            disabled={bulkBusy}
+            className="px-2 py-1 border border-border rounded bg-canvas text-text-primary text-xs"
+          >
+            {PROMO_ENTRY_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          <Button size="sm" variant="secondary" onClick={applyBulk} loading={bulkBusy}>Apply to all</Button>
+        </div>
+      )}
 
       {!entries ? (
         <p className="text-xs text-text-muted">Loading entries…</p>

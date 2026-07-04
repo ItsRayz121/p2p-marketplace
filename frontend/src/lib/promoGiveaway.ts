@@ -125,6 +125,8 @@ export const promoGiveawayApi = {
     apiRequest<unknown>(`/promo-giveaways/${id}/results`, { method: 'PATCH', body: JSON.stringify({ resultsSheetUrl }) }),
   updateEntry: (id: string, entryId: string, body: { status: PromoEntryStatus; note?: string }) =>
     apiRequest<unknown>(`/promo-giveaways/${id}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  bulkUpdateEntries: (id: string, body: { status: PromoEntryStatus; note?: string; includeRejected?: boolean }) =>
+    apiRequest<{ updated: number }>(`/promo-giveaways/${id}/entries/bulk`, { method: 'PATCH', body: JSON.stringify(body) }),
   publicInfo: (code: string) => apiRequest<PromoGiveawayPublic>(`/promo-giveaways/public/${code}`),
   participants: (code: string) => apiRequest<PromoParticipant[]>(`/promo-giveaways/public/${code}/participants`),
   enter: (code: string, body: { receivingAddress: string; email?: string; entrantName?: string; whatsapp?: string; ackTasks: string[] }) =>
