@@ -1122,6 +1122,7 @@ const DELIVERY_NETWORKS = [
   { value: 'Bitget',  kind: 'exchange', label: 'Bitget UID',  placeholder: 'Your Bitget UID' },
   { value: 'Gate',    kind: 'exchange', label: 'Gate UID',    placeholder: 'Your Gate.io UID' },
   { value: 'MEXC',    kind: 'exchange', label: 'MEXC UID',    placeholder: 'Your MEXC UID' },
+  { value: 'Other',   kind: 'exchange', label: 'Other UID',   placeholder: 'Your account ID / UID' },
 ] as const
 
 type DeliveryKind = 'wallet' | 'exchange'
@@ -1145,6 +1146,10 @@ function SavedDeliveryAddressesSection() {
   // (mirrors the ad-creation Token Delivery Method grouping).
   const [deliveryKind, setDeliveryKind] = useState<DeliveryKind>('wallet')
   const [form, setForm] = useState({ network: 'BEP20', tokenSymbol: '', address: '', label: '' })
+  // Free-form venue name when the "Other UID" exchange option is selected.
+  const [customExchange, setCustomExchange] = useState('')
+  // Track whether the user has hand-edited the label so auto-fill never clobbers it.
+  const [labelTouched, setLabelTouched] = useState(false)
   const [ctmTokens, setCtmTokens] = useState<CtmTokenOption[]>([])
   const [removeTarget, setRemoveTarget] = useState<SavedDeliveryAddress | null>(null)
 
@@ -1173,20 +1178,43 @@ function SavedDeliveryAddressesSection() {
     setForm({ network: 'BEP20', tokenSymbol: ctmTokens[0]?.symbol ?? '', address: '', label: '' })
     setCategory('crypto')
     setDeliveryKind('wallet')
+    setCustomExchange('')
+    setLabelTouched(false)
     setFormError(null)
     setShowForm(false)
+  }
+
+  // Auto-fill the Label to match the picked network/exchange/token unless the user
+  // has already typed their own. Selecting "MEXC UID" pre-fills "MEXC UID"; they can
+  // still append their name (e.g. "MEXC UID Fazal").
+  const applyAutoLabel = (label: string) => {
+    if (!labelTouched) setForm((f) => ({ ...f, label }))
   }
 
   // Switch the wallet/exchange sub-group and default to its first option.
   const selectDeliveryKind = (kind: DeliveryKind) => {
     setDeliveryKind(kind)
     const first = DELIVERY_NETWORKS.find((n) => n.kind === kind)
-    if (first) setForm((f) => ({ ...f, network: first.value }))
+    if (first) {
+      setForm((f) => ({ ...f, network: first.value }))
+      applyAutoLabel(first.value === 'Other' ? '' : first.label)
+    }
+    setCustomExchange('')
+    setFormError(null)
+  }
+
+  // Pick a specific network / exchange chip and auto-fill its label.
+  const selectNetwork = (value: string, label: string) => {
+    setForm((f) => ({ ...f, network: value }))
+    if (value !== 'Other') { setCustomExchange(''); applyAutoLabel(label) }
+    else applyAutoLabel('')
     setFormError(null)
   }
 
   const handleAdd = async () => {
     if (category === 'ctm' && !form.tokenSymbol) { setFormError('Select a token'); return }
+    const isOther = category === 'crypto' && deliveryKind === 'exchange' && form.network === 'Other'
+    if (isOther && !customExchange.trim()) { setFormError('Enter the exchange name'); return }
     if (!form.address.trim()) { setFormError('Address / UID is required'); return }
     // Only blockchain (wallet) addresses are format-checked. Exchange UIDs have no
     // canonical format (numeric id / email / phone) — accept as entered.
@@ -1198,9 +1226,12 @@ function SavedDeliveryAddressesSection() {
     setAdding(true)
     setFormError(null)
     try {
+      // For "Other", persist the venue the user typed as the network so the saved
+      // chip shows the real exchange name.
+      const exchangeNetwork = isOther ? (customExchange.trim() || 'Other') : form.network
       const payload = category === 'ctm'
         ? { coin: form.tokenSymbol, network: CTM_NETWORK, address: form.address.trim(), label: form.label.trim() }
-        : { coin: 'USDT', network: form.network, address: form.address.trim(), label: form.label.trim() }
+        : { coin: 'USDT', network: exchangeNetwork, address: form.address.trim(), label: form.label.trim() }
       const saved = await walletApi.addSavedAddress(payload)
       setAddresses((prev) => [saved, ...prev])
       resetForm()
@@ -1277,7 +1308,16 @@ function SavedDeliveryAddressesSection() {
               ] as const).map((c) => (
                 <button
                   key={c.key}
-                  onClick={() => { setCategory(c.key); setFormError(null) }}
+                  onClick={() => {
+                    setCategory(c.key); setFormError(null)
+                    if (c.key === 'ctm') {
+                      const tok = ctmTokens.find((t) => t.symbol === form.tokenSymbol) ?? ctmTokens[0]
+                      if (tok) applyAutoLabel(`${tok.name} (${tok.symbol})`)
+                    } else {
+                      const n = DELIVERY_NETWORKS.find((x) => x.value === form.network)
+                      if (n && n.value !== 'Other') applyAutoLabel(n.label)
+                    }
+                  }}
                   className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
                     category === c.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'
                   }`}
@@ -1316,7 +1356,7 @@ function SavedDeliveryAddressesSection() {
                   {DELIVERY_NETWORKS.filter((n) => n.kind === deliveryKind).map((n) => (
                     <button
                       key={n.value}
-                      onClick={() => setForm((f) => ({ ...f, network: n.value }))}
+                      onClick={() => selectNetwork(n.value, n.label)}
                       className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
                         form.network === n.value
                           ? 'border-primary bg-primary/5 text-primary'
@@ -1328,6 +1368,23 @@ function SavedDeliveryAddressesSection() {
                   ))}
                 </div>
               </div>
+              {/* Free-form exchange name when "Other UID" is selected. */}
+              {deliveryKind === 'exchange' && form.network === 'Other' && (
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Exchange name</label>
+                  <input
+                    type="text"
+                    value={customExchange}
+                    onChange={(e) => {
+                      const name = e.target.value
+                      setCustomExchange(name)
+                      applyAutoLabel(name.trim() ? `${name.trim()} UID` : '')
+                    }}
+                    placeholder="e.g. KuCoin, Bybit, HTX…"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
             </>
           ) : (
             <div>
@@ -1337,7 +1394,12 @@ function SavedDeliveryAddressesSection() {
               ) : (
                 <select
                   value={form.tokenSymbol}
-                  onChange={(e) => setForm((f) => ({ ...f, tokenSymbol: e.target.value }))}
+                  onChange={(e) => {
+                    const sym = e.target.value
+                    setForm((f) => ({ ...f, tokenSymbol: sym }))
+                    const tok = ctmTokens.find((t) => t.symbol === sym)
+                    applyAutoLabel(tok ? `${tok.name} (${tok.symbol})` : sym)
+                  }}
                   className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   {ctmTokens.map((t) => (
@@ -1369,11 +1431,11 @@ function SavedDeliveryAddressesSection() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Label (optional)</label>
+            <label className="block text-xs font-medium text-text-muted mb-1">Label</label>
             <input
               type="text"
               value={form.label}
-              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              onChange={(e) => { setLabelTouched(true); setForm((f) => ({ ...f, label: e.target.value })) }}
               placeholder='e.g. "My Main Binance" or "Sidra wallet"'
               className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
             />

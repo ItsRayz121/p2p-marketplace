@@ -477,11 +477,16 @@ export async function walletRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    // CTM-token addresses (network 'CTM') are free-form per token; only validate
-    // the known wallet networks and exchange venues against their address format.
-    const addrCheck = validateAddressForNetwork(parsed.data.address, parsed.data.network)
-    if (!addrCheck.valid) {
-      throw new AppError('VALIDATION_ERROR', addrCheck.reason ?? 'Invalid address for this network', 400)
+    // CTM-token addresses (network 'CTM') are free-form per token: every community
+    // token has its own chain/explorer, so a blockchain-shaped address is perfectly
+    // valid here and must NOT be rejected by the exchange-UID wallet guard. Their
+    // per-token format is enforced at listing creation via the token's addressRegex.
+    // Only the known USDT wallet networks and exchange venues are shape-checked here.
+    if (parsed.data.network !== 'CTM') {
+      const addrCheck = validateAddressForNetwork(parsed.data.address, parsed.data.network)
+      if (!addrCheck.valid) {
+        throw new AppError('VALIDATION_ERROR', addrCheck.reason ?? 'Invalid address for this network', 400)
+      }
     }
     const address = await addSavedAddress(userId, parsed.data)
     return reply.code(201).send({ success: true, data: address })
