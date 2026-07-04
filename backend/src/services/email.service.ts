@@ -38,6 +38,29 @@ async function logEmail(
   }
 }
 
+// ─── Account-critical allowlist ───────────────────────────────────────────────
+
+/**
+ * The ONLY email templates we actually send. Everything else — trade/KYC/
+ * withdrawal-status notifications, badges, referral rewards, and all admin
+ * alerts — is intentionally suppressed: users already receive those via the
+ * in-app bell + web push + Telegram, and admins via bell + push + Telegram.
+ *
+ * Why so tight: reserving the Resend quota for these few account-critical
+ * emails protects the ONE email that MUST always arrive — the signup
+ * verification code. A flood of notification emails is what would push us into
+ * Resend's rate limit / hurt sender reputation and make that code fail to send.
+ *
+ * Kept deliberately minimal. To add a template later (e.g. a future
+ * "password changed" / new-device security alert), add its exact key here.
+ *   - otp_verify         : signup / email verification code (required to register)
+ *   - otp_reset          : password reset code (the only account-recovery channel)
+ *   - withdrawal_confirm : confirm/cancel ACTION link — REQUIRED to complete a
+ *                          $100+ withdrawal (status email_pending). Not a mere
+ *                          notification; blocking it would freeze large withdrawals.
+ */
+const EMAIL_ALLOWLIST = new Set<string>(['otp_verify', 'otp_reset', 'withdrawal_confirm'])
+
 // ─── Send Helper ──────────────────────────────────────────────────────────────
 
 async function send(
@@ -47,6 +70,11 @@ async function send(
   template: string,
   userId?: string,
 ): Promise<void> {
+  // Suppress everything outside the account-critical allowlist (see above).
+  if (!EMAIL_ALLOWLIST.has(template)) {
+    logger.info({ template, to }, 'Email suppressed — not in account-critical allowlist (user is covered by in-app + push + Telegram)')
+    return
+  }
   if (!isEmailConfigured() || !EMAIL_FROM) {
     logger.warn(
       { template, to },
