@@ -7,7 +7,7 @@ import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Button } from '@/components/ui/Button'
 import { promoGiveawayApi, type PromoGiveawayPublic, type PromoParticipant } from '@/lib/promoGiveaway'
-import { ArrowLeft, Gift, CheckCircle2, ExternalLink, Users, Clock, Trophy, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Gift, CheckCircle2, ExternalLink, Users, Clock, Trophy, ChevronDown, XCircle, type LucideIcon } from 'lucide-react'
 
 export default function PromoGiveawayEntryPage() {
   const router = useRouter()
@@ -288,7 +288,9 @@ export default function PromoGiveawayEntryPage() {
                       <div key={i} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
                         <span className="flex items-center gap-2 min-w-0">
                           <span className="text-text-primary truncate">{p.username}</span>
-                          <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0 ${chip.cls}`}>{chip.label}</span>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${chip.cls}`}>
+                            <chip.Icon className="w-3 h-3" /> {chip.label}
+                          </span>
                         </span>
                         <span className="font-mono text-xs text-text-muted shrink-0">{p.address}</span>
                       </div>
@@ -337,11 +339,11 @@ const inputCls = 'mt-1 w-full px-3 py-2 border border-border rounded-lg text-sm 
 // Public participant-list status chip. Mirrors the fulfillment lifecycle the
 // organizer drives: entered → pending → (sent | rejected). The private rejection
 // reason is never shown here — only on the entrant's own MyStatusCard.
-const PARTICIPANT_STATUS_CHIP: Record<string, { label: string; cls: string }> = {
-  entered:  { label: 'Entered',  cls: 'bg-surface-alt text-text-muted' },
-  pending:  { label: 'Pending',  cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-  sent:     { label: 'Won',      cls: 'bg-success/10 text-success' },
-  rejected: { label: 'Rejected', cls: 'bg-danger/10 text-danger' },
+const PARTICIPANT_STATUS_CHIP: Record<string, { label: string; cls: string; Icon: LucideIcon }> = {
+  entered:  { label: 'Entered',        cls: 'bg-surface-alt text-text-muted',                    Icon: CheckCircle2 },
+  pending:  { label: 'Pending review', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', Icon: Clock },
+  sent:     { label: 'Reward sent',    cls: 'bg-success/10 text-success',                        Icon: Gift },
+  rejected: { label: 'Rejected',       cls: 'bg-danger/10 text-danger',                          Icon: XCircle },
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
