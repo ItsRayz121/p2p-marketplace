@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { cloudinary, CLOUDINARY_FOLDERS, signCloudinaryDeliveryUrl } from '../lib/cloudinary'
+import { cloudinary, CLOUDINARY_FOLDERS, signCloudinaryDeliveryUrl, fetchCloudinaryAsset } from '../lib/cloudinary'
 import { authenticate, requireRole, requireAdminStepUp } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
@@ -1375,6 +1375,39 @@ export async function adminRoutes(app: FastifyInstance) {
         videoUrl: signCloudinaryDeliveryUrl(submission.videoUrl),
       },
     })
+  })
+
+  // Stream a KYC document through our own API origin. KYC docs are stored as
+  // authenticated (private) Cloudinary assets, whose signed delivery URLs can be
+  // blocked when loaded directly by the reviewer's browser (CSP / cross-site).
+  // Fetching the bytes server-side and streaming them from our origin makes the
+  // documents always render — the permanent fix for "KYC images not visible".
+  app.get('/admin/kyc/:id/doc/:kind', { preHandler: [authenticate, adminOrSuperOrKyc] }, async (req, reply) => {
+    const { id, kind } = req.params as { id: string; kind: string }
+    const FIELD: Record<string, 'frontUrl' | 'backUrl' | 'selfieUrl' | 'videoUrl'> = {
+      front: 'frontUrl', back: 'backUrl', selfie: 'selfieUrl', video: 'videoUrl',
+    }
+    const field = FIELD[kind]
+    if (!field) throw new AppError('VALIDATION_ERROR', 'Invalid document kind', 400)
+
+    const submission = await db.kycSubmission.findUnique({
+      where: { id },
+      select: { frontUrl: true, backUrl: true, selfieUrl: true, videoUrl: true },
+    })
+    if (!submission) throw Errors.NOT_FOUND('KYC submission')
+
+    const storedUrl = submission[field]
+    if (!storedUrl) throw Errors.NOT_FOUND('Document')
+
+    const asset = await fetchCloudinaryAsset(storedUrl)
+    if (!asset) {
+      throw new AppError('UPSTREAM_ERROR', 'Could not load the document from storage', 502)
+    }
+
+    reply.header('Content-Type', asset.contentType)
+    reply.header('Cache-Control', 'private, max-age=300')
+    reply.header('Content-Disposition', 'inline')
+    return reply.send(asset.buffer)
   })
 
   app.post('/admin/kyc/:id/approve', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {

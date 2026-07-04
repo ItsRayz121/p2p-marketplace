@@ -425,6 +425,42 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   return unwrapEnvelope<T>(data)
 }
 
+// Fetch a binary asset (image/video) through our own API with the admin Bearer
+// token attached. Used for KYC documents, which are stored as authenticated
+// Cloudinary assets: streaming them via our origin sidesteps CSP / cross-site
+// cookie issues that break a direct <img src> to res.cloudinary.com. Returns an
+// object URL the caller must revoke when done. Retries once through reauth on 401.
+export async function apiRequestBlob(path: string): Promise<string> {
+  const url = `${API_BASE}/api/v1${path}`
+  const doFetch = async (token: string | null): Promise<Response> => {
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = 'Bearer ' + token
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 20_000)
+    try {
+      return await fetch(url, { method: 'GET', headers, credentials: 'include', signal: controller.signal })
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  let res = await doFetch(useAuthStore.getState().accessToken)
+  if (res.status === 401) {
+    try {
+      const newToken = await reauth()
+      useAuthStore.getState().setAccessToken(newToken)
+      res = await doFetch(newToken)
+    } catch {
+      throw new ApiError('UNAUTHORIZED', 'Session expired. Please log in again.', 401)
+    }
+  }
+  if (!res.ok) {
+    throw new ApiError('ASSET_ERROR', `Failed to load asset (${res.status})`, res.status)
+  }
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
+}
+
 // Legacy api object for compatibility
 export const api = {
   get: <T>(path: string, options?: RequestInit) =>
@@ -1969,6 +2005,11 @@ export const adminApi = {
     apiRequest<{ submissions: unknown[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/kyc/queue' + buildQs(params)),
   getKycSubmission: (id: string) =>
     apiRequest<unknown>(`/admin/kyc/${id}`),
+  // Streams a KYC document (front/back/selfie/video) through our API origin and
+  // returns an object URL. Immune to CSP / cross-site issues that break direct
+  // Cloudinary <img> loads. Caller must URL.revokeObjectURL when done.
+  getKycDocUrl: (id: string, kind: 'front' | 'back' | 'selfie' | 'video') =>
+    apiRequestBlob(`/admin/kyc/${id}/doc/${kind}`),
   approveKyc: (id: string, data: { notes?: string }) =>
     apiRequest<void>(`/admin/kyc/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
   rejectKyc: (id: string, data: { reason: string }) =>

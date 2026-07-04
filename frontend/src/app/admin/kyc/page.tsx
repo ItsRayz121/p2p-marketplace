@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDate, fmtDateTime } from '@/lib/fmt'
@@ -51,6 +51,64 @@ const STATUS_BADGE: Record<KycStatus, 'gold' | 'success' | 'danger'> = {
 function daysAgo(date: string) {
   const diff = Date.now() - new Date(date).getTime()
   return Math.floor(diff / (1000 * 60 * 60 * 24))
+}
+
+// Loads a KYC document (CNIC/selfie/video) by streaming its bytes through our
+// own API origin as an object URL. KYC docs are authenticated Cloudinary assets
+// that a direct <img src> can fail to load (CSP / cross-site); the proxy makes
+// them render reliably. Falls back to a clear "couldn't load" state on error.
+function KycDocImage({
+  submissionId, kind, label, isVideo,
+}: {
+  submissionId: string
+  kind: 'front' | 'back' | 'selfie' | 'video'
+  label: string
+  isVideo?: boolean
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+    setStatus('loading')
+    setUrl(null)
+    adminApi
+      .getKycDocUrl(submissionId, kind)
+      .then((u) => {
+        if (cancelled) { URL.revokeObjectURL(u); return }
+        objectUrl = u
+        setUrl(u)
+        setStatus('ready')
+      })
+      .catch(() => { if (!cancelled) setStatus('error') })
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [submissionId, kind])
+
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-text-muted">{label}</p>
+      {status === 'loading' && (
+        <div className="rounded-lg w-full aspect-video border border-border bg-surface flex items-center justify-center text-xs text-text-muted animate-pulse">
+          Loading…
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="rounded-lg w-full aspect-video border border-danger/30 bg-danger/5 flex items-center justify-center text-xs text-danger text-center px-2">
+          Couldn&apos;t load document
+        </div>
+      )}
+      {status === 'ready' && url && (
+        isVideo ? (
+          <video src={url} controls className="rounded-lg w-full aspect-video object-contain border border-border bg-surface" />
+        ) : (
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            <img src={url} alt={label} className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
+          </a>
+        )
+      )}
+    </div>
+  )
 }
 
 export default function KycQueuePage() {
@@ -339,34 +397,16 @@ export default function KycQueuePage() {
                 <p className="text-sm font-medium text-text-primary">Documents</p>
                 <div className="grid grid-cols-3 gap-3">
                   {selected.frontUrl && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-text-muted">CNIC Front</p>
-                      <a href={selected.frontUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={selected.frontUrl} alt="CNIC Front" className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
-                      </a>
-                    </div>
+                    <KycDocImage submissionId={selected.id} kind="front" label="CNIC Front" />
                   )}
                   {selected.backUrl && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-text-muted">CNIC Back</p>
-                      <a href={selected.backUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={selected.backUrl} alt="CNIC Back" className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
-                      </a>
-                    </div>
+                    <KycDocImage submissionId={selected.id} kind="back" label="CNIC Back" />
                   )}
                   {selected.selfieUrl && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-text-muted">Selfie</p>
-                      <a href={selected.selfieUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={selected.selfieUrl} alt="Selfie" className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
-                      </a>
-                    </div>
+                    <KycDocImage submissionId={selected.id} kind="selfie" label="Selfie" />
                   )}
                   {selected.videoUrl && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-text-muted">Verification Video</p>
-                      <video src={selected.videoUrl} controls className="rounded-lg w-full aspect-video object-contain border border-border bg-surface" />
-                    </div>
+                    <KycDocImage submissionId={selected.id} kind="video" label="Verification Video" isVideo />
                   )}
                   {!selected.frontUrl && !selected.backUrl && !selected.selfieUrl && (
                     <p className="text-sm text-text-muted col-span-3">No documents uploaded</p>
