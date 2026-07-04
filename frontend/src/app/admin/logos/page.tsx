@@ -410,14 +410,13 @@ export default function AdminLogosPage() {
             : 'bg-surface border-border'
         }`}
       >
-        {/* Mode header */}
+        {/* Mode header — chevron on the right, consistent with the search panel */}
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => setFormOpen((v) => !v)}
-            className="flex items-start gap-2 text-left min-w-0"
+            className="flex-1 flex items-start gap-2 text-left min-w-0"
           >
-            <span className={`text-text-muted mt-0.5 shrink-0 transition-transform ${formOpen ? 'rotate-180' : ''}`}>▾</span>
             <span className="min-w-0">
               <span className="block font-semibold text-text-primary">
                 {isEditing ? 'Edit Logo' : 'Add / Replace Logo'}
@@ -429,14 +428,25 @@ export default function AdminLogosPage() {
               )}
             </span>
           </button>
-          {isEditing && (
+          <div className="flex items-center gap-2 shrink-0">
+            {isEditing && (
+              <button
+                onClick={cancelEdit}
+                className="text-xs text-text-muted hover:text-text-primary border border-border rounded-lg px-3 py-1.5 transition-colors"
+              >
+                Cancel edit
+              </button>
+            )}
             <button
-              onClick={cancelEdit}
-              className="text-xs text-text-muted hover:text-text-primary border border-border rounded-lg px-3 py-1.5 transition-colors shrink-0"
+              type="button"
+              onClick={() => setFormOpen((v) => !v)}
+              aria-label={formOpen ? 'Collapse form' : 'Expand form'}
+              aria-expanded={formOpen}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-border text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
             >
-              Cancel edit
+              <span className={`text-base leading-none transition-transform ${formOpen ? 'rotate-180' : ''}`}>▾</span>
             </button>
-          )}
+          </div>
         </div>
 
         {formOpen && (<>

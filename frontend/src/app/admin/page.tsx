@@ -202,7 +202,7 @@ export default function AdminDashboardPage() {
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {todayCards.map((card) => (
             <div key={card.label} className="bg-surface shadow-card rounded-lg border border-border p-3">
               <div className="flex items-center gap-1.5 mb-1">

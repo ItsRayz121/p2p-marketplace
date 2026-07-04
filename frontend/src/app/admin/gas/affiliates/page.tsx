@@ -258,11 +258,13 @@ export default function GasAffiliatesAdminPage() {
                     className="w-full text-left p-4 hover:bg-surface-alt transition-colors"
                     aria-expanded={open}
                   >
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="font-semibold text-text-primary truncate">{g.owner.username ?? g.owner.email ?? 'Unknown user'}</span>
+                        <Badge variant={g.anyActive ? 'success' : 'default'}>{g.anyActive ? 'Active' : 'Disabled'}</Badge>
+                        <span className="text-xs text-text-muted">{g.links.length} link{g.links.length === 1 ? '' : 's'}</span>
+                      </div>
                       {open ? <ChevronDown className="w-4 h-4 text-text-muted shrink-0" /> : <ChevronRight className="w-4 h-4 text-text-muted shrink-0" />}
-                      <span className="font-semibold text-text-primary truncate">{g.owner.username ?? g.owner.email ?? 'Unknown user'}</span>
-                      <Badge variant={g.anyActive ? 'success' : 'default'}>{g.anyActive ? 'Active' : 'Disabled'}</Badge>
-                      <span className="text-xs text-text-muted">{g.links.length} link{g.links.length === 1 ? '' : 's'}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                       <div><p className="text-text-muted">Referred</p><p className="font-semibold text-text-primary">{g.referred}</p></div>
