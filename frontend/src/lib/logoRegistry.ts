@@ -1,7 +1,7 @@
 // Global logo resolution: DB-uploaded logos → static CDN fallbacks → initials avatar.
 // Import this lib; use EntityLogo component or useEntityLogo hook for React usage.
 
-export type EntityType = 'chain' | 'token' | 'payment_method' | 'bank' | 'wallet_provider'
+export type EntityType = 'chain' | 'token' | 'payment_method' | 'bank' | 'wallet_provider' | 'exchange'
 
 export interface LogoMap {
   chain:           Record<string, string>
@@ -9,6 +9,7 @@ export interface LogoMap {
   payment_method:  Record<string, string>
   bank:            Record<string, string>
   wallet_provider: Record<string, string>
+  exchange:        Record<string, string>
 }
 
 // ── Alias normalization ────────────────────────────────────────────────────────
@@ -245,6 +246,25 @@ export const BANK_LOGO_STATIC: Record<string, string> = {
   // summit_bank omitted — domain defunct, falls back to initials avatar
 }
 
+// Exchange (centralized exchange / internal-transfer venue) logos. Keyed by a
+// lowercased venue slug. Admin-uploaded logos (LogoRegistry type='exchange')
+// override these. Google favicon service is reliable and needs no auth.
+export const EXCHANGE_LOGO_STATIC: Record<string, string> = {
+  binance: 'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://binance.com&size=128',
+  okx:     'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://okx.com&size=128',
+  bitget:  'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://bitget.com&size=128',
+  gate:    'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://gate.io&size=128',
+  mexc:    'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://mexc.com&size=128',
+  kucoin:  'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://kucoin.com&size=128',
+  bybit:   'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://bybit.com&size=128',
+  htx:     'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://htx.com&size=128',
+}
+
+export function normalizeExchange(slug: string): string {
+  // Strip a "UID" suffix / punctuation so "MEXC UID" and "MEXC" both key to "mexc".
+  return slug.toLowerCase().replace(/\buid\b/g, '').replace(/[^a-z0-9]/g, '').trim()
+}
+
 // ── DB-only resolver (no static CDN fallback) ────────────────────────────────
 // Used by EntityLogo to build a deduped candidate list, so each URL tier is
 // tried independently rather than merged into one opaque string.
@@ -274,6 +294,10 @@ export function resolveLogoDbOnly(
       return null
     }
     case 'wallet_provider': return dbMap.wallet_provider[slug.toLowerCase()] ?? null
+    case 'exchange': {
+      const key = normalizeExchange(slug)
+      return dbMap.exchange?.[key] ?? dbMap.exchange?.[slug.toLowerCase()] ?? null
+    }
     default: return null
   }
 }
@@ -300,6 +324,10 @@ export function resolveLogoStatic(type: EntityType, slug: string): string | null
         if (BANK_LOGO_STATIC[key]) return BANK_LOGO_STATIC[key]
       }
       return null
+    }
+    case 'exchange': {
+      const key = normalizeExchange(slug)
+      return EXCHANGE_LOGO_STATIC[key] ?? null
     }
     default: return null
   }

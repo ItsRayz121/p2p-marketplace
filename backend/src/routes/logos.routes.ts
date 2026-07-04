@@ -13,6 +13,7 @@ export interface LogoMap {
   payment_method: Record<string, string>
   bank:           Record<string, string>
   wallet_provider: Record<string, string>
+  exchange:       Record<string, string>
 }
 
 // ── In-memory cache (5 min TTL) ────────────────────────────────────────────────
@@ -47,6 +48,7 @@ async function buildLogosMap(): Promise<LogoMap> {
   const payment_method: Record<string, string> = {}
   const bank:           Record<string, string> = {}
   const wallet_provider: Record<string, string> = {}
+  const exchange:       Record<string, string> = {}
 
   // Gas chain configs — keyed by slug uppercased (e.g. "BSC", "TRON", "MATIC")
   for (const c of chainConfigs) {
@@ -71,16 +73,17 @@ async function buildLogosMap(): Promise<LogoMap> {
       case 'payment_method': payment_method[r.slug.toLowerCase()] = r.logoUrl; break
       case 'bank':           bank[r.slug.toLowerCase()]           = r.logoUrl; break
       case 'wallet_provider': wallet_provider[r.slug.toLowerCase()] = r.logoUrl; break
+      case 'exchange':       exchange[r.slug.toLowerCase()]       = r.logoUrl; break
     }
   }
 
-  return { chain, token, payment_method, bank, wallet_provider }
+  return { chain, token, payment_method, bank, wallet_provider, exchange }
 }
 
 // ── Route registration ─────────────────────────────────────────────────────────
 
 const upsertSchema = z.object({
-  type:    z.enum(['chain', 'token', 'payment_method', 'bank', 'wallet_provider']),
+  type:    z.enum(['chain', 'token', 'payment_method', 'bank', 'wallet_provider', 'exchange']),
   slug:    z.string().min(1).max(100).trim(),
   logoUrl: z.string().url().max(1000),
 })

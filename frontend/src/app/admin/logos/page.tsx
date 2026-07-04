@@ -15,6 +15,7 @@ const ENTITY_TYPES: { value: EntityType; label: string }[] = [
   { value: 'payment_method',  label: 'Payment Method (JazzCash, Easypaisa…)' },
   { value: 'bank',            label: 'Bank (HBL, MCB…)' },
   { value: 'wallet_provider', label: 'Wallet Provider' },
+  { value: 'exchange',        label: 'Exchange (Binance, OKX…)' },
 ]
 
 const TYPE_EXAMPLES: Record<string, string> = {
@@ -23,6 +24,7 @@ const TYPE_EXAMPLES: Record<string, string> = {
   payment_method:  'jazzcash, easypaisa, sadapay, nayapay',
   bank:            'hbl, mcb, ubl, allied, meezan, nbp',
   wallet_provider: 'trustwallet, metamask, phantom',
+  exchange:        'binance, okx, bitget, gate, mexc, kucoin, bybit',
 }
 
 // ── Logo search helpers ───────────────────────────────────────────────────────

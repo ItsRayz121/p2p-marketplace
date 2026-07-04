@@ -23,6 +23,7 @@ import { COIN_NETWORKS, networksFor } from '@/lib/wallet/coinNetworks'
 import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { BankSelect } from '@/components/ui/BankSelect'
 import { validateAddressForNetwork } from '@/lib/addressValidation'
 import { useAccount } from 'wagmi'
 import { ArrowUpDown, Lock, Clock, AlertTriangle, Pencil, Eye, EyeOff, Trash2 } from 'lucide-react'
@@ -1002,14 +1003,11 @@ function PaymentMethodsSection() {
                 {isBankCategory ? 'Select bank' : 'Select method'}
               </p>
               {isBankCategory ? (
-                <select
-                  value={selectedMethod ?? ''}
-                  onChange={(e) => setSelectedMethod(e.target.value || null)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">— Choose a bank —</option>
-                  {PK_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
+                <BankSelect
+                  banks={PK_BANKS}
+                  value={selectedMethod}
+                  onChange={(b) => setSelectedMethod(b)}
+                />
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {PM_CATEGORIES.find((c) => c.key === category)!.methods.map((m) => (
@@ -1196,6 +1194,10 @@ const DELIVERY_NETWORKS = [
 
 type DeliveryKind = 'wallet' | 'exchange'
 
+// Networks that are on-chain wallets (show a chain logo); anything else that
+// isn't CTM is treated as an exchange venue (show an exchange logo).
+const WALLET_NETWORKS_UPPER = ['BEP20', 'APTOS', 'ERC20', 'TRC20', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'BASE']
+
 // Network value used to tag CTM-token delivery addresses; the token symbol is
 // stored in `coin` so each token's address is distinct.
 const CTM_NETWORK = 'CTM'
@@ -1373,6 +1375,13 @@ function SavedDeliveryAddressesSection() {
             </div>
           ) : (
             <div className="flex items-center gap-3">
+              {a.network === CTM_NETWORK ? (
+                <EntityLogo type="token" slug={a.coin} size="sm" className="flex-shrink-0" />
+              ) : WALLET_NETWORKS_UPPER.includes(a.network.toUpperCase()) ? (
+                <EntityLogo type="chain" slug={a.network} size="sm" className="flex-shrink-0" />
+              ) : (
+                <EntityLogo type="exchange" slug={a.network} size="sm" className="flex-shrink-0" />
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium text-text-primary">{a.label}</span>
@@ -1481,12 +1490,18 @@ function SavedDeliveryAddressesSection() {
                     <button
                       key={n.value}
                       onClick={() => selectNetwork(n.value, n.label)}
-                      className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                      className={`inline-flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
                         form.network === n.value
                           ? 'border-primary bg-primary/5 text-primary'
                           : 'border-border bg-surface text-text-primary hover:border-primary/50'
                       }`}
                     >
+                      {n.kind === 'exchange' && n.value !== 'Other' && (
+                        <EntityLogo type="exchange" slug={n.value} size="xs" className="flex-shrink-0" />
+                      )}
+                      {n.kind === 'wallet' && (
+                        <EntityLogo type="chain" slug={n.value} size="xs" className="flex-shrink-0" />
+                      )}
                       {n.label}
                     </button>
                   ))}
