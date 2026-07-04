@@ -63,13 +63,16 @@ export async function createAd(userId: string, data: CreateAdInput) {
   // at a time (default 1) so a scammer can't run a storefront. Flag OFF
   // preserves the original behavior (any approved user can post freely).
   if (user.kycLevel !== 'enhanced' && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
+    // Level 1 (basic) makers may post up to `l1Max` (default 1) active ad PER SIDE
+    // — i.e. one BUY and one SELL — so a genuine user can trade both ways without a
+    // scammer being able to run a full storefront. Level 2 (enhanced) is unlimited.
     const l1Row = await db.platformConfig.findUnique({ where: { key: 'noncustodial_l1_max_ads' } })
     const l1Max = l1Row ? parseInt(l1Row.value, 10) : 1
-    const activeCount = await db.ad.count({ where: { userId, status: { in: ['active', 'paused'] } } })
+    const activeCount = await db.ad.count({ where: { userId, side: data.side, status: { in: ['active', 'paused'] } } })
     if (activeCount >= l1Max) {
       throw new AppError(
         'KYC_LEVEL2_REQUIRED',
-        `Level 1 users can have ${l1Max} active ad${l1Max === 1 ? '' : 's'} at a time. Upgrade to Level 2 (enhanced) KYC to post more.`,
+        `Level 1 users can have ${l1Max} active ${data.side === 'buy' ? 'BUY' : 'SELL'} ad${l1Max === 1 ? '' : 's'} at a time (one buy + one sell). Upgrade to Level 2 (enhanced) KYC to post more.`,
         403,
       )
     }

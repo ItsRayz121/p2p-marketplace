@@ -93,18 +93,20 @@ export async function createListing(userId: string, data: CreateListingInput) {
   const user = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
 
   // Non-custodial trust model: Level 2 (enhanced) makers list freely; Level 1
-  // (basic) makers may keep a limited number of active listings (default 1).
-  // Flag OFF preserves the original behavior.
+  // (basic) makers may keep `l1Max` (default 1) active listings PER TOKEN PER SIDE
+  // — i.e. one BUY and one SELL for each listed token — so a genuine user can make
+  // two-sided markets without a scammer running a storefront. Flag OFF preserves
+  // the original behavior.
   if (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
     if (user?.kycLevel !== 'enhanced') {
-      const l1Max = Math.floor(await getNumberConfig('noncustodial_l1_max_ads_ctm', 2))
+      const l1Max = Math.floor(await getNumberConfig('noncustodial_l1_max_ads_ctm', 1))
       const activeCount = await db.ctmListing.count({
-        where: { merchantProfileId: merchantProfile.id, status: { in: ['active', 'paused'] } },
+        where: { merchantProfileId: merchantProfile.id, tokenId: data.tokenId, side: data.side, status: { in: ['active', 'paused'] } },
       })
       if (activeCount >= l1Max) {
         throw new AppError(
           'KYC_LEVEL2_REQUIRED',
-          `Level 1 users can have ${l1Max} active listing${l1Max === 1 ? '' : 's'} at a time. Upgrade to Level 2 (enhanced) KYC to list more.`,
+          `Level 1 users can have ${l1Max} active ${data.side === 'buy' ? 'BUY' : 'SELL'} listing${l1Max === 1 ? '' : 's'} per token (one buy + one sell). Upgrade to Level 2 (enhanced) KYC to list more.`,
           403,
         )
       }
