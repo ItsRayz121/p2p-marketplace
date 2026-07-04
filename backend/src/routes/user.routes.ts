@@ -6,6 +6,9 @@ import { AppError } from '../lib/errors'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { namesMatch } from '../lib/identity'
 import { recordAuditLog } from '../lib/audit'
+import {
+  getSocialProfile, addSocialLink, setSocialLinkHidden, deleteSocialLink, setSocialPublic, parseSocialLinks,
+} from '../services/socialLinks.service'
 
 const PAYMENT_METHOD_TYPES = ['jazzcash', 'easypaisa', 'sadapay', 'nayapay', 'bank_transfer'] as const
 
@@ -148,7 +151,10 @@ export async function userRoutes(app: FastifyInstance) {
       fullName: user.fullName,
       verifiedEmail: user.isEmailVerified,
       isFavorited,
-      socialLinks: user.socialLinksPublic ? user.socialLinks : null,
+      // Public profile shows only non-hidden links, and only when opted in.
+      socialLinks: user.socialLinksPublic
+        ? parseSocialLinks(user.socialLinks).filter((l) => !l.hidden).map((l) => ({ platform: l.platform, url: l.url, verified: l.verified }))
+        : null,
       // Reviews display the reviewer's full name and link to their public profile.
       ratings: enrichedRatings,
       activeAds: user.ads.map((ad) => ({
@@ -305,6 +311,54 @@ export async function userRoutes(app: FastifyInstance) {
       type: method.type, displayName: method.displayName, accountName: method.accountName,
     })
     return reply.send({ success: true, data: updated })
+  })
+
+  // ─── Social profile links ───────────────────────────────────────────────────
+  // Source of truth for a user's social profiles. KYC-approved links are marked
+  // `verified` (hide-only); the user may add their own extra links and choose to
+  // show the set publicly on their profile.
+
+  // GET /api/users/me/social-links → { links, public }
+  app.get('/users/me/social-links', { preHandler: [authenticate] }, async (req, reply) => {
+    const data = await getSocialProfile(req.user!.id)
+    return reply.send({ success: true, data })
+  })
+
+  const addSocialSchema = z.object({
+    platform: z.string().min(1).max(40),
+    url: z.string().url().max(300),
+  })
+
+  // POST /api/users/me/social-links — add a user-supplied link
+  app.post('/users/me/social-links', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = addSocialSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const links = await addSocialLink(req.user!.id, parsed.data.platform, parsed.data.url)
+    return reply.code(201).send({ success: true, data: links })
+  })
+
+  // PATCH /api/users/me/social-links/:id/visibility — hide / un-hide
+  app.patch('/users/me/social-links/:id/visibility', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = z.object({ hidden: z.boolean() }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Invalid input', 400)
+    const links = await setSocialLinkHidden(req.user!.id, id, parsed.data.hidden)
+    return reply.send({ success: true, data: links })
+  })
+
+  // DELETE /api/users/me/social-links/:id — unverified links only
+  app.delete('/users/me/social-links/:id', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const links = await deleteSocialLink(req.user!.id, id)
+    return reply.send({ success: true, data: links })
+  })
+
+  // PATCH /api/users/me/social-profile — toggle public visibility
+  app.patch('/users/me/social-profile', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = z.object({ public: z.boolean() }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Invalid input', 400)
+    await setSocialPublic(req.user!.id, parsed.data.public)
+    return reply.send({ success: true })
   })
 
   // ─── Favorites ────────────────────────────────────────────────────────────────

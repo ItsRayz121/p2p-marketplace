@@ -9,6 +9,7 @@ import { CopyButton } from '@/components/ui/CopyButton'
 import { ReferralLinks } from '@/components/referral/ReferralLinks'
 import { ReferralEarnings } from '@/components/referral/ReferralEarnings'
 import { CommunityGiveaways } from '@/components/referral/CommunityGiveaways'
+import { SocialProfilesManager } from '@/components/referral/SocialProfilesManager'
 import { ChevronDown, Users, Send, Globe } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -140,6 +141,9 @@ function ReferralPageInner() {
 
       {/* Community / influencer giveaways (affiliates + staff) */}
       <CommunityGiveaways />
+
+      {/* Public social profiles — opt-in display on the trader's profile */}
+      <SocialProfilesManager />
 
       {/* Referred Users — collapsible */}
       <section className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">

@@ -1,7 +1,7 @@
 // Global logo resolution: DB-uploaded logos → static CDN fallbacks → initials avatar.
 // Import this lib; use EntityLogo component or useEntityLogo hook for React usage.
 
-export type EntityType = 'chain' | 'token' | 'payment_method' | 'bank' | 'wallet_provider' | 'exchange'
+export type EntityType = 'chain' | 'token' | 'payment_method' | 'bank' | 'wallet_provider' | 'exchange' | 'social'
 
 export interface LogoMap {
   chain:           Record<string, string>
@@ -10,6 +10,7 @@ export interface LogoMap {
   bank:            Record<string, string>
   wallet_provider: Record<string, string>
   exchange:        Record<string, string>
+  social:          Record<string, string>
 }
 
 // ── Alias normalization ────────────────────────────────────────────────────────
@@ -265,6 +266,27 @@ export function normalizeExchange(slug: string): string {
   return slug.toLowerCase().replace(/\buid\b/g, '').replace(/[^a-z0-9]/g, '').trim()
 }
 
+// Social platform logos — keyed by a normalized platform slug. Admin uploads
+// (LogoRegistry type='social') override these brand-favicon fallbacks.
+export const SOCIAL_LOGO_STATIC: Record<string, string> = {
+  facebook:  'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://facebook.com&size=128',
+  instagram: 'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://instagram.com&size=128',
+  twitter:   'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://x.com&size=128',
+  youtube:   'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://youtube.com&size=128',
+  linkedin:  'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://linkedin.com&size=128',
+  tiktok:    'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://tiktok.com&size=128',
+  whatsapp:  'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://whatsapp.com&size=128',
+  telegram:  'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://telegram.org&size=128',
+  snapchat:  'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://snapchat.com&size=128',
+  discord:   'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://discord.com&size=128',
+}
+
+export function normalizeSocial(slug: string): string {
+  const s = slug.toLowerCase().trim()
+  if (s === 'x' || s === 'twitter/x' || s === 'twitter') return 'twitter'
+  return s.replace(/[^a-z0-9]/g, '')
+}
+
 // ── DB-only resolver (no static CDN fallback) ────────────────────────────────
 // Used by EntityLogo to build a deduped candidate list, so each URL tier is
 // tried independently rather than merged into one opaque string.
@@ -298,6 +320,10 @@ export function resolveLogoDbOnly(
       const key = normalizeExchange(slug)
       return dbMap.exchange?.[key] ?? dbMap.exchange?.[slug.toLowerCase()] ?? null
     }
+    case 'social': {
+      const key = normalizeSocial(slug)
+      return dbMap.social?.[key] ?? dbMap.social?.[slug.toLowerCase()] ?? null
+    }
     default: return null
   }
 }
@@ -328,6 +354,10 @@ export function resolveLogoStatic(type: EntityType, slug: string): string | null
     case 'exchange': {
       const key = normalizeExchange(slug)
       return EXCHANGE_LOGO_STATIC[key] ?? null
+    }
+    case 'social': {
+      const key = normalizeSocial(slug)
+      return SOCIAL_LOGO_STATIC[key] ?? null
     }
     default: return null
   }

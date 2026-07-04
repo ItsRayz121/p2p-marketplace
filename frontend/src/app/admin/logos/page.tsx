@@ -16,6 +16,7 @@ const ENTITY_TYPES: { value: EntityType; label: string }[] = [
   { value: 'bank',            label: 'Bank (HBL, MCB…)' },
   { value: 'wallet_provider', label: 'Wallet Provider' },
   { value: 'exchange',        label: 'Exchange (Binance, OKX…)' },
+  { value: 'social',          label: 'Social (YouTube, Instagram…)' },
 ]
 
 const TYPE_EXAMPLES: Record<string, string> = {
@@ -25,6 +26,7 @@ const TYPE_EXAMPLES: Record<string, string> = {
   bank:            'hbl, mcb, ubl, allied, meezan, nbp',
   wallet_provider: 'trustwallet, metamask, phantom',
   exchange:        'binance, okx, bitget, gate, mexc, kucoin, bybit',
+  social:          'facebook, instagram, twitter, youtube, tiktok, linkedin',
 }
 
 // ── Logo search helpers ───────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { kycApi, marketplaceApi } from '@/lib/api'
+import { kycApi, marketplaceApi, socialLinksApi } from '@/lib/api'
 import type { KycDocument } from '@/lib/api'
 import { analytics } from '@/lib/analytics'
 import { useFileUpload } from '@/hooks/useFileUpload'
@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Clock, ShieldCheck, ShieldPlus } from 'lucide-react'
 import { TraderLevelCard } from '@/components/ui/TraderLevelCard'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import Link from 'next/link'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -240,6 +241,9 @@ export default function KycPage() {
   ])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // Social profiles the user already verified in a prior KYC — reused automatically
+  // so we never ask for the same social twice.
+  const [verifiedSocials, setVerifiedSocials] = useState<Array<{ platform: string; url: string }>>([])
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -267,6 +271,17 @@ export default function KycPage() {
       .then((c) => setNonCustodial(!!(c as { nonCustodialP2p?: boolean }).nonCustodialP2p))
       .catch(() => {})
   }, [])
+
+  // Load already-verified social profiles so we don't ask for them again.
+  useEffect(() => {
+    socialLinksApi.get()
+      .then((d) => setVerifiedSocials(d.links.filter((l) => l.verified).map((l) => ({ platform: l.platform, url: l.url }))))
+      .catch(() => {})
+  }, [])
+
+  // Platform key for de-duplication against already-verified socials.
+  const socialKey = (p: string) => p.toLowerCase().replace(/twitter\/x|^x$/, 'twitter').replace(/[^a-z0-9]/g, '')
+  const verifiedKeys = new Set(verifiedSocials.map((v) => socialKey(v.platform)))
 
   // Poll every 20s while pending so the approved state appears without a manual refresh
   usePolling(fetchStatus, 20000, uiState === 'pending')
@@ -315,14 +330,15 @@ export default function KycPage() {
         setSubmitError('CNIC format must be XXXXX-XXXXXXX-X (e.g. 42201-1234567-8).')
         return
       }
-      if (nonCustodial && socialLinks.filter((l) => l.url.trim()).length < 1) {
+      if (nonCustodial && (socialLinks.filter((l) => l.url.trim()).length + verifiedSocials.length) < 1) {
         setSubmitError('Add at least one social profile (Facebook or Instagram preferred).')
         return
       }
     } else {
       // Level 2 reuses approved Level 1 identity docs — only video + socials.
+      // Already-verified socials count toward the minimum (we don't re-ask them).
       const validLinks = socialLinks.filter((l) => l.url.trim())
-      if (validLinks.length < 2) {
+      if (validLinks.length + verifiedSocials.length < 2) {
         setSubmitError('Enhanced KYC requires at least 2 social media profiles.')
         return
       }
@@ -335,7 +351,10 @@ export default function KycPage() {
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const validLinks = socialLinks.filter((l) => l.url.trim())
+      // Include newly-entered links PLUS the already-verified ones (reused so the
+      // minimum is met without re-typing; backend merge is idempotent).
+      const newLinks = socialLinks.filter((l) => l.url.trim() && !verifiedKeys.has(socialKey(l.platform)))
+      const validLinks = [...verifiedSocials, ...newLinks]
       await kycApi.submit({
         tier: selectedTier,
         // Level 1 only — Level 2 reuses the already-approved identity documents.
@@ -678,6 +697,22 @@ export default function KycPage() {
                   <Button size="sm" variant="ghost" onClick={addSocialLink}>+ Add</Button>
                 )}
               </div>
+
+              {/* Already-verified socials — reused automatically, never re-asked */}
+              {verifiedSocials.length > 0 && (
+                <div className="mb-3 rounded-lg border border-success/30 bg-success/5 p-3">
+                  <p className="text-xs font-medium text-success mb-2">✓ Already verified — reused automatically</p>
+                  <div className="flex flex-wrap gap-2">
+                    {verifiedSocials.map((v, i) => (
+                      <span key={`${v.platform}-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface text-xs text-text-primary">
+                        <EntityLogo type="social" slug={v.platform} size="xs" className="flex-shrink-0" />
+                        {v.platform}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-3">
                 {socialLinks.map((link, i) => (
                   <div key={i} className="flex gap-2">
@@ -686,7 +721,7 @@ export default function KycPage() {
                       onChange={(e) => updateSocialLink(i, 'platform', e.target.value)}
                       className="w-36 px-2 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                     >
-                      {SOCIAL_PLATFORMS.map((p) => <option key={p}>{p}</option>)}
+                      {SOCIAL_PLATFORMS.filter((p) => !verifiedKeys.has(socialKey(p)) || socialKey(p) === socialKey(link.platform)).map((p) => <option key={p}>{p}</option>)}
                     </select>
                     <input
                       type="url"

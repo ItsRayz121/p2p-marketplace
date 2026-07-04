@@ -1147,6 +1147,36 @@ export const userPaymentMethodsApi = {
     apiRequest<void>(`/users/me/payment-methods/${id}`, { method: 'DELETE' }),
 }
 
+export interface SocialLinkItem {
+  id: string
+  platform: string
+  url: string
+  verified: boolean
+  hidden: boolean
+}
+
+export const socialLinksApi = {
+  get: () =>
+    apiRequest<{ links: SocialLinkItem[]; public: boolean }>('/users/me/social-links'),
+  add: (platform: string, url: string) =>
+    apiRequest<SocialLinkItem[]>('/users/me/social-links', {
+      method: 'POST',
+      body: JSON.stringify({ platform, url }),
+    }),
+  setHidden: (id: string, hidden: boolean) =>
+    apiRequest<SocialLinkItem[]>(`/users/me/social-links/${id}/visibility`, {
+      method: 'PATCH',
+      body: JSON.stringify({ hidden }),
+    }),
+  remove: (id: string) =>
+    apiRequest<SocialLinkItem[]>(`/users/me/social-links/${id}`, { method: 'DELETE' }),
+  setPublic: (isPublic: boolean) =>
+    apiRequest<void>('/users/me/social-profile', {
+      method: 'PATCH',
+      body: JSON.stringify({ public: isPublic }),
+    }),
+}
+
 export interface SavedTerms {
   id: string
   label: string

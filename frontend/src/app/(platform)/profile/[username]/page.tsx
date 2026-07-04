@@ -49,6 +49,7 @@ interface TraderProfile {
     status: string
     rank: string
   } | null
+  socialLinks: Array<{ platform: string; url: string; verified: boolean }> | null
   ratings: Array<{
     id: string
     rating: number
@@ -316,6 +317,28 @@ export default function TraderProfilePage() {
           count is a harassment vector and discourages legitimate disputes. The
           full record stays in the admin panel; the public success rate above is
           the user-facing trust signal. */}
+
+      {/* Social profiles — only present when the trader opted in publicly */}
+      {profile.socialLinks && profile.socialLinks.length > 0 && (
+        <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+          <h2 className="text-sm font-semibold text-text-primary mb-3">Social Profiles</h2>
+          <div className="flex flex-wrap gap-2">
+            {profile.socialLinks.map((s, i) => (
+              <a
+                key={`${s.platform}-${i}`}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-surface text-sm text-text-primary hover:border-primary/50 hover:text-primary transition-colors"
+              >
+                <EntityLogo type="social" slug={s.platform} size="xs" className="flex-shrink-0" />
+                {s.platform}
+                {s.verified && <span title="Verified via KYC" className="text-success">✓</span>}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Active Ads */}
       {profile.activeAds.length > 0 && (

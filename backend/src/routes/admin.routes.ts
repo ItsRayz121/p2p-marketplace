@@ -138,6 +138,7 @@ async function createAuditLog(
 }
 
 import { notify } from '../lib/notify'
+import { mergeVerifiedFromKyc } from '../services/socialLinks.service'
 import { computeModerationStatus, recordModerationAction, notifyModeration, moderationStatusLabel } from '../lib/moderation'
 
 // ─── Route Export ─────────────────────────────────────────────────────────────
@@ -1521,6 +1522,17 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       })
     })
+
+    // Promote the submission's social links to the user's permanent VERIFIED set
+    // (they can hide but never delete these). Best-effort — never blocks approval.
+    try {
+      const submitted = Array.isArray(submission.socialLinks)
+        ? (submission.socialLinks as Array<{ platform?: unknown; url?: unknown }>)
+            .filter((l) => typeof l?.platform === 'string' && typeof l?.url === 'string')
+            .map((l) => ({ platform: l.platform as string, url: l.url as string }))
+        : []
+      await mergeVerifiedFromKyc(submission.userId, submitted)
+    } catch { /* best-effort — social sync must not fail approval */ }
 
     await createAuditLog(req.user!.id, 'KYC_APPROVED', 'KycSubmission', id, { userId: submission.userId, level: kycLevel }, clientIp(req), req.headers['user-agent'] as string | undefined)
     await sendKycEmail('approved', submission.user.email, { level: kycLevel })
