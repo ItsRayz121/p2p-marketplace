@@ -8,7 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
-import { ShieldCheck } from 'lucide-react'
+import { ShieldCheck, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -32,6 +32,7 @@ interface KycSubmission {
   rejectionReason?: string | null
   createdAt: string
   reviewedAt?: string
+  cnicDuplicates?: Array<{ userId: string; username: string | null; email: string | null; status: KycStatus }>
 }
 
 interface KycQueueResponse {
@@ -357,6 +358,29 @@ export default function KycQueuePage() {
       >
         {selected && (
           <div className="space-y-5">
+              {selected.cnicDuplicates && selected.cnicDuplicates.length > 0 && (
+                <div className="px-3 py-2.5 bg-danger/10 border border-danger/30 rounded-lg text-sm">
+                  <div className="flex items-center gap-2 font-semibold text-danger">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    Duplicate CNIC — this identity is on {selected.cnicDuplicates.length} other account{selected.cnicDuplicates.length === 1 ? '' : 's'}
+                  </div>
+                  <ul className="mt-1.5 space-y-1">
+                    {selected.cnicDuplicates.map((d) => (
+                      <li key={d.userId} className="text-text-secondary flex flex-wrap items-center gap-x-2">
+                        <Link href={`/admin/users/${d.userId}`} className="text-primary hover:underline font-medium">
+                          {d.username || d.email || d.userId}
+                        </Link>
+                        <Badge variant={STATUS_BADGE[d.status]} size="sm">{d.status}</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-xs text-text-muted">
+                    The same CNIC number was submitted by these accounts. Approving a CNIC that is already
+                    verified on another account is blocked — reject this one unless it is the genuine owner.
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-text-muted">User</p>

@@ -1342,6 +1342,37 @@ export async function adminRoutes(app: FastifyInstance) {
       db.kycSubmission.count({ where }),
     ])
 
+    // Duplicate-CNIC detection: for each submission on this page, find OTHER
+    // accounts that share the same CNIC hash (any status). Surfaced in the admin
+    // review modal so the same identity can't be silently approved twice — the
+    // permanent, zero-cost duplicate guard using the CNIC hash we already store.
+    const pageHashes = [...new Set(submissions.map((s) => s.cnicNumberHash).filter(Boolean))] as string[]
+    const dupRows = pageHashes.length
+      ? await db.kycSubmission.findMany({
+          where: { cnicNumberHash: { in: pageHashes } },
+          select: {
+            cnicNumberHash: true,
+            userId: true,
+            status: true,
+            user: { select: { username: true, email: true } },
+          },
+        })
+      : []
+    const dupByHash = new Map<string, typeof dupRows>()
+    for (const r of dupRows) {
+      const arr = dupByHash.get(r.cnicNumberHash!) ?? []
+      arr.push(r)
+      dupByHash.set(r.cnicNumberHash!, arr)
+    }
+    const collectDuplicates = (hash: string | null, selfUserId: string) => {
+      if (!hash) return []
+      const seen = new Set<string>()
+      return (dupByHash.get(hash) ?? [])
+        .filter((r) => r.userId !== selfUserId)
+        .filter((r) => { if (seen.has(r.userId)) return false; seen.add(r.userId); return true })
+        .map((r) => ({ userId: r.userId, username: r.user?.username ?? null, email: r.user?.email ?? null, status: r.status }))
+    }
+
     // KYC documents are stored as authenticated Cloudinary assets — sign the
     // delivery URLs so the reviewer's browser can actually load them.
     const signed = submissions.map((s) => ({
@@ -1350,6 +1381,7 @@ export async function adminRoutes(app: FastifyInstance) {
       backUrl: signCloudinaryDeliveryUrl(s.backUrl),
       selfieUrl: signCloudinaryDeliveryUrl(s.selfieUrl),
       videoUrl: signCloudinaryDeliveryUrl(s.videoUrl),
+      cnicDuplicates: collectDuplicates(s.cnicNumberHash, s.userId),
     }))
 
     return reply.send({
@@ -1365,6 +1397,19 @@ export async function adminRoutes(app: FastifyInstance) {
       include: { user: { select: { id: true, email: true, username: true, fullName: true, kycStatus: true, kycLevel: true } } },
     })
     if (!submission) throw Errors.NOT_FOUND('KYC submission')
+
+    // Other accounts sharing this CNIC hash (duplicate-identity guard).
+    const dupRows = submission.cnicNumberHash
+      ? await db.kycSubmission.findMany({
+          where: { cnicNumberHash: submission.cnicNumberHash, userId: { not: submission.userId } },
+          select: { userId: true, status: true, user: { select: { username: true, email: true } } },
+        })
+      : []
+    const seenDup = new Set<string>()
+    const cnicDuplicates = dupRows
+      .filter((r) => { if (seenDup.has(r.userId)) return false; seenDup.add(r.userId); return true })
+      .map((r) => ({ userId: r.userId, username: r.user?.username ?? null, email: r.user?.email ?? null, status: r.status }))
+
     return reply.send({
       success: true,
       data: {
@@ -1373,6 +1418,7 @@ export async function adminRoutes(app: FastifyInstance) {
         backUrl: signCloudinaryDeliveryUrl(submission.backUrl),
         selfieUrl: signCloudinaryDeliveryUrl(submission.selfieUrl),
         videoUrl: signCloudinaryDeliveryUrl(submission.videoUrl),
+        cnicDuplicates,
       },
     })
   })
@@ -1420,6 +1466,28 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!submission) throw Errors.NOT_FOUND('KYC submission')
     if (submission.status !== 'pending') {
       throw new AppError('INVALID_STATUS', 'Submission is not pending', 400)
+    }
+
+    // Hard guard: never approve a CNIC that is already verified on a DIFFERENT
+    // account. This is the safety net for a reviewer approving many KYCs in a
+    // row — a duplicate CNIC can't slip through even if it's visually missed.
+    if (submission.cnicNumberHash) {
+      const conflict = await db.kycSubmission.findFirst({
+        where: {
+          cnicNumberHash: submission.cnicNumberHash,
+          status: 'approved',
+          userId: { not: submission.userId },
+        },
+        include: { user: { select: { username: true, email: true } } },
+      })
+      if (conflict) {
+        const who = conflict.user?.username || conflict.user?.email || conflict.userId
+        throw new AppError(
+          'CNIC_DUPLICATE',
+          `This CNIC is already verified on another account (${who}). Reject this submission instead of approving it.`,
+          409,
+        )
+      }
     }
 
     const kycLevel = submission.tier === 'enhanced' ? 'enhanced' : 'basic'
