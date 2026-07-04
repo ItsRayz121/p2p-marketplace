@@ -33,12 +33,15 @@ async function resolvePaymentMethodsFor(
   if (allIds.length === 0) return new Map()
   const recs = await db.paymentMethod.findMany({
     where: { id: { in: allIds } },
-    select: { id: true, type: true, bankName: true },
+    select: { id: true, type: true, bankName: true, hidden: true, isActive: true },
   })
   const map = new Map<string, ResolvedPaymentMethod>()
   for (const id of allIds) {
     const rec = recs.find((r) => r.id === id)
-    if (!rec) { map.set(id, { id, type: 'unknown', label: id }); continue }
+    // Hidden / removed methods (and any id with no matching record) are dropped
+    // from the resolved set so they no longer surface on the seller's live
+    // listings (the "hide across all listings" rule).
+    if (!rec || rec.hidden || !rec.isActive) continue
     const label = rec.type === 'bank_transfer'
       ? (rec.bankName ?? 'Bank Transfer')
       : (PM_LABELS[rec.type] ?? rec.type)

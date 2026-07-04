@@ -25,6 +25,8 @@ import {
   getSavedAddresses,
   addSavedAddress,
   deleteSavedAddress,
+  updateSavedAddress,
+  setSavedAddressHidden,
 } from '../services/wallet.service'
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
@@ -60,6 +62,14 @@ const savedAddressSchema = z.object({
   address: z.string().min(1),
   label: z.string().min(1).max(100),
 })
+
+// Edit-only schemas (all fields optional so partial updates are allowed).
+const savedAddressEditSchema = z.object({
+  label: z.string().min(1).max(100).optional(),
+  address: z.string().min(1).max(500).optional(),
+})
+
+const visibilitySchema = z.object({ hidden: z.boolean() })
 
 const trustedAddressSchema = z.object({
   coin: z.string().min(1),
@@ -438,9 +448,12 @@ export async function walletRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: result })
   })
 
-  // GET /api/wallet/payment-methods
+  // GET /api/wallet/payment-methods?includeHidden=1
+  // Pickers (listing/trade) call without the flag → hidden methods excluded.
+  // Wallet management passes includeHidden=1 so hidden methods can be un-hidden.
   app.get('/wallet/payment-methods', { preHandler: [authenticate] }, async (req, reply) => {
-    const methods = await getPaymentMethods(req.user!.id)
+    const includeHidden = (req.query as { includeHidden?: string }).includeHidden === '1'
+    const methods = await getPaymentMethods(req.user!.id, { includeHidden })
     return reply.send({ success: true, data: methods })
   })
 
@@ -464,9 +477,10 @@ export async function walletRoutes(app: FastifyInstance) {
     return reply.send({ success: true, message: 'Payment method removed' })
   })
 
-  // GET /api/wallet/saved-addresses
+  // GET /api/wallet/saved-addresses?includeHidden=1
   app.get('/wallet/saved-addresses', { preHandler: [authenticate] }, async (req, reply) => {
-    const addresses = await getSavedAddresses(req.user!.id)
+    const includeHidden = (req.query as { includeHidden?: string }).includeHidden === '1'
+    const addresses = await getSavedAddresses(req.user!.id, { includeHidden })
     return reply.send({ success: true, data: addresses })
   })
 
@@ -490,6 +504,28 @@ export async function walletRoutes(app: FastifyInstance) {
     }
     const address = await addSavedAddress(userId, parsed.data)
     return reply.code(201).send({ success: true, data: address })
+  })
+
+  // PATCH /api/wallet/saved-addresses/:id  — edit label / address (audited)
+  app.patch('/wallet/saved-addresses/:id', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const parsed = savedAddressEditSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    const address = await updateSavedAddress(userId, id, parsed.data)
+    return reply.send({ success: true, data: address })
+  })
+
+  // PATCH /api/wallet/saved-addresses/:id/visibility  — hide / un-hide (audited)
+  app.patch('/wallet/saved-addresses/:id/visibility', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const parsed = visibilitySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Invalid input', 400)
+    const address = await setSavedAddressHidden(userId, id, parsed.data.hidden)
+    return reply.send({ success: true, data: address })
   })
 
   // DELETE /api/wallet/saved-addresses/:id

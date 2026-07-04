@@ -969,12 +969,22 @@ export const walletApi = {
     apiRequest<{ networkFee: string; platformFee: string; gasFee: string; coin: string; network: string }>(
       `/wallet/live-fee?coin=${encodeURIComponent(coin)}&network=${encodeURIComponent(network)}`,
     ),
-  getSavedAddresses: () =>
-    apiRequest<SavedDeliveryAddress[]>('/wallet/saved-addresses'),
+  getSavedAddresses: (includeHidden = false) =>
+    apiRequest<SavedDeliveryAddress[]>(`/wallet/saved-addresses${includeHidden ? '?includeHidden=1' : ''}`),
   addSavedAddress: (data: { coin: string; network: string; address: string; label: string }) =>
     apiRequest<SavedDeliveryAddress>('/wallet/saved-addresses', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  updateSavedAddress: (id: string, data: { label?: string; address?: string }) =>
+    apiRequest<SavedDeliveryAddress>(`/wallet/saved-addresses/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  setSavedAddressHidden: (id: string, hidden: boolean) =>
+    apiRequest<SavedDeliveryAddress>(`/wallet/saved-addresses/${id}/visibility`, {
+      method: 'PATCH',
+      body: JSON.stringify({ hidden }),
     }),
   deleteSavedAddress: (id: string) =>
     apiRequest<void>(`/wallet/saved-addresses/${id}`, { method: 'DELETE' }),
@@ -1103,12 +1113,13 @@ export interface UserPaymentMethod {
   ibanNumber?: string | null
   accountNumber?: string | null
   isActive: boolean
+  hidden?: boolean
   createdAt: string
 }
 
 export const userPaymentMethodsApi = {
-  getAll: () =>
-    apiRequest<UserPaymentMethod[]>('/users/me/payment-methods'),
+  getAll: (includeHidden = false) =>
+    apiRequest<UserPaymentMethod[]>(`/users/me/payment-methods${includeHidden ? '?includeHidden=1' : ''}`),
   add: (data: {
     type: UserPaymentMethod['type']
     displayName: string
@@ -1121,6 +1132,16 @@ export const userPaymentMethodsApi = {
     apiRequest<UserPaymentMethod>('/users/me/payment-methods', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  edit: (id: string, data: { accountName?: string; mobileNumber?: string; ibanNumber?: string; accountNumber?: string }) =>
+    apiRequest<UserPaymentMethod>(`/users/me/payment-methods/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  setHidden: (id: string, hidden: boolean) =>
+    apiRequest<UserPaymentMethod>(`/users/me/payment-methods/${id}/visibility`, {
+      method: 'PATCH',
+      body: JSON.stringify({ hidden }),
     }),
   remove: (id: string) =>
     apiRequest<void>(`/users/me/payment-methods/${id}`, { method: 'DELETE' }),
@@ -1151,6 +1172,7 @@ export interface SavedDeliveryAddress {
   network: string   // 'BEP20' | 'Aptos' | 'Binance' | 'Bitget' | 'Gate'
   address: string
   label: string
+  hidden?: boolean
 }
 
 export const kycApi = {

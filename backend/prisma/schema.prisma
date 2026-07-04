@@ -911,6 +911,10 @@ model PaymentMethod {
   ibanNumber    String?
   accountNumber String?
   isActive      Boolean           @default(true)
+  // User-hidden (reversible) — excluded from listing/trade pickers and from the
+  // resolved payment methods shown on existing ads, but still visible in Wallet
+  // management so it can be un-hidden. Distinct from isActive=false (removed).
+  hidden        Boolean           @default(false)
   createdAt     DateTime          @default(now())
 
   @@index([userId])
@@ -924,6 +928,9 @@ model SavedAddress {
   network   String
   address   String
   label     String
+  // User-hidden (reversible) — excluded from trade delivery/tap-to-fill pickers
+  // but still visible in Wallet management so it can be un-hidden.
+  hidden    Boolean  @default(false)
 
   @@unique([userId, coin, network, address])
   @@index([userId])

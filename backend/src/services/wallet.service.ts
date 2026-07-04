@@ -887,8 +887,11 @@ export async function getCollateralStatus(userId: string) {
 
 // ─── Payment Methods ──────────────────────────────────────────────────────────
 
-export async function getPaymentMethods(userId: string) {
-  return db.paymentMethod.findMany({ where: { userId, isActive: true } })
+export async function getPaymentMethods(userId: string, opts?: { includeHidden?: boolean }) {
+  return db.paymentMethod.findMany({
+    where: { userId, isActive: true, ...(opts?.includeHidden ? {} : { hidden: false }) },
+    orderBy: { createdAt: 'desc' },
+  })
 }
 
 export async function addPaymentMethod(
@@ -922,13 +925,50 @@ export async function addPaymentMethod(
 export async function deletePaymentMethod(userId: string, id: string) {
   const pm = await db.paymentMethod.findFirst({ where: { id, userId } })
   if (!pm) throw new AppError('NOT_FOUND', 'Payment method not found', 404)
+  void recordAuditLog(userId, 'PAYMENT_METHOD_REMOVED', 'PaymentMethod', id, {
+    type: pm.type, accountName: pm.accountName, bankName: pm.bankName,
+    accountNumber: pm.accountNumber, mobileNumber: pm.mobileNumber, ibanNumber: pm.ibanNumber,
+  })
   return db.paymentMethod.update({ where: { id }, data: { isActive: false } })
 }
 
 // ─── Saved Addresses ──────────────────────────────────────────────────────────
 
-export async function getSavedAddresses(userId: string) {
-  return db.savedAddress.findMany({ where: { userId } })
+export async function getSavedAddresses(userId: string, opts?: { includeHidden?: boolean }) {
+  return db.savedAddress.findMany({
+    where: { userId, ...(opts?.includeHidden ? {} : { hidden: false }) },
+  })
+}
+
+// Edit a saved delivery address (label / address). Audited.
+export async function updateSavedAddress(
+  userId: string,
+  id: string,
+  data: { label?: string | undefined; address?: string | undefined },
+) {
+  const addr = await db.savedAddress.findFirst({ where: { id, userId } })
+  if (!addr) throw new AppError('NOT_FOUND', 'Address not found', 404)
+  const next = {
+    label: data.label?.trim() || addr.label,
+    address: data.address?.trim() || addr.address,
+  }
+  const updated = await db.savedAddress.update({ where: { id }, data: next })
+  void recordAuditLog(userId, 'SAVED_ADDRESS_EDITED', 'SavedAddress', id, {
+    coin: addr.coin, network: addr.network,
+    before: { label: addr.label, address: addr.address },
+    after: next,
+  })
+  return updated
+}
+
+export async function setSavedAddressHidden(userId: string, id: string, hidden: boolean) {
+  const addr = await db.savedAddress.findFirst({ where: { id, userId } })
+  if (!addr) throw new AppError('NOT_FOUND', 'Address not found', 404)
+  const updated = await db.savedAddress.update({ where: { id }, data: { hidden } })
+  void recordAuditLog(userId, hidden ? 'SAVED_ADDRESS_HIDDEN' : 'SAVED_ADDRESS_UNHIDDEN', 'SavedAddress', id, {
+    coin: addr.coin, network: addr.network, label: addr.label,
+  })
+  return updated
 }
 
 export async function addSavedAddress(

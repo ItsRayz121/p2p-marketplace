@@ -25,7 +25,7 @@ import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { validateAddressForNetwork } from '@/lib/addressValidation'
 import { useAccount } from 'wagmi'
-import { ArrowUpDown, Lock, Clock, AlertTriangle } from 'lucide-react'
+import { ArrowUpDown, Lock, Clock, AlertTriangle, Pencil, Eye, EyeOff, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -820,6 +820,12 @@ function PaymentMethodsSection() {
   const [showForm, setShowForm] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<UserPaymentMethod | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  // Inline edit of an existing method
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editNumber, setEditNumber] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   // Step 1: category, Step 2: selected method within category, Step 3: fields
   const [category, setCategory] = useState<PmCategory | null>(null)
@@ -835,7 +841,9 @@ function PaymentMethodsSection() {
     : null
 
   useEffect(() => {
-    userPaymentMethodsApi.getAll()
+    // includeHidden: this is the management surface, so show hidden methods too
+    // (with a badge) so the user can un-hide them.
+    userPaymentMethodsApi.getAll(true)
       .then(setMethods)
       .catch(() => {})
       .finally(() => setPmLoading(false))
@@ -885,6 +893,45 @@ function PaymentMethodsSection() {
       setFormError(err instanceof Error ? err.message : 'Failed to add payment method')
     } finally {
       setAdding(false)
+    }
+  }
+
+  const startEdit = (m: UserPaymentMethod) => {
+    setEditId(m.id)
+    setEditName(m.accountName)
+    // Bank methods edit the IBAN; wallet methods edit the mobile/account number.
+    setEditNumber((m.type === 'bank_transfer' ? m.ibanNumber : m.mobileNumber) ?? m.accountNumber ?? '')
+    setFormError(null)
+  }
+
+  const saveEdit = async (m: UserPaymentMethod) => {
+    if (!editName.trim()) { toast.error('Account name is required'); return }
+    setEditSaving(true)
+    try {
+      const patch = m.type === 'bank_transfer'
+        ? { accountName: editName.trim(), ibanNumber: editNumber.trim() }
+        : { accountName: editName.trim(), mobileNumber: editNumber.trim() }
+      const updated = await userPaymentMethodsApi.edit(m.id, patch)
+      setMethods((prev) => prev.map((x) => (x.id === m.id ? updated : x)))
+      setEditId(null)
+      toast.success('Payment method updated')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update payment method')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const toggleHidden = async (m: UserPaymentMethod) => {
+    setBusyId(m.id)
+    try {
+      const updated = await userPaymentMethodsApi.setHidden(m.id, !m.hidden)
+      setMethods((prev) => prev.map((x) => (x.id === m.id ? updated : x)))
+      toast.success(updated.hidden ? 'Hidden from your listings' : 'Visible again')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update visibility')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -1025,7 +1072,7 @@ function PaymentMethodsSection() {
               )}
 
               {isBankCategory && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 items-end">
                   <div>
                     <label className="block text-xs text-text-muted mb-1">IBAN</label>
                     <input
@@ -1065,32 +1112,54 @@ function PaymentMethodsSection() {
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border overflow-hidden">
           {methods.map((m) => (
-            <div key={m.id} className="flex items-center gap-3 px-4 py-3">
-              <EntityLogo
-                type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'}
-                slug={m.type === 'bank_transfer' ? (m.bankName ?? 'bank') : pmTypeLabel(m.type)}
-                size="sm"
-                className="flex-shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-text-primary">{m.accountName}</span>
-                  <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPaymentMethodColor(pmTypeLabel(m.type))}`}>
-                    {pmTypeLabel(m.type, m.bankName)}
-                  </span>
+            <div key={m.id} className={`px-4 py-3 ${m.hidden ? 'opacity-60' : ''}`}>
+              {editId === m.id ? (
+                /* Inline edit */
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.type === 'bank_transfer' ? (m.bankName ?? 'bank') : pmTypeLabel(m.type)} size="sm" className="flex-shrink-0" />
+                    <span className="text-xs font-medium text-text-primary">{pmTypeLabel(m.type, m.bankName)}</span>
+                  </div>
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Account name" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <input value={editNumber} onChange={(e) => setEditNumber(e.target.value)} placeholder={m.type === 'bank_transfer' ? 'IBAN' : 'Account / mobile number'} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <div className="flex gap-2">
+                    <Button size="sm" loading={editSaving} onClick={() => saveEdit(m)}>Save</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setEditId(null)}>Cancel</Button>
+                  </div>
                 </div>
-                <p className="text-xs text-text-muted mt-0.5">
-                  {m.mobileNumber ?? m.ibanNumber ?? m.accountNumber ?? ''}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setRemoveTarget(m)}
-                className="text-danger hover:text-danger flex-shrink-0"
-              >
-                Remove
-              </Button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <EntityLogo
+                    type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'}
+                    slug={m.type === 'bank_transfer' ? (m.bankName ?? 'bank') : pmTypeLabel(m.type)}
+                    size="sm"
+                    className="flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-text-primary">{m.accountName}</span>
+                      <span className={`px-1.5 py-0.5 text-xs rounded-full ${getPaymentMethodColor(pmTypeLabel(m.type))}`}>
+                        {pmTypeLabel(m.type, m.bankName)}
+                      </span>
+                      {m.hidden && <span className="px-1.5 py-0.5 text-xs rounded-full bg-surface-alt text-text-muted border border-border">Hidden</span>}
+                    </div>
+                    <p className="text-xs text-text-muted mt-0.5">
+                      {m.mobileNumber ?? m.ibanNumber ?? m.accountNumber ?? ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <button onClick={() => startEdit(m)} title="Edit" aria-label="Edit" className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-surface-alt transition-colors">
+                      <Pencil size={16} />
+                    </button>
+                    <button onClick={() => toggleHidden(m)} disabled={busyId === m.id} title={m.hidden ? 'Un-hide' : 'Hide from listings'} aria-label={m.hidden ? 'Un-hide' : 'Hide'} className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-surface-alt transition-colors disabled:opacity-50">
+                      {m.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                    <button onClick={() => setRemoveTarget(m)} title="Remove" aria-label="Remove" className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1152,10 +1221,17 @@ function SavedDeliveryAddressesSection() {
   const [labelTouched, setLabelTouched] = useState(false)
   const [ctmTokens, setCtmTokens] = useState<CtmTokenOption[]>([])
   const [removeTarget, setRemoveTarget] = useState<SavedDeliveryAddress | null>(null)
+  // Inline edit + per-row busy state for saved addresses
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+  const [editAddress, setEditAddress] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const res = await walletApi.getSavedAddresses()
+      // Management surface → include hidden so they can be un-hidden.
+      const res = await walletApi.getSavedAddresses(true)
       setAddresses(Array.isArray(res) ? res : [])
     } catch { /* ignore */ } finally { setLoading(false) }
   }, [])
@@ -1256,22 +1332,70 @@ function SavedDeliveryAddressesSection() {
   const cryptoAddrs = addresses.filter((a) => a.network !== CTM_NETWORK)
   const ctmAddrs = addresses.filter((a) => a.network === CTM_NETWORK)
 
+  const startEdit = (a: SavedDeliveryAddress) => {
+    setEditId(a.id); setEditLabel(a.label); setEditAddress(a.address); setFormError(null)
+  }
+  const saveEdit = async (a: SavedDeliveryAddress) => {
+    if (!editLabel.trim() || !editAddress.trim()) { toast.error('Label and address are required'); return }
+    setEditSaving(true)
+    try {
+      const updated = await walletApi.updateSavedAddress(a.id, { label: editLabel.trim(), address: editAddress.trim() })
+      setAddresses((prev) => prev.map((x) => (x.id === a.id ? updated : x)))
+      setEditId(null)
+      toast.success('Address updated')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update address')
+    } finally { setEditSaving(false) }
+  }
+  const toggleHidden = async (a: SavedDeliveryAddress) => {
+    setBusyId(a.id)
+    try {
+      const updated = await walletApi.setSavedAddressHidden(a.id, !a.hidden)
+      setAddresses((prev) => prev.map((x) => (x.id === a.id ? updated : x)))
+      toast.success(updated.hidden ? 'Hidden from trade auto-fill' : 'Visible again')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update visibility')
+    } finally { setBusyId(null) }
+  }
+
   const renderList = (list: SavedDeliveryAddress[]) => (
     <div className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border overflow-hidden">
       {list.map((a) => (
-        <div key={a.id} className="flex items-center gap-3 px-4 py-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-medium text-text-primary">{a.label}</span>
-              <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium">
-                {a.network === CTM_NETWORK ? a.coin : a.network}
-              </span>
+        <div key={a.id} className={`px-4 py-3 ${a.hidden ? 'opacity-60' : ''}`}>
+          {editId === a.id ? (
+            <div className="space-y-2">
+              <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} placeholder="Label" className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary" />
+              <input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} placeholder="Address / UID" className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary" />
+              <div className="flex gap-2">
+                <Button size="sm" loading={editSaving} onClick={() => saveEdit(a)}>Save</Button>
+                <Button size="sm" variant="secondary" onClick={() => setEditId(null)}>Cancel</Button>
+              </div>
             </div>
-            <p className="font-mono text-xs text-text-muted truncate mt-0.5">{a.address}</p>
-          </div>
-          <Button size="sm" variant="ghost" onClick={() => setRemoveTarget(a)} className="text-danger hover:text-danger flex-shrink-0">
-            Remove
-          </Button>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-text-primary">{a.label}</span>
+                  <span className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium">
+                    {a.network === CTM_NETWORK ? a.coin : a.network}
+                  </span>
+                  {a.hidden && <span className="px-1.5 py-0.5 text-xs rounded-full bg-surface-alt text-text-muted border border-border">Hidden</span>}
+                </div>
+                <p className="font-mono text-xs text-text-muted truncate mt-0.5">{a.address}</p>
+              </div>
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button onClick={() => startEdit(a)} title="Edit" aria-label="Edit" className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-surface-alt transition-colors">
+                  <Pencil size={16} />
+                </button>
+                <button onClick={() => toggleHidden(a)} disabled={busyId === a.id} title={a.hidden ? 'Un-hide' : 'Hide from auto-fill'} aria-label={a.hidden ? 'Un-hide' : 'Hide'} className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-surface-alt transition-colors disabled:opacity-50">
+                  {a.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+                <button onClick={() => setRemoveTarget(a)} title="Remove" aria-label="Remove" className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-colors">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </div>

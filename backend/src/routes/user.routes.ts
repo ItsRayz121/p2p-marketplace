@@ -27,6 +27,17 @@ const paymentMethodSchema = z.object({
   accountNumber: z.string().max(30).optional(),
 })
 
+// Edit an existing method: account holder name + the number fields. Type/bank
+// are fixed once created (a different bank/rail is a different method).
+const paymentMethodEditSchema = z.object({
+  accountName: z.string().min(1).max(100).optional(),
+  mobileNumber: z.string().max(20).optional(),
+  ibanNumber: z.string().max(34).optional(),
+  accountNumber: z.string().max(30).optional(),
+})
+
+const visibilitySchema = z.object({ hidden: z.boolean() })
+
 export async function userRoutes(app: FastifyInstance) {
   // GET /api/users/:username/profile — public (optional auth)
   app.get('/users/:username/profile', { preHandler: [optionalAuth] }, async (req, reply) => {
@@ -160,11 +171,14 @@ export async function userRoutes(app: FastifyInstance) {
 
   // ─── Payment Methods CRUD ────────────────────────────────────────────────────
 
-  // GET /api/users/me/payment-methods
+  // GET /api/users/me/payment-methods?includeHidden=1
+  // Wallet management passes includeHidden=1 so hidden methods can be un-hidden;
+  // any picker calling without the flag gets only visible methods.
   app.get('/users/me/payment-methods', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
+    const includeHidden = (req.query as { includeHidden?: string }).includeHidden === '1'
     const methods = await db.paymentMethod.findMany({
-      where: { userId, isActive: true },
+      where: { userId, isActive: true, ...(includeHidden ? {} : { hidden: false }) },
       orderBy: { createdAt: 'desc' },
     })
     return reply.send({ success: true, data: methods })
@@ -235,6 +249,62 @@ export async function userRoutes(app: FastifyInstance) {
       accountNumber: maskAccount(method.accountNumber),
     })
     return reply.send({ success: true, data: null })
+  })
+
+  // PATCH /api/users/me/payment-methods/:id — edit account holder name / numbers
+  app.patch('/users/me/payment-methods/:id', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const parsed = paymentMethodEditSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    const method = await db.paymentMethod.findUnique({ where: { id } })
+    if (!method || method.userId !== userId || !method.isActive) {
+      throw new AppError('NOT_FOUND', 'Payment method not found', 404)
+    }
+    const { accountName, mobileNumber, ibanNumber, accountNumber } = parsed.data
+
+    // Non-custodial anti-fraud: an edited holder name must still match the verified
+    // CNIC legal name once it is locked (parity with the add endpoint).
+    if (accountName !== undefined && await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)) {
+      const u = await db.user.findUnique({ where: { id: userId }, select: { fullName: true, legalNameLockedAt: true } })
+      if (u?.legalNameLockedAt && !namesMatch(accountName, u.fullName)) {
+        throw new AppError('NAME_MISMATCH', 'The account holder name must match your verified CNIC name. Third-party accounts are not allowed.', 400)
+      }
+    }
+
+    const next = {
+      accountName: accountName ?? method.accountName,
+      mobileNumber: mobileNumber === undefined ? method.mobileNumber : (mobileNumber || null),
+      ibanNumber: ibanNumber === undefined ? method.ibanNumber : (ibanNumber || null),
+      accountNumber: accountNumber === undefined ? method.accountNumber : (accountNumber || null),
+    }
+    const updated = await db.paymentMethod.update({ where: { id }, data: next })
+    // Audit trail: before → after, account numbers masked to last 4 digits.
+    void recordAuditLog(userId, 'PAYMENT_METHOD_EDITED', 'PaymentMethod', id, {
+      type: method.type,
+      before: { accountName: method.accountName, mobileNumber: maskAccount(method.mobileNumber), ibanNumber: maskAccount(method.ibanNumber), accountNumber: maskAccount(method.accountNumber) },
+      after: { accountName: next.accountName, mobileNumber: maskAccount(next.mobileNumber), ibanNumber: maskAccount(next.ibanNumber), accountNumber: maskAccount(next.accountNumber) },
+    })
+    return reply.send({ success: true, data: updated })
+  })
+
+  // PATCH /api/users/me/payment-methods/:id/visibility — hide / un-hide
+  app.patch('/users/me/payment-methods/:id/visibility', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const parsed = visibilitySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Invalid input', 400)
+    const method = await db.paymentMethod.findUnique({ where: { id } })
+    if (!method || method.userId !== userId || !method.isActive) {
+      throw new AppError('NOT_FOUND', 'Payment method not found', 404)
+    }
+    const updated = await db.paymentMethod.update({ where: { id }, data: { hidden: parsed.data.hidden } })
+    void recordAuditLog(userId, parsed.data.hidden ? 'PAYMENT_METHOD_HIDDEN' : 'PAYMENT_METHOD_UNHIDDEN', 'PaymentMethod', id, {
+      type: method.type, displayName: method.displayName, accountName: method.accountName,
+    })
+    return reply.send({ success: true, data: updated })
   })
 
   // ─── Favorites ────────────────────────────────────────────────────────────────
