@@ -58,6 +58,12 @@ export default function Providers({ children }: ProvidersProps) {
 
     async function init() {
       setLoading(true)
+      // CSRF doesn't depend on the session, so fetch it in PARALLEL with the
+      // refresh→me auth chain instead of after it — removes one sequential
+      // round-trip from the cold-start critical path (noticeable on mobile).
+      const csrfPromise = authApi.getCsrf()
+        .then((csrfData) => setCsrfToken(csrfData.token))
+        .catch(() => { /* non-fatal */ })
       try {
         if (isTelegramMiniApp()) {
           // Inside Telegram the cross-site refresh cookie is blocked — bootstrap
@@ -87,14 +93,9 @@ export default function Providers({ children }: ProvidersProps) {
         clearAuth()
       }
 
-      try {
-        const csrfData = await authApi.getCsrf()
-        setCsrfToken(csrfData.token)
-      } catch {
-        // Non-fatal
-      } finally {
-        setLoading(false)
-      }
+      // Ensure CSRF has settled (it ran alongside auth) before we clear loading.
+      await csrfPromise
+      setLoading(false)
     }
 
     init()
