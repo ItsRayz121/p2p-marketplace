@@ -98,6 +98,15 @@ export const FLAGS = {
    * CSV. OFF (default) = create + entry endpoints are rejected.
    */
   PROMO_GIVEAWAY: 'promo_giveaway_enabled',
+  /**
+   * Admin notification EMAIL channel. When ON, critical admin notifications
+   * (email-eligible ones — withdrawal failures, reverted txs, unattributed
+   * deposits) are ALSO emailed to ADMIN_ALERT_EMAIL, on top of the in-app bell,
+   * web push, and Telegram DM. OFF (default) = no admin notification emails are
+   * sent, so the feature costs nothing on Resend until deliberately enabled.
+   * Kept minimal on purpose — only payloads marked `email: true` ever email.
+   */
+  ADMIN_EMAIL_NOTIFS: 'admin_email_notifs_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

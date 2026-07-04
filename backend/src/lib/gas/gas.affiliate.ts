@@ -22,6 +22,7 @@ import { db } from '../prisma'
 import { AppError } from '../errors'
 import { logger } from '../logger'
 import { notify } from '../notify'
+import { createAdminNotif } from '../../services/adminNotification.service'
 import { isFlagEnabled, FLAGS, getNumberConfig } from '../../services/platformFlags.service'
 import {
   generateUniqueCode, normalizeAndAssertVanityCode, getReferralSummary, getOrCreateOwnCode,
@@ -145,6 +146,20 @@ export async function applyForAffiliate(
     update: { socials, applicantNote, status: 'pending', rejectionReason: null },
   })
   logger.info({ userId }, 'gas affiliate application submitted')
+
+  // Notify staff (bell + web push + Telegram DM) so applications aren't missed.
+  // Affiliate approval is an admin/super-admin task, so no sub-admin roles.
+  const applicant = await db.user.findUnique({ where: { id: userId }, select: { username: true, email: true } })
+  const who = applicant?.username ?? applicant?.email ?? userId
+  void createAdminNotif({
+    category: 'SYSTEM',
+    title:    'New Affiliate Application',
+    body:     `${who} applied to become an affiliate${applicantNote ? `: "${applicantNote.slice(0, 140)}"` : '.'} Review their socials and approve or reject.`,
+    href:     '/admin/gas/affiliates',
+    roles:    ['admin', 'super_admin'],
+    telegram: true,
+  })
+
   return { status: row.status as AffiliateStatus }
 }
 

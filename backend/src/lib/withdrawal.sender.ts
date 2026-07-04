@@ -139,6 +139,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
       body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) is auto-approved but GAS_SEED_CIPHERTEXT is not set. Send manually from your wallet, then open the withdrawal in the admin panel → Review → Mark Sent (Manual Fallback).`,
       href:     '/admin/withdrawals',
       metadata: { withdrawalId: wd.id },
+      email:    true,
     })
     return
   }
@@ -222,6 +223,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
       body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) failed to send automatically: ${msg}. Send manually from the hot wallet, then open the withdrawal → Review → Mark Sent (Manual Fallback). Or reject to refund the user.`,
       href:     '/admin/withdrawals',
       metadata: { withdrawalId: wd.id, error: msg },
+      email:    true,
     })
     return
   }

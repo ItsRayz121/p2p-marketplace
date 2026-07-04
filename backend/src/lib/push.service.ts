@@ -1,4 +1,5 @@
 import webpush from 'web-push'
+import type { UserRole } from '@prisma/client'
 import { db } from './prisma'
 import { logger } from './logger'
 import { env } from './env'
@@ -69,19 +70,27 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
 }
 
 /**
- * Fan a push out to every staff member (admin / super_admin / kyc_reviewer) who
- * has a push subscription. Used for global admin notifications so admins get
- * OS-level alerts in addition to the in-app bell. Fire-and-forget; never throws.
+ * Fan a push out to every staff member holding one of the given roles who has a
+ * push subscription. Used for role-scoped admin notifications so, e.g., a
+ * kyc_reviewer only gets OS-level alerts for KYC events. Fire-and-forget.
  */
-export async function sendPushToAdmins(payload: PushPayload): Promise<void> {
-  if (!pushConfigured) return
+export async function sendPushToRoles(roles: UserRole[], payload: PushPayload): Promise<void> {
+  if (!pushConfigured || roles.length === 0) return
   try {
-    const admins = await db.user.findMany({
-      where: { role: { in: ['admin', 'super_admin', 'kyc_reviewer', 'support_agent'] } },
+    const staff = await db.user.findMany({
+      where: { role: { in: roles } },
       select: { id: true },
     })
-    await Promise.allSettled(admins.map((a) => sendPushToUser(a.id, payload)))
+    await Promise.allSettled(staff.map((a) => sendPushToUser(a.id, payload)))
   } catch (err) {
-    logger.warn({ err }, 'Admin push fan-out failed')
+    logger.warn({ err }, 'Role-scoped push fan-out failed')
   }
+}
+
+/**
+ * Fan a push out to every staff member (admin / super_admin / kyc_reviewer /
+ * support_agent) who has a push subscription. Fire-and-forget; never throws.
+ */
+export async function sendPushToAdmins(payload: PushPayload): Promise<void> {
+  return sendPushToRoles(['admin', 'super_admin', 'kyc_reviewer', 'support_agent'], payload)
 }

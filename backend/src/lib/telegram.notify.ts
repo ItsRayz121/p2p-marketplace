@@ -51,6 +51,26 @@ export async function sendTelegramNotification(
 }
 
 /**
+ * Send an ADMIN alert to one staff member's Telegram. Unlike user notifications
+ * (which deep-link into the Mini App), admins work in the web admin panel — so
+ * the "Open" button is an absolute https link to FRONTEND_URL + the admin href.
+ * `href` is an in-app admin path like "/admin/kyc".
+ */
+export async function sendTelegramAdminAlert(
+  telegramId: bigint,
+  title: string,
+  body: string,
+  href?: string,
+): Promise<TelegramSendResult> {
+  const safeHref = href && href.startsWith('/') && !href.startsWith('//') ? href : '/admin'
+  const url = `${env.FRONTEND_URL}${safeHref}`
+  const button = /^https?:\/\//i.test(url)
+    ? { text: '🔗 Open admin panel', url }
+    : { text: '🔗 Open admin panel', web_app: { url: miniAppUrl() } }
+  return sendMessage(telegramId, `🔔 ${title}\n\n${body}`, button)
+}
+
+/**
  * Send a broadcast ANNOUNCEMENT to one Telegram user. Same structured result so
  * the broadcast job can honor retry_after and record blocked users.
  *

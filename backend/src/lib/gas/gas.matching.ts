@@ -311,6 +311,7 @@ export async function matchAndDeliverGasPayment(p: MatchParams): Promise<MatchRe
     body: `Received ${incoming.toFixed(4)} USDT but no matching order found. Needs manual attribution. Tx: ${txHash.slice(0, 12)}…`,
     href: '/admin/gas/flagged',
     metadata: { txHash, amount: incoming.toFixed(4), network: paymentNetwork },
+    email: true,
   })
   return { matched: false, reason: 'no_match' }
 }

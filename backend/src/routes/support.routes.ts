@@ -143,6 +143,8 @@ export async function supportRoutes(app: FastifyInstance) {
         body: `${name}: ${body.slice(0, 120)}`,
         href: '/admin/support',
         metadata: { userId, conversationId: conversation.id },
+        roles: ['support_agent', 'admin', 'super_admin'],
+        telegram: true,
       })
     }
 
