@@ -62,6 +62,22 @@ export default function PromoGiveawayEntryPage() {
   useEffect(() => { if (!authLoading) void load() }, [load, authLoading])
   useEffect(() => { void loadParticipants() }, [loadParticipants])
 
+  // Light background refresh so an organizer's status change (e.g. "Reward sent")
+  // surfaces on the entrant's open page without a manual reload. Deliberately does
+  // NOT touch the address field or task checkboxes the user may be editing, and
+  // never flips the full-page spinner — it only refreshes the giveaway status.
+  useEffect(() => {
+    if (authLoading) return
+    const t = setInterval(() => {
+      promoGiveawayApi
+        .publicInfo(code)
+        .then((data) => { setG(data); setEntered(data.alreadyEntered) })
+        .catch(() => { /* transient — keep last good state */ })
+      void loadParticipants()
+    }, 20_000)
+    return () => clearInterval(t)
+  }, [code, authLoading, loadParticipants])
+
   const requiredIds = (g?.tasks ?? []).filter((t) => t.required).map((t) => t.id)
   const allRequiredDone = requiredIds.every((id) => checked[id])
   // Name / WhatsApp are only collected on the FIRST entry (the fields aren't shown
@@ -162,12 +178,10 @@ export default function PromoGiveawayEntryPage() {
             </div>
           </div>
 
-          {closed ? (
-            <div className="bg-surface border border-border rounded-2xl p-6 text-center">
-              <p className="font-semibold text-text-primary">This giveaway has closed</p>
-              <p className="text-sm text-text-muted mt-1">Entries are no longer being accepted.</p>
-            </div>
-          ) : entered ? (
+          {entered ? (
+            // An entrant always sees THEIR OWN status — even after the giveaway
+            // closes — so the organizer marking "Reward sent" surfaces here. The
+            // generic "closed" card below is only for people who never entered.
             <MyStatusCard
               status={g.myStatus}
               note={g.myNote}
@@ -176,7 +190,13 @@ export default function PromoGiveawayEntryPage() {
               setAddress={setAddress}
               onUpdate={enter}
               updating={submitting}
+              closed={closed}
             />
+          ) : closed ? (
+            <div className="bg-surface border border-border rounded-2xl p-6 text-center">
+              <p className="font-semibold text-text-primary">This giveaway has closed</p>
+              <p className="text-sm text-text-muted mt-1">Entries are no longer being accepted.</p>
+            </div>
           ) : (
             <div className="bg-surface border border-border rounded-2xl p-5 space-y-4">
               {/* Tasks */}
@@ -360,7 +380,7 @@ function TaskRow({
 }
 
 function MyStatusCard({
-  status, note, addressLabel, address, setAddress, onUpdate, updating,
+  status, note, addressLabel, address, setAddress, onUpdate, updating, closed,
 }: {
   status: string | null
   note: string | null
@@ -369,6 +389,7 @@ function MyStatusCard({
   setAddress: (v: string) => void
   onUpdate: () => void
   updating: boolean
+  closed: boolean
 }) {
   const map: Record<string, { cls: string; title: string; sub: string }> = {
     sent: { cls: 'bg-success/5 border-success/30', title: '🎉 Reward sent!', sub: 'The organizer marked your reward as sent.' },
@@ -377,12 +398,18 @@ function MyStatusCard({
     entered: { cls: 'bg-success/5 border-success/30', title: "You're entered! 🎉", sub: 'The organizer will reach out to winners.' },
   }
   const s = map[status ?? 'entered'] ?? map.entered!
-  const canUpdate = status !== 'sent' && status !== 'rejected'
+  // Address can only be edited while the giveaway is open and the outcome isn't
+  // final — a closed giveaway rejects address updates server-side anyway.
+  const pendingOutcome = status !== 'sent' && status !== 'rejected'
+  const canUpdate = !closed && pendingOutcome
   return (
     <div className={`border rounded-2xl p-6 text-center space-y-2 ${s.cls}`}>
       <CheckCircle2 className="w-10 h-10 text-success mx-auto" />
       <p className="font-semibold text-text-primary">{s.title}</p>
       <p className="text-sm text-text-muted">{s.sub}</p>
+      {closed && pendingOutcome && (
+        <p className="text-xs text-text-muted">Entries are closed — the organizer is finalizing rewards.</p>
+      )}
       {canUpdate && (
         <div className="text-left space-y-2 pt-2">
           <AddressField label={addressLabel} value={address} onChange={setAddress} />

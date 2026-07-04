@@ -35,16 +35,23 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
   useEffect(() => { void load() }, [load])
 
   async function setStatus(entry: PromoEntry, status: PromoEntryStatus) {
+    const who = entry.username ?? 'this entrant'
     let note: string | undefined
     if (status === 'rejected') {
       const reason = window.prompt('Reason for rejecting (shown to the entrant):', entry.note ?? '')
       if (!reason || !reason.trim()) { toast.error('A reason is required to reject.'); return }
       note = reason.trim()
+    } else if (status === 'sent') {
+      // Confirm the meaningful "I've paid them" action — it publishes the entrant
+      // as a winner and flips their status to "Reward sent" on their giveaway page.
+      if (!window.confirm(`Mark ${who} as "Reward sent"? They'll see this on their giveaway page and be listed as a winner.`)) return
     }
     setSavingId(entry.id)
     try {
       await promoGiveawayApi.updateEntry(giveaway.id, entry.id, { status, ...(note ? { note } : {}) })
       setEntries((prev) => prev?.map((x) => (x.id === entry.id ? { ...x, status, note: status === 'rejected' ? note ?? null : null } : x)) ?? null)
+      const label = PROMO_ENTRY_STATUSES.find((s) => s.value === status)?.label ?? status
+      toast.success(`Saved — "${label}" is now visible to ${who}.`)
       onChanged?.()
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Update failed')
