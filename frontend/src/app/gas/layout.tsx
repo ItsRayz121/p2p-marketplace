@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { buildMeta } from '@/lib/metadata'
+import GasChrome from './_components/GasChrome'
 
 export const metadata: Metadata = buildMeta(
   'Crypto Gas Fees — Top Up Any Blockchain Instantly',
@@ -8,5 +9,5 @@ export const metadata: Metadata = buildMeta(
 )
 
 export default function GasLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return <GasChrome>{children}</GasChrome>
 }

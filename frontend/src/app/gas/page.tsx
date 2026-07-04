@@ -494,9 +494,11 @@ export default function GasPage() {
 
   return (
     <GasFlowProvider value={ctx}>
-      <div className="min-h-screen bg-canvas">
+      <div className="bg-canvas">
 
-        {/* Sticky header */}
+        {/* Page toolbar — the unified site header (Navbar) is provided by the gas
+            layout; this is a slim in-page bar with the gas title and the
+            gas-specific quick actions (My Orders / Earn). */}
         <div className="bg-surface border-b border-border">
           <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
             <div className="flex items-center gap-3 min-w-0">
@@ -509,10 +511,6 @@ export default function GasPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <Link href="/dashboard" className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors px-2 py-1.5">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                Dashboard
-              </Link>
               {referralEnabled && (
                 <Link href="/referral" className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors px-2 py-1.5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V6m0 8v2" /></svg>
