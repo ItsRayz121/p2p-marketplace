@@ -1340,6 +1340,18 @@ export async function rateTrade(
     href: `/admin/ratings`,
   })
 
+  // Tell the rated trader they received a review (bell + push; not a Telegram DM
+  // per the minimal-DM policy — reviews aren't a money/security event).
+  notify(
+    rateeId,
+    'rating',
+    'New review received ⭐',
+    `${rater?.username ?? 'A trader'} rated you ${rating}★ on trade #${trade.orderRef}${comment ? `: "${comment}"` : ''}`,
+    { tradeId, rating },
+    undefined,
+    `/profile/${ratee?.username ?? ''}#reviews`,
+  )
+
   return tradeRating
 }
 

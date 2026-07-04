@@ -259,6 +259,18 @@ export async function accrueReferralForDelivery(order: GasFeeOrder): Promise<voi
       },
     })
     logger.info({ orderId: order.id, referrerId: binding.referrerId, amount }, 'gas referral accrued')
+    // Tell the referrer they just earned — a positive money event (bell + push +
+    // Telegram DM). Fires only on a genuinely new accrual (past the unique guard).
+    notify(
+      binding.referrerId,
+      'referral',
+      'Referral reward earned 💰',
+      `You earned $${amount.toFixed(2)} USDT in referral commission. Withdraw it from your Referral page after the hold window.`,
+      { orderId: order.id, amountUsdt: amount },
+      undefined,
+      '/referral',
+      { telegram: true },
+    )
   } catch {
     // Unique(orderId) — already accrued (e.g. retried delivery finalisation). Ignore.
   }
