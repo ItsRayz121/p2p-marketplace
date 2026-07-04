@@ -38,6 +38,9 @@ export interface TelegramWebApp {
 // Key under which the launch-hash initData is mirrored into sessionStorage.
 // Shared by the detect script and the TS helpers below — keep them in sync.
 const TG_INIT_DATA_STORAGE_KEY = 'tg_init_data'
+// Telegram's `startapp` value arrives as the hash param `tgWebAppStartParam`.
+// Like initData it only appears on the FIRST open, so we mirror it too.
+const TG_START_PARAM_STORAGE_KEY = 'tg_start_param'
 
 // Synchronous inline script — injected as the first <body> child in layout.tsx
 // (same pattern as THEME_SCRIPT) so it runs before React hydration and before
@@ -60,6 +63,10 @@ export const TELEGRAM_DETECT_SCRIPT = `(function(){
       try { sessionStorage.setItem('${TG_INIT_DATA_STORAGE_KEY}', initData); } catch (e) {}
     } else {
       try { initData = sessionStorage.getItem('${TG_INIT_DATA_STORAGE_KEY}') || ''; } catch (e) {}
+    }
+    var startParam = p.get('tgWebAppStartParam') || '';
+    if (startParam) {
+      try { sessionStorage.setItem('${TG_START_PARAM_STORAGE_KEY}', startParam); } catch (e) {}
     }
     window.__TG_INIT_DATA__ = initData;
     window.__IS_TELEGRAM__ = !!initData;
@@ -125,6 +132,67 @@ export function isTelegramMiniApp(): boolean {
 export function getWebApp(): TelegramWebApp | undefined {
   if (typeof window === 'undefined') return undefined
   return window.Telegram?.WebApp
+}
+
+/**
+ * The Mini App start parameter (Telegram's `startapp` value). Read from the live
+ * launch hash first, then the durable sessionStorage mirror, then the SDK. Empty
+ * string when absent. Used to deep-link a freshly-launched Mini App to a shared
+ * listing (see parseStartParamToPath).
+ */
+export function getStartParam(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    const raw = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
+    const fromHash = new URLSearchParams(raw).get('tgWebAppStartParam')
+    if (fromHash) return fromHash
+  } catch { /* ignore */ }
+  try {
+    const stored = sessionStorage.getItem(TG_START_PARAM_STORAGE_KEY)
+    if (stored) return stored
+  } catch { /* ignore */ }
+  return window.Telegram?.WebApp?.initDataUnsafe?.start_param ?? ''
+}
+
+/**
+ * Map a Mini App start parameter to an internal app path, or null if it isn't a
+ * recognised deep link. Listing share links encode `L_usdt_<id>` / `L_ctm_<id>`
+ * (start params allow only [A-Za-z0-9_-], max 64). Referral codes (`ref_…`) are
+ * handled by the bot, not here.
+ */
+export function parseStartParamToPath(param: string): string | null {
+  if (!param) return null
+  const m = param.match(/^L_(usdt|ctm)_([A-Za-z0-9]+)$/)
+  if (!m) return null
+  const [, kind, id] = m
+  return kind === 'usdt' ? `/marketplace/listings/${id}` : `/ctm/listings/${id}`
+}
+
+/**
+ * Build shareable links for a listing. `web` is the canonical https URL (works
+ * everywhere + rich preview); `telegram` opens the Mini App straight to the
+ * listing via startapp (null when the bot username env is unset).
+ */
+export function buildListingShareLinks(kind: 'usdt' | 'ctm', id: string): { web: string; telegram: string | null } {
+  const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.replace(/^@/, '')
+  const origin =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com')
+  const path = kind === 'usdt' ? `/marketplace/listings/${id}` : `/ctm/listings/${id}`
+  return {
+    web: `${origin}${path}`,
+    telegram: bot ? `https://t.me/${bot}?startapp=L_${kind}_${id}` : null,
+  }
+}
+
+/** Open a link the Telegram-native way when inside the Mini App, else a normal tab. */
+export function openTelegramLink(url: string): void {
+  try {
+    const wa = getWebApp() as (TelegramWebApp & { openTelegramLink?: (u: string) => void }) | undefined
+    if (wa?.openTelegramLink) { wa.openTelegramLink(url); return }
+  } catch { /* fall through */ }
+  if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 // ── Optional polish helpers — every one is a no-op when not in Telegram / no

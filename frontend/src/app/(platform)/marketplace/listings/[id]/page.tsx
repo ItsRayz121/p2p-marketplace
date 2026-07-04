@@ -8,6 +8,7 @@ import { traderDisplayName } from '@/lib/traderName'
 import type { AdActivity, SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { ShareListingButton } from '@/components/ui/ShareListingButton'
 import { useAuth } from '@/hooks/useAuth'
 import { validateAddressForNetwork, networkAssetLabel } from '@/lib/addressValidation'
 
@@ -348,7 +349,16 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               <p className="text-text-muted text-sm">{offeredNetworks.map((n) => networkAssetLabel(n, ad.coin)).join(' · ')}</p>
             </div>
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${ad.status === 'active' ? 'bg-success/10 text-success' : 'bg-surface-alt text-text-muted'}`}>{ad.status.charAt(0).toUpperCase() + ad.status.slice(1)}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${ad.status === 'active' ? 'bg-success/10 text-success' : 'bg-surface-alt text-text-muted'}`}>{ad.status.charAt(0).toUpperCase() + ad.status.slice(1)}</span>
+            <ShareListingButton
+              kind="usdt"
+              id={id}
+              title={`${ad.side === 'sell' ? 'Selling' : 'Buying'} ${ad.coin} on RupChain`}
+              text={`${ad.side === 'sell' ? 'Selling' : 'Buying'} ${ad.coin} @ PKR ${Number(ad.price).toLocaleString()} · ${Number(ad.minOrder).toLocaleString()}–${Number(ad.maxOrder).toLocaleString()} ${ad.coin} on RupChain`}
+              compact
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">

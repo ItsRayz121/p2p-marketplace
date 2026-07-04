@@ -6,6 +6,7 @@ import { ctmApi, apiRequest, ApiError, walletApi } from '@/lib/api'
 import type { SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { ShareListingButton } from '@/components/ui/ShareListingButton'
 import { SaveAddressInline } from '@/components/ctm/SaveAddressInline'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { useAuth } from '@/hooks/useAuth'
@@ -354,7 +355,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               <p className="text-text-muted text-sm">{listing.token.symbol} · {listing.token.settlementType}</p>
             </div>
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
+            <ShareListingButton
+              kind="ctm"
+              id={id}
+              title={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.symbol} on RupChain`}
+              text={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.name} (${listing.token.symbol}) @ PKR ${Number(listing.pricePerUnit).toLocaleString()} · ${Number(listing.minOrderTokens).toLocaleString()}–${Number(listing.maxOrderTokens).toLocaleString()} ${listing.token.symbol} on RupChain`}
+              compact
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">

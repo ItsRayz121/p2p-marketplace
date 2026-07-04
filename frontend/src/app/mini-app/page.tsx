@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
-import { loadTelegramSdk, getInitData } from '@/lib/telegram'
+import { loadTelegramSdk, getInitData, getStartParam, parseStartParamToPath } from '@/lib/telegram'
 
 export default function MiniAppBridge() {
   const router = useRouter()
@@ -32,6 +32,13 @@ export default function MiniAppBridge() {
       const p = new URLSearchParams(window.location.search).get('path')
       if (p && p.startsWith('/') && !p.startsWith('//')) dest = p
     } catch { /* ignore malformed query */ }
+    // A shared-listing deep link launches the Mini App with startapp=L_usdt/ctm_<id>.
+    // Translate that start parameter to the listing path (takes precedence over
+    // the default dashboard when present).
+    try {
+      const fromStart = parseStartParamToPath(getStartParam())
+      if (fromStart) dest = fromStart
+    } catch { /* ignore */ }
     router.replace(dest)
   }, [user, router])
 
