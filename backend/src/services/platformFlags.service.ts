@@ -143,6 +143,17 @@ export const FLAGS = {
    * Kept minimal on purpose — only payloads marked `email: true` ever email.
    */
   ADMIN_EMAIL_NOTIFS: 'admin_email_notifs_enabled',
+  /**
+   * USDT as an alternative payment currency in the Community Token Market. When
+   * ON (AND the CTM_USDT_PAYMENT_READY code gate is true — see
+   * ctm/ctm.usdtPayment.ts), a CTM listing may be priced/settled in USDT instead
+   * of PKR, with the buyer paying the seller via the same delivery methods as the
+   * USDT market: on-chain (BEP20 / Aptos) or an exchange internal transfer
+   * (Binance/OKX/…). OFF (default) = CTM is PKR-only exactly as today; the new
+   * schema columns stay at their defaults and no USDT-payment code path runs, so
+   * pushing to main / auto-deploy changes nothing until deliberately flipped.
+   */
+  CTM_USDT_PAYMENT: 'ctm_usdt_payment_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

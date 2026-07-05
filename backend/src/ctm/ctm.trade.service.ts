@@ -960,6 +960,11 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         expiresAt,
         platformFeePkr,
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
+        // Forward-compat: carry the listing's payment currency onto the trade.
+        // Always 'PKR' (the default) until USDT-as-payment is enabled, so this is
+        // a no-op for every existing/current trade. The full USDT trade-execution
+        // flow (method/address/amount + settlement) is wired during the flip.
+        ...((listing as { paymentCurrency?: string }).paymentCurrency === 'USDT' ? { paymentCurrency: 'USDT' } : {}),
       },
     })
 

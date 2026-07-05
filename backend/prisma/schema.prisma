@@ -2505,6 +2505,15 @@ model CtmListing {
   tokenDeliveryType String?            @db.VarChar(20)
   settlementNote    String             @db.VarChar(1000)
   paymentMethods    String[]
+  // USDT-as-payment (flag+ready gated — see ctm/ctm.usdtPayment.ts). Default
+  // "PKR" keeps every existing + new listing PKR-only unless the feature is
+  // deliberately enabled, so these columns are inert until then.
+  paymentCurrency   String             @default("PKR") @db.VarChar(10)
+  // Selected USDT delivery methods (BEP20 / Aptos / Binance / OKX / …) when
+  // paymentCurrency = USDT; empty for PKR listings.
+  usdtPaymentMethods String[]          @default([])
+  // Maker's USDT receive points for a SELL listing: [{ method, address, label }].
+  usdtSettlementDestinations Json?
   tradeWindowMins   Int                @default(45)
   terms             String             @default("") @db.VarChar(2000)
   status            CtmListingStatus   @default(active)
@@ -2594,6 +2603,13 @@ model CtmTrade {
   buyerSettlementId      String?           @db.VarChar(500)
   sellerPaymentSnapshot  Json?
   buyerPaymentSnapshot   Json?
+  // USDT-as-payment (flag+ready gated). Default "PKR" so existing trades are
+  // untouched. When "USDT", the buyer pays the seller in USDT via usdtDeliveryMethod
+  // (BEP20/Aptos/exchange) to usdtDeliveryAddress; usdtAmount is the USDT owed.
+  paymentCurrency        String            @default("PKR") @db.VarChar(10)
+  usdtDeliveryMethod     String?           @db.VarChar(40)
+  usdtDeliveryAddress    String?           @db.VarChar(200)
+  usdtAmount             Decimal?          @db.Decimal(28, 8)
   status            CtmTradeStatus    @default(awaiting_payment)
   // Taker-first settlement (Phase 1): true when this trade uses the reordered
   // BUY-listing flow (taker sends tokens first, merchant pays second). Stamped at

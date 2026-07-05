@@ -13,6 +13,7 @@ import {
   deleteListing,
 } from './ctm.listing.service'
 import { createTradeFromListing } from './ctm.trade.service'
+import { isCtmUsdtPaymentEnabled } from './ctm.usdtPayment'
 import { db } from '../lib/prisma'
 
 const createListingSchema = z.object({
@@ -32,8 +33,17 @@ const createListingSchema = z.object({
   requiresProof: z.boolean().optional(),
   proofInstructions: z.string().max(500).optional(),
   expiresAt: z.string().datetime().optional(),
+  // USDT-as-payment (flag+ready gated). Ignored unless isCtmUsdtPaymentEnabled().
+  paymentCurrency: z.enum(['PKR', 'USDT']).optional(),
+  usdtPaymentMethods: z.array(z.string()).optional(),
+  usdtSettlementDestinations: z
+    .array(z.object({ method: z.string(), address: z.string().max(200), label: z.string().max(100).optional() }))
+    .optional(),
 }).superRefine((data, ctx) => {
-  if (data.side === 'sell' && data.paymentMethods.length === 0) {
+  // PKR listings require a PKR payment method on the sell side (unchanged). A USDT
+  // listing satisfies the requirement via its USDT methods instead.
+  const isUsdt = data.paymentCurrency === 'USDT'
+  if (data.side === 'sell' && !isUsdt && data.paymentMethods.length === 0) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select at least one payment method', path: ['paymentMethods'] })
   }
 })
@@ -49,6 +59,12 @@ const updateListingSchema = z.object({
 })
 
 export async function ctmListingRoutes(app: FastifyInstance) {
+  // GET /ctm/config — public CTM feature gates the frontend needs (currently just
+  // whether USDT-as-payment is live). Kept tiny + uncached-cheap; defaults false.
+  app.get('/ctm/config', async (_req, reply) => {
+    return reply.send({ success: true, data: { usdtPaymentEnabled: await isCtmUsdtPaymentEnabled() } })
+  })
+
   // GET /ctm/stats — public marketplace stats
   app.get('/ctm/stats', async (_req, reply) => {
     const today = new Date()

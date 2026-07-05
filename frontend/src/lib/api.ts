@@ -2930,6 +2930,10 @@ export const ctmApi = {
   // Stats & feed
   getStats: () =>
     apiRequest<{ activeListings: number; todayTrades: number; totalTrades: number; totalTokens: number }>('/ctm/stats'),
+  // CTM feature gates (currently: USDT-as-payment). Defaults false while the
+  // feature is code-gated / flag-off, so the UI stays PKR-only until flipped.
+  getCtmConfig: () =>
+    apiRequest<{ usdtPaymentEnabled: boolean }>('/ctm/config'),
   getRecentTrades: () =>
     apiRequest<RecentTrade[]>('/ctm/recent-trades'),
 

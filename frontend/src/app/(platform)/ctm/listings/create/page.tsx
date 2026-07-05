@@ -37,6 +37,19 @@ function methodSubline(m: SavedPaymentMethod): string {
   return m.accountName
 }
 
+// USDT-as-payment options (mirrors backend ctm.usdtPayment CTM_USDT_METHODS).
+// Only surfaced when /ctm/config reports usdtPaymentEnabled.
+const CTM_USDT_METHOD_OPTS: { value: string; label: string; kind: 'wallet' | 'exchange'; placeholder: string }[] = [
+  { value: 'BEP20',   label: 'USDT BEP20',  kind: 'wallet',   placeholder: '0x… wallet address' },
+  { value: 'Aptos',   label: 'USDT Aptos',  kind: 'wallet',   placeholder: '0x… Aptos address' },
+  { value: 'Binance', label: 'Binance UID', kind: 'exchange', placeholder: 'Your Binance UID' },
+  { value: 'OKX',     label: 'OKX UID',     kind: 'exchange', placeholder: 'Your OKX UID' },
+  { value: 'Bitget',  label: 'Bitget UID',  kind: 'exchange', placeholder: 'Your Bitget UID' },
+  { value: 'Gate',    label: 'Gate UID',    kind: 'exchange', placeholder: 'Your Gate.io UID' },
+  { value: 'MEXC',    label: 'MEXC UID',    kind: 'exchange', placeholder: 'Your MEXC UID' },
+  { value: 'Other',   label: 'Other UID',   kind: 'exchange', placeholder: 'Your account ID / UID' },
+]
+
 export default function CreateListingPage() {
   const router = useRouter()
   const { user } = useAuth()
@@ -66,25 +79,41 @@ export default function CreateListingPage() {
     proofInstructions: '',
   })
 
+  // USDT-as-payment (gated on /ctm/config → usdtPaymentEnabled). Kept OUT of the
+  // main `form` object so nothing USDT-related is ever sent while the feature is
+  // off — the create body only includes these when isUsdt is true.
+  const [usdtEnabled, setUsdtEnabled] = useState(false)
+  const [paymentCurrency, setPaymentCurrency] = useState<'PKR' | 'USDT'>('PKR')
+  const [usdtMethods, setUsdtMethods] = useState<string[]>([])
+  const [usdtDests, setUsdtDests] = useState<Record<string, string>>({})
+
   useEffect(() => {
     const init = async () => {
       try {
-        const [tokensRes, methodsRes, termsRes, addrRes] = await Promise.all([
+        const [tokensRes, methodsRes, termsRes, addrRes, cfgRes] = await Promise.all([
           ctmApi.getTokens({ limit: 100 }),
           apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods'),
           savedTermsApi.getAll().catch(() => [] as SavedTerms[]),
           walletApi.getSavedAddresses().catch(() => [] as SavedDeliveryAddress[]),
+          ctmApi.getCtmConfig().catch(() => ({ usdtPaymentEnabled: false })),
         ])
         setTokens((tokensRes as { tokens: CtmToken[] }).tokens ?? [])
         setSavedMethods(Array.isArray(methodsRes) ? methodsRes : [])
         setSavedTerms(Array.isArray(termsRes) ? termsRes : [])
         setSavedAddresses(Array.isArray(addrRes) ? addrRes : [])
+        setUsdtEnabled(!!cfgRes?.usdtPaymentEnabled)
       } finally {
         setLoadingInit(false)
       }
     }
     init()
   }, [])
+
+  const isUsdt = usdtEnabled && paymentCurrency === 'USDT'
+
+  function toggleUsdtMethod(value: string) {
+    setUsdtMethods((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]))
+  }
 
   function togglePaymentMethod(id: string) {
     setForm((f) => ({
@@ -130,8 +159,18 @@ export default function CreateListingPage() {
     e.preventDefault()
     setError('')
     if (!form.tokenId) { setError('Please select a token'); return }
-    if (form.side === 'sell' && form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
-    if (form.side === 'buy' && form.paymentMethods.length === 0) { setError('Select at least one account you will pay from'); return }
+    // USDT payment: the PKR payment-method requirement is replaced by USDT method
+    // selection (+ a receiving address per method on the sell side).
+    if (isUsdt) {
+      if (usdtMethods.length === 0) { setError('Select at least one USDT payment method'); return }
+      if (form.side === 'sell') {
+        const missing = usdtMethods.some((m) => !(usdtDests[m] ?? '').trim())
+        if (missing) { setError('Add a USDT receiving address/UID for each selected method'); return }
+      }
+    } else {
+      if (form.side === 'sell' && form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
+      if (form.side === 'buy' && form.paymentMethods.length === 0) { setError('Select at least one account you will pay from'); return }
+    }
     if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
     if (form.side === 'buy' && !form.settlementMethod.trim()) {
       setError('Enter your token receiving address so sellers know where to send tokens'); return
@@ -163,6 +202,17 @@ export default function CreateListingPage() {
         minOrderTokens: parseFloat(form.minOrderTokens),
         maxOrderTokens: parseFloat(form.maxOrderTokens),
         ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod, paymentMethods: form.paymentMethods } : {}),
+        // USDT-as-payment fields — only sent when the feature is enabled AND the
+        // maker chose USDT, so the PKR path stays byte-identical.
+        ...(isUsdt
+          ? {
+              paymentCurrency: 'USDT' as const,
+              usdtPaymentMethods: usdtMethods,
+              usdtSettlementDestinations: usdtMethods
+                .map((m) => ({ method: m, address: (usdtDests[m] ?? '').trim(), label: m }))
+                .filter((d) => d.address),
+            }
+          : {}),
       })
       router.push(`/ctm/listings/${(res as { id: string }).id}`)
     } catch (err: unknown) {
@@ -368,7 +418,59 @@ export default function CreateListingPage() {
           )}
         </div>
 
-        {/* Payment methods — sell: accounts buyers pay TO; buy: accounts you'll pay FROM */}
+        {/* Payment currency (USDT-as-payment) — only when the feature is live. */}
+        {usdtEnabled && (
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1.5">Payment currency *</label>
+            <div className="flex gap-3">
+              {(['PKR', 'USDT'] as const).map((c) => (
+                <button type="button" key={c} onClick={() => setPaymentCurrency(c)}
+                  className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${paymentCurrency === c ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}>
+                  {c === 'PKR' ? 'PKR (bank / wallet)' : 'USDT (crypto)'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* USDT payment methods (blockchain + exchange) — mirrors the USDT market. */}
+        {isUsdt && (
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-0.5">USDT payment methods *</label>
+            <p className="text-xs text-text-muted mb-2">
+              {form.side === 'sell'
+                ? 'Buyers pay you in USDT via these methods. Add the address/UID where you receive for each.'
+                : 'You will pay the seller in USDT via one of these methods.'}
+            </p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {CTM_USDT_METHOD_OPTS.map((o) => {
+                const on = usdtMethods.includes(o.value)
+                return (
+                  <button type="button" key={o.value} onClick={() => toggleUsdtMethod(o.value)}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-secondary hover:bg-surface'}`}>
+                    {o.label}
+                  </button>
+                )
+              })}
+            </div>
+            {form.side === 'sell' && usdtMethods.length > 0 && (
+              <div className="space-y-2">
+                {usdtMethods.map((m) => {
+                  const opt = CTM_USDT_METHOD_OPTS.find((o) => o.value === m)
+                  return (
+                    <input key={m} value={usdtDests[m] ?? ''} onChange={(e) => setUsdtDests((d) => ({ ...d, [m]: e.target.value }))}
+                      placeholder={`${opt?.label ?? m} — ${opt?.placeholder ?? 'address / UID'}`}
+                      className="w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Payment methods — sell: accounts buyers pay TO; buy: accounts you'll pay FROM.
+            Hidden when the listing is priced in USDT (USDT methods replace them). */}
+        {!isUsdt && (
         <div>
             <label className="block text-sm font-medium text-text-primary mb-0.5">
               {form.side === 'sell' ? 'Payment methods *' : 'Which account(s) will you pay from? *'}
@@ -421,9 +523,10 @@ export default function CreateListingPage() {
               </div>
             )}
           </div>
+        )}
 
         {/* Buy listing info note — seller provides their receiving account when accepting */}
-        {form.side === 'buy' && (
+        {form.side === 'buy' && !isUsdt && (
           <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-sm text-blue-800 dark:text-blue-300">
             The seller will provide their payment receiving account when they accept your trade. The account(s) you selected above are shown to them as where your payment will come from.
           </div>

@@ -10,6 +10,7 @@ import { notify } from '../lib/notify'
 import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
 import { checkPriceMargin, marginRejectionMessage } from '../lib/priceGuardrail'
 import { getTokenMarketInsight } from './ctm.token.service'
+import { isCtmUsdtPaymentEnabled, CTM_USDT_METHOD_VALUES } from './ctm.usdtPayment'
 
 type Tx = Prisma.TransactionClient
 
@@ -30,6 +31,10 @@ export interface CreateListingInput {
   requiresProof?: boolean
   proofInstructions?: string
   expiresAt?: Date
+  // USDT-as-payment (flag+ready gated). Ignored unless isCtmUsdtPaymentEnabled().
+  paymentCurrency?: 'PKR' | 'USDT'
+  usdtPaymentMethods?: string[]
+  usdtSettlementDestinations?: { method: string; address: string; label?: string }[]
 }
 
 const PM_LABELS: Record<string, string> = {
@@ -161,6 +166,28 @@ export async function createListing(userId: string, data: CreateListingInput) {
     throw new AppError('VALIDATION_ERROR', 'One or more payment methods not found or not yours', 400)
   }
 
+  // USDT-as-payment resolution — inert unless the feature is code-ready AND the
+  // runtime flag is ON. When off, `useUsdt` is always false and the listing is
+  // written exactly as before (PKR, columns at their defaults).
+  const useUsdt = (await isCtmUsdtPaymentEnabled()) && data.paymentCurrency === 'USDT'
+  let usdtFields: Record<string, unknown> = {}
+  if (useUsdt) {
+    const methods = [...new Set(data.usdtPaymentMethods ?? [])].filter((m) => CTM_USDT_METHOD_VALUES.includes(m as never))
+    if (methods.length === 0) {
+      throw new AppError('VALIDATION_ERROR', 'Select at least one USDT payment method', 400)
+    }
+    // A SELL listing (maker receives USDT) needs a receive destination per method.
+    const dests = (data.usdtSettlementDestinations ?? []).filter((d) => d.address?.trim())
+    if (data.side === 'sell' && dests.length === 0) {
+      throw new AppError('VALIDATION_ERROR', 'Add at least one USDT receiving address', 400)
+    }
+    usdtFields = {
+      paymentCurrency: 'USDT',
+      usdtPaymentMethods: methods,
+      ...(dests.length > 0 ? { usdtSettlementDestinations: dests } : {}),
+    }
+  }
+
   const listing = await db.ctmListing.create({
     data: {
       merchantProfileId: merchantProfile.id,
@@ -182,6 +209,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
       requiresProof: data.requiresProof ?? true,
       proofInstructions: data.proofInstructions ?? null,
       ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
+      ...usdtFields,
     },
   })
 
