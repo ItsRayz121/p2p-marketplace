@@ -438,7 +438,24 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {/* Payment / receiving info section */}
-      {isBuyListing ? (
+      {isUsdt ? (
+        // USDT listing: payment is in USDT (on-chain / exchange), not PKR accounts.
+        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+          <h2 className="font-semibold text-text-primary mb-1">USDT Payment</h2>
+          <p className="text-xs text-text-muted mb-3">
+            {isBuyListing
+              ? (isMine ? 'You pay sellers in USDT via these methods.' : 'The buyer pays you in USDT via one of these methods.')
+              : (isMine ? 'Buyers pay you in USDT via these methods.' : 'Pay the seller in USDT via one of these methods.')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {usdtOffered.map((m) => (
+              <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium">
+                USDT {m}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : isBuyListing ? (
         // BUY listing: lister is BUYER — show buyer's token receiving address + the
         // accounts the buyer will pay FROM (so the seller-taker knows what to expect)
         <>
@@ -792,17 +809,20 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {!isMine && listing.status === 'active' && !myActiveBid && (
         <div className="flex gap-3">
           <button
-            onClick={() => { setShowModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setTokenAmount(''); setError('') }}
+            onClick={() => { setShowModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setUsdtMethod(''); setUsdtAddress(''); setTokenAmount(''); setError('') }}
             className={`flex-1 py-3.5 rounded-xl font-bold text-white transition-colors ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
           >
             {listing.side === 'sell' ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
           </button>
-          <button
-            onClick={() => { setShowBidModal(true); setTokenAmount(''); setBidPrice(''); setError('') }}
-            className="flex-1 py-3.5 rounded-xl font-bold border-2 border-primary text-primary hover:bg-primary/5 transition-colors"
-          >
-            Bid
-          </button>
+          {/* Bidding uses the PKR payment flow; USDT listings are direct-trade only. */}
+          {!isUsdt && (
+            <button
+              onClick={() => { setShowBidModal(true); setTokenAmount(''); setBidPrice(''); setError('') }}
+              className="flex-1 py-3.5 rounded-xl font-bold border-2 border-primary text-primary hover:bg-primary/5 transition-colors"
+            >
+              Bid
+            </button>
+          )}
         </div>
       )}
       {/* Pending bid notice */}

@@ -61,6 +61,13 @@ export async function placeBid(
   if (listing.status !== 'active') throw new AppError('CONFLICT', 'Listing is not active', 409)
   if (!listing.merchantProfile.isActive) throw new AppError('CONFLICT', 'Merchant is not active', 409)
   if (listing.merchantProfile.userId === bidderId) throw new AppError('CONFLICT', 'Cannot bid on your own listing', 409)
+  // Bidding runs through the PKR bid→trade path; USDT listings are direct-trade
+  // only (the frontend hides the Bid button). Guard here so the bid→trade paths
+  // can never mint a broken PKR trade on a USDT listing.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((listing as any).paymentCurrency === 'USDT') {
+    throw new AppError('CONFLICT', 'This listing is priced in USDT — start a direct trade instead of bidding', 409)
+  }
 
   const isBuyListing = listing.side === 'buy'
 
