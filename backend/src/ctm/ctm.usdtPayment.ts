@@ -12,7 +12,11 @@ import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
  * Both must be true for any USDT-payment code path to run. When either is false
  * the CTM market behaves byte-identically to today (PKR-only).
  */
-export const CTM_USDT_PAYMENT_READY = false
+// Code path is complete (listing config → trade execution → currency-aware trade
+// room). Flipped true so the runtime flag `ctm_usdt_payment_enabled` (still OFF by
+// default) actually takes effect once enabled. RECOMMENDED: run staging QA of a
+// full SELL + BUY USDT trade before flipping the runtime flag in production.
+export const CTM_USDT_PAYMENT_READY = true
 
 /** The USDT delivery methods a CTM listing may offer — mirrors the USDT market. */
 export const CTM_USDT_METHODS = [
