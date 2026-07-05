@@ -7,6 +7,7 @@ import { notify } from '../lib/notify'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { releaseMakerBond } from '../services/makerBond.service'
+import { closeEpisode } from '../services/chatThread.service'
 
 export async function runTradeEscalation(): Promise<void> {
   const now = new Date()
@@ -79,6 +80,7 @@ export async function runTradeEscalation(): Promise<void> {
       await releaseMakerBond({ tradeType: 'usdt', tradeId: trade.id }).catch((err) =>
         logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on auto-cancel'),
       )
+      void closeEpisode({ market: 'usdt', tradeId: trade.id, outcome: 'expired' })
       logger.info({ tradeId: trade.id }, 'Auto-cancelled stale trade')
     } catch (err) {
       logger.error({ err, tradeId: trade.id }, 'Failed to auto-cancel trade')

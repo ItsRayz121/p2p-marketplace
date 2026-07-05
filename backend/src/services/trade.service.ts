@@ -13,6 +13,7 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirst } from './settlementMode.service'
+import { openEpisode, closeEpisode } from './chatThread.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
@@ -622,6 +623,10 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     logger.info({ tradeId: trade.id, makerId, amount: bondHeldAmount }, 'Maker bond locked')
   }
 
+  // Persistent messaging (Phase 4): open the pair's trade episode. Best-effort,
+  // flag-gated, never throws — a messaging failure must not affect the trade.
+  void openEpisode({ market: 'usdt', tradeId: trade.id, tradeRef: trade.orderRef, buyerId, sellerId, fiatAmount: trade.fiatAmount })
+
   return trade
 }
 
@@ -1002,6 +1007,8 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     tradeDetails.buyer.email,
   )
 
+  void closeEpisode({ market: 'usdt', tradeId, outcome: 'completed' })
+
   return db.trade.findUnique({ where: { id: tradeId } })
 }
 
@@ -1088,6 +1095,8 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
   await postTradeSystemMessage(tradeId, actorId, `Trade cancelled. Reason: ${reason}`)
   notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId }, tradeId)
 
+  void closeEpisode({ market: 'usdt', tradeId, outcome: 'cancelled' })
+
   return db.trade.findUnique({ where: { id: tradeId } })
 }
 
@@ -1173,6 +1182,8 @@ export async function openDispute(
   notify(otherPartyId, 'dispute', 'Dispute Opened', `A dispute has been opened on your trade. Reason: ${reason}`, { tradeId, disputeId: dispute.id }, tradeId)
   notify(openedById, 'dispute', 'Dispute Submitted', 'Your dispute has been submitted and will be reviewed by an admin.', { tradeId, disputeId: dispute.id }, tradeId)
   createAdminNotif({ category: 'DISPUTE', title: 'New Dispute Opened', body: `Dispute on Trade #${trade.orderRef}: ${reason}`, href: `/admin/disputes` })
+
+  void closeEpisode({ market: 'usdt', tradeId, outcome: 'disputed' })
 
   return dispute
 }

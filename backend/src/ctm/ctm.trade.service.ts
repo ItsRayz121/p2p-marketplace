@@ -15,6 +15,7 @@ import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
 import { isTakerFirst } from '../services/settlementMode.service'
+import { openEpisode, closeEpisode } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
 
@@ -433,6 +434,8 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   if (promotedTo) {
     notify(trade.sellerId, 'CTM_TIER_PROMOTED', 'Merchant tier upgraded 🎉', `Your clean track record promoted you to the ${promotedTo} tier — your per-trade limit just went up.`, { tier: promotedTo })
   }
+
+  void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'completed' })
 }
 
 export async function openDispute(tradeRef: string, userId: string, reason: string, description: string) {
@@ -473,6 +476,8 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
   const otherId = trade.buyerId === userId ? trade.sellerId : trade.buyerId
   await postCtmSystemMessage(trade.id, userId, `A dispute was opened. Reason: ${String(reason).replace(/_/g, ' ')}. An admin will review.`)
   notify(otherId, 'CTM_DISPUTE_OPENED', 'Dispute opened on trade', `A dispute has been opened on trade ${refLabel(trade.displayRef)}. An admin will review.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
+
+  void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'disputed' })
 }
 
 export async function cancelTrade(tradeRef: string, userId: string, reason: string) {
@@ -500,6 +505,8 @@ export async function cancelTrade(tradeRef: string, userId: string, reason: stri
   const otherId = trade.buyerId === userId ? trade.sellerId : trade.buyerId
   await postCtmSystemMessage(trade.id, userId, `Trade cancelled. Reason: ${reason}`)
   notify(otherId, 'CTM_TRADE_CANCELLED', 'Trade cancelled', `Trade ${refLabel(trade.displayRef)} has been cancelled.`, { tradeRef, displayRef: trade.displayRef, reason })
+
+  void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'cancelled' })
 }
 
 export async function adminResolveDispute(adminId: string, tradeRef: string, data: {
@@ -917,6 +924,9 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await postCtmOpeningMessages(created.id, created.buyerId, (listing as any).terms)
+
+  // Persistent messaging (Phase 4): open the pair's episode. Best-effort, flag-gated.
+  void openEpisode({ market: 'ctm', tradeId: created.id, tradeRef: created.displayRef ?? created.tradeRef, buyerId: created.buyerId, sellerId: created.sellerId, fiatAmount: created.fiatAmount })
 
   return created
 }

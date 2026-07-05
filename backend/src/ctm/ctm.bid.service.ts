@@ -6,6 +6,7 @@ import { generateCtmDisplayRef } from './ctm.ref'
 import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
 import { isTakerFirst } from '../services/settlementMode.service'
+import { openEpisode } from '../services/chatThread.service'
 import { postCtmOpeningMessages } from './ctm.trade.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
 import { getNumberConfig } from '../services/platformFlags.service'
@@ -292,6 +293,8 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
 
   await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms)
 
+  void openEpisode({ market: 'ctm', tradeId: trade.id, tradeRef: trade.displayRef ?? trade.tradeRef, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmount: trade.fiatAmount })
+
   return trade
 }
 
@@ -502,6 +505,8 @@ export async function confirmBidDetails(
   })
 
   await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms)
+
+  void openEpisode({ market: 'ctm', tradeId: trade.id, tradeRef: trade.displayRef ?? trade.tradeRef, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmount: trade.fiatAmount })
 
   return trade
 }

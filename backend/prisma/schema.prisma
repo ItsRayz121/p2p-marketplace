@@ -520,6 +520,8 @@ model User {
   gasAffiliate           GasAffiliate?           @relation("GasAffiliateUser")
   tradeStreaksAsA        TradeStreak[]           @relation("StreakUserA")
   tradeStreaksAsB        TradeStreak[]           @relation("StreakUserB")
+  chatThreadsAsA         ChatThread[]            @relation("ChatThreadUserA")
+  chatThreadsAsB         ChatThread[]            @relation("ChatThreadUserB")
 
   @@index([email])
   @@index([username])
@@ -1462,6 +1464,65 @@ model TradeStreak {
   @@unique([userAId, userBId])
   @@index([userAId])
   @@index([userBId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERSISTENT COUNTERPARTY MESSAGING (Phase 4)
+// One permanent thread per unordered pair of users (canonical userAId < userBId,
+// mirroring TradeStreak). Reused across every trade the two ever do — each trade
+// is a TradeEpisode marker within the thread. Trade-gated: a thread only ever
+// exists once the pair has actually traded (no cold DMs). Modeled on
+// SupportConversation (persistent conversation + dated sub-sessions).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ChatThread {
+  id            String              @id @default(cuid())
+  userAId       String              // always the smaller of the two ids
+  userA         User                @relation("ChatThreadUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId       String
+  userB         User                @relation("ChatThreadUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  lastMessageAt DateTime            @default(now())
+  unreadByA     Boolean             @default(false)
+  unreadByB     Boolean             @default(false)
+  createdAt     DateTime            @default(now())
+  messages      ChatThreadMessage[]
+  episodes      TradeEpisode[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId, lastMessageAt])
+  @@index([userBId, lastMessageAt])
+}
+
+model ChatThreadMessage {
+  id            String     @id @default(cuid())
+  threadId      String
+  thread        ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId      String     // the author's user id ("" for platform/system lines)
+  body          String     @db.VarChar(2000)
+  attachmentUrl String?
+  isSystem      Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+
+  @@index([threadId, createdAt])
+}
+
+/// One marker per trade the pair opens, rendered as a divider in the thread and
+/// feeding the relationship stats header. Spans BOTH markets via (market, tradeId).
+model TradeEpisode {
+  id         String     @id @default(cuid())
+  threadId   String
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  market     String     // 'usdt' | 'ctm'
+  tradeId    String     // Trade.id or CtmTrade.id
+  tradeRef   String     // orderRef / displayRef for display + deep-linking
+  outcome    String     @default("active") // active | completed | cancelled | expired | disputed
+  fiatAmount Decimal?   @db.Decimal(14, 2)
+  startedAt  DateTime   @default(now())
+  endedAt    DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@unique([market, tradeId])
+  @@index([threadId, startedAt])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

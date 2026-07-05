@@ -127,6 +127,14 @@ export const FLAGS = {
    */
   NOKYC_TAKER: 'nokyc_taker_enabled',
   /**
+   * Persistent counterparty messaging inbox (Phase 4). When ON, trade lifecycle
+   * events accrue a per-pair ChatThread + TradeEpisode history and the "Messaging"
+   * inbox (dropdown + pages) is revealed. OFF (default) = no thread/episode writes
+   * happen and the inbox is hidden, so deploying is a no-op. Trade-gated regardless:
+   * threads only ever form between users who have actually traded.
+   */
+  MESSAGING_INBOX: 'messaging_inbox_enabled',
+  /**
    * Admin notification EMAIL channel. When ON, critical admin notifications
    * (email-eligible ones — withdrawal failures, reverted txs, unattributed
    * deposits) are ALSO emailed to ADMIN_ALERT_EMAIL, on top of the in-app bell,

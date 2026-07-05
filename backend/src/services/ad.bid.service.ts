@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { notify } from '../lib/notify'
 import { generateOrderRef } from '../lib/hash'
 import { assertCanOpenTrade } from './tradeConcurrency.service'
+import { openEpisode } from './chatThread.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
 import { getNumberConfig } from './platformFlags.service'
 
@@ -167,7 +168,7 @@ export async function confirmBidDetails(
   const expiresAt = new Date(Date.now() + (ad.tradeWindow ?? 30) * 60 * 1000)
   const orderRef = generateOrderRef('TRD')
 
-  return db.$transaction(async (tx: Tx) => {
+  const createdTrade = await db.$transaction(async (tx: Tx) => {
     // Check buyer standing
     const [buyerRow] = await tx.$queryRaw<Array<{
       isBanned: boolean; isSuspended: boolean; kycStatus: string
@@ -237,6 +238,11 @@ export async function confirmBidDetails(
 
     return trade
   })
+
+  // Persistent messaging (Phase 4): open the pair's episode post-commit. Best-effort.
+  void openEpisode({ market: 'usdt', tradeId: createdTrade.id, tradeRef: createdTrade.orderRef, buyerId: createdTrade.buyerId, sellerId: createdTrade.sellerId, fiatAmount: createdTrade.fiatAmount })
+
+  return createdTrade
 }
 
 export async function rejectAdBid(adOwnerUserId: string, bidId: string) {

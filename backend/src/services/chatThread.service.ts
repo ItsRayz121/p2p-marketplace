@@ -1,0 +1,250 @@
+import { Prisma } from '@prisma/client'
+import { db } from '../lib/prisma'
+import { AppError } from '../lib/errors'
+import { FLAGS, isFlagEnabled } from './platformFlags.service'
+import { logger } from '../lib/logger'
+
+/**
+ * Persistent counterparty messaging (Phase 4).
+ *
+ * One permanent ChatThread per unordered user pair (canonical userAId < userBId,
+ * mirroring TradeStreak), reused across every trade the pair ever does. Each trade
+ * is a TradeEpisode marker inside the thread, spanning BOTH markets. Trade-gated:
+ * a thread only ever comes into existence via a real trade — there is no cold-DM
+ * path. Once it exists the two established partners can keep chatting.
+ *
+ * Everything is gated by `messaging_inbox_enabled` (default OFF): while OFF, the
+ * lifecycle hooks below no-op (no thread/episode writes at all) and the inbox is
+ * hidden, so deploying changes nothing until a super-admin flips the flag.
+ *
+ * The lifecycle hooks (openEpisode/closeEpisode) are BEST-EFFORT and never throw —
+ * a messaging failure must never break or roll back a trade.
+ */
+
+export type Market = 'usdt' | 'ctm'
+
+/** Canonical ordering: the smaller id is always userA. */
+function canonicalPair(x: string, y: string): { userAId: string; userBId: string } {
+  return x < y ? { userAId: x, userBId: y } : { userAId: y, userBId: x }
+}
+
+/** Get or create the thread for a pair. Idempotent under concurrency (upsert). */
+async function getOrCreateThread(x: string, y: string): Promise<{ id: string; userAId: string; userBId: string }> {
+  const { userAId, userBId } = canonicalPair(x, y)
+  const thread = await db.chatThread.upsert({
+    where: { userAId_userBId: { userAId, userBId } },
+    update: {},
+    create: { userAId, userBId },
+    select: { id: true, userAId: true, userBId: true },
+  })
+  return thread
+}
+
+// ─── Lifecycle hooks (best-effort, called from trade services) ───────────────
+
+/**
+ * Record that a trade opened between two users: ensures the pair's thread exists,
+ * creates the episode marker (idempotent on market+tradeId), and posts a system
+ * divider line. No-op when the feature flag is OFF. Never throws.
+ */
+export async function openEpisode(params: {
+  market: Market
+  tradeId: string
+  tradeRef: string
+  buyerId: string
+  sellerId: string
+  fiatAmount?: Prisma.Decimal | number | string | null
+}): Promise<void> {
+  try {
+    if (!(await isFlagEnabled(FLAGS.MESSAGING_INBOX))) return
+    if (params.buyerId === params.sellerId) return
+    const thread = await getOrCreateThread(params.buyerId, params.sellerId)
+    const fiat = params.fiatAmount != null ? new Prisma.Decimal(params.fiatAmount) : null
+    // Idempotent: unique (market, tradeId) means a retried open won't duplicate.
+    const existing = await db.tradeEpisode.findUnique({
+      where: { market_tradeId: { market: params.market, tradeId: params.tradeId } },
+      select: { id: true },
+    })
+    if (existing) return
+    await db.tradeEpisode.create({
+      data: {
+        threadId: thread.id,
+        market: params.market,
+        tradeId: params.tradeId,
+        tradeRef: params.tradeRef,
+        outcome: 'active',
+        ...(fiat ? { fiatAmount: fiat } : {}),
+      },
+    })
+    await db.chatThreadMessage.create({
+      data: {
+        threadId: thread.id,
+        senderId: '',
+        isSystem: true,
+        body: `Trade ${params.tradeRef} opened.`,
+      },
+    })
+    await db.chatThread.update({ where: { id: thread.id }, data: { lastMessageAt: new Date() } })
+  } catch (err) {
+    logger.warn({ err, tradeId: params.tradeId }, 'openEpisode failed (non-fatal)')
+  }
+}
+
+/**
+ * Record a trade reaching a terminal state. Updates the episode outcome + endedAt
+ * and posts a system divider. No-op when the flag is OFF. Never throws.
+ */
+export async function closeEpisode(params: {
+  market: Market
+  tradeId: string
+  outcome: 'completed' | 'cancelled' | 'expired' | 'disputed'
+}): Promise<void> {
+  try {
+    if (!(await isFlagEnabled(FLAGS.MESSAGING_INBOX))) return
+    const episode = await db.tradeEpisode.findUnique({
+      where: { market_tradeId: { market: params.market, tradeId: params.tradeId } },
+      select: { id: true, threadId: true, tradeRef: true, outcome: true },
+    })
+    if (!episode) return
+    // 'disputed' is not strictly terminal, but we still surface it; don't overwrite
+    // an already-finalized completed/cancelled/expired outcome with 'disputed'.
+    if (['completed', 'cancelled', 'expired'].includes(episode.outcome)) return
+    await db.tradeEpisode.update({
+      where: { id: episode.id },
+      data: { outcome: params.outcome, endedAt: new Date() },
+    })
+    const label: Record<string, string> = {
+      completed: 'completed', cancelled: 'cancelled', expired: 'expired', disputed: 'disputed',
+    }
+    await db.chatThreadMessage.create({
+      data: {
+        threadId: episode.threadId,
+        senderId: '',
+        isSystem: true,
+        body: `Trade ${episode.tradeRef} ${label[params.outcome] ?? params.outcome}.`,
+      },
+    })
+    await db.chatThread.update({ where: { id: episode.threadId }, data: { lastMessageAt: new Date() } })
+  } catch (err) {
+    logger.warn({ err, tradeId: params.tradeId }, 'closeEpisode failed (non-fatal)')
+  }
+}
+
+// ─── User-facing reads/writes (routes) ───────────────────────────────────────
+
+function assertParticipant(thread: { userAId: string; userBId: string }, userId: string): void {
+  if (thread.userAId !== userId && thread.userBId !== userId) {
+    throw new AppError('FORBIDDEN', 'Not a participant of this conversation', 403)
+  }
+}
+
+/** Inbox: the user's threads, newest activity first, with unread + active-trade counts. */
+export async function getInbox(userId: string) {
+  const threads = await db.chatThread.findMany({
+    where: { OR: [{ userAId: userId }, { userBId: userId }] },
+    orderBy: { lastMessageAt: 'desc' },
+    take: 100,
+    select: {
+      id: true, userAId: true, userBId: true, lastMessageAt: true, unreadByA: true, unreadByB: true,
+      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+      episodes: { select: { outcome: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { body: true, isSystem: true, createdAt: true } },
+    },
+  })
+  return threads.map((t) => {
+    const isA = t.userAId === userId
+    const other = isA ? t.userB : t.userA
+    const unread = isA ? t.unreadByA : t.unreadByB
+    const activeTrades = t.episodes.filter((e) => e.outcome === 'active').length
+    const last = t.messages[0]
+    return {
+      threadId: t.id,
+      other,
+      lastMessageAt: t.lastMessageAt,
+      lastMessagePreview: last ? last.body : null,
+      unread,
+      activeTrades,
+      totalTrades: t.episodes.length,
+    }
+  })
+}
+
+/** Total active-trade episodes across all the user's threads (dropdown badge). */
+export async function getInboxSummary(userId: string): Promise<{ unreadThreads: number; activeTrades: number }> {
+  const threads = await db.chatThread.findMany({
+    where: { OR: [{ userAId: userId }, { userBId: userId }] },
+    select: { userAId: true, unreadByA: true, unreadByB: true, episodes: { select: { outcome: true } } },
+  })
+  let unreadThreads = 0
+  let activeTrades = 0
+  for (const t of threads) {
+    const unread = t.userAId === userId ? t.unreadByA : t.unreadByB
+    if (unread) unreadThreads++
+    activeTrades += t.episodes.filter((e) => e.outcome === 'active').length
+  }
+  return { unreadThreads, activeTrades }
+}
+
+/** Full thread view: messages + episode dividers + relationship stats. Marks read. */
+export async function getThread(userId: string, threadId: string) {
+  const thread = await db.chatThread.findUnique({
+    where: { id: threadId },
+    select: {
+      id: true, userAId: true, userBId: true,
+      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true } },
+      episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
+    },
+  })
+  if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
+  assertParticipant(thread, userId)
+
+  // Mark read for this viewer.
+  const isA = thread.userAId === userId
+  await db.chatThread.update({
+    where: { id: threadId },
+    data: isA ? { unreadByA: false } : { unreadByB: false },
+  }).catch(() => {})
+
+  const stats = { completed: 0, cancelled: 0, expired: 0, disputed: 0, active: 0, total: thread.episodes.length }
+  const s = stats as Record<string, number>
+  for (const e of thread.episodes) {
+    if (e.outcome in stats) s[e.outcome] = (s[e.outcome] ?? 0) + 1
+  }
+
+  const other = isA ? thread.userB : thread.userA
+  return {
+    threadId: thread.id,
+    other,
+    stats,
+    episodes: thread.episodes.map((e) => ({ ...e, fiatAmount: e.fiatAmount ? e.fiatAmount.toString() : null })),
+    messages: thread.messages,
+  }
+}
+
+/** Post a message to a thread. Sender must be a participant. Bumps the other's unread. */
+export async function postThreadMessage(userId: string, threadId: string, body: string, attachmentUrl?: string) {
+  const text = body.trim()
+  if (!text && !attachmentUrl) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
+  if (text.length > 2000) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
+
+  const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
+  assertParticipant(thread, userId)
+
+  const isA = thread.userAId === userId
+  const [message] = await db.$transaction([
+    db.chatThreadMessage.create({
+      data: { threadId, senderId: userId, body: text, ...(attachmentUrl ? { attachmentUrl } : {}) },
+      select: { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true },
+    }),
+    db.chatThread.update({
+      where: { id: threadId },
+      // Bump the OTHER participant's unread flag.
+      data: { lastMessageAt: new Date(), ...(isA ? { unreadByB: true } : { unreadByA: true }) },
+    }),
+  ])
+  return message
+}

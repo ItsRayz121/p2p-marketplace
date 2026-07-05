@@ -6,6 +6,7 @@ import { releaseMakerBond } from '../services/makerBond.service'
 import { incrementTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx } from '../services/airdrop.service'
 import { postCtmSystemMessage } from './ctm.trade.service'
+import { closeEpisode } from '../services/chatThread.service'
 
 /** Human-readable trade label for user-facing notifications — never exposes the raw cuid. */
 const lbl = (t: { displayRef?: string | null }): string => t.displayRef ?? 'your CTM trade'
@@ -45,6 +46,7 @@ export async function runCtmTradeExpiry() {
       logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM expiry'),
     )
 
+    void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'expired' })
     notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — payment was not uploaded in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
     notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — buyer did not upload payment proof in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
 
