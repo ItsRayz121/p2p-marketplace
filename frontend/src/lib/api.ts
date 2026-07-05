@@ -540,6 +540,7 @@ export interface Trade {
   buyerDeliveryAddress?: string
   sellerTxHash?: string
   txHash?: string
+  takerFirst?: boolean
   buyerRated?: boolean
   sellerRated?: boolean
   expiresAt: string

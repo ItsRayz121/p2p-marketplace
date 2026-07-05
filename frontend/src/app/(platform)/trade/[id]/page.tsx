@@ -25,6 +25,7 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { getTradeStatus } from '@/lib/tradeStatus'
+import { currentStep as flowCurrentStep, ACTION_VERB } from '@/lib/settlementFlow'
 import { promptPushOptIn } from '@/lib/pushPrompt'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
@@ -963,6 +964,85 @@ export default function TradePage() {
             </div>
           )}
 
+          {/* Taker-first action panel. Only renders for reordered BUY-ad trades
+              (trade.takerFirst). The classic StepCard action controls are gated OFF
+              when takerFirst, so this panel is the single source of actions; the
+              StepCards below still show the order details/proofs. The backend is
+              authoritative on ordering, so this drives the correct next action for
+              the current party. Reuses the same handlers as the classic flow. */}
+          {trade.takerFirst && !['cancelled', 'expired', 'crypto_released', 'disputed', 'dispute_resolved'].includes(trade.status) && (() => {
+            const step = flowCurrentStep(true, trade.status)
+            if (!step) return null
+            const myRole = isUserBuyer ? 'buyer' : 'seller'
+            const myTurn = step.actor === myRole
+            const other = isUserBuyer ? 'seller' : 'buyer'
+            if (!myTurn) {
+              return (
+                <div className="bg-surface border border-border rounded-xl p-4">
+                  <p className="text-sm font-semibold text-text-primary mb-1">Waiting on the {other}</p>
+                  <p className="text-xs text-text-muted">The {other} needs to {ACTION_VERB[step.action]}. You&apos;ll be notified when it&apos;s your turn.</p>
+                </div>
+              )
+            }
+            return (
+              <div className="bg-surface border border-primary/30 rounded-xl p-4 space-y-3">
+                <p className="text-sm font-semibold text-primary">Your turn</p>
+                {actionError && <div className="bg-danger/10 border border-danger/20 rounded-lg p-2 text-xs text-danger">{actionError}</div>}
+
+                {/* send_crypto (taker sends crypto first) */}
+                {step.action === 'send_crypto' && (
+                  !showCryptoSentForm ? (
+                    <>
+                      <p className="text-xs text-text-muted">Send {parseFloat(trade.amount).toFixed(4)} {trade.coin} to the buyer&apos;s address shown below, then submit your transfer proof. The buyer only pays PKR after your crypto is confirmed.</p>
+                      <Button fullWidth onClick={handleStartSending}>I&apos;m Sending the Crypto Now →</Button>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-text-primary mb-1">Transaction Hash</label>
+                        <input type="text" value={txHash} onChange={(e) => setTxHash(e.target.value)} placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)" className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-text-primary mb-1">Transfer Screenshot <span className="text-text-muted">(optional)</span></label>
+                        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setDeliveryShot(e.target.files?.[0] ?? null)} className="w-full text-xs border border-border rounded-lg p-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary" />
+                        {deliveryShot && <p className="text-xs text-text-muted mt-1 truncate">Attached: {deliveryShot.name}</p>}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="secondary" fullWidth onClick={() => { setShowCryptoSentForm(false); setDeliveryShot(null) }}>Cancel</Button>
+                        <Button fullWidth loading={actionLoading || uploading} disabled={(!txHash.trim() && !deliveryShot) || actionLoading || uploading} onClick={handleMarkCryptoSent}>I&apos;ve Sent the Crypto</Button>
+                      </div>
+                    </div>
+                  )
+                )}
+
+                {/* confirm_crypto (maker/buyer confirms the taker's crypto arrived) */}
+                {step.action === 'confirm_crypto' && (
+                  <>
+                    <p className="text-xs text-text-muted">Confirm the {trade.coin} has actually arrived in your wallet. Once confirmed, you&apos;ll send the PKR payment.</p>
+                    <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>I&apos;ve Received the Crypto — Confirm</Button>
+                  </>
+                )}
+
+                {/* send_fiat (maker/buyer pays PKR) */}
+                {step.action === 'send_fiat' && (
+                  <>
+                    <p className="text-xs text-text-muted">Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to the seller&apos;s account (shown below), then upload your payment proof.</p>
+                    <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }} />
+                    <Button fullWidth loading={uploading} disabled={uploading || actionLoading} onClick={() => fileInputRef.current?.click()}>Upload Payment Proof</Button>
+                  </>
+                )}
+
+                {/* confirm_fiat (taker confirms the maker's PKR arrived — completes) */}
+                {step.action === 'confirm_fiat' && (
+                  <>
+                    <p className="text-xs text-text-muted">Confirm the PKR payment has actually arrived in your account — a screenshot alone is not proof of funds. This completes the trade.</p>
+                    <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>Confirm Payment Received</Button>
+                  </>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Guided step flow (CTM-style) — active step auto-expands; completed
               steps collapse to a summary line and stay re-openable. */}
           {!['cancelled', 'expired'].includes(trade.status) && (
@@ -998,7 +1078,7 @@ export default function TradePage() {
                     {sellerAccount.accountNumber && <PayToRow label="Account number" value={sellerAccount.accountNumber} copy />}
                     {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
                     {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
-                    {isUserBuyer && trade.status === 'payment_pending' && (
+                    {!trade.takerFirst && isUserBuyer && trade.status === 'payment_pending' && (
                       <p className="text-xs text-text-muted leading-snug pt-1">
                         Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof.
                       </p>
@@ -1026,7 +1106,7 @@ export default function TradePage() {
                     </div>
                   )
                 })()}
-                {isUserBuyer && trade.status === 'payment_pending' && (
+                {!trade.takerFirst && isUserBuyer && trade.status === 'payment_pending' && (
                   <>
                     <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }} />
                     <Button fullWidth loading={uploading} disabled={uploading || actionLoading} onClick={() => fileInputRef.current?.click()}>
@@ -1037,7 +1117,7 @@ export default function TradePage() {
                     )}
                   </>
                 )}
-                {!isUserBuyer && trade.status === 'payment_pending' && (
+                {!trade.takerFirst && !isUserBuyer && trade.status === 'payment_pending' && (
                   <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">
                     Waiting for the buyer to send PKR and upload payment proof.
                   </div>
@@ -1065,13 +1145,13 @@ export default function TradePage() {
                     )}
                   </div>
                 )}
-                {!isUserBuyer && trade.status === 'payment_uploaded' && (
+                {!trade.takerFirst && !isUserBuyer && trade.status === 'payment_uploaded' && (
                   <>
                     <p className="text-xs text-text-muted">Confirm only after the PKR has actually arrived in your account — a screenshot alone is not proof of funds.</p>
                     <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>Confirm Payment Received</Button>
                   </>
                 )}
-                {isUserBuyer && trade.status === 'payment_uploaded' && (
+                {!trade.takerFirst && isUserBuyer && trade.status === 'payment_uploaded' && (
                   <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">Waiting for the seller to confirm they received your payment.</div>
                 )}
                 {currentStep >= 2 && (
@@ -1179,7 +1259,7 @@ export default function TradePage() {
                 )}
 
                 {/* Seller: send crypto (dual proof) */}
-                {!isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
+                {!trade.takerFirst && !isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
                   <>
                     <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">
                       Tap below to let the buyer know you&apos;re sending now, then send the {trade.coin} to the address above and submit your transfer proof.
@@ -1187,7 +1267,7 @@ export default function TradePage() {
                     <Button fullWidth onClick={handleStartSending}>I&apos;m Sending the Crypto Now →</Button>
                   </>
                 )}
-                {showCryptoSentForm && !isUserBuyer && (() => {
+                {!trade.takerFirst && showCryptoSentForm && !isUserBuyer && (() => {
                   const dm = trade.buyerDeliveryMethod ?? ''
                   const isWalletDelivery = dm === 'blockchain' || dm === 'wallet_blockchain' || dm === ''
                   const canSubmit = !!txHash.trim() || !!deliveryShot
@@ -1224,13 +1304,13 @@ export default function TradePage() {
                     </div>
                   )
                 })()}
-                {isUserBuyer && trade.status === 'payment_confirmed' && (
+                {!trade.takerFirst && isUserBuyer && trade.status === 'payment_confirmed' && (
                   <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">The seller is sending your {trade.coin} now. Once it arrives in your wallet, confirm receipt below to complete the trade.</div>
                 )}
 
                 {/* Buyer: confirm receipt & release — no verification gate. The
                     buyer is the authority on their own wallet; admin only via dispute. */}
-                {isUserBuyer && trade.status === 'crypto_sent' && (() => {
+                {!trade.takerFirst && isUserBuyer && trade.status === 'crypto_sent' && (() => {
                   const vs = trade.txVerificationStatus
                   const unverified = vs === 'skipped' || vs === 'rpc_error' || vs === 'pending' || vs === 'not_found'
                   return (
@@ -1252,7 +1332,7 @@ export default function TradePage() {
                     </>
                   )
                 })()}
-                {!isUserBuyer && trade.status === 'crypto_sent' && (
+                {!trade.takerFirst && !isUserBuyer && trade.status === 'crypto_sent' && (
                   <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">Waiting for the buyer to confirm receipt and release the trade.</div>
                 )}
               </StepCard>
