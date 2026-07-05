@@ -143,6 +143,8 @@ function isScreenshotRequired(settlementType?: string): boolean {
 interface SellerPaymentAccount {
   type: string; label: string; accountName: string
   mobileNumber?: string; bankName?: string; ibanNumber?: string; accountNumber?: string
+  // USDT payment snapshot (type === 'usdt')
+  method?: string; address?: string
 }
 interface SellerPaymentSnapshot extends SellerPaymentAccount {
   accounts?: SellerPaymentAccount[]
@@ -159,6 +161,11 @@ interface Trade {
   buyerPaymentSnapshot?: BuyerPaymentSnapshot
   tokenDeliveryType?: string; settlementType: string
   takerFirst?: boolean
+  // USDT-as-payment (present only on USDT trades)
+  paymentCurrency?: string
+  usdtDeliveryMethod?: string | null
+  usdtDeliveryAddress?: string | null
+  usdtAmount?: string | null
   expiresAt: string; confirmDeadlineAt?: string; proofDeadlineAt?: string; updatedAt?: string
   escrowAddress?: string; escrowAmount?: string; escrowCurrency?: string
   escrowTxHash?: string; escrowConfirmedAt?: string
@@ -376,6 +383,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const isBuyer = user?.id === trade.buyer.id
   const isSeller = user?.id === trade.seller.id
+  // USDT-as-payment: the "payment" leg is USDT (on-chain / exchange) instead of PKR.
+  const isUsdtTrade = trade.paymentCurrency === 'USDT'
+  const usdtAmountLabel = trade.usdtAmount != null
+    ? `${Number(trade.usdtAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`
+    : '— USDT'
+  const payAmountLabel = isUsdtTrade ? usdtAmountLabel : `PKR ${Number(trade.fiatAmount).toLocaleString()}`
   const stepIndex = STATUS_STEPS.indexOf(trade.status)
 
   // Rating window — opens at completion (anchored to updatedAt, consistent with
@@ -519,13 +532,27 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   )
 
   const renderSellerAccountBlock = (isBuyerView: boolean) => {
+    // USDT payment: single receive point (method + address/UID + amount owed).
+    if (isUsdtTrade) {
+      const method = trade.usdtDeliveryMethod ?? snap?.method ?? ''
+      const address = trade.usdtDeliveryAddress ?? snap?.address ?? ''
+      const isWallet = /^(BEP20|APTOS|ERC20|TRC20)$/i.test(method)
+      return (
+        <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+          <Row label="Pay in" value="USDT" />
+          {method && <Row label="Method" value={`USDT ${method}`} />}
+          <Row label="Amount" value={usdtAmountLabel} copyable />
+          {address && <Row label={isWallet ? 'Send to address' : 'Send to UID / account'} value={address} mono breakAll copyable />}
+        </div>
+      )
+    }
     const needsSelection = isMultiAccount && !isAccountLocked && isBuyerView && trade.status === 'awaiting_payment'
     const waitingForSelection = isMultiAccount && !isAccountLocked && !isBuyerView && trade.status === 'awaiting_payment'
     if (needsSelection) {
       return (
         <div>
           <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 mb-3">
-            Select the payment account you will use to send PKR {Number(trade.fiatAmount).toLocaleString()}. This will be locked for the trade.
+            Select the payment account you will use to send {payAmountLabel}. This will be locked for the trade.
           </p>
           <div className="space-y-2">
             {snap!.accounts!.map((acc, i) => (
@@ -651,8 +678,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <p className="font-semibold text-text-primary">{trade.tokenAmount} {trade.token.symbol}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
-          <p className="text-text-muted text-xs mb-0.5">Total PKR</p>
-          <p className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount).toLocaleString()}</p>
+          <p className="text-text-muted text-xs mb-0.5">{isUsdtTrade ? 'Total USDT' : 'Total PKR'}</p>
+          <p className="font-semibold text-text-primary">{payAmountLabel}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Payment</p>
@@ -947,7 +974,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 {/* send_fiat — the maker (buyer) pays PKR */}
                 {step.action === 'send_fiat' && (
                   <div className="space-y-2">
-                    <p className="text-xs text-text-muted">Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount).toLocaleString()}</span> to the seller&apos;s account shown below, then upload your payment proof.</p>
+                    <p className="text-xs text-text-muted">Send exactly <span className="font-semibold text-text-primary">{payAmountLabel}</span> to the seller&apos;s {isUsdtTrade ? 'USDT address' : 'account'} shown below, then upload your payment proof.</p>
                     <input type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} className="w-full border border-border rounded-xl p-2 text-sm" />
                     <button onClick={handleUploadPaymentProof} disabled={actionLoading || !proofFile} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">{actionLoading ? 'Uploading…' : 'Upload Payment Proof'}</button>
                   </div>
@@ -956,7 +983,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 {/* confirm_fiat — the taker (seller) confirms the maker's PKR arrived (completes) */}
                 {step.action === 'confirm_fiat' && (
                   <>
-                    <p className="text-xs text-text-muted">Confirm the PKR payment has actually arrived in your account — a screenshot alone is not proof of funds. This completes the trade.</p>
+                    <p className="text-xs text-text-muted">Confirm the {isUsdtTrade ? 'USDT payment has actually arrived' : 'PKR payment has actually arrived in your account'} — a screenshot alone is not proof of funds. This completes the trade.</p>
                     <button onClick={() => doAction(() => ctmApi.confirmPayment(ref))} disabled={actionLoading} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">{actionLoading ? '…' : 'Confirm Payment Received'}</button>
                   </>
                 )}
@@ -968,23 +995,23 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           {isBuyer && (
             <>
               <StepCard stepNum={1} title="Send Payment" state={s1}
-                summary={`${paymentMethodLabel} · PKR ${Number(trade.fiatAmount).toLocaleString()} · proof uploaded`}
+                summary={`${paymentMethodLabel} · ${payAmountLabel} · proof uploaded`}
                 expanded={expandedSteps.has(1)} onToggle={() => toggleStep(1)}>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
                   <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
                   <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
-                    <Row label="Total payable" value={`PKR ${Number(trade.fiatAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                    <Row label="Total payable" value={payAmountLabel} />
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
-                    <p className="text-sm font-semibold text-text-primary">Seller Receiving Account</p>
+                    <p className="text-sm font-semibold text-text-primary">{isUsdtTrade ? 'Seller USDT Address' : 'Seller Receiving Account'}</p>
                     {isAccountLocked && <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium ml-auto">Locked</span>}
                   </div>
-                  <p className="text-xs text-text-muted mb-2">Send PKR {Number(trade.fiatAmount).toLocaleString()} to this account.</p>
+                  <p className="text-xs text-text-muted mb-2">Send {payAmountLabel} to {isUsdtTrade ? 'this USDT address' : 'this account'}.</p>
                   {renderSellerAccountBlock(true)}
                 </div>
                 <div>
@@ -1178,18 +1205,20 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
                   <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
-                    <Row label="Total to receive" value={`PKR ${Number(trade.fiatAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                    <Row label="Total to receive" value={payAmountLabel} />
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
-                    <p className="text-sm font-semibold text-text-primary">Your Receiving Account</p>
+                    <p className="text-sm font-semibold text-text-primary">{isUsdtTrade ? 'Your USDT Receiving Address' : 'Your Receiving Account'}</p>
                     {isAccountLocked && <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium ml-auto">Locked</span>}
                   </div>
-                  <p className="text-xs text-text-muted mb-2">You will receive PKR {Number(trade.fiatAmount).toLocaleString()} from the buyer.</p>
+                  <p className="text-xs text-text-muted mb-2">You will receive {payAmountLabel} from the buyer.</p>
                   {renderSellerAccountBlock(false)}
                 </div>
+                {/* Buyer's PKR sending account — not tracked for USDT payments. */}
+                {!isUsdtTrade && (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
@@ -1198,16 +1227,17 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <p className="text-xs text-text-muted mb-2">Buyer will send PKR from this account. Watch for incoming payment here.</p>
                   {renderBuyerAccountBlock()}
                 </div>
+                )}
                 {trade.status === 'awaiting_payment' && (
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Waiting for buyer payment</p>
-                    <p className="text-yellow-700 dark:text-yellow-300">The buyer is sending PKR to your account. You&apos;ll be notified when payment proof is uploaded.</p>
+                    <p className="text-yellow-700 dark:text-yellow-300">The buyer is sending {isUsdtTrade ? 'USDT' : 'PKR'} to your {isUsdtTrade ? 'address' : 'account'}. You&apos;ll be notified when payment proof is uploaded.</p>
                   </div>
                 )}
               </StepCard>
 
               <StepCard stepNum={2} title="Confirm Payment" state={s2}
-                summary={`PKR ${Number(trade.fiatAmount).toLocaleString()} confirmed`}
+                summary={`${payAmountLabel} confirmed`}
                 expanded={expandedSteps.has(2)} onToggle={() => toggleStep(2)}>
                 {trade.status === 'payment_uploaded' ? (
                   <div className="space-y-3">
@@ -1218,11 +1248,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
                       <Row label="Payment method" value={paymentMethodLabel} />
                       <div className="border-t border-border pt-1.5 mt-1">
-                        <Row label="Amount to confirm" value={`PKR ${Number(trade.fiatAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                        <Row label="Amount to confirm" value={payAmountLabel} />
                       </div>
                     </div>
                     <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-sm text-amber-800 dark:text-amber-300">
-                      Only confirm after <span className="font-semibold">PKR {Number(trade.fiatAmount).toLocaleString()}</span> has actually arrived in your account. Once confirmed, you must send the tokens.
+                      Only confirm after <span className="font-semibold">{payAmountLabel}</span> has actually arrived {isUsdtTrade ? 'at your USDT address' : 'in your account'}. Once confirmed, you must send the tokens.
                     </div>
                     <div className="bg-surface rounded-xl p-3 text-sm">
                       <p className="text-text-muted text-xs mb-2">Buyer has uploaded payment proof. Review then confirm.</p>
@@ -1241,7 +1271,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 ) : (
                   <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
-                    ✓ You confirmed receiving PKR {Number(trade.fiatAmount).toLocaleString()}.
+                    ✓ You confirmed receiving {payAmountLabel}.
                   </div>
                 )}
               </StepCard>
@@ -1348,7 +1378,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
                   <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
-                    <Row label="Total" value={`PKR ${Number(trade.fiatAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+                    <Row label="Total" value={payAmountLabel} />
                   </div>
                 </div>
               </div>

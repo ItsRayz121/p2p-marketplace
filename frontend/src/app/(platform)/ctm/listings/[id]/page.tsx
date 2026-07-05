@@ -89,6 +89,10 @@ interface Listing {
   tradeWindowMins: number
   terms: string
   status: string
+  // USDT-as-payment (present only when the feature is enabled + the maker chose USDT)
+  paymentCurrency?: string
+  usdtPaymentMethods?: string[]
+  usdtSettlementDestinations?: { method: string; address: string; label?: string }[]
   token: { id: string; name: string; symbol: string; logoUrl?: string; riskTier: string; settlementType: string; description: string; addressExample?: string }
   merchantProfile: { id: string; tier: string; totalCtmTrades: number; completedCtmTrades: number; ctmAvgRating: string; user: { id: string; username: string; fullName: string | null; avatarUrl: string | null } }
 }
@@ -129,6 +133,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [acceptedBuyerMethodIds, setAcceptedBuyerMethodIds] = useState<string[]>([]) // BUY listing: which of the buyer's pay-from accounts the seller accepts
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [tokenAmount, setTokenAmount] = useState('')
+  // USDT-as-payment selection (only used on USDT listings)
+  const [usdtMethod, setUsdtMethod] = useState('')
+  const [usdtAddress, setUsdtAddress] = useState('') // BUY listing: taker's USDT receiving address
   const [bidPrice, setBidPrice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -230,9 +237,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   }, [user])
 
   const handleStartTrade = async () => {
-    if (isBuyListing && paymentMethodIds.length === 0) { setError('Select at least one payment receiving account'); return }
-    if (isBuyListing && acceptedBuyerMethodIds.length === 0) { setError("Select at least one of the buyer's accounts you'll accept payment from"); return }
-    if (!isBuyListing && !paymentMethodId) { setError('Select a payment method'); return }
+    const listingIsUsdt = listing?.paymentCurrency === 'USDT'
+    if (listingIsUsdt) {
+      if (!usdtMethod) { setError('Select a USDT payment method'); return }
+      // BUY listing (maker pays USDT): the taker (seller) supplies their receiving address.
+      if (isBuyListing && !usdtAddress.trim()) { setError('Enter your USDT receiving address / UID'); return }
+    } else {
+      if (isBuyListing && paymentMethodIds.length === 0) { setError('Select at least one payment receiving account'); return }
+      if (isBuyListing && acceptedBuyerMethodIds.length === 0) { setError("Select at least one of the buyer's accounts you'll accept payment from"); return }
+      if (!isBuyListing && !paymentMethodId) { setError('Select a payment method'); return }
+    }
     if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setError('Enter a token amount'); return }
     // SELL listings: buyer must provide their token receiving address
     if (listing?.side === 'sell' && !buyerSettlementId.trim()) {
@@ -244,15 +258,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       if (!listing) return
       const res = await ctmApi.startListingTrade(id, {
         // BUY listing: seller provides multiple receiving accounts; SELL listing: buyer picks one seller account
-        paymentMethod: isBuyListing ? undefined : paymentMethodId,
-        paymentMethods: isBuyListing ? paymentMethodIds : undefined,
+        paymentMethod: listingIsUsdt || isBuyListing ? undefined : paymentMethodId,
+        paymentMethods: !listingIsUsdt && isBuyListing ? paymentMethodIds : undefined,
         // For SELL listings: buyer provides their address. For BUY listings: address is on the listing.
         buyerSettlementId: listing.side === 'sell' ? (buyerSettlementId.trim() || undefined) : undefined,
         // For SELL listings: snapshot which of the buyer's accounts they'll pay FROM
-        buyerPaymentMethodId: !isBuyListing && buyerFromMethodId ? buyerFromMethodId : undefined,
+        buyerPaymentMethodId: !listingIsUsdt && !isBuyListing && buyerFromMethodId ? buyerFromMethodId : undefined,
         // For BUY listings: restrict which of the buyer's pay-from accounts the seller accepts
-        acceptedBuyerPaymentMethodIds: isBuyListing ? acceptedBuyerMethodIds : undefined,
+        acceptedBuyerPaymentMethodIds: !listingIsUsdt && isBuyListing ? acceptedBuyerMethodIds : undefined,
         tokenAmount: parseFloat(tokenAmount),
+        // USDT-as-payment: chosen method + (BUY) the taker's receiving address.
+        usdtMethod: listingIsUsdt ? usdtMethod : undefined,
+        usdtAddress: listingIsUsdt && isBuyListing ? usdtAddress.trim() : undefined,
       })
       router.push(`/ctm/trade/${res.tradeRef}`)
     } catch (err: unknown) {
@@ -325,6 +342,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   const isMine = user?.id === listing.merchantProfile.user.id
   const isBuyListing = listing.side === 'buy'
+  const isUsdt = listing.paymentCurrency === 'USDT'
+  const usdtOffered = listing.usdtPaymentMethods ?? []
+  const usdtDestFor = (m: string) => (listing.usdtSettlementDestinations ?? []).find((d) => d.method === m)?.address ?? ''
   const resolvedMethods = listing.resolvedPaymentMethods ?? listing.paymentMethods.map((m) => ({
     id: m,
     type: PK_MOBILE_METHODS.includes(m) ? m : 'bank_transfer',
@@ -884,7 +904,46 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               )
             })()}
 
-            {/* Payment method selection */}
+            {/* USDT payment method (USDT listings) */}
+            {isUsdt && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-0.5">USDT payment method *</label>
+                <p className="text-xs text-text-muted mb-2">
+                  {isBuyListing
+                    ? 'Choose how the buyer will pay you in USDT, then enter your receiving address / UID.'
+                    : 'Choose how you will pay the seller in USDT.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {usdtOffered.map((m) => (
+                    <button type="button" key={m} onClick={() => setUsdtMethod(m)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${usdtMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
+                      USDT {m}
+                      {usdtMethod === m && <span className="ml-0.5 text-xs">✓</span>}
+                    </button>
+                  ))}
+                </div>
+                {/* SELL listing: show the maker's receive address for the chosen method */}
+                {!isBuyListing && usdtMethod && usdtDestFor(usdtMethod) && (
+                  <div className="mt-2">
+                    <p className="text-xs text-text-muted mb-1">Send USDT ({usdtMethod}) to the seller at:</p>
+                    <p className="text-xs font-mono bg-surface border border-border rounded-lg px-3 py-2 break-all text-text-primary">{usdtDestFor(usdtMethod)}</p>
+                  </div>
+                )}
+                {/* BUY listing: taker (seller) enters their own USDT receiving address */}
+                {isBuyListing && usdtMethod && (
+                  <input
+                    type="text"
+                    placeholder={`Your ${usdtMethod} USDT receiving address / UID`}
+                    value={usdtAddress}
+                    onChange={(e) => setUsdtAddress(e.target.value)}
+                    className="mt-2 w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Payment method selection (PKR) */}
+            {!isUsdt && (
             <div>
               <label className="block text-sm font-medium text-text-primary mb-0.5">
                 {isBuyListing
@@ -925,10 +984,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 })}
               </div>
             </div>
+            )}
 
             {/* BUY listing: show the buyer's declared pay-from accounts so the seller
                 can pick which one(s) they'll accept payment from. */}
-            {isBuyListing && resolvedMethods.length > 0 && (
+            {!isUsdt && isBuyListing && resolvedMethods.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">
                   Which of the buyer&apos;s accounts will you accept payment from?
@@ -952,7 +1012,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             )}
 
             {/* SELL listing: show buyer's own methods so seller knows which account payment will come from */}
-            {!isBuyListing && myMethods.length > 0 && (
+            {!isUsdt && !isBuyListing && myMethods.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">
                   Your payment account (you&apos;ll pay from)
