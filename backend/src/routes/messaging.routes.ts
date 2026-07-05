@@ -29,13 +29,14 @@ export async function messagingRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data })
   })
 
-  // GET /api/v1/messages/summary — dropdown badge counts
+  // GET /api/v1/messages/summary — dropdown badge counts + feature-enabled flag,
+  // so the client can reveal the "Messaging" item the moment the flag is flipped.
   app.get('/messages/summary', { preHandler: [authenticate] }, async (req, reply) => {
     if (!(await isFlagEnabled(FLAGS.MESSAGING_INBOX))) {
-      return reply.send({ success: true, data: { unreadThreads: 0, activeTrades: 0 } })
+      return reply.send({ success: true, data: { enabled: false, unreadThreads: 0, activeTrades: 0 } })
     }
     const data = await getInboxSummary(req.user!.id)
-    return reply.send({ success: true, data })
+    return reply.send({ success: true, data: { enabled: true, ...data } })
   })
 
   // GET /api/v1/messages/:threadId — full thread (messages + episodes + stats)

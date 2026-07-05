@@ -1,11 +1,12 @@
 'use client'
-import { useState, useCallback, Fragment } from 'react'
+import { useState, useCallback, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { notificationsApi } from '@/lib/api'
+import { messagingApi, type InboxSummary } from '@/lib/messaging'
 import { cn } from '@/lib/utils'
 import { BrandLogo } from '@/components/ui/BrandLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
@@ -28,6 +29,7 @@ import {
   Heart,
   HelpCircle,
   Users,
+  MessageSquare,
 } from 'lucide-react'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
@@ -70,6 +72,7 @@ export default function Navbar() {
   const pathname = usePathname()
   const [unreadCount, setUnreadCount] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [msgSummary, setMsgSummary] = useState<InboxSummary | null>(null)
 
   const fetchUnread = useCallback(async () => {
     if (!user) return
@@ -82,6 +85,33 @@ export default function Navbar() {
   }, [user])
 
   usePolling(fetchUnread, 60_000, !!user)
+
+  // Messaging inbox summary — reveals the dropdown item once the flag is ON and
+  // drives its unread/active-trade badge. Silent-fails; feature stays hidden.
+  const fetchMsgSummary = useCallback(async () => {
+    if (!user) return
+    try {
+      setMsgSummary(await messagingApi.getSummary())
+    } catch {
+      // silently fail — item stays hidden
+    }
+  }, [user])
+
+  usePolling(fetchMsgSummary, 60_000, !!user)
+
+  // Insert "Messaging" into the Trading group when the feature is enabled. Its
+  // badge shows active-trade count first (the merchant work-queue signal), else
+  // unread threads.
+  const dropdownItems = useMemo(() => {
+    if (!msgSummary?.enabled) return DROPDOWN_ITEMS.map((it) => ({ ...it, badge: 0 }))
+    const badge = msgSummary.activeTrades || msgSummary.unreadThreads || 0
+    const items = DROPDOWN_ITEMS.map((it) => ({ ...it, badge: 0 }))
+    const idx = items.findIndex((it) => it.href === '/my-ads')
+    const messaging = { href: '/messages', Icon: MessageSquare, label: 'Messaging', iconCls: 'text-indigo-500', bgCls: 'bg-indigo-500/10', group: 'trading', badge }
+    if (idx >= 0) items.splice(idx + 1, 0, messaging)
+    else items.push(messaging)
+    return items
+  }, [msgSummary])
 
   const kycBadge =
     user?.kycStatus === 'approved' && user?.kycLevel === 'enhanced'
@@ -210,9 +240,9 @@ export default function Navbar() {
                         <p className="text-xs text-text-muted truncate mt-0.5">{user.email}</p>
                       </div>
 
-                      {DROPDOWN_ITEMS.map(({ href, Icon, label, iconCls, bgCls, group }, i) => (
+                      {dropdownItems.map(({ href, Icon, label, iconCls, bgCls, group, badge }, i) => (
                         <Fragment key={href}>
-                          {i > 0 && group !== DROPDOWN_ITEMS[i - 1].group && (
+                          {i > 0 && group !== dropdownItems[i - 1].group && (
                             <DropdownMenu.Separator className="my-0.5 h-px bg-border" />
                           )}
                           <DropdownMenu.Item asChild>
@@ -221,6 +251,11 @@ export default function Navbar() {
                                 <Icon className={cn('w-3.5 h-3.5', iconCls)} aria-hidden />
                               </span>
                               {label}
+                              {badge > 0 && (
+                                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] font-bold">
+                                  {badge > 99 ? '99+' : badge}
+                                </span>
+                              )}
                             </Link>
                           </DropdownMenu.Item>
                         </Fragment>
