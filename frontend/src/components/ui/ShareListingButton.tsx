@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Share2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { useAuth } from '@/hooks/useAuth'
 import { buildListingShareLinks, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 
 /**
@@ -25,10 +26,13 @@ export function ShareListingButton({
   compact?: boolean
 }) {
   const [copied, setCopied] = useState(false)
+  const { user } = useAuth()
 
   const handleShare = async () => {
     hapticSelection()
-    const { web, telegram } = buildListingShareLinks(kind, id)
+    // Attach the sharer's referral code so the shared trade link doubles as a
+    // referral link for brand-new signups.
+    const { web, telegram } = buildListingShareLinks(kind, id, user?.referralCode)
 
     // Inside Telegram: share the Mini App deep link so recipients land on the listing.
     if (isTelegramMiniApp()) {

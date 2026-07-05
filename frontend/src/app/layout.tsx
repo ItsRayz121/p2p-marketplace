@@ -5,6 +5,7 @@ import Providers from '@/components/providers/Providers'
 import Toaster from '@/components/providers/Toaster'
 import SupportChatWidget from '@/components/support/SupportChatWidget'
 import TelegramPolish from '@/components/providers/TelegramPolish'
+import ReferralCapture from '@/components/providers/ReferralCapture'
 import { THEME_SCRIPT } from '@/lib/theme'
 import { TELEGRAM_DETECT_SCRIPT } from '@/lib/telegram'
 
@@ -110,6 +111,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Toaster />
           <SupportChatWidget />
           <TelegramPolish />
+          <ReferralCapture />
         </Providers>
         <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
         <Script id="gtag-init" strategy="afterInteractive">{`

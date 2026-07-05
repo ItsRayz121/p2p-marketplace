@@ -173,15 +173,26 @@ export function parseStartParamToPath(param: string): string | null {
  * everywhere + rich preview); `telegram` opens the Mini App straight to the
  * listing via startapp (null when the bot username env is unset).
  */
-export function buildListingShareLinks(kind: 'usdt' | 'ctm', id: string): { web: string; telegram: string | null } {
+export function buildListingShareLinks(
+  kind: 'usdt' | 'ctm',
+  id: string,
+  refCode?: string | null,
+): { web: string; telegram: string | null } {
   const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.replace(/^@/, '')
   const origin =
     typeof window !== 'undefined'
       ? window.location.origin
       : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com')
   const path = kind === 'usdt' ? `/marketplace/listings/${id}` : `/ctm/listings/${id}`
+  // A shared trade link doubles as a referral link: a brand-new visitor who opens
+  // it and signs up is attributed to the sharer (ReferralCapture stashes ?ref for
+  // the register flow; middleware preserves it through the login gate on /ctm).
+  const ref = refCode ? `?ref=${encodeURIComponent(refCode)}` : ''
   return {
-    web: `${origin}${path}`,
+    web: `${origin}${path}${ref}`,
+    // Telegram in-app deep link keeps the existing referral mechanism (bot
+    // ref_<code> link); listing start params carry no ref to avoid conflicting
+    // with the anchored backend parser.
     telegram: bot ? `https://t.me/${bot}?startapp=L_${kind}_${id}` : null,
   }
 }

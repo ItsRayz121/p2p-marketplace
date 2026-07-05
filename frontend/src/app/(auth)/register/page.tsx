@@ -43,10 +43,17 @@ export default function RegisterPage() {
   } = useForm<FormValues>({ resolver: zodResolver(schema) })
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('referralCode')
-      if (stored) setValue('referralCode', stored)
+    if (typeof window === 'undefined') return
+    // A shared trade link lands here as /register?ref=<code> (directly or via the
+    // login gate). Capture it first-touch so the code is applied even if the
+    // global ReferralCapture effect hasn't run yet.
+    const urlRef = new URLSearchParams(window.location.search).get('ref')
+    let code = localStorage.getItem('referralCode')
+    if (urlRef && /^[A-Za-z0-9_-]{1,64}$/.test(urlRef) && !code) {
+      localStorage.setItem('referralCode', urlRef)
+      code = urlRef
     }
+    if (code) setValue('referralCode', code)
   }, [setValue])
 
   async function onSubmit(values: FormValues) {

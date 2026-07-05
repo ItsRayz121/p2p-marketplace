@@ -57,6 +57,11 @@ export function middleware(request: NextRequest) {
   if (requiresAuth && !hasAuthHint) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)
+    // Preserve a shared trade link's referral code across the auth gate (e.g. a
+    // brand-new visitor opening /ctm/listings/<id>?ref=<code>) so signup still
+    // attributes them to the sharer.
+    const ref = request.nextUrl.searchParams.get('ref')
+    if (ref) loginUrl.searchParams.set('ref', ref)
     return NextResponse.redirect(loginUrl)
   }
 
