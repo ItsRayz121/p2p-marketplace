@@ -572,6 +572,12 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
       // Only on SELL ads: there the maker is the seller who must deliver USDT, so a
       // USDT bond is meaningful. On a BUY ad the maker is the buyer (may hold no
       // USDT), so we skip it — consistent with the bid path, which posts no bond.
+      // This holds under taker-first too: the BUY-ad maker is still the fiat-paying
+      // buyer with no USDT to bond, and bonding the taker (who sends crypto first)
+      // would only lock the honest first-mover's own funds without protecting them —
+      // so the skip is correct in both orders. (CTM differs: its maker bond is drawn
+      // from the platform USDT balance regardless of side, so CTM taker-first buy
+      // listings DO bond the maker — see ctm.trade.service createTradeFromListing.)
       if (bondCfg.enabled && !isBuyAd) {
         const lock = await lockMakerBondTx(
           tx,

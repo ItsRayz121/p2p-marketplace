@@ -60,11 +60,22 @@ Backend — **USDT DONE + inert** (`trade.service.ts`); **CTM DONE + inert** (`c
       `proof_submitted→completed` in both flows — fired by the buyer's confirm_crypto
       in classic, the taker's confirm_fiat in taker-first); dispute-lock derived from
       `ctmDisputeLock` (classic seller / taker-first buyer). Classic byte-identical.
-- [ ] Bond on taker-first buy ads (currently skipped on buy ads) — revisit.
-- [ ] CTM jobs (`ctm.jobs.ts`) deadline/auto-dispute/auto-complete are status-keyed
-      and thus classic-only correct; in taker-first the status meanings shift. Inert
-      today (takerFirst always false) — review + make flow-aware during staging QA
-      before flipping the CTM flag.
+- [x] Bond on taker-first buy ads — RESOLVED (no code change; skip is correct).
+      The USDT buy-ad maker is the fiat-paying buyer with no USDT to bond, and
+      bonding the taker (crypto first-mover) would only lock the honest party's own
+      funds without protecting them. CTM already bonds its maker from the platform
+      USDT balance on BOTH sides, so CTM taker-first buy listings ARE bonded.
+- [x] CTM jobs (`ctm.jobs.ts`) made flow-aware (inert): `runCtmProofDeadline` now
+      derives the pending step from `ctmStepFromStatus(takerFirst, status)` —
+      non-terminal missed step → auto-dispute opened by the counterparty (reason
+      keyed to the missed actor); terminal missed step → auto-complete if the
+      DELIVERING merchant (counterparty of the pending confirmer) is trusted, else
+      admin review. Never wrongly releases: the taker-first non-terminal buyer
+      confirm (payment_confirmed) is skipped by the terminal branch and escalated by
+      the dispute branch instead. `confirmReceipt` sets a maker-fiat deadline in
+      taker-first so the buyer's payment step is enforced. Expiry wording flow-aware.
+      Classic behavior byte-identical (payment_uploaded/seller_transferring →
+      seller dispute; proof_submitted → auto-complete trusting the seller).
 
 Frontend — **DONE + inert (both pages)**. USDT (`(platform)/trade/[id]/page.tsx`)
 and CTM (`(platform)/ctm/trade/[ref]/page.tsx`) each render a standalone taker-first

@@ -342,11 +342,14 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
 
   // Taker-first: non-terminal — the maker/buyer acknowledges the taker's crypto
   // arrived; advance so the maker can now send the PKR payment. (CAS-guarded on the
-  // expected `from` status so concurrent transitions can't both apply.)
+  // expected `from` status so concurrent transitions can't both apply.) Set a
+  // proofDeadlineAt for the maker's fiat payment so runCtmProofDeadline auto-escalates
+  // a no-show — parity with the seller's deliver steps in the classic flow.
   if (!step.terminal) {
+    const payDeadlineAt = new Date(Date.now() + 60 * 60 * 1000) // maker has 1h to pay + upload proof
     const advanced = await db.ctmTrade.updateMany({
       where: { id: trade.id, status: step.from },
-      data: { status: step.to },
+      data: { status: step.to, proofDeadlineAt: payDeadlineAt },
     })
     if (advanced.count === 0) throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${trade.status}`, 409)
     await postCtmSystemMessage(trade.id, buyerId, 'Buyer confirmed the tokens were received. Buyer: now send the PKR payment and upload proof within the trade window.')

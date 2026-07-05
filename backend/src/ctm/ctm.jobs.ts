@@ -7,6 +7,16 @@ import { incrementTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx } from '../services/airdrop.service'
 import { postCtmSystemMessage } from './ctm.trade.service'
 import { closeEpisode } from '../services/chatThread.service'
+import { ctmStepFromStatus, type CtmFlowAction } from '../services/ctmSettlementFlow'
+
+/** What each pending action means in a missed-deadline message. */
+const MISSED_ACTION_TEXT: Record<CtmFlowAction, string> = {
+  send_fiat: 'send the PKR payment and upload proof',
+  confirm_fiat: 'confirm the PKR payment was received',
+  start_crypto: 'start sending the tokens',
+  prove_crypto: 'submit the token transfer proof',
+  confirm_crypto: 'confirm the tokens were received',
+}
 
 /** Human-readable trade label for user-facing notifications — never exposes the raw cuid. */
 const lbl = (t: { displayRef?: string | null }): string => t.displayRef ?? 'your CTM trade'
@@ -23,7 +33,7 @@ export async function runCtmTradeExpiry() {
   // Expire trades stuck in awaiting_payment past expiresAt
   const expired = await db.ctmTrade.findMany({
     where: { status: 'awaiting_payment', expiresAt: { lte: now } },
-    select: { id: true, tradeRef: true, displayRef: true, listingId: true, tokenAmount: true, buyerId: true, sellerId: true },
+    select: { id: true, tradeRef: true, displayRef: true, listingId: true, tokenAmount: true, buyerId: true, sellerId: true, takerFirst: true },
   })
 
   for (const trade of expired) {
@@ -47,8 +57,15 @@ export async function runCtmTradeExpiry() {
     )
 
     void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'expired' })
-    notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — payment was not uploaded in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
-    notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — buyer did not upload payment proof in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+    // awaiting_payment's no-show party is flow-dependent: classic = the buyer never
+    // paid; taker-first = the seller (taker) never started the token transfer.
+    if (trade.takerFirst) {
+      notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — you did not start the token transfer in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+      notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — the seller did not start the token transfer in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+    } else {
+      notify(trade.buyerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — payment was not uploaded in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+      notify(trade.sellerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — buyer did not upload payment proof in time.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+    }
 
     logger.info({ tradeRef: trade.tradeRef }, 'CTM trade expired')
   }
@@ -61,119 +78,128 @@ export async function runCtmTradeExpiry() {
 export async function runCtmProofDeadline() {
   const now = new Date()
 
-  // Escalate trades where seller missed proofDeadlineAt (payment_uploaded: seller must confirm)
-  const sellerMissedConfirm = await db.ctmTrade.findMany({
-    where: { status: 'payment_uploaded', proofDeadlineAt: { lte: now } },
-    select: { id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true },
-  })
-
-  for (const trade of sellerMissedConfirm) {
-    await db.$transaction([
-      db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'disputed' } }),
-      db.ctmDispute.create({
-        data: {
-          tradeId: trade.id,
-          openedById: trade.buyerId,
-          reason: 'seller_unresponsive',
-          description: 'Auto-escalated: seller did not confirm payment within deadline.',
-        },
-      }),
-    ])
-
-    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: seller missed the confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
-    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: you missed the payment confirmation deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
-
-    logger.warn({ tradeRef: trade.tradeRef }, 'CTM auto-dispute: seller missed payment confirmation deadline')
-  }
-
-  // Escalate trades where seller missed proofDeadlineAt (seller_transferring: must submit token proof)
-  const sellerMissedTokenProof = await db.ctmTrade.findMany({
-    where: { status: 'seller_transferring', proofDeadlineAt: { lte: now } },
-    select: { id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true },
-  })
-
-  for (const trade of sellerMissedTokenProof) {
-    await db.$transaction([
-      db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'disputed' } }),
-      db.ctmDispute.create({
-        data: {
-          tradeId: trade.id,
-          openedById: trade.buyerId,
-          reason: 'seller_unresponsive',
-          description: 'Auto-escalated: seller did not submit token transfer proof within deadline.',
-        },
-      }),
-    ])
-
-    notify(trade.buyerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: seller missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
-    notify(trade.sellerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: you missed the token proof deadline. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
-
-    logger.warn({ tradeRef: trade.tradeRef }, 'CTM auto-dispute: seller missed token proof deadline')
-  }
-
-  // Auto-complete trades where buyer missed confirmDeadlineAt (only for verified/elite merchant sellers)
-  const buyerMissedConfirm = await db.ctmTrade.findMany({
-    where: { status: 'proof_submitted', confirmDeadlineAt: { lte: now } },
+  // ── Missed step deadlines (flow-aware) ────────────────────────────────────
+  // A trade past a step deadline is handled by what its PENDING step is in that
+  // trade's flow (resolver-derived), not by the raw status name — which means the
+  // classic and taker-first orders are both handled from one pass:
+  //   • non-terminal step → the pending actor is unresponsive → AUTO-DISPUTE,
+  //     opened by the counterparty (reason keyed to the missed actor).
+  //   • terminal step      → the counterparty has already delivered BOTH legs and
+  //     only the final acknowledgement is late → AUTO-COMPLETE if the delivering
+  //     merchant is trusted (verified/elite), else leave for admin review.
+  // proofDeadlineAt and confirmDeadlineAt are never both set on an active trade, so
+  // one pass over "either deadline passed" covers every enforced step in both flows.
+  // Classic behavior is unchanged: payment_uploaded / seller_transferring are
+  // non-terminal SELLER steps (→ dispute, opened by the buyer); proof_submitted is
+  // the terminal BUYER confirm (→ auto-complete trusting the seller who delivered).
+  const due = await db.ctmTrade.findMany({
+    where: {
+      status: { in: ['payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted'] },
+      OR: [{ proofDeadlineAt: { lte: now } }, { confirmDeadlineAt: { lte: now } }],
+    },
     include: {
+      buyer: { include: { ctmMerchantProfile: { select: { tier: true } } } },
       seller: { include: { ctmMerchantProfile: { select: { tier: true } } } },
     },
   })
 
-  for (const trade of buyerMissedConfirm) {
-    const sellerTier = trade.seller.ctmMerchantProfile?.tier
-    const autoComplete = sellerTier === 'verified' || sellerTier === 'elite'
+  for (const trade of due) {
+    const step = ctmStepFromStatus(trade.takerFirst, trade.status)
+    if (!step) continue
 
-    if (autoComplete) {
-      let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
-      let didComplete = false
-      await db.$transaction(async (tx) => {
-        // CAS guard: only complete a trade still in proof_submitted. If the buyer
-        // confirmed receipt in the same instant (confirmReceipt), that path wins and
-        // this no-ops — preventing a double streak / stats increment for one trade.
-        const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: 'proof_submitted' }, data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null } })
-        if (claimed.count === 0) return
-        didComplete = true
-        await tx.ctmToken.update({ where: { id: trade.tokenId }, data: { totalTrades: { increment: 1 }, totalVolumePkr: { increment: trade.fiatAmount }, lastTradedAt: new Date() } })
-        if (trade.listingId) {
-          await tx.ctmListing.update({
-            where: { id: trade.listingId },
-            data: { lockedAmount: { decrement: trade.tokenAmount }, totalAmount: { decrement: trade.tokenAmount } },
-          })
-        }
-        await tx.ctmMerchantProfile.updateMany({
-          where: { userId: trade.sellerId },
-          data: { totalCtmTrades: { increment: 1 }, completedCtmTrades: { increment: 1 } },
+    // ── Non-terminal: the pending party is unresponsive → auto-dispute ────────
+    if (!step.terminal) {
+      const missedActorId = step.actor === 'seller' ? trade.sellerId : trade.buyerId
+      const openerId = step.actor === 'seller' ? trade.buyerId : trade.sellerId
+      const reason = step.actor === 'seller' ? 'seller_unresponsive' : 'buyer_unresponsive'
+      const actionText = MISSED_ACTION_TEXT[step.action]
+
+      // CAS: only escalate a trade still in this status (a same-instant transition
+      // wins and this no-ops), and only if no dispute exists yet.
+      const escalated = await db.$transaction(async (tx) => {
+        const existing = await tx.ctmDispute.findFirst({ where: { tradeId: trade.id }, select: { id: true } })
+        if (existing) return false
+        const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: trade.status }, data: { status: 'disputed' } })
+        if (claimed.count === 0) return false
+        await tx.ctmDispute.create({
+          data: {
+            tradeId: trade.id,
+            openedById: openerId,
+            reason: reason as never,
+            description: `Auto-escalated: the ${step.actor} did not ${actionText} within the deadline.`,
+          },
         })
-        // Bump the combined buyer↔seller streak, atomic with the auto-completion.
-        streakResult = await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
-        // Award airdrop points to both sides (idempotent; no-op when the flag is off).
-        await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
+        return true
       })
+      if (!escalated) continue
 
-      // Buyer confirmed in the same instant — that path owns the completion side effects.
-      if (!didComplete) continue
-
-      // Clean auto-completion → release the maker's bond (idempotent; no-op when off).
-      await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
-        logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM auto-complete'),
-      )
-
-      if (streakResult.count > 0) {
-        const streakMsg = streakResult.isMilestone
-          ? `🔥 Milestone! This is your ${ordinal(streakResult.count)} completed trade together. Thanks for building trust on the platform.`
-          : `🤝 ${ordinal(streakResult.count)} completed trade between you two.`
-        await postCtmSystemMessage(trade.id, trade.buyerId, streakMsg)
-      }
-
-      notify(trade.buyerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
-      notify(trade.sellerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed after buyer's confirmation deadline passed.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
-
-      logger.info({ tradeRef: trade.tradeRef, sellerTier }, 'CTM auto-completed: buyer missed confirmation deadline')
-    } else {
-      // Send to admin queue for manual review
-      await db.ctmTrade.update({ where: { id: trade.id }, data: { confirmDeadlineAt: null } })
-      logger.warn({ tradeRef: trade.tradeRef, sellerTier }, 'CTM buyer missed confirmation deadline — admin review needed')
+      notify(openerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: the ${step.actor} missed the deadline to ${actionText}. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
+      notify(missedActorId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: you missed the deadline to ${actionText}. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
+      logger.warn({ tradeRef: trade.tradeRef, missedActor: step.actor, action: step.action, takerFirst: trade.takerFirst }, 'CTM auto-dispute: party missed step deadline')
+      continue
     }
+
+    // ── Terminal: both legs delivered, only the final ack is late ─────────────
+    // Auto-complete if the DELIVERING merchant (the counterparty of the pending
+    // confirmer) is trusted; else leave for admin review. Classic: confirmer=buyer,
+    // deliverer=seller. Taker-first: confirmer=seller/taker, deliverer=buyer/maker.
+    const delivererId = step.actor === 'buyer' ? trade.sellerId : trade.buyerId
+    const delivererTier = (step.actor === 'buyer' ? trade.seller : trade.buyer).ctmMerchantProfile?.tier
+    const autoComplete = delivererTier === 'verified' || delivererTier === 'elite'
+
+    if (!autoComplete) {
+      // Clear both deadline fields so this doesn't re-fire; admin resolves manually.
+      await db.ctmTrade.update({ where: { id: trade.id }, data: { confirmDeadlineAt: null, proofDeadlineAt: null } })
+      logger.warn({ tradeRef: trade.tradeRef, delivererTier, takerFirst: trade.takerFirst }, 'CTM final-confirm deadline missed — admin review needed')
+      continue
+    }
+
+    let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
+    let didComplete = false
+    await db.$transaction(async (tx) => {
+      // CAS guard: only complete a trade still in this (terminal-from) status. If the
+      // confirmer acted in the same instant, that path wins and this no-ops —
+      // preventing a double streak / stats increment for one trade.
+      const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: trade.status }, data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null, proofDeadlineAt: null } })
+      if (claimed.count === 0) return
+      didComplete = true
+      await tx.ctmToken.update({ where: { id: trade.tokenId }, data: { totalTrades: { increment: 1 }, totalVolumePkr: { increment: trade.fiatAmount }, lastTradedAt: new Date() } })
+      if (trade.listingId) {
+        await tx.ctmListing.update({
+          where: { id: trade.listingId },
+          data: { lockedAmount: { decrement: trade.tokenAmount }, totalAmount: { decrement: trade.tokenAmount } },
+        })
+      }
+      await tx.ctmMerchantProfile.updateMany({
+        where: { userId: trade.sellerId },
+        data: { totalCtmTrades: { increment: 1 }, completedCtmTrades: { increment: 1 } },
+      })
+      // Bump the combined buyer↔seller streak, atomic with the auto-completion.
+      streakResult = await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
+      // Award airdrop points to both sides (idempotent; no-op when the flag is off).
+      await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
+    })
+
+    // Confirmer acted in the same instant — that path owns the completion side effects.
+    if (!didComplete) continue
+
+    // Clean auto-completion → release the maker's bond (idempotent; no-op when off).
+    await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+      logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM auto-complete'),
+    )
+
+    if (streakResult.count > 0) {
+      const streakMsg = streakResult.isMilestone
+        ? `🔥 Milestone! This is your ${ordinal(streakResult.count)} completed trade together. Thanks for building trust on the platform.`
+        : `🤝 ${ordinal(streakResult.count)} completed trade between you two.`
+      await postCtmSystemMessage(trade.id, trade.buyerId, streakMsg)
+    }
+
+    // The party who missed the final confirmation (the pending confirmer).
+    const confirmerId = step.actor === 'buyer' ? trade.buyerId : trade.sellerId
+    notify(confirmerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+    notify(delivererId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed after the counterparty's confirmation deadline passed.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+    logger.info({ tradeRef: trade.tradeRef, delivererTier, takerFirst: trade.takerFirst }, 'CTM auto-completed: final confirmation deadline missed')
   }
 }
 
