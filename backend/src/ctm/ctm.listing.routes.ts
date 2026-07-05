@@ -207,7 +207,11 @@ export async function ctmListingRoutes(app: FastifyInstance) {
       // BUY listings: seller restricts which of the buyer's declared pay-from accounts they'll accept.
       acceptedBuyerPaymentMethodIds: z.array(z.string().min(1)).optional(),
       tokenAmount: z.number().positive(),
-    }).refine((d) => d.paymentMethod || (d.paymentMethods && d.paymentMethods.length > 0), {
+      // USDT-as-payment (only for USDT listings): chosen delivery method + (BUY only)
+      // the taker's USDT receiving address. Ignored for PKR listings.
+      usdtMethod: z.string().min(1).max(40).optional(),
+      usdtAddress: z.string().min(1).max(200).optional(),
+    }).refine((d) => d.usdtMethod || d.paymentMethod || (d.paymentMethods && d.paymentMethods.length > 0), {
       message: 'paymentMethod or paymentMethods is required',
     }).safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)

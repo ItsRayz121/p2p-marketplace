@@ -734,6 +734,9 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   buyerPaymentMethodId?: string  // SELL listings: buyer's own account they'll pay FROM
   acceptedBuyerPaymentMethodIds?: string[]  // BUY listings: subset of buyer's pay-from accounts the seller accepts
   tokenAmount?: number
+  // USDT-as-payment (only used when listing.paymentCurrency === 'USDT'):
+  usdtMethod?: string   // chosen delivery method (BEP20/Aptos/Binance/…) — must be offered by the listing
+  usdtAddress?: string  // BUY listings only: the taker (seller)'s USDT receiving address
 }) {
   const listing = await db.ctmListing.findUnique({
     where: { id: listingId },
@@ -772,11 +775,45 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
     await assertNoKycTakerAllowed({ takerId: buyerId, fiatAmount: fiatForNoKyc, takerSendsFirst, flagOffBehavior: 'allow' })
   }
 
+  // USDT-as-payment: dead code in production until a USDT listing exists (only
+  // possible once the feature is enabled). The listing's own currency is the
+  // source of truth, so every PKR path below stays byte-identical when off.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isUsdtListing = (listing as any).paymentCurrency === 'USDT'
+
   // SELL listings: taker (buyer) picks one of the listing's accepted payment methods.
   // BUY listings: taker (seller) provides one or more of their own receiving accounts.
   let primaryPaymentMethodId: string
   let resolvedPaymentMethodIds: string[]
-  if (!isBuyListing) {
+  // Resolved USDT payment (populated only for USDT listings).
+  let usdtMethod = ''
+  let usdtAddress = ''
+  if (isUsdtListing) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const offered: string[] = (listing as any).usdtPaymentMethods ?? []
+    const method = (data.usdtMethod ?? '').trim()
+    if (!method || !offered.includes(method)) {
+      throw new AppError('CONFLICT', 'USDT payment method not supported by this listing', 409)
+    }
+    usdtMethod = method
+    if (isBuyListing) {
+      // Maker PAYS USDT → the taker (seller) supplies their receiving address/UID.
+      const addr = (data.usdtAddress ?? '').trim()
+      if (!addr) throw new AppError('VALIDATION_ERROR', 'Enter your USDT receiving address / UID', 400)
+      usdtAddress = addr
+    } else {
+      // Maker RECEIVES USDT → use the maker's receive address for the chosen method.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dests: Array<{ method?: string; address?: string }> = (listing as any).usdtSettlementDestinations ?? []
+      const d = dests.find((x) => x.method === method)
+      if (!d?.address) throw new AppError('CONFLICT', 'Maker has no USDT address for the selected method', 409)
+      usdtAddress = d.address
+    }
+    // Placeholder id keeps the required `paymentMethod` column non-empty without a
+    // PKR PaymentMethod row (there is none for a USDT trade).
+    primaryPaymentMethodId = `usdt:${method}`
+    resolvedPaymentMethodIds = []
+  } else if (!isBuyListing) {
     if (!data.paymentMethod) throw new AppError('VALIDATION_ERROR', 'paymentMethod is required', 400)
     if (!listing.paymentMethods.includes(data.paymentMethod)) {
       throw new AppError('CONFLICT', 'Payment method not supported by this listing', 409)
@@ -837,7 +874,11 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   }
 
   let sellerPaymentSnapshot: Record<string, unknown>
-  if (isBuyListing && resolvedPaymentMethodIds.length > 1) {
+  if (isUsdtListing) {
+    // USDT payment "receive point" — rendered in the trade room as where the payer
+    // sends USDT (maker's address on a SELL listing, taker's address on a BUY one).
+    sellerPaymentSnapshot = { type: 'usdt', method: usdtMethod, address: usdtAddress, label: `USDT ${usdtMethod}` }
+  } else if (isBuyListing && resolvedPaymentMethodIds.length > 1) {
     // Multi-account: seller chose multiple receiving accounts
     const methods = await db.paymentMethod.findMany({
       where: { id: { in: resolvedPaymentMethodIds }, userId: paymentMethodOwnerId },
@@ -862,7 +903,11 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   //     creation, stored on listing.paymentMethods — snapshot them here so the trade
   //     no longer shows "account details not provided".
   let buyerPaymentSnapshot: Record<string, unknown> | null = null
-  if (!isBuyListing && data.buyerPaymentMethodId) {
+  if (isUsdtListing) {
+    // No PKR pay-from account for a USDT trade — the payer's USDT method is implied
+    // by the receive snapshot above.
+    buyerPaymentSnapshot = null
+  } else if (!isBuyListing && data.buyerPaymentMethodId) {
     const buyerPm = await db.paymentMethod.findFirst({
       where: { id: data.buyerPaymentMethodId, userId: buyerId },
     })
@@ -918,6 +963,23 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   }
   const willBond = bondCfg.enabled && bondUsdtEquiv > 0
 
+  // USDT-as-payment amount owed (only for USDT listings). The order is PKR-priced,
+  // so convert to USDT via the platform rate; without it we can't state the amount,
+  // so we block — only ever reachable for a USDT listing.
+  let usdtTradeFields: Record<string, unknown> = {}
+  if (isUsdtListing) {
+    const usdtPkr = await getNumberConfig('rate_USDT_PKR', 0)
+    if (usdtPkr <= 0) {
+      throw new AppError('SERVICE_UNAVAILABLE', 'USDT/PKR rate unavailable — cannot open a USDT trade right now', 503)
+    }
+    usdtTradeFields = {
+      paymentCurrency: 'USDT',
+      usdtDeliveryMethod: usdtMethod,
+      usdtDeliveryAddress: usdtAddress,
+      usdtAmount: listing.pricePerUnit.mul(tradeTokenAmount).div(usdtPkr),
+    }
+  }
+
   const created = await db.$transaction(async (tx: Tx) => {
     // Atomic availability check: only lock if availableAmount >= requested amount (prevents race condition)
     const updated = await tx.ctmListing.updateMany({
@@ -960,11 +1022,9 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         expiresAt,
         platformFeePkr,
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
-        // Forward-compat: carry the listing's payment currency onto the trade.
-        // Always 'PKR' (the default) until USDT-as-payment is enabled, so this is
-        // a no-op for every existing/current trade. The full USDT trade-execution
-        // flow (method/address/amount + settlement) is wired during the flip.
-        ...((listing as { paymentCurrency?: string }).paymentCurrency === 'USDT' ? { paymentCurrency: 'USDT' } : {}),
+        // USDT-as-payment: currency + method/address/amount owed. Empty (PKR) for
+        // every existing/current trade, so this is a no-op until the feature is on.
+        ...usdtTradeFields,
       },
     })
 
