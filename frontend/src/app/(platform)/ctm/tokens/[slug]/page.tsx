@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-500/15 text-green-800 dark:text-green-300',
@@ -106,6 +107,9 @@ export default function CtmTokenDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Market insight — live price movement (1h + 12h change, avgs, sparkline) */}
+      <MarketInsightWidget tokenId={token.id} tokenSymbol={token.symbol} side="sell" />
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">

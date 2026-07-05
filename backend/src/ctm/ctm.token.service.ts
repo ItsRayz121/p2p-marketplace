@@ -198,8 +198,12 @@ export interface MarketInsight {
   sellAvg12h: number | null
   previous12hAvg: number | null
   changePercent: number | null
+  /** Short-window momentum: avg price in the last 1h vs the prior 1h. */
+  changePercent1h: number | null
   lastTradePrice: number | null
   lastTradedAt: string | null
+  /** Last ~30 completed trade prices, oldest→newest, for a sparkline. */
+  recentPrices: { price: number; at: string }[]
   dataSource: 'completed_trades' | 'active_listings' | 'none'
   sampleSize: number
   lowData: boolean
@@ -207,8 +211,25 @@ export interface MarketInsight {
 
 export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsight> {
   const now = new Date()
+  const h1ago = new Date(now.getTime() - 1 * 60 * 60 * 1000)
+  const h2ago = new Date(now.getTime() - 2 * 60 * 60 * 1000)
   const h12ago = new Date(now.getTime() - 12 * 60 * 60 * 1000)
   const h24ago = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+
+  // Last ~30 completed trades (any time) → sparkline series, oldest→newest.
+  const sparkTrades = await db.ctmTrade.findMany({
+    where: { tokenId, status: 'completed', completedAt: { not: null } },
+    select: { pricePerUnit: true, completedAt: true },
+    orderBy: { completedAt: 'desc' },
+    take: 30,
+  })
+  const recentPrices = sparkTrades
+    .slice()
+    .reverse()
+    .map((t) => ({
+      price: parseFloat(parseFloat(t.pricePerUnit.toString()).toFixed(6)),
+      at: (t.completedAt as Date).toISOString(),
+    }))
 
   // Current 12h completed trades
   const recentTrades = await db.ctmTrade.findMany({
@@ -224,6 +245,21 @@ export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsi
     },
     orderBy: { completedAt: 'desc' },
   })
+
+  // 1h momentum derived in-memory from the 12h set (no extra query): avg of the
+  // last hour vs the hour before it.
+  const avgOf = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null)
+  const last1h = recentTrades
+    .filter((t) => t.completedAt && t.completedAt >= h1ago)
+    .map((t) => parseFloat(t.pricePerUnit.toString()))
+  const prev1h = recentTrades
+    .filter((t) => t.completedAt && t.completedAt >= h2ago && t.completedAt < h1ago)
+    .map((t) => parseFloat(t.pricePerUnit.toString()))
+  const last1hAvg = avgOf(last1h)
+  const prev1hAvg = avgOf(prev1h)
+  const changePercent1h = last1hAvg !== null && prev1hAvg !== null && prev1hAvg !== 0
+    ? parseFloat((((last1hAvg - prev1hAvg) / prev1hAvg) * 100).toFixed(2))
+    : null
 
   // Previous 12h completed trades (for change%)
   const prevTrades = await db.ctmTrade.findMany({
@@ -263,8 +299,10 @@ export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsi
       sellAvg12h: sellAvg12h !== null ? parseFloat(sellAvg12h.toFixed(2)) : null,
       previous12hAvg: previous12hAvg !== null ? parseFloat(previous12hAvg.toFixed(2)) : null,
       changePercent: changePercent !== null ? parseFloat(changePercent.toFixed(2)) : null,
+      changePercent1h,
       lastTradePrice: lastTrade ? parseFloat(parseFloat(lastTrade.pricePerUnit.toString()).toFixed(2)) : null,
       lastTradedAt: lastTrade?.completedAt?.toISOString() ?? null,
+      recentPrices,
       dataSource: 'completed_trades',
       sampleSize: recentTrades.length,
       lowData: recentTrades.length < 3,
@@ -289,8 +327,10 @@ export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsi
       sellAvg12h: sellPrices.length > 0 ? parseFloat((sellPrices.reduce((a, b) => a + b, 0) / sellPrices.length).toFixed(2)) : null,
       previous12hAvg: null,
       changePercent: null,
+      changePercent1h,
       lastTradePrice: null,
       lastTradedAt: null,
+      recentPrices,
       dataSource: 'active_listings',
       sampleSize: activeListings.length,
       lowData: activeListings.length < 3,
@@ -303,8 +343,10 @@ export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsi
     sellAvg12h: null,
     previous12hAvg: null,
     changePercent: null,
+    changePercent1h,
     lastTradePrice: null,
     lastTradedAt: null,
+    recentPrices,
     dataSource: 'none',
     sampleSize: 0,
     lowData: true,

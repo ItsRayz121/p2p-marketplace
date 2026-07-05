@@ -11,6 +11,7 @@ import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPaymentLabels } from '@/lib/pkPaymentMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
+import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck } from 'lucide-react'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
@@ -327,11 +328,13 @@ function ListingRow({
         {/* ── 2. TOKEN + PRICE ── */}
         <div className="sm:flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <EntityLogo type="token" slug={sym} size="md" logoUrl={listing.token.logoUrl} />
-            <div className="min-w-0">
-              <p className="font-semibold text-text-primary text-sm leading-tight truncate">{listing.token.name}</p>
-              <p className="text-xs text-text-muted">{sym}</p>
-            </div>
+            <Link href={`/ctm/tokens/${listing.token.slug}`} className="flex items-center gap-2 min-w-0 group" title={`${listing.token.name} market insights`}>
+              <EntityLogo type="token" slug={sym} size="md" logoUrl={listing.token.logoUrl} />
+              <div className="min-w-0">
+                <p className="font-semibold text-text-primary text-sm leading-tight truncate group-hover:text-primary group-hover:underline">{listing.token.name}</p>
+                <p className="text-xs text-text-muted">{sym}</p>
+              </div>
+            </Link>
             <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
               {isSell ? 'BUY' : 'SELL'}
             </span>
@@ -478,16 +481,16 @@ function ListingRow({
 
         {/* Row 3: token + price */}
         <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-border">
-          <div className="flex items-center gap-1.5 min-w-0">
+          <Link href={`/ctm/tokens/${listing.token.slug}`} className="flex items-center gap-1.5 min-w-0 group" title={`${listing.token.name} market insights`}>
             <EntityLogo type="token" slug={sym} size="sm" logoUrl={listing.token.logoUrl} />
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-text-primary leading-tight truncate">{listing.token.name}</p>
+              <p className="text-sm font-semibold text-text-primary leading-tight truncate group-hover:text-primary">{listing.token.name}</p>
               <p className="text-[11px] text-text-muted leading-tight flex items-center gap-1">
                 {sym}
                 {listing.token.communityVerified && <BadgeCheck size={10} className="text-success" />}
               </p>
             </div>
-          </div>
+          </Link>
           <div className="text-right flex-shrink-0">
             <p className={`text-lg font-bold leading-none ${priceCls}`}>PKR {price.toLocaleString()}</p>
             <p className="text-[11px] text-text-muted mt-0.5">{listing.side === 'buy' ? 'Wanted' : 'Avail'} {Number(listing.availableAmount).toLocaleString()} {sym}</p>
@@ -744,6 +747,23 @@ export default function CtmHomePage() {
           Clear
         </button>
       </div>
+
+      {/* Market insight for the selected token — mirrors the create-listing
+          insight so a browsing user immediately sees price movement (e.g. "▼ 12%
+          last 1h") the moment they filter to a token. */}
+      {tokenId && (() => {
+        const t = tokens.find((tk) => tk.id === tokenId)
+        return t ? (
+          <div className="mb-4">
+            <MarketInsightWidget tokenId={t.id} tokenSymbol={t.symbol} side={side} />
+            <div className="mt-1 text-right">
+              <Link href={`/ctm/tokens/${t.slug}`} className="text-xs text-primary hover:underline">
+                View {t.symbol} insights →
+              </Link>
+            </div>
+          </div>
+        ) : null
+      })()}
 
       {/* Listings */}
       {loading ? (

@@ -8,8 +8,10 @@ type Insight = {
   sellAvg12h: number | null
   previous12hAvg: number | null
   changePercent: number | null
+  changePercent1h: number | null
   lastTradePrice: number | null
   lastTradedAt: string | null
+  recentPrices: { price: number; at: string }[]
   dataSource: 'completed_trades' | 'active_listings' | 'none'
   sampleSize: number
   lowData: boolean
@@ -18,6 +20,39 @@ type Insight = {
 function fmt(n: number | null) {
   if (n === null) return null
   return n.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Tiny inline sparkline (no external lib). Colours by net direction across the
+// series (last vs first). Renders nothing for < 2 points.
+function Sparkline({ points, className }: { points: number[]; className?: string }) {
+  if (points.length < 2) return null
+  const w = 120, h = 28, pad = 2
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const span = max - min || 1
+  const step = (w - pad * 2) / (points.length - 1)
+  const coords = points.map((p, i) => {
+    const x = pad + i * step
+    const y = pad + (h - pad * 2) * (1 - (p - min) / span)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  })
+  const up = points[points.length - 1] >= points[0]
+  const stroke = up ? '#10b981' : '#ef4444'
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className={className} preserveAspectRatio="none" aria-hidden>
+      <polyline points={coords.join(' ')} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function ChangeChip({ label, pct }: { label: string; pct: number | null }) {
+  if (pct === null) return null
+  const up = pct > 0, down = pct < 0
+  return (
+    <span className={`font-semibold ${up ? 'text-emerald-600' : down ? 'text-red-500' : 'text-text-muted'}`}>
+      {up ? '▲' : down ? '▼' : '—'} {Math.abs(pct).toFixed(2)}% {label}
+    </span>
+  )
 }
 
 interface Props {
@@ -55,9 +90,6 @@ export function MarketInsightWidget({ tokenId, tokenSymbol, side }: Props) {
     : insight.dataSource === 'active_listings'
     ? 'from listings'
     : null
-
-  const changeUp = insight.changePercent !== null && insight.changePercent > 0
-  const changeDown = insight.changePercent !== null && insight.changePercent < 0
 
   // Competitive range: ±3% of average for the relevant side
   const rangeBase = (side === 'sell' ? insight.sellAvg12h : insight.buyAvg12h) ?? insight.avg12h
@@ -109,17 +141,19 @@ export function MarketInsightWidget({ tokenId, tokenSymbol, side }: Props) {
             )}
           </div>
 
-          {/* Change % + last trade */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {insight.changePercent !== null && (
-              <span className={`font-semibold ${changeUp ? 'text-emerald-600' : changeDown ? 'text-red-500' : 'text-text-muted'}`}>
-                {changeUp ? '▲' : changeDown ? '▼' : '—'} {Math.abs(insight.changePercent).toFixed(2)}% last 12h
-              </span>
-            )}
-            {insight.lastTradePrice !== null && (
-              <span className="text-text-muted">
-                Last trade: PKR {fmt(insight.lastTradePrice)} per {tokenSymbol}
-              </span>
+          {/* Change % (1h + 12h) + last trade + sparkline */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap">
+              <ChangeChip label="last 1h" pct={insight.changePercent1h} />
+              <ChangeChip label="last 12h" pct={insight.changePercent} />
+              {insight.lastTradePrice !== null && (
+                <span className="text-text-muted">
+                  Last trade: PKR {fmt(insight.lastTradePrice)} per {tokenSymbol}
+                </span>
+              )}
+            </div>
+            {insight.recentPrices && insight.recentPrices.length >= 2 && (
+              <Sparkline points={insight.recentPrices.map((p) => p.price)} className="h-7 w-24 flex-shrink-0" />
             )}
           </div>
 

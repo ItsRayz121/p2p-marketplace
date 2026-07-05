@@ -2906,8 +2906,10 @@ export const ctmApi = {
     sellAvg12h: number | null
     previous12hAvg: number | null
     changePercent: number | null
+    changePercent1h: number | null
     lastTradePrice: number | null
     lastTradedAt: string | null
+    recentPrices: { price: number; at: string }[]
     dataSource: 'completed_trades' | 'active_listings' | 'none'
     sampleSize: number
     lowData: boolean
