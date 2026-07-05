@@ -42,29 +42,31 @@ the status name.
 
 ## Build checklist
 
-Backend (both `trade.service.ts` and `ctm.trade.service.ts`):
-- [x] A flow resolver: given `trade.takerFirst` + side, return per-transition
-      `{ actorRole, action }`. **DONE + unit-tested** — `settlementFlow.ts`
-      (`flowSteps`, `stepForAction`, `stepFromStatus`, `actorForAction`,
-      `isTerminalAction`, `statusMeaning`) with `__tests__/settlementFlow.test.ts`
-      (11 passing). Encodes the actor-invariant insight: only ordering flips.
-- [ ] Rework each transition fn to authorize the acting party from the resolver
-      (not hardcoded buyer/seller), store into the right field (fiat proof vs tx),
-      and run verification on the `send_crypto` action wherever it lands.
-- [ ] Opening system message + `notify()` wording per flow.
-- [ ] Dispute windows (`sellerLockedStatuses`) recomputed for the reordered flow.
-- [ ] Expiry/auto-cancel semantics: in taker-first the first mover is the taker
-      sending crypto — decide the abandon/cooldown target accordingly.
-- [ ] Bond: on a buy ad in taker-first, revisit whether the maker bond applies
-      (currently skipped on buy ads).
+Backend — **USDT DONE + inert** (`trade.service.ts`); CTM remains (`ctm.trade.service.ts`, 6-status ladder — needs its own flow model):
+- [x] Flow resolver — `settlementFlow.ts` + 11 passing tests. Actor-invariant.
+- [x] **USDT** transitions reworked through the resolver (status guards + terminality
+      flow-derived; actor checks unchanged since invariant); verification rides the
+      `send_crypto` action (→ moves to step 1 in taker-first). Commit `b4247f0`.
+- [x] **USDT** completion extracted to `finalizeUsdtTrade` (terminal is always
+      crypto_sent→released; caller authorizes actor). Fires from `releaseTrade`
+      (classic) or `confirmPayment` (taker-first).
+- [x] **USDT** dispute-lock recomputed (locks whoever confirmed the counterparty's
+      leg — classic seller / taker-first buyer) + abandon penalty hits the real
+      first mover. Commit `62d1b57`.
+- [ ] **CTM** equivalent (its ladder has separate seller_transferring/proof_submitted
+      steps → a 5-action, 6-status flow model, not the USDT 4/5 one).
+- [ ] Bond on taker-first buy ads (currently skipped on buy ads) — revisit.
 
-Frontend (`(platform)/trade/[id]/page.tsx` and CTM twin):
-- [ ] A mode-aware step resolver so each status shows the right instruction +
-      button for the right party (34 status branches today assume fiat-first).
-- [ ] Status badge labels: neutralize "Awaiting Payment"/"Crypto Sent" or vary by
-      `takerFirst` so they read correctly for a crypto-first flow.
+Frontend (`(platform)/trade/[id]/page.tsx` and CTM twin) — **REMAINING; needs a
+running app**. The page is built as fixed StepCards (Step 1 Payment → 2 Confirm →
+3 Crypto) with actions nested inside each card, so taker-first requires
+restructuring/relabeling the cards per flow, not just swapping conditions. The
+backend is authoritative on order, so this is presentation only — but it's shared
+with classic trades and must be visually QA'd. Gate ALL taker-first UI on
+`trade.takerFirst` so the classic render path is untouched.
 
 Rollout:
-- [ ] QA all four steps end-to-end on staging for a buy ad (both markets), incl.
+- [ ] Build CTM backend + the frontend (both pages), gated on `takerFirst`.
+- [ ] QA all steps end-to-end on staging for a buy ad (both markets), incl.
       dispute + expiry, with the flag ON and readiness true for that market only.
 - [ ] Flip `TAKER_FIRST_MARKET_READY[market] = true`, deploy, then flip the flag.
