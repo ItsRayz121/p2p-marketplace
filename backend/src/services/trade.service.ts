@@ -14,6 +14,7 @@ import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.ser
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode } from './chatThread.service'
+import { stepForAction } from './settlementFlow'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
@@ -643,14 +644,19 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
   // Load seller info for email — safe outside tx (read-only, non-critical timing)
   const tradeForEmail = await db.trade.findUnique({
     where: { id: tradeId },
-    select: { seller: { select: { email: true, username: true } }, sellerId: true, orderRef: true, coin: true, amount: true, fiatAmount: true },
+    select: { seller: { select: { email: true, username: true } }, sellerId: true, orderRef: true, coin: true, amount: true, fiatAmount: true, takerFirst: true },
   })
   if (!tradeForEmail) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
+  // send_fiat is always the BUYER's action. Its position in the ladder depends on
+  // the flow: classic pending→uploaded (first step); taker-first confirmed→crypto_sent
+  // (the maker pays after acknowledging the taker's crypto). Never terminal.
+  const step = stepForAction(tradeForEmail.takerFirst, 'send_fiat')
+
   // Use optimistic updateMany with status guard — prevents two concurrent uploads both succeeding
   const result = await db.trade.updateMany({
-    where: { id: tradeId, buyerId, status: 'payment_pending' },
-    data: { status: 'payment_uploaded', paymentProofUrl: proofUrl, paymentUploadedAt: new Date() },
+    where: { id: tradeId, buyerId, status: step.from },
+    data: { status: step.to, paymentProofUrl: proofUrl, paymentUploadedAt: new Date() },
   })
 
   if (result.count === 0) {
@@ -698,14 +704,32 @@ export async function confirmPayment(
   if (role !== 'admin' && opts?.confirmedReceipt !== true && nonCustodial) {
     throw new AppError(
       'RECEIPT_NOT_CONFIRMED',
-      'Confirm that the payment has actually arrived in your account (a screenshot is not enough) before releasing.',
+      'Confirm that the payment has actually arrived in your account (a screenshot is not enough).',
       400,
     )
   }
 
-  // Release window: once payment is confirmed, the seller must release within
-  // RELEASE_WINDOW_MIN or the trade auto-escalates to a dispute (see
-  // tradeEscalation.job). Only enforced in non-custodial mode.
+  // confirm_fiat is always the SELLER's action (they receive the PKR). Position in
+  // the ladder depends on the flow: classic uploaded→confirmed (then the seller
+  // sends crypto); taker-first crypto_sent→released — the TERMINAL step (the taker
+  // confirms the maker's fiat and the trade completes).
+  const pre = await db.trade.findUnique({ where: { id: tradeId }, select: { takerFirst: true, status: true, sellerId: true } })
+  if (!pre) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (role !== 'admin' && pre.sellerId !== actorId) {
+    throw new AppError('FORBIDDEN', 'Only the seller or admin can confirm payment', 403)
+  }
+  const step = stepForAction(pre.takerFirst, 'confirm_fiat')
+  if (pre.status !== step.from) {
+    throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${pre.status}`, 400)
+  }
+
+  // Taker-first: this is terminal — the seller (taker) confirms the maker's fiat
+  // arrived, completing the trade. The maker's crypto was already delivered first.
+  if (step.terminal) return finalizeUsdtTrade(tradeId)
+
+  // Classic: non-terminal. Release window — once payment is confirmed, the seller
+  // must release the crypto within RELEASE_WINDOW_MIN or the trade auto-escalates
+  // to a dispute (tradeEscalation.job). Only enforced in non-custodial mode.
   const RELEASE_WINDOW_MIN = 15
   const releaseDeadlineAt = nonCustodial
     ? new Date(Date.now() + RELEASE_WINDOW_MIN * 60 * 1000)
@@ -721,14 +745,14 @@ export async function confirmPayment(
     if (role !== 'admin' && trade.sellerId !== actorId) {
       throw new AppError('FORBIDDEN', 'Only the seller or admin can confirm payment', 403)
     }
-    if (trade.status !== 'payment_uploaded') {
+    if (trade.status !== step.from) {
       throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${trade.status}`, 400)
     }
 
     return tx.trade.update({
       where: { id: tradeId },
       data: {
-        status: 'payment_confirmed',
+        status: step.to,
         paymentConfirmedAt: new Date(),
         ...(releaseDeadlineAt ? { releaseDeadlineAt } : {}),
       },
@@ -758,11 +782,16 @@ export async function markCryptoSent(
   // before acquiring the DB lock — RPC calls can take several seconds.
   const tradeForVerify = await db.trade.findUnique({
     where: { id: tradeId },
-    select: { id: true, status: true, sellerId: true, coin: true, network: true, amount: true, buyerWalletAddress: true, buyerDeliveryAddress: true, buyerDeliveryMethod: true },
+    select: { id: true, status: true, sellerId: true, coin: true, network: true, amount: true, buyerWalletAddress: true, buyerDeliveryAddress: true, buyerDeliveryMethod: true, takerFirst: true },
   })
   if (!tradeForVerify) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (tradeForVerify.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
-  if (tradeForVerify.status !== 'payment_confirmed') {
+  // send_crypto is always the SELLER's action (they deliver the crypto, with on-chain
+  // verification). Position depends on the flow: classic confirmed→crypto_sent (after
+  // fiat is confirmed); taker-first pending→uploaded (the FIRST step — the taker sends
+  // crypto before any fiat moves). Never terminal.
+  const cryptoStep = stepForAction(tradeForVerify.takerFirst, 'send_crypto')
+  if (tradeForVerify.status !== cryptoStep.from) {
     throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${tradeForVerify.status}`, 400)
   }
 
@@ -871,14 +900,14 @@ export async function markCryptoSent(
     const trade = rows[0]
     if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
     if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
-    if (trade.status !== 'payment_confirmed') {
+    if (trade.status !== cryptoStep.from) {
       throw new AppError('INVALID_STATUS', `Trade status changed concurrently: ${trade.status}`, 400)
     }
 
     return tx.trade.update({
       where: { id: tradeId },
       data: {
-        status: 'crypto_sent',
+        status: cryptoStep.to,
         ...(hasHash ? { sellerTxHash: txHashNorm } : {}),
         ...(screenshot ? { sellerDeliveryProofUrl: screenshot } : {}),
         txVerificationStatus: verificationResult.status,
@@ -899,7 +928,15 @@ export async function markCryptoSent(
   return updated
 }
 
-export async function releaseTrade(tradeId: string, buyerId: string) {
+/**
+ * Trade completion — the terminal `crypto_sent → crypto_released` transition.
+ * This is IDENTICAL in both flows (classic: triggered by the buyer's release;
+ * taker-first: triggered by the seller confirming fiat receipt), because the
+ * terminal rung is always crypto_sent→crypto_released. The CALLER authorizes the
+ * acting party; this function only re-guards the status under a row lock (so it
+ * can be invoked from whichever endpoint is terminal for the trade's flow).
+ */
+async function finalizeUsdtTrade(tradeId: string) {
   // Load buyer/seller details needed for emails/queues — safe to read outside tx
   const tradeDetails = await db.trade.findUnique({
     where: { id: tradeId },
@@ -922,11 +959,13 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
   if (!tradeDetails.sellerTxHash && !tradeDetails.sellerDeliveryProofUrl) {
     throw new AppError(
       'NO_DELIVERY_PROOF',
-      'Cannot release — the seller has not submitted any transfer proof yet.',
+      'Cannot complete — the seller has not submitted any transfer proof yet.',
       400,
     )
   }
 
+  // The acting party was already authorized by the calling endpoint.
+  const buyerId = tradeDetails.buyerId
   let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
 
   await db.$transaction(async (tx: Tx) => {
@@ -940,9 +979,8 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
       FOR UPDATE
     `
     if (!rows) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-    if (rows.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can release the trade', 403)
     if (rows.status !== 'crypto_sent') {
-      throw new AppError('INVALID_STATUS', `Cannot release trade in status: ${rows.status}`, 400)
+      throw new AppError('INVALID_STATUS', `Cannot complete trade in status: ${rows.status}`, 400)
     }
 
     await tx.trade.update({
@@ -988,7 +1026,7 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     await queues.referralPayout.add('first-trade', { userId: buyerId, tradeId })
   }
 
-  await postTradeSystemMessage(tradeId, buyerId, 'Trade complete — the buyer confirmed receipt and released the trade. 🎉')
+  await postTradeSystemMessage(tradeId, buyerId, 'Trade complete — both legs have settled. 🎉')
 
   // Mutual streak — always confirm the running count; celebrate at milestones.
   if (streakResult.count > 0) {
@@ -998,7 +1036,9 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
     await postTradeSystemMessage(tradeId, buyerId, streakMsg)
   }
 
-  notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The buyer has released the crypto. Trade is complete.', { tradeId }, tradeId)
+  // Notify both parties (flow-neutral — either side may be the one that completed it).
+  notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The trade is complete. 🎉', { tradeId }, tradeId)
+  notify(tradeDetails.buyerId, 'trade', 'Trade Completed', 'The trade is complete. 🎉', { tradeId }, tradeId)
   createAdminNotif({ category: 'TRADE', title: 'Trade Completed', body: `Trade #${tradeDetails.orderRef} has been completed.`, href: `/admin/trades/${tradeId}` })
 
   // Send completion emails
@@ -1016,6 +1056,44 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
 
   void closeEpisode({ market: 'usdt', tradeId, outcome: 'completed' })
 
+  return db.trade.findUnique({ where: { id: tradeId } })
+}
+
+/**
+ * Buyer's `confirm_crypto` action. The BUYER (USDT buyer) is the actor in both
+ * flows. In the classic flow this is the TERMINAL step (crypto_sent → released) —
+ * the buyer confirms receipt and the trade completes. In the taker-first flow it
+ * is a NON-terminal acknowledgement (uploaded → confirmed): the maker/buyer
+ * confirms the taker's crypto arrived, after which the maker sends the fiat.
+ */
+export async function releaseTrade(tradeId: string, buyerId: string) {
+  const trade = await db.trade.findUnique({
+    where: { id: tradeId },
+    select: { takerFirst: true, status: true, buyerId: true, sellerId: true },
+  })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can confirm the crypto', 403)
+
+  const step = stepForAction(trade.takerFirst, 'confirm_crypto')
+  if (trade.status !== step.from) {
+    throw new AppError('INVALID_STATUS', `Cannot confirm crypto for trade in status: ${trade.status}`, 400)
+  }
+
+  // Classic: terminal — buyer confirms receipt → complete the trade.
+  if (step.terminal) return finalizeUsdtTrade(tradeId)
+
+  // Taker-first: non-terminal — buyer (maker) acknowledges the taker's crypto
+  // arrived; advance to `confirmed` so the maker can now send the PKR payment.
+  const result = await db.trade.updateMany({
+    where: { id: tradeId, buyerId, status: step.from },
+    data: { status: step.to },
+  })
+  if (result.count === 0) {
+    const check = await db.trade.findUnique({ where: { id: tradeId }, select: { status: true } })
+    throw new AppError('INVALID_STATUS', `Cannot confirm crypto for trade in status: ${check?.status}`, 400)
+  }
+  await postTradeSystemMessage(tradeId, buyerId, 'Buyer confirmed the crypto was received. Buyer: now send the PKR payment and upload proof within the trade window.')
+  notify(trade.sellerId, 'trade', 'Crypto Confirmed', 'The buyer confirmed your crypto arrived and will now send the PKR payment.', { tradeId }, tradeId)
   return db.trade.findUnique({ where: { id: tradeId } })
 }
 
