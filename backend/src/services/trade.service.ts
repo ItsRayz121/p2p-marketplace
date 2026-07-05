@@ -1055,14 +1055,18 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
       },
     })
 
-    // Restore ad availableAmount
-    const ad = await tx.ad.findUnique({ where: { id: trade.adId } })
+    // Restore ad availableAmount. Use an ATOMIC increment (not read-then-write) so
+    // a concurrent createTrade decrementing the same ad can't be lost — matching how
+    // CTM and the expiry job restore liquidity. Reactivate an ad that had
+    // auto-completed at zero, but never resurrect one the owner deliberately paused.
+    const ad = await tx.ad.findUnique({ where: { id: trade.adId }, select: { status: true } })
     if (ad) {
-      const restoredAmount = ad.availableAmount.add(trade.amount)
-      const newStatus = ad.status === 'completed' ? 'active' : ad.status
       await tx.ad.update({
         where: { id: trade.adId },
-        data: { availableAmount: restoredAmount, status: newStatus },
+        data: {
+          availableAmount: { increment: trade.amount },
+          ...(ad.status === 'completed' ? { status: 'active' } : {}),
+        },
       })
     }
 
