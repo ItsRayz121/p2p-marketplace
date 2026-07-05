@@ -1,8 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { ctmApi } from '@/lib/api'
+import { ctmApi, favoritesApi } from '@/lib/api'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
+import { toast } from '@/lib/toast'
+import { Heart } from 'lucide-react'
 
 interface Review {
   id: string
@@ -21,6 +23,7 @@ interface Profile {
   totalCtmTrades: number
   completedCtmTrades: number
   ctmAvgRating: string
+  isFavorited?: boolean
   user: {
     id: string
     username: string
@@ -52,12 +55,15 @@ export function MerchantProfileModal({ userId, onClose }: { userId: string; onCl
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [favorited, setFavorited] = useState(false)
+  const [favBusy, setFavBusy] = useState(false)
 
   useEffect(() => {
     const load = async () => {
       try {
         const res = await ctmApi.getPublicMerchant(userId)
         setProfile(res as Profile)
+        setFavorited(!!(res as Profile).isFavorited)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load profile')
       } finally {
@@ -66,6 +72,23 @@ export function MerchantProfileModal({ userId, onClose }: { userId: string; onCl
     }
     load()
   }, [userId])
+
+  const toggleFavorite = async () => {
+    if (!profile || favBusy) return
+    setFavBusy(true)
+    const next = !favorited
+    setFavorited(next) // optimistic
+    try {
+      if (next) await favoritesApi.addFavorite(profile.user.username)
+      else await favoritesApi.removeFavorite(profile.user.username)
+      toast.success(next ? 'Added to favorites' : 'Removed from favorites')
+    } catch {
+      setFavorited(!next) // revert
+      toast.error('Could not update favorites')
+    } finally {
+      setFavBusy(false)
+    }
+  }
 
   const avgRating = profile ? Number(profile.ctmAvgRating) : 0
 
@@ -77,7 +100,20 @@ export function MerchantProfileModal({ userId, onClose }: { userId: string; onCl
       >
         <div className="p-5 border-b border-border flex items-center justify-between">
           <h3 className="font-bold text-lg text-text-primary">Merchant Profile</h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-xl leading-none">×</button>
+          <div className="flex items-center gap-1">
+            {profile && (
+              <button
+                onClick={toggleFavorite}
+                disabled={favBusy}
+                aria-label={favorited ? 'Remove from favorites' : 'Add to favorites'}
+                title={favorited ? 'Remove from favorites' : 'Add to favorites'}
+                className={`p-1.5 rounded-full transition-colors ${favorited ? 'text-red-500 bg-red-500/10' : 'text-text-muted hover:text-red-500 hover:bg-red-500/10'}`}
+              >
+                <Heart size={18} className={favorited ? 'fill-current' : ''} />
+              </button>
+            )}
+            <button onClick={onClose} aria-label="Close" className="text-text-muted hover:text-text-primary text-xl leading-none px-1.5">×</button>
+          </div>
         </div>
 
         <div className="overflow-y-auto flex-1 p-5 space-y-4">

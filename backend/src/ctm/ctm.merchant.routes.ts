@@ -123,7 +123,16 @@ export async function ctmMerchantRoutes(app: FastifyInstance) {
       }
     })
 
-    return reply.send({ success: true, data: { ...profile, reviews } })
+    // Whether the authenticated viewer has favorited this trader (same generic
+    // UserFavorite used on the USDT profile page — favorites are cross-market).
+    const viewerId = (req as { user?: { id: string } }).user?.id
+    const isFavorited = viewerId && viewerId !== userId
+      ? !!(await db.userFavorite.findUnique({
+          where: { userId_favoritedUserId: { userId: viewerId, favoritedUserId: userId } },
+        }))
+      : false
+
+    return reply.send({ success: true, data: { ...profile, reviews, isFavorited } })
   })
 
   // GET /ctm/merchants/admin/queue — pending CTM merchant approvals
