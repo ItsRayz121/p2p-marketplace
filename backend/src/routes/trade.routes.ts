@@ -16,6 +16,7 @@ import {
   getMessages,
   rateTrade,
 } from '../services/trade.service'
+import { getNoKycTakerStatus } from '../services/nokycTaker.service'
 import { AppError } from '../lib/errors'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
@@ -82,6 +83,14 @@ export async function tradeRoutes(app: FastifyInstance) {
       ...(buyerPayFromMethodId !== undefined ? { buyerPayFromMethodId } : {}),
     })
     return reply.code(201).send({ success: true, data: trade })
+  })
+
+  // GET /api/trades/nokyc-status — the caller's no-KYC taker headroom, so the UI
+  // can show remaining unverified limits and nudge toward KYC. Verified users get
+  // { verified: true } and no caps apply.
+  app.get('/trades/nokyc-status', { preHandler: [authenticate] }, async (req, reply) => {
+    const status = await getNoKycTakerStatus(req.user!.id)
+    return reply.send({ success: true, data: status })
   })
 
   // GET /api/trades and /api/trades/me (alias) — current user's trades

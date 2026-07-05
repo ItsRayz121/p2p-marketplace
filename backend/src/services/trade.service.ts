@@ -11,6 +11,8 @@ import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
 import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.service'
+import { assertNoKycTakerAllowed } from './nokycTaker.service'
+import { isTakerFirst } from './settlementMode.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
@@ -233,7 +235,7 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
   // USDT (initiator = buyer). On a BUY ad the initiator is selling USDT to the ad
   // owner, so the ad owner is the buyer and the initiator is the seller. We read
   // side + owner up front (cheap) so role-dependent guards below are correct.
-  const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true, network: true, networks: true } })
+  const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true, network: true, networks: true, price: true } })
   if (!adSide) throw new AppError('NOT_FOUND', 'Ad not found', 404)
   if (adSide.userId === initiatorId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
   const isBuyAd = adSide.side === 'buy'
@@ -287,6 +289,18 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     // delivering. Checks the taker (initiator) AND the maker (ad owner).
     await assertCanOpenTrade(initiatorId, 'self')
     await assertCanOpenTrade(adSide.userId, 'counterparty')
+
+    // ── No-KYC taker access & limits (Phase 2) ──────────────────────────────────
+    // The taker is the initiator; the maker (ad owner) is always KYC-approved
+    // (ad creation is gated). When nokyc_taker_enabled is OFF (default) this call
+    // simply enforces the pre-existing "KYC required to trade" gate for the taker,
+    // so behavior is unchanged. When ON, an unverified taker may proceed within the
+    // per-trade / daily / lifetime PKR caps and single-open-trade cap — but ONLY
+    // when the taker sends their own leg first (sell ads always; buy ads once
+    // taker-first settlement is enabled). The maker's KYC is still enforced in-tx.
+    const takerSendsFirst = !isBuyAd || (await isTakerFirst())
+    const fiatForNoKyc = new Prisma.Decimal(data.amount).mul(adSide.price)
+    await assertNoKycTakerAllowed({ takerId: initiatorId, fiatAmount: fiatForNoKyc, takerSendsFirst })
 
     // ── Non-custodial anti-griefing (taker = the initiator) ───────────────────
     // Flag OFF (default) skips this, so production is unchanged. Caps only the
@@ -342,11 +356,15 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     if (!buyerRows) throw new AppError('NOT_FOUND', 'Buyer not found', 404)
     if (buyerRows.isBanned) throw new AppError('ACCOUNT_BANNED', 'Account is banned', 403)
     if (buyerRows.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Account is suspended', 403)
-    if (buyerRows.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
+    // On a BUY ad the buyer is the ad owner (the maker) and must be KYC-approved.
+    // On a SELL ad the buyer is the taker (initiator), whose KYC gate is handled by
+    // assertNoKycTakerAllowed() above — either verified, or allowed within no-KYC
+    // limits — so we do NOT hard-block here.
+    if (isBuyAd && buyerRows.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
 
-    // On a BUY ad the seller is the initiator (not the ad owner / buyer checked
-    // above), so verify the seller's standing too — they must be approved and in
-    // good standing to sell USDT into someone's buy ad.
+    // On a BUY ad the seller is the initiator (the taker), so verify their standing.
+    // Their KYC gate is handled by assertNoKycTakerAllowed() above (verified, or
+    // allowed within no-KYC limits); here we only enforce ban/suspension.
     if (isBuyAd) {
       const [sellerRows] = await tx.$queryRaw<Array<{ isBanned: boolean; isSuspended: boolean; kycStatus: string }>>`
         SELECT "isBanned", "isSuspended", "kycStatus" FROM "User" WHERE id = ${sellerId} FOR UPDATE
@@ -354,7 +372,6 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
       if (!sellerRows) throw new AppError('NOT_FOUND', 'Seller not found', 404)
       if (sellerRows.isBanned) throw new AppError('ACCOUNT_BANNED', 'Account is banned', 403)
       if (sellerRows.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Account is suspended', 403)
-      if (sellerRows.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
     }
 
     // SELECT FOR UPDATE on ad

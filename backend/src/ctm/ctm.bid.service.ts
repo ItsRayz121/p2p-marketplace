@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client'
 import { notify as centralNotify } from '../lib/notify'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
+import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
+import { isTakerFirst } from '../services/settlementMode.service'
 import { postCtmOpeningMessages } from './ctm.trade.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
 import { getNumberConfig } from '../services/platformFlags.service'
@@ -170,6 +172,16 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
   // (anti-scam; USDT + CTM combined, lower while a party has an open dispute).
   await assertCanOpenTrade(bid.bidderId, 'self')
   await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty')
+
+  // No-KYC taker limits (Phase 2): the bidder is the taker; the listing merchant
+  // is the KYC'd maker. flagOffBehavior:'allow' preserves CTM's current no-gate
+  // behavior until nokyc_taker_enabled is flipped ON.
+  await assertNoKycTakerAllowed({
+    takerId: bid.bidderId,
+    fiatAmount: bid.fiatAmount,
+    takerSendsFirst: !isBuyListing || (await isTakerFirst()),
+    flagOffBehavior: 'allow',
+  })
 
   // Resolve payment method IDs
   const primaryPaymentMethodId = isBuyListing
@@ -390,6 +402,16 @@ export async function confirmBidDetails(
   // Concurrency cap (anti-scam): both parties under their active-trade limit.
   await assertCanOpenTrade(bid.bidderId, 'self')
   await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty')
+
+  // No-KYC taker limits (Phase 2): the bidder is the taker; the listing merchant
+  // is the KYC'd maker. flagOffBehavior:'allow' preserves CTM's current no-gate
+  // behavior until nokyc_taker_enabled is flipped ON.
+  await assertNoKycTakerAllowed({
+    takerId: bid.bidderId,
+    fiatAmount: bid.fiatAmount,
+    takerSendsFirst: !isBuyListing || (await isTakerFirst()),
+    flagOffBehavior: 'allow',
+  })
 
   const primaryPaymentMethodId = isBuyListing
     ? ((data.paymentMethods?.[0]) ?? data.paymentMethod ?? '')

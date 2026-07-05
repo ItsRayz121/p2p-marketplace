@@ -13,6 +13,8 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
+import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
+import { isTakerFirst } from '../services/settlementMode.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
 
@@ -670,6 +672,19 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   // limit (USDT + CTM combined, lower while a party has an open dispute).
   await assertCanOpenTrade(buyerId, 'self')                          // taker (initiator)
   await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty') // maker (ad owner)
+
+  // ── No-KYC taker access & limits (Phase 2) ──────────────────────────────────
+  // CTM does NOT gate trading on KYC today, so flagOffBehavior:'allow' preserves
+  // that exactly until nokyc_taker_enabled is flipped ON. When ON, an unverified
+  // taker is held to the per-trade / daily / lifetime PKR caps + single-open-trade
+  // cap, and only on listings where they send first (sell listings always; buy
+  // listings once taker-first settlement is enabled). Maker KYC is enforced at
+  // listing creation, unchanged.
+  {
+    const takerSendsFirst = !isBuyListing || (await isTakerFirst())
+    const fiatForNoKyc = listing.pricePerUnit.mul(new Prisma.Decimal(data.tokenAmount ?? 0))
+    await assertNoKycTakerAllowed({ takerId: buyerId, fiatAmount: fiatForNoKyc, takerSendsFirst, flagOffBehavior: 'allow' })
+  }
 
   // SELL listings: taker (buyer) picks one of the listing's accepted payment methods.
   // BUY listings: taker (seller) provides one or more of their own receiving accounts.
