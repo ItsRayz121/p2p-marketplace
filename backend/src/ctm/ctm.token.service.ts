@@ -289,7 +289,9 @@ export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsi
     if (prevTrades.length >= 1) {
       const prevPrices = prevTrades.map((t) => parseFloat(t.pricePerUnit.toString()))
       previous12hAvg = prevPrices.reduce((a, b) => a + b, 0) / prevPrices.length
-      changePercent = ((avg12h - previous12hAvg) / previous12hAvg) * 100
+      // Guard against a zero baseline (parity with changePercent1h) so a degenerate
+      // 0-price average can't yield Infinity/NaN and render as "Infinity%".
+      changePercent = previous12hAvg !== 0 ? ((avg12h - previous12hAvg) / previous12hAvg) * 100 : null
     }
 
     const lastTrade = recentTrades[0]

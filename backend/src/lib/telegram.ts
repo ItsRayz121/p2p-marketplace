@@ -151,8 +151,10 @@ export function parseReferralStartParam(startParam: string | undefined): string 
  * Extract a referral code from ANY supported deep-link payload:
  *  - a plain referral link:            `ref_<code>`
  *  - a shared LISTING deep link that also carries the sharer's referral:
- *    `L_<kind>_<listingId>_r_<code>` (listing ids are lowercase-alphanumeric
- *    cuids, so `_r_` unambiguously delimits the trailing code).
+ *    `L_<kind>_<listingId>_r_<code>` (listing ids are alphanumeric — cuids today,
+ *    so `_r_` unambiguously delimits the trailing code; the id class is kept in
+ *    sync with the frontend's parseStartParamToPath / buildListingShareLinks so a
+ *    future id scheme change can't silently drop referral attribution here).
  *
  * So a brand-new user who taps a shared trade link inside Telegram and auto-
  * registers via the Mini App is attributed to the sharer, exactly like the web
@@ -163,6 +165,6 @@ export function extractReferralFromStartParam(startParam: string | undefined): s
   const direct = parseReferralStartParam(startParam)
   if (direct) return direct
   if (!startParam) return null
-  const m = /^L_(?:usdt|ctm)_[a-z0-9]+_r_([A-Za-z0-9_-]{1,64})$/.exec(startParam)
+  const m = /^L_(?:usdt|ctm)_[A-Za-z0-9]+_r_([A-Za-z0-9_-]{1,64})$/.exec(startParam)
   return m ? m[1]! : null
 }
