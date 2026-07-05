@@ -43,8 +43,11 @@ the status name.
 ## Build checklist
 
 Backend (both `trade.service.ts` and `ctm.trade.service.ts`):
-- [ ] A flow resolver: given `trade.takerFirst` + side, return per-transition
-      `{ actorRole, action: 'send_fiat'|'confirm_fiat'|'send_crypto'|'confirm_crypto' }`.
+- [x] A flow resolver: given `trade.takerFirst` + side, return per-transition
+      `{ actorRole, action }`. **DONE + unit-tested** — `settlementFlow.ts`
+      (`flowSteps`, `stepForAction`, `stepFromStatus`, `actorForAction`,
+      `isTerminalAction`, `statusMeaning`) with `__tests__/settlementFlow.test.ts`
+      (11 passing). Encodes the actor-invariant insight: only ordering flips.
 - [ ] Rework each transition fn to authorize the acting party from the resolver
       (not hardcoded buyer/seller), store into the right field (fiat proof vs tx),
       and run verification on the `send_crypto` action wherever it lands.
