@@ -42,7 +42,7 @@ the status name.
 
 ## Build checklist
 
-Backend — **USDT DONE + inert** (`trade.service.ts`); CTM remains (`ctm.trade.service.ts`, 6-status ladder — needs its own flow model):
+Backend — **USDT DONE + inert** (`trade.service.ts`); **CTM DONE + inert** (`ctm.trade.service.ts`, via its own 5-action/6-status `ctmSettlementFlow.ts`):
 - [x] Flow resolver — `settlementFlow.ts` + 11 passing tests. Actor-invariant.
 - [x] **USDT** transitions reworked through the resolver (status guards + terminality
       flow-derived; actor checks unchanged since invariant); verification rides the
@@ -53,20 +53,30 @@ Backend — **USDT DONE + inert** (`trade.service.ts`); CTM remains (`ctm.trade.
 - [x] **USDT** dispute-lock recomputed (locks whoever confirmed the counterparty's
       leg — classic seller / taker-first buyer) + abandon penalty hits the real
       first mover. Commit `62d1b57`.
-- [ ] **CTM** equivalent (its ladder has separate seller_transferring/proof_submitted
-      steps → a 5-action, 6-status flow model, not the USDT 4/5 one).
+- [x] **CTM** equivalent — its own 5-action/6-status resolver `ctmSettlementFlow.ts`
+      (11 tests). All five CTM transitions (`uploadPaymentProof`/`confirmPayment`/
+      `markSellerTransferring`/`uploadTokenProof`/`confirmReceipt`) route through the
+      resolver; completion extracted to `finalizeCtmTrade` (terminal is always
+      `proof_submitted→completed` in both flows — fired by the buyer's confirm_crypto
+      in classic, the taker's confirm_fiat in taker-first); dispute-lock derived from
+      `ctmDisputeLock` (classic seller / taker-first buyer). Classic byte-identical.
 - [ ] Bond on taker-first buy ads (currently skipped on buy ads) — revisit.
+- [ ] CTM jobs (`ctm.jobs.ts`) deadline/auto-dispute/auto-complete are status-keyed
+      and thus classic-only correct; in taker-first the status meanings shift. Inert
+      today (takerFirst always false) — review + make flow-aware during staging QA
+      before flipping the CTM flag.
 
-Frontend (`(platform)/trade/[id]/page.tsx` and CTM twin) — **REMAINING; needs a
-running app**. The page is built as fixed StepCards (Step 1 Payment → 2 Confirm →
-3 Crypto) with actions nested inside each card, so taker-first requires
-restructuring/relabeling the cards per flow, not just swapping conditions. The
-backend is authoritative on order, so this is presentation only — but it's shared
-with classic trades and must be visually QA'd. Gate ALL taker-first UI on
-`trade.takerFirst` so the classic render path is untouched.
+Frontend — **DONE + inert (both pages)**. USDT (`(platform)/trade/[id]/page.tsx`)
+and CTM (`(platform)/ctm/trade/[ref]/page.tsx`) each render a standalone taker-first
+action panel above the StepCards, gated on `trade.takerFirst` and driven by the
+frontend flow mirror (`lib/settlementFlow.ts` / `lib/ctmSettlementFlow.ts`). Every
+classic StepCard action control is gated with `!trade.takerFirst`, so the classic
+render path is byte-identical (takerFirst always false in prod). StepCards still
+show order details/proofs in both flows. Panels reuse the existing action handlers —
+backend stays authoritative on order.
 
 Rollout:
-- [ ] Build CTM backend + the frontend (both pages), gated on `takerFirst`.
+- [x] Build CTM backend + the frontend (both pages), gated on `takerFirst`.
 - [ ] QA all steps end-to-end on staging for a buy ad (both markets), incl.
-      dispute + expiry, with the flag ON and readiness true for that market only.
+      dispute + expiry + jobs, with the flag ON and readiness true for that market only.
 - [ ] Flip `TAKER_FIRST_MARKET_READY[market] = true`, deploy, then flip the flag.

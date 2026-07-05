@@ -15,6 +15,7 @@ import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
+import { ctmStepForAction, ctmDisputeLock } from '../services/ctmSettlementFlow'
 import { openEpisode, closeEpisode } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
@@ -121,7 +122,13 @@ export async function uploadPaymentProof(tradeRef: string, buyerId: string, file
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only buyer can upload payment proof', 403)
-  if (trade.status !== 'awaiting_payment') throw new AppError('CONFLICT', `Cannot upload proof in status: ${trade.status}`, 409)
+  // send_fiat is always the BUYER's action. Its ladder position depends on the flow:
+  // classic awaiting_payment→payment_uploaded (first step); taker-first
+  // seller_transferring→proof_submitted (the maker pays after the taker's crypto is
+  // confirmed). Never terminal. Classic == the original literal, so behavior is
+  // byte-identical until a market's taker-first readiness flips.
+  const step = ctmStepForAction(trade.takerFirst, 'send_fiat')
+  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot upload proof in status: ${trade.status}`, 409)
 
   const duplicate = await db.ctmTradeProof.findFirst({ where: { tradeId: trade.id, fileHash } })
   if (duplicate) throw new AppError('CONFLICT', 'This file has already been uploaded', 409)
@@ -131,7 +138,7 @@ export async function uploadPaymentProof(tradeRef: string, buyerId: string, file
   await db.$transaction([
     db.ctmTrade.update({
       where: { id: trade.id },
-      data: { status: 'payment_uploaded', paymentProofUrl: fileUrl, paymentProofHash: fileHash, proofDeadlineAt },
+      data: { status: step.to, paymentProofUrl: fileUrl, paymentProofHash: fileHash, proofDeadlineAt },
     }),
     db.ctmTradeProof.create({
       data: { tradeId: trade.id, uploadedBy: buyerId, proofType: 'screenshot', fileUrl, fileHash, description: 'Payment proof' },
@@ -146,9 +153,19 @@ export async function confirmPayment(tradeRef: string, sellerId: string) {
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only seller can confirm payment', 403)
-  if (trade.status !== 'payment_uploaded') throw new AppError('CONFLICT', `Cannot confirm payment in status: ${trade.status}`, 409)
+  // confirm_fiat is always the SELLER's action (they receive the PKR). Classic:
+  // payment_uploaded→payment_confirmed, then the seller sends tokens. Taker-first:
+  // proof_submitted→completed — the TERMINAL step (the taker confirms the maker's
+  // fiat, after the taker's crypto already settled first). Classic behavior is
+  // byte-identical until readiness flips.
+  const step = ctmStepForAction(trade.takerFirst, 'confirm_fiat')
+  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot confirm payment in status: ${trade.status}`, 409)
 
-  await db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'payment_confirmed', proofDeadlineAt: null } })
+  // Taker-first: this is terminal — the seller (taker) confirms the maker's fiat
+  // arrived and the trade completes (the maker's tokens were already delivered).
+  if (step.terminal) return finalizeCtmTrade(tradeRef)
+
+  await db.ctmTrade.update({ where: { id: trade.id }, data: { status: step.to, proofDeadlineAt: null } })
   await postCtmSystemMessage(trade.id, sellerId, 'Seller confirmed the payment was received. The seller will now send the tokens.')
   notify(trade.buyerId, 'CTM_PAYMENT_CONFIRMED', 'Payment confirmed', 'Seller confirmed your payment. They will now send the tokens.', { tradeRef })
 }
@@ -157,11 +174,16 @@ export async function markSellerTransferring(tradeRef: string, sellerId: string)
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only seller can mark transfer started', 403)
-  if (trade.status !== 'payment_confirmed') throw new AppError('CONFLICT', `Cannot mark transferring in status: ${trade.status}`, 409)
+  // start_crypto is always the SELLER's action (first of the two crypto-send steps).
+  // Classic: payment_confirmed→seller_transferring (after fiat is confirmed).
+  // Taker-first: awaiting_payment→payment_uploaded (the FIRST step — the taker sends
+  // crypto before any fiat moves). Never terminal.
+  const step = ctmStepForAction(trade.takerFirst, 'start_crypto')
+  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot mark transferring in status: ${trade.status}`, 409)
 
   const proofDeadlineAt = new Date(Date.now() + 2 * 60 * 60 * 1000) // 2h to submit token proof
 
-  await db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'seller_transferring', proofDeadlineAt } })
+  await db.ctmTrade.update({ where: { id: trade.id }, data: { status: step.to, proofDeadlineAt } })
   await postCtmSystemMessage(trade.id, sellerId, 'Seller has started sending the tokens.')
   notify(trade.buyerId, 'CTM_SELLER_TRANSFERRING', 'Seller is transferring tokens', 'Seller has started the token transfer. Watch for incoming tokens.', { tradeRef })
 }
@@ -179,7 +201,12 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
   })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only seller can upload token proof', 403)
-  if (trade.status !== 'seller_transferring') throw new AppError('CONFLICT', `Cannot upload token proof in status: ${trade.status}`, 409)
+  // prove_crypto is always the SELLER's action (second crypto-send step, with
+  // on-chain verification below). Classic: seller_transferring→proof_submitted.
+  // Taker-first: payment_uploaded→payment_confirmed (the second step — verification
+  // rides the action, so it moves to the front of the ladder). Never terminal.
+  const step = ctmStepForAction(trade.takerFirst, 'prove_crypto')
+  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot upload token proof in status: ${trade.status}`, 409)
 
   // ── On-chain verification for txhash proofs on ON_CHAIN settlements ──────────
   let txVerificationStatus: string | undefined
@@ -253,7 +280,7 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
   await db.$transaction([
     db.ctmTrade.update({
       where: { id: trade.id },
-      data: { status: 'proof_submitted', confirmDeadlineAt, proofDeadlineAt: null },
+      data: { status: step.to, confirmDeadlineAt, proofDeadlineAt: null },
     }),
     db.ctmTradeProof.create({
       data: {
@@ -278,15 +305,22 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   const trade = await db.ctmTrade.findUnique({
     where: { tradeRef },
     include: {
-      listing: true,
       proofs: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
   })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only buyer can confirm receipt', 403)
-  if (trade.status !== 'proof_submitted') throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${trade.status}`, 409)
+  // confirm_crypto is always the BUYER's action (they receive the tokens). Classic:
+  // proof_submitted→completed — the TERMINAL step (buyer confirms and the trade
+  // completes). Taker-first: payment_confirmed→seller_transferring — a NON-terminal
+  // acknowledgement (the maker confirms the taker's crypto arrived, then pays fiat).
+  // Classic byte-identical until a market's taker-first readiness flips.
+  const step = ctmStepForAction(trade.takerFirst, 'confirm_crypto')
+  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${trade.status}`, 409)
 
-  // Check the latest txhash proof's verification status
+  // Verification gate — rides the confirm_crypto action in BOTH flows (the token
+  // proof was submitted in the immediately-preceding prove_crypto step). Check the
+  // latest txhash proof's verification status.
   const latestProof = trade.proofs[0]
   if (latestProof?.proofType === 'txhash' && latestProof.txVerificationStatus) {
     const vs = latestProof.txVerificationStatus
@@ -305,6 +339,41 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
       )
     }
   }
+
+  // Taker-first: non-terminal — the maker/buyer acknowledges the taker's crypto
+  // arrived; advance so the maker can now send the PKR payment. (CAS-guarded on the
+  // expected `from` status so concurrent transitions can't both apply.)
+  if (!step.terminal) {
+    const advanced = await db.ctmTrade.updateMany({
+      where: { id: trade.id, status: step.from },
+      data: { status: step.to },
+    })
+    if (advanced.count === 0) throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${trade.status}`, 409)
+    await postCtmSystemMessage(trade.id, buyerId, 'Buyer confirmed the tokens were received. Buyer: now send the PKR payment and upload proof within the trade window.')
+    notify(trade.sellerId, 'CTM_CRYPTO_CONFIRMED', 'Tokens confirmed received', 'The buyer confirmed your tokens arrived and will now send the PKR payment.', { tradeRef })
+    return
+  }
+
+  // Classic: terminal — buyer confirms receipt → complete the trade.
+  return finalizeCtmTrade(tradeRef)
+}
+
+/**
+ * Terminal completion for a CTM trade — the proof_submitted→completed transition
+ * plus all its side effects (token / merchant / global stats, tier auto-promotion,
+ * mutual streak, airdrop points, bond release, badges, messages, notifications).
+ *
+ * The terminal step is the SAME ladder rung in both flows (proof_submitted →
+ * completed); only the action that triggers it differs — classic = the buyer's
+ * confirm_crypto (confirmReceipt); taker-first = the seller/taker's confirm_fiat
+ * (confirmPayment). So this is caller-authorized (the calling endpoint already
+ * verified the acting party) and re-guards the status under a CAS claim shared with
+ * the auto-complete job (ctm.jobs.ts).
+ */
+async function finalizeCtmTrade(tradeRef: string) {
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  const buyerId = trade.buyerId
 
   // Set inside the tx if the seller's merchant tier is auto-promoted on completion;
   // used after commit to notify them.
@@ -447,16 +516,21 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
   }
   if (trade.dispute) throw new AppError('CONFLICT', 'Dispute already open for this trade', 409)
 
-  // Mirror of the USDT rule (see trade.service.ts): once the seller confirms the
-  // payment was received, they have acknowledged the buyer's obligation is met and
-  // their only remaining job is to send the tokens. From payment_confirmed onward
-  // only the BUYER may open a dispute; the seller's recourse is human support. This
-  // closes the confirm-then-dispute-instead-of-delivering stall vector.
-  const sellerLockedStatuses = ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming']
-  if (sellerLockedStatuses.includes(trade.status) && trade.sellerId === userId) {
+  // Dispute-lock (mirror of the USDT rule): once a party has CONFIRMED receipt of
+  // the counterparty's leg, their only remaining job is to deliver their own —
+  // letting them "dispute instead of delivering" is a pure stall/grief lever, so
+  // they're barred from self-disputing from that point on (recourse = human support).
+  // The locked party is flow-dependent and derived from the flow resolver:
+  //   classic     → the SELLER (confirmed the fiat), from payment_confirmed onward
+  //   taker-first → the BUYER/maker (confirmed the crypto), from seller_transferring
+  // Classic is byte-identical to the old hardcoded rule (minus the dead
+  // 'buyer_confirming' status, which is never actually set).
+  const lock = ctmDisputeLock(trade.takerFirst)
+  const lockedUserId = lock.actor === 'buyer' ? trade.buyerId : trade.sellerId
+  if ((lock.lockedStatuses as readonly string[]).includes(trade.status) && userId === lockedUserId) {
     throw new AppError(
       'DISPUTE_SELLER_LOCKED',
-      'You confirmed the payment was received, so the only remaining step is to send the tokens — you cannot open a dispute against the buyer at this stage. If something is genuinely wrong, contact support.',
+      'You already confirmed the counterparty delivered their part, so the only remaining step is to send your own leg — you cannot open a dispute at this stage. If something is genuinely wrong, contact support.',
       403,
     )
   }
