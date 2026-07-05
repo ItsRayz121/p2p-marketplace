@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { AppError } from '../lib/errors'
 import { env } from '../lib/env'
-import { validateInitData, parseReferralStartParam } from '../lib/telegram'
+import { validateInitData, extractReferralFromStartParam } from '../lib/telegram'
 import { loginOrRegisterWithTelegram, COOKIE_OPTIONS } from '../services/auth.service'
 import { handleTelegramUpdate } from '../services/telegram-bot.service'
 import { logger } from '../lib/logger'
@@ -39,7 +39,7 @@ export async function telegramRoutes(app: FastifyInstance) {
         throw new AppError('UNAUTHORIZED', 'Invalid Telegram launch data', 401)
       }
 
-      const referralCode = parseReferralStartParam(validated.startParam) ?? undefined
+      const referralCode = extractReferralFromStartParam(validated.startParam) ?? undefined
       const ua = req.headers['user-agent']
 
       const result = await loginOrRegisterWithTelegram({

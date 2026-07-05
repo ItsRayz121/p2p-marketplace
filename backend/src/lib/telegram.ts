@@ -146,3 +146,23 @@ export function parseReferralStartParam(startParam: string | undefined): string 
   const match = /^ref_([A-Za-z0-9_-]{1,64})$/.exec(startParam)
   return match ? match[1]! : null
 }
+
+/**
+ * Extract a referral code from ANY supported deep-link payload:
+ *  - a plain referral link:            `ref_<code>`
+ *  - a shared LISTING deep link that also carries the sharer's referral:
+ *    `L_<kind>_<listingId>_r_<code>` (listing ids are lowercase-alphanumeric
+ *    cuids, so `_r_` unambiguously delimits the trailing code).
+ *
+ * So a brand-new user who taps a shared trade link inside Telegram and auto-
+ * registers via the Mini App is attributed to the sharer, exactly like the web
+ * `?ref=` flow. `parseReferralStartParam` is left untouched (its tests + the plain
+ * `ref_` bot flow keep their exact semantics).
+ */
+export function extractReferralFromStartParam(startParam: string | undefined): string | null {
+  const direct = parseReferralStartParam(startParam)
+  if (direct) return direct
+  if (!startParam) return null
+  const m = /^L_(?:usdt|ctm)_[a-z0-9]+_r_([A-Za-z0-9_-]{1,64})$/.exec(startParam)
+  return m ? m[1]! : null
+}

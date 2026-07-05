@@ -162,7 +162,10 @@ export function getStartParam(): string {
  */
 export function parseStartParamToPath(param: string): string | null {
   if (!param) return null
-  const m = param.match(/^L_(usdt|ctm)_([A-Za-z0-9]+)$/)
+  // Tolerate an optional `_r_<code>` referral suffix (see buildListingShareLinks);
+  // the referral is bound server-side on Mini-App auth — here we only resolve the
+  // listing path, ignoring the suffix.
+  const m = param.match(/^L_(usdt|ctm)_([A-Za-z0-9]+)(?:_r_[A-Za-z0-9_-]+)?$/)
   if (!m) return null
   const [, kind, id] = m
   return kind === 'usdt' ? `/marketplace/listings/${id}` : `/ctm/listings/${id}`
@@ -188,12 +191,18 @@ export function buildListingShareLinks(
   // it and signs up is attributed to the sharer (ReferralCapture stashes ?ref for
   // the register flow; middleware preserves it through the login gate on /ctm).
   const ref = refCode ? `?ref=${encodeURIComponent(refCode)}` : ''
+  // Telegram start params allow [A-Za-z0-9_-], max 64 chars. Encode the sharer's
+  // referral as `_r_<code>` after the listing id so a brand-new user who taps the
+  // deep link inside Telegram is bound to the sharer on Mini-App auto-registration
+  // (backend extractReferralFromStartParam). Only append when it stays within the
+  // 64-char budget and the code is start-param-safe; otherwise fall back to a plain
+  // listing deep link (the web link below still carries the ref).
+  const base = `L_${kind}_${id}`
+  const safeRef = refCode && /^[A-Za-z0-9_-]{1,64}$/.test(refCode) ? refCode : ''
+  const startParam = safeRef && base.length + 3 + safeRef.length <= 64 ? `${base}_r_${safeRef}` : base
   return {
     web: `${origin}${path}${ref}`,
-    // Telegram in-app deep link keeps the existing referral mechanism (bot
-    // ref_<code> link); listing start params carry no ref to avoid conflicting
-    // with the anchored backend parser.
-    telegram: bot ? `https://t.me/${bot}?startapp=L_${kind}_${id}` : null,
+    telegram: bot ? `https://t.me/${bot}?startapp=${startParam}` : null,
   }
 }
 

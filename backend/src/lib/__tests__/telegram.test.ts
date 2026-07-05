@@ -22,12 +22,14 @@ function buildInitData(fields: Record<string, string>): string {
 
 let validateInitData: typeof import('../telegram')['validateInitData']
 let parseReferralStartParam: typeof import('../telegram')['parseReferralStartParam']
+let extractReferralFromStartParam: typeof import('../telegram')['extractReferralFromStartParam']
 
 beforeAll(async () => {
   process.env.TELEGRAM_BOT_TOKEN = TEST_BOT_TOKEN
   const mod = await import('../telegram')
   validateInitData = mod.validateInitData
   parseReferralStartParam = mod.parseReferralStartParam
+  extractReferralFromStartParam = mod.extractReferralFromStartParam
 })
 
 describe('validateInitData', () => {
@@ -95,5 +97,25 @@ describe('parseReferralStartParam', () => {
     expect(parseReferralStartParam(undefined)).toBeNull()
     expect(parseReferralStartParam('promo_xyz')).toBeNull()
     expect(parseReferralStartParam('ref_')).toBeNull()
+  })
+  it('does NOT match a listing deep link (leaves that to extractReferralFromStartParam)', () => {
+    expect(parseReferralStartParam('L_ctm_clh123abc_r_ABC123')).toBeNull()
+  })
+})
+
+describe('extractReferralFromStartParam', () => {
+  it('extracts a plain ref_<code>', () => {
+    expect(extractReferralFromStartParam('ref_ABC123')).toBe('ABC123')
+  })
+  it('extracts the sharer code from a listing deep link L_<kind>_<id>_r_<code>', () => {
+    expect(extractReferralFromStartParam('L_ctm_clh123abc_r_ABC123')).toBe('ABC123')
+    expect(extractReferralFromStartParam('L_usdt_ckxyz789_r_ref-42_x')).toBe('ref-42_x')
+  })
+  it('returns null for a plain listing deep link with no referral', () => {
+    expect(extractReferralFromStartParam('L_ctm_clh123abc')).toBeNull()
+  })
+  it('returns null for absent / unrelated payloads', () => {
+    expect(extractReferralFromStartParam(undefined)).toBeNull()
+    expect(extractReferralFromStartParam('promo_xyz')).toBeNull()
   })
 })
