@@ -11,6 +11,7 @@ import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ShareListingButton } from '@/components/ui/ShareListingButton'
 import { useAuth } from '@/hooks/useAuth'
 import { validateAddressForNetwork, networkAssetLabel } from '@/lib/addressValidation'
+import { NoKycLimitNotice } from '@/components/trade/NoKycLimitNotice'
 
 const METHOD_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -334,6 +335,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
+
+      {/* No-KYC taker headroom nudge (shown only to unverified takers while the
+          feature is enabled; renders nothing otherwise). */}
+      {!isMine && <NoKycLimitNotice />}
 
       {/* Listing header */}
       <div className="bg-surface shadow-card border border-border rounded-xl p-6">
