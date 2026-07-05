@@ -25,8 +25,24 @@ const ADMIN_REQUIRED = ['/admin']
 // Routes accessible only when NOT logged in (redirect to dashboard if authed)
 const GUEST_ONLY = ['/login', '/register', '/forgot-password', '/verify-email']
 
+// Social link-preview crawlers (Telegram, WhatsApp, X, Facebook, Slack,
+// Discord, LinkedIn, etc.). They don't run JS — they only read the server HTML
+// <head>. We let them past the auth gate on otherwise-gated routes (e.g. /ctm
+// listings) so a shared trade link unfurls into its rich Open Graph card.
+const CRAWLER_UA =
+  /(bot|crawl|spider|facebookexternalhit|telegrambot|whatsapp|twitterbot|slackbot|discordbot|linkedinbot|embedly|quora link preview|pinterest|redditbot|skypeuripreview|vkshare|W3C_Validator|preview)/i
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  // File-based metadata image routes must always be reachable (even on gated
+  // segments) so crawlers can fetch the generated card. They expose no private
+  // data — the underlying listing endpoints are public.
+  if (pathname.includes('/opengraph-image') || pathname.includes('/twitter-image')) {
+    return NextResponse.next()
+  }
+
+  const isCrawler = CRAWLER_UA.test(request.headers.get('user-agent') ?? '')
 
   // Auth presence is read from the frontend-domain hint cookie set after a
   // successful login. The real refresh_token is HttpOnly and set by the
@@ -54,7 +70,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (requiresAuth && !hasAuthHint) {
+  if (requiresAuth && !hasAuthHint && !isCrawler) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)
     // Preserve a shared trade link's referral code across the auth gate (e.g. a
