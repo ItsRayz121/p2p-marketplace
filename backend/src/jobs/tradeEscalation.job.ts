@@ -49,19 +49,22 @@ export async function runTradeEscalation(): Promise<void> {
           SET "dailyBuyUsed" = GREATEST("dailyBuyUsed" - ${trade.fiatAmount ?? 0}, 0)
           WHERE id = ${trade.buyerId}
         `
-        // Anti-griefing penalty (non-custodial only): the buyer abandoned this
-        // trade by never paying. Increment their abandon count and apply an
-        // escalating cooldown (30 min × offenses) before they can start another.
+        // Anti-griefing penalty (non-custodial only): the FIRST MOVER abandoned this
+        // trade by never acting at payment_pending. In the classic flow the first
+        // mover is the buyer (owes fiat); in a taker-first trade it's the seller
+        // (taker, owes crypto). Penalize whoever actually stalled. Increment their
+        // abandon count and apply an escalating cooldown (30 min × offenses).
         if (nonCustodial) {
+          const abandonUserId = trade.takerFirst ? trade.sellerId : trade.buyerId
           const [u] = await tx.$queryRaw<{ tradeAbandonCount: number }[]>`
-            SELECT "tradeAbandonCount" FROM "User" WHERE id = ${trade.buyerId} FOR UPDATE
+            SELECT "tradeAbandonCount" FROM "User" WHERE id = ${abandonUserId} FOR UPDATE
           `
           const offenses = (u?.tradeAbandonCount ?? 0) + 1
           const cooldownUntil = new Date(now.getTime() + Math.min(offenses, 6) * 30 * 60 * 1000)
           await tx.$executeRaw`
             UPDATE "User"
             SET "tradeAbandonCount" = ${offenses}, "tradeCooldownUntil" = ${cooldownUntil}
-            WHERE id = ${trade.buyerId}
+            WHERE id = ${abandonUserId}
           `
         }
         // Restore inventory AND reactivate the ad if this trade had consumed

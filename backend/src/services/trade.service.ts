@@ -14,7 +14,7 @@ import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.ser
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode } from './chatThread.service'
-import { stepForAction } from './settlementFlow'
+import { stepForAction, flowSteps } from './settlementFlow'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
@@ -1206,21 +1206,22 @@ export async function openDispute(
     throw new AppError('INVALID_STATUS', `Cannot open dispute for trade in status: ${trade.status}`, 400)
   }
 
-  // Seller dispute is locked once they confirm the PKR payment was received. By
-  // confirming, the seller has acknowledged the buyer met their fiat obligation —
-  // the only remaining step is for the seller to send the crypto. Letting the
-  // seller ALSO dispute at that point is a pure stall/grief lever (confirm
-  // payment, then "dispute" instead of delivering). So from payment_confirmed
-  // onward only the BUYER (who paid and is owed crypto) may open a dispute. The
-  // seller's recourse for the rare genuine edge case (e.g. fiat reversed after
-  // confirmation) is human support, not a self-serve dispute. Before confirmation
-  // (payment_uploaded) BOTH sides may dispute — that's the seller's window to
-  // contest a fake/incorrect payment proof.
-  const sellerLockedStatuses = ['payment_confirmed', 'crypto_sent']
-  if (sellerLockedStatuses.includes(trade.status) && openedById === trade.sellerId) {
+  // Dispute-lock: once a party has CONFIRMED the counterparty delivered their leg
+  // (the confirm step that lands on `payment_confirmed`), that party may no longer
+  // self-dispute — their only remaining job is to send their own leg, and letting
+  // them "dispute instead of delivering" is a pure stall/grief lever. Their
+  // recourse for a genuine edge case (e.g. a reversed payment) is human support.
+  // The locked party is flow-dependent: classic = the SELLER (confirmed the fiat);
+  // taker-first = the BUYER/maker (confirmed the crypto). It's exactly the actor of
+  // the step that produces `payment_confirmed`. Before that (payment_uploaded) both
+  // sides may still dispute — the window to contest a fake/incorrect proof.
+  const lockedStatuses = ['payment_confirmed', 'crypto_sent']
+  const confirmActor = flowSteps(trade.takerFirst)[1]!.actor // actor landing on payment_confirmed
+  const lockedUserId = confirmActor === 'buyer' ? trade.buyerId : trade.sellerId
+  if (lockedStatuses.includes(trade.status) && openedById === lockedUserId) {
     throw new AppError(
       'DISPUTE_SELLER_LOCKED',
-      'You confirmed the payment was received, so the only remaining step is to send the crypto — you cannot open a dispute against the buyer at this stage. If something is genuinely wrong, contact support.',
+      'You already confirmed the counterparty delivered their part, so you cannot open a dispute at this stage — your only remaining step is to send your own leg. If something is genuinely wrong, contact support.',
       403,
     )
   }
