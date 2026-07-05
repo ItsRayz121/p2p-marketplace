@@ -14,7 +14,7 @@ import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute 
 import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
-import { isTakerFirst } from '../services/settlementMode.service'
+import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { openEpisode, closeEpisode } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
@@ -687,8 +687,10 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   // cap, and only on listings where they send first (sell listings always; buy
   // listings once taker-first settlement is enabled). Maker KYC is enforced at
   // listing creation, unchanged.
+  // Only BUY listings on a taker-first-ready market use the reordered flow.
+  const usesTakerFirstFlow = isBuyListing && (await isTakerFirstForMarket('ctm'))
   {
-    const takerSendsFirst = !isBuyListing || (await isTakerFirst())
+    const takerSendsFirst = !isBuyListing || usesTakerFirstFlow
     const fiatForNoKyc = listing.pricePerUnit.mul(new Prisma.Decimal(data.tokenAmount ?? 0))
     await assertNoKycTakerAllowed({ takerId: buyerId, fiatAmount: fiatForNoKyc, takerSendsFirst, flagOffBehavior: 'allow' })
   }
@@ -877,6 +879,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
         sellerPaymentSnapshot: sellerPaymentSnapshot as never,
         ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot: buyerPaymentSnapshot as never } : {}),
         status: 'awaiting_payment',
+        takerFirst: usesTakerFirstFlow,
         expiresAt,
         platformFeePkr,
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),

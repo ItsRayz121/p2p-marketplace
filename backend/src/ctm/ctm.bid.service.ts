@@ -5,7 +5,7 @@ import { notify as centralNotify } from '../lib/notify'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
-import { isTakerFirst } from '../services/settlementMode.service'
+import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { openEpisode } from '../services/chatThread.service'
 import { postCtmOpeningMessages } from './ctm.trade.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
@@ -180,7 +180,7 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
   await assertNoKycTakerAllowed({
     takerId: bid.bidderId,
     fiatAmount: bid.fiatAmount,
-    takerSendsFirst: !isBuyListing || (await isTakerFirst()),
+    takerSendsFirst: !isBuyListing || (await isTakerFirstForMarket('ctm')),
     flagOffBehavior: 'allow',
   })
 
@@ -412,7 +412,7 @@ export async function confirmBidDetails(
   await assertNoKycTakerAllowed({
     takerId: bid.bidderId,
     fiatAmount: bid.fiatAmount,
-    takerSendsFirst: !isBuyListing || (await isTakerFirst()),
+    takerSendsFirst: !isBuyListing || (await isTakerFirstForMarket('ctm')),
     flagOffBehavior: 'allow',
   })
 

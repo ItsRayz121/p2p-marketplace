@@ -39,6 +39,31 @@ export async function isTakerFirst(): Promise<boolean> {
   return (await getSettlementOrder()) === 'taker_first'
 }
 
+/**
+ * Per-market readiness for taker-first BUY-ad settlement (Phase 1).
+ *
+ * The `taker_first_settlement_enabled` flag is global, but the reordered BUY-ad
+ * flow has to be BUILT per market (state machine + UI + disputes) before it's safe
+ * to honor. Until a market's flow is implemented, flipping the flag must NOT change
+ * its behavior — and, critically, must NOT let Phase 2 open buy-side no-KYC trading
+ * on a market whose flow hasn't changed. Flip these to `true` only once that
+ * market's taker-first flow is implemented AND QA'd.
+ */
+const TAKER_FIRST_MARKET_READY: Record<'usdt' | 'ctm', boolean> = {
+  usdt: false,
+  ctm: false,
+}
+
+/**
+ * True when taker-first ordering is BOTH enabled (flag) AND implemented for this
+ * market. This is the gate every caller should use for BUY-ad ordering + buy-side
+ * no-KYC eligibility — never the raw flag alone.
+ */
+export async function isTakerFirstForMarket(market: 'usdt' | 'ctm'): Promise<boolean> {
+  if (!TAKER_FIRST_MARKET_READY[market]) return false
+  return isTakerFirst()
+}
+
 // ── Settlement mode (scaffold — NOT wired to anything) ──────────────────────
 
 export type SettlementMode = 'trust' | 'escrow'

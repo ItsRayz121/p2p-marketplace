@@ -12,7 +12,7 @@ import { createAdminNotif } from './adminNotification.service'
 import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
-import { isTakerFirst } from './settlementMode.service'
+import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode } from './chatThread.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
@@ -282,6 +282,11 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     throw new AppError('DUPLICATE_REQUEST', 'A matching trade is already being created. Please wait a moment.', 409)
   }
 
+  // Taker-first flow marker (Phase 1) — hoisted so it can be stamped on the trade
+  // inside the transaction below. Only BUY ads on a taker-first-ready market use
+  // the reordered flow; false everywhere else (classic fiat-first).
+  let usesTakerFirstFlow = false
+
   try {
     // ── Concurrency cap (anti-scam, always on) ──────────────────────────────────
     // Both parties must be under their active-trade limit (USDT + CTM combined,
@@ -299,7 +304,8 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     // per-trade / daily / lifetime PKR caps and single-open-trade cap — but ONLY
     // when the taker sends their own leg first (sell ads always; buy ads once
     // taker-first settlement is enabled). The maker's KYC is still enforced in-tx.
-    const takerSendsFirst = !isBuyAd || (await isTakerFirst())
+    usesTakerFirstFlow = isBuyAd && (await isTakerFirstForMarket('usdt'))
+    const takerSendsFirst = !isBuyAd || usesTakerFirstFlow
     const fiatForNoKyc = new Prisma.Decimal(data.amount).mul(adSide.price)
     await assertNoKycTakerAllowed({ takerId: initiatorId, fiatAmount: fiatForNoKyc, takerSendsFirst })
 
@@ -540,6 +546,7 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
         ...(buyerDeliveryMethod ? { buyerDeliveryMethod } : {}),
         ...(buyerDeliveryAddress ? { buyerDeliveryAddress } : {}),
         status: 'payment_pending',
+        takerFirst: usesTakerFirstFlow,
         expiresAt,
       },
     })

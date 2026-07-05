@@ -699,6 +699,10 @@ model Trade {
   sellerPaymentSnapshot Json?    // { type, label, accountName, mobileNumber?, bankName?, ibanNumber?, accountNumber? } — locked at trade creation so the buyer's pay-to account is immutable for disputes
   buyerPaymentSnapshot  Json?    // buy ads only: the buyer/lister's pay-FROM account(s) declared at ad creation, so the seller sees where PKR will arrive from. Single account or { accounts: [...] }.
   escrowReleased     Boolean     @default(false)
+  // Taker-first settlement (Phase 1): true when this trade uses the reordered
+  // BUY-ad flow (taker sends crypto first, merchant pays second). Stamped at
+  // creation from isTakerFirstForMarket('usdt'); false = classic fiat-first flow.
+  takerFirst         Boolean     @default(false)
   cancelledBy        String?
   cancelReason       String?
   cancelledAt        DateTime?
@@ -2591,6 +2595,10 @@ model CtmTrade {
   sellerPaymentSnapshot  Json?
   buyerPaymentSnapshot   Json?
   status            CtmTradeStatus    @default(awaiting_payment)
+  // Taker-first settlement (Phase 1): true when this trade uses the reordered
+  // BUY-listing flow (taker sends tokens first, merchant pays second). Stamped at
+  // creation from isTakerFirstForMarket('ctm'); false = classic payment-first flow.
+  takerFirst        Boolean           @default(false)
   proofDeadlineAt   DateTime?
   confirmDeadlineAt DateTime?
   expiresAt         DateTime
