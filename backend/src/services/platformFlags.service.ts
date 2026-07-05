@@ -99,6 +99,34 @@ export const FLAGS = {
    */
   PROMO_GIVEAWAY: 'promo_giveaway_enabled',
   /**
+   * Taker-sends-first settlement order. When ON, the party RESPONDING to an ad
+   * (the taker) always transfers their leg FIRST and the ad owner (the merchant)
+   * always moves second — in BOTH directions:
+   *   - SELL ad (merchant sells USDT/CTM): taker sends fiat first → merchant releases.
+   *     This is already the flow today, so the flag doesn't change it.
+   *   - BUY ad (merchant buys USDT/CTM): taker (the crypto seller) sends crypto
+   *     FIRST, then the merchant pays fiat. This FLIPS the current buy-ad order
+   *     (where the merchant/buyer pays fiat first).
+   * Rationale: merchants are KYC'd + known; takers may be unknown/no-KYC, so the
+   * unknown party locks their leg first and the trusted party moves second.
+   * OFF (default) = current per-side order, so pushing to main is a no-op until
+   * a super-admin flips it. Applies to both USDT and CTM. See settlementMode.service.
+   */
+  TAKER_FIRST_SETTLEMENT: 'taker_first_settlement_enabled',
+  /**
+   * No-KYC taker access. When ON, an un-verified user may TAKE trades (respond to
+   * someone else's ad) without KYC, subject to hard PKR limits (per-trade, daily,
+   * and a rolling lifetime ceiling that forces KYC once crossed) and a single
+   * open-trade cap. Creating an ad ALWAYS still requires approved KYC — this only
+   * relaxes the taker-side gate. OFF (default) = KYC required to trade, exactly as
+   * today. Applies to both USDT and CTM. Limits are read from PlatformConfig:
+   *   - nokyc_max_per_trade_pkr        (default 20000)
+   *   - nokyc_max_daily_pkr            (default 60000)
+   *   - nokyc_rolling_ceiling_pkr      (default 150000; lifetime no-KYC volume)
+   *   - nokyc_max_open_trades          (default 1)
+   */
+  NOKYC_TAKER: 'nokyc_taker_enabled',
+  /**
    * Admin notification EMAIL channel. When ON, critical admin notifications
    * (email-eligible ones — withdrawal failures, reverted txs, unattributed
    * deposits) are ALSO emailed to ADMIN_ALERT_EMAIL, on top of the in-app bell,
