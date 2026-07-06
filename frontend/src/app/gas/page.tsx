@@ -10,7 +10,6 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { useFileUpload } from '@/hooks/useFileUpload'
-import { Fuel } from 'lucide-react'
 
 import {
   PHASE, GasFlowProvider, type Phase, type PkrMethodKey,
@@ -496,21 +495,14 @@ export default function GasPage() {
     <GasFlowProvider value={ctx}>
       <div className="bg-canvas">
 
-        {/* Page toolbar — the unified site header (Navbar) is provided by the gas
-            layout; this is a slim in-page bar with the gas title and the
-            gas-specific quick actions (My Orders / Earn). */}
-        <div className="bg-surface border-b border-border">
-          <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white flex-shrink-0">
-                <Fuel size={18} />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-base font-bold text-text-primary leading-tight truncate">Buy Gas Instantly</h1>
-                <p className="text-xs text-text-muted truncate">Pay with PKR or USDT</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Slim quick-action bar — the page title now lives in the global navbar
+            (above) and the "Select Blockchain" heading below, so this bar just
+            carries the gas quick-actions (Earn / My Orders), right-aligned so
+            they sit tucked under the avatar on both desktop and mobile. Renders
+            only when there's at least one action to show. */}
+        {(user || referralEnabled) && (
+          <div className="bg-surface border-b border-border">
+            <div className="max-w-5xl mx-auto px-4 py-2 flex items-center justify-end gap-2">
               {referralEnabled && (
                 <Link href="/referral" className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors px-2 py-1.5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V6m0 8v2" /></svg>
@@ -525,7 +517,7 @@ export default function GasPage() {
               )}
             </div>
           </div>
-        </div>
+        )}
 
         <div className={`mx-auto px-4 py-6 pb-16 ${phase === PHASE.CHAINS ? 'max-w-5xl' : 'max-w-xl'}`}>
 
