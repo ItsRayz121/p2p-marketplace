@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Calculator, X, ArrowLeftRight } from 'lucide-react'
+import { Calculator, X, ArrowLeftRight, ChevronDown } from 'lucide-react'
 import { ctmApi, type CtmPriceHistory, type CtmPriceRange } from '@/lib/api'
 import { PriceChartCanvas } from '@/components/ui/PriceChartCanvas'
 
@@ -21,6 +21,15 @@ const RANGES: { key: CtmPriceRange; label: string }[] = [
 ]
 
 type Currency = 'USDT' | 'PKR'
+
+const RANGE_PHRASE: Record<CtmPriceRange, string> = {
+  '24h': 'the last 24 hours',
+  '7d': 'the last 7 days',
+  '30d': 'the last 30 days',
+  '90d': 'the last 90 days',
+  '1y': 'the last year',
+  'all': 'this range',
+}
 
 function fmtUsdt(n: number): string {
   const max = n !== 0 && Math.abs(n) < 1 ? 6 : 2
@@ -44,6 +53,7 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
   const [data, setData] = useState<CtmPriceHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [showCalc, setShowCalc] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -75,13 +85,18 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
     <div className="relative rounded-xl border border-border bg-surface p-4">
       {/* Header: price + change, controls */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-            Price · {tokenSymbol}
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          className="min-w-0 flex-1 text-left"
+        >
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            <ChevronDown size={13} className={`transition-transform text-text-muted ${collapsed ? '-rotate-90' : ''}`} />
+            {tokenSymbol} price chart
             <span className="rounded bg-surface-alt px-1.5 py-0.5 text-[10px] font-medium normal-case text-text-muted">from platform trades</span>
           </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-text-primary">
+          <div className="mt-1 flex items-baseline gap-2 pl-[19px]">
+            <span className={`font-bold text-text-primary ${collapsed ? 'text-lg' : 'text-2xl'}`}>
               {lastClose !== null ? `${effCurrency === 'USDT' ? '$' : 'PKR '}${fmtValue(lastClose, effCurrency)}` : '—'}
             </span>
             {changePct !== null && (
@@ -90,8 +105,9 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
               </span>
             )}
           </div>
-        </div>
+        </button>
 
+        {!collapsed && (
         <div className="flex items-center gap-2">
           {/* Currency toggle */}
           <div className="inline-flex rounded-lg border border-border overflow-hidden">
@@ -119,8 +135,11 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
             <Calculator size={15} />
           </button>
         </div>
+        )}
       </div>
 
+      {!collapsed && (
+      <>
       {/* Timeframes */}
       <div className="mt-3 flex flex-wrap gap-1.5">
         {RANGES.map((r) => (
@@ -142,7 +161,7 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
           <div className="h-[240px] rounded-lg bg-surface-alt animate-pulse" />
         ) : !data || data.tradeCount === 0 || points.length === 0 ? (
           <div className="h-[240px] flex flex-col items-center justify-center text-center rounded-lg border border-dashed border-border">
-            <p className="text-sm font-medium text-text-secondary">No price data for this range yet</p>
+            <p className="text-sm font-medium text-text-secondary">No trades in {RANGE_PHRASE[range]}</p>
             <p className="mt-1 text-xs text-text-muted">
               The chart is built from completed trades on RupChain.{' '}
               {range !== 'all' && <button onClick={() => setRange('all')} className="text-primary font-medium hover:underline">Try “All”.</button>}
@@ -155,6 +174,7 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
             hasCandles={data.hasCandles}
             toDisplay={conv}
             format={(v) => (effCurrency === 'USDT' ? fmtUsdt(v) : fmtPkr(v))}
+            yUnit={`${effCurrency} / ${tokenSymbol}`}
           />
         )}
       </div>
@@ -165,6 +185,8 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
           {data.tradeCount} completed {data.tradeCount === 1 ? 'trade' : 'trades'} in range · {data.hasCandles ? 'candlestick' : 'line'} view
           {effCurrency === 'USDT' && usdtAvailable ? ` · converted at 1 USDT ≈ PKR ${fmtPkr(rate as number)}` : ''}
         </p>
+      )}
+      </>
       )}
 
       {showCalc && (

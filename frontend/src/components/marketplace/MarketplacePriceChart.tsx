@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Calculator, X, ArrowLeftRight } from 'lucide-react'
+import { Calculator, X, ArrowLeftRight, ChevronDown } from 'lucide-react'
 import { marketplaceApi, type UsdtPriceHistory, type CtmPriceRange } from '@/lib/api'
 import { PriceChartCanvas } from '@/components/ui/PriceChartCanvas'
 
@@ -18,6 +18,15 @@ const RANGES: { key: CtmPriceRange; label: string }[] = [
   { key: 'all', label: 'All' },
 ]
 
+const RANGE_PHRASE: Record<CtmPriceRange, string> = {
+  '24h': 'the last 24 hours',
+  '7d': 'the last 7 days',
+  '30d': 'the last 30 days',
+  '90d': 'the last 90 days',
+  '1y': 'the last year',
+  'all': 'this range',
+}
+
 function fmtPkr(n: number): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
@@ -31,6 +40,7 @@ export function MarketplacePriceChart() {
   const [data, setData] = useState<UsdtPriceHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [showCalc, setShowCalc] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -52,13 +62,18 @@ export function MarketplacePriceChart() {
   return (
     <div className="relative rounded-xl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-            USDT price
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          className="min-w-0 flex-1 text-left group"
+        >
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            <ChevronDown size={13} className={`transition-transform text-text-muted ${collapsed ? '-rotate-90' : ''}`} />
+            USDT price chart
             <span className="rounded bg-surface-alt px-1.5 py-0.5 text-[10px] font-medium normal-case text-text-muted">from platform trades</span>
           </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-text-primary">
+          <div className="mt-1 flex items-baseline gap-2 pl-[19px]">
+            <span className={`font-bold text-text-primary ${collapsed ? 'text-lg' : 'text-2xl'}`}>
               {lastClose !== null ? `PKR ${fmtPkr(lastClose)}` : '—'}
             </span>
             <span className="text-xs text-text-muted">/ USDT</span>
@@ -68,19 +83,23 @@ export function MarketplacePriceChart() {
               </span>
             )}
           </div>
-        </div>
-
-        <button
-          onClick={() => setShowCalc((v) => !v)}
-          aria-label="Price calculator"
-          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${
-            showCalc ? 'border-primary bg-primary/5 text-primary' : 'border-border text-text-secondary hover:bg-surface-alt'
-          }`}
-        >
-          <Calculator size={15} />
         </button>
+
+        {!collapsed && (
+          <button
+            onClick={() => setShowCalc((v) => !v)}
+            aria-label="Price calculator"
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${
+              showCalc ? 'border-primary bg-primary/5 text-primary' : 'border-border text-text-secondary hover:bg-surface-alt'
+            }`}
+          >
+            <Calculator size={15} />
+          </button>
+        )}
       </div>
 
+      {!collapsed && (
+      <>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {RANGES.map((r) => (
           <button
@@ -100,7 +119,7 @@ export function MarketplacePriceChart() {
           <div className="h-[240px] rounded-lg bg-surface-alt animate-pulse" />
         ) : !data || data.tradeCount === 0 || points.length === 0 ? (
           <div className="h-[240px] flex flex-col items-center justify-center text-center rounded-lg border border-dashed border-border">
-            <p className="text-sm font-medium text-text-secondary">No USDT price data for this range yet</p>
+            <p className="text-sm font-medium text-text-secondary">No trades in {RANGE_PHRASE[range]}</p>
             <p className="mt-1 text-xs text-text-muted">
               The chart is built from completed USDT trades on RupChain.{' '}
               {range !== 'all' && <button onClick={() => setRange('all')} className="text-primary font-medium hover:underline">Try “All”.</button>}
@@ -113,6 +132,7 @@ export function MarketplacePriceChart() {
             hasCandles={data.hasCandles}
             toDisplay={(v) => v}
             format={fmtPkr}
+            yUnit="PKR / USDT"
           />
         )}
       </div>
@@ -121,6 +141,8 @@ export function MarketplacePriceChart() {
         <p className="mt-2 text-[11px] text-text-muted">
           {data.tradeCount} completed USDT {data.tradeCount === 1 ? 'trade' : 'trades'} in range · {data.hasCandles ? 'candlestick' : 'line'} view · price is PKR per 1 USDT
         </p>
+      )}
+      </>
       )}
 
       {showCalc && (

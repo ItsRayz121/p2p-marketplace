@@ -9,8 +9,37 @@ import { useEffect, useRef, useState } from 'react'
 export interface ChartCandle { t: string; o: number; h: number; l: number; c: number; n: number }
 export interface ChartPoint { t: string; p: number }
 
+// Generate ~`count` rounded "nice" tick values spanning [lo, hi]. Keeps the
+// y-axis readable (e.g. 250 / 275 / 300 instead of 229.38 / 748.5 / 1267.62).
+function niceTicks(lo: number, hi: number, count = 4): number[] {
+  const span = hi - lo
+  if (!(span > 0)) return [hi]
+  const rawStep = span / count
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)))
+  const norm = rawStep / mag
+  const step = (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag
+  const start = Math.ceil(lo / step) * step
+  const ticks: number[] = []
+  for (let v = start; v <= hi + step * 1e-6; v += step) ticks.push(v)
+  return ticks.length >= 2 ? ticks : [lo, hi]
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function formatXLabel(iso: string, spanMs: number): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  if (spanMs <= 2 * DAY_MS) {
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+  if (spanMs <= 400 * DAY_MS) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+}
+
 export function PriceChartCanvas({
-  candles, points, hasCandles, toDisplay, format, height = 240,
+  candles, points, hasCandles, toDisplay, format, height = 240, yUnit,
 }: {
   candles: ChartCandle[]
   points: ChartPoint[]
@@ -20,6 +49,8 @@ export function PriceChartCanvas({
   /** Format a display value for the y-axis labels. */
   format: (v: number) => string
   height?: number
+  /** Short caption for what the vertical axis measures, e.g. "PKR / USDT". */
+  yUnit?: string
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(640)
@@ -37,7 +68,7 @@ export function PriceChartCanvas({
   }, [])
 
   const H = height
-  const padL = 8, padR = 52, padT = 10, padB = 20
+  const padL = 8, padR = 56, padT = 16, padB = 22
   const chartW = Math.max(width - padL - padR, 10)
   const chartH = H - padT - padB
 
@@ -58,17 +89,50 @@ export function PriceChartCanvas({
   const slot = chartW / Math.max(n, 1)
   const xAt = (i: number) => padL + slot * (i + 0.5)
 
-  const gridVals = [hi, (hi + lo) / 2, lo]
+  // Rounded, evenly-spaced y-axis levels (kept inside the visible band).
+  const gridVals = niceTicks(lo, hi, 4).filter((v) => v >= lo && v <= hi)
+
+  // X-axis time labels at start / middle / end of the visible data.
+  const times = useCandles ? candles.map((c) => c.t) : points.map((p) => p.t)
+  const spanMs = times.length >= 2
+    ? Math.max(new Date(times[times.length - 1]).getTime() - new Date(times[0]).getTime(), 0)
+    : 0
+  const xTicks = times.length === 0
+    ? []
+    : (times.length === 1
+        ? [0]
+        : [0, Math.floor((times.length - 1) / 2), times.length - 1])
+  const seenX = new Set<number>()
 
   return (
     <div ref={wrapRef} className="w-full">
       <svg width={width} height={H} className="block" role="img" aria-label="Price chart">
+        {/* Vertical-axis unit caption */}
+        {yUnit && (
+          <text x={width - 2} y={11} textAnchor="end" className="fill-text-muted" fontSize={9} fontWeight={600}>
+            {yUnit}
+          </text>
+        )}
+
         {gridVals.map((gv, i) => (
           <g key={i}>
             <line x1={padL} x2={padL + chartW} y1={y(gv)} y2={y(gv)} stroke="currentColor" className="text-border" strokeWidth={1} strokeDasharray="3 3" />
             <text x={padL + chartW + 6} y={y(gv) + 3} className="fill-text-muted" fontSize={10}>{format(gv)}</text>
           </g>
         ))}
+
+        {/* X-axis time labels */}
+        {xTicks.map((idx, k) => {
+          if (seenX.has(idx)) return null
+          seenX.add(idx)
+          const anchor = k === 0 ? 'start' : k === xTicks.length - 1 ? 'end' : 'middle'
+          const cx = k === 0 ? padL : k === xTicks.length - 1 ? padL + chartW : xAt(idx)
+          return (
+            <text key={`x-${idx}`} x={cx} y={H - 6} textAnchor={anchor} className="fill-text-muted" fontSize={9}>
+              {formatXLabel(times[idx], spanMs)}
+            </text>
+          )
+        })}
 
         {useCandles ? (
           candles.map((c, i) => {
