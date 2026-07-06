@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { blogApi, type BlogPost, type BlogUpsert, ApiError } from '@/lib/api'
+import { blogApi, ctmApi, gasApi, type BlogPost, type BlogUpsert, type GasChain, ApiError } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { BlogEditor } from './BlogEditor'
 import { SeoChecklist } from './SeoChecklist'
 import { cn } from '@/lib/utils'
-import { BLOG_CATEGORY_LABELS, OTHER_OPTION, subcategoriesFor } from '@/lib/blogTaxonomy'
+import { BLOG_CATEGORY_LABELS, CATEGORY, OTHER_OPTION, subcategoriesFor } from '@/lib/blogTaxonomy'
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-border bg-canvas text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary/40'
 const labelCls = 'block text-xs font-semibold text-text-secondary mb-1'
@@ -46,7 +46,35 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   )
 
   const categoryValue = catSelect === OTHER_OPTION ? catCustom.trim() : catSelect
-  const subOptions = subcategoriesFor(catSelect === OTHER_OPTION ? '' : catSelect)
+
+  // CTM and Gas subcategories are pulled live so newly-added tokens/chains show up
+  // automatically. USDT/Learn use the static lists. Fetches are best-effort — on
+  // failure the static seeds in blogTaxonomy stand in, and "Others" always works.
+  const [ctmSubs, setCtmSubs] = useState<string[]>([])
+  const [gasSubs, setGasSubs] = useState<string[]>([])
+  useEffect(() => {
+    ctmApi.getTokens({ limit: 100 })
+      .then((res) => {
+        const tokens = (res as { tokens?: { name?: string; symbol?: string }[] }).tokens ?? []
+        const labels = tokens
+          .map((t) => (t.name && t.symbol ? `${t.name} (${t.symbol})` : (t.name ?? t.symbol ?? '')))
+          .filter(Boolean)
+        if (labels.length) setCtmSubs(Array.from(new Set(labels)))
+      })
+      .catch(() => { /* fall back to static seeds */ })
+    gasApi.getChains()
+      .then(({ chains }: { chains: GasChain[] }) => {
+        const labels = chains.filter((c) => c.isActive).map((c) => c.name).filter(Boolean)
+        if (labels.length) setGasSubs(Array.from(new Set(labels)))
+      })
+      .catch(() => { /* fall back to static seeds */ })
+  }, [])
+
+  const activeCat = catSelect === OTHER_OPTION ? '' : catSelect
+  const subOptions =
+    activeCat === CATEGORY.CTM && ctmSubs.length ? ctmSubs
+    : activeCat === CATEGORY.GAS && gasSubs.length ? gasSubs
+    : subcategoriesFor(activeCat)
   const subcategoryValue = subSelect === OTHER_OPTION ? subCustom.trim() : subSelect
 
   const [metaTitle, setMetaTitle] = useState(initial?.metaTitle ?? '')

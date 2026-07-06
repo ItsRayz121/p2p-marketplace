@@ -792,7 +792,7 @@ export default function ConfigPage() {
             <input type="checkbox" checked={ctmUsdtFlag} onChange={(e) => setCtmUsdtFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
             <div>
               <p className="text-sm font-medium text-text-primary">CTM USDT-as-payment <span className="font-mono text-xs text-text-muted">ctm_usdt_payment_enabled</span></p>
-              <p className="text-xs text-text-muted mt-0.5">Lets a Community Token Market listing be priced/settled in USDT (on-chain BEP20/Aptos or exchange transfer) instead of PKR. Code path is ready — QA a full SELL + BUY USDT trade on staging before enabling in production.</p>
+              <p className="text-xs text-text-muted mt-0.5">Adds USDT as an <span className="font-semibold">extra</span> payment option on Community Token Market listings — it does <span className="font-semibold">not</span> remove PKR. When creating a listing the maker picks one currency: PKR (bank/wallet) <span className="font-semibold">or</span> USDT (on-chain BEP20/Aptos, or an exchange transfer). Code path is ready — QA a full SELL + BUY USDT trade on staging before enabling in production.</p>
             </div>
           </label>
 
