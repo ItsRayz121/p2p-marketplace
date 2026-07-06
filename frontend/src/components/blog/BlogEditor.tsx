@@ -13,7 +13,7 @@ import { FigureImage } from './figureImageExtension'
 import { useRef, useState } from 'react'
 import {
   Bold, Italic, Strikethrough, Heading2, Heading3, List, ListOrdered,
-  Quote, Code, Link2, ImagePlus, Youtube as YoutubeIcon, Undo2, Redo2, Minus, RemoveFormatting,
+  Quote, Code, Link2, ImagePlus, Youtube as YoutubeIcon, Undo2, Redo2, Minus, RemoveFormatting, Wand2,
 } from 'lucide-react'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { cn } from '@/lib/utils'
@@ -194,6 +194,28 @@ function Toolbar({ editor }: { editor: Editor }) {
     if (safeCaption) editor.chain().focus().insertContent(`<p class="blog-caption">${safeCaption}</p>`).run()
   }
 
+  // Turn literal Markdown (## heading, **bold**, - lists, [text](url) …) that was
+  // typed or pasted as plain text into real formatting. Converts the current
+  // selection when there is one; otherwise reflows the whole article.
+  function formatMarkdown() {
+    const { state } = editor
+    const { from, to, empty } = state.selection
+
+    if (!empty) {
+      const text = state.doc.textBetween(from, to, '\n\n', '\n')
+      if (!looksLikeMarkdown(text)) { window.alert('The selected text has no Markdown to convert.'); return }
+      const rendered = marked.parse(text, { async: false, gfm: true }) as string
+      editor.chain().focus().deleteSelection().insertContent(rendered).run()
+      return
+    }
+
+    const text = editor.getText({ blockSeparator: '\n\n' })
+    if (!looksLikeMarkdown(text)) { window.alert('No Markdown found in this article to convert.'); return }
+    if (!window.confirm('Convert Markdown in this article to formatting?\n\nThis reflows the whole article and will drop any inserted images or videos. Press Undo (Ctrl+Z) if you don’t like the result.')) return
+    const rendered = marked.parse(text, { async: false, gfm: true }) as string
+    editor.chain().focus().setContent(rendered, true).run()
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-0.5 border-b border-border p-1.5 bg-surface sticky top-14 z-20 rounded-t-lg">
       <ToolbarButton title="Bold" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={16} /></ToolbarButton>
@@ -213,6 +235,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton title={uploading ? 'Uploading…' : 'Insert image'} disabled={uploading} onClick={() => fileRef.current?.click()}><ImagePlus size={16} /></ToolbarButton>
       <ToolbarButton title="Embed video" onClick={addVideo}><YoutubeIcon size={16} /></ToolbarButton>
       <span className="w-px h-5 bg-border mx-1" />
+      <ToolbarButton title="Format Markdown (convert selected — or all — ## **bold** lists etc. into real formatting)" onClick={formatMarkdown}><Wand2 size={16} /></ToolbarButton>
       <ToolbarButton title="Clear formatting (turn selection back into normal text)" onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()}><RemoveFormatting size={16} /></ToolbarButton>
       <ToolbarButton title="Undo" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 size={16} /></ToolbarButton>
       <ToolbarButton title="Redo" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={16} /></ToolbarButton>
