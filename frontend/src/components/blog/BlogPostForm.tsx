@@ -8,6 +8,7 @@ import { BlogEditor } from './BlogEditor'
 import { SeoChecklist } from './SeoChecklist'
 import { cn } from '@/lib/utils'
 import { BLOG_CATEGORY_LABELS, CATEGORY, OTHER_OPTION, subcategoriesFor } from '@/lib/blogTaxonomy'
+import { Eye, X } from 'lucide-react'
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-border bg-canvas text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary/40'
 const labelCls = 'block text-xs font-semibold text-text-secondary mb-1'
@@ -91,6 +92,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
 
   const { upload: uploadCover, uploading: uploadingCover } = useFileUpload('blog-image')
 
@@ -150,6 +152,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   }
 
   return (
+    <>
     <div className="grid lg:grid-cols-3 gap-6 items-start">
       {/* Main column */}
       <div className="lg:col-span-2 space-y-4">
@@ -180,6 +183,11 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
             </div>
             {error && <p className="text-xs text-rose-500">{error}</p>}
             {ok && <p className="text-xs text-success">{ok}</p>}
+            {/* Preview — renders the post exactly as the public page will, from the
+                current (unsaved) form state, so you can eyeball it before publishing. */}
+            <button onClick={() => setShowPreview(true)} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-sm font-semibold text-text-primary hover:bg-surface-alt">
+              <Eye size={15} aria-hidden /> Preview
+            </button>
             <div className="flex gap-2">
               <button onClick={() => save('draft')} disabled={saving} className="flex-1 px-3 py-2 rounded-lg border border-border text-sm font-semibold text-text-secondary hover:bg-surface-alt disabled:opacity-50">
                 Save draft
@@ -325,6 +333,103 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
             <input type="checkbox" checked={noindex} onChange={(e) => setNoindex(e.target.checked)} />
             Hide from search engines (noindex)
           </label>
+        </div>
+      </div>
+    </div>
+
+    {showPreview && (
+      <BlogPreviewModal
+        title={title}
+        category={categoryValue}
+        subcategory={subcategoryValue}
+        bodyHtml={bodyHtml}
+        coverImageUrl={coverImageUrl}
+        coverImageAlt={coverImageAlt}
+        coverImageCaption={coverImageCaption}
+        tags={tags.split(',').map((t) => t.trim()).filter(Boolean)}
+        onClose={() => setShowPreview(false)}
+      />
+    )}
+    </>
+  )
+}
+
+// ─── Live preview modal ────────────────────────────────────────────────────────
+// Renders the post the way the public article page does (same `blog-article`
+// styles, cover, meta line, tags) from the current unsaved form state. A banner
+// makes clear it's a preview, and the reading time is a rough client estimate.
+
+function BlogPreviewModal({
+  title, category, subcategory, bodyHtml, coverImageUrl, coverImageAlt, coverImageCaption, tags, onClose,
+}: {
+  title: string
+  category: string
+  subcategory: string
+  bodyHtml: string
+  coverImageUrl: string
+  coverImageAlt: string
+  coverImageCaption: string
+  tags: string[]
+  onClose: () => void
+}) {
+  const words = bodyHtml.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean).length
+  const readingMinutes = Math.max(1, Math.round(words / 200))
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const hasBody = bodyHtml && bodyHtml !== '<p></p>'
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto" onClick={onClose}>
+      <div className="min-h-full py-8 px-4 flex justify-center">
+        <div className="relative w-full max-w-3xl bg-surface rounded-2xl shadow-xl border border-border" onClick={(e) => e.stopPropagation()}>
+          {/* Preview banner + close */}
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-surface/95 backdrop-blur px-5 py-3">
+            <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-primary">
+              <Eye size={14} aria-hidden /> Preview — not published
+            </span>
+            <button onClick={onClose} className="inline-flex items-center gap-1 text-sm font-semibold text-text-secondary hover:text-text-primary">
+              <X size={16} aria-hidden /> Close
+            </button>
+          </div>
+
+          <article className="px-5 sm:px-8 py-8 min-w-0">
+            {category && (
+              <span className="text-[11px] font-bold uppercase tracking-wide text-primary">
+                {category}{subcategory ? ` · ${subcategory}` : ''}
+              </span>
+            )}
+            <h1 className="mt-1.5 text-3xl font-bold leading-tight text-text-primary sm:text-4xl">
+              {title || 'Untitled post'}
+            </h1>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-muted">
+              <span>By RupChain</span>
+              <span>·</span><span>{today}</span>
+              <span>·</span><span>{readingMinutes} min read</span>
+            </div>
+
+            {coverImageUrl && (
+              <figure className="mt-6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={coverImageUrl} alt={coverImageAlt || title} className="w-full rounded-xl border border-border" />
+                {coverImageCaption && (
+                  <figcaption className="mt-2 text-center text-sm italic text-text-muted">{coverImageCaption}</figcaption>
+                )}
+              </figure>
+            )}
+
+            {hasBody ? (
+              <div className="blog-article mt-8" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+            ) : (
+              <p className="mt-8 text-text-muted italic">Nothing written yet — add some article body to preview it.</p>
+            )}
+
+            {tags.length > 0 && (
+              <div className="mt-10 flex flex-wrap gap-2">
+                {tags.map((t) => (
+                  <span key={t} className="rounded-full border border-border bg-surface-alt px-2.5 py-1 text-xs font-medium text-text-secondary">#{t}</span>
+                ))}
+              </div>
+            )}
+          </article>
         </div>
       </div>
     </div>
