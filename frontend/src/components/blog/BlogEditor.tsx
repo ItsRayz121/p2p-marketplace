@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import Youtube from '@tiptap/extension-youtube'
+import { marked } from 'marked'
 import { Iframe } from './iframeExtension'
 import { FigureImage } from './figureImageExtension'
 import { useRef, useState } from 'react'
@@ -14,6 +15,22 @@ import {
 } from 'lucide-react'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { cn } from '@/lib/utils'
+
+// Heuristic: does this pasted plain text look like Markdown worth converting?
+// Deliberately conservative — only fires on clear Markdown syntax so ordinary
+// prose (with the odd asterisk) is pasted verbatim.
+function looksLikeMarkdown(t: string): boolean {
+  return /(^|\n)\s{0,3}#{1,6}\s/.test(t)          // # headings
+    || /\*\*[^*\n]+\*\*/.test(t)                   // **bold**
+    || /__[^_\n]+__/.test(t)                       // __bold__
+    || /(^|\n)\s{0,3}>\s/.test(t)                  // > blockquote
+    || /(^|\n)\s{0,3}[-*+]\s+\S/.test(t)           // - bullet list
+    || /(^|\n)\s{0,3}\d+\.\s+\S/.test(t)           // 1. ordered list
+    || /\[[^\]]+\]\([^)\s]+\)/.test(t)             // [text](url)
+    || /`[^`\n]+`/.test(t)                          // `inline code`
+    || /(^|\n)```/.test(t)                          // ``` code fence
+    || /(^|\n)(-{3,}|\*{3,}|_{3,})\s*(\n|$)/.test(t) // --- horizontal rule
+}
 
 function ToolbarButton({
   onClick, active, disabled, title, children,
@@ -102,7 +119,7 @@ function Toolbar({ editor }: { editor: Editor }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-b border-border p-1.5 bg-surface sticky top-0 z-10">
+    <div className="flex flex-wrap items-center gap-0.5 border-b border-border p-1.5 bg-surface sticky top-14 z-20 rounded-t-lg">
       <ToolbarButton title="Bold" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={16} /></ToolbarButton>
       <ToolbarButton title="Italic" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={16} /></ToolbarButton>
       <ToolbarButton title="Strikethrough" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={16} /></ToolbarButton>
@@ -130,6 +147,9 @@ function Toolbar({ editor }: { editor: Editor }) {
 }
 
 export function BlogEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+  // Ref so the paste handler (captured once at init) can reach the live editor.
+  const editorRef = useRef<Editor | null>(null)
+
   const editor = useEditor({
     immediatelyRender: false, // avoid Next.js SSR hydration mismatch
     extensions: [
@@ -144,15 +164,31 @@ export function BlogEditor({ value, onChange }: { value: string; onChange: (html
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
     editorProps: {
       attributes: { class: 'blog-content focus:outline-none min-h-[360px] px-4 py-3' },
+      // Paste Markdown as real formatting. When the clipboard carries only plain
+      // text that looks like Markdown (e.g. copied from an .md file), convert it
+      // to HTML so **bold**, headings, lists, quotes etc. render properly. If the
+      // source provided real HTML, we defer to Tiptap's native rich-paste.
+      handlePaste(view, event) {
+        const cd = event.clipboardData
+        if (!cd) return false
+        const html = cd.getData('text/html')
+        if (html && html.trim()) return false
+        const text = cd.getData('text/plain')
+        if (!text || !looksLikeMarkdown(text)) return false
+        const rendered = marked.parse(text, { async: false, gfm: true }) as string
+        editorRef.current?.chain().focus().insertContent(rendered).run()
+        return true // handled — prevent the default plain-text paste
+      },
     },
   })
+  editorRef.current = editor
 
   if (!editor) {
     return <div className="border border-border rounded-lg h-[420px] flex items-center justify-center text-text-muted text-sm">Loading editor…</div>
   }
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden bg-canvas">
+    <div className="border border-border rounded-lg bg-canvas">
       <Toolbar editor={editor} />
       <EditorContent editor={editor} />
     </div>
