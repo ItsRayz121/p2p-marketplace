@@ -5,6 +5,8 @@ import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import Youtube from '@tiptap/extension-youtube'
+import { TextSelection } from '@tiptap/pm/state'
+import type { Fragment, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { marked } from 'marked'
 import { Iframe } from './iframeExtension'
 import { FigureImage } from './figureImageExtension'
@@ -30,6 +32,80 @@ function looksLikeMarkdown(t: string): boolean {
     || /`[^`\n]+`/.test(t)                          // `inline code`
     || /(^|\n)```/.test(t)                          // ``` code fence
     || /(^|\n)(-{3,}|\*{3,}|_{3,})\s*(\n|$)/.test(t) // --- horizontal rule
+}
+
+// Drop hard line-breaks sitting at the very start/end of an inline fragment so
+// isolating a line doesn't leave empty leading/trailing lines behind.
+function stripEdgeBreaks(frag: Fragment): Fragment {
+  let f = frag
+  while (f.firstChild && f.firstChild.type.name === 'hardBreak') f = f.cut(f.firstChild.nodeSize, f.size)
+  while (f.lastChild && f.lastChild.type.name === 'hardBreak') f = f.cut(0, f.size - f.lastChild.nodeSize)
+  return f
+}
+
+// Apply an H2/H3 heading to ONLY the selected line(s).
+//
+// TipTap headings are block-level, so a plain `toggleHeading` converts the whole
+// paragraph — including sibling lines joined to it by soft line-breaks (which is
+// how pasted Markdown drafts arrive). To honour "only what I selected", we split
+// the paragraph at the line-breaks bracketing the selection, turn the isolated
+// middle into a heading, and keep the lines before/after as their own paragraphs.
+function applyHeading(editor: Editor, level: 2 | 3) {
+  // Already this heading on the block → toggle back to normal text.
+  if (editor.isActive('heading', { level })) {
+    editor.chain().focus().setParagraph().run()
+    return
+  }
+
+  const { state, view } = editor
+  const { from, to } = state.selection
+  const $from = state.doc.resolve(from)
+  const $to = state.doc.resolve(to)
+  const parent = $from.parent
+
+  // Only do the line-isolation surgery for a plain top-level paragraph. Anything
+  // else (lists, quotes, multi-block selections, existing headings) falls back to
+  // TipTap's native behaviour, which is correct for those cases.
+  const canIsolate = $from.sameParent($to) && $from.depth === 1 && parent.type.name === 'paragraph'
+  if (!canIsolate) {
+    editor.chain().focus().toggleHeading({ level }).run()
+    return
+  }
+
+  const blockStart = $from.start()
+  const blockEnd = $from.end()
+
+  // Find the hard-break boundaries that bracket the selection.
+  let lineStart = blockStart
+  let lineEnd = blockEnd
+  let pos = blockStart
+  parent.forEach((child) => {
+    const start = pos
+    const end = pos + child.nodeSize
+    if (child.type.name === 'hardBreak') {
+      if (end <= from) lineStart = end                          // nearest break before selection
+      if (start >= to && lineEnd === blockEnd) lineEnd = start  // nearest break after selection
+    }
+    pos = end
+  })
+
+  const c = parent.content
+  const before = stripEdgeBreaks(c.cut(0, lineStart - blockStart))
+  const line = stripEdgeBreaks(c.cut(lineStart - blockStart, lineEnd - blockStart))
+  const after = stripEdgeBreaks(c.cut(lineEnd - blockStart, blockEnd - blockStart))
+
+  const { schema } = state
+  const nodes: ProseMirrorNode[] = []
+  if (before.size > 0) nodes.push(schema.nodes.paragraph.create(null, before))
+  nodes.push(schema.nodes.heading.create({ level }, line))
+  if (after.size > 0) nodes.push(schema.nodes.paragraph.create(null, after))
+
+  const tr = state.tr.replaceWith(blockStart - 1, blockEnd + 1, nodes)
+  // Re-select the new heading's text.
+  const headingContentStart = blockStart - 1 + (before.size > 0 ? before.size + 2 : 0) + 1
+  tr.setSelection(TextSelection.create(tr.doc, headingContentStart, headingContentStart + line.size))
+  view.dispatch(tr)
+  view.focus()
 }
 
 function ToolbarButton({
@@ -124,8 +200,8 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton title="Italic" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={16} /></ToolbarButton>
       <ToolbarButton title="Strikethrough" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={16} /></ToolbarButton>
       <span className="w-px h-5 bg-border mx-1" />
-      <ToolbarButton title="Heading 2" active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 size={16} /></ToolbarButton>
-      <ToolbarButton title="Heading 3" active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 size={16} /></ToolbarButton>
+      <ToolbarButton title="Heading 2 (applies to the selected line only)" active={editor.isActive('heading', { level: 2 })} onClick={() => applyHeading(editor, 2)}><Heading2 size={16} /></ToolbarButton>
+      <ToolbarButton title="Heading 3 (applies to the selected line only)" active={editor.isActive('heading', { level: 3 })} onClick={() => applyHeading(editor, 3)}><Heading3 size={16} /></ToolbarButton>
       <span className="w-px h-5 bg-border mx-1" />
       <ToolbarButton title="Bullet list" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={16} /></ToolbarButton>
       <ToolbarButton title="Numbered list" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={16} /></ToolbarButton>
