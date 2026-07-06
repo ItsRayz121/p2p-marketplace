@@ -50,6 +50,7 @@ const upsertSchema = z.object({
   status: z.enum(['draft', 'published']).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
   category: z.string().max(60).nullish(),
+  subcategory: z.string().max(60).nullish(),
   authorName: z.string().max(80).optional(),
   metaTitle: z.string().max(200).nullish(),
   metaDescription: z.string().max(320).nullish(),
@@ -67,6 +68,7 @@ export async function blogRoutes(app: FastifyInstance) {
       page: q.page ? Number(q.page) : undefined,
       pageSize: q.pageSize ? Number(q.pageSize) : undefined,
       category: q.category,
+      subcategory: q.subcategory,
       tag: q.tag,
       q: q.q,
     })

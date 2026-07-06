@@ -2812,6 +2812,7 @@ export interface BlogPostSummary {
   coverImageUrl: string | null
   coverImageAlt: string | null
   category: string | null
+  subcategory: string | null
   tags: string[]
   authorName: string
   publishedAt: string | null
@@ -2848,6 +2849,7 @@ export interface BlogUpsert {
   status?: 'draft' | 'published'
   tags?: string[]
   category?: string | null
+  subcategory?: string | null
   authorName?: string
   metaTitle?: string | null
   metaDescription?: string | null

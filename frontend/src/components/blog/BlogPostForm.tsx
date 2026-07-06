@@ -7,6 +7,7 @@ import { useFileUpload } from '@/hooks/useFileUpload'
 import { BlogEditor } from './BlogEditor'
 import { SeoChecklist } from './SeoChecklist'
 import { cn } from '@/lib/utils'
+import { BLOG_CATEGORY_LABELS, OTHER_OPTION, subcategoriesFor } from '@/lib/blogTaxonomy'
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-border bg-canvas text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary/40'
 const labelCls = 'block text-xs font-semibold text-text-secondary mb-1'
@@ -23,7 +24,31 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   const [coverImageAlt, setCoverImageAlt] = useState(initial?.coverImageAlt ?? '')
   const [coverImageCaption, setCoverImageCaption] = useState(initial?.coverImageCaption ?? '')
   const [tags, setTags] = useState((initial?.tags ?? []).join(', '))
-  const [category, setCategory] = useState(initial?.category ?? '')
+
+  // Category / subcategory are picked from a curated dropdown (see blogTaxonomy).
+  // Each dropdown has an "Others" option that reveals a free-text box. We keep the
+  // dropdown selection and the custom text as separate state, then derive the
+  // stored string in buildPayload. On edit, an existing value that isn't in the
+  // list preselects "Others" and prefills the text box so nothing is lost.
+  const initCat = initial?.category ?? ''
+  const [catSelect, setCatSelect] = useState(
+    initCat ? (BLOG_CATEGORY_LABELS.includes(initCat) ? initCat : OTHER_OPTION) : '',
+  )
+  const [catCustom, setCatCustom] = useState(
+    initCat && !BLOG_CATEGORY_LABELS.includes(initCat) ? initCat : '',
+  )
+  const initSub = initial?.subcategory ?? ''
+  const [subSelect, setSubSelect] = useState(
+    initSub ? (subcategoriesFor(initCat).includes(initSub) ? initSub : OTHER_OPTION) : '',
+  )
+  const [subCustom, setSubCustom] = useState(
+    initSub && !subcategoriesFor(initCat).includes(initSub) ? initSub : '',
+  )
+
+  const categoryValue = catSelect === OTHER_OPTION ? catCustom.trim() : catSelect
+  const subOptions = subcategoriesFor(catSelect === OTHER_OPTION ? '' : catSelect)
+  const subcategoryValue = subSelect === OTHER_OPTION ? subCustom.trim() : subSelect
+
   const [metaTitle, setMetaTitle] = useState(initial?.metaTitle ?? '')
   const [metaDescription, setMetaDescription] = useState(initial?.metaDescription ?? '')
   const [focusKeyword, setFocusKeyword] = useState(initial?.focusKeyword ?? '')
@@ -64,7 +89,8 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
       coverImageCaption: coverImageCaption.trim() || null,
       status,
       tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-      category: category.trim() || null,
+      category: categoryValue.trim() || null,
+      subcategory: subcategoryValue.trim() || null,
       metaTitle: metaTitle.trim() || null,
       metaDescription: metaDescription.trim() || null,
       focusKeyword: focusKeyword.trim() || null,
@@ -188,8 +214,60 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
           </div>
           <div>
             <label className={labelCls}>Category</label>
-            <input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Guides" />
+            <select
+              className={inputCls}
+              value={catSelect}
+              onChange={(e) => {
+                const v = e.target.value
+                setCatSelect(v)
+                setCatCustom('')
+                // Category drives the subcategory list — clear the old pick so we
+                // never keep a subcategory that doesn't belong to the new category.
+                setSubSelect('')
+                setSubCustom('')
+              }}
+            >
+              <option value="">— Select category —</option>
+              {BLOG_CATEGORY_LABELS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+              <option value={OTHER_OPTION}>{OTHER_OPTION}</option>
+            </select>
+            {catSelect === OTHER_OPTION && (
+              <input
+                className={cn(inputCls, 'mt-2')}
+                value={catCustom}
+                onChange={(e) => setCatCustom(e.target.value)}
+                placeholder="Type the category name"
+                autoFocus
+              />
+            )}
           </div>
+          {catSelect && (
+            <div>
+              <label className={labelCls}>Subcategory <span className="text-text-muted font-normal">(optional)</span></label>
+              <select
+                className={inputCls}
+                value={subSelect}
+                onChange={(e) => { setSubSelect(e.target.value); setSubCustom('') }}
+              >
+                <option value="">— None —</option>
+                {subOptions.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+                <option value={OTHER_OPTION}>{OTHER_OPTION}</option>
+              </select>
+              {subSelect === OTHER_OPTION && (
+                <input
+                  className={cn(inputCls, 'mt-2')}
+                  value={subCustom}
+                  onChange={(e) => setSubCustom(e.target.value)}
+                  placeholder="Type the subcategory name"
+                  autoFocus
+                />
+              )}
+            </div>
+          )}
           <div>
             <label className={labelCls}>Tags (comma-separated)</label>
             <input className={inputCls} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="USDT, JazzCash, P2P" />

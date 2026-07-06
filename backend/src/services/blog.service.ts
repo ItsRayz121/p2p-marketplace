@@ -96,6 +96,7 @@ export interface BlogPostInput {
   status?: 'draft' | 'published' | undefined
   tags?: string[] | undefined
   category?: string | null | undefined
+  subcategory?: string | null | undefined
   authorName?: string | undefined
   metaTitle?: string | null | undefined
   metaDescription?: string | null | undefined
@@ -126,6 +127,7 @@ export async function createPost(input: BlogPostInput, authorId?: string) {
       publishedAt: status === 'published' ? new Date() : null,
       tags: input.tags ?? [],
       category: input.category ?? null,
+      subcategory: input.subcategory ?? null,
       authorId: authorId ?? null,
       authorName: input.authorName?.trim() || 'RupChain',
       metaTitle: input.metaTitle ?? null,
@@ -172,6 +174,7 @@ export async function updatePost(id: string, input: BlogPostUpdate) {
       ...(input.status !== undefined ? { status: input.status, publishedAt } : {}),
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
       ...(input.category !== undefined ? { category: input.category } : {}),
+      ...(input.subcategory !== undefined ? { subcategory: input.subcategory } : {}),
       ...(input.authorName !== undefined ? { authorName: input.authorName.trim() || 'RupChain' } : {}),
       ...(input.metaTitle !== undefined ? { metaTitle: input.metaTitle } : {}),
       ...(input.metaDescription !== undefined ? { metaDescription: input.metaDescription } : {}),
@@ -214,7 +217,7 @@ export async function getAdminById(id: string) {
 
 // ─── Public operations ──────────────────────────────────────────────────────
 
-export async function listPublic(opts: { page?: number | undefined; pageSize?: number | undefined; category?: string | undefined; tag?: string | undefined; q?: string | undefined }) {
+export async function listPublic(opts: { page?: number | undefined; pageSize?: number | undefined; category?: string | undefined; subcategory?: string | undefined; tag?: string | undefined; q?: string | undefined }) {
   const page = Math.max(1, opts.page ?? 1)
   const pageSize = Math.min(50, Math.max(1, opts.pageSize ?? 12))
   // Only gate on publish status. `noindex` is a search-engine directive (keep a
@@ -224,6 +227,7 @@ export async function listPublic(opts: { page?: number | undefined; pageSize?: n
   // their direct URL.) The sitemap still excludes noindex — see listPublishedSlugs.
   const where: Record<string, unknown> = { status: 'published' }
   if (opts.category) where.category = opts.category
+  if (opts.subcategory) where.subcategory = opts.subcategory
   if (opts.tag) where.tags = { has: opts.tag }
   if (opts.q) {
     where.OR = [
@@ -239,7 +243,7 @@ export async function listPublic(opts: { page?: number | undefined; pageSize?: n
       take: pageSize,
       select: {
         slug: true, title: true, excerpt: true, coverImageUrl: true, coverImageAlt: true,
-        category: true, tags: true, authorName: true, publishedAt: true, readingMinutes: true,
+        category: true, subcategory: true, tags: true, authorName: true, publishedAt: true, readingMinutes: true,
         viewCount: true,
       },
     }),

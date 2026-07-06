@@ -1148,6 +1148,7 @@ model BlogPost {
 
   tags            String[]  @default([])
   category        String?
+  subcategory     String?
 
   // Denormalized authorship — no FK, so we don't touch the User relation graph.
   authorId        String?
@@ -1169,6 +1170,7 @@ model BlogPost {
 
   @@index([status, publishedAt])
   @@index([category])
+  @@index([subcategory])
 }
 
 // Newsletter opt-ins captured from the public blog sidebar. Email-only, no

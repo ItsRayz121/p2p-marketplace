@@ -111,7 +111,11 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
         <div className="mt-5 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_17rem]">
           {/* ── Article ───────────────────────────────────────────────── */}
           <article className="min-w-0">
-            {post.category && <span className="text-[11px] font-bold uppercase tracking-wide text-primary">{post.category}</span>}
+            {post.category && (
+              <span className="text-[11px] font-bold uppercase tracking-wide text-primary">
+                {post.category}{post.subcategory ? ` · ${post.subcategory}` : ''}
+              </span>
+            )}
             <h1 className="mt-1.5 text-3xl font-bold leading-tight text-text-primary sm:text-4xl">{post.title}</h1>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-muted">
               <span>By {post.authorName}</span>
