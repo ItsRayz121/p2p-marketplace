@@ -40,6 +40,16 @@ export async function marketplaceRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data })
   })
 
+  // USDT price history (OHLC / line) from completed USDT trades on this platform,
+  // for the marketplace price chart. ?range=24h|7d|30d|90d|1y|all. Public.
+  app.get('/rates/usdt-history', async (req, reply) => {
+    const raw = (req.query as { range?: string }).range ?? '30d'
+    const valid = ['24h', '7d', '30d', '90d', '1y', 'all'] as const
+    const range = (valid as readonly string[]).includes(raw) ? (raw as typeof valid[number]) : '30d'
+    const data = await marketplaceService.getUsdtPriceHistory(range)
+    return reply.send({ success: true, data })
+  })
+
   app.get('/stats', async (_req, reply) => {
     const data = await marketplaceService.getStats()
     return reply.send({ success: true, data })

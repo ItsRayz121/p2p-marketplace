@@ -17,6 +17,7 @@ import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, Histo
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
+import { MarketplacePriceChart } from '@/components/marketplace/MarketplacePriceChart'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -700,6 +701,11 @@ export default function MarketplacePage() {
 
       {/* Stats strip */}
       {marketStats && <MarketplaceStatsStrip stats={{ ...marketStats, totalListings: total }} />}
+
+      {/* USDT price chart — PKR per USDT over time, from completed trades here */}
+      <div className="mt-4">
+        <MarketplacePriceChart />
+      </div>
 
       {/* Recent trades ticker */}
       <RecentTradesFeed trades={recentTrades} />

@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { isPubliclyVisible, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { getBondConfig, computeBondUsdt } from './makerBond.service'
 import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
+import { buildPriceHistory, priceRangeStart, type PriceRange, type PriceHistoryResult } from '../lib/priceHistory'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -861,6 +862,40 @@ export async function getUsdtReferenceRate(): Promise<UsdtReferenceRate> {
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 30)
   return result
+}
+
+// ─── USDT price history (for the marketplace chart) ──────────────────────────
+// Source of truth = completed USDT trades on THIS platform (their transacted
+// PKR-per-USDT price, timestamped at crypto_released). Same OHLC bucketing as
+// the CTM token chart (lib/priceHistory).
+export interface UsdtPriceHistory extends PriceHistoryResult {
+  /** Price unit is PKR per 1 USDT. */
+  currency: 'PKR'
+}
+
+export async function getUsdtPriceHistory(range: PriceRange): Promise<UsdtPriceHistory> {
+  const now = new Date()
+
+  let earliest: Date | null = null
+  if (range === 'all') {
+    const first = await db.trade.findFirst({
+      where: { status: 'crypto_released', coin: 'USDT', releasedAt: { not: null } },
+      select: { releasedAt: true },
+      orderBy: { releasedAt: 'asc' },
+    })
+    earliest = first?.releasedAt ?? null
+  }
+  const from = priceRangeStart(range, now, earliest)
+
+  const rows = await db.trade.findMany({
+    where: { status: 'crypto_released', coin: 'USDT', releasedAt: { gte: from, lte: now } },
+    select: { price: true, releasedAt: true },
+    orderBy: { releasedAt: 'asc' },
+  })
+  const trades = rows.map((r) => ({ price: Number(r.price), at: r.releasedAt as Date }))
+
+  const history = buildPriceHistory(trades, range, from, now)
+  return { ...history, currency: 'PKR' }
 }
 
 export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {

@@ -862,6 +862,8 @@ export const marketplaceApi = {
     apiRequest<{ avg: number | null; buyAvg: number | null; sellAvg: number | null; sampleSize: number; lowData: boolean; dataSource: string; marginPct: number }>('/marketplace/rates/usdt-insight'),
   getUsdtReferenceRate: () =>
     apiRequest<{ rate: number | null; source: 'recent_trades' | 'active_listings' | 'fx_spot' | 'none'; sampleSize: number }>('/marketplace/rates/usdt-reference'),
+  getUsdtPriceHistory: (range: CtmPriceRange) =>
+    apiRequest<UsdtPriceHistory>('/marketplace/rates/usdt-history' + buildQs({ range })),
   getAds: (params?: Record<string, string | number | undefined>) => {
     const qs = params
       ? '?' + new URLSearchParams(
@@ -2904,6 +2906,20 @@ export interface CtmPriceHistory {
   range: CtmPriceRange
   currency: 'PKR'
   usdtPkrRate: number | null
+  candles: CtmPriceCandle[]
+  points: CtmPricePoint[]
+  tradeCount: number
+  bucketMs: number
+  from: string
+  to: string
+  hasCandles: boolean
+}
+
+// USDT-marketplace price history — PKR per 1 USDT over time. Same shape as the
+// CTM history minus the conversion rate (the price is already in PKR).
+export interface UsdtPriceHistory {
+  range: CtmPriceRange
+  currency: 'PKR'
   candles: CtmPriceCandle[]
   points: CtmPricePoint[]
   tradeCount: number
