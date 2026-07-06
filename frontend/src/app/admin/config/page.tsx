@@ -50,6 +50,10 @@ const STRUCTURED_KEYS = new Set([
   'usdt_price_margin_pct', 'ctm_price_margin_pct',
   'usdt_bid_margin_pct', 'ctm_bid_margin_pct',
   'max_concurrent_trades', 'max_concurrent_trades_with_dispute', 'trade_limit_bypass_user_ids',
+  // New / beta feature flags (see "New & Beta Features" panel)
+  'ctm_usdt_payment_enabled', 'messaging_inbox_enabled', 'admin_email_notifs_enabled',
+  'taker_first_settlement_enabled', 'nokyc_taker_enabled',
+  'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -250,6 +254,19 @@ export default function ConfigPage() {
   const [promoGiveawayFlag, setPromoGiveawayFlag] = useState(false)
   const [mktSaving, setMktSaving] = useState(false)
 
+  // ── New & Beta Features (recently shipped, flag-gated OFF by default) ─────────
+  const [betaOpen, setBetaOpen] = useState(false)
+  const [ctmUsdtFlag, setCtmUsdtFlag] = useState(false)
+  const [messagingFlag, setMessagingFlag] = useState(false)
+  const [adminEmailFlag, setAdminEmailFlag] = useState(false)
+  const [takerFirstFlag, setTakerFirstFlag] = useState(false)
+  const [nokycFlag, setNokycFlag] = useState(false)
+  const [nokycPerTrade, setNokycPerTrade] = useState('20000')
+  const [nokycDaily, setNokycDaily] = useState('60000')
+  const [nokycCeiling, setNokycCeiling] = useState('150000')
+  const [nokycMaxOpen, setNokycMaxOpen] = useState('1')
+  const [betaSaving, setBetaSaving] = useState(false)
+
   // ── Homepage Top Offers ─────────────────────────────────────────────────────
   const [offersMode, setOffersMode] = useState<'top' | 'latest' | 'pinned'>('top')
   const [pinnedAdIds, setPinnedAdIds] = useState('')
@@ -355,6 +372,15 @@ export default function ConfigPage() {
       setGiveawayFlag(m['gas_giveaway_enabled'] === 'true')
       setPromoGiveawayFlag(m['promo_giveaway_enabled'] === 'true')
       setFreeGrantFlag(m['gas_free_grant_enabled'] === 'true')
+      setCtmUsdtFlag(m['ctm_usdt_payment_enabled'] === 'true')
+      setMessagingFlag(m['messaging_inbox_enabled'] === 'true')
+      setAdminEmailFlag(m['admin_email_notifs_enabled'] === 'true')
+      setTakerFirstFlag(m['taker_first_settlement_enabled'] === 'true')
+      setNokycFlag(m['nokyc_taker_enabled'] === 'true')
+      setNokycPerTrade(m['nokyc_max_per_trade_pkr'] ?? '20000')
+      setNokycDaily(m['nokyc_max_daily_pkr'] ?? '60000')
+      setNokycCeiling(m['nokyc_rolling_ceiling_pkr'] ?? '150000')
+      setNokycMaxOpen(m['nokyc_max_open_trades'] ?? '1')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
       setUsdtBidMargin(m['usdt_bid_margin_pct'] ?? '10')
@@ -513,6 +539,25 @@ export default function ConfigPage() {
       showToast('Marketing & Growth settings saved. Takes effect within ~15s.')
     } catch { showToast('Failed to save marketing settings.', false) }
     finally { setMktSaving(false) }
+  }
+
+  async function saveBeta() {
+    setBetaSaving(true)
+    try {
+      await saveKeys([
+        { key: 'ctm_usdt_payment_enabled', value: ctmUsdtFlag ? 'true' : 'false' },
+        { key: 'messaging_inbox_enabled', value: messagingFlag ? 'true' : 'false' },
+        { key: 'admin_email_notifs_enabled', value: adminEmailFlag ? 'true' : 'false' },
+        { key: 'taker_first_settlement_enabled', value: takerFirstFlag ? 'true' : 'false' },
+        { key: 'nokyc_taker_enabled', value: nokycFlag ? 'true' : 'false' },
+        { key: 'nokyc_max_per_trade_pkr', value: String(Math.max(parseFloat(nokycPerTrade) || 0, 0)) },
+        { key: 'nokyc_max_daily_pkr', value: String(Math.max(parseFloat(nokycDaily) || 0, 0)) },
+        { key: 'nokyc_rolling_ceiling_pkr', value: String(Math.max(parseFloat(nokycCeiling) || 0, 0)) },
+        { key: 'nokyc_max_open_trades', value: String(Math.max(parseInt(nokycMaxOpen, 10) || 0, 0)) },
+      ])
+      showToast('Feature settings saved. Takes effect within ~15s.')
+    } catch { showToast('Failed to save feature settings.', false) }
+    finally { setBetaSaving(false) }
   }
 
   async function savePricing() {
@@ -719,6 +764,94 @@ export default function ConfigPage() {
 
           <div className="flex justify-end">
             <Button size="sm" loading={mktSaving} onClick={saveMarketing}>Save Marketing Settings</Button>
+          </div>
+        </div>
+      </Accordion>
+
+      {/* ══ New & Beta Features ═══════════════════════════════════════════════ */}
+      <Accordion
+        title="New & Beta Features"
+        subtitle="Recently shipped features — each OFF by default until you enable it here"
+        open={betaOpen}
+        onToggle={() => setBetaOpen((v) => !v)}
+        badge={
+          (ctmUsdtFlag || messagingFlag || adminEmailFlag || takerFirstFlag || nokycFlag)
+            ? <Badge variant="success" size="sm">{[ctmUsdtFlag, messagingFlag, adminEmailFlag, takerFirstFlag, nokycFlag].filter(Boolean).length} ON</Badge>
+            : <Badge variant="outline" size="sm">All OFF</Badge>
+        }
+      >
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-text-muted">
+            Each switch is OFF by default. Turning one ON activates that feature platform-wide and
+            takes effect within ~15s; turning it OFF instantly disables it. Run staging QA before
+            enabling anything that moves funds.
+          </p>
+
+          {/* CTM USDT-as-payment */}
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={ctmUsdtFlag} onChange={(e) => setCtmUsdtFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">CTM USDT-as-payment <span className="font-mono text-xs text-text-muted">ctm_usdt_payment_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Lets a Community Token Market listing be priced/settled in USDT (on-chain BEP20/Aptos or exchange transfer) instead of PKR. Code path is ready — QA a full SELL + BUY USDT trade on staging before enabling in production.</p>
+            </div>
+          </label>
+
+          {/* Messaging inbox */}
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={messagingFlag} onChange={(e) => setMessagingFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Messaging inbox <span className="font-mono text-xs text-text-muted">messaging_inbox_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Reveals the persistent counterparty Messaging inbox (dropdown + pages) and starts writing per-pair chat threads / trade episodes. Threads only ever form between users who have actually traded.</p>
+            </div>
+          </label>
+
+          {/* Admin email notifications */}
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={adminEmailFlag} onChange={(e) => setAdminEmailFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Admin email notifications <span className="font-mono text-xs text-text-muted">admin_email_notifs_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Also emails critical admin alerts (withdrawal failures, reverted txs, unattributed deposits) to <span className="font-mono">ADMIN_ALERT_EMAIL</span>, on top of the in-app bell, web push and Telegram DM. Only payloads marked email-eligible ever send.</p>
+            </div>
+          </label>
+
+          {/* Taker-first settlement — needs a per-market code deploy too */}
+          <label className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 cursor-pointer hover:bg-amber-500/10 transition-colors">
+            <input type="checkbox" checked={takerFirstFlag} onChange={(e) => setTakerFirstFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Taker-sends-first settlement <span className="font-mono text-xs text-text-muted">taker_first_settlement_enabled</span></p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">⚠️ On a BUY ad, the taker (crypto seller) transfers FIRST, then the merchant pays fiat. <b>This flag alone is not enough</b> — each market must also be marked ready in code (<span className="font-mono">TAKER_FIRST_MARKET_READY</span>, currently OFF for both USDT &amp; CTM) and deployed. Until then, flipping this changes nothing.</p>
+            </div>
+          </label>
+
+          {/* No-KYC taker */}
+          <label className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 cursor-pointer hover:bg-amber-500/10 transition-colors">
+            <input type="checkbox" checked={nokycFlag} onChange={(e) => setNokycFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">No-KYC taker access <span className="font-mono text-xs text-text-muted">nokyc_taker_enabled</span></p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">⚠️ Lets an un-verified user TAKE trades (respond to someone else&apos;s ad) without KYC, subject to the PKR limits below. Creating an ad still always requires approved KYC. Applies to both USDT &amp; CTM.</p>
+            </div>
+          </label>
+
+          {nokycFlag && (
+            <div className="rounded-xl border border-border p-4 space-y-4">
+              <SubSection label="No-KYC limits (PKR)" />
+              <Field label="Max per trade" hint="Single-trade ceiling for an un-verified taker (default 20,000).">
+                <input className={inputCls} type="number" min="0" value={nokycPerTrade} onChange={(e) => setNokycPerTrade(e.target.value)} placeholder="20000" />
+              </Field>
+              <Field label="Max per day" hint="Rolling 24h volume ceiling (default 60,000).">
+                <input className={inputCls} type="number" min="0" value={nokycDaily} onChange={(e) => setNokycDaily(e.target.value)} placeholder="60000" />
+              </Field>
+              <Field label="Lifetime ceiling" hint="Total no-KYC volume before KYC is forced (default 150,000).">
+                <input className={inputCls} type="number" min="0" value={nokycCeiling} onChange={(e) => setNokycCeiling(e.target.value)} placeholder="150000" />
+              </Field>
+              <Field label="Max open trades" hint="Simultaneous open trades an un-verified taker may hold (default 1).">
+                <input className={inputCls} type="number" min="0" value={nokycMaxOpen} onChange={(e) => setNokycMaxOpen(e.target.value)} placeholder="1" />
+              </Field>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button size="sm" loading={betaSaving} onClick={saveBeta}>Save Feature Settings</Button>
           </div>
         </div>
       </Accordion>
