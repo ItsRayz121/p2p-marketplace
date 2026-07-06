@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { blogApi, ctmApi, gasApi, type BlogPost, type BlogUpsert, type GasChain, ApiError } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
@@ -8,7 +8,8 @@ import { BlogEditor } from './BlogEditor'
 import { SeoChecklist } from './SeoChecklist'
 import { cn } from '@/lib/utils'
 import { BLOG_CATEGORY_LABELS, CATEGORY, OTHER_OPTION, subcategoriesFor } from '@/lib/blogTaxonomy'
-import { Eye, X } from 'lucide-react'
+import { BLOG_PREVIEW_CHANNEL, BLOG_PREVIEW_STORAGE_KEY, type BlogPreviewSnapshot } from './BlogArticlePreview'
+import { Eye } from 'lucide-react'
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-border bg-canvas text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary/40'
 const labelCls = 'block text-xs font-semibold text-text-secondary mb-1'
@@ -104,7 +105,51 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
-  const [showPreview, setShowPreview] = useState(false)
+
+  // ── Live preview ─────────────────────────────────────────────────────────
+  // "Preview" opens a dedicated tab that renders the post exactly as the public
+  // page will, and keeps it in sync with the editor: on open we seed a snapshot
+  // into localStorage, then broadcast the latest snapshot (debounced) on every
+  // edit over a BroadcastChannel the preview tab listens on.
+  const [previewOpened, setPreviewOpened] = useState(false)
+  const previewChannel = useRef<BroadcastChannel | null>(null)
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') previewChannel.current = new BroadcastChannel(BLOG_PREVIEW_CHANNEL)
+    return () => previewChannel.current?.close()
+  }, [])
+
+  const buildSnapshot = useCallback((): BlogPreviewSnapshot => ({
+    title,
+    category: categoryValue,
+    subcategory: subcategoryValue,
+    bodyHtml,
+    coverImageUrl,
+    coverImageAlt,
+    coverImageCaption,
+    tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+    authorName: initial?.authorName ?? 'RupChain',
+    publishedAt: initial?.publishedAt ?? null,
+  }), [title, categoryValue, subcategoryValue, bodyHtml, coverImageUrl, coverImageAlt, coverImageCaption, tags, initial])
+
+  const pushPreview = useCallback(() => {
+    const snap = buildSnapshot()
+    try { localStorage.setItem(BLOG_PREVIEW_STORAGE_KEY, JSON.stringify(snap)) } catch { /* ignore quota */ }
+    previewChannel.current?.postMessage(snap)
+  }, [buildSnapshot])
+
+  // Keep an open preview tab in sync with edits (debounced so typing is smooth).
+  useEffect(() => {
+    if (!previewOpened) return
+    const t = setTimeout(pushPreview, 250)
+    return () => clearTimeout(t)
+  }, [previewOpened, pushPreview])
+
+  function openPreview() {
+    pushPreview() // seed the snapshot before the tab reads localStorage
+    const win = window.open('/admin/blog/preview', BLOG_PREVIEW_CHANNEL)
+    win?.focus()
+    setPreviewOpened(true)
+  }
 
   const { upload: uploadCover, uploading: uploadingCover } = useFileUpload('blog-image')
 
@@ -164,7 +209,6 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
   }
 
   return (
-    <>
     <div className="grid lg:grid-cols-3 gap-6 items-start">
       {/* Main column */}
       <div className="lg:col-span-2 space-y-4">
@@ -197,7 +241,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
             {ok && <p className="text-xs text-success">{ok}</p>}
             {/* Preview — renders the post exactly as the public page will, from the
                 current (unsaved) form state, so you can eyeball it before publishing. */}
-            <button onClick={() => setShowPreview(true)} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-sm font-semibold text-text-primary hover:bg-surface-alt">
+            <button onClick={openPreview} className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-sm font-semibold text-text-primary hover:bg-surface-alt">
               <Eye size={15} aria-hidden /> Preview
             </button>
             <div className="flex gap-2">
@@ -345,113 +389,6 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
             <input type="checkbox" checked={noindex} onChange={(e) => setNoindex(e.target.checked)} />
             Hide from search engines (noindex)
           </label>
-        </div>
-      </div>
-    </div>
-
-    {showPreview && (
-      <BlogPreviewModal
-        title={title}
-        category={categoryValue}
-        subcategory={subcategoryValue}
-        bodyHtml={bodyHtml}
-        coverImageUrl={coverImageUrl}
-        coverImageAlt={coverImageAlt}
-        coverImageCaption={coverImageCaption}
-        tags={tags.split(',').map((t) => t.trim()).filter(Boolean)}
-        authorName={initial?.authorName ?? 'RupChain'}
-        publishedAt={initial?.publishedAt ?? null}
-        onClose={() => setShowPreview(false)}
-      />
-    )}
-    </>
-  )
-}
-
-// ─── Live preview modal ────────────────────────────────────────────────────────
-// Renders the post the way the public article page does (same `blog-article`
-// styles, cover, meta line, tags) from the current unsaved form state. A banner
-// makes clear it's a preview, and the reading time is a rough client estimate.
-
-function BlogPreviewModal({
-  title, category, subcategory, bodyHtml, coverImageUrl, coverImageAlt, coverImageCaption, tags, authorName, publishedAt, onClose,
-}: {
-  title: string
-  category: string
-  subcategory: string
-  bodyHtml: string
-  coverImageUrl: string
-  coverImageAlt: string
-  coverImageCaption: string
-  tags: string[]
-  authorName: string
-  publishedAt: string | null
-  onClose: () => void
-}) {
-  // Mirror the server's estimateReadingMinutes exactly (strip tags → collapse
-  // whitespace → words / 200) so the previewed count matches what gets saved.
-  const text = bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-  const words = text ? text.split(' ').length : 0
-  const readingMinutes = Math.max(1, Math.round(words / 200))
-  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  // A published post being edited shows its real date; an unpublished draft has
-  // no date yet, so we stand in with today (what it'll get on publish).
-  const dateLabel = publishedAt ? fmtDate(publishedAt) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  const hasBody = bodyHtml && bodyHtml !== '<p></p>'
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto" onClick={onClose}>
-      <div className="min-h-full py-8 px-4 flex justify-center">
-        <div className="relative w-full max-w-3xl bg-surface rounded-2xl shadow-xl border border-border" onClick={(e) => e.stopPropagation()}>
-          {/* Preview banner + close */}
-          <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-surface/95 backdrop-blur px-5 py-3">
-            <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-primary">
-              <Eye size={14} aria-hidden /> Preview — not published
-            </span>
-            <button onClick={onClose} className="inline-flex items-center gap-1 text-sm font-semibold text-text-secondary hover:text-text-primary">
-              <X size={16} aria-hidden /> Close
-            </button>
-          </div>
-
-          <article className="px-5 sm:px-8 py-8 min-w-0">
-            {category && (
-              <span className="text-[11px] font-bold uppercase tracking-wide text-primary">
-                {category}{subcategory ? ` · ${subcategory}` : ''}
-              </span>
-            )}
-            <h1 className="mt-1.5 text-3xl font-bold leading-tight text-text-primary sm:text-4xl">
-              {title || 'Untitled post'}
-            </h1>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-muted">
-              <span>By {authorName}</span>
-              <span>·</span><span>{dateLabel}</span>
-              <span>·</span><span>{readingMinutes} min read</span>
-            </div>
-
-            {coverImageUrl && (
-              <figure className="mt-6">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={coverImageUrl} alt={coverImageAlt || title} className="w-full rounded-xl border border-border" />
-                {coverImageCaption && (
-                  <figcaption className="mt-2 text-center text-sm italic text-text-muted">{coverImageCaption}</figcaption>
-                )}
-              </figure>
-            )}
-
-            {hasBody ? (
-              <div className="blog-article mt-8" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
-            ) : (
-              <p className="mt-8 text-text-muted italic">Nothing written yet — add some article body to preview it.</p>
-            )}
-
-            {tags.length > 0 && (
-              <div className="mt-10 flex flex-wrap gap-2">
-                {tags.map((t) => (
-                  <span key={t} className="rounded-full border border-border bg-surface-alt px-2.5 py-1 text-xs font-medium text-text-secondary">#{t}</span>
-                ))}
-              </div>
-            )}
-          </article>
         </div>
       </div>
     </div>
