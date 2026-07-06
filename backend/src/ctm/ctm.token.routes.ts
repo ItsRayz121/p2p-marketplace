@@ -14,6 +14,8 @@ import {
   approveTokenRequest,
   rejectTokenRequest,
   getTokenMarketInsight,
+  getTokenPriceHistory,
+  type CtmPriceRange,
 } from './ctm.token.service'
 
 const suggestSchema = z.object({
@@ -137,6 +139,17 @@ export async function ctmTokenRoutes(app: FastifyInstance) {
     const { tokenId } = req.params as { tokenId: string }
     const insight = await getTokenMarketInsight(tokenId)
     return reply.send({ success: true, data: insight })
+  })
+
+  // GET /ctm/tokens/:tokenId/price-history?range=… — OHLC / line series from
+  // completed trades on this platform (source of truth), for the token chart.
+  app.get('/ctm/tokens/:tokenId/price-history', { preHandler: [optionalAuth] }, async (req, reply) => {
+    const { tokenId } = req.params as { tokenId: string }
+    const raw = (req.query as { range?: string }).range ?? '30d'
+    const valid: CtmPriceRange[] = ['24h', '7d', '30d', '90d', '1y', 'all']
+    const range: CtmPriceRange = (valid as string[]).includes(raw) ? (raw as CtmPriceRange) : '30d'
+    const history = await getTokenPriceHistory(tokenId, range)
+    return reply.send({ success: true, data: history })
   })
 
   // GET /ctm/tokens/:slug — token detail

@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
+import { CtmPriceChart } from '@/components/ctm/CtmPriceChart'
 
 const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-500/15 text-green-800 dark:text-green-300',
@@ -145,6 +146,9 @@ export default function CtmTokenDetailPage() {
           </button>
         </Link>
       </div>
+
+      {/* Price chart — candles/line from completed trades on this platform */}
+      <CtmPriceChart tokenId={token.id} tokenSymbol={token.symbol} />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
+import { getUsdtReferenceRate } from '../services/marketplace.service'
 import type { CtmTokenStatus, CtmTokenRiskTier, CtmSettlementType } from '@prisma/client'
 
 export interface ListTokensFilters {
@@ -352,5 +353,122 @@ export async function getTokenMarketInsight(tokenId: string): Promise<MarketInsi
     dataSource: 'none',
     sampleSize: 0,
     lowData: true,
+  }
+}
+
+// ─── Price history (OHLC / line series) ──────────────────────────────────────
+// Source of truth = completed CTM trades on THIS platform (prices in PKR). The
+// client converts to USDT with usdtPkrRate. We bucket trades into OHLC candles
+// sized to the range; the client shows candlesticks when there are enough
+// buckets and falls back to an area line for sparse tokens.
+
+export type CtmPriceRange = '24h' | '7d' | '30d' | '90d' | '1y' | 'all'
+
+export interface CtmPriceCandle { t: string; o: number; h: number; l: number; c: number; n: number }
+export interface CtmPricePoint { t: string; p: number }
+
+export interface CtmPriceHistory {
+  range: CtmPriceRange
+  /** Prices are returned in PKR; multiply by (1 / usdtPkrRate) for USDT. */
+  currency: 'PKR'
+  usdtPkrRate: number | null
+  candles: CtmPriceCandle[]
+  points: CtmPricePoint[]
+  tradeCount: number
+  bucketMs: number
+  from: string
+  to: string
+  /** Hint: enough distinct buckets to render a candlestick view sensibly. */
+  hasCandles: boolean
+}
+
+const CTM_RANGE_MS: Record<CtmPriceRange, number | null> = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+  '90d': 90 * 24 * 60 * 60 * 1000,
+  '1y': 365 * 24 * 60 * 60 * 1000,
+  'all': null,
+}
+
+const HOUR = 60 * 60 * 1000
+const DAY = 24 * HOUR
+
+function ctmBucketMs(range: CtmPriceRange, spanMs: number): number {
+  switch (range) {
+    case '24h': return HOUR            // 24 buckets
+    case '7d': return 6 * HOUR         // 28 buckets
+    case '30d': return DAY             // 30 buckets
+    case '90d': return DAY             // 90 buckets
+    case '1y': return 7 * DAY          // ~52 buckets
+    case 'all': {
+      // Aim for ~60 buckets across the actual span, clamped to sane sizes.
+      const target = Math.max(spanMs / 60, HOUR)
+      return Math.min(Math.max(target, HOUR), 30 * DAY)
+    }
+  }
+}
+
+export async function getTokenPriceHistory(tokenId: string, range: CtmPriceRange): Promise<CtmPriceHistory> {
+  const now = new Date()
+  const to = now
+
+  // Resolve the window start. For "all", anchor on the earliest completed trade.
+  let from: Date
+  if (range === 'all') {
+    const first = await db.ctmTrade.findFirst({
+      where: { tokenId, status: 'completed', completedAt: { not: null } },
+      select: { completedAt: true },
+      orderBy: { completedAt: 'asc' },
+    })
+    from = first?.completedAt ?? new Date(now.getTime() - 30 * DAY)
+  } else {
+    from = new Date(now.getTime() - (CTM_RANGE_MS[range] as number))
+  }
+
+  const trades = await db.ctmTrade.findMany({
+    where: { tokenId, status: 'completed', completedAt: { gte: from, lte: to } },
+    select: { pricePerUnit: true, completedAt: true },
+    orderBy: { completedAt: 'asc' },
+  })
+
+  const spanMs = Math.max(to.getTime() - from.getTime(), HOUR)
+  const bucketMs = ctmBucketMs(range, spanMs)
+  const fromAligned = Math.floor(from.getTime() / bucketMs) * bucketMs
+
+  // Bucket into OHLC. Trades are ascending, so first seen = open, last = close.
+  const byBucket = new Map<number, CtmPriceCandle>()
+  for (const tr of trades) {
+    const at = (tr.completedAt as Date).getTime()
+    const price = parseFloat(parseFloat(tr.pricePerUnit.toString()).toFixed(6))
+    if (!(price > 0)) continue
+    const key = Math.floor((at - fromAligned) / bucketMs)
+    const bucketStart = new Date(fromAligned + key * bucketMs).toISOString()
+    const existing = byBucket.get(key)
+    if (!existing) {
+      byBucket.set(key, { t: bucketStart, o: price, h: price, l: price, c: price, n: 1 })
+    } else {
+      existing.h = Math.max(existing.h, price)
+      existing.l = Math.min(existing.l, price)
+      existing.c = price // trades ascending → latest wins
+      existing.n += 1
+    }
+  }
+
+  const candles = [...byBucket.values()].sort((a, b) => a.t.localeCompare(b.t))
+  const points: CtmPricePoint[] = candles.map((c) => ({ t: c.t, p: c.c }))
+  const usdtPkrRate = (await getUsdtReferenceRate()).rate
+
+  return {
+    range,
+    currency: 'PKR',
+    usdtPkrRate,
+    candles,
+    points,
+    tradeCount: trades.length,
+    bucketMs,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    hasCandles: candles.length >= 4,
   }
 }

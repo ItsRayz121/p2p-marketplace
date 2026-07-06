@@ -2897,6 +2897,22 @@ export const blogApi = {
 
 // ─── Community Token Market ───────────────────────────────────────────────────
 
+export type CtmPriceRange = '24h' | '7d' | '30d' | '90d' | '1y' | 'all'
+export interface CtmPriceCandle { t: string; o: number; h: number; l: number; c: number; n: number }
+export interface CtmPricePoint { t: string; p: number }
+export interface CtmPriceHistory {
+  range: CtmPriceRange
+  currency: 'PKR'
+  usdtPkrRate: number | null
+  candles: CtmPriceCandle[]
+  points: CtmPricePoint[]
+  tradeCount: number
+  bucketMs: number
+  from: string
+  to: string
+  hasCandles: boolean
+}
+
 export const ctmApi = {
   // Tokens
   getTokens: (params?: Record<string, string | number | undefined>) =>
@@ -2916,6 +2932,9 @@ export const ctmApi = {
     sampleSize: number
     lowData: boolean
   }>(`/ctm/tokens/${tokenId}/market-insight`),
+  getTokenPriceHistory: (tokenId: string, range: CtmPriceRange) => apiRequest<CtmPriceHistory>(
+    `/ctm/tokens/${tokenId}/price-history` + buildQs({ range }),
+  ),
   suggestToken: (data: object) => apiRequest<unknown>('/ctm/tokens/suggest', { method: 'POST', body: JSON.stringify(data) }),
   adminListTokens: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ tokens: unknown[]; total: number; page: number; limit: number; totalPages: number }>(
