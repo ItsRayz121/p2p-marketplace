@@ -295,7 +295,11 @@ function EditCtmListingModal({ listing, onClose, onSaved }: { listing: CtmListin
     setSaving(true)
     try {
       await ctmApi.updateListing(listing.id, {
-        pricePerUnit: p,
+        // Only send the price when it actually changed. The backend rejects ANY
+        // price field with a 409 while there are active trades on the listing, so
+        // always sending it would block edits to terms / window during a trade
+        // even when the price is untouched.
+        ...(p !== parseFloat(listing.pricePerUnit) ? { pricePerUnit: p } : {}),
         minOrderTokens: mn,
         maxOrderTokens: mx,
         tradeWindowMins: tradeWindow,
