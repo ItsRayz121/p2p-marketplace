@@ -8,6 +8,7 @@ import { EntityLogo } from '@/components/ui/EntityLogo'
 import { SaveAddressInline } from '@/components/ctm/SaveAddressInline'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
+import { CTM_USDT_METHODS, CTM_USDT_METHOD_KINDS, type UsdtMethodKind } from '@/lib/ctmUsdtMethods'
 
 interface CtmToken { id: string; name: string; symbol: string; logoUrl?: string; settlementType: string; addressExample?: string; addressRegex?: string }
 
@@ -37,18 +38,10 @@ function methodSubline(m: SavedPaymentMethod): string {
   return m.accountName
 }
 
-// USDT-as-payment options (mirrors backend ctm.usdtPayment CTM_USDT_METHODS).
+// USDT-as-payment method metadata now lives in a shared module so the create
+// form and the take-trade flow categorise methods identically.
 // Only surfaced when /ctm/config reports usdtPaymentEnabled.
-const CTM_USDT_METHOD_OPTS: { value: string; label: string; kind: 'wallet' | 'exchange'; placeholder: string }[] = [
-  { value: 'BEP20',   label: 'USDT BEP20',  kind: 'wallet',   placeholder: '0x… wallet address' },
-  { value: 'Aptos',   label: 'USDT Aptos',  kind: 'wallet',   placeholder: '0x… Aptos address' },
-  { value: 'Binance', label: 'Binance UID', kind: 'exchange', placeholder: 'Your Binance UID' },
-  { value: 'OKX',     label: 'OKX UID',     kind: 'exchange', placeholder: 'Your OKX UID' },
-  { value: 'Bitget',  label: 'Bitget UID',  kind: 'exchange', placeholder: 'Your Bitget UID' },
-  { value: 'Gate',    label: 'Gate UID',    kind: 'exchange', placeholder: 'Your Gate.io UID' },
-  { value: 'MEXC',    label: 'MEXC UID',    kind: 'exchange', placeholder: 'Your MEXC UID' },
-  { value: 'Other',   label: 'Other UID',   kind: 'exchange', placeholder: 'Your account ID / UID' },
-]
+const CTM_USDT_METHOD_OPTS = CTM_USDT_METHODS
 
 export default function CreateListingPage() {
   const router = useRouter()
@@ -86,6 +79,10 @@ export default function CreateListingPage() {
   const [paymentCurrency, setPaymentCurrency] = useState<'PKR' | 'USDT'>('PKR')
   const [usdtMethods, setUsdtMethods] = useState<string[]>([])
   const [usdtDests, setUsdtDests] = useState<Record<string, string>>({})
+  // Which method group (Wallet/Blockchain vs Internal/Exchange) the picker shows.
+  // Selections persist across groups — the destination inputs below list every
+  // selected method regardless of the active group.
+  const [usdtKind, setUsdtKind] = useState<UsdtMethodKind>('wallet')
 
   useEffect(() => {
     const init = async () => {
@@ -442,12 +439,29 @@ export default function CreateListingPage() {
                 ? 'Buyers pay you in USDT via these methods. Add the address/UID where you receive for each.'
                 : 'You will pay the seller in USDT via one of these methods.'}
             </p>
+
+            {/* Method type — Wallet/Blockchain vs Internal/Exchange, matching the
+                wallet "Add Delivery Address" flow. Selecting a group filters the
+                options below; picks in the other group stay selected. */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              {CTM_USDT_METHOD_KINDS.map((k) => {
+                const count = usdtMethods.filter((v) => CTM_USDT_METHOD_OPTS.find((o) => o.value === v)?.kind === k.key).length
+                return (
+                  <button type="button" key={k.key} onClick={() => setUsdtKind(k.key)}
+                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${usdtKind === k.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                    {k.label}{count > 0 ? ` (${count})` : ''}
+                  </button>
+                )
+              })}
+            </div>
+
             <div className="flex flex-wrap gap-2 mb-2">
-              {CTM_USDT_METHOD_OPTS.map((o) => {
+              {CTM_USDT_METHOD_OPTS.filter((o) => o.kind === usdtKind).map((o) => {
                 const on = usdtMethods.includes(o.value)
                 return (
                   <button type="button" key={o.value} onClick={() => toggleUsdtMethod(o.value)}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-secondary hover:bg-surface'}`}>
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-secondary hover:bg-surface'}`}>
+                    <EntityLogo type={o.kind === 'wallet' ? 'chain' : 'exchange'} slug={o.value} size="xs" className="flex-shrink-0" />
                     {o.label}
                   </button>
                 )

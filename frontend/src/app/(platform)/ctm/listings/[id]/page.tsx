@@ -11,6 +11,7 @@ import { SaveAddressInline } from '@/components/ctm/SaveAddressInline'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
+import { CTM_USDT_METHOD_KINDS, ctmUsdtMethodKind, ctmUsdtMethodLabel, type UsdtMethodKind } from '@/lib/ctmUsdtMethods'
 import { Star } from 'lucide-react'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-surface-alt text-text-secondary', basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300', verified: 'bg-green-500/15 text-green-700 dark:text-green-300', elite: 'bg-primary/10 text-primary' }
@@ -135,6 +136,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [tokenAmount, setTokenAmount] = useState('')
   // USDT-as-payment selection (only used on USDT listings)
   const [usdtMethod, setUsdtMethod] = useState('')
+  const [usdtKind, setUsdtKind] = useState<UsdtMethodKind | null>(null) // active method group (Wallet/Blockchain vs Exchange)
   const [usdtAddress, setUsdtAddress] = useState('') // BUY listing: taker's USDT receiving address
   const [bidPrice, setBidPrice] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -933,15 +935,44 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     ? 'Choose how the buyer will pay you in USDT, then enter your receiving address / UID.'
                     : 'Choose how you will pay the seller in USDT.'}
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {usdtOffered.map((m) => (
-                    <button type="button" key={m} onClick={() => setUsdtMethod(m)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${usdtMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
-                      USDT {m}
-                      {usdtMethod === m && <span className="ml-0.5 text-xs">✓</span>}
-                    </button>
-                  ))}
-                </div>
+
+                {/* Group the offered methods into Wallet/Blockchain vs
+                    Internal/Exchange, matching the wallet delivery-address flow.
+                    The group toggle only shows groups that the listing offers. */}
+                {(() => {
+                  const offeredKinds = CTM_USDT_METHOD_KINDS.filter((k) => usdtOffered.some((m) => ctmUsdtMethodKind(m) === k.key))
+                  const activeKind = usdtKind ?? offeredKinds[0]?.key ?? 'wallet'
+                  const shown = usdtOffered.filter((m) => ctmUsdtMethodKind(m) === activeKind)
+                  return (
+                    <>
+                      {offeredKinds.length > 1 && (
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          {offeredKinds.map((k) => (
+                            <button type="button" key={k.key}
+                              onClick={() => {
+                                setUsdtKind(k.key)
+                                // Dropping a pick from the other group avoids submitting a hidden method.
+                                if (usdtMethod && ctmUsdtMethodKind(usdtMethod) !== k.key) { setUsdtMethod(''); setUsdtAddress('') }
+                              }}
+                              className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${activeKind === k.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                              {k.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {shown.map((m) => (
+                          <button type="button" key={m} onClick={() => setUsdtMethod(m)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${usdtMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
+                            <EntityLogo type={ctmUsdtMethodKind(m) === 'wallet' ? 'chain' : 'exchange'} slug={m} size="xs" className="flex-shrink-0" />
+                            {ctmUsdtMethodLabel(m)}
+                            {usdtMethod === m && <span className="ml-0.5 text-xs">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )
+                })()}
                 {/* SELL listing: show the maker's receive address for the chosen method */}
                 {!isBuyListing && usdtMethod && usdtDestFor(usdtMethod) && (
                   <div className="mt-2">
