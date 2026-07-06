@@ -78,6 +78,18 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
     : subcategoriesFor(activeCat)
   const subcategoryValue = subSelect === OTHER_OPTION ? subCustom.trim() : subSelect
 
+  // Reconcile once the live CTM/Gas lists arrive: an existing post whose saved
+  // subcategory wasn't in the static seeds initialised as "Others + custom text".
+  // If that value is actually a real token/chain, promote it back into the
+  // dropdown so editing shows the true selection. Fires only when the lists load
+  // (deps), so it never fights a custom value the user types afterwards.
+  useEffect(() => {
+    if (subSelect !== OTHER_OPTION || !subCustom) return
+    const list = activeCat === CATEGORY.CTM ? ctmSubs : activeCat === CATEGORY.GAS ? gasSubs : []
+    if (list.includes(subCustom)) { setSubSelect(subCustom); setSubCustom('') }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctmSubs, gasSubs])
+
   const [metaTitle, setMetaTitle] = useState(initial?.metaTitle ?? '')
   const [metaDescription, setMetaDescription] = useState(initial?.metaDescription ?? '')
   const [focusKeyword, setFocusKeyword] = useState(initial?.focusKeyword ?? '')
@@ -347,6 +359,8 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
         coverImageAlt={coverImageAlt}
         coverImageCaption={coverImageCaption}
         tags={tags.split(',').map((t) => t.trim()).filter(Boolean)}
+        authorName={initial?.authorName ?? 'RupChain'}
+        publishedAt={initial?.publishedAt ?? null}
         onClose={() => setShowPreview(false)}
       />
     )}
@@ -360,7 +374,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
 // makes clear it's a preview, and the reading time is a rough client estimate.
 
 function BlogPreviewModal({
-  title, category, subcategory, bodyHtml, coverImageUrl, coverImageAlt, coverImageCaption, tags, onClose,
+  title, category, subcategory, bodyHtml, coverImageUrl, coverImageAlt, coverImageCaption, tags, authorName, publishedAt, onClose,
 }: {
   title: string
   category: string
@@ -370,11 +384,19 @@ function BlogPreviewModal({
   coverImageAlt: string
   coverImageCaption: string
   tags: string[]
+  authorName: string
+  publishedAt: string | null
   onClose: () => void
 }) {
-  const words = bodyHtml.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean).length
+  // Mirror the server's estimateReadingMinutes exactly (strip tags → collapse
+  // whitespace → words / 200) so the previewed count matches what gets saved.
+  const text = bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  const words = text ? text.split(' ').length : 0
   const readingMinutes = Math.max(1, Math.round(words / 200))
-  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  // A published post being edited shows its real date; an unpublished draft has
+  // no date yet, so we stand in with today (what it'll get on publish).
+  const dateLabel = publishedAt ? fmtDate(publishedAt) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   const hasBody = bodyHtml && bodyHtml !== '<p></p>'
 
   return (
@@ -401,8 +423,8 @@ function BlogPreviewModal({
               {title || 'Untitled post'}
             </h1>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-text-muted">
-              <span>By RupChain</span>
-              <span>·</span><span>{today}</span>
+              <span>By {authorName}</span>
+              <span>·</span><span>{dateLabel}</span>
               <span>·</span><span>{readingMinutes} min read</span>
             </div>
 
