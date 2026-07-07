@@ -167,7 +167,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   // Collapsible cards
   const [merchantOpen, setMerchantOpen] = useState(true)
   const [paymentOpen, setPaymentOpen] = useState(true)
-  const [payFromOpen, setPayFromOpen] = useState(true)
+  // Payment Methods panel starts collapsed — it's reference info (which rails the
+  // taker can pick from), so it stays out of the way until opened.
+  const [payFromOpen, setPayFromOpen] = useState(false)
   const [deliveryOpen, setDeliveryOpen] = useState(true)
   const [termsOpen, setTermsOpen] = useState(false)
 

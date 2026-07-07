@@ -34,14 +34,14 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 - [x] 4b. BEP20 + Aptos render as equal halves; wallet chains show the USDT token mark (chain slugs had no logo → grey initials). New `ctmUsdtMethodLogo()` helper applied at all chip sites (cards, create, detail).
 - [x] 4c. Labels already correct in helper (Binance UID / OKX UID / USDT BEP20 …) — not "USDT Binance".
 
-## Phase 5 — Listing overview payment display (both PKR + USDT) (both detail pages)
-- [ ] 5a. Ad overview shows only one payment currency → show BOTH. "Payment Methods" → horizontal dropdowns: [PKR methods] [USDT methods → Exchange/Internal + Blockchain]. Collapse by default.
-- [ ] 5b. Consistent naming + logos in these dropdowns.
+## Phase 5 — Listing overview payment display (both PKR + USDT)  ✅ COMMITTED
+- [x] 5a. CTM detail "Payment Methods" panel shows BOTH rails grouped (PKR / USDT·Wallet / USDT·Exchange); now collapsed by default (prior work built the panel; this collapses it).
+- [x] 5b. Consistent labels + USDT logos (via Phase 4 helper).
 
 ## Phase 6 — Trade modal method organization + progress bar
-- [ ] 6a. "Where will you send USDT?" long option list → group Exchange vs Blockchain, collapsible when >3. Consistent wording. (USDT + CTM start modals.)
-- [ ] 6b. Fix half-hidden collapsible buttons.
-- [ ] 6c. CTM trade progress bar: 5th step "Tokens Received" is cut off / outside the box → make it fit (responsive / scroll).
+- [ ] 6a. "Where will you send USDT?" long option list → group Exchange vs Blockchain, collapsible when >3. (DEFERRED — diffuse; revisit if budget.)
+- [ ] 6b. Fix half-hidden collapsible buttons. (DEFERRED — revisit.)
+- [x] 6c. CTM trade stepper now scrolls WITHIN the card (overflow-x-auto, min-w-[340px], mobile label w-12) — 6th step no longer spills outside the box.  ✅ COMMITTED
 
 ## Phase 7 — CTM in-trade chat bubbles (`ctm/trade/[ref]/page.tsx`)
 - [ ] 7a. CTM trade chat: my messages right, other person left (like USDT chat). Name shown.

@@ -843,9 +843,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <Countdown deadline={trade.confirmDeadlineAt ?? trade.proofDeadlineAt ?? trade.expiresAt} />
               </div>
             )}
-            {/* Full-width, flex-distributed stepper — fits any screen without a
-                sideways scroll (connectors flex to fill the gaps). */}
-            <div className="flex items-start">
+            {/* Stepper. Six steps can't fit at a readable size on the narrowest
+                phones, so the row scrolls horizontally WITHIN the card (overflow-x-auto
+                clips to the card bounds — it never spills outside). min-w keeps the
+                labels from being crushed; on wider screens flex-1 connectors fill. */}
+            <div className="overflow-x-auto -mx-1 px-1">
+            <div className="flex items-start min-w-[340px]">
               {STATUS_STEPS.map((s, i) => {
                 const isLast = i === STATUS_STEPS.length - 1
                 return (
@@ -854,7 +857,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       <div className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 ${i < stepIndex ? 'bg-green-500 text-white' : i === stepIndex ? 'bg-primary text-white' : 'bg-surface-alt text-text-muted'}`}>
                         {i < stepIndex ? '✓' : i + 1}
                       </div>
-                      <div className="mt-1.5 w-14 sm:w-16 text-center">
+                      <div className="mt-1.5 w-12 sm:w-16 text-center">
                         <p className={`text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 dark:text-green-400 font-medium' : 'text-text-muted'}`}>
                           {STEP_INFO[i].label}
                         </p>
@@ -871,6 +874,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 )
               })}
+            </div>
             </div>
           </div>
 
