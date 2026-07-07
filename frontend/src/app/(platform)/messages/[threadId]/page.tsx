@@ -88,7 +88,11 @@ export default function MessageThreadPage() {
   const s = data.stats
 
   return (
-    <div className="max-w-2xl mx-auto flex flex-col h-[calc(100dvh-4rem)]">
+    // Fill the viewport below the navbar. On mobile we cancel the parent <main>'s
+    // bottom padding (-mb) and reserve our own (pb) so the composer sits just
+    // ABOVE the fixed BottomNav instead of being hidden behind it — the input is
+    // visible the instant the thread opens, no scrolling required.
+    <div className="max-w-2xl mx-auto flex flex-col h-[calc(100dvh-4rem)] pb-[calc(4rem+env(safe-area-inset-bottom))] -mb-[calc(6rem+env(safe-area-inset-bottom))] lg:h-[calc(100dvh-4rem)] lg:pb-0 lg:mb-0">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-surface">
         <Link href="/messages" className="p-1 -ml-1 rounded hover:bg-muted" aria-label="Back">
@@ -147,8 +151,9 @@ export default function MessageThreadPage() {
         })}
       </div>
 
-      {/* Composer */}
-      <div className="flex items-center gap-2 px-3 py-3 border-t border-border bg-surface pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      {/* Composer — always pinned at the bottom of the thread container, which
+          already clears the mobile BottomNav via the container's padding. */}
+      <div className="flex items-center gap-2 px-3 py-3 border-t border-border bg-surface">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

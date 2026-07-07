@@ -1,5 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import BottomNav from '@/components/layout/BottomNav'
@@ -33,6 +34,12 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const { isLoading: authLoading, user } = useAuthStore()
   const [config, setConfig] = useState<SiteConfig>({})
   const [dismissed, setDismissed] = useState(false)
+  const pathname = usePathname()
+  // On mobile the marketing footer only belongs on the Home tab (where the page
+  // is meant to scroll to the very bottom). On every other app surface — USDT
+  // marketplace, CTM, Messages, trade rooms, etc. — the content is the end of
+  // the page, so the footer is hidden on small screens and kept on desktop only.
+  const isHomeTab = pathname === '/dashboard' || pathname === '/'
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -124,7 +131,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           ) : children}
         </main>
 
-        <Footer />
+        <div className={isHomeTab ? '' : 'hidden lg:block'}>
+          <Footer />
+        </div>
         <BottomNav />
         {user && <PushOptInBanner />}
       </div>
