@@ -316,6 +316,13 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set())
   const chatEndRef = useRef<HTMLDivElement>(null)
   const prevMsgCountRef = useRef(0)
+  // Mobile-only tab: at <lg the trade panel and chat stack, so chat lives on its
+  // own tab. This keeps completing a step from scrolling the page into the chat
+  // (the chat is display:none on the Trade tab, so its auto-scroll is a no-op).
+  const [mobileTab, setMobileTab] = useState<'trade' | 'chat'>('trade')
+  // New counterparty messages while on the Trade tab light up the Chat tab's dot.
+  const lastSeenChatCountRef = useRef(0)
+  const [unreadChat, setUnreadChat] = useState(false)
 
   const fetchTrade = useCallback(async () => {
     try {
@@ -392,6 +399,24 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [trade?.status])
+
+  // Unread tracking for the mobile Chat tab. New incoming messages while the user
+  // is on the Trade tab light up the red dot; opening Chat resets it. MUST stay
+  // above the early returns below (stable hook count across renders).
+  useEffect(() => {
+    if (mobileTab === 'chat') {
+      lastSeenChatCountRef.current = messages.length
+      setUnreadChat(false)
+      return
+    }
+    if (messages.length > lastSeenChatCountRef.current) {
+      const newOnes = messages.slice(lastSeenChatCountRef.current)
+      // Only count messages from the counterparty (skip system + my own).
+      if (newOnes.some((m) => !m.isSystem && m.senderId !== user?.id)) {
+        setUnreadChat(true)
+      }
+    }
+  }, [messages, mobileTab, user?.id])
 
   if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-96 border border-border" /></div>
   if (!trade) return <div className="max-w-5xl mx-auto px-4 py-12 text-center text-text-muted">Trade not found.</div>
@@ -826,41 +851,62 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         </div>
       )}
 
+      {/* Header — trade identity + status. The details live here so the progress
+          bar below stays a clean, at-a-glance strip (mirrors the USDT room). */}
+      <div className="mb-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-bold text-text-primary text-lg sm:text-xl leading-tight">{trade.tokenAmount} {trade.token.symbol}</h1>
+            <p className="text-text-muted text-sm mt-0.5">{payAmountLabel} · Trade #{trade.displayRef ?? trade.tradeRef.slice(-8)}</p>
+            {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
+              <span
+                className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+                title="Combined completed trades between you two (USDT + community tokens)"
+              >
+                🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
+              </span>
+            )}
+          </div>
+          <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${trade.status === 'completed' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : trade.status === 'disputed' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300'}`}>
+            {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
+          </span>
+        </div>
+      </div>
+
+      {/* Mobile Trade/Chat tabs — chat gets its own tab so completing a step never
+          scrolls the page down into the chat. Desktop shows both columns. */}
+      <div className="flex bg-surface border border-border rounded-xl overflow-hidden mb-4 lg:hidden">
+        {(['trade', 'chat'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setMobileTab(t)}
+            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${mobileTab === t ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface'}`}
+          >
+            {t === 'trade' ? 'Trade' : 'Chat'}
+            {t === 'chat' && unreadChat && <span className="w-2 h-2 rounded-full bg-red-500" />}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
         {/* Left: Trade panel */}
-        <div className="lg:col-span-3 space-y-4">
+        <div className={`lg:col-span-3 space-y-4 ${mobileTab === 'chat' ? 'hidden lg:block' : ''}`}>
 
-          {/* Header + Progress */}
-          <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
-                <h1 className="font-bold text-text-primary text-lg">{trade.tokenAmount} {trade.token.symbol}</h1>
-                <p className="text-text-muted text-sm">PKR {Number(trade.fiatAmount).toLocaleString()} · Trade #{trade.displayRef ?? trade.tradeRef.slice(-8)}</p>
-                {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
-                  <span
-                    className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
-                    title="Combined completed trades between you two (USDT + community tokens)"
-                  >
-                    🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
-                  </span>
-                )}
-              </div>
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${trade.status === 'completed' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : trade.status === 'disputed' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300'}`}>
-                {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
+          {/* Countdown — its own compact card, above the progress strip. */}
+          {trade.status !== 'completed' && trade.status !== 'cancelled' && trade.status !== 'expired' && (
+            <div className="bg-surface shadow-card border border-border rounded-xl p-3 text-sm flex items-center justify-between">
+              <span className="text-text-muted">
+                {trade.confirmDeadlineAt ? 'Confirm by:' : trade.proofDeadlineAt ? 'Deadline:' : 'Expires:'}
               </span>
+              <Countdown deadline={trade.confirmDeadlineAt ?? trade.proofDeadlineAt ?? trade.expiresAt} />
             </div>
-            {trade.status !== 'completed' && trade.status !== 'cancelled' && trade.status !== 'expired' && (
-              <div className="bg-surface rounded-xl p-3 text-sm flex items-center justify-between mb-4">
-                <span className="text-text-muted">
-                  {trade.confirmDeadlineAt ? 'Confirm by:' : trade.proofDeadlineAt ? 'Deadline:' : 'Expires:'}
-                </span>
-                <Countdown deadline={trade.confirmDeadlineAt ?? trade.proofDeadlineAt ?? trade.expiresAt} />
-              </div>
-            )}
-            {/* Stepper — all six steps always fit on screen (no horizontal scroll).
-                Compact circles + connectors that flex to fill, with labels sized to
-                stay readable while wrapping to at most two short lines on phones. */}
+          )}
+
+          {/* Progress bar — steps only (mirrors the USDT room). All six steps fit
+              on screen: compact circles + connectors that flex to fill, labels
+              sized to wrap to at most two short lines on phones. */}
+          <div className="bg-surface shadow-card border border-border rounded-xl p-3 sm:p-4">
             <div className="flex items-start">
               {STATUS_STEPS.map((s, i) => {
                 const isLast = i === STATUS_STEPS.length - 1
@@ -1435,8 +1481,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
         </div>
 
-        {/* Right: Chat */}
-        <div className="lg:col-span-2 flex flex-col bg-surface shadow-card border border-border rounded-xl overflow-hidden" style={{ maxHeight: '70vh' }}>
+        {/* Right: Chat — its own mobile tab (hidden on the Trade tab), side column on desktop. */}
+        <div className={`lg:col-span-2 flex-col bg-surface shadow-card border border-border rounded-xl overflow-hidden max-h-[70vh] min-h-[55vh] lg:min-h-0 ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`}>
           <div className="p-4 border-b border-border font-semibold text-text-primary text-sm">
             Chat — {trade.buyer.fullName || trade.buyer.username} & {trade.seller.fullName || trade.seller.username}
           </div>
