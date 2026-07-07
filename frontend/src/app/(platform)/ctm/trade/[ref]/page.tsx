@@ -920,7 +920,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       <p className="text-[11px] text-red-500 mt-0.5">{new Date(m.createdAt).toLocaleString()}</p>
                     </div>
                   ))}
-                  <p className="text-xs text-red-700 dark:text-red-300">Respond using the chat on the right, or upload evidence below.</p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Respond in the chat (Chat tab on mobile), or upload evidence below.</p>
                 </div>
               )}
               {trade.dispute.resolution && <p className="mt-2 text-green-700 dark:text-green-300 font-medium">Resolution: {trade.dispute.resolution}</p>}
