@@ -866,18 +866,6 @@ export default function TradePage() {
         </div>
       )}
 
-      {/* Completed card */}
-      {trade.status === 'crypto_released' && (
-        <CompletedTradeCard
-          trade={trade}
-          isUserBuyer={isUserBuyer}
-          counterparty={counterparty}
-          ratedAlready={ratedAlready}
-          onRatingSubmit={handleRatingSubmit}
-          actionError={actionError}
-        />
-      )}
-
       {/* Mobile tab switcher */}
       <div className="flex bg-surface border border-border rounded-xl overflow-hidden mb-4 lg:hidden">
         {(['trade', 'chat'] as const).map((t) => (
@@ -1352,7 +1340,7 @@ export default function TradePage() {
                 onToggle={() => toggleStep(4)}
               >
                 {trade.status === 'crypto_released' ? (
-                  <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-sm text-success">✓ Trade complete.{ratedAlready ? ' Thanks for your rating!' : ' You can rate your counterparty above.'}</div>
+                  <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-sm text-success">✓ Trade complete.{ratedAlready ? ' Thanks for your rating!' : ' You can rate your counterparty below.'}</div>
                 ) : (
                   <p className="text-xs text-text-muted">Once the buyer confirms receipt and releases, the trade is complete and you can rate each other.</p>
                 )}
@@ -1397,6 +1385,19 @@ export default function TradePage() {
 
           {actionError && (
             <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">{actionError}</p>
+          )}
+
+          {/* Completed card — an optional, collapsible "rate this trade" step at the
+              BOTTOM of the trade flow (no longer pinned to the top of the page). */}
+          {trade.status === 'crypto_released' && (
+            <CompletedTradeCard
+              trade={trade}
+              isUserBuyer={isUserBuyer}
+              counterparty={counterparty}
+              ratedAlready={ratedAlready}
+              onRatingSubmit={handleRatingSubmit}
+              actionError={actionError}
+            />
           )}
         </div>
 

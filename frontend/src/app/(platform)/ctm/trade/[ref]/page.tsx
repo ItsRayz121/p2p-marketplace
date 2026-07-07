@@ -297,8 +297,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [disputeReason, setDisputeReason] = useState('')
   const [disputeDesc, setDisputeDesc] = useState('')
   const [txHash, setTxHash] = useState('')
-  // Completed-trade banner (pinned to the top of the page, mirrors USDT marketplace).
-  const [completedBannerOpen, setCompletedBannerOpen] = useState(true)
   const [rating, setRating] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
   const [ratingTags, setRatingTags] = useState<string[]>([])
@@ -378,7 +376,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   // hook count between renders (React error #310).
   useEffect(() => {
     if (traderRatingDone && platformRatingDone) {
-      setCompletedBannerOpen(false)
       setStep4Collapsed(true)
     }
   }, [traderRatingDone, platformRatingDone])
@@ -772,7 +769,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               </p>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setCompletedBannerOpen(false)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
+              <button onClick={() => setStep4Collapsed(true)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
               <button onClick={handleRate} disabled={ratingWindowClosed} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Submit Rating</button>
             </div>
           </>
@@ -797,7 +794,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           </>
         )}
       </div>
-      <button onClick={() => setCompletedBannerOpen(false)} className="w-full border border-border py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors">Close</button>
+      <button onClick={() => setStep4Collapsed(true)} className="w-full border border-border py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors">Close</button>
     </div>
   )
 
@@ -813,43 +810,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
 
-      {/* Completed-trade banner — full-width across the top (mirrors USDT
-          marketplace). Sits above the two-column grid so the summary tiles and
-          rating lay out horizontally instead of being cramped in the side panel. */}
-      {trade.status === 'completed' && (isBuyer || isSeller) && (
-        <div className="bg-green-500/10 border border-green-500/30 rounded-xl overflow-hidden mb-6">
-          <button
-            type="button"
-            onClick={() => setCompletedBannerOpen((v) => !v)}
-            className="w-full flex items-center gap-3 p-4 text-left hover:bg-green-500/[0.06] transition-colors"
-          >
-            <span className="w-9 h-9 rounded-full bg-green-500/15 flex items-center justify-center flex-shrink-0 text-green-600 dark:text-green-400 text-lg">✓</span>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-base font-bold text-green-800 dark:text-green-300">Trade Completed!</h2>
-              {!completedBannerOpen && (
-                <p className="text-xs text-text-muted truncate">
-                  {trade.tokenAmount} {trade.token.symbol} · PKR {Number(trade.fiatAmount).toLocaleString()} · @{completedCounterparty}
-                </p>
-              )}
-            </div>
-            {/* Compact rating-window indicator in the header (mirrors USDT). */}
-            {ratingWindowOpen && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-full px-2 py-0.5 flex-shrink-0" title={`${ratingCountdown} left to rate this trade`}>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                {ratingCountdown}
-              </span>
-            )}
-            <svg className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform ${completedBannerOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-          {completedBannerOpen && (
-            <div className="px-4 pb-4">
-              {ratingPanel(completedCounterparty)}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Rating lives at the BOTTOM now (as an optional collapsible "Complete &
+          Rate" step), so there's no pinned completed banner at the top. */}
 
       {/* Header — trade identity + status. The details live here so the progress
           bar below stays a clean, at-a-glance strip (mirrors the USDT room). */}
@@ -1255,8 +1217,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 summary="Trade complete"
                 expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'completed' ? (
-                  <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
-                    ✓ Trade complete. Rate this trade using the panel at the top of the page.
+                  <div className="space-y-4">
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
+                      ✓ Trade complete. Rating is optional — leave feedback below if you like.
+                    </div>
+                    {ratingPanel(completedCounterparty)}
                   </div>
                 ) : (
                   <p className="text-sm text-text-muted">This trade isn&apos;t complete yet.</p>
@@ -1433,8 +1398,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 )}
                 {trade.status === 'completed' && (
-                  <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
-                    ✓ Trade complete. Rate this trade using the panel at the top of the page.
+                  <div className="space-y-4">
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
+                      ✓ Trade complete. Rating is optional — leave feedback below if you like.
+                    </div>
+                    {ratingPanel(completedCounterparty)}
                   </div>
                 )}
               </StepCard>
