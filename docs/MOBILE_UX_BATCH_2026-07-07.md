@@ -78,6 +78,17 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 ### Deferred
 - 6a "Where will you send USDT?" grouping · 6b half-hidden collapsible buttons (need exact locations).
 
+### Hard cross-check (2026-07-07) — full `next build` + backend `tsc` PASS
+- FOUND+FIXED (54ebd7b): admin "Taker-sends-first" toggle description was stale — said the
+  flag "changes nothing" (TAKER_FIRST_MARKET_READY OFF) but that constant was flipped true in
+  0ef1952. Corrected to "moves real money / LIVE".
+- Verified address/number formatting consistent everywhere: USDT dest+hash stacked full-width;
+  CTM Row breakAll stacked; CopyableText, escrow addr, token-proof hash already full-width; copy
+  in front of numbers. No remaining squeezed vertical-column addresses.
+- Verified taker-first change is a true no-op until the runtime flag flips (isTakerFirstForMarket
+  returns the flag only when ready=true; flag OFF ⇒ false ⇒ no behavior change).
+- Admin flags location confirmed: Admin → Platform Configuration → "New & Beta Features" accordion.
+
 ---
 ### Workflow
 One commit per phase to `main` (auto-deploys Railway + Vercel). Cross-check each
