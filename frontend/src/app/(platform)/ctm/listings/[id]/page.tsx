@@ -400,35 +400,36 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
       {/* Listing header */}
       <div className="bg-surface shadow-card border border-border rounded-xl p-6">
-        <div className="flex items-start justify-between gap-3 mb-5">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <EntityLogo type="token" slug={listing.token.symbol} size="xl" logoUrl={listing.token.logoUrl} className="flex-shrink-0" />
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-text-primary leading-tight">
-                {isMine
-                  ? listing.side === 'sell' ? 'Sell' : 'Buy'
-                  : listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}
-              </h1>
-              <p className="text-text-muted text-sm truncate">{listing.token.symbol} · {listing.token.settlementType}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
-            <ShareListingButton
-              kind="ctm"
-              id={id}
-              title={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.symbol} on RupChain`}
-              text={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.name} (${listing.token.symbol}) @ PKR ${Number(listing.pricePerUnit).toLocaleString()} · ${Number(listing.minOrderTokens).toLocaleString()}–${Number(listing.maxOrderTokens).toLocaleString()} ${listing.token.symbol} on RupChain`}
-              compact
-            />
+        {/* Status + share pinned to the top-right corner on their own row so the
+            title always gets the full card width and reads on a single line. */}
+        <div className="flex items-center justify-end gap-2 mb-3">
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
+          <ShareListingButton
+            kind="ctm"
+            id={id}
+            title={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.symbol} on RupChain`}
+            text={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.name} (${listing.token.symbol}) @ PKR ${Number(listing.pricePerUnit).toLocaleString()} · ${Number(listing.minOrderTokens).toLocaleString()}–${Number(listing.maxOrderTokens).toLocaleString()} ${listing.token.symbol} on RupChain`}
+            compact
+          />
+        </div>
+        <div className="flex items-center gap-3 min-w-0 mb-5">
+          <EntityLogo type="token" slug={listing.token.symbol} size="xl" logoUrl={listing.token.logoUrl} className="flex-shrink-0" />
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-text-primary leading-tight truncate">
+              {isMine
+                ? listing.side === 'sell' ? 'Sell' : 'Buy'
+                : listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}
+            </h1>
+            <p className="text-text-muted text-sm truncate">{listing.token.symbol} · {listing.token.settlementType}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <p className="text-xs text-text-muted">Price</p>
-            {/* PKR and USDT both shown bold, inline, so each reads as primary. */}
-            <p className="font-bold text-text-primary flex flex-wrap items-baseline gap-x-1.5">
+            {/* PKR and USDT both bold, inline on ONE line (Price cell spans the full
+                width on mobile so the pair never wraps). */}
+            <p className="font-bold text-text-primary flex items-baseline gap-x-1.5 whitespace-nowrap">
               <span>PKR {Number(listing.pricePerUnit).toLocaleString()}</span>
               {usdtPerToken !== null && (
                 <span className="text-primary">· ≈ {usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: usdtPerToken < 1 ? 6 : 2 })} USDT</span>
