@@ -488,77 +488,93 @@ function ListingRow({
           {activity && <span className={`text-[10px] ${activity.cls}`}>· {activity.text}</span>}
         </div>
 
-        {/* Row 3: token + price */}
-        <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-border">
-          <Link href={`/ctm/tokens/${listing.token.slug}`} className="flex items-center gap-1.5 min-w-0 group" title={`${listing.token.name} market insights`}>
-            <EntityLogo type="token" slug={sym} size="sm" logoUrl={listing.token.logoUrl} />
+        {/* Row 3: token identity + price — two aligned lines. The logo spans both
+            rows on the far left; line 1 pairs the token name with the PKR+USDT
+            price (inline, one line), line 2 pairs the symbol with wanted/avail.
+            The market-reference rate is intentionally dropped from the mobile card
+            to keep it tight — the listing's own price is what matters here. */}
+        <div className="flex items-start justify-between gap-2 mt-2 pt-2 border-t border-border">
+          <div className="flex items-start gap-1.5 min-w-0">
+            <Link href={`/ctm/tokens/${listing.token.slug}`} className="flex-shrink-0 mt-0.5" title={`${listing.token.name} market insights`}>
+              <EntityLogo type="token" slug={sym} size="sm" logoUrl={listing.token.logoUrl} />
+            </Link>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-text-primary leading-tight truncate group-hover:text-primary">{listing.token.name}</p>
-              <p className="text-[11px] text-text-muted leading-tight flex items-center gap-1">
+              <Link href={`/ctm/tokens/${listing.token.slug}`} className="group" title={`${listing.token.name} market insights`}>
+                <p className="text-sm font-semibold text-text-primary leading-tight truncate group-hover:text-primary">{listing.token.name}</p>
+              </Link>
+              <p className="text-[11px] text-text-muted leading-tight flex items-center gap-1 mt-0.5">
                 {sym}
                 {listing.token.communityVerified && <BadgeCheck size={10} className="text-success" />}
               </p>
             </div>
-          </Link>
+          </div>
           <div className="text-right flex-shrink-0">
-            {/* PKR + USDT both bold so each reads as primary. */}
-            <p className={`text-lg font-bold leading-tight ${priceCls}`}>
+            {/* PKR + USDT on ONE line (both bold so each reads as primary). */}
+            <p className={`text-base font-bold leading-tight whitespace-nowrap ${priceCls}`}>
               PKR {price.toLocaleString()}
-              {usdtRate !== null && <span className="block text-xs">≈ {fmtUsdt(usdtRate)} USDT</span>}
+              {usdtRate !== null && <span className="text-[11px] font-semibold"> · ≈ {fmtUsdt(usdtRate)} USDT</span>}
             </p>
-            <p className="text-[11px] text-text-muted mt-0.5">{listing.side === 'buy' ? 'Wanted' : 'Avail'} {Number(listing.availableAmount).toLocaleString()} {sym}</p>
+            <p className="text-[11px] text-text-muted mt-0.5">{listing.side === 'buy' ? 'Wanted' : 'Available'} {Number(listing.availableAmount).toLocaleString()} {sym}</p>
           </div>
         </div>
 
-        {/* Row 4: market ref + limits + window + listed */}
-        {pkrRate !== null && (
-          <p className="text-[11px] text-text-muted/80 mt-1.5">Market ≈ PKR {pkrRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-        )}
-        <p className="text-[11px] text-text-muted mt-1">
+        {/* Row 4: limit (+PKR) + window + listed — one line, replaces the market ref. */}
+        <p className="text-[11px] text-text-muted mt-1.5">
           Limit {minTok.toLocaleString()}–{maxTok.toLocaleString()} {sym}
           {price > 0 && <span className="text-text-muted/80"> (≈PKR {minPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })}–{maxPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>}
           {listing.tradeWindowMins != null && <><span className="mx-1">·</span><Clock size={9} className="inline -mt-0.5" /> {listing.tradeWindowMins} min</>}
           {age && <><span className="mx-1">·</span>Listed {age}</>}
         </p>
 
-        {/* Row 5: payment methods + CTA */}
-        <div className="flex items-center justify-between gap-2 mt-2">
-          <div className="flex flex-wrap items-center gap-1 min-w-0">
-            {methods.length > 0 || usdtMethods.length > 0 ? (
-              <>
-                {methods.slice(0, 2).map((pm) => (
-                  <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${getPaymentMethodColor(pm.label)}`}>
-                    <EntityLogo type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'} slug={pm.label} size="xs" className="flex-shrink-0" />
-                    {pm.label}
-                  </span>
-                ))}
-                {usdtMethods.slice(0, 2).map((m) => (
-                  <span key={m} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                    <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
-                    {ctmUsdtMethodLabel(m)}
-                  </span>
-                ))}
-                {methods.length + usdtMethods.length > 4 && (
-                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-surface-alt text-text-secondary">+{methods.length + usdtMethods.length - 4}</span>
+        {/* Row 5: payment methods + CTA — kept to a single tight line by showing at
+            most one PKR rail + one USDT rail, then a prominent "+N" that stands in
+            for the rest (tap the card to see them all). CTA sits alongside. */}
+        {(() => {
+          const shownPkr = methods.slice(0, 1)
+          const shownUsdt = usdtMethods.slice(0, 1)
+          const overflow = methods.length + usdtMethods.length - shownPkr.length - shownUsdt.length
+          return (
+            <div className="flex items-center justify-between gap-2 mt-2">
+              <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+                {methods.length > 0 || usdtMethods.length > 0 ? (
+                  <>
+                    {shownPkr.map((pm) => (
+                      <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${getPaymentMethodColor(pm.label)}`}>
+                        <EntityLogo type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'} slug={pm.label} size="xs" className="flex-shrink-0" />
+                        {pm.label}
+                      </span>
+                    ))}
+                    {shownUsdt.map((m) => (
+                      <span key={m} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
+                        {ctmUsdtMethodLabel(m)}
+                      </span>
+                    ))}
+                    {overflow > 0 && (
+                      <Link href={`/ctm/listings/${listing.id}`} className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                        +{overflow} more
+                      </Link>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-[11px] text-text-muted/50">No payment methods</span>
                 )}
-              </>
-            ) : (
-              <span className="text-[11px] text-text-muted/50">No payment methods</span>
-            )}
-          </div>
-          <div className="flex-shrink-0">
-            {listing.makerBondInsufficient ? (
-              <span className="px-2.5 py-1.5 text-[11px] font-semibold rounded-full bg-warning/10 text-warning border border-warning/20 whitespace-nowrap">Maker unavailable</span>
-            ) : (
-              <Link
-                href={`/ctm/listings/${listing.id}`}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${isSell ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}
-              >
-                {isSell ? `Buy ${sym}` : `Sell ${sym}`}
-              </Link>
-            )}
-          </div>
-        </div>
+              </div>
+              <div className="flex-shrink-0">
+                {listing.makerBondInsufficient ? (
+                  <span className="px-2.5 py-1.5 text-[11px] font-semibold rounded-full bg-warning/10 text-warning border border-warning/20 whitespace-nowrap">Maker unavailable</span>
+                ) : (
+                  <Link
+                    href={`/ctm/listings/${listing.id}`}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${isSell ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}
+                  >
+                    {isSell ? `Buy ${sym}` : `Sell ${sym}`}
+                  </Link>
+                )}
+              </div>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
