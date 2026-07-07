@@ -55,9 +55,11 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 - [x] 9a-CTM. CTM takers already never need KYC (code, committed Phase 1). Only the maker is KYC-gated.
 - [x] 9a-USDT SELL. Safe (taker pays fiat first). ACTION: set `nokyc_taker_enabled = true`; raise
       `nokyc_max_per_trade_pkr` / `nokyc_max_daily_pkr` / `nokyc_rolling_ceiling_pkr` if you want no caps.
-- [!] 9a-USDT BUY. Needs taker-first settlement (built, NOT QA'd — moves real money). Do NOT flip
-      `taker_first_settlement_enabled` + `TAKER_FIRST_MARKET_READY[usdt]` until a staging end-to-end
-      trade test passes. This is the piece I said I'd confirm before flipping. HOLDING.
+- [x] 9a-USDT/CTM BUY. Owner-directed 2026-07-07: code interlock lifted —
+      `TAKER_FIRST_MARKET_READY = { usdt:true, ctm:true }`. Taker-first is now controlled solely by
+      the runtime flag `taker_first_settlement_enabled` (still OFF by default → deploy is a no-op).
+      ACTION: flip that flag in Admin→Platform Config to make takers send first on BUY ads too.
+      ⚠️ Moves real money (taker sends crypto first) — run one small buy-ad trade right after flipping.
 - [x] 9b. "Trading without verification" box is now a collapsed one-line header (taps to expand).  ✅ COMMITTED
 
 ## Phase 10 — Final cross-check + cleanup  ✅ DONE

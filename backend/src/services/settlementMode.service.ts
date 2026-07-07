@@ -49,9 +49,15 @@ export async function isTakerFirst(): Promise<boolean> {
  * on a market whose flow hasn't changed. Flip these to `true` only once that
  * market's taker-first flow is implemented AND QA'd.
  */
+// Owner-directed 2026-07-07: both markets' taker-first BUY-ad flows are built, so
+// the code interlock is lifted — the runtime flag `taker_first_settlement_enabled`
+// is now the single on-switch. It is still OFF by default, so this deploy changes
+// NOTHING until a super-admin flips the flag. ⚠️ Moves real money on buy ads (taker
+// sends crypto first, merchant pays second) — run one small end-to-end buy-ad trade
+// on staging/prod immediately after flipping the flag before relying on it.
 const TAKER_FIRST_MARKET_READY: Record<'usdt' | 'ctm', boolean> = {
-  usdt: false,
-  ctm: false,
+  usdt: true,
+  ctm: true,
 }
 
 /**
