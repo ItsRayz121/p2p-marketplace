@@ -404,43 +404,44 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
       {/* Listing header */}
-      <div className="bg-surface shadow-card border border-border rounded-xl p-6">
-        {/* Status + share pinned to the top-right corner on their own row so the
-            title always gets the full card width and reads on a single line. */}
-        <div className="flex items-center justify-end gap-2 mb-3">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
-          <ShareListingButton
-            kind="ctm"
-            id={id}
-            title={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.symbol} on RupChain`}
-            text={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.name} (${listing.token.symbol}) @ PKR ${Number(listing.pricePerUnit).toLocaleString()} · ${Number(listing.minOrderTokens).toLocaleString()}–${Number(listing.maxOrderTokens).toLocaleString()} ${listing.token.symbol} on RupChain`}
-            compact
-          />
-        </div>
-        <div className="flex items-center gap-3 min-w-0 mb-5">
-          <EntityLogo type="token" slug={listing.token.symbol} size="xl" logoUrl={listing.token.logoUrl} className="flex-shrink-0" />
-          <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold text-text-primary leading-tight truncate">
-              {isMine
-                ? listing.side === 'sell' ? 'Sell' : 'Buy'
-                : listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}
-            </h1>
-            <p className="text-text-muted text-sm truncate">{listing.token.symbol} · {listing.token.settlementType}</p>
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+        {/* Top row: title (upper-left) + status & share (upper-right) on one line,
+            so the empty band under the title is gone and the divider sits higher. */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <EntityLogo type="token" slug={listing.token.symbol} size="lg" logoUrl={listing.token.logoUrl} className="flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-text-primary leading-tight truncate">
+                {isMine
+                  ? listing.side === 'sell' ? 'Sell' : 'Buy'
+                  : listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}
+              </h1>
+              <p className="text-text-muted text-sm truncate">{listing.token.symbol} · {listing.token.settlementType}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${listing.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-surface-alt text-text-secondary'}`}>{listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}</span>
+            <ShareListingButton
+              kind="ctm"
+              id={id}
+              title={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.symbol} on RupChain`}
+              text={`${listing.side === 'sell' ? 'Selling' : 'Buying'} ${listing.token.name} (${listing.token.symbol}) @ PKR ${Number(listing.pricePerUnit).toLocaleString()} · ${Number(listing.minOrderTokens).toLocaleString()}–${Number(listing.maxOrderTokens).toLocaleString()} ${listing.token.symbol} on RupChain`}
+              compact
+            />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">
-          <div className="col-span-2 sm:col-span-1">
+        {/* Price / amounts — two tidy lines: (Price + Wanted) then (Min/Max +
+            Window). "per {symbol}" caption dropped; divider pulled up under the title. */}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border mt-4 pt-4">
+          <div>
             <p className="text-xs text-text-muted">Price</p>
-            {/* PKR and USDT both bold, inline on ONE line (Price cell spans the full
-                width on mobile so the pair never wraps). */}
-            <p className="font-bold text-text-primary flex items-baseline gap-x-1.5 whitespace-nowrap">
+            <p className="font-bold text-text-primary flex items-baseline gap-x-1.5 flex-wrap">
               <span>PKR {Number(listing.pricePerUnit).toLocaleString()}</span>
               {usdtPerToken !== null && (
-                <span className="text-primary">· ≈ {usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: usdtPerToken < 1 ? 6 : 2 })} USDT</span>
+                <span className="text-primary text-sm">· ≈ {usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: usdtPerToken < 1 ? 6 : 2 })} USDT</span>
               )}
             </p>
-            <p className="text-[11px] text-text-muted font-normal">per {listing.token.symbol}</p>
           </div>
           <div>
             <p className="text-xs text-text-muted">{listing.side === 'buy' ? 'Wanted' : 'Available'}</p>
