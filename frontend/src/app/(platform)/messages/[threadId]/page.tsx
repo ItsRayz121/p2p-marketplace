@@ -62,6 +62,16 @@ export default function MessageThreadPage() {
     return items.sort((a, b) => a.at - b.at)
   }, [data])
 
+  // The latest still-in-progress trade — pinned just under the header so it's
+  // reachable without scrolling; the full history stays in the timeline below.
+  const activeEpisode = useMemo<TradeEpisode | null>(() => {
+    if (!data) return null
+    const actives = data.episodes.filter((e) => e.outcome === 'active')
+    if (actives.length === 0) return null
+    return actives.reduce((latest, e) =>
+      new Date(e.startedAt).getTime() > new Date(latest.startedAt).getTime() ? e : latest)
+  }, [data])
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [timeline])
@@ -116,6 +126,25 @@ export default function MessageThreadPage() {
         </div>
       </div>
 
+      {/* Pinned in-progress trade — the latest active trade sits at the top so it's
+          one tap away; the full trade history remains in the timeline below. */}
+      {activeEpisode && (
+        <Link
+          href={episodeTradeHref(activeEpisode)}
+          className="mx-4 mt-3 flex items-center gap-2.5 rounded-xl border border-blue-500/30 bg-blue-500/5 px-3 py-2 hover:border-blue-500/50 transition-colors"
+        >
+          <Clock className="w-4 h-4 text-blue-500 flex-shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-500 leading-none">In progress</p>
+            <p className="text-sm font-semibold text-text-primary truncate mt-0.5">
+              {activeEpisode.tradeRef}
+              {activeEpisode.fiatAmount && <span className="text-text-muted font-normal"> · {fmtPkr(activeEpisode.fiatAmount)}</span>}
+            </p>
+          </div>
+          <span className="text-xs font-medium text-blue-500 flex-shrink-0">View →</span>
+        </Link>
+      )}
+
       {/* Timeline */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {timeline.map((item) => {
@@ -125,23 +154,19 @@ export default function MessageThreadPage() {
             // Full-width card (not a centered pill) so a long ref like
             // "CTM-20260706-0001" never wraps mid-way and the outcome/amount read
             // as a tidy second line instead of scattering across the row.
+            // Compact single-line divider: ref truncates on the left, the market
+            // chip + outcome + amount stay pinned right so it reads as one tidy row.
             return (
               <Link
                 key={`ep-${ep.id}`}
                 href={episodeTradeHref(ep)}
-                className="block my-3 rounded-xl border border-border bg-muted/60 px-3 py-2 hover:border-primary/40 transition-colors"
+                className="flex items-center gap-2 my-2 rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 hover:border-primary/40 transition-colors"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Icon className={`w-4 h-4 flex-shrink-0 ${OUTCOME_CLS[ep.outcome]}`} />
-                    <span className="font-semibold text-text-primary text-sm truncate">{ep.tradeRef}</span>
-                  </div>
-                  <span className="uppercase text-[9px] font-semibold text-text-muted bg-surface border border-border rounded px-1.5 py-0.5 flex-shrink-0">{ep.market}</span>
-                </div>
-                <div className="flex items-center gap-1.5 mt-0.5 pl-[22px] text-xs">
-                  <span className={OUTCOME_CLS[ep.outcome]}>{OUTCOME_LABEL[ep.outcome]}</span>
-                  {ep.fiatAmount && <span className="text-text-muted">· {fmtPkr(ep.fiatAmount)}</span>}
-                </div>
+                <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${OUTCOME_CLS[ep.outcome]}`} />
+                <span className="font-semibold text-text-primary text-xs truncate min-w-0 flex-1">{ep.tradeRef}</span>
+                <span className="uppercase text-[9px] font-semibold text-text-muted bg-surface border border-border rounded px-1.5 py-0.5 flex-shrink-0">{ep.market}</span>
+                <span className={`text-[11px] flex-shrink-0 ${OUTCOME_CLS[ep.outcome]}`}>{OUTCOME_LABEL[ep.outcome]}</span>
+                {ep.fiatAmount && <span className="text-[11px] text-text-muted flex-shrink-0">· {fmtPkr(ep.fiatAmount)}</span>}
               </Link>
             )
           }
