@@ -814,12 +814,12 @@ export default function ConfigPage() {
             </div>
           </label>
 
-          {/* Taker-first settlement — needs a per-market code deploy too */}
+          {/* Taker-first settlement — code interlock lifted 2026-07-07; this flag is now live */}
           <label className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 cursor-pointer hover:bg-amber-500/10 transition-colors">
             <input type="checkbox" checked={takerFirstFlag} onChange={(e) => setTakerFirstFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
             <div>
               <p className="text-sm font-medium text-text-primary">Taker-sends-first settlement <span className="font-mono text-xs text-text-muted">taker_first_settlement_enabled</span></p>
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">⚠️ On a BUY ad, the taker (crypto seller) transfers FIRST, then the merchant pays fiat. <b>This flag alone is not enough</b> — each market must also be marked ready in code (<span className="font-mono">TAKER_FIRST_MARKET_READY</span>, currently OFF for both USDT &amp; CTM) and deployed. Until then, flipping this changes nothing.</p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">⚠️ <b>Moves real money and is LIVE.</b> On a BUY ad the taker (crypto seller) transfers their crypto FIRST, then the merchant pays fiat (SELL ads are unchanged). Both markets are code-ready (<span className="font-mono">TAKER_FIRST_MARKET_READY</span> = true for USDT &amp; CTM), so turning this ON reorders every new BUY-ad trade immediately. Run one small buy-ad trade right after enabling to confirm the flow.</p>
             </div>
           </label>
 
