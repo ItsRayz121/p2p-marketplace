@@ -40,10 +40,11 @@ const createListingSchema = z.object({
     .array(z.object({ method: z.string(), address: z.string().max(200), label: z.string().max(100).optional() }))
     .optional(),
 }).superRefine((data, ctx) => {
-  // PKR listings require a PKR payment method on the sell side (unchanged). A USDT
-  // listing satisfies the requirement via its USDT methods instead.
-  const isUsdt = data.paymentCurrency === 'USDT'
-  if (data.side === 'sell' && !isUsdt && data.paymentMethods.length === 0) {
+  // A SELL listing must offer at least one payment rail — PKR account(s) and/or
+  // USDT method(s). A listing may now offer both together; the taker picks one at
+  // trade time.
+  const hasUsdt = (data.usdtPaymentMethods?.length ?? 0) > 0
+  if (data.side === 'sell' && !hasUsdt && data.paymentMethods.length === 0) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select at least one payment method', path: ['paymentMethods'] })
   }
 })

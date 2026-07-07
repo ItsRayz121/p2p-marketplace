@@ -2,8 +2,8 @@
 import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ctmApi, apiRequest, ApiError, walletApi } from '@/lib/api'
-import type { SavedDeliveryAddress } from '@/lib/api'
+import { ctmApi, apiRequest, ApiError, walletApi, marketplaceApi } from '@/lib/api'
+import type { SavedDeliveryAddress, MarketRateToken } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ShareListingButton } from '@/components/ui/ShareListingButton'
@@ -134,10 +134,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [acceptedBuyerMethodIds, setAcceptedBuyerMethodIds] = useState<string[]>([]) // BUY listing: which of the buyer's pay-from accounts the seller accepts
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [tokenAmount, setTokenAmount] = useState('')
-  // USDT-as-payment selection (only used on USDT listings)
+  // Which payment rail the taker is using in the trade modal ('pkr' | 'usdt').
+  const [rail, setRail] = useState<'pkr' | 'usdt'>('pkr')
+  // USDT-as-payment selection
   const [usdtMethod, setUsdtMethod] = useState('')
   const [usdtKind, setUsdtKind] = useState<UsdtMethodKind | null>(null) // active method group (Wallet/Blockchain vs Exchange)
   const [usdtAddress, setUsdtAddress] = useState('') // BUY listing: taker's USDT receiving address
+  // Per-token market estimate (USDT/PKR) for the price header.
+  const [marketRate, setMarketRate] = useState<MarketRateToken | null>(null)
   const [bidPrice, setBidPrice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -238,9 +242,21 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [user])
 
+  // Fetch the per-token market estimate so the price header can show a USDT value
+  // alongside PKR (same source as the marketplace cards).
+  useEffect(() => {
+    if (!listing) return
+    marketplaceApi.getMarketRatesSummary().then((res) => {
+      const t = res.communityTokens.find((c) => c.symbol === listing.token.symbol)
+      setMarketRate(t ?? null)
+    }).catch(() => {})
+  }, [listing?.token.symbol]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleStartTrade = async () => {
-    const listingIsUsdt = listing?.paymentCurrency === 'USDT'
-    if (listingIsUsdt) {
+    // The taker picks the rail. USDT only when the taker chose the USDT rail on a
+    // listing that offers it; otherwise the trade settles in PKR.
+    const railUsdt = rail === 'usdt'
+    if (railUsdt) {
       if (!usdtMethod) { setError('Select a USDT payment method'); return }
       // BUY listing (maker pays USDT): the taker (seller) supplies their receiving address.
       if (isBuyListing && !usdtAddress.trim()) { setError('Enter your USDT receiving address / UID'); return }
@@ -260,18 +276,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       if (!listing) return
       const res = await ctmApi.startListingTrade(id, {
         // BUY listing: seller provides multiple receiving accounts; SELL listing: buyer picks one seller account
-        paymentMethod: listingIsUsdt || isBuyListing ? undefined : paymentMethodId,
-        paymentMethods: !listingIsUsdt && isBuyListing ? paymentMethodIds : undefined,
+        paymentMethod: railUsdt || isBuyListing ? undefined : paymentMethodId,
+        paymentMethods: !railUsdt && isBuyListing ? paymentMethodIds : undefined,
         // For SELL listings: buyer provides their address. For BUY listings: address is on the listing.
         buyerSettlementId: listing.side === 'sell' ? (buyerSettlementId.trim() || undefined) : undefined,
         // For SELL listings: snapshot which of the buyer's accounts they'll pay FROM
-        buyerPaymentMethodId: !listingIsUsdt && !isBuyListing && buyerFromMethodId ? buyerFromMethodId : undefined,
+        buyerPaymentMethodId: !railUsdt && !isBuyListing && buyerFromMethodId ? buyerFromMethodId : undefined,
         // For BUY listings: restrict which of the buyer's pay-from accounts the seller accepts
-        acceptedBuyerPaymentMethodIds: !listingIsUsdt && isBuyListing ? acceptedBuyerMethodIds : undefined,
+        acceptedBuyerPaymentMethodIds: !railUsdt && isBuyListing ? acceptedBuyerMethodIds : undefined,
         tokenAmount: parseFloat(tokenAmount),
-        // USDT-as-payment: chosen method + (BUY) the taker's receiving address.
-        usdtMethod: listingIsUsdt ? usdtMethod : undefined,
-        usdtAddress: listingIsUsdt && isBuyListing ? usdtAddress.trim() : undefined,
+        // USDT rail: chosen method + (BUY) the taker's receiving address.
+        usdtMethod: railUsdt ? usdtMethod : undefined,
+        usdtAddress: railUsdt && isBuyListing ? usdtAddress.trim() : undefined,
       })
       router.push(`/ctm/trade/${res.tradeRef}`)
     } catch (err: unknown) {
@@ -344,7 +360,6 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   const isMine = user?.id === listing.merchantProfile.user.id
   const isBuyListing = listing.side === 'buy'
-  const isUsdt = listing.paymentCurrency === 'USDT'
   const usdtOffered = listing.usdtPaymentMethods ?? []
   const usdtDestFor = (m: string) => (listing.usdtSettlementDestinations ?? []).find((d) => d.method === m)?.address ?? ''
   const resolvedMethods = listing.resolvedPaymentMethods ?? listing.paymentMethods.map((m) => ({
@@ -352,6 +367,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     type: PK_MOBILE_METHODS.includes(m) ? m : 'bank_transfer',
     label: m,
   }))
+  // A listing can now offer PKR account(s) and/or USDT method(s) at once; the taker
+  // picks a rail at trade time. Presence of each rail drives the UI (not a single
+  // listing-level currency).
+  const hasUsdt = usdtOffered.length > 0
+  const hasPkr = resolvedMethods.length > 0
+  // USDT methods split into the two familiar groups for display.
+  const usdtWallet = usdtOffered.filter((m) => ctmUsdtMethodKind(m) === 'wallet')
+  const usdtExchange = usdtOffered.filter((m) => ctmUsdtMethodKind(m) === 'exchange')
+  // Per-token USDT estimate for the price header (same source as the market cards).
+  const usdtPerToken = marketRate?.averageUsdtRate ?? null
 
   // BUY listings (lister=BUYER, taker=SELLER):
   //   taker picks their own payment receiving account (buyer will send PKR here)
@@ -365,16 +390,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
       {/* Listing header */}
       <div className="bg-surface shadow-card border border-border rounded-xl p-6">
-        <div className="flex items-start justify-between gap-4 mb-5">
-          <div className="flex items-center gap-4">
-            <EntityLogo type="token" slug={listing.token.symbol} size="2xl" logoUrl={listing.token.logoUrl} />
-            <div>
-              <h1 className="text-xl font-bold text-text-primary">
+        <div className="flex items-start justify-between gap-3 mb-5">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <EntityLogo type="token" slug={listing.token.symbol} size="xl" logoUrl={listing.token.logoUrl} className="flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-text-primary leading-tight">
                 {isMine
                   ? listing.side === 'sell' ? 'Sell' : 'Buy'
                   : listing.side === 'sell' ? 'Buy' : 'Sell'} {listing.token.name}
               </h1>
-              <p className="text-text-muted text-sm">{listing.token.symbol} · {listing.token.settlementType}</p>
+              <p className="text-text-muted text-sm truncate">{listing.token.symbol} · {listing.token.settlementType}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -392,7 +417,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-border pt-4">
           <div>
             <p className="text-xs text-text-muted">Price</p>
-            <p className="font-bold text-text-primary">PKR {Number(listing.pricePerUnit).toLocaleString()}</p>
+            {/* PKR and USDT both shown bold, inline, so each reads as primary. */}
+            <p className="font-bold text-text-primary flex flex-wrap items-baseline gap-x-1.5">
+              <span>PKR {Number(listing.pricePerUnit).toLocaleString()}</span>
+              {usdtPerToken !== null && (
+                <span className="text-primary">· ≈ {usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: usdtPerToken < 1 ? 6 : 2 })} USDT</span>
+              )}
+            </p>
+            <p className="text-[11px] text-text-muted font-normal">per {listing.token.symbol}</p>
           </div>
           <div>
             <p className="text-xs text-text-muted">{listing.side === 'buy' ? 'Wanted' : 'Available'}</p>
@@ -439,28 +471,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         )}
       </div>
 
-      {/* Payment / receiving info section */}
-      {isUsdt ? (
-        // USDT listing: payment is in USDT (on-chain / exchange), not PKR accounts.
-        <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-          <h2 className="font-semibold text-text-primary mb-1">USDT Payment</h2>
-          <p className="text-xs text-text-muted mb-3">
-            {isBuyListing
-              ? (isMine ? 'You pay sellers in USDT via these methods.' : 'The buyer pays you in USDT via one of these methods.')
-              : (isMine ? 'Buyers pay you in USDT via these methods.' : 'Pay the seller in USDT via one of these methods.')}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {usdtOffered.map((m) => (
-              <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium">
-                USDT {m}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : isBuyListing ? (
-        // BUY listing: lister is BUYER — show buyer's token receiving address + the
-        // accounts the buyer will pay FROM (so the seller-taker knows what to expect)
-        <>
+      {/* BUY listing: the maker is the BUYER — show their token receiving address so
+          the seller-taker knows where to send tokens (applies to any payment rail). */}
+      {isBuyListing && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5">
           <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
             <h2 className="font-semibold text-text-primary">
@@ -487,65 +500,70 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
         </div>
+      )}
 
-        {/* Accounts the buyer will pay FROM — shown to the seller-taker so they know
-            where the incoming payment will originate. */}
-        {resolvedMethods.length > 0 && (
-          <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-            <button onClick={() => setPayFromOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
-              <h2 className="font-semibold text-text-primary">
-                {isMine ? 'Accounts You Pay From' : "Buyer's Payment Accounts"}
-              </h2>
-              <svg className={`w-4 h-4 text-text-muted transition-transform ${payFromOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {payFromOpen && (
-              <div className="mt-3">
-                <p className="text-xs text-text-muted mb-3">
-                  {isMine
-                    ? 'These are the accounts you said you will send payment from. Sellers see them so they know where your payment will come from.'
-                    : 'The buyer will send your payment from one of these accounts.'}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {resolvedMethods.map((m) => (
-                    <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
-                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                      {m.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        </>
-      ) : (
-        // SELL listing: lister is SELLER — show their accepted payment methods
+      {/* Payment Methods — a listing can offer PKR account(s) and/or USDT method(s);
+          the taker picks one rail when they trade. */}
+      {(hasPkr || hasUsdt) && (
         <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-          <button onClick={() => setPaymentOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
-            <h2 className="font-semibold text-text-primary">
-              {isMine ? 'Your Accepted Payment Methods' : 'Seller Accepted Payment Methods'}
-            </h2>
-            <svg className={`w-4 h-4 text-text-muted transition-transform ${paymentOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onClick={() => setPayFromOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
+            <h2 className="font-semibold text-text-primary">Payment Methods</h2>
+            <svg className={`w-4 h-4 text-text-muted transition-transform ${payFromOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          {paymentOpen && (
-            <div className="mt-3">
-              <p className="text-xs text-text-muted mb-3">
-                {isMine
-                  ? 'These are the payment methods you accept from buyers.'
-                  : 'These are the methods this seller accepts from buyers.'}
+          {payFromOpen && (
+            <div className="mt-3 space-y-4">
+              <p className="text-xs text-text-muted">
+                {isBuyListing
+                  ? (isMine ? 'How you will pay the seller. They pick one when trading.' : 'The buyer will pay you via one of these — you pick which when you trade.')
+                  : (isMine ? 'How buyers can pay you. They pick one when trading.' : 'Pay the seller via one of these — you pick which when you trade.')}
               </p>
-              <div className="flex flex-wrap gap-2">
-                {resolvedMethods.map((m) => (
-                  <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
-                    <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                    {m.label}
-                  </span>
-                ))}
-              </div>
+
+              {/* PKR rail */}
+              {hasPkr && (
+                <div>
+                  <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">PKR</p>
+                  <div className="flex flex-wrap gap-2">
+                    {resolvedMethods.map((m) => (
+                      <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                        {m.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* USDT — Wallet / Blockchain */}
+              {usdtWallet.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">USDT · Wallet / Blockchain</p>
+                  <div className="flex flex-wrap gap-2">
+                    {usdtWallet.map((m) => (
+                      <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium">
+                        <EntityLogo type="chain" slug={m} size="xs" className="flex-shrink-0" />
+                        {ctmUsdtMethodLabel(m)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* USDT — Exchange */}
+              {usdtExchange.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">USDT · Exchange</p>
+                  <div className="flex flex-wrap gap-2">
+                    {usdtExchange.map((m) => (
+                      <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium">
+                        <EntityLogo type="exchange" slug={m} size="xs" className="flex-shrink-0" />
+                        {ctmUsdtMethodLabel(m)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -811,13 +829,13 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {!isMine && listing.status === 'active' && !myActiveBid && (
         <div className="flex gap-3">
           <button
-            onClick={() => { setShowModal(true); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setUsdtMethod(''); setUsdtAddress(''); setTokenAmount(''); setError('') }}
+            onClick={() => { setShowModal(true); setRail(hasPkr ? 'pkr' : 'usdt'); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setUsdtMethod(''); setUsdtKind(null); setUsdtAddress(''); setTokenAmount(''); setError('') }}
             className={`flex-1 py-3.5 rounded-xl font-bold text-white transition-colors ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
           >
             {listing.side === 'sell' ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
           </button>
-          {/* Bidding uses the PKR payment flow; USDT listings are direct-trade only. */}
-          {!isUsdt && (
+          {/* Bidding uses the PKR payment flow — available whenever a PKR rail is offered. */}
+          {hasPkr && (
             <button
               onClick={() => { setShowBidModal(true); setTokenAmount(''); setBidPrice(''); setError('') }}
               className="flex-1 py-3.5 rounded-xl font-bold border-2 border-primary text-primary hover:bg-primary/5 transition-colors"
@@ -922,12 +940,39 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <span className="text-text-muted">{isBuyListing ? 'Total you will receive' : 'Total payable'}</span>
                     <span className="text-text-primary">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
+                  {/* USDT estimate when paying in USDT — the exact amount is locked at trade start. */}
+                  {rail === 'usdt' && usdtPerToken !== null && tokenAmt > 0 && (
+                    <div className="flex justify-between text-primary font-semibold">
+                      <span>≈ in USDT</span>
+                      <span>{(tokenAmt * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT</span>
+                    </div>
+                  )}
                 </div>
               )
             })()}
 
-            {/* USDT payment method (USDT listings) */}
-            {isUsdt && (
+            {/* Payment rail — shown only when the listing offers both PKR and USDT.
+                The taker picks how they'll pay/receive for this trade. */}
+            {hasPkr && hasUsdt && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">How do you want to pay?</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { key: 'pkr' as const, label: 'PKR' },
+                    { key: 'usdt' as const, label: 'USDT' },
+                  ]).map((r) => (
+                    <button type="button" key={r.key}
+                      onClick={() => setRail(r.key)}
+                      className={`py-2.5 rounded-xl border font-semibold text-sm transition-colors ${rail === r.key ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* USDT payment method — when the taker is on the USDT rail. */}
+            {rail === 'usdt' && (
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">USDT payment method *</label>
                 <p className="text-xs text-text-muted mb-2">
@@ -954,16 +999,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                                 // Dropping a pick from the other group avoids submitting a hidden method.
                                 if (usdtMethod && ctmUsdtMethodKind(usdtMethod) !== k.key) { setUsdtMethod(''); setUsdtAddress('') }
                               }}
-                              className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${activeKind === k.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                              className={`px-3 py-2 rounded-lg border text-xs font-medium text-center transition-colors ${activeKind === k.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
                               {k.label}
                             </button>
                           ))}
                         </div>
                       )}
-                      <div className="flex flex-wrap gap-2">
+                      {/* Even 2-column grid so every method button is the same size
+                          (no ragged/overflowing rows). */}
+                      <div className="grid grid-cols-2 gap-2">
                         {shown.map((m) => (
                           <button type="button" key={m} onClick={() => setUsdtMethod(m)}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${usdtMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
+                            className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium text-center transition-colors ${usdtMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
                             <EntityLogo type={ctmUsdtMethodKind(m) === 'wallet' ? 'chain' : 'exchange'} slug={m} size="xs" className="flex-shrink-0" />
                             {ctmUsdtMethodLabel(m)}
                             {usdtMethod === m && <span className="ml-0.5 text-xs">✓</span>}
@@ -994,7 +1041,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             )}
 
             {/* Payment method selection (PKR) */}
-            {!isUsdt && (
+            {rail === 'pkr' && (
             <div>
               <label className="block text-sm font-medium text-text-primary mb-0.5">
                 {isBuyListing
@@ -1039,7 +1086,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
             {/* BUY listing: show the buyer's declared pay-from accounts so the seller
                 can pick which one(s) they'll accept payment from. */}
-            {!isUsdt && isBuyListing && resolvedMethods.length > 0 && (
+            {rail === 'pkr' && isBuyListing && resolvedMethods.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">
                   Which of the buyer&apos;s accounts will you accept payment from?
@@ -1063,7 +1110,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             )}
 
             {/* SELL listing: show buyer's own methods so seller knows which account payment will come from */}
-            {!isUsdt && !isBuyListing && myMethods.length > 0 && (
+            {rail === 'pkr' && !isBuyListing && myMethods.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-0.5">
                   Your payment account (you&apos;ll pay from)

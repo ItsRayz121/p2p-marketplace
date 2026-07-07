@@ -13,7 +13,6 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
-import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock } from '../services/ctmSettlementFlow'
 import { openEpisode, closeEpisode } from '../services/chatThread.service'
@@ -760,26 +759,18 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   await assertCanOpenTrade(buyerId, 'self')                          // taker (initiator)
   await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty') // maker (ad owner)
 
-  // ── No-KYC taker access & limits (Phase 2) ──────────────────────────────────
-  // CTM does NOT gate trading on KYC today, so flagOffBehavior:'allow' preserves
-  // that exactly until nokyc_taker_enabled is flipped ON. When ON, an unverified
-  // taker is held to the per-trade / daily / lifetime PKR caps + single-open-trade
-  // cap, and only on listings where they send first (sell listings always; buy
-  // listings once taker-first settlement is enabled). Maker KYC is enforced at
-  // listing creation, unchanged.
+  // ── Taker KYC: intentionally NOT required on CTM ────────────────────────────
+  // The taker (the party responding to an ad) always commits their leg and never
+  // needs KYC to trade — verification is enforced only on the MAKER at listing
+  // creation. No per-trade / daily / lifetime / send-first caps are applied to the
+  // taker here; the global concurrency cap above is the only throttle.
   // Only BUY listings on a taker-first-ready market use the reordered flow.
   const usesTakerFirstFlow = isBuyListing && (await isTakerFirstForMarket('ctm'))
-  {
-    const takerSendsFirst = !isBuyListing || usesTakerFirstFlow
-    const fiatForNoKyc = listing.pricePerUnit.mul(new Prisma.Decimal(data.tokenAmount ?? 0))
-    await assertNoKycTakerAllowed({ takerId: buyerId, fiatAmount: fiatForNoKyc, takerSendsFirst, flagOffBehavior: 'allow' })
-  }
 
-  // USDT-as-payment: dead code in production until a USDT listing exists (only
-  // possible once the feature is enabled). The listing's own currency is the
-  // source of truth, so every PKR path below stays byte-identical when off.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isUsdtListing = (listing as any).paymentCurrency === 'USDT'
+  // Payment rail is chosen by the TAKER at trade time, not fixed on the listing:
+  // a listing can offer PKR and/or USDT, and the taker picks one. When the taker
+  // selected a USDT method this is a USDT trade; otherwise it settles in PKR.
+  const isUsdtTrade = !!(data.usdtMethod && data.usdtMethod.trim())
 
   // SELL listings: taker (buyer) picks one of the listing's accepted payment methods.
   // BUY listings: taker (seller) provides one or more of their own receiving accounts.
@@ -788,7 +779,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   // Resolved USDT payment (populated only for USDT listings).
   let usdtMethod = ''
   let usdtAddress = ''
-  if (isUsdtListing) {
+  if (isUsdtTrade) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const offered: string[] = (listing as any).usdtPaymentMethods ?? []
     const method = (data.usdtMethod ?? '').trim()
@@ -874,7 +865,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   }
 
   let sellerPaymentSnapshot: Record<string, unknown>
-  if (isUsdtListing) {
+  if (isUsdtTrade) {
     // USDT payment "receive point" — rendered in the trade room as where the payer
     // sends USDT (maker's address on a SELL listing, taker's address on a BUY one).
     sellerPaymentSnapshot = { type: 'usdt', method: usdtMethod, address: usdtAddress, label: `USDT ${usdtMethod}` }
@@ -903,7 +894,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   //     creation, stored on listing.paymentMethods — snapshot them here so the trade
   //     no longer shows "account details not provided".
   let buyerPaymentSnapshot: Record<string, unknown> | null = null
-  if (isUsdtListing) {
+  if (isUsdtTrade) {
     // No PKR pay-from account for a USDT trade — the payer's USDT method is implied
     // by the receive snapshot above.
     buyerPaymentSnapshot = null
@@ -967,7 +958,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   // so convert to USDT via the platform rate; without it we can't state the amount,
   // so we block — only ever reachable for a USDT listing.
   let usdtTradeFields: Record<string, unknown> = {}
-  if (isUsdtListing) {
+  if (isUsdtTrade) {
     const usdtPkr = await getNumberConfig('rate_USDT_PKR', 0)
     if (usdtPkr <= 0) {
       throw new AppError('SERVICE_UNAVAILABLE', 'USDT/PKR rate unavailable — cannot open a USDT trade right now', 503)

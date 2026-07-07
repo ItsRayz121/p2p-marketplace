@@ -74,9 +74,8 @@ export default function CreateListingPage() {
 
   // USDT-as-payment (gated on /ctm/config → usdtPaymentEnabled). Kept OUT of the
   // main `form` object so nothing USDT-related is ever sent while the feature is
-  // off — the create body only includes these when isUsdt is true.
+  // off — the create body only includes these when a USDT method is selected.
   const [usdtEnabled, setUsdtEnabled] = useState(false)
-  const [paymentCurrency, setPaymentCurrency] = useState<'PKR' | 'USDT'>('PKR')
   const [usdtMethods, setUsdtMethods] = useState<string[]>([])
   const [usdtDests, setUsdtDests] = useState<Record<string, string>>({})
   // Which method group (Wallet/Blockchain vs Internal/Exchange) the picker shows.
@@ -106,7 +105,9 @@ export default function CreateListingPage() {
     init()
   }, [])
 
-  const isUsdt = usdtEnabled && paymentCurrency === 'USDT'
+  // A listing can offer PKR account(s) and/or USDT method(s) together; the taker
+  // picks one rail at trade time. USDT groups are only offered when the feature is on.
+  const hasUsdt = usdtEnabled && usdtMethods.length > 0
 
   function toggleUsdtMethod(value: string) {
     setUsdtMethods((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]))
@@ -156,17 +157,20 @@ export default function CreateListingPage() {
     e.preventDefault()
     setError('')
     if (!form.tokenId) { setError('Please select a token'); return }
-    // USDT payment: the PKR payment-method requirement is replaced by USDT method
-    // selection (+ a receiving address per method on the sell side).
-    if (isUsdt) {
-      if (usdtMethods.length === 0) { setError('Select at least one USDT payment method'); return }
-      if (form.side === 'sell') {
-        const missing = usdtMethods.some((m) => !(usdtDests[m] ?? '').trim())
-        if (missing) { setError('Add a USDT receiving address/UID for each selected method'); return }
-      }
-    } else {
-      if (form.side === 'sell' && form.paymentMethods.length === 0) { setError('Select at least one payment method'); return }
-      if (form.side === 'buy' && form.paymentMethods.length === 0) { setError('Select at least one account you will pay from'); return }
+    // Payment rails: at least one of PKR account(s) or USDT method(s) is required.
+    // Both may be offered together — the taker chooses one at trade time.
+    const hasPkr = form.paymentMethods.length > 0
+    if (!hasPkr && !hasUsdt) {
+      setError(form.side === 'sell'
+        ? 'Select at least one payment method (PKR account or USDT method)'
+        : 'Select at least one account/method you will pay from (PKR or USDT)')
+      return
+    }
+    // On a SELL listing the maker receives USDT, so each selected USDT method needs
+    // a receiving address / UID.
+    if (hasUsdt && form.side === 'sell') {
+      const missing = usdtMethods.some((m) => !(usdtDests[m] ?? '').trim())
+      if (missing) { setError('Add a USDT receiving address/UID for each selected method'); return }
     }
     if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
     if (form.side === 'buy' && !form.settlementMethod.trim()) {
@@ -199,11 +203,10 @@ export default function CreateListingPage() {
         minOrderTokens: parseFloat(form.minOrderTokens),
         maxOrderTokens: parseFloat(form.maxOrderTokens),
         ...(form.side === 'buy' ? { settlementMethod: form.settlementMethod, paymentMethods: form.paymentMethods } : {}),
-        // USDT-as-payment fields — only sent when the feature is enabled AND the
-        // maker chose USDT, so the PKR path stays byte-identical.
-        ...(isUsdt
+        // USDT rails — sent whenever the maker selected any USDT method. The backend
+        // derives paymentCurrency (USDT only when there is no PKR rail; hybrid stays PKR).
+        ...(hasUsdt
           ? {
-              paymentCurrency: 'USDT' as const,
               usdtPaymentMethods: usdtMethods,
               usdtSettlementDestinations: usdtMethods
                 .map((m) => ({ method: m, address: (usdtDests[m] ?? '').trim(), label: m }))
@@ -415,25 +418,20 @@ export default function CreateListingPage() {
           )}
         </div>
 
-        {/* Payment currency (USDT-as-payment) — only when the feature is live. */}
+        {/* Payment rails intro — a listing can offer PKR and/or USDT together. */}
         {usdtEnabled && (
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Payment currency *</label>
-            <div className="flex gap-3">
-              {(['PKR', 'USDT'] as const).map((c) => (
-                <button type="button" key={c} onClick={() => setPaymentCurrency(c)}
-                  className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${paymentCurrency === c ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}>
-                  {c === 'PKR' ? 'PKR (bank / wallet)' : 'USDT (crypto)'}
-                </button>
-              ))}
-            </div>
+          <div className="rounded-xl border border-border bg-surface-alt/50 px-3 py-2.5">
+            <p className="text-sm font-medium text-text-primary">Payment methods you&apos;ll accept</p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Offer PKR, USDT, or both — takers pick one when they trade. Choose at least one.
+            </p>
           </div>
         )}
 
-        {/* USDT payment methods (blockchain + exchange) — mirrors the USDT market. */}
-        {isUsdt && (
+        {/* USDT payment methods (blockchain + exchange) — optional rail. */}
+        {usdtEnabled && (
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-0.5">USDT payment methods *</label>
+            <label className="block text-sm font-medium text-text-primary mb-0.5">USDT methods {form.paymentMethods.length > 0 ? '(optional)' : ''}</label>
             <p className="text-xs text-text-muted mb-2">
               {form.side === 'sell'
                 ? 'Buyers pay you in USDT via these methods. Add the address/UID where you receive for each.'
@@ -482,12 +480,13 @@ export default function CreateListingPage() {
           </div>
         )}
 
-        {/* Payment methods — sell: accounts buyers pay TO; buy: accounts you'll pay FROM.
-            Hidden when the listing is priced in USDT (USDT methods replace them). */}
-        {!isUsdt && (
+        {/* Payment methods (PKR) — sell: accounts buyers pay TO; buy: accounts you'll
+            pay FROM. Offered alongside USDT; at least one rail overall is required. */}
         <div>
             <label className="block text-sm font-medium text-text-primary mb-0.5">
-              {form.side === 'sell' ? 'Payment methods *' : 'Which account(s) will you pay from? *'}
+              {form.side === 'sell'
+                ? `PKR accounts ${hasUsdt ? '(optional)' : ''}`
+                : `Which PKR account(s) will you pay from? ${hasUsdt ? '(optional)' : ''}`}
             </label>
             <p className="text-xs text-text-muted mb-2">
               {form.side === 'sell'
@@ -537,10 +536,9 @@ export default function CreateListingPage() {
               </div>
             )}
           </div>
-        )}
 
         {/* Buy listing info note — seller provides their receiving account when accepting */}
-        {form.side === 'buy' && !isUsdt && (
+        {form.side === 'buy' && form.paymentMethods.length > 0 && (
           <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-sm text-blue-800 dark:text-blue-300">
             The seller will provide their payment receiving account when they accept your trade. The account(s) you selected above are shown to them as where your payment will come from.
           </div>

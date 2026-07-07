@@ -166,24 +166,30 @@ export async function createListing(userId: string, data: CreateListingInput) {
     throw new AppError('VALIDATION_ERROR', 'One or more payment methods not found or not yours', 400)
   }
 
-  // USDT-as-payment resolution — inert unless the feature is code-ready AND the
-  // runtime flag is ON. When off, `useUsdt` is always false and the listing is
-  // written exactly as before (PKR, columns at their defaults).
-  const useUsdt = (await isCtmUsdtPaymentEnabled()) && data.paymentCurrency === 'USDT'
+  // Payment rails — a listing may offer PKR account(s) and/or USDT method(s) at
+  // once; the taker picks one at trade time. USDT is only accepted when the
+  // feature flag is ON (otherwise those columns stay at their defaults).
+  const usdtEnabled = await isCtmUsdtPaymentEnabled()
+  const usdtMethodsSel = usdtEnabled
+    ? [...new Set(data.usdtPaymentMethods ?? [])].filter((m) => CTM_USDT_METHOD_VALUES.includes(m as never))
+    : []
+  const hasUsdt = usdtMethodsSel.length > 0
+  const hasPkr = data.paymentMethods.length > 0
+  if (data.side === 'sell' && !hasUsdt && !hasPkr) {
+    throw new AppError('VALIDATION_ERROR', 'Select at least one payment method', 400)
+  }
   let usdtFields: Record<string, unknown> = {}
-  if (useUsdt) {
-    const methods = [...new Set(data.usdtPaymentMethods ?? [])].filter((m) => CTM_USDT_METHOD_VALUES.includes(m as never))
-    if (methods.length === 0) {
-      throw new AppError('VALIDATION_ERROR', 'Select at least one USDT payment method', 400)
-    }
+  if (hasUsdt) {
     // A SELL listing (maker receives USDT) needs a receive destination per method.
     const dests = (data.usdtSettlementDestinations ?? []).filter((d) => d.address?.trim())
     if (data.side === 'sell' && dests.length === 0) {
       throw new AppError('VALIDATION_ERROR', 'Add at least one USDT receiving address', 400)
     }
     usdtFields = {
-      paymentCurrency: 'USDT',
-      usdtPaymentMethods: methods,
+      // paymentCurrency is a hint for legacy/pure-USDT display: 'USDT' only when the
+      // listing has NO PKR rail. Hybrid + PKR-only listings keep the 'PKR' default.
+      ...(hasPkr ? {} : { paymentCurrency: 'USDT' }),
+      usdtPaymentMethods: usdtMethodsSel,
       ...(dests.length > 0 ? { usdtSettlementDestinations: dests } : {}),
     }
   }

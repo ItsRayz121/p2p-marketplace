@@ -10,6 +10,7 @@ import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPaymentLabels } from '@/lib/pkPaymentMethods'
+import { ctmUsdtMethodLabel, ctmUsdtMethodKind } from '@/lib/ctmUsdtMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
@@ -38,6 +39,7 @@ interface Listing {
   tradeWindowMins?: number
   createdAt?: string
   paymentMethods: string[]
+  usdtPaymentMethods?: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
   makerBondInsufficient?: boolean
   token: {
@@ -233,6 +235,8 @@ function ListingRow({
       ? listing.resolvedPaymentMethods
       : (listing.paymentMethods ?? []).map((pm) => ({ id: pm, type: 'other', label: pm })),
   )
+  // USDT rails a listing may also accept (shown as chips alongside PKR methods).
+  const usdtMethods = listing.usdtPaymentMethods ?? []
 
   const isSell    = listing.side === 'sell'
   const accentCls = isSell ? 'border-l-emerald-500' : 'border-l-blue-500'
@@ -248,7 +252,6 @@ function ListingRow({
 
   const usdtRate = marketRate?.averageUsdtRate ?? null
   const pkrRate  = marketRate?.averagePkrRate ?? null
-  const hasConversion = usdtRate !== null || pkrRate !== null
 
   const openProfile = () => onViewMerchant(user.id)
 
@@ -352,20 +355,20 @@ function ListingRow({
             </div>
           )}
 
-          <p className={`text-xl font-bold ${priceCls}`}>PKR {price.toLocaleString()}</p>
+          {/* PKR + USDT both bold inline so each reads as primary. */}
+          <p className={`text-xl font-bold ${priceCls} flex flex-wrap items-baseline gap-x-1.5`}>
+            <span>PKR {price.toLocaleString()}</span>
+            {usdtRate !== null && <span className="text-base">· ≈ {fmtUsdt(usdtRate)} USDT</span>}
+          </p>
           <p className="text-xs text-text-muted">per {sym}</p>
           <p className="text-xs text-text-muted mt-0.5">
             <span className="font-medium">{listing.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
             {Number(listing.availableAmount).toLocaleString()} {sym}
           </p>
 
-          {/* Internal CTM market estimate — hidden gracefully when unavailable */}
-          {hasConversion && (
-            <p className="text-[11px] text-text-muted/80 mt-0.5">
-              {usdtRate !== null && <>1 {sym} ≈ {fmtUsdt(usdtRate)} USDT</>}
-              {usdtRate !== null && pkrRate !== null && <span className="mx-1">·</span>}
-              {pkrRate !== null && <>≈ PKR {pkrRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</>}
-            </p>
+          {/* Market PKR reference — shown when it adds info beyond the listing price. */}
+          {pkrRate !== null && (
+            <p className="text-[11px] text-text-muted/80 mt-0.5">Market ≈ PKR {pkrRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
           )}
 
           {age && <p className="text-xs text-text-muted/60 mt-0.5">Listed {age}</p>}
@@ -396,17 +399,23 @@ function ListingRow({
             pulling Order Limit / CTA out of alignment with the other rows. */}
         <div className="sm:w-32 flex-shrink-0">
           <p className="text-xs text-text-muted mb-1">Payment</p>
-          {methods.length > 0 ? (
+          {methods.length > 0 || usdtMethods.length > 0 ? (
             <div className="flex flex-wrap gap-1">
-              {methods.slice(0, 3).map((pm) => (
+              {methods.slice(0, 2).map((pm) => (
                 <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentMethodColor(pm.label)}`}>
                   <EntityLogo type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'} slug={pm.label} size="xs" className="flex-shrink-0" />
                   {pm.label}
                 </span>
               ))}
-              {methods.length > 3 && (
+              {usdtMethods.slice(0, 2).map((m) => (
+                <span key={m} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <EntityLogo type={ctmUsdtMethodKind(m) === 'wallet' ? 'chain' : 'exchange'} slug={m} size="xs" className="flex-shrink-0" />
+                  {ctmUsdtMethodLabel(m)}
+                </span>
+              ))}
+              {methods.length + usdtMethods.length > 4 && (
                 <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-surface-alt text-text-secondary">
-                  +{methods.length - 3}
+                  +{methods.length + usdtMethods.length - 4}
                 </span>
               )}
             </div>
@@ -492,18 +501,18 @@ function ListingRow({
             </div>
           </Link>
           <div className="text-right flex-shrink-0">
-            <p className={`text-lg font-bold leading-none ${priceCls}`}>PKR {price.toLocaleString()}</p>
+            {/* PKR + USDT both bold so each reads as primary. */}
+            <p className={`text-lg font-bold leading-tight ${priceCls}`}>
+              PKR {price.toLocaleString()}
+              {usdtRate !== null && <span className="block text-xs">≈ {fmtUsdt(usdtRate)} USDT</span>}
+            </p>
             <p className="text-[11px] text-text-muted mt-0.5">{listing.side === 'buy' ? 'Wanted' : 'Avail'} {Number(listing.availableAmount).toLocaleString()} {sym}</p>
           </div>
         </div>
 
-        {/* Row 4: estimate (if any) + limits + window + listed */}
-        {hasConversion && (usdtRate !== null || pkrRate !== null) && (
-          <p className="text-[11px] text-text-muted/80 mt-1.5">
-            {usdtRate !== null && <>1 {sym} ≈ {fmtUsdt(usdtRate)} USDT</>}
-            {usdtRate !== null && pkrRate !== null && <span className="mx-1">·</span>}
-            {pkrRate !== null && <>≈ PKR {pkrRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</>}
-          </p>
+        {/* Row 4: market ref + limits + window + listed */}
+        {pkrRate !== null && (
+          <p className="text-[11px] text-text-muted/80 mt-1.5">Market ≈ PKR {pkrRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
         )}
         <p className="text-[11px] text-text-muted mt-1">
           Limit {minTok.toLocaleString()}–{maxTok.toLocaleString()} {sym}
@@ -515,7 +524,7 @@ function ListingRow({
         {/* Row 5: payment methods + CTA */}
         <div className="flex items-center justify-between gap-2 mt-2">
           <div className="flex flex-wrap items-center gap-1 min-w-0">
-            {methods.length > 0 ? (
+            {methods.length > 0 || usdtMethods.length > 0 ? (
               <>
                 {methods.slice(0, 2).map((pm) => (
                   <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${getPaymentMethodColor(pm.label)}`}>
@@ -523,8 +532,14 @@ function ListingRow({
                     {pm.label}
                   </span>
                 ))}
-                {methods.length > 2 && (
-                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-surface-alt text-text-secondary">+{methods.length - 2}</span>
+                {usdtMethods.slice(0, 2).map((m) => (
+                  <span key={m} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <EntityLogo type={ctmUsdtMethodKind(m) === 'wallet' ? 'chain' : 'exchange'} slug={m} size="xs" className="flex-shrink-0" />
+                    {ctmUsdtMethodLabel(m)}
+                  </span>
+                ))}
+                {methods.length + usdtMethods.length > 4 && (
+                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-surface-alt text-text-secondary">+{methods.length + usdtMethods.length - 4}</span>
                 )}
               </>
             ) : (

@@ -4,8 +4,6 @@ import { Prisma } from '@prisma/client'
 import { notify as centralNotify } from '../lib/notify'
 import { generateCtmDisplayRef } from './ctm.ref'
 import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
-import { assertNoKycTakerAllowed } from '../services/nokycTaker.service'
-import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { openEpisode } from '../services/chatThread.service'
 import { postCtmOpeningMessages } from './ctm.trade.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
@@ -181,15 +179,8 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
   await assertCanOpenTrade(bid.bidderId, 'self')
   await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty')
 
-  // No-KYC taker limits (Phase 2): the bidder is the taker; the listing merchant
-  // is the KYC'd maker. flagOffBehavior:'allow' preserves CTM's current no-gate
-  // behavior until nokyc_taker_enabled is flipped ON.
-  await assertNoKycTakerAllowed({
-    takerId: bid.bidderId,
-    fiatAmount: bid.fiatAmount,
-    takerSendsFirst: !isBuyListing || (await isTakerFirstForMarket('ctm')),
-    flagOffBehavior: 'allow',
-  })
+  // Taker KYC is intentionally NOT required on CTM — the bidder (taker) never needs
+  // verification to trade; only the maker is KYC-gated at listing creation.
 
   // Resolve payment method IDs
   const primaryPaymentMethodId = isBuyListing
@@ -413,15 +404,8 @@ export async function confirmBidDetails(
   await assertCanOpenTrade(bid.bidderId, 'self')
   await assertCanOpenTrade(listing.merchantProfile.userId, 'counterparty')
 
-  // No-KYC taker limits (Phase 2): the bidder is the taker; the listing merchant
-  // is the KYC'd maker. flagOffBehavior:'allow' preserves CTM's current no-gate
-  // behavior until nokyc_taker_enabled is flipped ON.
-  await assertNoKycTakerAllowed({
-    takerId: bid.bidderId,
-    fiatAmount: bid.fiatAmount,
-    takerSendsFirst: !isBuyListing || (await isTakerFirstForMarket('ctm')),
-    flagOffBehavior: 'allow',
-  })
+  // Taker KYC is intentionally NOT required on CTM — the bidder (taker) never needs
+  // verification to trade; only the maker is KYC-gated at listing creation.
 
   const primaryPaymentMethodId = isBuyListing
     ? ((data.paymentMethods?.[0]) ?? data.paymentMethod ?? '')
