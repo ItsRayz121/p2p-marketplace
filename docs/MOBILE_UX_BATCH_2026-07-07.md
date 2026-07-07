@@ -46,12 +46,19 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 ## Phase 7 — CTM in-trade chat bubbles (`ctm/trade/[ref]/page.tsx`)  ✅ COMMITTED
 - [x] 7a. CTM chat now mirrors USDT chat: resolves real senderName (You / trader / RupChain); my messages right, other person left with name labels; system notices side by the ACTOR (was pinned to viewer's role, which made it look one-sided).
 
-## Phase 8 — Persistent messaging [Q]
-- [Q] 8a. Flip `messaging_inbox_enabled` ON (gives the persistent "chat anytime" + Messages tab). LIVE PROD decision.
+## Phase 8 — Persistent messaging  ⚙️ ADMIN FLAG (user action)
+- [x] 8a. User approved ON. Flags are DB-config, not code. ACTION: Admin→Platform Config → set
+      `messaging_inbox_enabled = true`. Then the Messages tab + persistent per-person chat go live.
+      (Already built: cross-market single thread per person, WhatsApp bubbles, trade-progress dividers.)
 
-## Phase 9 — KYC gating [Q]
-- [Q] 9a. Only ad creators need KYC; takers don't. Maps to `nokyc_taker_enabled` + admin caps. Money-safety nuance: buy-side taker-moves-second is intentionally still gated.
-- [ ] 9b. "Trading without verification" big box → tiny line / move just above Buy/Sell button / collapse.
+## Phase 9 — KYC gating
+- [x] 9a-CTM. CTM takers already never need KYC (code, committed Phase 1). Only the maker is KYC-gated.
+- [x] 9a-USDT SELL. Safe (taker pays fiat first). ACTION: set `nokyc_taker_enabled = true`; raise
+      `nokyc_max_per_trade_pkr` / `nokyc_max_daily_pkr` / `nokyc_rolling_ceiling_pkr` if you want no caps.
+- [!] 9a-USDT BUY. Needs taker-first settlement (built, NOT QA'd — moves real money). Do NOT flip
+      `taker_first_settlement_enabled` + `TAKER_FIRST_MARKET_READY[usdt]` until a staging end-to-end
+      trade test passes. This is the piece I said I'd confirm before flipping. HOLDING.
+- [x] 9b. "Trading without verification" box is now a collapsed one-line header (taps to expand).  ✅ COMMITTED
 
 ## Phase 10 — Final cross-check + cleanup
 - [ ] Re-verify every phase against a running build; delete this file.

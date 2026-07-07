@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { apiRequest } from '@/lib/api'
 import { fmtPkr } from '@/lib/fmt'
-import { ShieldCheck, ShieldAlert } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, ChevronDown } from 'lucide-react'
 
 interface NoKycStatus {
   verified: boolean
@@ -24,6 +24,9 @@ interface NoKycStatus {
  */
 export function NoKycLimitNotice() {
   const [s, setS] = useState<NoKycStatus | null>(null)
+  // Collapsed by default → a single thin line until the user taps to see the
+  // per-trade / daily / lifetime breakdown, so it never dominates the page.
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -40,14 +43,20 @@ export function NoKycLimitNotice() {
   const nearLimit = lifetimeLeft <= s.lifetimeCeilingPkr * 0.15 || dailyLeft <= 0
 
   return (
-    <div className={`rounded-lg border p-3 text-sm ${nearLimit ? 'border-amber-500/40 bg-amber-500/10' : 'border-border bg-muted'}`}>
-      <div className="flex items-start gap-2">
+    <div className={`rounded-lg border text-sm ${nearLimit ? 'border-amber-500/40 bg-amber-500/10' : 'border-border bg-muted'}`}>
+      {/* One-line collapsed header */}
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
         {nearLimit
-          ? <ShieldAlert className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-          : <ShieldCheck className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />}
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-text-primary">Trading without verification</p>
-          <ul className="text-xs text-text-muted mt-1 space-y-0.5">
+          ? <ShieldAlert className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          : <ShieldCheck className="w-4 h-4 text-primary flex-shrink-0" />}
+        <span className="min-w-0 flex-1 truncate font-medium text-text-primary">
+          Trading without verification · up to {fmtPkr(s.perTradePkr)}/trade
+        </span>
+        <ChevronDown className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pl-9">
+          <ul className="text-xs text-text-muted space-y-0.5">
             <li>Up to <span className="font-medium text-text-primary">{fmtPkr(s.perTradePkr)}</span> per trade</li>
             <li>{fmtPkr(dailyLeft)} left today (of {fmtPkr(s.dailyLimitPkr)})</li>
             <li>{fmtPkr(lifetimeLeft)} left before verification is required</li>
@@ -57,7 +66,7 @@ export function NoKycLimitNotice() {
             Verify your identity to trade more →
           </Link>
         </div>
-      </div>
+      )}
     </div>
   )
 }
