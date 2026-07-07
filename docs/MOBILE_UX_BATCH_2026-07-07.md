@@ -43,8 +43,8 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 - [ ] 6b. Fix half-hidden collapsible buttons. (DEFERRED — revisit.)
 - [x] 6c. CTM trade stepper now scrolls WITHIN the card (overflow-x-auto, min-w-[340px], mobile label w-12) — 6th step no longer spills outside the box.  ✅ COMMITTED
 
-## Phase 7 — CTM in-trade chat bubbles (`ctm/trade/[ref]/page.tsx`)
-- [ ] 7a. CTM trade chat: my messages right, other person left (like USDT chat). Name shown.
+## Phase 7 — CTM in-trade chat bubbles (`ctm/trade/[ref]/page.tsx`)  ✅ COMMITTED
+- [x] 7a. CTM chat now mirrors USDT chat: resolves real senderName (You / trader / RupChain); my messages right, other person left with name labels; system notices side by the ACTOR (was pinned to viewer's role, which made it look one-sided).
 
 ## Phase 8 — Persistent messaging [Q]
 - [Q] 8a. Flip `messaging_inbox_enabled` ON (gives the persistent "chat anytime" + Messages tab). LIVE PROD decision.
