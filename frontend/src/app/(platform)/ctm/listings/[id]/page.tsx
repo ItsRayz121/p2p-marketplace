@@ -534,11 +534,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               {hasPkr && (
                 <div>
                   <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">PKR</p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {resolvedMethods.map((m) => (
-                      <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
+                      <span key={m.id} className="flex items-center gap-1.5 min-w-0 bg-surface border border-border px-3 py-2 rounded-xl text-sm">
                         <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                        {m.label}
+                        <span className="truncate">{m.label}</span>
                       </span>
                     ))}
                   </div>
@@ -549,11 +549,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               {usdtWallet.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">USDT · Wallet / Blockchain</p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {usdtWallet.map((m) => (
-                      <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium">
+                      <span key={m} className="flex items-center gap-1.5 min-w-0 bg-surface border border-border px-3 py-2 rounded-xl text-sm font-medium">
                         <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
-                        {ctmUsdtMethodLabel(m)}
+                        <span className="truncate">{ctmUsdtMethodLabel(m)}</span>
                       </span>
                     ))}
                   </div>
@@ -564,11 +564,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               {usdtExchange.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">USDT · Exchange</p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {usdtExchange.map((m) => (
-                      <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium">
+                      <span key={m} className="flex items-center gap-1.5 min-w-0 bg-surface border border-border px-3 py-2 rounded-xl text-sm font-medium">
                         <EntityLogo type="exchange" slug={m} size="xs" className="flex-shrink-0" />
-                        {ctmUsdtMethodLabel(m)}
+                        <span className="truncate">{ctmUsdtMethodLabel(m)}</span>
                       </span>
                     ))}
                   </div>
