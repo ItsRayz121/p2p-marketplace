@@ -131,11 +131,16 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   // Live clock (1s) so an accepted bid's confirm window flips to an "expired"
   // state on its own the moment it lapses — no manual refresh needed. Once the
   // window is gone the bid is dead: no CTA, and the confirm modal is sealed.
+  // Only ticks while a bid is actually awaiting confirmation, so the page isn't
+  // re-rendering every second the rest of the time.
   const [nowTs, setNowTs] = useState(() => Date.now())
+  const bidAwaitingConfirm = myActiveBid?.status === 'accepted_pending_buyer'
   useEffect(() => {
+    if (!bidAwaitingConfirm) return
+    setNowTs(Date.now())
     const t = setInterval(() => setNowTs(Date.now()), 1000)
     return () => clearInterval(t)
-  }, [])
+  }, [bidAwaitingConfirm])
 
   // Collapsible cards
   const [sellerOpen, setSellerOpen] = useState(true)

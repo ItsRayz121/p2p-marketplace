@@ -92,7 +92,7 @@ export default function MessageThreadPage() {
     // bottom padding (-mb) and reserve our own (pb) so the composer sits just
     // ABOVE the fixed BottomNav instead of being hidden behind it — the input is
     // visible the instant the thread opens, no scrolling required.
-    <div className="max-w-2xl mx-auto flex flex-col h-[calc(100dvh-4rem)] pb-[calc(4rem+env(safe-area-inset-bottom))] -mb-[calc(6rem+env(safe-area-inset-bottom))] lg:h-[calc(100dvh-4rem)] lg:pb-0 lg:mb-0">
+    <div className="max-w-2xl mx-auto flex flex-col h-[calc(100dvh-4rem)] pb-[calc(4rem+max(1rem,env(safe-area-inset-bottom)))] -mb-[calc(6rem+env(safe-area-inset-bottom))] lg:h-[calc(100dvh-4rem)] lg:pb-0 lg:mb-0">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-surface">
         <Link href="/messages" className="p-1 -ml-1 rounded hover:bg-muted" aria-label="Back">

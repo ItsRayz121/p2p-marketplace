@@ -39,12 +39,27 @@ function statusLabelForRole(status: string, role: Role): string {
   return map[status]?.[role] ?? status
 }
 
+// Stepper labels for the CLASSIC flow (buyer pays first, then seller sends tokens).
 const STEP_INFO = [
   { label: 'Trade Started', actor: null },
   { label: 'Payment Sent', actor: 'Buyer' },
   { label: 'Payment Confirmed', actor: 'Seller' },
   { label: 'Tokens Sent', actor: 'Seller' },
   { label: 'Tokens Received', actor: 'Buyer' },
+  { label: 'Completed', actor: null },
+]
+
+// Stepper labels for the TAKER-FIRST flow (seller sends tokens first, buyer pays
+// only after the tokens are confirmed). Same six rungs, but the token leg and the
+// payment leg swap places — so the labels must swap too, otherwise the stepper
+// mislabels each rung (e.g. showing "Payment Sent" while the seller is actually
+// sending tokens). Order mirrors TAKER_FIRST in lib/ctmSettlementFlow.ts.
+const STEP_INFO_TAKER_FIRST = [
+  { label: 'Trade Started', actor: null },
+  { label: 'Tokens Sent', actor: 'Seller' },
+  { label: 'Tokens Received', actor: 'Buyer' },
+  { label: 'Payment Sent', actor: 'Buyer' },
+  { label: 'Payment Confirmed', actor: 'Seller' },
   { label: 'Completed', actor: null },
 ]
 
@@ -849,6 +864,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             <div className="flex items-start">
               {STATUS_STEPS.map((s, i) => {
                 const isLast = i === STATUS_STEPS.length - 1
+                // Taker-first trades reorder the token/payment legs, so pick the
+                // matching label set — otherwise each rung reads as the wrong step.
+                const stepInfo = (trade.takerFirst ? STEP_INFO_TAKER_FIRST : STEP_INFO)[i]!
                 return (
                   <div key={s} className={`flex items-start ${isLast ? 'flex-shrink-0' : 'flex-1'}`}>
                     <div className="flex flex-col items-center flex-shrink-0 w-11 sm:w-16">
@@ -857,11 +875,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       </div>
                       <div className="mt-1.5 w-full text-center">
                         <p className={`text-[8.5px] sm:text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 dark:text-green-400 font-medium' : 'text-text-muted'}`}>
-                          {STEP_INFO[i].label}
+                          {stepInfo.label}
                         </p>
-                        {STEP_INFO[i].actor && (
-                          <span className={`text-[8px] sm:text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (STEP_INFO[i].actor === 'Buyer' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400') : 'bg-surface-alt text-text-muted'}`}>
-                            {STEP_INFO[i].actor}
+                        {stepInfo.actor && (
+                          <span className={`text-[8px] sm:text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (stepInfo.actor === 'Buyer' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400') : 'bg-surface-alt text-text-muted'}`}>
+                            {stepInfo.actor}
                           </span>
                         )}
                       </div>
