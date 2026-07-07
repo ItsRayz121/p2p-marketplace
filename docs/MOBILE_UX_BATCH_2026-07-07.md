@@ -22,12 +22,12 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 - [x] 2a. Chart collapsed by default; collapsed = single "USDT price chart" line (PKR value/% hidden until opened).
 - [x] 2b. Added mb-4 gap between Price Chart box and Recent Trades ticker.
 
-## Phase 3 — Address / number / value formatting (USDT + CTM trade pages)
-- [ ] 3a. USDT Send Crypto (Internal/Exchange): "Send to buyer's Binance UID / deposit address" value is pushed into a vertical column → render horizontally, proper spacing, + copy button.
-- [ ] 3b. USDT Send Crypto (Wallet/BEP20): wallet address (6-7 lines) → 1 line + copy; tx hash (4 lines) → 1-2 lines. Keep "On-chain verified" + "View on BscScan".
-- [ ] 3c. CTM Send Tokens to Buyer: buyer address (3 lines) → 1 line + copy.
-- [ ] 3d. Send-payment blocks: move copy icon IN FRONT of the number; rename "Mobile number" → "Payment Number".
-- [ ] 3e. Seller/buyer receiving-account block: "Account / Payment Number" label collides with number → shorten to "Payment Number"/"Account Number"; fix faint text + spacing.
+## Phase 3 — Address / number / value formatting (USDT + CTM trade pages)  ✅ COMMITTED
+- [x] 3a. USDT Send Crypto UID/address now stacks full-width (label above, bordered box, copy inline) — no vertical column.
+- [x] 3b. Wallet address + tx hash full-width boxes (wrap 1-2 lines); On-chain verified + explorer link flow left-aligned below.
+- [x] 3c. CTM Row breakAll values (buyer address, IBAN, USDT address) now stack full-width.
+- [x] 3d. Copy icon moved IN FRONT of value; "Mobile number" → "Payment number" (both trade pages).
+- [x] 3e. "Account / Payment Number" → "Payment number" (CTM); inline rows use items-center (no collision).
 
 ## Phase 4 — CTM create-listing USDT payment layout (`ctm/listings/create/page.tsx`)
 - [ ] 4a. Internal/Exchange transfer (6 chips): equal size, equal spacing, grid-aligned (not random widths).

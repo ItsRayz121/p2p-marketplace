@@ -524,7 +524,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
       <Row label="Method" value={acc.label} />
       <Row label="Account Name" value={acc.accountName} copyable />
-      {acc.mobileNumber && <Row label="Account / Payment Number" value={acc.mobileNumber} mono copyable />}
+      {acc.mobileNumber && <Row label="Payment number" value={acc.mobileNumber} mono copyable />}
       {acc.bankName && <Row label="Bank" value={acc.bankName} />}
       {acc.ibanNumber && <Row label="IBAN" value={acc.ibanNumber} mono breakAll copyable />}
       {acc.accountNumber && !acc.ibanNumber && <Row label="Account No." value={acc.accountNumber} mono copyable />}
@@ -565,7 +565,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </button>
                 </div>
                 <Row label="Account Name" value={acc.accountName} copyable />
-                {acc.mobileNumber && <Row label="Account / Payment Number" value={acc.mobileNumber} mono copyable />}
+                {acc.mobileNumber && <Row label="Payment number" value={acc.mobileNumber} mono copyable />}
                 {acc.bankName && <Row label="Bank" value={acc.bankName} />}
                 {acc.ibanNumber && <Row label="IBAN" value={acc.ibanNumber} mono breakAll copyable />}
                 {acc.accountNumber && !acc.ibanNumber && <Row label="Account No." value={acc.accountNumber} mono copyable />}
@@ -606,7 +606,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
           <Row label="Method" value={b.label} />
           <Row label="Account Name" value={b.accountName} copyable />
-          {b.mobileNumber && <Row label="Account / Payment Number" value={b.mobileNumber} mono copyable />}
+          {b.mobileNumber && <Row label="Payment number" value={b.mobileNumber} mono copyable />}
           {b.bankName && <Row label="Bank" value={b.bankName} />}
           {b.ibanNumber && <Row label="IBAN" value={b.ibanNumber} mono breakAll copyable />}
           {b.accountNumber && !b.ibanNumber && <Row label="Account No." value={b.accountNumber} mono copyable />}
@@ -1543,29 +1543,45 @@ function Row({ label, value, mono, breakAll, copyable }: { label: string; value:
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* ignore */ }
   }
+  const copyBtn = copyable ? (
+    <button onClick={handleCopy} title="Copy" className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors">
+      {copied ? (
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+        </svg>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+          <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+        </svg>
+      )}
+    </button>
+  ) : null
+
+  // Long addresses / hashes (breakAll) stack: the label sits on its own line and
+  // the value fills the FULL width in a bordered box, so a 0x… address wraps to
+  // one or two lines instead of a narrow vertical column pinned to the right edge.
+  if (breakAll) {
+    return (
+      <div className="space-y-1">
+        <span className="text-text-muted">{label}</span>
+        <div className="flex items-center gap-2 bg-surface-alt/50 border border-border rounded-lg px-2.5 py-1.5">
+          <span className={`text-text-primary font-medium break-all min-w-0 flex-1 ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
+          {copyBtn}
+        </div>
+      </div>
+    )
+  }
+
+  // Short values stay inline; the copy button sits in FRONT of the value (to its
+  // left) so a phone number reads "[copy] 0309…" rather than the copy trailing off
+  // the right edge.
   return (
-    // Label pinned to the left border, value block pinned to the right border so
-    // every row (incl. a long break-all address and the amount beneath it) lines
-    // up on the same left/right edges. items-start keeps the label top-aligned
-    // against a wrapped multi-line value instead of floating to its centre.
-    <div className="flex items-start justify-between gap-4">
+    <div className="flex items-center justify-between gap-4">
       <span className="text-text-muted flex-shrink-0">{label}</span>
-      <div className={`flex items-center gap-1.5 min-w-0 justify-end ${breakAll ? 'text-right' : ''}`}>
-        <span className={`text-text-primary font-medium ${mono ? 'font-mono' : ''} ${breakAll ? 'break-all' : ''}`}>{value}</span>
-        {copyable && (
-          <button onClick={handleCopy} title="Copy" className="flex-shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-primary/10 transition-colors">
-            {copied ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-              </svg>
-            )}
-          </button>
-        )}
+      <div className="flex items-center gap-1.5 min-w-0 justify-end">
+        {copyBtn}
+        <span className={`text-text-primary font-medium text-right ${mono ? 'font-mono' : ''}`}>{value}</span>
       </div>
     </div>
   )

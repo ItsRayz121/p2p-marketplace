@@ -1074,7 +1074,7 @@ export default function TradePage() {
                       {isUserBuyer ? 'Send your PKR payment to' : 'Your receiving account'}
                     </p>
                     <PayToRow label="Account name" value={sellerAccount.accountName} />
-                    {sellerAccount.mobileNumber && <PayToRow label="Mobile number" value={sellerAccount.mobileNumber} copy />}
+                    {sellerAccount.mobileNumber && <PayToRow label="Payment number" value={sellerAccount.mobileNumber} copy />}
                     {sellerAccount.accountNumber && <PayToRow label="Account number" value={sellerAccount.accountNumber} copy />}
                     {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
                     {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
@@ -1096,7 +1096,7 @@ export default function TradePage() {
                         <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2">
                           <PayToRow label="Method" value={acc.label} />
                           <PayToRow label="Account name" value={acc.accountName} />
-                          {acc.mobileNumber && <PayToRow label="Mobile number" value={acc.mobileNumber} copy />}
+                          {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
                           {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
                           {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
                           {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
@@ -1198,25 +1198,30 @@ export default function TradePage() {
                       )
                     }
                     return (
-                      <div className="flex justify-between items-start gap-2">
-                        <span className="text-text-muted flex-shrink-0">{deliveryDestinationLabel(trade.buyerDeliveryMethod, isUserBuyer)}</span>
-                        <span className="inline-flex items-start gap-1 min-w-0">
-                          <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{dest}</span>
-                          <CopyButton text={dest} size="sm" className="flex-shrink-0 -mt-0.5" />
-                        </span>
+                      // Stacked: the label sits above and the address fills the full
+                      // width in a bordered box, so a UID / 0x… address wraps to one or
+                      // two lines instead of a narrow vertical column at the right edge.
+                      <div className="space-y-1 pt-1">
+                        <span className="text-text-muted">{deliveryDestinationLabel(trade.buyerDeliveryMethod, isUserBuyer)}</span>
+                        <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-2.5 py-2">
+                          <span className="font-medium text-text-primary break-all font-mono text-xs min-w-0 flex-1">{dest}</span>
+                          <CopyButton text={dest} size="sm" className="flex-shrink-0" />
+                        </div>
                       </div>
                     )
                   })()}
                 </div>
 
                 {trade.sellerTxHash && (
-                  <div className="flex justify-between items-start gap-2 text-sm">
-                    <span className="text-text-muted flex-shrink-0">Transaction Hash</span>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="inline-flex items-start gap-1 min-w-0">
-                        <span className="font-medium text-text-primary text-right break-all font-mono text-xs">{trade.sellerTxHash}</span>
-                        <CopyButton text={trade.sellerTxHash} size="sm" className="flex-shrink-0 -mt-0.5" />
-                      </span>
+                  <div className="space-y-1.5 text-sm">
+                    <span className="text-text-muted">Transaction Hash</span>
+                    {/* Full-width box → the hash wraps to one or two lines; the
+                        verification badge + explorer link flow left-aligned below. */}
+                    <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-2.5 py-2">
+                      <span className="font-medium text-text-primary break-all font-mono text-xs min-w-0 flex-1">{trade.sellerTxHash}</span>
+                      <CopyButton text={trade.sellerTxHash} size="sm" className="flex-shrink-0" />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                       {trade.txVerificationStatus === 'verified' && (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-500/10 border border-green-500/30 rounded px-2 py-0.5">
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
@@ -1604,11 +1609,12 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function PayToRow({ label, value, copy }: { label: string; value: string; copy?: boolean }) {
   return (
-    <div className="flex justify-between items-start gap-2">
+    <div className="flex justify-between items-center gap-2">
       <span className="text-text-muted flex-shrink-0">{label}</span>
-      <span className="inline-flex items-start gap-1 min-w-0">
+      {/* Copy sits in FRONT of the value so a phone number reads "[copy] 0309…". */}
+      <span className="inline-flex items-center gap-1.5 min-w-0 justify-end">
+        {copy && <CopyButton text={value} size="sm" className="flex-shrink-0" />}
         <span className="font-medium text-text-primary text-right break-all">{value}</span>
-        {copy && <CopyButton text={value} size="sm" className="flex-shrink-0 -mt-0.5" />}
       </span>
     </div>
   )
