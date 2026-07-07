@@ -11,7 +11,7 @@ import { SaveAddressInline } from '@/components/ctm/SaveAddressInline'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
-import { CTM_USDT_METHOD_KINDS, ctmUsdtMethodKind, ctmUsdtMethodLabel, type UsdtMethodKind } from '@/lib/ctmUsdtMethods'
+import { CTM_USDT_METHOD_KINDS, ctmUsdtMethodKind, ctmUsdtMethodLabel, ctmUsdtMethodLogo, type UsdtMethodKind } from '@/lib/ctmUsdtMethods'
 import { Star } from 'lucide-react'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-surface-alt text-text-secondary', basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300', verified: 'bg-green-500/15 text-green-700 dark:text-green-300', elite: 'bg-primary/10 text-primary' }
@@ -542,7 +542,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   <div className="flex flex-wrap gap-2">
                     {usdtWallet.map((m) => (
                       <span key={m} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium">
-                        <EntityLogo type="chain" slug={m} size="xs" className="flex-shrink-0" />
+                        <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
                         {ctmUsdtMethodLabel(m)}
                       </span>
                     ))}
@@ -1011,7 +1011,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         {shown.map((m) => (
                           <button type="button" key={m} onClick={() => setUsdtMethod(m)}
                             className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium text-center transition-colors ${usdtMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
-                            <EntityLogo type={ctmUsdtMethodKind(m) === 'wallet' ? 'chain' : 'exchange'} slug={m} size="xs" className="flex-shrink-0" />
+                            <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
                             {ctmUsdtMethodLabel(m)}
                             {usdtMethod === m && <span className="ml-0.5 text-xs">✓</span>}
                           </button>

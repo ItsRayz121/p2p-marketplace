@@ -453,13 +453,17 @@ export default function CreateListingPage() {
               })}
             </div>
 
-            <div className="flex flex-wrap gap-2 mb-2">
+            {/* Even 2-col grid so every method chip is the same width with equal
+                gaps (BEP20 ↔ Aptos, and the six exchange UIDs in tidy rows). */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
               {CTM_USDT_METHOD_OPTS.filter((o) => o.kind === usdtKind).map((o) => {
                 const on = usdtMethods.includes(o.value)
                 return (
                   <button type="button" key={o.value} onClick={() => toggleUsdtMethod(o.value)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-secondary hover:bg-surface'}`}>
-                    <EntityLogo type={o.kind === 'wallet' ? 'chain' : 'exchange'} slug={o.value} size="xs" className="flex-shrink-0" />
+                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium text-center transition-colors ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-secondary hover:bg-surface'}`}>
+                    {/* Wallet chains carry no registry logo → show the USDT token mark
+                        (these are all USDT rails); exchanges keep their own logo. */}
+                    <EntityLogo type={o.kind === 'wallet' ? 'token' : 'exchange'} slug={o.kind === 'wallet' ? 'USDT' : o.value} size="xs" className="flex-shrink-0" />
                     {o.label}
                   </button>
                 )

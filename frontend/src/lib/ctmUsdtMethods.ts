@@ -49,3 +49,15 @@ export function ctmUsdtMethodKind(value: string): UsdtMethodKind {
 export function ctmUsdtMethodLabel(value: string): string {
   return ctmUsdtMethod(value)?.label ?? `USDT ${value}`
 }
+
+/**
+ * EntityLogo type/slug for a method chip. Wallet chains (BEP20/Aptos) carry no
+ * entry in the chain logo registry, so they'd fall back to a grey initials avatar;
+ * since every wallet rail is USDT, show the USDT token mark instead. Exchange rails
+ * keep their own brand logo.
+ */
+export function ctmUsdtMethodLogo(value: string): { type: 'token' | 'exchange'; slug: string } {
+  return ctmUsdtMethodKind(value) === 'wallet'
+    ? { type: 'token', slug: 'USDT' }
+    : { type: 'exchange', slug: value }
+}

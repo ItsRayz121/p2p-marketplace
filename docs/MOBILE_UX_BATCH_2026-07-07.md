@@ -29,10 +29,10 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 - [x] 3d. Copy icon moved IN FRONT of value; "Mobile number" → "Payment number" (both trade pages).
 - [x] 3e. "Account / Payment Number" → "Payment number" (CTM); inline rows use items-center (no collision).
 
-## Phase 4 — CTM create-listing USDT payment layout (`ctm/listings/create/page.tsx`)
-- [ ] 4a. Internal/Exchange transfer (6 chips): equal size, equal spacing, grid-aligned (not random widths).
-- [ ] 4b. Wallet/Blockchain: USDT BEP20 + Aptos as equal half-width boxes; fix missing logos.
-- [ ] 4c. Rename exchange methods to "Binance / OKX / Bitget / Gate / MEXC / Other" (it's internal transfer, not "USDT Binance") — also fixes logo lookups.
+## Phase 4 — CTM create-listing USDT payment layout (`ctm/listings/create/page.tsx`)  ✅ COMMITTED
+- [x] 4a. Exchange/wallet method chips now in an even 2-col grid (equal width + gaps), across create + detail modal.
+- [x] 4b. BEP20 + Aptos render as equal halves; wallet chains show the USDT token mark (chain slugs had no logo → grey initials). New `ctmUsdtMethodLogo()` helper applied at all chip sites (cards, create, detail).
+- [x] 4c. Labels already correct in helper (Binance UID / OKX UID / USDT BEP20 …) — not "USDT Binance".
 
 ## Phase 5 — Listing overview payment display (both PKR + USDT) (both detail pages)
 - [ ] 5a. Ad overview shows only one payment currency → show BOTH. "Payment Methods" → horizontal dropdowns: [PKR methods] [USDT methods → Exchange/Internal + Blockchain]. Collapse by default.

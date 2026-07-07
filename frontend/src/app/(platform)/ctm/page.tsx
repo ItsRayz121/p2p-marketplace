@@ -10,7 +10,7 @@ import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, PK_MOBILE_METHODS, cleanPaymentLabels } from '@/lib/pkPaymentMethods'
-import { ctmUsdtMethodLabel, ctmUsdtMethodKind } from '@/lib/ctmUsdtMethods'
+import { ctmUsdtMethodLabel, ctmUsdtMethodLogo } from '@/lib/ctmUsdtMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
@@ -409,7 +409,7 @@ function ListingRow({
               ))}
               {usdtMethods.slice(0, 2).map((m) => (
                 <span key={m} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  <EntityLogo type={ctmUsdtMethodKind(m) === 'wallet' ? 'chain' : 'exchange'} slug={m} size="xs" className="flex-shrink-0" />
+                  <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
                   {ctmUsdtMethodLabel(m)}
                 </span>
               ))}
@@ -534,7 +534,7 @@ function ListingRow({
                 ))}
                 {usdtMethods.slice(0, 2).map((m) => (
                   <span key={m} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                    <EntityLogo type={ctmUsdtMethodKind(m) === 'wallet' ? 'chain' : 'exchange'} slug={m} size="xs" className="flex-shrink-0" />
+                    <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
                     {ctmUsdtMethodLabel(m)}
                   </span>
                 ))}
