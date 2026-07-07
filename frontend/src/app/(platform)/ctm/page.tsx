@@ -243,12 +243,9 @@ function ListingRow({
   const chipCls   = isSell ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
   const priceCls  = isSell ? 'text-emerald-600' : 'text-blue-600 dark:text-blue-400'
 
-  // Order-limit PKR equivalent — derived from this listing's own price.
   const price  = Number(listing.pricePerUnit)
   const minTok = Number(listing.minOrderTokens)
   const maxTok = Number(listing.maxOrderTokens)
-  const minPkr = price * minTok
-  const maxPkr = price * maxTok
 
   const usdtRate = marketRate?.averageUsdtRate ?? null
   const pkrRate  = marketRate?.averagePkrRate ?? null
@@ -380,11 +377,6 @@ function ListingRow({
           <p className="text-sm font-medium text-text-primary">
             {minTok.toLocaleString()} – {maxTok.toLocaleString()} {sym}
           </p>
-          {price > 0 && (
-            <p className="text-[11px] text-text-muted/80">
-              ≈ PKR {minPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })} – PKR {maxPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </p>
-          )}
           {listing.tradeWindowMins != null && (
             <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
               <Clock size={10} className="flex-shrink-0" />
@@ -518,10 +510,10 @@ function ListingRow({
           </div>
         </div>
 
-        {/* Row 4: limit (+PKR) + window + listed — one line, replaces the market ref. */}
+        {/* Row 4: limit + window + listed — one line. The PKR-equivalent range is
+            dropped as redundant (price already shows PKR + USDT above). */}
         <p className="text-[11px] text-text-muted mt-1.5">
           Limit {minTok.toLocaleString()}–{maxTok.toLocaleString()} {sym}
-          {price > 0 && <span className="text-text-muted/80"> (≈PKR {minPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })}–{maxPkr.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>}
           {listing.tradeWindowMins != null && <><span className="mx-1">·</span><Clock size={9} className="inline -mt-0.5" /> {listing.tradeWindowMins} min</>}
           {age && <><span className="mx-1">·</span>Listed {age}</>}
         </p>
@@ -538,20 +530,23 @@ function ListingRow({
               <div className="flex items-center gap-1 min-w-0 overflow-hidden">
                 {methods.length > 0 || usdtMethods.length > 0 ? (
                   <>
+                    {/* PKR chip can shrink + truncate a long label (e.g. "UBL —
+                        United Bank Limited") so the USDT chip beside it is never
+                        clipped off the row. */}
                     {shownPkr.map((pm) => (
-                      <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${getPaymentMethodColor(pm.label)}`}>
+                      <span key={pm.id} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium min-w-0 ${getPaymentMethodColor(pm.label)}`}>
                         <EntityLogo type={PK_MOBILE_METHODS.includes(pm.label) ? 'payment_method' : 'bank'} slug={pm.label} size="xs" className="flex-shrink-0" />
-                        {pm.label}
+                        <span className="truncate">{pm.label}</span>
                       </span>
                     ))}
                     {shownUsdt.map((m) => (
-                      <span key={m} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <span key={m} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap flex-shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                         <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
                         {ctmUsdtMethodLabel(m)}
                       </span>
                     ))}
                     {overflow > 0 && (
-                      <Link href={`/ctm/listings/${listing.id}`} className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                      <Link href={`/ctm/listings/${listing.id}`} className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap flex-shrink-0 bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
                         +{overflow} more
                       </Link>
                     )}
