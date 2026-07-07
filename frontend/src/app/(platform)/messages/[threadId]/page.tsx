@@ -101,12 +101,18 @@ export default function MessageThreadPage() {
         <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" />
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-text-primary truncate">{name}</p>
-          <p className="text-xs text-text-muted">
-            {s.total} trade{s.total === 1 ? '' : 's'} together
-            {s.completed > 0 && <span className="text-emerald-500"> · {s.completed} completed</span>}
-            {s.cancelled > 0 && <span> · {s.cancelled} cancelled</span>}
-            {s.disputed > 0 && <span className="text-amber-500"> · {s.disputed} disputed</span>}
-          </p>
+          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+            {s.total > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                🤝 {s.total} trade{s.total === 1 ? '' : 's'} together
+              </span>
+            )}
+            <span className="text-[11px] text-text-muted">
+              {s.completed > 0 && <span className="text-emerald-500">{s.completed} completed</span>}
+              {s.cancelled > 0 && <span>{s.completed > 0 ? ' · ' : ''}{s.cancelled} cancelled</span>}
+              {s.disputed > 0 && <span className="text-amber-500">{(s.completed > 0 || s.cancelled > 0) ? ' · ' : ''}{s.disputed} disputed</span>}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -116,21 +122,27 @@ export default function MessageThreadPage() {
           if (item.kind === 'episode') {
             const ep = item.ep
             const Icon = OUTCOME_ICON[ep.outcome]
+            // Full-width card (not a centered pill) so a long ref like
+            // "CTM-20260706-0001" never wraps mid-way and the outcome/amount read
+            // as a tidy second line instead of scattering across the row.
             return (
-              <div key={`ep-${ep.id}`} className="flex items-center gap-2 my-3">
-                <div className="flex-1 h-px bg-border" />
-                <Link
-                  href={episodeTradeHref(ep)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted border border-border text-xs hover:border-primary/40"
-                >
-                  <Icon className={`w-3.5 h-3.5 ${OUTCOME_CLS[ep.outcome]}`} />
-                  <span className="font-medium text-text-primary">{ep.tradeRef}</span>
-                  <span className="text-text-muted">· {OUTCOME_LABEL[ep.outcome]}</span>
+              <Link
+                key={`ep-${ep.id}`}
+                href={episodeTradeHref(ep)}
+                className="block my-3 rounded-xl border border-border bg-muted/60 px-3 py-2 hover:border-primary/40 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Icon className={`w-4 h-4 flex-shrink-0 ${OUTCOME_CLS[ep.outcome]}`} />
+                    <span className="font-semibold text-text-primary text-sm truncate">{ep.tradeRef}</span>
+                  </div>
+                  <span className="uppercase text-[9px] font-semibold text-text-muted bg-surface border border-border rounded px-1.5 py-0.5 flex-shrink-0">{ep.market}</span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5 pl-[22px] text-xs">
+                  <span className={OUTCOME_CLS[ep.outcome]}>{OUTCOME_LABEL[ep.outcome]}</span>
                   {ep.fiatAmount && <span className="text-text-muted">· {fmtPkr(ep.fiatAmount)}</span>}
-                  <span className="uppercase text-[9px] text-text-muted">{ep.market}</span>
-                </Link>
-                <div className="flex-1 h-px bg-border" />
-              </div>
+                </div>
+              </Link>
             )
           }
           const m = item.msg
