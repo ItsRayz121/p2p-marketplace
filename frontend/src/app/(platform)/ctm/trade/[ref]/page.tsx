@@ -2,7 +2,7 @@
 import React, { useState, use, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
-import { ctmCurrentStep, CTM_ACTION_VERB } from '@/lib/ctmSettlementFlow'
+import { ctmCurrentStep, CTM_ACTION_VERB, CTM_ACTION_TITLE } from '@/lib/ctmSettlementFlow'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
@@ -843,38 +843,35 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <Countdown deadline={trade.confirmDeadlineAt ?? trade.proofDeadlineAt ?? trade.expiresAt} />
               </div>
             )}
-            {/* Stepper. Six steps can't fit at a readable size on the narrowest
-                phones, so the row scrolls horizontally WITHIN the card (overflow-x-auto
-                clips to the card bounds — it never spills outside). min-w keeps the
-                labels from being crushed; on wider screens flex-1 connectors fill. */}
-            <div className="overflow-x-auto -mx-1 px-1">
-            <div className="flex items-start min-w-[340px]">
+            {/* Stepper — all six steps always fit on screen (no horizontal scroll).
+                Compact circles + connectors that flex to fill, with labels sized to
+                stay readable while wrapping to at most two short lines on phones. */}
+            <div className="flex items-start">
               {STATUS_STEPS.map((s, i) => {
                 const isLast = i === STATUS_STEPS.length - 1
                 return (
-                  <div key={s} className={`flex items-start ${isLast ? '' : 'flex-1'}`}>
-                    <div className="flex flex-col items-center flex-shrink-0">
-                      <div className={`w-7 h-7 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 ${i < stepIndex ? 'bg-green-500 text-white' : i === stepIndex ? 'bg-primary text-white' : 'bg-surface-alt text-text-muted'}`}>
+                  <div key={s} className={`flex items-start ${isLast ? 'flex-shrink-0' : 'flex-1'}`}>
+                    <div className="flex flex-col items-center flex-shrink-0 w-11 sm:w-16">
+                      <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full text-[10px] sm:text-xs flex items-center justify-center font-bold flex-shrink-0 ${i < stepIndex ? 'bg-green-500 text-white' : i === stepIndex ? 'bg-primary text-white' : 'bg-surface-alt text-text-muted'}`}>
                         {i < stepIndex ? '✓' : i + 1}
                       </div>
-                      <div className="mt-1.5 w-12 sm:w-16 text-center">
-                        <p className={`text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 dark:text-green-400 font-medium' : 'text-text-muted'}`}>
+                      <div className="mt-1.5 w-full text-center">
+                        <p className={`text-[8.5px] sm:text-[10px] leading-tight ${i === stepIndex ? 'text-primary font-semibold' : i < stepIndex ? 'text-green-600 dark:text-green-400 font-medium' : 'text-text-muted'}`}>
                           {STEP_INFO[i].label}
                         </p>
                         {STEP_INFO[i].actor && (
-                          <span className={`text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (STEP_INFO[i].actor === 'Buyer' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400') : 'bg-surface-alt text-text-muted'}`}>
+                          <span className={`text-[8px] sm:text-[9px] mt-0.5 inline-block px-1 py-0.5 rounded font-medium ${i <= stepIndex ? (STEP_INFO[i].actor === 'Buyer' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400') : 'bg-surface-alt text-text-muted'}`}>
                             {STEP_INFO[i].actor}
                           </span>
                         )}
                       </div>
                     </div>
                     {!isLast && (
-                      <div className={`h-0.5 flex-1 min-w-[6px] mt-3.5 mx-1 ${i < stepIndex ? 'bg-green-500' : 'bg-border'}`} />
+                      <div className={`h-0.5 flex-1 min-w-[3px] mt-3 mx-0.5 ${i < stepIndex ? 'bg-green-500' : 'bg-border'}`} />
                     )}
                   </div>
                 )
               })}
-            </div>
             </div>
           </div>
 
@@ -923,9 +920,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             const myRole: 'buyer' | 'seller' = isBuyer ? 'buyer' : 'seller'
             const myTurn = step.actor === myRole
             const other = isBuyer ? 'seller' : 'buyer'
+            // Sequential step label ("Step 3 of 6 · Send Tokens") so the flow reads
+            // as an advancing ladder rather than a bare, repeated "Your turn".
+            const stepNo = step.index + 1
+            const stepTitle = CTM_ACTION_TITLE[step.action]
             if (!myTurn) {
               return (
                 <div className="bg-surface border border-border rounded-xl p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-1">Step {stepNo} of 6 · {stepTitle}</p>
                   <p className="text-sm font-semibold text-text-primary mb-1">Waiting on the {other}</p>
                   <p className="text-xs text-text-muted">The {other} needs to {CTM_ACTION_VERB[step.action]}. You&apos;ll be notified when it&apos;s your turn.</p>
                 </div>
@@ -933,7 +935,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             }
             return (
               <div className="bg-surface border border-primary/30 rounded-xl p-4 space-y-3">
-                <p className="text-sm font-semibold text-primary">Your turn</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-primary">Step {stepNo} of 6 · {stepTitle}</p>
+                  <span className="text-[10px] font-bold uppercase tracking-wide bg-primary/10 text-primary rounded-full px-2 py-0.5 flex-shrink-0">Your turn</span>
+                </div>
                 {error && <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-xs text-red-600 dark:text-red-400">{error}</div>}
 
                 {/* start_crypto — the taker (seller) starts sending tokens first */}

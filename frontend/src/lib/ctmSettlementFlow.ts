@@ -48,3 +48,12 @@ export const CTM_ACTION_VERB: Record<CtmFlowAction, string> = {
   prove_crypto: 'submit the token transfer proof',
   confirm_crypto: 'confirm the tokens arrived',
 }
+
+/** Concise step title (for the stepwise action header, e.g. "Step 3 of 6 · …"). */
+export const CTM_ACTION_TITLE: Record<CtmFlowAction, string> = {
+  send_fiat: 'Send Payment',
+  confirm_fiat: 'Confirm Payment Received',
+  start_crypto: 'Send Tokens',
+  prove_crypto: 'Submit Transfer Proof',
+  confirm_crypto: 'Confirm Tokens Received',
+}
