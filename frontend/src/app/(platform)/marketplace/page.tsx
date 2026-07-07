@@ -702,8 +702,9 @@ export default function MarketplacePage() {
       {/* Stats strip */}
       {marketStats && <MarketplaceStatsStrip stats={{ ...marketStats, totalListings: total }} />}
 
-      {/* USDT price chart — PKR per USDT over time, from completed trades here */}
-      <div className="mt-4">
+      {/* USDT price chart — PKR per USDT over time, from completed trades here.
+          mb-4 keeps a clear gap from the Recent Trades ticker below it. */}
+      <div className="mt-4 mb-4">
         <MarketplacePriceChart />
       </div>
 

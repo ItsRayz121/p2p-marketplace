@@ -40,7 +40,9 @@ export function MarketplacePriceChart() {
   const [data, setData] = useState<UsdtPriceHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [showCalc, setShowCalc] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  // Collapsed by default → the chart is a single "USDT price chart" line until the
+  // user opens it, so it never crowds the Recent Trades ticker below.
+  const [collapsed, setCollapsed] = useState(true)
 
   useEffect(() => {
     let alive = true
@@ -67,22 +69,25 @@ export function MarketplacePriceChart() {
           aria-expanded={!collapsed}
           className="min-w-0 flex-1 text-left group"
         >
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
             <ChevronDown size={13} className={`transition-transform text-text-muted ${collapsed ? '-rotate-90' : ''}`} />
             USDT price chart
             <span className="rounded bg-surface-alt px-1.5 py-0.5 text-[10px] font-medium normal-case text-text-muted">from platform trades</span>
           </div>
-          <div className="mt-1 flex items-baseline gap-2 pl-[19px]">
-            <span className={`font-bold text-text-primary ${collapsed ? 'text-lg' : 'text-2xl'}`}>
-              {lastClose !== null ? `PKR ${fmtPkr(lastClose)}` : '—'}
-            </span>
-            <span className="text-xs text-text-muted">/ USDT</span>
-            {changePct !== null && (
-              <span className={`text-sm font-semibold ${changePct > 0 ? 'text-emerald-600' : changePct < 0 ? 'text-red-500' : 'text-text-muted'}`}>
-                {changePct > 0 ? '▲' : changePct < 0 ? '▼' : '—'} {Math.abs(changePct).toFixed(2)}%
+          {/* PKR value + change % only when expanded — collapsed is a single line. */}
+          {!collapsed && (
+            <div className="mt-1 flex items-baseline gap-2 pl-[19px]">
+              <span className="font-bold text-text-primary text-2xl">
+                {lastClose !== null ? `PKR ${fmtPkr(lastClose)}` : '—'}
               </span>
-            )}
-          </div>
+              <span className="text-xs text-text-muted">/ USDT</span>
+              {changePct !== null && (
+                <span className={`text-sm font-semibold ${changePct > 0 ? 'text-emerald-600' : changePct < 0 ? 'text-red-500' : 'text-text-muted'}`}>
+                  {changePct > 0 ? '▲' : changePct < 0 ? '▼' : '—'} {Math.abs(changePct).toFixed(2)}%
+                </span>
+              )}
+            </div>
+          )}
         </button>
 
         {!collapsed && (

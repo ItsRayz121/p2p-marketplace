@@ -18,9 +18,9 @@ consistent wording, show logos, copy buttons where an address/number is shown.
 - [x] 1d. Listing detail price header shows USDT ≈ alongside PKR.
 - NOTE: a prior session already built the CTM hybrid PKR+USDT rails end-to-end (create/detail/trade + backend) and removed CTM taker KYC; landed together in this commit.
 
-## Phase 2 — USDT marketplace price chart (`marketplace/page.tsx`)
-- [ ] 2a. Chart collapsed by default; collapsed = single line "USDT PRICE CHART" only (hide "PKR 288 / 0.00%" until opened).
-- [ ] 2b. Add spacing between Recent Trades box and Price Chart box (currently merging).
+## Phase 2 — USDT marketplace price chart (`marketplace/page.tsx`)  ✅ COMMITTED
+- [x] 2a. Chart collapsed by default; collapsed = single "USDT price chart" line (PKR value/% hidden until opened).
+- [x] 2b. Added mb-4 gap between Price Chart box and Recent Trades ticker.
 
 ## Phase 3 — Address / number / value formatting (USDT + CTM trade pages)
 - [ ] 3a. USDT Send Crypto (Internal/Exchange): "Send to buyer's Binance UID / deposit address" value is pushed into a vertical column → render horizontally, proper spacing, + copy button.
