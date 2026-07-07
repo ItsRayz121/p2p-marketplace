@@ -60,8 +60,21 @@ consistent wording, show logos, copy buttons where an address/number is shown.
       trade test passes. This is the piece I said I'd confirm before flipping. HOLDING.
 - [x] 9b. "Trading without verification" box is now a collapsed one-line header (taps to expand).  ✅ COMMITTED
 
-## Phase 10 — Final cross-check + cleanup
-- [ ] Re-verify every phase against a running build; delete this file.
+## Phase 10 — Final cross-check + cleanup  ✅ DONE
+- [x] Full `next build` (frontend) PASS + backend `tsc --noEmit` PASS on the whole working tree.
+- Keep this file until: (a) the 5 local commits are pushed, (b) admin flags flipped, (c) 6a/6b done.
+
+### Commits (local; remote main at 70d75de until pushed)
+- 29817ba Phase 1 (pushed) · 70d75de Phase 2 (pushed)
+- 4e8ceed Phase 3 · b5b96c9 Phase 4 · 30c9905 Phase 5+6c · 36ced64 Phase 7 · 8f2642f Phase 9b  (UNPUSHED)
+
+### Blockers / user actions
+1. `git push origin main` — GCM needs an interactive prompt this shell can't give. Run it yourself once.
+2. Admin→Platform Config flags: `messaging_inbox_enabled=true`, `nokyc_taker_enabled=true` (+ raise nokyc_* caps for "no caps").
+3. Do NOT flip `taker_first_settlement_enabled` / `TAKER_FIRST_MARKET_READY[usdt]` until a staging end-to-end money trade passes.
+
+### Deferred
+- 6a "Where will you send USDT?" grouping · 6b half-hidden collapsible buttons (need exact locations).
 
 ---
 ### Workflow
