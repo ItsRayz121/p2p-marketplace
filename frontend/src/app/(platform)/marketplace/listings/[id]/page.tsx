@@ -128,6 +128,15 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   const [confirmSubmitting, setConfirmSubmitting] = useState(false)
   const [confirmError, setConfirmError] = useState('')
 
+  // Live clock (1s) so an accepted bid's confirm window flips to an "expired"
+  // state on its own the moment it lapses — no manual refresh needed. Once the
+  // window is gone the bid is dead: no CTA, and the confirm modal is sealed.
+  const [nowTs, setNowTs] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNowTs(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
   // Collapsible cards
   const [sellerOpen, setSellerOpen] = useState(true)
   const [paymentOpen, setPaymentOpen] = useState(true)
@@ -702,6 +711,15 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Accepted bid banner */}
       {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
+        new Date(myActiveBid.expiresAt).getTime() <= nowTs ? (
+          <div className="bg-surface-alt border border-border rounded-xl p-4">
+            <p className="font-semibold text-text-secondary">Your bid was accepted, but the trade window has expired</p>
+            <p className="text-sm text-text-muted mt-1">
+              The payment details weren&apos;t completed in time, so this bid has expired and no further action is possible.
+              Place a new bid if you still want to trade.
+            </p>
+          </div>
+        ) : (
         <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
           <p className="font-semibold text-amber-900 dark:text-amber-200">Your bid was accepted!</p>
           <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
@@ -715,6 +733,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
             Complete Trade Details
           </button>
         </div>
+        )
       )}
 
       {/* Pending bid notice */}
@@ -1008,7 +1027,26 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       )}
 
       {/* ─── Confirm Bid Details Modal ───────────────────────────────────── */}
+      {/* Once the confirm window lapses (even while this modal is open) the whole
+          form is sealed and replaced by a dead-end "expired" state — no payment
+          details can be submitted against an expired bid. */}
       {showConfirmModal && myActiveBid && (
+        new Date(myActiveBid.expiresAt).getTime() <= nowTs ? (
+          <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
+            <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 border border-border shadow-card-lg">
+              <div>
+                <h3 className="font-bold text-lg text-text-primary">Trade window expired</h3>
+                <p className="text-sm text-text-muted mt-1">
+                  Your bid was accepted, but the window to complete the payment details has passed.
+                  This bid has expired and no further action is possible. Place a new bid if you still want to trade.
+                </p>
+              </div>
+              <button onClick={() => setShowConfirmModal(false)} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
           <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90dvh] overflow-y-auto border border-border shadow-card-lg">
             <div>
@@ -1120,6 +1158,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
             </div>
           </div>
         </div>
+        )
       )}
     </div>
   )
