@@ -83,6 +83,24 @@ async function uploadToCloudinary(buffer: Buffer, folder: string): Promise<strin
 }
 
 export async function ctmTradeRoutes(app: FastifyInstance) {
+  // Deep links from the messages inbox and notifications address a CTM trade by its
+  // human displayRef (CTM-YYYYMMDD-NNNN), whereas in-app navigation and every
+  // service lookup key on the internal cuid `tradeRef`. Without this normalisation
+  // a displayRef URL 404s as "Trade not found". Resolve any `:ref` param that looks
+  // like a displayRef to its canonical cuid once, up front, so all downstream
+  // handlers (service lookups, admin queries) work unchanged. cuids never start with
+  // "CTM-", so the hot path (canonical refs) skips the extra query entirely.
+  app.addHook('preHandler', async (req) => {
+    const params = req.params as { ref?: string }
+    const ref = params?.ref
+    if (!ref || !ref.startsWith('CTM-')) return
+    const found = await db.ctmTrade.findFirst({
+      where: { OR: [{ displayRef: ref }, { tradeRef: ref }, { id: ref }] },
+      select: { tradeRef: true },
+    })
+    if (found && found.tradeRef !== ref) params.ref = found.tradeRef
+  })
+
   // GET /ctm/trades — my trades
   app.get('/ctm/trades', { preHandler: [authenticate] }, async (req, reply) => {
     const q = req.query as Record<string, string>

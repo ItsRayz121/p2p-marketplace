@@ -8,6 +8,7 @@ import { traderDisplayName } from '@/lib/traderName'
 import type { AdActivity, SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { MethodSelect } from '@/components/ui/MethodSelect'
 import { ShareListingButton } from '@/components/ui/ShareListingButton'
 import { useAuth } from '@/hooks/useAuth'
 import { validateAddressForNetwork, networkAssetLabel } from '@/lib/addressValidation'
@@ -808,9 +809,16 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
             {/* Payment method */}
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
-                {isSellAd ? "Pay via (seller's accepted methods)" : 'Receive payment via (your account)'}
-              </label>
+              {/* Label + an inline "Add payment method" affordance on the SAME line
+                  (only for your own receiving accounts). */}
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className="block text-sm font-medium text-text-primary">
+                  {isSellAd ? "Pay via (seller's accepted methods)" : 'Receive payment via (your account)'}
+                </label>
+                {!isSellAd && (
+                  <Link href="/wallet#payment-methods" className="text-xs text-primary font-medium hover:underline whitespace-nowrap flex-shrink-0">+ Add payment method</Link>
+                )}
+              </div>
               {tradePaymentMethods.length === 0 ? (
                 <div className="border border-border rounded-xl p-4 text-center">
                   <p className="text-sm text-text-muted mb-2">
@@ -821,19 +829,23 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                   )}
                 </div>
               ) : (
-              <div className="space-y-2">
-                {tradePaymentMethods.map((m) => (
-                  <button type="button" key={m.id}
-                    onClick={() => setInstantPaymentMethod(instantPaymentMethod === m.id ? '' : m.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
-                    <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
-                    <span className="text-sm font-medium text-text-primary">{m.label}</span>
-                    <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantPaymentMethod === m.id ? 'border-primary bg-primary' : 'border-border'}`}>
-                      {instantPaymentMethod === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                    </div>
-                  </button>
-                ))}
-              </div>
+                // >2 collapses into a dropdown; each row shows the account number
+                // beneath the method name (from your saved accounts).
+                <MethodSelect
+                  options={tradePaymentMethods.map((m) => {
+                    const saved = isSellAd ? undefined : myMethods.find((x) => x.id === m.id)
+                    const number = saved?.mobileNumber ?? saved?.accountNumber ?? saved?.ibanNumber
+                    return {
+                      id: m.id,
+                      label: m.label,
+                      ...(number ? { sublabel: number } : {}),
+                      logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
+                    }
+                  })}
+                  value={instantPaymentMethod}
+                  onChange={setInstantPaymentMethod}
+                  placeholder={isSellAd ? "Select the seller's method…" : 'Select your receiving account…'}
+                />
               )}
             </div>
 
@@ -847,38 +859,67 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                     <div>
                       <label className="block text-sm font-medium text-text-primary mb-0.5">Where will you send {ad.coin}?</label>
                       <p className="text-xs text-text-muted mb-1.5">{dests.length > 1 ? "Choose one of the buyer's receiving methods." : "The buyer's receiving method."}</p>
-                      <div className="space-y-2">
-                        {dests.map((d) => {
-                          const key = destKeyOf(d)
-                          const selected = dests.length === 1 || instantSendDestKey === key
-                          return (
-                            <button type="button" key={key} onClick={() => setInstantSendDestKey(key)}
-                              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-text-primary">{destLabelOf(d)}</p>
-                                <p className="text-xs text-text-muted font-mono break-all">{d.address}</p>
-                              </div>
-                              {dests.length > 1 && <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>{selected && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</span>}
-                            </button>
-                          )
-                        })}
-                      </div>
+                      {dests.length > 2 ? (
+                        // Long receiving-method list collapses into a dropdown; the
+                        // destination address shows as the sublabel of each option.
+                        <MethodSelect
+                          options={dests.map((d) => ({
+                            id: destKeyOf(d),
+                            label: destLabelOf(d),
+                            sublabel: d.address,
+                            logo: d.method === 'wallet_blockchain' ? { type: 'token' as const, slug: 'USDT' } : { type: 'exchange' as const, slug: d.method },
+                          }))}
+                          value={instantSendDestKey}
+                          onChange={setInstantSendDestKey}
+                          placeholder="Select where you'll send USDT…"
+                        />
+                      ) : (
+                        <div className="space-y-2">
+                          {dests.map((d) => {
+                            const key = destKeyOf(d)
+                            const selected = dests.length === 1 || instantSendDestKey === key
+                            return (
+                              <button type="button" key={key} onClick={() => setInstantSendDestKey(key)}
+                                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-text-primary">{destLabelOf(d)}</p>
+                                  <p className="text-xs text-text-muted font-mono break-all">{d.address}</p>
+                                </div>
+                                {dests.length > 1 && <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>{selected && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                   {payFroms.length > 1 && (
                     <div>
                       <label className="block text-sm font-medium text-text-primary mb-0.5">Buyer will pay you via</label>
                       <p className="text-xs text-text-muted mb-1.5">Pick one of the buyer&apos;s accounts — they&apos;ll send PKR from it.</p>
-                      <div className="space-y-2">
-                        {payFroms.map((m) => (
-                          <button type="button" key={m.id} onClick={() => setInstantBuyerPayFrom(instantBuyerPayFrom === m.id ? '' : m.id)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
-                            <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
-                            <span className="text-sm font-medium text-text-primary">{m.label}</span>
-                            <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary' : 'border-border'}`}>{instantBuyerPayFrom === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</div>
-                          </button>
-                        ))}
-                      </div>
+                      {payFroms.length > 2 ? (
+                        <MethodSelect
+                          options={payFroms.map((m) => ({
+                            id: m.id,
+                            label: m.label,
+                            logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
+                          }))}
+                          value={instantBuyerPayFrom}
+                          onChange={setInstantBuyerPayFrom}
+                          placeholder="Select the buyer's account…"
+                        />
+                      ) : (
+                        <div className="space-y-2">
+                          {payFroms.map((m) => (
+                            <button type="button" key={m.id} onClick={() => setInstantBuyerPayFrom(instantBuyerPayFrom === m.id ? '' : m.id)}
+                              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
+                              <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
+                              <span className="text-sm font-medium text-text-primary">{m.label}</span>
+                              <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary' : 'border-border'}`}>{instantBuyerPayFrom === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -1079,9 +1120,14 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
             {/* Payment method */}
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
-                {isSellAd ? "Select seller's payment account to send PKR to" : 'Choose where you receive PKR'}
-              </label>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className="block text-sm font-medium text-text-primary">
+                  {isSellAd ? "Select seller's payment account to send PKR to" : 'Choose where you receive PKR'}
+                </label>
+                {!isSellAd && (
+                  <Link href="/wallet#payment-methods" className="text-xs text-primary font-medium hover:underline whitespace-nowrap flex-shrink-0">+ Add payment method</Link>
+                )}
+              </div>
               {tradePaymentMethods.length === 0 ? (
                 <div className="border border-border rounded-xl p-4 text-center">
                   <p className="text-sm text-text-muted mb-2">
@@ -1092,19 +1138,21 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                   )}
                 </div>
               ) : (
-              <div className="space-y-2">
-                {tradePaymentMethods.map((m) => (
-                  <button type="button" key={m.id}
-                    onClick={() => setConfirmPaymentMethod(confirmPaymentMethod === m.id ? '' : m.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${confirmPaymentMethod === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
-                    <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
-                    <span className="text-sm font-medium text-text-primary">{m.label}</span>
-                    <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${confirmPaymentMethod === m.id ? 'border-primary bg-primary' : 'border-border'}`}>
-                      {confirmPaymentMethod === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                    </div>
-                  </button>
-                ))}
-              </div>
+                <MethodSelect
+                  options={tradePaymentMethods.map((m) => {
+                    const saved = isSellAd ? undefined : myMethods.find((x) => x.id === m.id)
+                    const number = saved?.mobileNumber ?? saved?.accountNumber ?? saved?.ibanNumber
+                    return {
+                      id: m.id,
+                      label: m.label,
+                      ...(number ? { sublabel: number } : {}),
+                      logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
+                    }
+                  })}
+                  value={confirmPaymentMethod}
+                  onChange={setConfirmPaymentMethod}
+                  placeholder={isSellAd ? "Select the seller's method…" : 'Select your receiving account…'}
+                />
               )}
             </div>
 

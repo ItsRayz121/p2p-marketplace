@@ -6,12 +6,13 @@ import { ctmApi, apiRequest, ApiError, walletApi, marketplaceApi } from '@/lib/a
 import type { SavedDeliveryAddress, MarketRateToken } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { MethodSelect } from '@/components/ui/MethodSelect'
 import { ShareListingButton } from '@/components/ui/ShareListingButton'
 import { SaveAddressInline } from '@/components/ctm/SaveAddressInline'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
-import { CTM_USDT_METHOD_KINDS, ctmUsdtMethodKind, ctmUsdtMethodLabel, ctmUsdtMethodLogo, type UsdtMethodKind } from '@/lib/ctmUsdtMethods'
+import { CTM_USDT_METHOD_KINDS, ctmUsdtMethod, ctmUsdtMethodKind, ctmUsdtMethodLabel, ctmUsdtMethodLogo, type UsdtMethodKind } from '@/lib/ctmUsdtMethods'
 import { Star } from 'lucide-react'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-surface-alt text-text-secondary', basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300', verified: 'bg-green-500/15 text-green-700 dark:text-green-300', elite: 'bg-primary/10 text-primary' }
@@ -436,12 +437,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border mt-4 pt-4">
           <div>
             <p className="text-xs text-text-muted">Price</p>
-            <p className="font-bold text-text-primary flex items-baseline gap-x-1.5 flex-wrap">
-              <span>PKR {Number(listing.pricePerUnit).toLocaleString()}</span>
-              {usdtPerToken !== null && (
-                <span className="text-primary text-sm">· ≈ {usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: usdtPerToken < 1 ? 6 : 2 })} USDT</span>
-              )}
-            </p>
+            {/* PKR headline with the USDT equivalent stacked cleanly on its own line
+                below it (no "·"/"≈" clutter squeezing the row). */}
+            <p className="font-bold text-text-primary">PKR {Number(listing.pricePerUnit).toLocaleString()}</p>
+            {usdtPerToken !== null && (
+              <p className="text-primary text-sm font-semibold mt-0.5">{usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: usdtPerToken < 1 ? 6 : 2 })} USDT</p>
+            )}
           </div>
           <div>
             <p className="text-xs text-text-muted">{listing.side === 'buy' ? 'Wanted' : 'Available'}</p>
@@ -960,7 +961,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   {/* USDT estimate when paying in USDT — the exact amount is locked at trade start. */}
                   {rail === 'usdt' && usdtPerToken !== null && tokenAmt > 0 && (
                     <div className="flex justify-between text-primary font-semibold">
-                      <span>≈ in USDT</span>
+                      <span>In USDT</span>
                       <span>{(tokenAmt * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT</span>
                     </div>
                   )}
@@ -1048,7 +1049,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 {isBuyListing && usdtMethod && (
                   <input
                     type="text"
-                    placeholder={`Your ${usdtMethod} USDT receiving address / UID`}
+                    // Use the method's own placeholder so an exchange rail asks for a
+                    // UID (e.g. "Your Gate.io UID") and only a wallet rail asks for an
+                    // address — an exchange transfer is UID-based, never an address.
+                    placeholder={ctmUsdtMethod(usdtMethod)?.placeholder ?? `Your ${usdtMethod} receiving UID`}
                     value={usdtAddress}
                     onChange={(e) => setUsdtAddress(e.target.value)}
                     className="mt-2 w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -1073,31 +1077,35 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
                 </p>
               )}
-              <div className="flex flex-wrap gap-2">
-                {modalPaymentMethods.map((m) => {
-                  const isSelected = isBuyListing ? paymentMethodIds.includes(m.id) : paymentMethodId === m.id
-                  return (
-                    <button
-                      type="button"
-                      key={m.id}
-                      onClick={() => {
-                        if (isBuyListing) {
-                          setPaymentMethodIds((prev) =>
-                            prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id]
-                          )
-                        } else {
-                          setPaymentMethodId(m.id)
-                        }
-                      }}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
-                    >
-                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                      {m.label}
-                      {isBuyListing && isSelected && <span className="ml-0.5 text-xs">✓</span>}
-                    </button>
-                  )
-                })}
-              </div>
+              {/* SELL flow is single-select → dropdown when the seller has >2 saved
+                  accounts. BUY flow is multi-select ("all accounts you'll accept"),
+                  which stays as chips since a dropdown can't express "pick several". */}
+              {isBuyListing ? (
+                <div className="flex flex-wrap gap-2">
+                  {modalPaymentMethods.map((m) => {
+                    const isSelected = paymentMethodIds.includes(m.id)
+                    return (
+                      <button
+                        type="button"
+                        key={m.id}
+                        onClick={() => setPaymentMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
+                      >
+                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                        {m.label}
+                        {isSelected && <span className="ml-0.5 text-xs">✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <MethodSelect
+                  options={modalPaymentMethods.map((m) => ({ id: m.id, label: m.label, logo: { type: m.type === 'bank_transfer' ? 'bank' : 'payment_method', slug: m.label } }))}
+                  value={paymentMethodId}
+                  onChange={setPaymentMethodId}
+                  placeholder="Select the seller's payment account…"
+                />
+              )}
             </div>
             )}
 
@@ -1135,20 +1143,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 <p className="text-xs text-text-muted mb-2">
                   Select which of your accounts you&apos;ll send payment from — this lets the seller know where to expect it.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {myMethods.map((m) => (
-                    <button
-                      type="button"
-                      key={m.id}
-                      onClick={() => setBuyerFromMethodId(prev => prev === m.id ? '' : m.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${buyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
-                    >
-                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                      {m.label}
-                      {buyerFromMethodId === m.id && <span className="ml-0.5 text-xs">✓</span>}
-                    </button>
-                  ))}
-                </div>
+                <MethodSelect
+                  options={myMethods.map((m) => ({ id: m.id, label: m.label, logo: { type: m.type === 'bank_transfer' ? 'bank' : 'payment_method', slug: m.label } }))}
+                  value={buyerFromMethodId}
+                  onChange={setBuyerFromMethodId}
+                  placeholder="Select the account you'll pay from…"
+                />
               </div>
             )}
 

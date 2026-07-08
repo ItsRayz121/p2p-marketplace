@@ -79,10 +79,18 @@ const RATING_TAGS = ['Fast Payment', 'Good Communication', 'Smooth Trade', 'Trus
 // USDT marketplace trade room (anchored to the trade's completion timestamp).
 const RATING_WINDOW_MINUTES = 15
 
-// Supports {hash} template (e.g. https://explorer.example.com/tx/{hash}).
+// Build a per-token explorer link. Each CTM token stores its own explorerUrl in
+// the admin panel; there is no fixed registry, so we support two forms:
+//   1. A full template containing {hash} — e.g. https://explorer.mec.me/tx/{hash}
+//      (PREFERRED: lets each explorer's exact tx path be configured). {txhash} and
+//      {tx} are accepted as aliases.
+//   2. A bare base URL — we append the common "/tx/<hash>" path as a best-effort.
+// If a token's explorer lands on a "No Data"/search page, the configured base URL
+// is missing the correct tx path — set the full {hash} template in admin instead.
 function buildExplorerUrl(baseUrl: string, txHash: string): string {
-  if (baseUrl.includes('{hash}')) return baseUrl.replace('{hash}', txHash)
-  return `${baseUrl.replace(/\/$/, '')}/tx/${txHash}`
+  const hash = encodeURIComponent(txHash.trim())
+  if (/\{(hash|txhash|tx)\}/i.test(baseUrl)) return baseUrl.replace(/\{(hash|txhash|tx)\}/i, hash)
+  return `${baseUrl.replace(/\/$/, '')}/tx/${hash}`
 }
 
 // Derive a human explorer name from the token's configured explorer URL so the
@@ -289,15 +297,20 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [platformComment, setPlatformComment] = useState('')
   const [platformRatingDone, setPlatformRatingDone] = useState(false)
   const [traderRatingDone, setTraderRatingDone] = useState(false)
-  // "Complete & Rate" auto-collapses once the user finishes rating (or skips),
-  // mirroring how the other step cards collapse when their work is done. Starts
-  // expanded so the rating prompt is visible; the header toggle re-opens it.
-  const [step4Collapsed, setStep4Collapsed] = useState(false)
+  // Rating is optional, so the "Trade Completed" card starts COLLAPSED — the trade
+  // is already done. The header shows the countdown; tapping expands it to leave
+  // feedback. Mirrors the USDT room's collapsed-by-default rating card.
+  const [step4Collapsed, setStep4Collapsed] = useState(true)
   const [error, setError] = useState('')
   const [selectingPayment, setSelectingPayment] = useState(false)
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set())
   const chatEndRef = useRef<HTMLDivElement>(null)
   const prevMsgCountRef = useRef(0)
+  // Every identifier this trade can be addressed by (URL ref, cuid, displayRef,
+  // primary id). SSE events carry whichever the emitter used, so we match against
+  // the whole set — otherwise a room opened via displayRef ignores events keyed on
+  // the cuid and its live updates silently stop (messages appear to "disappear").
+  const tradeIdsRef = useRef<string[]>([ref])
   // Mobile-only tab: at <lg the trade panel and chat stack, so chat lives on its
   // own tab. This keeps completing a step from scrolling the page into the chat
   // (the chat is display:none on the Trade tab, so its auto-scroll is a no-op).
@@ -311,6 +324,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
       const res = await ctmApi.getTrade(ref) as Trade
       if (!Array.isArray(res.ratings)) res.ratings = []
       setTrade(res)
+      tradeIdsRef.current = [ref, res.tradeRef, res.displayRef, res.id].filter(Boolean) as string[]
     } catch { /* ignore */ } finally { setLoading(false) }
   }, [ref])
 
@@ -332,10 +346,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   useSSE((event) => {
     if (event.type === 'notification') {
-      const payload = event.payload as { metadata?: { tradeRef?: string; tradeId?: string } } | undefined
-      const matchesRef = payload?.metadata?.tradeRef === ref
-      const matchesId = payload?.metadata?.tradeId === ref
-      if (matchesRef || matchesId) {
+      const md = (event.payload as { metadata?: { tradeRef?: string; tradeId?: string; displayRef?: string } } | undefined)?.metadata
+      const hit = !!md && [md.tradeRef, md.tradeId, md.displayRef].some((v) => !!v && tradeIdsRef.current.includes(v))
+      if (hit) {
         void fetchTrade()
         void fetchMessages()
       }
@@ -410,6 +423,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     ? `${Number(trade.usdtAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`
     : '— USDT'
   const payAmountLabel = isUsdtTrade ? usdtAmountLabel : `PKR ${Number(trade.fiatAmount).toLocaleString()}`
+  // Compact label for identity/summary spots (header, completed card) — long
+  // 6-dp USDT amounts (e.g. 0.157989) wrap the header across many lines and read
+  // as noise once the trade is done. Rounded to 3 dp here ONLY; the payment steps
+  // keep the exact `payAmountLabel` so the buyer still sends the precise amount.
+  const usdtAmountLabelShort = trade.usdtAmount != null
+    ? `${Number(trade.usdtAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} USDT`
+    : usdtAmountLabel
+  const payAmountLabelShort = isUsdtTrade ? usdtAmountLabelShort : payAmountLabel
   const stepIndex = STATUS_STEPS.indexOf(trade.status)
 
   // ── Flow-aware step model (single source of truth for BOTH flows) ───────────
@@ -666,10 +687,17 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         </div>
       )
     }
+    // No stored pay-from snapshot. For a USDT exchange/UID transfer this is normal —
+    // the payer just sends from their own exchange balance to the seller's UID above,
+    // so there are no "account details" to show. Say that plainly instead of the
+    // alarming "(account details not provided)".
     return (
       <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
-        Method: <span className="font-medium text-text-primary">{prettyMethod(trade.paymentMethod)}</span>
-        <span className="ml-1">(account details not provided)</span>
+        {isUsdtTrade ? (
+          <>Send the USDT from your own account to the seller&apos;s address / UID above.</>
+        ) : (
+          <>Method: <span className="font-medium text-text-primary">{prettyMethod(trade.paymentMethod)}</span></>
+        )}
       </div>
     )
   }
@@ -738,7 +766,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">{isUsdtTrade ? 'Total USDT' : 'Total PKR'}</p>
-          <p className="font-semibold text-text-primary">{payAmountLabel}</p>
+          <p className="font-semibold text-text-primary">{payAmountLabelShort}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Payment</p>
@@ -832,24 +860,26 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
       {/* Header — trade identity + status. The details live here so the progress
           bar below stays a clean, at-a-glance strip (mirrors the USDT room). */}
-      <div className="mb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="font-bold text-text-primary text-lg sm:text-xl leading-tight">{trade.tokenAmount} {trade.token.symbol}</h1>
-            <p className="text-text-muted text-sm mt-0.5">{payAmountLabel} · Trade #{trade.displayRef ?? trade.tradeRef.slice(-8)}</p>
-            {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
-              <span
-                className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
-                title="Combined completed trades between you two (USDT + community tokens)"
-              >
-                🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
-              </span>
-            )}
-          </div>
-          <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${trade.status === 'completed' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : trade.status === 'disputed' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300'}`}>
+      <div className="mb-4 space-y-1.5">
+        {/* Token amount + status on the top row. The status pill can be long
+            ("Action required: review payment proof"), so the streak badge and the
+            trade-ref line each get their OWN full-width row below — that stops the
+            ref from wrapping across four lines when the status squeezes the column. */}
+        <div className="flex items-start justify-between gap-2">
+          <h1 className="font-bold text-text-primary text-lg sm:text-xl leading-tight min-w-0">{trade.tokenAmount} {trade.token.symbol}</h1>
+          <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 text-right ${trade.status === 'completed' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : trade.status === 'disputed' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300'}`}>
             {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
           </span>
         </div>
+        {typeof trade.streakCount === 'number' && trade.streakCount > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+            title="Combined completed trades between you two (USDT + community tokens)"
+          >
+            🤝 {trade.streakCount} {trade.streakCount === 1 ? 'trade' : 'trades'} together
+          </span>
+        )}
+        <p className="text-text-muted text-sm">{payAmountLabelShort} · Trade #{trade.displayRef ?? trade.tradeRef.slice(-8)}</p>
       </div>
 
       {/* Mobile Trade/Chat tabs — chat gets its own tab so completing a step never
@@ -1153,9 +1183,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               </div>
 
               <div style={{ order: legPos.complete }}>
-              <StepCard stepNum={legPos.complete} title="Complete & Rate"
+              <StepCard stepNum={legPos.complete} title="Trade Completed"
                 state={trade.status === 'completed' ? 'completed' : 'future'}
-                summary="Trade complete"
+                summary="You can rate your counterparty below"
                 expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'completed' ? (
                   <div className="space-y-4">
@@ -1344,9 +1374,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               </div>
 
               <div style={{ order: legPos.complete }}>
-              <StepCard stepNum={legPos.complete} title="Complete & Rate"
+              <StepCard stepNum={legPos.complete} title="Trade Completed"
                 state={trade.status === 'completed' ? 'completed' : 'future'}
-                summary="Trade complete"
+                summary="You can rate your counterparty below"
                 expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'completed' && (
                   <div className="space-y-4">

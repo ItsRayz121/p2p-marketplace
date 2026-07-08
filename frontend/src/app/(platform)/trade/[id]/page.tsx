@@ -230,8 +230,10 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
   const ratingOpen = !ratedAlready && msLeft > 0
   const windowClosed = !ratedAlready && msLeft <= 0
 
-  // Default open while the user can still act (rate); collapse once rated or closed.
-  const [expanded, setExpanded] = useState(ratingOpen)
+  // Rating is optional, so this card is collapsed by default — the trade is already
+  // done. The header still surfaces the countdown chip so the user knows a rating
+  // window is open; they tap to expand and leave feedback if they want to.
+  const [expanded, setExpanded] = useState(false)
 
   const mm = Math.max(0, Math.floor(msLeft / 60_000))
   const ss = Math.max(0, Math.floor((msLeft % 60_000) / 1000))
@@ -249,7 +251,10 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
           <CheckCircle2 size={20} className="text-success" aria-hidden />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-bold text-success">Trade Completed</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-success">Rate the Trade</h2>
+            <span className="text-[10px] font-medium text-text-muted bg-surface-alt/70 rounded-full px-1.5 py-0.5 flex-shrink-0">Optional</span>
+          </div>
           {!expanded && (
             <p className="text-xs text-text-muted truncate">
               {parseFloat(trade.amount).toFixed(2)} {trade.coin} · PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} · {counterparty}
@@ -1036,6 +1041,29 @@ export default function TradePage() {
                     )}
                   </div>
                 )}
+                {/* Buyer view: the account the buyer committed to pay FROM — mirrors
+                    the seller's "Buyer will pay from" block so both sides see the same
+                    pay-from account, not just the seller. */}
+                {isUserBuyer && trade.buyerPaymentSnapshot && (() => {
+                  const b = trade.buyerPaymentSnapshot!
+                  const accounts = b.accounts && b.accounts.length > 0 ? b.accounts : [b]
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-text-primary">You&apos;ll pay from</p>
+                      {accounts.map((acc, i) => (
+                        <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2">
+                          <PayToRow label="Method" value={acc.label} />
+                          <PayToRow label="Account name" value={acc.accountName} />
+                          {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
+                          {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
+                          {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
+                          {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
+                        </div>
+                      ))}
+                      <p className="text-xs text-text-muted leading-snug">Send the PKR from {accounts.length > 1 ? 'one of these accounts' : 'this account'} so the seller can match your payment.</p>
+                    </div>
+                  )
+                })()}
                 {/* Seller view: where the buyer's PKR payment will come from (buy ads) */}
                 {!isUserBuyer && trade.buyerPaymentSnapshot && (() => {
                   const b = trade.buyerPaymentSnapshot!
@@ -1302,9 +1330,9 @@ export default function TradePage() {
               <div style={{ order: legPos.complete }}>
               <StepCard
                 stepNum={legPos.complete}
-                title="Complete"
+                title="Trade Completed"
                 state={trade.status === 'crypto_released' ? 'active' : 'future'}
-                summary="Trade complete"
+                summary="You can rate your counterparty below"
                 expanded={expandedSteps.has(legPos.complete)}
                 onToggle={() => toggleStep(legPos.complete)}
               >
