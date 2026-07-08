@@ -2,7 +2,8 @@
 import React, { useState, use, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
-import { ctmCurrentStep, CTM_ACTION_VERB, CTM_ACTION_TITLE } from '@/lib/ctmSettlementFlow'
+import { ctmCurrentStep, ctmFlowOrder } from '@/lib/ctmSettlementFlow'
+import type { CtmFlowAction, CtmFlowActor } from '@/lib/ctmSettlementFlow'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
@@ -210,23 +211,6 @@ function Countdown({ deadline }: { deadline: string }) {
 }
 
 type StepState = 'completed' | 'active' | 'future'
-
-function getStepState(stepNum: 1 | 2 | 3 | 4, tradeStatus: string, role: 'buyer' | 'seller'): StepState {
-  let idx = STATUS_STEPS.indexOf(tradeStatus)
-  if (idx === -1) idx = 0
-  if (role === 'buyer') {
-    if (stepNum === 1) return idx >= 1 ? 'completed' : 'active'
-    if (stepNum === 2) return idx >= 2 ? 'completed' : idx >= 1 ? 'active' : 'future'
-    if (stepNum === 3) return idx >= 5 ? 'completed' : idx >= 2 ? 'active' : 'future'
-    if (stepNum === 4) return idx >= 5 ? 'active' : 'future'
-  } else {
-    if (stepNum === 1) return idx >= 1 ? 'completed' : 'active'
-    if (stepNum === 2) return idx >= 2 ? 'completed' : idx >= 1 ? 'active' : 'future'
-    if (stepNum === 3) return idx >= 4 ? 'completed' : idx >= 2 ? 'active' : 'future'
-    if (stepNum === 4) return idx >= 4 ? 'active' : 'future'
-  }
-  return 'future'
-}
 
 function StepCard({
   stepNum, title, state, summary, expanded, onToggle, children,
@@ -798,14 +782,36 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     </div>
   )
 
-  const role = isBuyer ? 'buyer' : 'seller'
   const completedCounterparty = isBuyer
     ? (trade.seller.fullName || trade.seller.username)
     : (trade.buyer.fullName || trade.buyer.username)
-  const s1 = getStepState(1, trade.status, role)
-  const s2 = getStepState(2, trade.status, role)
-  const s3 = getStepState(3, trade.status, role)
-  const s4 = getStepState(4, trade.status, role)
+
+  // ── Flow-aware step model (single source of truth for BOTH flows) ───────────
+  // Mirrors the USDT room. The settlement resolver decides who does what next in
+  // the classic (fiat-first) and taker-first (crypto-first) flows; card ORDER,
+  // active-state, and the action shown all derive from it — one coherent ladder
+  // instead of a separate "Step N of 6" banner disagreeing with the cards below.
+  const takerFirst = !!trade.takerFirst
+  const flowStep = ctmCurrentStep(takerFirst, trade.status)
+  const myRole: CtmFlowActor = isBuyer ? 'buyer' : 'seller'
+  const myTurn = !!flowStep && flowStep.actor === myRole
+  const isAction = (a: CtmFlowAction) => !!flowStep && flowStep.action === a
+  const order = ctmFlowOrder(takerFirst)
+  // `stepIndex` (ladder position of the current status) and `order.indexOf(action)`
+  // share one coordinate system, so a card's state follows from how far we've come.
+  const legState = (actions: CtmFlowAction[]): StepState => {
+    const idxs = actions.map((a) => order.indexOf(a))
+    const start = Math.min(...idxs)
+    const end = Math.max(...idxs)
+    if (stepIndex > end) return 'completed'
+    if (stepIndex >= start) return 'active'
+    return 'future'
+  }
+  // Display order / step numbers: crypto leg leads in taker-first, fiat leg leads
+  // in classic; Complete is always last.
+  const legPos = takerFirst
+    ? { crypto: 1, fiat: 2, fiat_confirm: 3, complete: 4 }
+    : { fiat: 1, fiat_confirm: 2, crypto: 3, complete: 4 }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
@@ -933,105 +939,19 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             </div>
           )}
 
-          {/* Taker-first action panel. Only renders for reordered BUY-listing trades
-              (trade.takerFirst — always false in prod until a market's readiness flips).
-              The classic StepCard action controls are gated OFF when takerFirst, so this
-              panel is the single source of actions; the StepCards below still show the
-              order details / proofs. The backend is authoritative on ordering, so this
-              drives the correct next action for the current party via the flow resolver,
-              reusing the same handlers as the classic flow. */}
-          {trade.takerFirst && (isBuyer || isSeller) && !['completed', 'cancelled', 'expired', 'disputed', 'dispute_resolved'].includes(trade.status) && (() => {
-            const step = ctmCurrentStep(true, trade.status)
-            if (!step) return null
-            const myRole: 'buyer' | 'seller' = isBuyer ? 'buyer' : 'seller'
-            const myTurn = step.actor === myRole
-            const other = isBuyer ? 'seller' : 'buyer'
-            // Sequential step label ("Step 3 of 6 · Send Tokens") so the flow reads
-            // as an advancing ladder rather than a bare, repeated "Your turn".
-            const stepNo = step.index + 1
-            const stepTitle = CTM_ACTION_TITLE[step.action]
-            if (!myTurn) {
-              return (
-                <div className="bg-surface border border-border rounded-xl p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-1">Step {stepNo} of 6 · {stepTitle}</p>
-                  <p className="text-sm font-semibold text-text-primary mb-1">Waiting on the {other}</p>
-                  <p className="text-xs text-text-muted">The {other} needs to {CTM_ACTION_VERB[step.action]}. You&apos;ll be notified when it&apos;s your turn.</p>
-                </div>
-              )
-            }
-            return (
-              <div className="bg-surface border border-primary/30 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-primary">Step {stepNo} of 6 · {stepTitle}</p>
-                  <span className="text-[10px] font-bold uppercase tracking-wide bg-primary/10 text-primary rounded-full px-2 py-0.5 flex-shrink-0">Your turn</span>
-                </div>
-                {error && <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-xs text-red-600 dark:text-red-400">{error}</div>}
-
-                {/* start_crypto — the taker (seller) starts sending tokens first */}
-                {step.action === 'start_crypto' && (
-                  <>
-                    <p className="text-xs text-text-muted">Send {Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} {trade.token.symbol} to the buyer&apos;s address shown below, then submit your transfer proof. The buyer only pays PKR after your tokens are confirmed.</p>
-                    <button onClick={() => doAction(() => ctmApi.markTransferring(ref))} disabled={actionLoading} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">{actionLoading ? '…' : 'I Have Started Sending Tokens'}</button>
-                  </>
-                )}
-
-                {/* prove_crypto — seller submits the token transfer proof (verification rides here) */}
-                {step.action === 'prove_crypto' && (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-text-primary mb-1.5">
-                        {proofHashLabel(trade.settlementType)}
-                        {isHashRequired(trade.settlementType) ? <span className="text-primary font-semibold ml-1">(required)</span> : <span className="text-text-muted font-normal ml-1">(optional)</span>}
-                      </label>
-                      <input type="text" value={txHash} onChange={(e) => setTxHash(e.target.value)} placeholder={proofHashPlaceholder(trade.settlementType)} className="w-full border border-border rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-text-primary mb-1.5">
-                        Screenshot
-                        {isScreenshotRequired(trade.settlementType) ? <span className="text-primary font-semibold ml-1">(required)</span> : <span className="text-text-muted font-normal ml-1">(optional)</span>}
-                      </label>
-                      <input type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} className="w-full border border-border rounded-xl p-2 text-sm" />
-                    </div>
-                    <button onClick={handleUploadTokenProof}
-                      disabled={actionLoading || (isHashRequired(trade.settlementType) ? !txHash.trim() : isScreenshotRequired(trade.settlementType) ? !proofFile : (!txHash.trim() && !proofFile))}
-                      className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">{actionLoading ? 'Uploading…' : 'Submit Transfer Proof'}</button>
-                  </div>
-                )}
-
-                {/* confirm_crypto — the maker (buyer) confirms the taker's tokens arrived */}
-                {step.action === 'confirm_crypto' && (
-                  <>
-                    <p className="text-xs text-text-muted">Confirm the {trade.token.symbol} tokens have actually arrived in your wallet. Once confirmed, you&apos;ll send the PKR payment.</p>
-                    <button onClick={() => doAction(() => ctmApi.confirmReceipt(ref))} disabled={actionLoading} className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 hover:bg-green-700">{actionLoading ? '…' : 'I Received the Tokens'}</button>
-                  </>
-                )}
-
-                {/* send_fiat — the maker (buyer) pays PKR */}
-                {step.action === 'send_fiat' && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-text-muted">Send exactly <span className="font-semibold text-text-primary">{payAmountLabel}</span> to the seller&apos;s {isUsdtTrade ? 'USDT address' : 'account'} shown below, then upload your payment proof.</p>
-                    <input type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} className="w-full border border-border rounded-xl p-2 text-sm" />
-                    <button onClick={handleUploadPaymentProof} disabled={actionLoading || !proofFile} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">{actionLoading ? 'Uploading…' : 'Upload Payment Proof'}</button>
-                  </div>
-                )}
-
-                {/* confirm_fiat — the taker (seller) confirms the maker's PKR arrived (completes) */}
-                {step.action === 'confirm_fiat' && (
-                  <>
-                    <p className="text-xs text-text-muted">Confirm the {isUsdtTrade ? 'USDT payment has actually arrived' : 'PKR payment has actually arrived in your account'} — a screenshot alone is not proof of funds. This completes the trade.</p>
-                    <button onClick={() => doAction(() => ctmApi.confirmPayment(ref))} disabled={actionLoading} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">{actionLoading ? '…' : 'Confirm Payment Received'}</button>
-                  </>
-                )}
-              </div>
-            )
-          })()}
+          {/* The step cards below are the single source of truth for both flows —
+              the standalone "Step N of 6" action banner is gone; each action now
+              lives inside its (flow-ordered) card. */}
 
           {/* BUYER steps */}
           {isBuyer && (
-            <>
-              <StepCard stepNum={1} title="Send Payment" state={s1}
+            <div className="flex flex-col gap-4">
+              {/* Cards render in flow order via CSS `order`: fiat leg leads in
+                  classic, crypto leg leads in taker-first. One card active at a time. */}
+              <div style={{ order: legPos.fiat }}>
+              <StepCard stepNum={legPos.fiat} title="Send Payment" state={legState(['send_fiat'])}
                 summary={`${paymentMethodLabel} · ${payAmountLabel} · proof uploaded`}
-                expanded={expandedSteps.has(1)} onToggle={() => toggleStep(1)}>
+                expanded={expandedSteps.has(legPos.fiat)} onToggle={() => toggleStep(legPos.fiat)}>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
                   <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
@@ -1057,7 +977,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <p className="text-xs text-text-muted mb-2">You will send payment from this account.</p>
                   {renderBuyerAccountBlock()}
                 </div>
-                {!trade.takerFirst && trade.status === 'awaiting_payment' && trade.settlementType === 'ON_CHAIN' && trade.escrowAddress && (
+                {myTurn && isAction('send_fiat') && trade.settlementType === 'ON_CHAIN' && trade.escrowAddress && (
                   <div className="space-y-3">
                     <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 space-y-2">
                       <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Send USDT to Escrow Address</p>
@@ -1084,7 +1004,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Cancel Trade</button>
                   </div>
                 )}
-                {!trade.takerFirst && trade.status === 'awaiting_payment' && !(trade.settlementType === 'ON_CHAIN' && trade.escrowAddress) && (() => {
+                {myTurn && isAction('send_fiat') && !(trade.settlementType === 'ON_CHAIN' && trade.escrowAddress) && (() => {
                   const needsAccountSelection = isMultiAccount && snap?.selectedIdx === undefined
                   if (needsAccountSelection) {
                     return (
@@ -1100,7 +1020,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       <button onClick={handleUploadPaymentProof} disabled={actionLoading || !proofFile} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 hover:bg-primary/90">
                         {actionLoading ? 'Uploading…' : 'Upload Payment Proof'}
                       </button>
-                      <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Cancel Trade</button>
+                      {/* Cancel only in the classic flow — a taker-first buyer pays
+                          AFTER receiving tokens, so cancelling then would be unsafe. */}
+                      {!takerFirst && (
+                        <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Cancel Trade</button>
+                      )}
                     </div>
                   )
                 })()}
@@ -1120,25 +1044,29 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 )}
               </StepCard>
+              </div>
 
-              <StepCard stepNum={2} title="Awaiting Seller Confirmation" state={s2}
+              <div style={{ order: legPos.fiat_confirm }}>
+              <StepCard stepNum={legPos.fiat_confirm} title="Awaiting Seller Confirmation" state={legState(['confirm_fiat'])}
                 summary="Payment confirmed by seller"
-                expanded={expandedSteps.has(2)} onToggle={() => toggleStep(2)}>
-                {trade.status === 'payment_uploaded' ? (
+                expanded={expandedSteps.has(legPos.fiat_confirm)} onToggle={() => toggleStep(legPos.fiat_confirm)}>
+                {isAction('confirm_fiat') ? (
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Payment proof submitted</p>
                     <p className="text-yellow-700 dark:text-yellow-300">Waiting for seller to confirm they received your payment. This usually takes a few minutes.</p>
                   </div>
-                ) : (
+                ) : legState(['confirm_fiat']) === 'completed' ? (
                   <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
                     ✓ Seller confirmed your payment.
                   </div>
-                )}
+                ) : null}
               </StepCard>
+              </div>
 
-              <StepCard stepNum={3} title="Receive Your Tokens" state={s3}
+              <div style={{ order: legPos.crypto }}>
+              <StepCard stepNum={legPos.crypto} title="Receive Your Tokens" state={legState(['start_crypto', 'prove_crypto', 'confirm_crypto'])}
                 summary={`${trade.tokenAmount} ${trade.token.symbol} received`}
-                expanded={expandedSteps.has(3)} onToggle={() => toggleStep(3)}>
+                expanded={expandedSteps.has(legPos.crypto)} onToggle={() => toggleStep(legPos.crypto)}>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   {(trade.buyerSettlementId || trade.settlementMethod) && (
                     <Row label="Your receiving address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll copyable />
@@ -1152,20 +1080,20 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     <p className="text-amber-700 dark:text-amber-300">{trade.settlementNote}</p>
                   </div>
                 )}
-                {trade.status === 'payment_confirmed' && (
+                {!myTurn && isAction('start_crypto') && (
                   <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">Payment confirmed by seller</p>
                     <p className="text-blue-700 dark:text-blue-300">Seller is now sending your {trade.token.symbol} tokens. Please wait.</p>
                   </div>
                 )}
-                {trade.status === 'seller_transferring' && (
+                {!myTurn && isAction('prove_crypto') && (
                   <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">Seller is transferring tokens</p>
                     <p className="text-blue-700 dark:text-blue-300">Seller has started the transfer. They will upload proof shortly. Check your wallet.</p>
                   </div>
                 )}
                 {renderTokenProofsList()}
-                {!trade.takerFirst && trade.status === 'proof_submitted' && (
+                {myTurn && isAction('confirm_crypto') && (
                   <div className="space-y-3">
                     <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 space-y-3">
                       <p className="font-semibold text-green-800 dark:text-green-300">Seller has submitted transfer proof</p>
@@ -1211,9 +1139,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 )}
                 {disputeBtn}
               </StepCard>
+              </div>
 
-              <StepCard stepNum={4} title="Complete & Rate"
-                state={trade.status === 'completed' ? 'completed' : s4}
+              <div style={{ order: legPos.complete }}>
+              <StepCard stepNum={legPos.complete} title="Complete & Rate"
+                state={trade.status === 'completed' ? 'completed' : 'future'}
                 summary="Trade complete"
                 expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'completed' ? (
@@ -1227,15 +1157,17 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <p className="text-sm text-text-muted">This trade isn&apos;t complete yet.</p>
                 )}
               </StepCard>
-            </>
+              </div>
+            </div>
           )}
 
           {/* SELLER steps */}
           {isSeller && (
-            <>
-              <StepCard stepNum={1} title="Awaiting Buyer Payment" state={s1}
+            <div className="flex flex-col gap-4">
+              <div style={{ order: legPos.fiat }}>
+              <StepCard stepNum={legPos.fiat} title="Awaiting Buyer Payment" state={legState(['send_fiat'])}
                 summary="Buyer submitted payment proof"
-                expanded={expandedSteps.has(1)} onToggle={() => toggleStep(1)}>
+                expanded={expandedSteps.has(legPos.fiat)} onToggle={() => toggleStep(legPos.fiat)}>
                 {/* Order summary so the seller can see the price, token quantity and
                     the PKR they will receive (mirrors the buyer's Send-Payment card). */}
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
@@ -1266,18 +1198,20 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   {renderBuyerAccountBlock()}
                 </div>
                 )}
-                {trade.status === 'awaiting_payment' && (
+                {!myTurn && isAction('send_fiat') && (
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Waiting for buyer payment</p>
                     <p className="text-yellow-700 dark:text-yellow-300">The buyer is sending {isUsdtTrade ? 'USDT' : 'PKR'} to your {isUsdtTrade ? 'address' : 'account'}. You&apos;ll be notified when payment proof is uploaded.</p>
                   </div>
                 )}
               </StepCard>
+              </div>
 
-              <StepCard stepNum={2} title="Confirm Payment" state={s2}
+              <div style={{ order: legPos.fiat_confirm }}>
+              <StepCard stepNum={legPos.fiat_confirm} title="Confirm Payment" state={legState(['confirm_fiat'])}
                 summary={`${payAmountLabel} confirmed`}
-                expanded={expandedSteps.has(2)} onToggle={() => toggleStep(2)}>
-                {trade.status === 'payment_uploaded' ? (
+                expanded={expandedSteps.has(legPos.fiat_confirm)} onToggle={() => toggleStep(legPos.fiat_confirm)}>
+                {isAction('confirm_fiat') ? (
                   <div className="space-y-3">
                     {/* Amount summary so the seller knows exactly how much they are
                         confirming receipt of (and for how many tokens) before tapping. */}
@@ -1300,7 +1234,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                           : <p className="text-xs text-warning bg-warning/10 rounded px-2 py-1 mb-2">Proof image from untrusted source.</p>
                       )}
                     </div>
-                    {!trade.takerFirst && (
+                    {myTurn && (
                       <button onClick={() => doAction(() => ctmApi.confirmPayment(ref))} disabled={actionLoading}
                         className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
                         {actionLoading ? '…' : 'Confirm Payment Received'}
@@ -1313,10 +1247,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 )}
               </StepCard>
+              </div>
 
-              <StepCard stepNum={3} title="Send Tokens to Buyer" state={s3}
+              <div style={{ order: legPos.crypto }}>
+              <StepCard stepNum={legPos.crypto} title="Send Tokens to Buyer" state={legState(['start_crypto', 'prove_crypto', 'confirm_crypto'])}
                 summary="Transfer proof submitted"
-                expanded={expandedSteps.has(3)} onToggle={() => toggleStep(3)}>
+                expanded={expandedSteps.has(legPos.crypto)} onToggle={() => toggleStep(legPos.crypto)}>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <p className="text-xs font-medium text-text-muted mb-1">Send tokens to buyer</p>
                   {(trade.buyerSettlementId || trade.settlementMethod) && (
@@ -1330,13 +1266,13 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     <p className="text-amber-700 dark:text-amber-300">{trade.settlementNote}</p>
                   </div>
                 )}
-                {!trade.takerFirst && trade.status === 'payment_confirmed' && (
+                {myTurn && isAction('start_crypto') && (
                   <button onClick={() => doAction(() => ctmApi.markTransferring(ref))} disabled={actionLoading}
                     className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
                     {actionLoading ? '…' : 'I Have Started Sending Tokens'}
                   </button>
                 )}
-                {!trade.takerFirst && trade.status === 'seller_transferring' && (
+                {myTurn && isAction('prove_crypto') && (
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-medium text-text-primary mb-1.5">
@@ -1384,19 +1320,23 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 )}
                 {renderTokenProofsList()}
-                {disputeBtn}
-              </StepCard>
-
-              <StepCard stepNum={4} title="Complete & Rate"
-                state={trade.status === 'completed' ? 'completed' : s4}
-                summary="Trade complete"
-                expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
-                {trade.status === 'proof_submitted' && (
+                {/* Seller's leg isn't done until the buyer confirms receipt, so this
+                    waiting note lives in the Send-Tokens card (which stays active). */}
+                {!myTurn && isAction('confirm_crypto') && (
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Waiting for buyer confirmation</p>
                     <p className="text-yellow-700 dark:text-yellow-300">Transfer proof submitted. Buyer has 30 minutes to confirm receipt. If they don&apos;t respond, the trade escalates to admin.</p>
                   </div>
                 )}
+                {disputeBtn}
+              </StepCard>
+              </div>
+
+              <div style={{ order: legPos.complete }}>
+              <StepCard stepNum={legPos.complete} title="Complete & Rate"
+                state={trade.status === 'completed' ? 'completed' : 'future'}
+                summary="Trade complete"
+                expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'completed' && (
                   <div className="space-y-4">
                     <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">
@@ -1406,7 +1346,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   </div>
                 )}
               </StepCard>
-            </>
+              </div>
+            </div>
           )}
 
           {/* Admin flat view */}

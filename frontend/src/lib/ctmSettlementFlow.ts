@@ -32,6 +32,12 @@ export interface CtmCurrentStep {
   terminal: boolean
 }
 
+/** Ordered list of actions for the flow — index === the ladder rung each action
+ *  lands on. Lets the trade room order/state its step cards by the real flow. */
+export function ctmFlowOrder(takerFirst: boolean): CtmFlowAction[] {
+  return [...(takerFirst ? TAKER_FIRST : CLASSIC)]
+}
+
 /** The pending step for an in-progress trade, or null if terminal/unknown status. */
 export function ctmCurrentStep(takerFirst: boolean, status: string): CtmCurrentStep | null {
   const idx = LADDER.indexOf(status as (typeof LADDER)[number])

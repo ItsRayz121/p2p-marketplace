@@ -25,7 +25,8 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { getTradeStatus } from '@/lib/tradeStatus'
-import { currentStep as flowCurrentStep, ACTION_VERB } from '@/lib/settlementFlow'
+import { currentStep as flowCurrentStep, flowOrder } from '@/lib/settlementFlow'
+import type { FlowAction, FlowActor } from '@/lib/settlementFlow'
 import { promptPushOptIn } from '@/lib/pushPrompt'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
@@ -103,6 +104,18 @@ const TIMELINE_STEPS = [
   { key: 'crypto_sent',       label: 'Crypto Sent',       Icon: ArrowUpRight  },
   { key: 'crypto_released',   label: 'Trade Complete',    Icon: CheckCircle2  },
 ]
+
+// Taker-first reorders the legs (crypto is sent & confirmed BEFORE the PKR is
+// paid), so the same five ladder rungs carry different meaning — relabel them so
+// the strip never reads e.g. "Payment Confirmed" while crypto is being confirmed.
+// Keys/icons stay positional; only the human labels change. Mirrors the CTM strip.
+const TIMELINE_LABELS_TAKER_FIRST: Record<string, string> = {
+  payment_pending:   'Order Created',
+  payment_uploaded:  'Crypto Sent',
+  payment_confirmed: 'Crypto Received',
+  crypto_sent:       'Payment Sent',
+  crypto_released:   'Trade Complete',
+}
 
 function stepIndex(status: string): number {
   if (status === 'payment_pending')   return 0
@@ -310,16 +323,6 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
 // ─── Step Card (CTM-style guided flow) ─────────────────────────────────────────
 
 type StepState = 'completed' | 'active' | 'future'
-
-// 4-step flow mapped onto USDT statuses (idx: 0 pending, 1 uploaded, 2 confirmed,
-// 3 crypto_sent, 4 released). Steps 1–2 are the payment phase, step 3 the crypto
-// delivery + release phase, step 4 completion.
-function getStepState(stepNum: 1 | 2 | 3 | 4, idx: number): StepState {
-  if (stepNum === 1) return idx >= 1 ? 'completed' : 'active'
-  if (stepNum === 2) return idx >= 2 ? 'completed' : idx >= 1 ? 'active' : 'future'
-  if (stepNum === 3) return idx >= 4 ? 'completed' : idx >= 2 ? 'active' : 'future'
-  return idx >= 4 ? 'active' : 'future'
-}
 
 function StepCard({ stepNum, title, state, summary, expanded, onToggle, children }: {
   stepNum: number; title: string; state: StepState; summary?: string
@@ -780,6 +783,35 @@ export default function TradePage() {
   if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={fetchTrade} />
 
   const currentStep = stepIndex(trade.status)
+
+  // ── Flow-aware step model ──────────────────────────────────────────────────
+  // The settlement resolver is the single source of truth for who does what next,
+  // in BOTH the classic (fiat-first) and taker-first (crypto-first) flows. Card
+  // ORDER, active-state, and the action shown all derive from it — so there is one
+  // coherent ladder instead of a separate "your turn" banner disagreeing with the
+  // cards below it. `flowOrder` index === the ladder rung an action lands on, and
+  // `currentStep` is that same ladder position, so they compare directly.
+  const takerFirst = !!trade.takerFirst
+  const flowStep = flowCurrentStep(takerFirst, trade.status)
+  const myRole: FlowActor = isUserBuyer ? 'buyer' : 'seller'
+  const myTurn = !!flowStep && flowStep.actor === myRole
+  const isAction = (a: FlowAction) => !!flowStep && flowStep.action === a
+  const order = flowOrder(takerFirst)
+  // State of the card that hosts `actions`, from how far the trade has advanced.
+  const legState = (actions: FlowAction[]): StepState => {
+    const idxs = actions.map((a) => order.indexOf(a))
+    const start = Math.min(...idxs)
+    const end = Math.max(...idxs)
+    if (currentStep > end) return 'completed'
+    if (currentStep >= start) return 'active'
+    return 'future'
+  }
+  // Display order / step numbers: crypto leg leads in taker-first, fiat leg leads
+  // in classic; the Complete card is always last.
+  const legPos = trade.takerFirst
+    ? { crypto: 1, fiat: 2, fiat_confirm: 3, complete: 4 }
+    : { fiat: 1, fiat_confirm: 2, crypto: 3, complete: 4 }
+
   const pmLabel = trade.paymentMethodLabel ?? trade.paymentMethod
   const sellerAccount = trade.sellerPaymentAccount
   const canCancel = isUserBuyer && trade.status === 'payment_pending'
@@ -921,7 +953,7 @@ export default function TradePage() {
                         i === currentStep ? 'text-primary font-semibold'
                           : i < currentStep ? 'text-success font-medium'
                           : 'text-text-muted'
-                      }`}>{step.label}</p>
+                      }`}>{trade.takerFirst ? (TIMELINE_LABELS_TAKER_FIRST[step.key] ?? step.label) : step.label}</p>
                     </div>
                     {!isLast && (
                       <div className={`h-0.5 flex-1 min-w-[2px] mt-4 mx-0.5 sm:mx-1 ${i < currentStep ? 'bg-success' : 'bg-border'}`} />
@@ -952,97 +984,25 @@ export default function TradePage() {
             </div>
           )}
 
-          {/* Taker-first action panel. Only renders for reordered BUY-ad trades
-              (trade.takerFirst). The classic StepCard action controls are gated OFF
-              when takerFirst, so this panel is the single source of actions; the
-              StepCards below still show the order details/proofs. The backend is
-              authoritative on ordering, so this drives the correct next action for
-              the current party. Reuses the same handlers as the classic flow. */}
-          {trade.takerFirst && !['cancelled', 'expired', 'crypto_released', 'disputed', 'dispute_resolved'].includes(trade.status) && (() => {
-            const step = flowCurrentStep(true, trade.status)
-            if (!step) return null
-            const myRole = isUserBuyer ? 'buyer' : 'seller'
-            const myTurn = step.actor === myRole
-            const other = isUserBuyer ? 'seller' : 'buyer'
-            if (!myTurn) {
-              return (
-                <div className="bg-surface border border-border rounded-xl p-4">
-                  <p className="text-sm font-semibold text-text-primary mb-1">Waiting on the {other}</p>
-                  <p className="text-xs text-text-muted">The {other} needs to {ACTION_VERB[step.action]}. You&apos;ll be notified when it&apos;s your turn.</p>
-                </div>
-              )
-            }
-            return (
-              <div className="bg-surface border border-primary/30 rounded-xl p-4 space-y-3">
-                <p className="text-sm font-semibold text-primary">Your turn</p>
-                {actionError && <div className="bg-danger/10 border border-danger/20 rounded-lg p-2 text-xs text-danger">{actionError}</div>}
-
-                {/* send_crypto (taker sends crypto first) */}
-                {step.action === 'send_crypto' && (
-                  !showCryptoSentForm ? (
-                    <>
-                      <p className="text-xs text-text-muted">Send {parseFloat(trade.amount).toFixed(4)} {trade.coin} to the buyer&apos;s address shown below, then submit your transfer proof. The buyer only pays PKR after your crypto is confirmed.</p>
-                      <Button fullWidth onClick={handleStartSending}>I&apos;m Sending the Crypto Now →</Button>
-                    </>
-                  ) : (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-text-primary mb-1">Transaction Hash</label>
-                        <input type="text" value={txHash} onChange={(e) => setTxHash(e.target.value)} placeholder="Paste the blockchain transaction hash (e.g. 0xabc123…)" className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-text-primary mb-1">Transfer Screenshot <span className="text-text-muted">(optional)</span></label>
-                        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setDeliveryShot(e.target.files?.[0] ?? null)} className="w-full text-xs border border-border rounded-lg p-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary" />
-                        {deliveryShot && <p className="text-xs text-text-muted mt-1 truncate">Attached: {deliveryShot.name}</p>}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant="secondary" fullWidth onClick={() => { setShowCryptoSentForm(false); setDeliveryShot(null) }}>Cancel</Button>
-                        <Button fullWidth loading={actionLoading || uploading} disabled={(!txHash.trim() && !deliveryShot) || actionLoading || uploading} onClick={handleMarkCryptoSent}>I&apos;ve Sent the Crypto</Button>
-                      </div>
-                    </div>
-                  )
-                )}
-
-                {/* confirm_crypto (maker/buyer confirms the taker's crypto arrived) */}
-                {step.action === 'confirm_crypto' && (
-                  <>
-                    <p className="text-xs text-text-muted">Confirm the {trade.coin} has actually arrived in your wallet. Once confirmed, you&apos;ll send the PKR payment.</p>
-                    <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={() => setShowReleaseModal(true)}>I&apos;ve Received the Crypto — Confirm</Button>
-                  </>
-                )}
-
-                {/* send_fiat (maker/buyer pays PKR) */}
-                {step.action === 'send_fiat' && (
-                  <>
-                    <p className="text-xs text-text-muted">Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to the seller&apos;s account (shown below), then upload your payment proof.</p>
-                    <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }} />
-                    <Button fullWidth loading={uploading} disabled={uploading || actionLoading} onClick={() => fileInputRef.current?.click()}>Upload Payment Proof</Button>
-                  </>
-                )}
-
-                {/* confirm_fiat (taker confirms the maker's PKR arrived — completes) */}
-                {step.action === 'confirm_fiat' && (
-                  <>
-                    <p className="text-xs text-text-muted">Confirm the PKR payment has actually arrived in your account — a screenshot alone is not proof of funds. This completes the trade.</p>
-                    <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>Confirm Payment Received</Button>
-                  </>
-                )}
-              </div>
-            )
-          })()}
-
-          {/* Guided step flow (CTM-style) — active step auto-expands; completed
-              steps collapse to a summary line and stay re-openable. */}
+          {/* Guided step flow — the ONE source of truth. Active step auto-expands
+              and carries its action; completed steps collapse to a summary line and
+              stay re-openable. Order + state come from the flow resolver, so classic
+              (fiat-first) and taker-first (crypto-first) share one coherent ladder. */}
           {!['cancelled', 'expired'].includes(trade.status) && (
             <>
-              {/* Step 1 — Payment */}
+              {/* Cards render in flow order via CSS `order`: fiat leg leads in
+                  classic, crypto leg leads in taker-first. Only one card is active
+                  (interactive) at a time, so visual order carries the sequence. */}
+              <div className="flex flex-col gap-4">
+              {/* Payment (fiat) leg */}
+              <div style={{ order: legPos.fiat }}>
               <StepCard
-                stepNum={1}
+                stepNum={legPos.fiat}
                 title={isUserBuyer ? 'Send Payment' : 'Receive PKR Payment'}
-                state={getStepState(1, currentStep)}
+                state={legState(['send_fiat'])}
                 summary={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} · ${pmLabel}`}
-                expanded={expandedSteps.has(1)}
-                onToggle={() => toggleStep(1)}
+                expanded={expandedSteps.has(legPos.fiat)}
+                onToggle={() => toggleStep(legPos.fiat)}
               >
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
                   <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
@@ -1066,7 +1026,7 @@ export default function TradePage() {
                     {sellerAccount.accountNumber && <PayToRow label="Account number" value={sellerAccount.accountNumber} copy />}
                     {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
                     {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
-                    {!trade.takerFirst && isUserBuyer && trade.status === 'payment_pending' && (
+                    {myTurn && isAction('send_fiat') && (
                       <p className="text-xs text-text-muted leading-snug pt-1">
                         Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof.
                       </p>
@@ -1094,7 +1054,7 @@ export default function TradePage() {
                     </div>
                   )
                 })()}
-                {!trade.takerFirst && isUserBuyer && trade.status === 'payment_pending' && (
+                {myTurn && isAction('send_fiat') && (
                   <>
                     <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }} />
                     <Button fullWidth loading={uploading} disabled={uploading || actionLoading} onClick={() => fileInputRef.current?.click()}>
@@ -1105,21 +1065,23 @@ export default function TradePage() {
                     )}
                   </>
                 )}
-                {!trade.takerFirst && !isUserBuyer && trade.status === 'payment_pending' && (
+                {!myTurn && isAction('send_fiat') && (
                   <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">
                     Waiting for the buyer to send PKR and upload payment proof.
                   </div>
                 )}
               </StepCard>
+              </div>
 
-              {/* Step 2 — Confirm Payment */}
+              {/* Confirm Payment (fiat confirm) leg */}
+              <div style={{ order: legPos.fiat_confirm }}>
               <StepCard
-                stepNum={2}
+                stepNum={legPos.fiat_confirm}
                 title="Confirm Payment"
-                state={getStepState(2, currentStep)}
+                state={legState(['confirm_fiat'])}
                 summary="Payment confirmed by seller"
-                expanded={expandedSteps.has(2)}
-                onToggle={() => toggleStep(2)}
+                expanded={expandedSteps.has(legPos.fiat_confirm)}
+                onToggle={() => toggleStep(legPos.fiat_confirm)}
               >
                 {trade.paymentProofUrl && (
                   <div>
@@ -1133,28 +1095,30 @@ export default function TradePage() {
                     )}
                   </div>
                 )}
-                {!trade.takerFirst && !isUserBuyer && trade.status === 'payment_uploaded' && (
+                {myTurn && isAction('confirm_fiat') && (
                   <>
                     <p className="text-xs text-text-muted">Confirm only after the PKR has actually arrived in your account — a screenshot alone is not proof of funds.</p>
                     <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>Confirm Payment Received</Button>
                   </>
                 )}
-                {!trade.takerFirst && isUserBuyer && trade.status === 'payment_uploaded' && (
+                {!myTurn && isAction('confirm_fiat') && (
                   <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">Waiting for the seller to confirm they received your payment.</div>
                 )}
-                {currentStep >= 2 && (
+                {legState(['confirm_fiat']) === 'completed' && (
                   <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-xs text-success">✓ Payment confirmed.</div>
                 )}
               </StepCard>
+              </div>
 
-              {/* Step 3 — Crypto delivery & release */}
+              {/* Crypto delivery & release leg */}
+              <div style={{ order: legPos.crypto }}>
               <StepCard
-                stepNum={3}
+                stepNum={legPos.crypto}
                 title={isUserBuyer ? 'Receive & Confirm Crypto' : 'Send Crypto'}
-                state={getStepState(3, currentStep)}
+                state={legState(['send_crypto', 'confirm_crypto'])}
                 summary={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin} delivered`}
-                expanded={expandedSteps.has(3)}
-                onToggle={() => toggleStep(3)}
+                expanded={expandedSteps.has(legPos.crypto)}
+                onToggle={() => toggleStep(legPos.crypto)}
               >
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
                   {/* Amount is shown front-and-centre so the seller knows exactly how
@@ -1252,7 +1216,7 @@ export default function TradePage() {
                 )}
 
                 {/* Seller: send crypto (dual proof) */}
-                {!trade.takerFirst && !isUserBuyer && trade.status === 'payment_confirmed' && !showCryptoSentForm && (
+                {myTurn && isAction('send_crypto') && !showCryptoSentForm && (
                   <>
                     <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">
                       Tap below to let the buyer know you&apos;re sending now, then send the {trade.coin} to the address above and submit your transfer proof.
@@ -1260,7 +1224,7 @@ export default function TradePage() {
                     <Button fullWidth onClick={handleStartSending}>I&apos;m Sending the Crypto Now →</Button>
                   </>
                 )}
-                {!trade.takerFirst && showCryptoSentForm && !isUserBuyer && (() => {
+                {myTurn && isAction('send_crypto') && showCryptoSentForm && (() => {
                   const dm = trade.buyerDeliveryMethod ?? ''
                   const isWalletDelivery = dm === 'blockchain' || dm === 'wallet_blockchain' || dm === ''
                   const canSubmit = !!txHash.trim() || !!deliveryShot
@@ -1297,13 +1261,13 @@ export default function TradePage() {
                     </div>
                   )
                 })()}
-                {!trade.takerFirst && isUserBuyer && trade.status === 'payment_confirmed' && (
+                {!myTurn && isAction('send_crypto') && (
                   <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">The seller is sending your {trade.coin} now. Once it arrives in your wallet, confirm receipt below to complete the trade.</div>
                 )}
 
                 {/* Buyer: confirm receipt & release — no verification gate. The
                     buyer is the authority on their own wallet; admin only via dispute. */}
-                {!trade.takerFirst && isUserBuyer && trade.status === 'crypto_sent' && (() => {
+                {myTurn && isAction('confirm_crypto') && (() => {
                   const vs = trade.txVerificationStatus
                   const unverified = vs === 'skipped' || vs === 'rpc_error' || vs === 'pending' || vs === 'not_found'
                   return (
@@ -1325,19 +1289,21 @@ export default function TradePage() {
                     </>
                   )
                 })()}
-                {!trade.takerFirst && !isUserBuyer && trade.status === 'crypto_sent' && (
+                {!myTurn && isAction('confirm_crypto') && (
                   <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">Waiting for the buyer to confirm receipt and release the trade.</div>
                 )}
               </StepCard>
+              </div>
 
-              {/* Step 4 — Complete */}
+              {/* Complete leg */}
+              <div style={{ order: legPos.complete }}>
               <StepCard
-                stepNum={4}
+                stepNum={legPos.complete}
                 title="Complete"
-                state={getStepState(4, currentStep)}
+                state={trade.status === 'crypto_released' ? 'active' : 'future'}
                 summary="Trade complete"
-                expanded={expandedSteps.has(4)}
-                onToggle={() => toggleStep(4)}
+                expanded={expandedSteps.has(legPos.complete)}
+                onToggle={() => toggleStep(legPos.complete)}
               >
                 {trade.status === 'crypto_released' ? (
                   <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-sm text-success">✓ Trade complete.{ratedAlready ? ' Thanks for your rating!' : ' You can rate your counterparty below.'}</div>
@@ -1345,6 +1311,8 @@ export default function TradePage() {
                   <p className="text-xs text-text-muted">Once the buyer confirms receipt and releases, the trade is complete and you can rate each other.</p>
                 )}
               </StepCard>
+              </div>
+              </div>
 
               {/* Dispute */}
               {canDispute && trade.status !== 'disputed' && !showDisputeForm && (
