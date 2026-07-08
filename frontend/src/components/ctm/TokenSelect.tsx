@@ -1,7 +1,8 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
 
 export interface TokenOption {
   id: string
@@ -35,15 +36,6 @@ export function TokenSelect({
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocClick)
-    return () => document.removeEventListener('mousedown', onDocClick)
-  }, [open])
-
   const selected = tokens.find((t) => t.id === value) ?? null
   const logoSize = compact ? 'xs' : 'sm'
   const btnPad = compact ? 'px-3 py-2' : 'px-3 py-2.5'
@@ -67,8 +59,8 @@ export function TokenSelect({
         <ChevronDown size={14} className={`flex-shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <div className="absolute z-30 mt-1 w-full max-h-72 overflow-y-auto bg-surface border border-border rounded-xl shadow-card py-1">
+      <AnchoredMenu anchorRef={ref} open={open} onClose={() => setOpen(false)}>
+        <div className="w-full h-full overflow-y-auto bg-surface border border-border rounded-xl shadow-card py-1">
           {allLabel && (
             <button
               type="button"
@@ -94,7 +86,7 @@ export function TokenSelect({
             <p className="px-3 py-2 text-sm text-text-muted">No tokens available.</p>
           )}
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }

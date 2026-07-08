@@ -214,13 +214,45 @@ export async function getThread(userId: string, threadId: string) {
     if (e.outcome in stats) s[e.outcome] = (s[e.outcome] ?? 0) + 1
   }
 
+  // ── Unify the timeline: the actual per-trade room chat still lives in
+  //    TradeMessage / CtmTradeMessage (source of truth for a trade, untouched).
+  //    The inbox is a UNION VIEW that folds each episode's real messages into
+  //    the thread's own free-chat messages, so a line typed in the trade room
+  //    shows up here too. Trade *system* step-lines are excluded — the episode
+  //    dividers already convey lifecycle, and including them would bury the
+  //    actual conversation under 6+ status lines per trade.
+  const usdtTradeIds = thread.episodes.filter((e) => e.market === 'usdt').map((e) => e.tradeId)
+  const ctmTradeIds = thread.episodes.filter((e) => e.market === 'ctm').map((e) => e.tradeId)
+  const [usdtMsgs, ctmMsgs] = await Promise.all([
+    usdtTradeIds.length
+      ? db.tradeMessage.findMany({
+          where: { tradeId: { in: usdtTradeIds }, isSystem: false },
+          select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+    ctmTradeIds.length
+      ? db.ctmTradeMessage.findMany({
+          where: { tradeId: { in: ctmTradeIds }, isSystem: false },
+          select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+  ])
+
+  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; isSystem: boolean; createdAt: Date }
+  // Prefix trade-message ids so they can never collide with thread-message ids.
+  const messages: Msg[] = [
+    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, isSystem: m.isSystem, createdAt: m.createdAt })),
+    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, isSystem: m.isSystem, createdAt: m.createdAt })),
+    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, isSystem: m.isSystem, createdAt: m.createdAt })),
+  ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+
   const other = isA ? thread.userB : thread.userA
   return {
     threadId: thread.id,
     other,
     stats,
     episodes: thread.episodes.map((e) => ({ ...e, fiatAmount: e.fiatAmount ? e.fiatAmount.toString() : null })),
-    messages: thread.messages,
+    messages,
   }
 }
 
@@ -247,4 +279,31 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
     }),
   ])
   return message
+}
+
+/**
+ * Best-effort hook: a real per-trade room message was just posted, so bump the
+ * pair's inbox thread (lastMessageAt + the recipient's unread) to keep the inbox
+ * ordering/unread accurate — the trade message itself stays in TradeMessage /
+ * CtmTradeMessage and is folded into the thread view by getThread(). No-op while
+ * the inbox flag is OFF; never throws (a messaging failure must not break chat).
+ */
+export async function bumpThreadForTradeMessage(params: {
+  buyerId: string
+  sellerId: string
+  senderId: string
+}): Promise<void> {
+  try {
+    if (!(await isFlagEnabled(FLAGS.MESSAGING_INBOX))) return
+    if (params.buyerId === params.sellerId) return
+    const thread = await getOrCreateThread(params.buyerId, params.sellerId)
+    const senderIsA = params.senderId === thread.userAId
+    await db.chatThread.update({
+      where: { id: thread.id },
+      // Bump the recipient's unread flag (the participant who is NOT the sender).
+      data: { lastMessageAt: new Date(), ...(senderIsA ? { unreadByB: true } : { unreadByA: true }) },
+    })
+  } catch (err) {
+    logger.warn({ err, senderId: params.senderId }, 'bumpThreadForTradeMessage failed (non-fatal)')
+  }
 }

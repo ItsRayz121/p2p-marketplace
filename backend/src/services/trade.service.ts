@@ -13,7 +13,7 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
-import { openEpisode, closeEpisode } from './chatThread.service'
+import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from './chatThread.service'
 import { stepForAction, flowSteps } from './settlementFlow'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
@@ -1338,6 +1338,9 @@ export async function sendMessage(
   // raises block/report rates). Web push + in-app bell only; telegram: false
   // force-excludes them even though they share type 'trade'.
   notify(recipientId, 'trade', 'New Message', `${senderLabel}: ${preview}`, { tradeId }, tradeId, undefined, { silent, telegram: false })
+
+  // Keep the unified inbox thread fresh (ordering + unread). Best-effort, flag-gated.
+  void bumpThreadForTradeMessage({ buyerId: trade.buyerId, sellerId: trade.sellerId, senderId })
 
   return msg
 }

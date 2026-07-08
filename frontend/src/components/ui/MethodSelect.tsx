@@ -1,6 +1,7 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { EntityLogo } from './EntityLogo'
+import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
 import type { EntityType } from '@/lib/logoRegistry'
 
 export interface MethodOption {
@@ -30,15 +31,6 @@ export function MethodSelect({
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
 
   // Small lists stay as inline chips — a dropdown for 1–2 options is overkill.
   if (options.length <= inlineThreshold) {
@@ -90,8 +82,8 @@ export function MethodSelect({
           <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
         </svg>
       </button>
-      {open && (
-        <div className="absolute z-20 mt-1 w-full rounded-xl border border-border bg-surface shadow-card max-h-64 overflow-y-auto">
+      <AnchoredMenu anchorRef={rootRef} open={open} onClose={() => setOpen(false)} desiredMaxH={256}>
+        <div className="w-full h-full rounded-xl border border-border bg-surface shadow-card overflow-y-auto">
           {options.map((m) => {
             const sel = value === m.id
             return (
@@ -111,7 +103,7 @@ export function MethodSelect({
             )
           })}
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }

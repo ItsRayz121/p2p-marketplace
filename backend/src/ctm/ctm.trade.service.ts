@@ -15,7 +15,7 @@ import { recordAuditLog } from '../lib/audit'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock } from '../services/ctmSettlementFlow'
-import { openEpisode, closeEpisode } from '../services/chatThread.service'
+import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
 
@@ -1085,9 +1085,14 @@ export async function sendMessage(tradeRef: string, senderId: string, message: s
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== senderId && trade.sellerId !== senderId) throw new AppError('FORBIDDEN', 'Access denied', 403)
 
-  return db.ctmTradeMessage.create({
+  const msg = await db.ctmTradeMessage.create({
     data: { tradeId: trade.id, senderId, message, attachmentUrl: attachmentUrl ?? null },
   })
+
+  // Keep the unified inbox thread fresh (ordering + unread). Best-effort, flag-gated.
+  void bumpThreadForTradeMessage({ buyerId: trade.buyerId, sellerId: trade.sellerId, senderId })
+
+  return msg
 }
 
 export async function getMessages(tradeRef: string, userId: string, role: string) {

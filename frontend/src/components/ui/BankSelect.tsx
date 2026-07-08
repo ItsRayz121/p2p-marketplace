@@ -1,7 +1,8 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { ChevronDown, Check, Search } from 'lucide-react'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
 import { cn } from '@/lib/utils'
 
 /**
@@ -20,15 +21,6 @@ export function BankSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
 
   const filtered = query.trim()
     ? banks.filter((b) => b.toLowerCase().includes(query.trim().toLowerCase()))
@@ -52,8 +44,8 @@ export function BankSelect({
         <ChevronDown size={16} className={cn('flex-shrink-0 text-text-muted transition-transform', open && 'rotate-180')} />
       </button>
 
-      {open && (
-        <div className="absolute z-30 mt-1 w-full rounded-lg border border-border bg-surface shadow-lg max-h-72 overflow-hidden flex flex-col">
+      <AnchoredMenu anchorRef={ref} open={open} onClose={() => setOpen(false)}>
+        <div className="w-full h-full rounded-lg border border-border bg-surface shadow-lg overflow-hidden flex flex-col">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
             <Search size={14} className="text-text-muted flex-shrink-0" />
             <input
@@ -83,7 +75,7 @@ export function BankSelect({
             )}
           </div>
         </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }
