@@ -34,6 +34,16 @@ export function flowOrder(takerFirst: boolean): FlowAction[] {
   return [...(takerFirst ? TAKER_FIRST : CLASSIC)]
 }
 
+/** Dispute lock (mirror of backend rule in trade.service.ts): the party who
+ *  performs the confirm that lands on `payment_confirmed` (the 2nd action) is
+ *  barred from disputing from `payment_confirmed` onward — their only job left is
+ *  to deliver their own leg. Classic locks the SELLER; taker-first locks the
+ *  BUYER/maker. */
+export function disputeLock(takerFirst: boolean): { actor: FlowActor; lockedStatuses: string[] } {
+  const actor = ACTOR[(takerFirst ? TAKER_FIRST : CLASSIC)[1]!]
+  return { actor, lockedStatuses: ['payment_confirmed', 'crypto_sent'] }
+}
+
 /** The pending step for an in-progress trade, or null if terminal/unknown status. */
 export function currentStep(takerFirst: boolean, status: string): CurrentStep | null {
   const idx = LADDER.indexOf(status as (typeof LADDER)[number])

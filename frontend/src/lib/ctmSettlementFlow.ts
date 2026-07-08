@@ -38,6 +38,20 @@ export function ctmFlowOrder(takerFirst: boolean): CtmFlowAction[] {
   return [...(takerFirst ? TAKER_FIRST : CLASSIC)]
 }
 
+/** Dispute lock (mirror of backend ctmDisputeLock): once a party CONFIRMS the
+ *  counterparty's leg, their only job left is to deliver their own — so they can't
+ *  "dispute instead of delivering". Returns the locked actor + the statuses they're
+ *  barred from at. Classic locks the SELLER from payment_confirmed; taker-first
+ *  locks the BUYER/maker from seller_transferring. */
+export function ctmDisputeLock(takerFirst: boolean): { actor: CtmFlowActor; lockedStatuses: string[] } {
+  const orderArr = takerFirst ? TAKER_FIRST : CLASSIC
+  // First NON-terminal confirm action (terminal = last rung, index 4).
+  const confirmIdx = orderArr.findIndex((a, i) => (a === 'confirm_fiat' || a === 'confirm_crypto') && i < orderArr.length - 1)
+  // Its landing status is the next rung; lock from there up to (excl.) 'completed'.
+  const lockedStatuses = [...LADDER.slice(confirmIdx + 1, LADDER.length - 1)]
+  return { actor: ACTOR[orderArr[confirmIdx]!], lockedStatuses }
+}
+
 /** The pending step for an in-progress trade, or null if terminal/unknown status. */
 export function ctmCurrentStep(takerFirst: boolean, status: string): CtmCurrentStep | null {
   const idx = LADDER.indexOf(status as (typeof LADDER)[number])

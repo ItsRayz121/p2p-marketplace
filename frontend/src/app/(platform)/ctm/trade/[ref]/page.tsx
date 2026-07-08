@@ -2,7 +2,7 @@
 import React, { useState, use, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ctmApi } from '@/lib/api'
-import { ctmCurrentStep, ctmFlowOrder } from '@/lib/ctmSettlementFlow'
+import { ctmCurrentStep, ctmFlowOrder, ctmDisputeLock } from '@/lib/ctmSettlementFlow'
 import type { CtmFlowAction, CtmFlowActor } from '@/lib/ctmSettlementFlow'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
@@ -706,18 +706,24 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     ) : null
 
   const disputeUnlockAt = trade.updatedAt ? new Date(trade.updatedAt).getTime() + DISPUTE_DELAY_MINUTES * 60_000 : null
-  // Once the seller confirms payment, only the buyer may dispute — the seller's
-  // only remaining job is to deliver tokens (mirrors backend sellerLockedStatuses
-  // in ctm.trade.service.ts). Locked seller sees a "Contact support" path instead.
-  const sellerDisputeLocked = isSeller && ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'].includes(trade.status) && !trade.dispute
-  const disputeBtn = sellerDisputeLocked
+  // Dispute lock (mirrors backend ctmDisputeLock): once a party confirms the
+  // counterparty's leg, disputing instead of delivering their own is a pure stall
+  // lever, so they're barred from there on. The locked party is FLOW-DEPENDENT —
+  // classic locks the seller (confirmed fiat), taker-first locks the buyer/maker
+  // (confirmed crypto) — so derive it from the resolver, don't assume the seller.
+  const lock = ctmDisputeLock(takerFirst)
+  const iAmLockedParty = lock.actor === 'buyer' ? isBuyer : isSeller
+  const disputeLockedForMe = iAmLockedParty && lock.lockedStatuses.includes(trade.status) && !trade.dispute
+  // Disputable window mirrors the backend: any active status except awaiting_payment.
+  const disputeWindowOpen = ['payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted'].includes(trade.status) && !trade.dispute
+  const disputeBtn = disputeLockedForMe
     ? (
       <div className="bg-surface rounded-xl border border-border p-4 text-sm text-text-secondary">
-        <p className="mb-2">You confirmed the payment was received, so the only remaining step is to <span className="font-medium text-text-primary">send the tokens</span>. You can&apos;t open a dispute against the buyer at this stage.</p>
-        <p>If something is genuinely wrong, <a href={supportMailto(`CTM trade ${trade.displayRef ?? trade.tradeRef} — issue after payment confirmed`)} className="text-primary underline">contact support</a>.</p>
+        <p className="mb-2">You already confirmed your counterparty delivered their part, so the only remaining step is to <span className="font-medium text-text-primary">send your own leg</span>. You can&apos;t open a dispute at this stage.</p>
+        <p>If something is genuinely wrong, <a href={supportMailto(`CTM trade ${trade.displayRef ?? trade.tradeRef} — issue after confirming`)} className="text-primary underline">contact support</a>.</p>
       </div>
     )
-    : (isBuyer || isSeller) && ['payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'].includes(trade.status) && !trade.dispute
+    : (isBuyer || isSeller) && disputeWindowOpen
     ? <DisputeUnlockGate unlockAt={disputeUnlockAt} onOpen={() => setDisputeOpen(true)} />
     : null
 
