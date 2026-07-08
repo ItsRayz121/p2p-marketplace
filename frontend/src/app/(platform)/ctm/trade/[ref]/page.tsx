@@ -412,6 +412,35 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const payAmountLabel = isUsdtTrade ? usdtAmountLabel : `PKR ${Number(trade.fiatAmount).toLocaleString()}`
   const stepIndex = STATUS_STEPS.indexOf(trade.status)
 
+  // ── Flow-aware step model (single source of truth for BOTH flows) ───────────
+  // Mirrors the USDT room. The settlement resolver decides who does what next in
+  // the classic (fiat-first) and taker-first (crypto-first) flows; card ORDER,
+  // active-state, and the action shown all derive from it — one coherent ladder
+  // instead of a separate "Step N of 6" banner disagreeing with the cards below.
+  // Defined up here (before the render helpers) so renderSellerAccountBlock can
+  // gate the pay-account picker on the real "buyer is paying now" action.
+  const takerFirst = !!trade.takerFirst
+  const flowStep = ctmCurrentStep(takerFirst, trade.status)
+  const myRole: CtmFlowActor = isBuyer ? 'buyer' : 'seller'
+  const myTurn = !!flowStep && flowStep.actor === myRole
+  const isAction = (a: CtmFlowAction) => !!flowStep && flowStep.action === a
+  const order = ctmFlowOrder(takerFirst)
+  // `stepIndex` (ladder position of the current status) and `order.indexOf(action)`
+  // share one coordinate system, so a card's state follows from how far we've come.
+  const legState = (actions: CtmFlowAction[]): StepState => {
+    const idxs = actions.map((a) => order.indexOf(a))
+    const start = Math.min(...idxs)
+    const end = Math.max(...idxs)
+    if (stepIndex > end) return 'completed'
+    if (stepIndex >= start) return 'active'
+    return 'future'
+  }
+  // Display order / step numbers: crypto leg leads in taker-first, fiat leg leads
+  // in classic; Complete is always last.
+  const legPos = takerFirst
+    ? { crypto: 1, fiat: 2, fiat_confirm: 3, complete: 4 }
+    : { fiat: 1, fiat_confirm: 2, crypto: 3, complete: 4 }
+
   // Rating window — opens at completion (anchored to updatedAt, consistent with
   // the CTM dispute timer) and lasts RATING_WINDOW_MINUTES. Once it closes the
   // form stays visible but submission is blocked, mirroring the USDT marketplace.
@@ -567,8 +596,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         </div>
       )
     }
-    const needsSelection = isMultiAccount && !isAccountLocked && isBuyerView && trade.status === 'awaiting_payment'
-    const waitingForSelection = isMultiAccount && !isAccountLocked && !isBuyerView && trade.status === 'awaiting_payment'
+    // Gate on the "buyer pays fiat now" ACTION, not a raw status — in taker-first
+    // the buyer pays at 'seller_transferring', not 'awaiting_payment', so a
+    // status check would hide the pay-account picker and deadlock the payment.
+    const needsSelection = isMultiAccount && !isAccountLocked && isBuyerView && isAction('send_fiat')
+    const waitingForSelection = isMultiAccount && !isAccountLocked && !isBuyerView && isAction('send_fiat')
     if (needsSelection) {
       return (
         <div>
@@ -785,33 +817,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const completedCounterparty = isBuyer
     ? (trade.seller.fullName || trade.seller.username)
     : (trade.buyer.fullName || trade.buyer.username)
-
-  // ── Flow-aware step model (single source of truth for BOTH flows) ───────────
-  // Mirrors the USDT room. The settlement resolver decides who does what next in
-  // the classic (fiat-first) and taker-first (crypto-first) flows; card ORDER,
-  // active-state, and the action shown all derive from it — one coherent ladder
-  // instead of a separate "Step N of 6" banner disagreeing with the cards below.
-  const takerFirst = !!trade.takerFirst
-  const flowStep = ctmCurrentStep(takerFirst, trade.status)
-  const myRole: CtmFlowActor = isBuyer ? 'buyer' : 'seller'
-  const myTurn = !!flowStep && flowStep.actor === myRole
-  const isAction = (a: CtmFlowAction) => !!flowStep && flowStep.action === a
-  const order = ctmFlowOrder(takerFirst)
-  // `stepIndex` (ladder position of the current status) and `order.indexOf(action)`
-  // share one coordinate system, so a card's state follows from how far we've come.
-  const legState = (actions: CtmFlowAction[]): StepState => {
-    const idxs = actions.map((a) => order.indexOf(a))
-    const start = Math.min(...idxs)
-    const end = Math.max(...idxs)
-    if (stepIndex > end) return 'completed'
-    if (stepIndex >= start) return 'active'
-    return 'future'
-  }
-  // Display order / step numbers: crypto leg leads in taker-first, fiat leg leads
-  // in classic; Complete is always last.
-  const legPos = takerFirst
-    ? { crypto: 1, fiat: 2, fiat_confirm: 3, complete: 4 }
-    : { fiat: 1, fiat_confirm: 2, crypto: 3, complete: 4 }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
