@@ -1052,7 +1052,7 @@ export default function TradePage() {
                       <p className="text-xs font-semibold text-text-primary">You&apos;ll pay from</p>
                       {accounts.map((acc, i) => (
                         <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2">
-                          <PayToRow label="Method" value={acc.label} />
+                          <PayToRow label="Method" value={acc.bankName || acc.ibanNumber ? 'Bank Transfer' : acc.label} />
                           <PayToRow label="Account name" value={acc.accountName} />
                           {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
                           {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
@@ -1073,7 +1073,7 @@ export default function TradePage() {
                       <p className="text-xs font-semibold text-text-primary">Buyer will pay from</p>
                       {accounts.map((acc, i) => (
                         <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2">
-                          <PayToRow label="Method" value={acc.label} />
+                          <PayToRow label="Method" value={acc.bankName || acc.ibanNumber ? 'Bank Transfer' : acc.label} />
                           <PayToRow label="Account name" value={acc.accountName} />
                           {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
                           {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}

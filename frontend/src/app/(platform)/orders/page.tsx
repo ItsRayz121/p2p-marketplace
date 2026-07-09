@@ -213,7 +213,7 @@ export default function OrdersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-text-primary text-right font-mono">
-                        {parseFloat(t.amount).toFixed(4)} {t.coin}
+                        {parseFloat(t.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {t.coin}
                       </td>
                       <td className="px-4 py-3 text-sm font-semibold text-text-primary text-right">
                         {getPkrDisplay(t)}
@@ -248,7 +248,7 @@ export default function OrdersPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-text-primary">
-                          {parseFloat(t.amount).toFixed(4)} {t.coin}
+                          {parseFloat(t.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {t.coin}
                         </p>
                         <p className="text-xs text-text-muted">{getPkrDisplay(t)}</p>
                         <p className="text-xs text-text-muted mt-1">{timeAgo(t.createdAt)}</p>

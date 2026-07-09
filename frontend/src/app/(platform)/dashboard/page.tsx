@@ -369,7 +369,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-medium text-text-primary whitespace-nowrap">{parseFloat(t.amount).toFixed(4)} {t.coin}</p>
+                    <p className="text-sm font-medium text-text-primary whitespace-nowrap">{parseFloat(t.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {t.coin}</p>
                     <p className="text-xs text-text-muted">{timeAgo(t.createdAt)}</p>
                   </div>
                 </Link>
