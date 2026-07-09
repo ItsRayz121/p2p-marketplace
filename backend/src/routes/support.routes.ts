@@ -88,7 +88,9 @@ function validateRefundAddress(network: string, address: string): boolean {
   const addr = address.trim()
   if (net === 'TRC20') return /^T[A-Za-z1-9]{33}$/.test(addr)
   if (net === 'BEP20' || net === 'ERC20') return /^0x[0-9a-fA-F]{40}$/.test(addr)
-  if (net === 'APTOS') return /^0x[0-9a-fA-F]{1,64}$/.test(addr)
+  // Match the refund engine's validateAptosAddress exactly (full 64-hex, 0x-prefixed)
+  // so an address the user submits can't later be rejected by the admin refund route.
+  if (net === 'APTOS') return /^0x[0-9a-fA-F]{64}$/.test(addr)
   return false
 }
 
@@ -266,13 +268,18 @@ export async function supportRoutes(app: FastifyInstance) {
     }
     const orderRef = (request.metadata as { orderRef?: string } | null)?.orderRef ?? null
 
-    // Idempotent: if an answer to this request already exists, don't post a second.
-    const existing = await db.supportMessage.findFirst({
+    // Idempotent: if an answer to THIS request already exists (any of them), return
+    // it instead of posting a duplicate. Scan all responses in the (small) thread so
+    // it's correct even when several refund_requests have been answered.
+    const priorResponses = await db.supportMessage.findMany({
       where: { conversationId: request.conversation.id, kind: 'refund_response' },
       orderBy: { createdAt: 'desc' },
     })
-    if (existing && (existing.metadata as { requestId?: string } | null)?.requestId === requestId) {
-      return reply.send({ success: true, data: serializeMessage(existing) })
+    const already = priorResponses.find(
+      (m) => (m.metadata as { requestId?: string } | null)?.requestId === requestId,
+    )
+    if (already) {
+      return reply.send({ success: true, data: serializeMessage(already) })
     }
 
     const message = await db.supportMessage.create({

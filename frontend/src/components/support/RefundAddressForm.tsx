@@ -10,7 +10,8 @@ function looksValid(network: RefundNetwork, address: string): boolean {
   const a = address.trim()
   if (network === 'TRC20') return /^T[A-Za-z1-9]{33}$/.test(a)
   if (network === 'BEP20' || network === 'ERC20') return /^0x[0-9a-fA-F]{40}$/.test(a)
-  if (network === 'APTOS') return /^0x[0-9a-fA-F]{1,64}$/.test(a)
+  // Full 64-hex Aptos address — matches what the refund engine will accept.
+  if (network === 'APTOS') return /^0x[0-9a-fA-F]{64}$/.test(a)
   return false
 }
 
