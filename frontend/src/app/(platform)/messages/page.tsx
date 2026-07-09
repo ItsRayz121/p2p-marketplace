@@ -9,7 +9,6 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { fmtDateTime } from '@/lib/fmt'
-import { openSupportChat } from '@/lib/supportChat'
 import { MessageSquare, BadgeCheck, Headphones } from 'lucide-react'
 
 export default function MessagesInboxPage() {
@@ -48,9 +47,10 @@ export default function MessagesInboxPage() {
         Your conversations with people you&apos;ve traded with. Each person keeps one thread across all your trades.
       </p>
 
-      {/* Official RupChain channel — always pinned at the top, opens live support */}
-      <button
-        onClick={() => openSupportChat()}
+      {/* Official RupChain channel — pinned at the top; opens the full-page support
+          thread so it behaves like the trader threads below (not a floating popup). */}
+      <Link
+        href="/messages/support"
         className="w-full flex items-center gap-3 p-3 mb-2 rounded-lg bg-primary/5 border border-primary/30 hover:border-primary/50 transition-colors text-left"
       >
         <span className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
@@ -63,7 +63,7 @@ export default function MessagesInboxPage() {
           </div>
           <p className="text-xs text-text-muted truncate mt-0.5">Support &amp; account help — tap to chat with our team.</p>
         </div>
-      </button>
+      </Link>
 
       {items.length === 0 ? (
         <EmptyState

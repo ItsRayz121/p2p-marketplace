@@ -7,7 +7,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ReferralLinks } from '@/components/referral/ReferralLinks'
-import { ReferralEarnings } from '@/components/referral/ReferralEarnings'
+import { ReferralEarnings, ReferralEarningsSummary } from '@/components/referral/ReferralEarnings'
 import { CommunityGiveaways } from '@/components/referral/CommunityGiveaways'
 import { SocialProfilesManager } from '@/components/referral/SocialProfilesManager'
 import { ChevronDown, Users, Send, Globe } from 'lucide-react'
@@ -47,6 +47,7 @@ function ReferralPageInner() {
   const [error, setError] = useState('')
   const [showReferrals, setShowReferrals] = useState(false)
   const [showHowItWorks, setShowHowItWorks] = useState(false)
+  const [showRewards, setShowRewards] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -90,23 +91,8 @@ function ReferralPageInner() {
         <p className="text-sm text-text-muted">Invite friends to RupChain and earn on every gas top-up they make.</p>
       </div>
 
-      {/* Active rewards banner — the live 5% / 5% program */}
-      <div className="bg-gradient-to-r from-primary/5 to-pink-500/5 border border-primary/20 rounded-xl p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-bold text-text-primary">Referral rewards</h2>
-          <Badge variant="success" size="sm">Active</Badge>
-        </div>
-        <p className="text-sm text-text-muted">
-          Earn <strong>5% of the platform gas fee</strong> from everyone you refer — paid into your USDT balance —
-          and your friend gets <strong>5% off</strong> their gas fee automatically. Paid from our fee, never extra cost to anyone.
-        </p>
-        <div className="text-xs text-text-muted space-y-1 bg-surface rounded-lg border border-border px-3 py-2">
-          <p>• Share your code or link below — or create named custom links.</p>
-          <p>• Earnings accrue automatically once your referrals&apos; gas orders are delivered.</p>
-          <p>• Withdraw to your USDT balance after a short fraud-hold window.</p>
-          <p>• Want a bigger cut? Apply to become an affiliate for up to 20–30%.</p>
-        </div>
-      </div>
+      {/* At-a-glance earnings snapshot (4 stat boxes) + collapsible Withdraw — pinned to the top */}
+      <ReferralEarningsSummary />
 
       {/* Referral Code Card */}
       <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-6 text-white">
@@ -192,6 +178,35 @@ function ReferralPageInner() {
               ))}
             </div>
           )
+        )}
+      </section>
+
+      {/* Referral rewards — the live 5% / 5% program explainer (collapsible, moved to the bottom) */}
+      <section className="bg-surface border border-border rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowRewards((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-alt transition-colors"
+          aria-expanded={showRewards}
+        >
+          <span className="flex items-center gap-2 text-base font-semibold text-text-primary">
+            Referral rewards
+            <Badge variant="success" size="sm">Active</Badge>
+          </span>
+          <ChevronDown size={18} className={`text-text-muted transition-transform ${showRewards ? 'rotate-180' : ''}`} />
+        </button>
+        {showRewards && (
+          <div className="px-5 pb-5 pt-1 space-y-3 border-t border-border">
+            <p className="text-sm text-text-muted">
+              Earn <strong>5% of the platform gas fee</strong> from everyone you refer — paid into your USDT balance —
+              and your friend gets <strong>5% off</strong> their gas fee automatically. Paid from our fee, never extra cost to anyone.
+            </p>
+            <div className="text-xs text-text-muted space-y-1 bg-surface-alt rounded-lg border border-border px-3 py-2">
+              <p>• Share your code or link above — or create named custom links.</p>
+              <p>• Earnings accrue automatically once your referrals&apos; gas orders are delivered.</p>
+              <p>• Withdraw to your USDT balance after a short fraud-hold window.</p>
+              <p>• Want a bigger cut? Apply to become an affiliate for up to 20–30%.</p>
+            </div>
+          </div>
         )}
       </section>
 

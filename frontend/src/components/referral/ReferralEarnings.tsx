@@ -35,7 +35,6 @@ export function ReferralEarnings() {
   const [data, setData] = useState<AffiliateOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [withdrawing, setWithdrawing] = useState(false)
   const [applyCode, setApplyCode] = useState('')
   const [applying, setApplying] = useState(false)
   const [socials, setSocials] = useState<Record<string, string>>({})
@@ -93,16 +92,6 @@ export function ReferralEarnings() {
   }, [data?.links, load])
 
   useEffect(() => { void load() }, [load])
-
-  const handleWithdraw = async () => {
-    setWithdrawing(true)
-    try {
-      const r = await gasApi.withdrawReferral()
-      toast.success(`Withdrew $${r.withdrawnUsdt.toFixed(2)} to your USDT balance`)
-      await load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Withdrawal failed') }
-    finally { setWithdrawing(false) }
-  }
 
   const handleApply = async () => {
     if (!applyCode.trim()) return
@@ -209,36 +198,8 @@ export function ReferralEarnings() {
   // Nothing is live if neither the affiliate program nor the underlying referral earnings are on.
   if (!data.enabled && !sum.enabled) return null
 
-  const canWithdraw = sum.kycOk && sum.withdrawableUsdt > 0 && sum.withdrawableUsdt >= sum.minWithdrawUsdt
-
   return (
     <div className="space-y-6">
-      {/* Live referral earnings — single source of truth (USDT) */}
-      {sum.enabled && (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Stat label="People referred" value={String(sum.referredCount)} />
-            <Stat label="Total earned" value={`$${sum.totalAccruedUsdt.toFixed(2)}`} />
-            <Stat label="Available now" value={`$${sum.withdrawableUsdt.toFixed(2)}`} accent />
-            <Stat label="Withdrawn" value={`$${sum.withdrawnUsdt.toFixed(2)}`} />
-          </div>
-
-          <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
-            <h3 className="text-sm font-bold text-text-primary">Withdraw earnings</h3>
-            {sum.availableUsdt > sum.withdrawableUsdt && (
-              <p className="text-xs text-text-muted">${(sum.availableUsdt - sum.withdrawableUsdt).toFixed(2)} is still in the fraud-hold window and will become withdrawable shortly.</p>
-            )}
-            {!sum.kycOk && <p className="text-xs text-amber-600 dark:text-amber-400">Complete identity verification (KYC) to withdraw your earnings.</p>}
-            {sum.kycOk && sum.withdrawableUsdt < sum.minWithdrawUsdt && (
-              <p className="text-xs text-text-muted">Minimum withdrawal is ${sum.minWithdrawUsdt.toFixed(2)}. Keep referring to reach it.</p>
-            )}
-            <Button onClick={handleWithdraw} disabled={!canWithdraw || withdrawing}>
-              {withdrawing ? <Spinner size="sm" /> : `Withdraw $${sum.withdrawableUsdt.toFixed(2)} to USDT balance`}
-            </Button>
-          </div>
-        </>
-      )}
-
       {/* Custom referral links — approved affiliates only. The whole card collapses
           under its header (closed by default) via the card-level chevron. */}
       {data.enabled && caps && (
@@ -484,6 +445,90 @@ export function ReferralEarnings() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Top-of-page earnings snapshot: the four at-a-glance stat boxes plus a collapsible
+ * Withdraw panel. Split out of ReferralEarnings so it can sit at the very top of the
+ * /referral page, above the referral-code card. Fetches its own overview and reloads
+ * after a withdrawal so the numbers stay in sync.
+ */
+export function ReferralEarningsSummary() {
+  const [sum, setSum] = useState<AffiliateOverview['earnings'] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [showWithdraw, setShowWithdraw] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const fresh = await gasApi.getAffiliateOverview()
+      setSum(fresh.earnings)
+      // Auto-open the withdraw panel when there's an actionable balance; otherwise leave it tucked away.
+      const e = fresh.earnings
+      if (e.kycOk && e.withdrawableUsdt > 0 && e.withdrawableUsdt >= e.minWithdrawUsdt) setShowWithdraw(true)
+    } catch { /* the tools section below surfaces load errors; the snapshot just hides */ }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  const handleWithdraw = async () => {
+    setWithdrawing(true)
+    try {
+      const r = await gasApi.withdrawReferral()
+      toast.success(`Withdrew $${r.withdrawnUsdt.toFixed(2)} to your USDT balance`)
+      await load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Withdrawal failed') }
+    finally { setWithdrawing(false) }
+  }
+
+  if (loading || !sum || !sum.enabled) return null
+  const canWithdraw = sum.kycOk && sum.withdrawableUsdt > 0 && sum.withdrawableUsdt >= sum.minWithdrawUsdt
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Stat label="People referred" value={String(sum.referredCount)} />
+        <Stat label="Total earned" value={`$${sum.totalAccruedUsdt.toFixed(2)}`} />
+        <Stat label="Available now" value={`$${sum.withdrawableUsdt.toFixed(2)}`} accent />
+        <Stat label="Withdrawn" value={`$${sum.withdrawnUsdt.toFixed(2)}`} />
+      </div>
+
+      {/* Withdraw earnings — collapsible; a "ready" chip surfaces a withdrawable balance while collapsed. */}
+      <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowWithdraw((v) => !v)}
+          aria-expanded={showWithdraw}
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-alt transition-colors"
+        >
+          <span className="flex items-center gap-2 text-sm font-bold text-text-primary">
+            Withdraw earnings
+            {sum.withdrawableUsdt > 0 && (
+              <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-success">
+                ${sum.withdrawableUsdt.toFixed(2)} ready
+              </span>
+            )}
+          </span>
+          <ChevronDown size={18} className={`text-text-muted transition-transform ${showWithdraw ? 'rotate-180' : ''}`} />
+        </button>
+        {showWithdraw && (
+          <div className="px-5 pb-5 pt-1 space-y-3 border-t border-border">
+            {sum.availableUsdt > sum.withdrawableUsdt && (
+              <p className="text-xs text-text-muted">${(sum.availableUsdt - sum.withdrawableUsdt).toFixed(2)} is still in the fraud-hold window and will become withdrawable shortly.</p>
+            )}
+            {!sum.kycOk && <p className="text-xs text-amber-600 dark:text-amber-400">Complete identity verification (KYC) to withdraw your earnings.</p>}
+            {sum.kycOk && sum.withdrawableUsdt < sum.minWithdrawUsdt && (
+              <p className="text-xs text-text-muted">Minimum withdrawal is ${sum.minWithdrawUsdt.toFixed(2)}. Keep referring to reach it.</p>
+            )}
+            <Button onClick={handleWithdraw} disabled={!canWithdraw || withdrawing}>
+              {withdrawing ? <Spinner size="sm" /> : `Withdraw $${sum.withdrawableUsdt.toFixed(2)} to USDT balance`}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
