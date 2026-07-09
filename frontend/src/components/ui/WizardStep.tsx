@@ -1,5 +1,7 @@
 'use client'
 import { ChevronDown } from 'lucide-react'
+import { EntityLogo } from '@/components/ui/EntityLogo'
+import type { EntityType } from '@/lib/logoRegistry'
 
 /**
  * Collapsible step header for the Start-Trade wizards (USDT marketplace + CTM).
@@ -7,8 +9,11 @@ import { ChevronDown } from 'lucide-react'
  * Keep it OUTSIDE the page component so inputs inside a step body are not
  * remounted every render (which would drop focus while typing).
  */
-export function WizardStepHeader({ n, title, subtitle, done, open, onClick }: {
-  n: number; title: string; subtitle?: string; done: boolean; open: boolean; onClick: () => void
+export function WizardStepHeader({ n, title, subtitle, subtitleLogo, done, open, onClick }: {
+  n: number; title: string; subtitle?: string
+  /** Optional payment-method / bank logo rendered inline before the subtitle. */
+  subtitleLogo?: { type: EntityType; slug: string }
+  done: boolean; open: boolean; onClick: () => void
 }) {
   return (
     <button type="button" onClick={onClick}
@@ -18,7 +23,12 @@ export function WizardStepHeader({ n, title, subtitle, done, open, onClick }: {
       </span>
       <span className="flex-1 min-w-0">
         <span className="block text-sm font-semibold text-text-primary">{title}</span>
-        {subtitle && <span className="block text-xs text-text-muted truncate">{subtitle}</span>}
+        {subtitle && (
+          <span className="flex items-center gap-1.5 text-xs text-text-muted min-w-0">
+            {subtitleLogo && <EntityLogo type={subtitleLogo.type} slug={subtitleLogo.slug} size="xs" className="flex-shrink-0" />}
+            <span className="truncate">{subtitle}</span>
+          </span>
+        )}
       </span>
       <ChevronDown size={18} className={`flex-shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>

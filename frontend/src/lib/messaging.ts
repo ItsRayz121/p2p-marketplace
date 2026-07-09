@@ -47,6 +47,8 @@ export interface TradeEpisode {
   endedAt: string | null
   /** Live trade status — present only for ACTIVE episodes (drives the thread progress bar). */
   status?: string | null
+  /** Whether the viewer already rated this (completed) trade — hides the rate prompt. */
+  ratedByMe?: boolean
 }
 
 /**

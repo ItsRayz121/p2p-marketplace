@@ -35,6 +35,22 @@ export default function MessageThreadPage() {
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // Locally-dismissed rate prompts — once the user taps "Rate", the prompt
+  // disappears for good (persisted so it stays gone across reloads/polls), even
+  // if they don't actually leave a rating. Keyed by episode id.
+  const [dismissedRates, setDismissedRates] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem('rc_rate_prompt_dismissed') || '[]') as string[]) } catch { return new Set() }
+  })
+  const dismissRate = useCallback((epId: string) => {
+    setDismissedRates((prev) => {
+      if (prev.has(epId)) return prev
+      const next = new Set(prev).add(epId)
+      try { localStorage.setItem('rc_rate_prompt_dismissed', JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
   const load = useCallback(async () => {
     try {
       setData(await messagingApi.getThread(threadId))
@@ -80,10 +96,10 @@ export default function MessageThreadPage() {
   const rateableEpisode = useMemo<TradeEpisode | null>(() => {
     if (!data) return null
     const done = data.episodes
-      .filter((e) => e.outcome === 'completed' && e.endedAt && Date.now() - new Date(e.endedAt).getTime() < RATING_WINDOW_MS)
+      .filter((e) => e.outcome === 'completed' && !e.ratedByMe && !dismissedRates.has(e.id) && e.endedAt && Date.now() - new Date(e.endedAt).getTime() < RATING_WINDOW_MS)
       .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())
     return done[0] ?? null
-  }, [data, RATING_WINDOW_MS])
+  }, [data, RATING_WINDOW_MS, dismissedRates])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -177,6 +193,7 @@ export default function MessageThreadPage() {
       {rateableEpisode && (
         <Link
           href={episodeTradeHref(rateableEpisode)}
+          onClick={() => dismissRate(rateableEpisode.id)}
           className="mx-4 mt-3 flex items-center gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 hover:border-amber-500/60 transition-colors"
         >
           <span className="text-base leading-none">⭐</span>

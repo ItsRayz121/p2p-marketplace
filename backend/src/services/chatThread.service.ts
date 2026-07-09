@@ -258,6 +258,17 @@ export async function getThread(userId: string, threadId: string) {
   const statusByTrade = new Map<string, string>()
   for (const t of [...uStatuses, ...cStatuses]) statusByTrade.set(t.id, t.status)
 
+  // Whether THIS viewer has already rated each completed trade — lets the inbox
+  // hide the "Rate this trade" prompt once a rating is in (H2). Only completed
+  // episodes can be rated, so we scope the lookup to them.
+  const completedUsdtIds = thread.episodes.filter((e) => e.market === 'usdt' && e.outcome === 'completed').map((e) => e.tradeId)
+  const completedCtmIds = thread.episodes.filter((e) => e.market === 'ctm' && e.outcome === 'completed').map((e) => e.tradeId)
+  const [uRatings, cRatings] = await Promise.all([
+    completedUsdtIds.length ? db.tradeRating.findMany({ where: { tradeId: { in: completedUsdtIds }, ratedByUserId: userId }, select: { tradeId: true } }) : Promise.resolve([]),
+    completedCtmIds.length ? db.ctmTradeRating.findMany({ where: { tradeId: { in: completedCtmIds }, ratedByUserId: userId }, select: { tradeId: true } }) : Promise.resolve([]),
+  ])
+  const ratedByMe = new Set<string>([...uRatings, ...cRatings].map((r) => r.tradeId))
+
   const other = isA ? thread.userB : thread.userA
   return {
     threadId: thread.id,
@@ -267,6 +278,7 @@ export async function getThread(userId: string, threadId: string) {
       ...e,
       fiatAmount: e.fiatAmount ? e.fiatAmount.toString() : null,
       status: e.outcome === 'active' ? (statusByTrade.get(e.tradeId) ?? null) : null,
+      ratedByMe: e.outcome === 'completed' ? ratedByMe.has(e.tradeId) : false,
     })),
     messages,
   }

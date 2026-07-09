@@ -849,14 +849,23 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
             )}
 
             {/* ── STEP 2 — Payment method ── */}
-            <WizardStepHeader
-              n={2}
-              title={isSellAd ? "How you'll pay" : "How you'll receive payment"}
-              subtitle={instantPaymentMethod ? (tradePaymentMethods.find((m) => m.id === instantPaymentMethod)?.label ?? 'Selected') : 'Choose a payment account'}
-              done={iwStep2Done}
-              open={iwStep === 2}
-              onClick={() => iwStep1Done && setIwStep(2)}
-            />
+            {(() => {
+              const sel = tradePaymentMethods.find((m) => m.id === instantPaymentMethod)
+              const logo = sel
+                ? { type: (MOBILE_TYPES.includes(sel.type) ? 'payment_method' : 'bank') as 'payment_method' | 'bank', slug: sel.label }
+                : undefined
+              return (
+                <WizardStepHeader
+                  n={2}
+                  title={isSellAd ? "How you'll pay" : "How you'll receive payment"}
+                  subtitle={sel ? sel.label : 'Choose a payment account'}
+                  {...(logo ? { subtitleLogo: logo } : {})}
+                  done={iwStep2Done}
+                  open={iwStep === 2}
+                  onClick={() => iwStep1Done && setIwStep(2)}
+                />
+              )
+            })()}
             {iwStep === 2 && (
             <div className="space-y-3">
             {/* Payment method */}

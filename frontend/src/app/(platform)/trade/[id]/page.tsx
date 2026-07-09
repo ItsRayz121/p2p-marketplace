@@ -23,7 +23,6 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { CopyButton } from '@/components/ui/CopyButton'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { getTradeStatus } from '@/lib/tradeStatus'
 import { currentStep as flowCurrentStep, flowOrder, disputeLock } from '@/lib/settlementFlow'
 import type { FlowAction, FlowActor } from '@/lib/settlementFlow'
@@ -1012,76 +1011,87 @@ export default function TradePage() {
                 expanded={expandedSteps.has(legPos.fiat)}
                 onToggle={() => toggleStep(legPos.fiat)}
               >
+                {/* Order summary — mirrors the CTM room: amount / price / method,
+                    then the highlighted Total PKR set off by a divider. "Pay via"
+                    no longer floats up here; the method rail now lives inside the
+                    Seller Receiving Account block below (with its logo). */}
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
                   <DetailRow label="Amount" value={`${parseFloat(trade.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.coin}`} />
                   <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
-                  <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} highlight />
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">Pay via</span>
-                    <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
-                      <EntityLogo type={PK_MOBILE_METHODS.includes(pmLabel) ? 'payment_method' : 'bank'} slug={pmLabel} size="xs" className="flex-shrink-0" />
-                      {pmLabel}
-                    </span>
+                  <DetailRow label="Payment method" value={pmLabel} />
+                  <div className="border-t border-border pt-2 mt-1">
+                    <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} highlight />
                   </div>
                 </div>
+                {/* 🟠 Seller Receiving Account — the rail the PKR is sent to, with a
+                    Method row that carries the payment-method logo (parity with CTM). */}
                 {sellerAccount && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-text-primary">
-                      {isUserBuyer ? 'Send your PKR payment to' : 'Your receiving account'}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+                      <p className="text-sm font-semibold text-text-primary">{isUserBuyer ? 'Seller Receiving Account' : 'Your Receiving Account'}</p>
+                    </div>
+                    <p className="text-xs text-text-muted mb-2">
+                      {isUserBuyer
+                        ? `Send PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} to this account.`
+                        : 'The buyer will send your PKR payment to this account.'}
                     </p>
-                    <PayToRow label="Account name" value={sellerAccount.accountName} />
-                    {sellerAccount.mobileNumber && <PayToRow label="Payment number" value={sellerAccount.mobileNumber} copy />}
-                    {sellerAccount.accountNumber && <PayToRow label="Account number" value={sellerAccount.accountNumber} copy />}
-                    {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
-                    {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
+                    <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-text-muted flex-shrink-0">Method</span>
+                        <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                          <EntityLogo type={sellerAccount.bankName || sellerAccount.ibanNumber ? 'bank' : 'payment_method'} slug={sellerAccount.label || pmLabel} size="xs" className="flex-shrink-0" />
+                          {sellerAccount.bankName || sellerAccount.ibanNumber ? 'Bank Transfer' : (sellerAccount.label || pmLabel)}
+                        </span>
+                      </div>
+                      <PayToRow label="Account name" value={sellerAccount.accountName} />
+                      {sellerAccount.mobileNumber && <PayToRow label="Payment number" value={sellerAccount.mobileNumber} copy />}
+                      {sellerAccount.accountNumber && <PayToRow label="Account number" value={sellerAccount.accountNumber} copy />}
+                      {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
+                      {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
+                    </div>
                     {myTurn && isAction('send_fiat') && (
-                      <p className="text-xs text-text-muted leading-snug pt-1">
+                      <p className="text-xs text-text-muted leading-snug pt-2">
                         Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof.
                       </p>
                     )}
                   </div>
                 )}
-                {/* Buyer view: the account the buyer committed to pay FROM — mirrors
-                    the seller's "Buyer will pay from" block so both sides see the same
-                    pay-from account, not just the seller. */}
-                {isUserBuyer && trade.buyerPaymentSnapshot && (() => {
+                {/* 🔵 Sending Account — the account the PKR is (or will be) paid FROM.
+                    One block for both sides (buyer sees "Your", seller sees "Buyer's"),
+                    each account carrying its Method-with-logo row. */}
+                {trade.buyerPaymentSnapshot && (() => {
                   const b = trade.buyerPaymentSnapshot!
                   const accounts = b.accounts && b.accounts.length > 0 ? b.accounts : [b]
                   return (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-text-primary">You&apos;ll pay from</p>
-                      {accounts.map((acc, i) => (
-                        <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2">
-                          <PayToRow label="Method" value={acc.bankName || acc.ibanNumber ? 'Bank Transfer' : acc.label} />
-                          <PayToRow label="Account name" value={acc.accountName} />
-                          {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
-                          {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
-                          {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
-                          {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
-                        </div>
-                      ))}
-                      <p className="text-xs text-text-muted leading-snug">Send the PKR from {accounts.length > 1 ? 'one of these accounts' : 'this account'} so the seller can match your payment.</p>
-                    </div>
-                  )
-                })()}
-                {/* Seller view: where the buyer's PKR payment will come from (buy ads) */}
-                {!isUserBuyer && trade.buyerPaymentSnapshot && (() => {
-                  const b = trade.buyerPaymentSnapshot!
-                  const accounts = b.accounts && b.accounts.length > 0 ? b.accounts : [b]
-                  return (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-text-primary">Buyer will pay from</p>
-                      {accounts.map((acc, i) => (
-                        <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2">
-                          <PayToRow label="Method" value={acc.bankName || acc.ibanNumber ? 'Bank Transfer' : acc.label} />
-                          <PayToRow label="Account name" value={acc.accountName} />
-                          {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
-                          {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
-                          {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
-                          {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
-                        </div>
-                      ))}
-                      <p className="text-xs text-text-muted leading-snug">The buyer indicated they'll pay from {accounts.length > 1 ? 'one of these accounts' : 'this account'}. Match it against your incoming payment.</p>
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                        <p className="text-sm font-semibold text-text-primary">{isUserBuyer ? 'Your Sending Account' : "Buyer's Sending Account"}</p>
+                      </div>
+                      <p className="text-xs text-text-muted mb-2">
+                        {isUserBuyer
+                          ? `You will send payment from ${accounts.length > 1 ? 'one of these accounts' : 'this account'}, so the seller can match it.`
+                          : `The buyer will pay from ${accounts.length > 1 ? 'one of these accounts' : 'this account'} — match it against your incoming payment.`}
+                      </p>
+                      <div className="space-y-2">
+                        {accounts.map((acc, i) => (
+                          <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-text-muted flex-shrink-0">Method</span>
+                              <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                                <EntityLogo type={acc.bankName || acc.ibanNumber ? 'bank' : 'payment_method'} slug={acc.label} size="xs" className="flex-shrink-0" />
+                                {acc.bankName || acc.ibanNumber ? 'Bank Transfer' : acc.label}
+                              </span>
+                            </div>
+                            <PayToRow label="Account name" value={acc.accountName} />
+                            {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
+                            {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
+                            {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
+                            {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )
                 })()}

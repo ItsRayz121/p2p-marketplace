@@ -880,7 +880,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {!isMine && listing.status === 'active' && (!myActiveBid || (myActiveBid.status === 'accepted_pending_buyer' && new Date(myActiveBid.expiresAt).getTime() <= nowTs)) && (
         <div className="flex gap-3">
           <button
-            onClick={() => { setShowModal(true); setWizStep(1); setRail(hasPkr ? 'pkr' : 'usdt'); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setUsdtMethod(''); setUsdtKind(null); setUsdtAddress(''); setTokenAmount(''); setError('') }}
+            onClick={() => { setShowModal(true); setWizStep(1); setRail(hasPkr ? 'pkr' : 'usdt'); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds([]); setUsdtMethod(''); setUsdtKind(null); setUsdtAddress(''); setTokenAmount(''); setError('') }}
             className={`flex-1 py-3.5 rounded-xl font-bold text-white transition-colors inline-flex items-center justify-center gap-1.5 ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
           >
             {listing.side === 'sell' ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}
@@ -1000,16 +1000,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <span className="font-medium text-text-primary">{tokenAmt > 0 ? tokenAmt.toLocaleString(undefined, { maximumFractionDigits: 3 }) : '—'} {listing.token.symbol}</span>
                   </div>
                   <div className="flex justify-between border-t border-border pt-2 font-semibold">
-                    <span className="text-text-muted">{isBuyListing ? 'Total you will receive' : 'Total payable'}</span>
+                    <span className="text-text-muted">{isBuyListing ? 'Total you will receive (PKR)' : 'Total payable'}</span>
                     <span className="text-text-primary">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                   {/* USDT equivalent — always shown so someone who thinks in USDT
-                      can read the value even on the PKR rail. On the USDT rail it's
-                      the amount they'll pay (locked at trade start); on PKR it's a
-                      reference estimate (≈) from the platform USDT rate. */}
+                      can read the value even on the PKR rail. On a BUY listing it
+                      parallels the PKR line ("Total you will receive (USDT)"); on a
+                      SELL/USDT rail it's the amount payable / a ≈ reference estimate. */}
                   {usdtPerToken !== null && tokenAmt > 0 && (
                     <div className="flex justify-between text-primary font-semibold">
-                      <span>{rail === 'usdt' ? 'In USDT' : '≈ In USDT'}</span>
+                      <span>{isBuyListing ? 'Total you will receive (USDT)' : (rail === 'usdt' ? 'In USDT' : '≈ In USDT')}</span>
                       <span>{rail === 'usdt' ? '' : '≈ '}{(tokenAmt * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} USDT</span>
                     </div>
                   )}
@@ -1386,14 +1386,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <span className="font-medium text-text-primary">{amount.toLocaleString(undefined, { maximumFractionDigits: 3 })} {listing.token.symbol}</span>
                   </div>
                   <div className="flex justify-between border-t border-border pt-2 font-semibold">
-                    <span className="text-text-muted">{isBuyListing ? 'Total you will receive' : 'Total payable'}</span>
+                    <span className="text-text-muted">{isBuyListing ? 'Total you will receive (PKR)' : 'Total payable'}</span>
                     <span className="text-text-primary">PKR {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                   {/* USDT equivalent (reference, from the platform USDT rate) so a
                       bidder who thinks in USDT can read the value too. */}
                   {usdtPerToken !== null && amount > 0 && (
                     <div className="flex justify-between text-primary font-semibold">
-                      <span>≈ In USDT</span>
+                      <span>{isBuyListing ? 'Total you will receive (USDT)' : '≈ In USDT'}</span>
                       <span>≈ {(amount * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} USDT</span>
                     </div>
                   )}
