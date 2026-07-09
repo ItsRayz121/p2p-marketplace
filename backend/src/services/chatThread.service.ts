@@ -246,12 +246,28 @@ export async function getThread(userId: string, threadId: string) {
     ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, isSystem: m.isSystem, createdAt: m.createdAt })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
 
+  // Live status for ACTIVE episodes so the thread can show a progress bar (H1).
+  // The episode's own `outcome` stays 'active' the whole time, so we join to the
+  // real trade for its granular status. Bounded — usually 0–1 active per thread.
+  const activeUsdtIds = thread.episodes.filter((e) => e.market === 'usdt' && e.outcome === 'active').map((e) => e.tradeId)
+  const activeCtmIds = thread.episodes.filter((e) => e.market === 'ctm' && e.outcome === 'active').map((e) => e.tradeId)
+  const [uStatuses, cStatuses] = await Promise.all([
+    activeUsdtIds.length ? db.trade.findMany({ where: { id: { in: activeUsdtIds } }, select: { id: true, status: true } }) : Promise.resolve([]),
+    activeCtmIds.length ? db.ctmTrade.findMany({ where: { id: { in: activeCtmIds } }, select: { id: true, status: true } }) : Promise.resolve([]),
+  ])
+  const statusByTrade = new Map<string, string>()
+  for (const t of [...uStatuses, ...cStatuses]) statusByTrade.set(t.id, t.status)
+
   const other = isA ? thread.userB : thread.userA
   return {
     threadId: thread.id,
     other,
     stats,
-    episodes: thread.episodes.map((e) => ({ ...e, fiatAmount: e.fiatAmount ? e.fiatAmount.toString() : null })),
+    episodes: thread.episodes.map((e) => ({
+      ...e,
+      fiatAmount: e.fiatAmount ? e.fiatAmount.toString() : null,
+      status: e.outcome === 'active' ? (statusByTrade.get(e.tradeId) ?? null) : null,
+    })),
     messages,
   }
 }

@@ -13,7 +13,8 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { useAuth } from '@/hooks/useAuth'
 import { PK_MOBILE_METHODS } from '@/lib/pkPaymentMethods'
 import { CTM_USDT_METHOD_KINDS, ctmUsdtMethod, ctmUsdtMethodKind, ctmUsdtMethodLabel, ctmUsdtMethodLogo, type UsdtMethodKind } from '@/lib/ctmUsdtMethods'
-import { Star } from 'lucide-react'
+import { Star, Plus, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { WizardStepHeader } from '@/components/ui/WizardStep'
 
 const TIER_COLORS: Record<string, string> = { new: 'bg-surface-alt text-text-secondary', basic: 'bg-blue-500/15 text-blue-700 dark:text-blue-300', verified: 'bg-green-500/15 text-green-700 dark:text-green-300', elite: 'bg-primary/10 text-primary' }
 
@@ -25,7 +26,7 @@ const METHOD_LABELS: Record<string, string> = {
   bank_transfer: 'Bank Transfer',
 }
 
-interface ResolvedPaymentMethod { id: string; type: string; label: string }
+interface ResolvedPaymentMethod { id: string; type: string; label: string; ref?: string; accountName?: string }
 
 interface SavedPaymentMethod {
   id: string
@@ -121,6 +122,17 @@ function buyerAddressPlaceholder(tokenDeliveryType: string | undefined, tokenSym
   return addressExample ? `e.g. ${addressExample}` : 'Your receiving address'
 }
 
+/** "+ Add new payment method" affordance — opens the setup page in a new tab so
+ *  the in-progress trade modal isn't lost. `href` differs for PKR vs USDT. */
+function AddPaymentMethodLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-dashed border-primary/50 text-xs font-medium text-primary hover:bg-primary/5 transition-colors">
+      <Plus size={14} /> {label}
+    </a>
+  )
+}
+
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -135,6 +147,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [acceptedBuyerMethodIds, setAcceptedBuyerMethodIds] = useState<string[]>([]) // BUY listing: which of the buyer's pay-from accounts the seller accepts
   const [buyerSettlementId, setBuyerSettlementId] = useState('')
   const [tokenAmount, setTokenAmount] = useState('')
+  // Start-Trade wizard: which of the 3 steps is currently expanded.
+  const [wizStep, setWizStep] = useState(1)
   // Which payment rail the taker is using in the trade modal ('pkr' | 'usdt').
   const [rail, setRail] = useState<'pkr' | 'usdt'>('pkr')
   // USDT-as-payment selection
@@ -249,6 +263,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           id: m.id,
           type: m.type,
           label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
+          // The account's own identifier so the taker can recognise it's THEIR
+          // account (A7): mobile number for wallets, account no. / IBAN for banks.
+          ref: m.mobileNumber ?? m.accountNumber ?? m.ibanNumber ?? undefined,
+          accountName: m.accountName,
         }))
         setMyMethods(resolved)
       }).catch(() => {})
@@ -272,19 +290,20 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     // The taker picks the rail. USDT only when the taker chose the USDT rail on a
     // listing that offers it; otherwise the trade settles in PKR.
     const railUsdt = rail === 'usdt'
+    // Amount first — it's Step 1, so surface it before the later steps.
+    if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setWizStep(1); setError('Enter a token amount'); return }
     if (railUsdt) {
-      if (!usdtMethod) { setError('Select a USDT payment method'); return }
+      if (!usdtMethod) { setWizStep(2); setError('Select a USDT payment method'); return }
       // BUY listing (maker pays USDT): the taker (seller) supplies their receiving address.
-      if (isBuyListing && !usdtAddress.trim()) { setError('Enter your USDT receiving address / UID'); return }
+      if (isBuyListing && !usdtAddress.trim()) { setWizStep(2); setError('Enter your USDT receiving address / UID'); return }
     } else {
-      if (isBuyListing && paymentMethodIds.length === 0) { setError('Select at least one payment receiving account'); return }
-      if (isBuyListing && acceptedBuyerMethodIds.length === 0) { setError("Select at least one of the buyer's accounts you'll accept payment from"); return }
-      if (!isBuyListing && !paymentMethodId) { setError('Select a payment method'); return }
+      if (isBuyListing && paymentMethodIds.length === 0) { setWizStep(2); setError('Select at least one payment receiving account'); return }
+      if (isBuyListing && acceptedBuyerMethodIds.length === 0) { setWizStep(3); setError("Select at least one of the buyer's accounts you'll accept payment from"); return }
+      if (!isBuyListing && !paymentMethodId) { setWizStep(2); setError('Select a payment method'); return }
     }
-    if (!tokenAmount.trim() || parseFloat(tokenAmount) <= 0) { setError('Enter a token amount'); return }
     // SELL listings: buyer must provide their token receiving address
     if (listing?.side === 'sell' && !buyerSettlementId.trim()) {
-      setError('Enter your token receiving address'); return
+      setWizStep(3); setError('Enter your token receiving address'); return
     }
     setError('')
     setSubmitting(true)
@@ -402,6 +421,19 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     ? myMethods       // taker is seller, selects their own receiving account
     : resolvedMethods // taker is buyer, picks from all seller's accepted accounts
 
+  // Start-Trade wizard step-completion (mirrors handleStartTrade validation so the
+  // 3-step accordion never lets a step "complete" without its required field).
+  const wizTokenAmt = tokenAmount ? parseFloat(tokenAmount) : 0
+  const wizMinT = Number(listing.minOrderTokens)
+  const wizMaxT = Math.min(Number(listing.maxOrderTokens), Number(listing.availableAmount))
+  const wizStep1Done = wizTokenAmt > 0 && wizTokenAmt >= wizMinT && wizTokenAmt <= wizMaxT
+  const wizStep2Done = rail === 'usdt'
+    ? (!!usdtMethod && (isBuyListing ? usdtAddress.trim().length > 0 : true))
+    : (isBuyListing ? paymentMethodIds.length > 0 : !!paymentMethodId)
+  const wizStep3Done = isBuyListing
+    ? (rail === 'usdt' ? true : acceptedBuyerMethodIds.length > 0)
+    : buyerSettlementId.trim().length > 0
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
       {/* Listing header */}
@@ -441,7 +473,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 below it (no "·"/"≈" clutter squeezing the row). */}
             <p className="font-bold text-text-primary">PKR {Number(listing.pricePerUnit).toLocaleString()}</p>
             {usdtPerToken !== null && (
-              <p className="text-primary text-sm font-semibold mt-0.5">{usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: usdtPerToken < 1 ? 6 : 2 })} USDT</p>
+              <p className="text-primary text-sm font-semibold mt-0.5">{usdtPerToken.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} USDT</p>
             )}
           </div>
           <div>
@@ -822,8 +854,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           <div className="bg-surface-alt border border-border rounded-xl p-4">
             <p className="font-semibold text-text-secondary">Your bid was accepted, but the trade window has expired</p>
             <p className="text-sm text-text-muted mt-1">
-              The payment details weren&apos;t completed in time, so this bid has expired and no further action is possible.
-              Place a new bid if you still want to trade.
+              The payment details weren&apos;t completed in time, so this bid has expired. No worries —
+              start a fresh trade or place a new bid below.
             </p>
           </div>
         ) : (
@@ -843,13 +875,15 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         )
       )}
 
-      {/* CTA */}
-      {!isMine && listing.status === 'active' && !myActiveBid && (
+      {/* CTA — also shown when an accepted bid's window has lapsed (E1): a dead
+          bid must not trap the user; the backend cap still prevents double-opening. */}
+      {!isMine && listing.status === 'active' && (!myActiveBid || (myActiveBid.status === 'accepted_pending_buyer' && new Date(myActiveBid.expiresAt).getTime() <= nowTs)) && (
         <div className="flex gap-3">
           <button
-            onClick={() => { setShowModal(true); setRail(hasPkr ? 'pkr' : 'usdt'); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setUsdtMethod(''); setUsdtKind(null); setUsdtAddress(''); setTokenAmount(''); setError('') }}
-            className={`flex-1 py-3.5 rounded-xl font-bold text-white transition-colors ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+            onClick={() => { setShowModal(true); setWizStep(1); setRail(hasPkr ? 'pkr' : 'usdt'); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds(resolvedMethods.map((m) => m.id)); setUsdtMethod(''); setUsdtKind(null); setUsdtAddress(''); setTokenAmount(''); setError('') }}
+            className={`flex-1 py-3.5 rounded-xl font-bold text-white transition-colors inline-flex items-center justify-center gap-1.5 ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
           >
+            {listing.side === 'sell' ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}
             {listing.side === 'sell' ? `Buy ${listing.token.symbol}` : `Sell ${listing.token.symbol}`}
           </button>
           {/* Bidding uses the PKR payment flow — available whenever a PKR rail is offered. */}
@@ -913,6 +947,17 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             )}
 
+            {/* ── STEP 1 — Amount ── */}
+            <WizardStepHeader
+              n={1}
+              title={isBuyListing ? `How many ${listing.token.symbol} to sell` : `How many ${listing.token.symbol} to buy`}
+              subtitle={wizStep1Done ? `${wizTokenAmt.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${listing.token.symbol}` : 'Amount & order summary'}
+              done={wizStep1Done}
+              open={wizStep === 1}
+              onClick={() => setWizStep(1)}
+            />
+            {wizStep === 1 && (
+            <div className="space-y-3">
             {/* Token-quantity input */}
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
@@ -952,28 +997,49 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-muted">Token amount</span>
-                    <span className="font-medium text-text-primary">{tokenAmt > 0 ? tokenAmt.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'} {listing.token.symbol}</span>
+                    <span className="font-medium text-text-primary">{tokenAmt > 0 ? tokenAmt.toLocaleString(undefined, { maximumFractionDigits: 3 }) : '—'} {listing.token.symbol}</span>
                   </div>
                   <div className="flex justify-between border-t border-border pt-2 font-semibold">
                     <span className="text-text-muted">{isBuyListing ? 'Total you will receive' : 'Total payable'}</span>
                     <span className="text-text-primary">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
-                  {/* USDT estimate when paying in USDT — the exact amount is locked at trade start. */}
-                  {rail === 'usdt' && usdtPerToken !== null && tokenAmt > 0 && (
+                  {/* USDT equivalent — always shown so someone who thinks in USDT
+                      can read the value even on the PKR rail. On the USDT rail it's
+                      the amount they'll pay (locked at trade start); on PKR it's a
+                      reference estimate (≈) from the platform USDT rate. */}
+                  {usdtPerToken !== null && tokenAmt > 0 && (
                     <div className="flex justify-between text-primary font-semibold">
-                      <span>In USDT</span>
-                      <span>{(tokenAmt * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT</span>
+                      <span>{rail === 'usdt' ? 'In USDT' : '≈ In USDT'}</span>
+                      <span>{rail === 'usdt' ? '' : '≈ '}{(tokenAmt * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} USDT</span>
                     </div>
                   )}
                 </div>
               )
             })()}
+            <button type="button" disabled={!wizStep1Done} onClick={() => setWizStep(2)}
+              className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+              Continue
+            </button>
+            </div>
+            )}
+
+            {/* ── STEP 2 — Payment method (your side) ── */}
+            <WizardStepHeader
+              n={2}
+              title={isBuyListing ? "How you'll receive payment" : "How you'll pay"}
+              subtitle={rail === 'usdt' ? (usdtMethod ? ctmUsdtMethodLabel(usdtMethod) : 'Choose USDT method') : (isBuyListing ? (paymentMethodIds.length ? `${paymentMethodIds.length} account(s)` : 'Choose account(s)') : "Choose seller's account")}
+              done={wizStep2Done}
+              open={wizStep === 2}
+              onClick={() => wizStep1Done && setWizStep(2)}
+            />
+            {wizStep === 2 && (
+            <div className="space-y-3">
 
             {/* Payment rail — shown only when the listing offers both PKR and USDT.
                 The taker picks how they'll pay/receive for this trade. */}
             {hasPkr && hasUsdt && (
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-1.5">How do you want to pay?</label>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">{isBuyListing ? 'Receive payment in' : 'Pay in'}</label>
                 <div className="grid grid-cols-2 gap-2">
                   {([
                     { key: 'pkr' as const, label: 'PKR' },
@@ -1081,7 +1147,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   accounts. BUY flow is multi-select ("all accounts you'll accept"),
                   which stays as chips since a dropdown can't express "pick several". */}
               {isBuyListing ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 items-start">
                   {modalPaymentMethods.map((m) => {
                     const isSelected = paymentMethodIds.includes(m.id)
                     return (
@@ -1089,14 +1155,20 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         type="button"
                         key={m.id}
                         onClick={() => setPaymentMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
+                        className={`inline-flex flex-col items-start gap-0.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
                       >
-                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                        {m.label}
-                        {isSelected && <span className="ml-0.5 text-xs">✓</span>}
+                        <span className="inline-flex items-center gap-1.5">
+                          <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                          {m.label}
+                          {isSelected && <span className="ml-0.5 text-xs">✓</span>}
+                        </span>
+                        {/* A7: show the account's own number/UID so the taker recognises it's THEIRS. */}
+                        {m.ref && <span className="text-[11px] font-normal text-text-muted">{m.ref}</span>}
                       </button>
                     )
                   })}
+                  {/* A5: quick add — opens the payment-methods page in a new tab. */}
+                  <AddPaymentMethodLink href="/payment-methods" label="Add account" />
                 </div>
               ) : (
                 <MethodSelect
@@ -1107,6 +1179,31 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 />
               )}
             </div>
+            )}
+            <button type="button" disabled={!wizStep2Done} onClick={() => setWizStep(3)}
+              className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+              Continue
+            </button>
+            </div>
+            )}
+
+            {/* ── STEP 3 — Confirm counterparty / your details ── */}
+            <WizardStepHeader
+              n={3}
+              title={isBuyListing ? "Accounts you'll accept from the buyer" : 'Your details'}
+              subtitle={wizStep3Done ? 'Ready to start' : (isBuyListing ? 'Pick accepted account(s)' : 'Your token receiving address')}
+              done={wizStep3Done}
+              open={wizStep === 3}
+              onClick={() => wizStep1Done && wizStep2Done && setWizStep(3)}
+            />
+            {wizStep === 3 && (
+            <div className="space-y-3">
+
+            {/* BUY + USDT rail has no extra field here — confirm and start. */}
+            {isBuyListing && rail === 'usdt' && (
+              <p className="text-sm text-text-muted bg-surface border border-border rounded-xl px-3 py-2.5">
+                Your USDT receiving details are set. Review the summary above, then start the trade.
+              </p>
             )}
 
             {/* BUY listing: show the buyer's declared pay-from accounts so the seller
@@ -1149,21 +1246,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   onChange={setBuyerFromMethodId}
                   placeholder="Select the account you'll pay from…"
                 />
-              </div>
-            )}
-
-            {/* BUY listing: show buyer's receiving address so seller knows where to send tokens */}
-            {isBuyListing && listing.settlementMethod && (
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1.5">
-                  Send tokens to buyer&apos;s address
-                </label>
-                <p className="text-xs font-mono bg-surface border border-border rounded-lg px-3 py-2 break-all text-text-primary">
-                  {listing.settlementMethod}
-                </p>
-                <p className="mt-1 text-xs text-text-muted">
-                  Send {listing.token.symbol} to this address after the buyer confirms payment.
-                </p>
+                {/* A7: confirm the chosen account's own number so the taker knows it's theirs. */}
+                {(() => {
+                  const picked = myMethods.find((m) => m.id === buyerFromMethodId)
+                  return picked?.ref ? <p className="mt-1 text-xs text-text-muted">Your {picked.label}: <span className="font-medium text-text-primary">{picked.ref}</span></p> : null
+                })()}
+                <div className="mt-2"><AddPaymentMethodLink href="/payment-methods" label="Add account" /></div>
               </div>
             )}
 
@@ -1208,6 +1296,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 <p className="font-medium text-text-primary mb-1">Instructions from merchant:</p>
                 <p className="text-text-muted">{listing.settlementNote}</p>
               </div>
+            )}
+            </div>
             )}
 
             <div className="flex gap-3">
@@ -1293,12 +1383,20 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-muted">Token amount</span>
-                    <span className="font-medium text-text-primary">{amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {listing.token.symbol}</span>
+                    <span className="font-medium text-text-primary">{amount.toLocaleString(undefined, { maximumFractionDigits: 3 })} {listing.token.symbol}</span>
                   </div>
                   <div className="flex justify-between border-t border-border pt-2 font-semibold">
                     <span className="text-text-muted">{isBuyListing ? 'Total you will receive' : 'Total payable'}</span>
                     <span className="text-text-primary">PKR {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
+                  {/* USDT equivalent (reference, from the platform USDT rate) so a
+                      bidder who thinks in USDT can read the value too. */}
+                  {usdtPerToken !== null && amount > 0 && (
+                    <div className="flex justify-between text-primary font-semibold">
+                      <span>≈ In USDT</span>
+                      <span>≈ {(amount * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} USDT</span>
+                    </div>
+                  )}
                 </div>
               )
             })()}

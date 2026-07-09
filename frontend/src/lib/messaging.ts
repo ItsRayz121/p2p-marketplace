@@ -45,6 +45,31 @@ export interface TradeEpisode {
   fiatAmount: string | null
   startedAt: string
   endedAt: string | null
+  /** Live trade status — present only for ACTIVE episodes (drives the thread progress bar). */
+  status?: string | null
+}
+
+/**
+ * Ordered in-progress step ladders per market (terminal states excluded). Used to
+ * render a compact progress bar for an active trade inside the chat thread.
+ */
+const USDT_STEPS = ['payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent', 'crypto_released']
+const CTM_STEPS = ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming', 'completed']
+const STEP_LABELS: Record<string, string> = {
+  payment_pending: 'Awaiting payment', awaiting_payment: 'Awaiting payment',
+  payment_uploaded: 'Payment sent', payment_confirmed: 'Payment confirmed',
+  crypto_sent: 'Crypto sent', crypto_released: 'Completed',
+  seller_transferring: 'Seller sending tokens', proof_submitted: 'Tokens sent',
+  buyer_confirming: 'Confirming receipt', completed: 'Completed',
+}
+
+/** Progress of an active episode → { index, total, label } (or null if unknown). */
+export function episodeProgress(ep: TradeEpisode): { index: number; total: number; label: string } | null {
+  if (ep.outcome !== 'active' || !ep.status) return null
+  const ladder = ep.market === 'ctm' ? CTM_STEPS : USDT_STEPS
+  const i = ladder.indexOf(ep.status)
+  if (i < 0) return null
+  return { index: i + 1, total: ladder.length, label: STEP_LABELS[ep.status] ?? ep.status }
 }
 
 export interface ThreadStats {

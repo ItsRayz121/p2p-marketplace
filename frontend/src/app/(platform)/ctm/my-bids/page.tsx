@@ -106,7 +106,7 @@ export default function MyBidsPage() {
               </div>
               <div>
                 <p className="text-xs text-text-muted">Amount</p>
-                <p className="font-semibold text-text-primary">{Number(bid.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} {bid.listing.token.symbol}</p>
+                <p className="font-semibold text-text-primary">{Number(bid.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {bid.listing.token.symbol}</p>
               </div>
               <div>
                 <p className="text-xs text-text-muted">Total</p>

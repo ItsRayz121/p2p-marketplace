@@ -41,11 +41,18 @@ export function ShareListingButton({
       return
     }
 
+    // Web / desktop sharer → prefer the Telegram deep link when the bot is
+    // configured. A plain web link opened INSIDE Telegram launches the Mini App
+    // at its root (the dashboard), losing the listing; the `t.me/<bot>?startapp=…`
+    // link instead re-launches the Mini App straight to this listing. Falls back
+    // to the canonical web URL when no bot username is configured.
+    const primary = telegram ?? web
+
     // Native share sheet (mobile browsers + installed app).
     const nav = typeof navigator !== 'undefined' ? navigator : undefined
     if (nav?.share) {
       try {
-        await nav.share({ title, text, url: web })
+        await nav.share({ title, text, url: primary })
         return
       } catch {
         // user dismissed, or share failed — fall through to copy
@@ -54,12 +61,12 @@ export function ShareListingButton({
 
     // Fallback: copy the link.
     try {
-      await navigator.clipboard.writeText(web)
+      await navigator.clipboard.writeText(primary)
       setCopied(true)
       toast.success('Link copied', 'Listing link copied to your clipboard')
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      toast.info('Share this listing', web)
+      toast.info('Share this listing', primary)
     }
   }
 

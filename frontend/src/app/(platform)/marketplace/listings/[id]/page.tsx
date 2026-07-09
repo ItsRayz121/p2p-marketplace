@@ -13,6 +13,8 @@ import { ShareListingButton } from '@/components/ui/ShareListingButton'
 import { useAuth } from '@/hooks/useAuth'
 import { validateAddressForNetwork, networkAssetLabel } from '@/lib/addressValidation'
 import { NoKycLimitNotice } from '@/components/trade/NoKycLimitNotice'
+import { WizardStepHeader } from '@/components/ui/WizardStep'
+import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 
 const METHOD_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -108,6 +110,8 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
   // Instant trade modal (at listed price)
   const [showInstantModal, setShowInstantModal] = useState(false)
+  // Start-Trade wizard: which of the 3 steps is currently expanded.
+  const [iwStep, setIwStep] = useState(1)
   const [instantAmount, setInstantAmount] = useState('')
   const [instantPaymentMethod, setInstantPaymentMethod] = useState('')
   const [instantDeliveryMethod, setInstantDeliveryMethod] = useState('')
@@ -226,10 +230,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   }
 
   const handleInstantTrade = async () => {
-    if (!instantAmount.trim() || parseFloat(instantAmount) <= 0) { setInstantError('Enter USDT amount'); return }
-    if (!instantPaymentMethod) { setInstantError('Select a payment method'); return }
-    if (ad?.side === 'sell' && !instantDeliveryMethod) { setInstantError('Select your receiving method'); return }
-    if (ad?.side === 'sell' && instantDeliveryMethod && !instantDeliveryAddress.trim()) { setInstantError('Enter your receiving address'); return }
+    if (!instantAmount.trim() || parseFloat(instantAmount) <= 0) { setIwStep(1); setInstantError('Enter USDT amount'); return }
+    if (!instantPaymentMethod) { setIwStep(2); setInstantError('Select a payment method'); return }
+    if (ad?.side === 'sell' && !instantDeliveryMethod) { setIwStep(3); setInstantError('Select your receiving method'); return }
+    if (ad?.side === 'sell' && instantDeliveryMethod && !instantDeliveryAddress.trim()) { setIwStep(3); setInstantError('Enter your receiving address'); return }
     const offered = ad?.networks?.length ? ad.networks : (ad?.network ? [ad.network] : [])
     const isWallet = instantDeliveryMethod === 'wallet_blockchain'
     const chosenNet = isWallet ? (instantNetwork || offered[0] || '') : ''
@@ -245,10 +249,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     if (ad?.side === 'buy') {
       const dests = adBuyDestinations(ad)
       if (dests.length === 0) { setInstantError('This listing has no receiving destination on file'); return }
-      if (dests.length > 1 && !instantSendDestKey) { setInstantError('Select where to send the USDT'); return }
+      if (dests.length > 1 && !instantSendDestKey) { setIwStep(3); setInstantError('Select where to send the USDT'); return }
       const chosen = dests.find((d) => destKeyOf(d) === instantSendDestKey) ?? dests[0]!
       const payFroms = ad.resolvedPaymentMethods ?? []
-      if (payFroms.length > 1 && !instantBuyerPayFrom) { setInstantError("Select the buyer's payment method") ; return }
+      if (payFroms.length > 1 && !instantBuyerPayFrom) { setIwStep(3); setInstantError("Select the buyer's payment method") ; return }
       buyPayload = {
         buyerDeliveryMethod: chosen.method,
         ...(chosen.method === 'wallet_blockchain' && chosen.network ? { network: chosen.network } : {}),
@@ -307,6 +311,11 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
 
   const isMine = user?.id === ad.user.id
   const isSellAd = ad.side === 'sell'
+  // An accepted bid whose completion window lapsed is DEAD — no action is possible
+  // against it. Treat it as "no active bid" so the Buy/Bid actions come back
+  // instead of a dead-end (E1). A genuinely in-progress trade is still guarded by
+  // the backend concurrency cap, so re-showing the buttons can't double-open.
+  const bidExpiredDead = myActiveBid?.status === 'accepted_pending_buyer' && new Date(myActiveBid.expiresAt).getTime() <= nowTs
   const resolvedMethods = ad.resolvedPaymentMethods ?? []
   const deliveryTypes = ad.tokenDeliveryTypes ?? []
   // Networks the ad offers for wallet delivery (multi-network). Legacy ads fall
@@ -322,6 +331,20 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         type: m.type,
         label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
       }))
+
+  // Start-Trade wizard step-completion (mirrors handleInstantTrade validation).
+  const iwAmt = instantAmount ? parseFloat(instantAmount) : 0
+  const iwStep1Done = iwAmt > 0 && iwAmt >= Number(ad.minOrder) && iwAmt <= Math.min(Number(ad.maxOrder), Number(ad.availableAmount))
+  const iwStep2Done = !!instantPaymentMethod
+  const iwStep3Done = (() => {
+    if (isSellAd) return !!instantDeliveryMethod && instantDeliveryAddress.trim().length > 0
+    // BUY ad: need a send destination (when >1) and a pay-from account (when >1).
+    const dests = adBuyDestinations(ad)
+    const payFroms = ad.resolvedPaymentMethods ?? []
+    const destOk = dests.length <= 1 || !!instantSendDestKey
+    const payOk = payFroms.length <= 1 || !!instantBuyerPayFrom
+    return dests.length > 0 && destOk && payOk
+  })()
 
   // Network-aware delivery label. Wallet delivery shows the on-chain asset+network(s)
   // ("Wallet · USDT BEP20" or "Wallet · USDT BEP20 / Aptos") so the buyer always
@@ -388,7 +411,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
           </div>
           <div>
             <p className="text-xs text-text-muted">{isSellAd ? 'Available' : 'Wanted'}</p>
-            <p className="font-bold text-text-primary">{Number(ad.availableAmount).toFixed(4)} {ad.coin}</p>
+            <p className="font-bold text-text-primary">{Number(ad.availableAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {ad.coin}</p>
           </div>
           <div>
             <p className="text-xs text-text-muted">Min / Max</p>
@@ -721,8 +744,8 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
           <div className="bg-surface-alt border border-border rounded-xl p-4">
             <p className="font-semibold text-text-secondary">Your bid was accepted, but the trade window has expired</p>
             <p className="text-sm text-text-muted mt-1">
-              The payment details weren&apos;t completed in time, so this bid has expired and no further action is possible.
-              Place a new bid if you still want to trade.
+              The payment details weren&apos;t completed in time, so this bid has expired. No worries —
+              start a fresh trade at the listed price or place a new bid below.
             </p>
           </div>
         ) : (
@@ -754,12 +777,13 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       {/* CTA buttons — instant trade (at the listed price) + negotiate via bid.
           Both sell and buy ads get both options: "Buy USDT"/"Sell USDT" opens an
           instant trade, "Place Bid" negotiates a price. */}
-      {!isMine && ad.status === 'active' && !myActiveBid && (
+      {!isMine && ad.status === 'active' && (!myActiveBid || bidExpiredDead) && (
         <div className="grid gap-3 grid-cols-2">
           <button
-            onClick={() => { setShowInstantModal(true); setInstantAmount(''); setInstantPaymentMethod(''); setInstantDeliveryMethod(''); setInstantDeliveryAddress(''); setInstantError('') }}
-            className="py-3.5 rounded-xl font-bold text-white transition-colors bg-green-600 hover:bg-green-700"
+            onClick={() => { setShowInstantModal(true); setIwStep(1); setInstantAmount(''); setInstantPaymentMethod(''); setInstantDeliveryMethod(''); setInstantDeliveryAddress(''); setInstantError('') }}
+            className={`py-3.5 rounded-xl font-bold text-white transition-colors inline-flex items-center justify-center gap-1.5 ${isSellAd ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
           >
+            {isSellAd ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}
             {isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
           </button>
           <button
@@ -788,6 +812,17 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               </div>
             )}
 
+            {/* ── STEP 1 — Amount ── */}
+            <WizardStepHeader
+              n={1}
+              title={isSellAd ? `How many ${ad.coin} to buy` : `How many ${ad.coin} to sell`}
+              subtitle={iwStep1Done ? `${iwAmt.toLocaleString(undefined, { maximumFractionDigits: 3 })} ${ad.coin}` : `At PKR ${Number(ad.price).toLocaleString()}`}
+              done={iwStep1Done}
+              open={iwStep === 1}
+              onClick={() => setIwStep(1)}
+            />
+            {iwStep === 1 && (
+            <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1.5">
                 {isSellAd ? `How many ${ad.coin} do you want to buy?` : `How many ${ad.coin} will you sell?`}
@@ -806,7 +841,24 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 </p>
               )}
             </div>
+            <button type="button" disabled={!iwStep1Done} onClick={() => setIwStep(2)}
+              className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+              Continue
+            </button>
+            </div>
+            )}
 
+            {/* ── STEP 2 — Payment method ── */}
+            <WizardStepHeader
+              n={2}
+              title={isSellAd ? "How you'll pay" : "How you'll receive payment"}
+              subtitle={instantPaymentMethod ? (tradePaymentMethods.find((m) => m.id === instantPaymentMethod)?.label ?? 'Selected') : 'Choose a payment account'}
+              done={iwStep2Done}
+              open={iwStep === 2}
+              onClick={() => iwStep1Done && setIwStep(2)}
+            />
+            {iwStep === 2 && (
+            <div className="space-y-3">
             {/* Payment method */}
             <div>
               {/* Label + an inline "Add payment method" affordance on the SAME line
@@ -848,6 +900,24 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 />
               )}
             </div>
+            <button type="button" disabled={!iwStep2Done} onClick={() => setIwStep(3)}
+              className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+              Continue
+            </button>
+            </div>
+            )}
+
+            {/* ── STEP 3 — Delivery / counterparty details ── */}
+            <WizardStepHeader
+              n={3}
+              title={isSellAd ? `How you'll receive ${ad.coin}` : `Where you'll send ${ad.coin}`}
+              subtitle={iwStep3Done ? 'Ready to start' : 'Delivery details'}
+              done={iwStep3Done}
+              open={iwStep === 3}
+              onClick={() => iwStep1Done && iwStep2Done && setIwStep(3)}
+            />
+            {iwStep === 3 && (
+            <div className="space-y-3">
 
             {/* BUY ad (taker = seller): where to send USDT (4a) + which buyer account pays (4b) */}
             {!isSellAd && (() => {
@@ -995,10 +1065,14 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               </div>
             )}
 
+            </div>
+            )}
+
             <div className="flex gap-3">
               <button onClick={() => setShowInstantModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
               <button onClick={handleInstantTrade} disabled={instantSubmitting}
-                className={`flex-1 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-colors ${isSellAd ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                className={`flex-1 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-1.5 ${isSellAd ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                {!instantSubmitting && (isSellAd ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />)}
                 {instantSubmitting ? 'Opening…' : isSellAd ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
               </button>
             </div>
@@ -1049,7 +1123,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 <div className="bg-surface rounded-xl border border-border p-4 space-y-2 text-sm">
                   <p className="font-semibold text-text-primary mb-2">Bid Summary</p>
                   <div className="flex justify-between"><span className="text-text-muted">Your bid price</span><span className="font-medium">PKR {parseFloat(bidPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
-                  <div className="flex justify-between"><span className="text-text-muted">Amount</span><span className="font-medium">{parseFloat(bidAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} {ad.coin}</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">Amount</span><span className="font-medium">{parseFloat(bidAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {ad.coin}</span></div>
                   <div className="flex justify-between border-t border-border pt-2 font-semibold">
                     <span className="text-text-muted">{isSellAd ? 'Total payable' : 'Total you receive'}</span>
                     <span>PKR {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>

@@ -1,7 +1,9 @@
 'use client'
 import React, { useState, use, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ctmApi } from '@/lib/api'
+import { ctmApi, walletApi } from '@/lib/api'
+import type { SavedDeliveryAddress } from '@/lib/api'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ctmCurrentStep, ctmFlowOrder, ctmDisputeLock } from '@/lib/ctmSettlementFlow'
 import type { CtmFlowAction, CtmFlowActor } from '@/lib/ctmSettlementFlow'
 import { usePolling } from '@/hooks/usePolling'
@@ -16,6 +18,16 @@ import { supportMailto } from '@/lib/contact'
 function prettyMethod(value?: string | null): string {
   if (!value || isOpaqueId(value)) return 'Selected payment method'
   return value
+}
+
+/**
+ * Category shown in a "Method" row. A bank account's own label IS the bank name,
+ * which then duplicates the separate "Bank" row — so show the generic category
+ * ("Bank Transfer") and let the Bank / IBAN rows carry the specifics (I1).
+ */
+function accountMethodLabel(acc: { label?: string | null; bankName?: string | null; ibanNumber?: string | null }): string {
+  if (acc.bankName || acc.ibanNumber) return 'Bank Transfer'
+  return acc.label ?? 'Selected payment method'
 }
 import NextImage from 'next/image'
 
@@ -279,6 +291,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const disputeSectionRef = useRef<HTMLDivElement>(null)
   const [highlightDispute, setHighlightDispute] = useState(false)
   const [trade, setTrade] = useState<Trade | null>(null)
+  // The buyer's own saved USDT accounts — used to surface "Your Sending Account"
+  // for a USDT trade (G1) so the payer sees their saved Gate/Binance/… UID
+  // instead of a generic "send from your own account" line.
+  const [mySavedAddresses, setMySavedAddresses] = useState<SavedDeliveryAddress[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [msgText, setMsgText] = useState('')
@@ -342,6 +358,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   useEffect(() => { fetchTrade(); fetchMessages() }, [fetchTrade, fetchMessages])
   usePolling(fetchTrade, 30_000, !loading)
+
+  // Load the current user's saved USDT accounts once, to surface their own
+  // sending account on a USDT trade (G1). Best-effort — never blocks the room.
+  useEffect(() => {
+    walletApi.getSavedAddresses().then((a) => setMySavedAddresses(Array.isArray(a) ? a : [])).catch(() => {})
+  }, [])
   usePolling(fetchMessages, 15_000, !loading)
 
   useSSE((event) => {
@@ -376,6 +398,18 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
       setStep4Collapsed(true)
     }
   }, [traderRatingDone, platformRatingDone])
+
+  // Auto-open the "Rate the trade" card ONCE when a freshly completed trade still
+  // has an open rating window and hasn't been rated — so the rating box is as
+  // obvious as the USDT room's, not hidden behind a collapsed header (C1). The
+  // window is recomputed from raw fields here because the derived `ratingWindowOpen`
+  // is defined below the early returns and can't be referenced this high up.
+  const autoOpenedRating = useRef(false)
+  useEffect(() => {
+    if (autoOpenedRating.current || !trade || trade.status !== 'completed' || traderRatingDone) return
+    const endsAt = trade.updatedAt ? new Date(trade.updatedAt).getTime() + RATING_WINDOW_MINUTES * 60_000 : 0
+    if (endsAt > Date.now()) { autoOpenedRating.current = true; setStep4Collapsed(false) }
+  }, [trade, traderRatingDone])
 
   // Reflect an existing rating when the trade loads so the top banner shows the
   // "submitted" confirmation instead of an empty form after a reload.
@@ -419,18 +453,16 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const isSeller = user?.id === trade.seller.id
   // USDT-as-payment: the "payment" leg is USDT (on-chain / exchange) instead of PKR.
   const isUsdtTrade = trade.paymentCurrency === 'USDT'
+  // All displayed amounts are rounded to max 3 dp site-wide (trailing zeros
+  // trimmed). CTM USDT settlement is manual/screenshot-confirmed, so the tiny
+  // rounding delta never affects the payment — and it keeps long 6-dp amounts
+  // (e.g. 0.157989) from wrapping the header into noise.
   const usdtAmountLabel = trade.usdtAmount != null
-    ? `${Number(trade.usdtAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDT`
+    ? `${Number(trade.usdtAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} USDT`
     : '— USDT'
   const payAmountLabel = isUsdtTrade ? usdtAmountLabel : `PKR ${Number(trade.fiatAmount).toLocaleString()}`
-  // Compact label for identity/summary spots (header, completed card) — long
-  // 6-dp USDT amounts (e.g. 0.157989) wrap the header across many lines and read
-  // as noise once the trade is done. Rounded to 3 dp here ONLY; the payment steps
-  // keep the exact `payAmountLabel` so the buyer still sends the precise amount.
-  const usdtAmountLabelShort = trade.usdtAmount != null
-    ? `${Number(trade.usdtAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} USDT`
-    : usdtAmountLabel
-  const payAmountLabelShort = isUsdtTrade ? usdtAmountLabelShort : payAmountLabel
+  const usdtAmountLabelShort = usdtAmountLabel
+  const payAmountLabelShort = payAmountLabel
   const stepIndex = STATUS_STEPS.indexOf(trade.status)
 
   // ── Flow-aware step model (single source of truth for BOTH flows) ───────────
@@ -593,7 +625,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const renderSingleAccount = (acc: SellerPaymentAccount) => (
     <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
-      <Row label="Method" value={acc.label} />
+      {/* Method row carries a logo (I3) so the payer can eyeball the rail. */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-text-muted flex-shrink-0">Method</span>
+        <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+          <EntityLogo type={acc.bankName || acc.ibanNumber ? 'bank' : 'payment_method'} slug={acc.label} size="xs" className="flex-shrink-0" />
+          {accountMethodLabel(acc)}
+        </span>
+      </div>
       <Row label="Account Name" value={acc.accountName} copyable />
       {acc.mobileNumber && <Row label="Payment number" value={acc.mobileNumber} mono copyable />}
       {acc.bankName && <Row label="Bank" value={acc.bankName} />}
@@ -678,7 +717,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     if (b) {
       return (
         <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
-          <Row label="Method" value={b.label} />
+          <Row label="Method" value={accountMethodLabel(b)} />
           <Row label="Account Name" value={b.accountName} copyable />
           {b.mobileNumber && <Row label="Payment number" value={b.mobileNumber} mono copyable />}
           {b.bankName && <Row label="Bank" value={b.bankName} />}
@@ -691,6 +730,33 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     // the payer just sends from their own exchange balance to the seller's UID above,
     // so there are no "account details" to show. Say that plainly instead of the
     // alarming "(account details not provided)".
+    // G1: for a USDT trade, surface the payer's OWN saved account(s) for the
+    // seller's rail (e.g. their Gate UID) so "Your Sending Account" is concrete,
+    // not a generic instruction. Falls back to the plain message when none match.
+    if (isUsdtTrade) {
+      const method = (trade.usdtDeliveryMethod ?? '').toLowerCase()
+      const mine = mySavedAddresses.filter((a) => a.network.toLowerCase() === method && a.coin.toUpperCase() === 'USDT')
+      const usdtMine = mine.length > 0 ? mine : mySavedAddresses.filter((a) => a.network.toLowerCase() === method)
+      if (usdtMine.length > 0) {
+        return (
+          <div className="space-y-2">
+            {usdtMine.map((a) => (
+              <div key={a.id} className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-text-muted flex-shrink-0">Method</span>
+                  <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                    <EntityLogo type="exchange" slug={a.network} size="xs" className="flex-shrink-0" />
+                    {a.network}
+                  </span>
+                </div>
+                <Row label={a.label || 'Your account'} value={a.address} mono breakAll copyable />
+              </div>
+            ))}
+            <p className="text-xs text-text-muted">Send the USDT from this account to the seller&apos;s address / UID above.</p>
+          </div>
+        )
+      }
+    }
     return (
       <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
         {isUsdtTrade ? (
@@ -852,6 +918,16 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     ? (trade.seller.fullName || trade.seller.username)
     : (trade.buyer.fullName || trade.buyer.username)
 
+  // Rating-aware summary for the completed step so it reads like the USDT room's
+  // obvious "Rate the Trade — Optional · countdown" card (C1).
+  const completedSummary = trade.status !== 'completed'
+    ? 'You can rate your counterparty below'
+    : traderRatingDone
+      ? 'Rating submitted — thank you'
+      : ratingWindowOpen
+        ? `Rate the trade — optional · ${ratingCountdown} left`
+        : 'You can rate your counterparty below'
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
 
@@ -995,10 +1071,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 expanded={expandedSteps.has(legPos.fiat)} onToggle={() => toggleStep(legPos.fiat)}>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
-                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
+                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
                   <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
-                    <Row label="Total payable" value={payAmountLabel} />
+                    <Row label="Total payable" value={payAmountLabel} highlight />
                   </div>
                 </div>
                 <div>
@@ -1185,7 +1261,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               <div style={{ order: legPos.complete }}>
               <StepCard stepNum={legPos.complete} title="Trade Completed"
                 state={trade.status === 'completed' ? 'completed' : 'future'}
-                summary="You can rate your counterparty below"
+                summary={completedSummary}
                 expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'completed' ? (
                   <div className="space-y-4">
@@ -1213,10 +1289,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     the PKR they will receive (mirrors the buyer's Send-Payment card). */}
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
-                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
+                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
                   <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
-                    <Row label="Total to receive" value={payAmountLabel} />
+                    <Row label="Total to receive" value={payAmountLabel} highlight />
                   </div>
                 </div>
                 <div>
@@ -1258,7 +1334,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         confirming receipt of (and for how many tokens) before tapping. */}
                     <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                       <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
-                      <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
+                      <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
                       <Row label="Payment method" value={paymentMethodLabel} />
                       <div className="border-t border-border pt-1.5 mt-1">
                         <Row label="Amount to confirm" value={payAmountLabel} />
@@ -1376,7 +1452,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               <div style={{ order: legPos.complete }}>
               <StepCard stepNum={legPos.complete} title="Trade Completed"
                 state={trade.status === 'completed' ? 'completed' : 'future'}
-                summary="You can rate your counterparty below"
+                summary={completedSummary}
                 expanded={!step4Collapsed} onToggle={() => setStep4Collapsed((v) => !v)}>
                 {trade.status === 'completed' && (
                   <div className="space-y-4">
@@ -1398,10 +1474,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <h2 className="font-semibold text-text-primary mb-3">Order Summary</h2>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
-                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${trade.token.symbol}`} />
+                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
                   <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
-                    <Row label="Total" value={payAmountLabel} />
+                    <Row label="Total" value={payAmountLabel} highlight />
                   </div>
                 </div>
               </div>
@@ -1576,7 +1652,7 @@ function DisputeUnlockGate({ unlockAt, onOpen }: { unlockAt: number | null; onOp
   )
 }
 
-function Row({ label, value, mono, breakAll, copyable }: { label: string; value: string; mono?: boolean; breakAll?: boolean; copyable?: boolean }) {
+function Row({ label, value, mono, breakAll, copyable, highlight }: { label: string; value: string; mono?: boolean; breakAll?: boolean; copyable?: boolean; highlight?: boolean }) {
   const [copied, setCopied] = useState(false)
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* ignore */ }
@@ -1615,11 +1691,11 @@ function Row({ label, value, mono, breakAll, copyable }: { label: string; value:
   // left) so a phone number reads "[copy] 0309…" rather than the copy trailing off
   // the right edge.
   return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-text-muted flex-shrink-0">{label}</span>
+    <div className={`flex items-center justify-between gap-4 ${highlight ? 'bg-primary/5 border border-primary/20 rounded-lg px-2.5 py-1.5' : ''}`}>
+      <span className={`flex-shrink-0 ${highlight ? 'text-text-primary font-semibold' : 'text-text-muted'}`}>{label}</span>
       <div className="flex items-center gap-1.5 min-w-0 justify-end">
         {copyBtn}
-        <span className={`text-text-primary font-medium text-right ${mono ? 'font-mono' : ''}`}>{value}</span>
+        <span className={`text-right ${highlight ? 'text-primary font-bold text-base' : 'text-text-primary font-medium'} ${mono ? 'font-mono' : ''}`}>{value}</span>
       </div>
     </div>
   )

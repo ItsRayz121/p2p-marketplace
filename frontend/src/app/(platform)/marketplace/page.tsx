@@ -13,7 +13,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
-import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, History, Search, X } from 'lucide-react'
+import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, History, Search, X, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
@@ -214,7 +214,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           </div>
           <p className={`text-xl font-bold ${priceCls}`}>PKR {Number(ad.price).toLocaleString()}</p>
           <p className="text-xs text-text-muted mt-0.5">
-            {ad.side === 'buy' ? 'Wanted' : 'Available'}: {Number(ad.availableAmount).toFixed(4)} {ad.coin}
+            {ad.side === 'buy' ? 'Wanted' : 'Available'}: {Number(ad.availableAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {ad.coin}
           </p>
           <p className="text-xs text-text-muted/60 mt-0.5">Listed {listingAge(ad.createdAt)}</p>
         </div>
@@ -276,10 +276,11 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           ) : parseFloat(ad.availableAmount) > 0 ? (
             <Link
               href={`/marketplace/listings/${ad.id}`}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
-                ad.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
+                ad.side === 'sell' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'
               }`}
             >
+              {ad.side === 'sell' ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
               {ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
             </Link>
           ) : (
@@ -400,8 +401,9 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             ) : parseFloat(ad.availableAmount) > 0 ? (
               <Link
                 href={`/marketplace/listings/${ad.id}`}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${ad.side === 'sell' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap inline-flex items-center gap-1.5 ${ad.side === 'sell' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
               >
+                {ad.side === 'sell' ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
                 {ad.side === 'sell' ? `Buy ${ad.coin}` : `Sell ${ad.coin}`}
               </Link>
             ) : (
@@ -719,10 +721,13 @@ export default function MarketplacePage() {
             <button
               key={s}
               onClick={() => { setFilters((f) => ({ ...f, side: s })); setPage(1) }}
-              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium transition-colors ${
-                filters.side === s ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface'
+              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium transition-colors inline-flex items-center justify-center gap-1.5 ${
+                filters.side === s
+                  ? (s === 'buy' ? 'bg-green-600 text-white' : 'bg-red-600 text-white')
+                  : 'text-text-secondary hover:bg-surface'
               }`}
             >
+              {s === 'buy' ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
               {s === 'buy' ? 'Buy USDT' : 'Sell USDT'}
             </button>
           ))}

@@ -53,6 +53,23 @@ export function fmtAmount(
   return n.toFixed(decimals)
 }
 
+/**
+ * Format an amount for DISPLAY at max 3 decimal places, trimming trailing
+ * zeros and grouping the integer part with commas.
+ *   0.947935 → "0.948"   5 → "5"   264 → "264"   1234.5 → "1,234.5"
+ *
+ * DISPLAY-ONLY. Never use this for an amount that must match on-chain / an
+ * automated payment-matching check (e.g. gas unique-payment amounts) — rounding
+ * those breaks detection. Safe for CTM/USDT manual/screenshot-confirmed amounts.
+ * Returns '0' for null/undefined/NaN.
+ */
+export function fmt3(value: string | number | null | undefined): string {
+  if (value == null) return '0'
+  const n = Number(value)
+  if (isNaN(n)) return '0'
+  return n.toLocaleString(undefined, { maximumFractionDigits: 3 })
+}
+
 /** Format as PKR amount string with commas. Returns 'PKR 0' for null/undefined/NaN. */
 export function fmtPkr(value: string | number | null | undefined): string {
   if (value == null) return 'PKR 0'

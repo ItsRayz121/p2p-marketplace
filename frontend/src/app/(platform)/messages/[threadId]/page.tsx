@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  messagingApi, episodeTradeHref, OUTCOME_LABEL,
+  messagingApi, episodeTradeHref, episodeProgress, OUTCOME_LABEL,
   type ThreadView, type ThreadMessage, type TradeEpisode,
 } from '@/lib/messaging'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -72,6 +72,19 @@ export default function MessageThreadPage() {
       new Date(e.startedAt).getTime() > new Date(latest.startedAt).getTime() ? e : latest)
   }, [data])
 
+  // A just-completed trade still inside its 15-minute rating window — surfaces a
+  // "Rate this trade" prompt in the thread (H2) that auto-disappears once the
+  // window lapses (the 15s poll re-evaluates this). Links to the trade room where
+  // the rating box is now prominent.
+  const RATING_WINDOW_MS = 15 * 60 * 1000
+  const rateableEpisode = useMemo<TradeEpisode | null>(() => {
+    if (!data) return null
+    const done = data.episodes
+      .filter((e) => e.outcome === 'completed' && e.endedAt && Date.now() - new Date(e.endedAt).getTime() < RATING_WINDOW_MS)
+      .sort((a, b) => new Date(b.endedAt!).getTime() - new Date(a.endedAt!).getTime())
+    return done[0] ?? null
+  }, [data, RATING_WINDOW_MS])
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [timeline])
@@ -128,20 +141,50 @@ export default function MessageThreadPage() {
 
       {/* Pinned in-progress trade — the latest active trade sits at the top so it's
           one tap away; the full trade history remains in the timeline below. */}
-      {activeEpisode && (
+      {activeEpisode && (() => {
+        const prog = episodeProgress(activeEpisode)
+        return (
+          <Link
+            href={episodeTradeHref(activeEpisode)}
+            className="mx-4 mt-3 block rounded-xl border border-blue-500/30 bg-blue-500/5 px-3 py-2 hover:border-blue-500/50 transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <Clock className="w-4 h-4 text-blue-500 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-500 leading-none">In progress{prog ? ` · step ${prog.index}/${prog.total}` : ''}</p>
+                <p className="text-sm font-semibold text-text-primary truncate mt-0.5">
+                  {activeEpisode.tradeRef}
+                  {activeEpisode.fiatAmount && <span className="text-text-muted font-normal"> · {fmtPkr(activeEpisode.fiatAmount)}</span>}
+                </p>
+              </div>
+              <span className="text-xs font-medium text-blue-500 flex-shrink-0">View →</span>
+            </div>
+            {/* Compact progress bar (H1) — proportion of steps completed. */}
+            {prog && (
+              <div className="mt-2">
+                <div className="h-1.5 rounded-full bg-blue-500/15 overflow-hidden">
+                  <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${Math.round((prog.index / prog.total) * 100)}%` }} />
+                </div>
+                <p className="text-[10px] text-text-muted mt-1">{prog.label}</p>
+              </div>
+            )}
+          </Link>
+        )
+      })()}
+
+      {/* Rate-this-trade prompt (H2) — appears for ~15 min after a trade completes,
+          then disappears on its own. Opens the trade room where the rating box is. */}
+      {rateableEpisode && (
         <Link
-          href={episodeTradeHref(activeEpisode)}
-          className="mx-4 mt-3 flex items-center gap-2.5 rounded-xl border border-blue-500/30 bg-blue-500/5 px-3 py-2 hover:border-blue-500/50 transition-colors"
+          href={episodeTradeHref(rateableEpisode)}
+          className="mx-4 mt-3 flex items-center gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 hover:border-amber-500/60 transition-colors"
         >
-          <Clock className="w-4 h-4 text-blue-500 flex-shrink-0" />
+          <span className="text-base leading-none">⭐</span>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-500 leading-none">In progress</p>
-            <p className="text-sm font-semibold text-text-primary truncate mt-0.5">
-              {activeEpisode.tradeRef}
-              {activeEpisode.fiatAmount && <span className="text-text-muted font-normal"> · {fmtPkr(activeEpisode.fiatAmount)}</span>}
-            </p>
+            <p className="text-sm font-semibold text-text-primary truncate">Rate this trade — optional</p>
+            <p className="text-[11px] text-text-muted truncate">{rateableEpisode.tradeRef} completed. Leave feedback before the window closes.</p>
           </div>
-          <span className="text-xs font-medium text-blue-500 flex-shrink-0">View →</span>
+          <span className="text-xs font-medium text-amber-600 dark:text-amber-400 flex-shrink-0">Rate →</span>
         </Link>
       )}
 

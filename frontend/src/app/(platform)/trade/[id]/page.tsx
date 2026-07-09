@@ -279,7 +279,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="bg-surface rounded-lg border border-border p-3">
               <p className="text-text-muted text-xs mb-0.5">Token</p>
-              <p className="font-semibold text-text-primary">{parseFloat(trade.amount).toFixed(4)} {trade.coin}</p>
+              <p className="font-semibold text-text-primary">{parseFloat(trade.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {trade.coin}</p>
             </div>
             <div className="bg-surface rounded-lg border border-border p-3">
               <p className="text-text-muted text-xs mb-0.5">Total PKR</p>
@@ -1013,9 +1013,9 @@ export default function TradePage() {
                 onToggle={() => toggleStep(legPos.fiat)}
               >
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
-                  <DetailRow label="Amount" value={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin}`} />
+                  <DetailRow label="Amount" value={`${parseFloat(trade.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.coin}`} />
                   <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
-                  <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} />
+                  <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} highlight />
                   <div className="flex justify-between">
                     <span className="text-text-muted">Pay via</span>
                     <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
@@ -1147,7 +1147,7 @@ export default function TradePage() {
                 stepNum={legPos.crypto}
                 title={isUserBuyer ? 'Receive & Confirm Crypto' : 'Send Crypto'}
                 state={legState(['send_crypto', 'confirm_crypto'])}
-                summary={`${parseFloat(trade.amount).toFixed(4)} ${trade.coin} delivered`}
+                summary={`${parseFloat(trade.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.coin} delivered`}
                 expanded={expandedSteps.has(legPos.crypto)}
                 onToggle={() => toggleStep(legPos.crypto)}
               >
@@ -1156,7 +1156,7 @@ export default function TradePage() {
                       much to send without scrolling back up to the order summary. */}
                   <div className="flex justify-between items-center gap-2 pb-2 mb-1 border-b border-border">
                     <span className="text-text-muted flex-shrink-0">{isUserBuyer ? 'Amount to receive' : 'Amount to send'}</span>
-                    <span className="font-bold text-text-primary text-base">{parseFloat(trade.amount).toFixed(4)} {trade.coin}</span>
+                    <span className="font-bold text-text-primary text-base">{parseFloat(trade.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {trade.coin}</span>
                   </div>
                   {(() => {
                     // Network only applies to on-chain wallet delivery. For exchange /
@@ -1598,11 +1598,11 @@ function deliveryDestinationLabel(method: string | undefined, isUserBuyer: boole
   return isUserBuyer ? 'Your token receiving address' : "Send to buyer's wallet address"
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div className="flex justify-between gap-2">
-      <span className="text-text-muted flex-shrink-0">{label}</span>
-      <span className="font-medium text-text-primary text-right break-words min-w-0">{value}</span>
+    <div className={`flex justify-between gap-2 ${highlight ? 'bg-primary/5 border border-primary/20 rounded-lg px-2.5 py-1.5' : ''}`}>
+      <span className={`flex-shrink-0 ${highlight ? 'text-text-primary font-semibold' : 'text-text-muted'}`}>{label}</span>
+      <span className={`text-right break-words min-w-0 ${highlight ? 'text-primary font-bold text-base' : 'font-medium text-text-primary'}`}>{value}</span>
     </div>
   )
 }

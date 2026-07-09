@@ -14,7 +14,7 @@ import { ctmUsdtMethodLabel, ctmUsdtMethodLogo } from '@/lib/ctmUsdtMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
-import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck } from 'lucide-react'
+import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 import { toast } from '@/lib/toast'
 
@@ -427,10 +427,11 @@ function ListingRow({
         ) : (
           <Link
             href={`/ctm/listings/${listing.id}`}
-            className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-              isSell ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+            className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors inline-flex items-center gap-1.5 ${
+              isSell ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'
             }`}
           >
+            {isSell ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
             {isSell ? `Buy ${sym}` : `Sell ${sym}`}
           </Link>
         )}
@@ -561,8 +562,9 @@ function ListingRow({
                 ) : (
                   <Link
                     href={`/ctm/listings/${listing.id}`}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${isSell ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap inline-flex items-center gap-1.5 ${isSell ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
                   >
+                    {isSell ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
                     {isSell ? `Buy ${sym}` : `Sell ${sym}`}
                   </Link>
                 )}
@@ -719,10 +721,13 @@ export default function CtmHomePage() {
             <button
               key={opt.value}
               onClick={() => { setSide(opt.value); setPage(1) }}
-              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium transition-colors ${
-                side === opt.value ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-alt'
+              className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium transition-colors inline-flex items-center justify-center gap-1.5 ${
+                side === opt.value
+                  ? (opt.value === 'buy' ? 'bg-green-600 text-white' : 'bg-red-600 text-white')
+                  : 'text-text-secondary hover:bg-surface-alt'
               }`}
             >
+              {opt.value === 'buy' ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
               {opt.label}
             </button>
           ))}

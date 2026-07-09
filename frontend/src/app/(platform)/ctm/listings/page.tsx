@@ -226,7 +226,7 @@ export default function BrowseListingsPage() {
                     <p className="text-xs text-text-muted">per {l.token.symbol}</p>
                     <p className="text-xs text-text-muted mt-0.5">
                       <span className="font-medium">{l.side === 'buy' ? 'Wanted' : 'Available'}:</span>{' '}
-                      {Number(l.availableAmount).toFixed(4)} {l.token.symbol}
+                      {Number(l.availableAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {l.token.symbol}
                     </p>
                   </div>
 

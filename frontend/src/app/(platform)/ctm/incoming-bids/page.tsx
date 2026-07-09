@@ -72,7 +72,7 @@ function BidCard({ bid, listing, onAccept, onReject, acting }: {
         </div>
         <div>
           <p className="text-xs text-text-muted">Amount</p>
-          <p className="font-semibold text-text-primary">{Number(bid.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 6 })} {listing.token.symbol}</p>
+          <p className="font-semibold text-text-primary">{Number(bid.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} {listing.token.symbol}</p>
         </div>
         <div>
           <p className="text-xs text-text-muted">Total PKR</p>

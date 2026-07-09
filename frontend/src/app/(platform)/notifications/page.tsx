@@ -72,6 +72,13 @@ function getNavTarget(notif: Notification): string | null {
   // P2P trade & dispute
   if ((t === 'trade' || t === 'dispute') && meta?.tradeId) return `/trade/${meta.tradeId}`
 
+  // "New review received" — open the trade where the review lives so the user can
+  // see the rating + comment left for them (J1). CTM carries a tradeRef, USDT a tradeId.
+  if (t === 'rating') {
+    if (meta?.tradeRef) return `/ctm/trade/${meta.tradeRef}`
+    if (meta?.tradeId) return `/trade/${meta.tradeId}`
+  }
+
   // CTM dispute-related types deep-link into the trade room and auto-open the
   // dispute panel + evidence/response area.
   const ctmDisputeTypes = new Set([
