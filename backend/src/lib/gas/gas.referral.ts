@@ -172,29 +172,61 @@ export async function bindReferral(referredUserId: string, rawCode?: string): Pr
     } catch { /* unique race — already bound concurrently */ }
   }
 
-  // Notify the referrer that a new person joined via their link — fires exactly
-  // once, when the canonical signup binding is first established. Bell + push +
-  // Telegram DM (a positive, low-volume, user-initiated event worth surfacing).
+  // Notify the referrer that a new person joined via their link. This path only
+  // covers "heal" cases where bindReferral itself first establishes the signup
+  // binding (a user created WITHOUT referredById, later bound via a gas code).
+  // The common case — signup with a referral link — pre-sets referredById at user
+  // creation, so it never reaches here; those paths call notifyReferralJoined()
+  // directly (email path at verification, Google/Telegram at signup).
   if (signupNewlyBound && ownerId) {
-    const owner = ownerId
-    db.user.findUnique({ where: { id: referredUserId }, select: { username: true } })
-      .then((ru) => {
-        const who = ru?.username ? `@${ru.username}` : 'Someone new'
-        notify(
-          owner,
-          'referral',
-          'New referral joined 🎉',
-          `${who} just signed up with your referral link. You'll earn rewards when they trade or top up gas.`,
-          { referredUserId },
-          undefined,
-          '/referral',
-          { telegram: true },
-        )
-      })
-      .catch(() => { /* best-effort */ })
+    void notifyReferralJoined(ownerId, referredUserId)
   }
 
   return { bound: didBind, referrerId: ownerId }
+}
+
+/**
+ * Notify a referrer that a new person joined via their link — the in-app bell +
+ * web push + a Telegram DM (a positive, low-volume, user-initiated event worth
+ * surfacing). This is the notification that was previously never delivered for
+ * normal signups (referredById is set inline at user creation, so bindReferral's
+ * "newly bound" branch never fired).
+ *
+ * De-duplicated on (referrer, referred) so it fires AT MOST ONCE per referred
+ * user, which makes it safe to call from every seam — the three signup paths and
+ * the bindReferral heal — without any risk of double-buzzing the referrer.
+ * Best-effort: never throws into the caller.
+ */
+export async function notifyReferralJoined(referrerId: string, referredUserId: string): Promise<void> {
+  try {
+    if (!referrerId || referrerId === referredUserId) return
+
+    // Idempotency guard — one join notification per referred user, ever.
+    const already = await db.notification.findFirst({
+      where: {
+        userId: referrerId,
+        type: 'referral',
+        metadata: { path: ['referredUserId'], equals: referredUserId },
+      },
+      select: { id: true },
+    })
+    if (already) return
+
+    const ru = await db.user.findUnique({ where: { id: referredUserId }, select: { username: true } })
+    const who = ru?.username ? `@${ru.username}` : 'Someone new'
+    notify(
+      referrerId,
+      'referral',
+      'New referral joined 🎉',
+      `${who} just signed up with your referral link. You'll earn rewards when they trade or top up gas.`,
+      { referredUserId },
+      undefined,
+      '/referral',
+      { telegram: true },
+    )
+  } catch (err) {
+    logger.error({ err, referrerId, referredUserId }, 'notifyReferralJoined failed')
+  }
 }
 
 /**

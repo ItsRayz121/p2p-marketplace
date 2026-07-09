@@ -39,7 +39,7 @@ import {
 import { sendOtpEmail } from './email.service'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
-import { resolveReferralOwner, bindReferral } from '../lib/gas/gas.referral'
+import { resolveReferralOwner, bindReferral, notifyReferralJoined } from '../lib/gas/gas.referral'
 import { resolveAndStoreCountry } from '../lib/geoip'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -499,6 +499,18 @@ export async function verifyEmail(userId: string, code: string): Promise<void> {
     db.otpCode.update({ where: { id: otp.id }, data: { usedAt: new Date() } }),
     db.user.update({ where: { id: userId }, data: { isEmailVerified: true } }),
   ])
+
+  // If this account came in via a referral link, tell the referrer now — the
+  // referred user has confirmed their email and is a real join. We deliberately
+  // wait for verification (rather than firing at signup) so unverified ghost
+  // signups can't notify-bomb a referrer. Google/Telegram signups are proven at
+  // creation and notify immediately in their own paths. Best-effort + de-duped.
+  db.user
+    .findUnique({ where: { id: userId }, select: { referredById: true } })
+    .then((u) => {
+      if (u?.referredById) void notifyReferralJoined(u.referredById, userId)
+    })
+    .catch(() => { /* best-effort */ })
 }
 
 // Verifies the OTP and immediately creates a login session so the frontend
@@ -840,6 +852,9 @@ export async function loginOrRegisterWithGoogle(
     // Mirror the signup attribution into the gas referral system (best-effort, idempotent).
     if (referredById) {
       bindReferral(created.id).catch((err) => logger.error({ err, userId: created.id }, 'gas referral heal on google register failed'))
+      // Google identity is proven by OAuth, so this is a real join — notify the
+      // referrer right away (de-duped, best-effort).
+      void notifyReferralJoined(referredById, created.id)
     }
   } else if (!user.googleId) {
     // Existing email/password user — link their Google account
@@ -990,6 +1005,9 @@ export async function loginOrRegisterWithTelegram(
   // Mirror the signup attribution into the gas referral system (best-effort, idempotent).
   if (referredById) {
     bindReferral(created.id).catch((err) => logger.error({ err, userId: created.id }, 'gas referral heal on telegram register failed'))
+    // Telegram identity is proven by the initData HMAC, so this is a real join —
+    // notify the referrer right away (de-duped, best-effort).
+    void notifyReferralJoined(referredById, created.id)
   }
   // Resolve the signup country from the IP (fire-and-forget; display/analytics only).
   resolveAndStoreCountry(created.id, ip)
