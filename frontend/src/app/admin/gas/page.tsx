@@ -1040,23 +1040,26 @@ export default function GasAdminPage() {
           <h1 className="text-2xl font-bold text-text-primary">Gas Fee Operations</h1>
           <p className="text-text-muted text-sm mt-0.5">{total} total orders</p>
         </div>
-        <div className="admin-toolbar items-center gap-2 -mx-1 px-1">
+        {/* Mobile: an even 2-column grid so every action is visible and aligned
+            (was a hidden horizontal-scroll strip that clipped the later buttons).
+            lg+: a normal inline row. */}
+        <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
           {isSuperAdmin && !globalPaused && (
-            <Button size="sm" variant="danger" onClick={() => setConfirmGlobalPause(true)}>
+            <Button size="sm" variant="danger" fullWidth className="lg:w-auto" onClick={() => setConfirmGlobalPause(true)}>
               Emergency Pause
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={showAnalytics ? () => setShowAnalytics(false) : handleShowAnalytics}>
+          <Button size="sm" variant="ghost" fullWidth className="lg:w-auto" onClick={showAnalytics ? () => setShowAnalytics(false) : handleShowAnalytics}>
             {showAnalytics ? 'Hide Analytics' : 'Analytics'}
           </Button>
-          <Link href="/admin/gas/requests">
-            <Button size="sm" variant="ghost">Custom Requests</Button>
+          <Link href="/admin/gas/requests" className="w-full lg:w-auto">
+            <Button size="sm" variant="ghost" fullWidth className="lg:w-auto">Custom Requests</Button>
           </Link>
-          <Link href="/admin/gas/diagnostics">
-            <Button size="sm" variant="ghost">Token Diagnostics</Button>
+          <Link href="/admin/gas/diagnostics" className="w-full lg:w-auto">
+            <Button size="sm" variant="ghost" fullWidth className="lg:w-auto">Token Diagnostics</Button>
           </Link>
-          <Link href="/admin/gas/chains">
-            <Button size="sm" variant="secondary">Chain & Token Config</Button>
+          <Link href="/admin/gas/chains" className="w-full lg:w-auto">
+            <Button size="sm" variant="secondary" fullWidth className="lg:w-auto">Chain &amp; Token Config</Button>
           </Link>
         </div>
       </div>
