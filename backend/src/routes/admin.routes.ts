@@ -4508,16 +4508,21 @@ export async function adminRoutes(app: FastifyInstance) {
     // Either way the refund settles on the PAYMENT network's chain (BEP20→BSC,
     // APTOS→Aptos, …), never the gas-delivery chain — enforced in processGasRefund
     // and, for the manual address, validated here against that same network.
-    const body = (req.body ?? {}) as { mode?: string; toAddress?: string }
+    const body = (req.body ?? {}) as { mode?: string; toAddress?: string; toNetwork?: string }
     const mode = body.mode === 'manual' ? 'manual' : 'auto'
 
     let toAddressOverride: string | undefined
+    let networkOverride: string | undefined
     if (mode === 'manual') {
       const addr = (body.toAddress ?? '').trim()
       if (!addr) throw new AppError('VALIDATION_ERROR', 'Manual refund requires a destination address.', 400)
-      const net = order.paymentNetwork.toUpperCase()
+      // The refund settles on a chosen USDT rail. Default to the order's own payment
+      // network (crypto orders), but allow an explicit override — a PKR-paid order has
+      // no crypto payment network, so the admin picks the rail the user asked for.
+      const requestedNet = (body.toNetwork ?? '').trim().toUpperCase()
+      const net = requestedNet || order.paymentNetwork.toUpperCase()
       let valid = false
-      let hint = `No automated USDT refund for payment network ${order.paymentNetwork}.`
+      let hint = `No automated USDT refund for network ${net}.`
       if (net === 'TRC20') {
         valid = /^T[A-Za-z1-9]{33}$/.test(addr); hint = 'Expected a TRON (TRC20) address starting with T.'
       } else if (net === 'BEP20' || net === 'ERC20') {
@@ -4525,9 +4530,14 @@ export async function adminRoutes(app: FastifyInstance) {
       } else if (net === 'APTOS') {
         const { validateAptosAddress } = await import('../lib/gas/aptosWalletService')
         valid = validateAptosAddress(addr); hint = 'Expected a valid Aptos 0x address.'
+      } else {
+        hint = `Refunds are only supported to BEP20, ERC20, TRC20 or APTOS USDT rails (got ${net || 'none'}).`
       }
-      if (!valid) throw new AppError('VALIDATION_ERROR', `Invalid refund address for ${order.paymentNetwork}. ${hint}`, 400)
+      if (!valid) throw new AppError('VALIDATION_ERROR', `Invalid refund address for ${net}. ${hint}`, 400)
       toAddressOverride = addr
+      // Only carry an override when it differs from the payment network; keeps the
+      // common crypto-order path unchanged (settles on payment network as before).
+      if (requestedNet && requestedNet !== order.paymentNetwork.toUpperCase()) networkOverride = requestedNet
     } else if (!order.paymentTxHash) {
       throw new AppError(
         'NO_PAYMENT',
@@ -4560,9 +4570,10 @@ export async function adminRoutes(app: FastifyInstance) {
     try { await queues.gasFee.remove(jobId) } catch { /* active or absent — add() stays a safe no-op */ }
     await queues.gasFee.add(
       'process-refund',
-      { orderId: id, ...(toAddressOverride ? { toAddressOverride } : {}) },
+      { orderId: id, ...(toAddressOverride ? { toAddressOverride } : {}), ...(networkOverride ? { networkOverride } : {}) },
       { jobId, attempts: 5, backoff: { type: 'exponential', delay: 30_000 } },
     )
+    const settleNet = networkOverride ?? order.paymentNetwork
     await createAuditLog(req.user!.id, 'GAS_ORDER_REFUND_TRIGGERED', 'GasFeeOrder', id, {
       previousStatus: order.status,
       orderRef: order.orderRef,
@@ -4570,12 +4581,13 @@ export async function adminRoutes(app: FastifyInstance) {
       amount: order.paymentAmount.toString(),
       mode,
       ...(toAddressOverride ? { toAddress: toAddressOverride } : {}),
+      ...(networkOverride ? { networkOverride } : {}),
     }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({
       success: true,
       message: mode === 'manual'
-        ? `Refund queued — ${order.paymentAmount} USDT will be sent to the specified address on ${order.paymentNetwork}.`
+        ? `Refund queued — ${order.paymentAmount} USDT will be sent to the specified address on ${settleNet}.`
         : 'Refund queued — USDT will be sent back to the payer automatically.',
     })
   })

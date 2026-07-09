@@ -12,7 +12,8 @@ import { useSSE } from '@/hooks/useSSE'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
-import { Send } from 'lucide-react'
+import { adminApi } from '@/lib/api'
+import { Send, UserPlus, Search, X } from 'lucide-react'
 
 interface ConversationSummary {
   id: string
@@ -28,7 +29,17 @@ interface ThreadMessage {
   sender: 'user' | 'admin' | 'system'
   body: string
   rating?: number | null
+  kind?: 'text' | 'refund_request' | 'refund_response'
+  metadata?: Record<string, unknown> | null
   createdAt: string
+}
+
+interface UserSearchResult {
+  id: string
+  name: string
+  username: string | null
+  email: string
+  avatarUrl: string | null
 }
 
 interface Thread {
@@ -47,8 +58,47 @@ export default function AdminSupportPage() {
   const [sending, setSending] = useState(false)
   const [closing, setClosing] = useState(false)
   const [merging, setMerging] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [contacting, setContacting] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { user } = useAuth()
+
+  // Debounced user search for the "Message a user" composer.
+  useEffect(() => {
+    if (!composeOpen) return
+    const q = searchQ.trim()
+    if (q.length < 2) { setSearchResults([]); return }
+    setSearching(true)
+    const t = setTimeout(async () => {
+      try {
+        setSearchResults(await adminApi.searchSupportUsers(q))
+      } catch {
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchQ, composeOpen])
+
+  async function startConversationWith(u: UserSearchResult) {
+    setContacting(u.id)
+    try {
+      const { conversationId } = await adminApi.contactSupportUser(u.id)
+      setComposeOpen(false)
+      setSearchQ('')
+      setSearchResults([])
+      await fetchConversations()
+      openConversation(conversationId)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not open conversation')
+    } finally {
+      setContacting(null)
+    }
+  }
 
   async function mergeConversations() {
     if (!window.confirm('Merge every user’s duplicate support conversations into one? This is safe and idempotent.')) return
@@ -143,14 +193,70 @@ export default function AdminSupportPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-text-primary">Support Chat</h1>
-          <p className="text-sm text-text-muted">Reply to users live. New messages appear automatically.</p>
+          <p className="text-sm text-text-muted">Reply to users live, or reach out to any user first.</p>
         </div>
-        {user?.role === 'super_admin' && (
-          <Button size="sm" variant="secondary" onClick={mergeConversations} loading={merging} className="flex-shrink-0">
-            Merge duplicates
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button size="sm" variant="primary" onClick={() => setComposeOpen(true)} className="flex items-center gap-1.5">
+            <UserPlus className="w-4 h-4" /> Message a user
           </Button>
-        )}
+          {user?.role === 'super_admin' && (
+            <Button size="sm" variant="secondary" onClick={mergeConversations} loading={merging}>
+              Merge duplicates
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Compose: search a user and open (or reuse) their support thread */}
+      {composeOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-24" onClick={() => setComposeOpen(false)}>
+          <div className="w-full max-w-md bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <p className="font-semibold text-text-primary">Message a user</p>
+              <button onClick={() => setComposeOpen(false)} className="p-1 hover:bg-canvas rounded-lg" aria-label="Close">
+                <X className="w-5 h-5 text-text-muted" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="relative">
+                <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  autoFocus
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  placeholder="Search by username, email, name or user ID…"
+                  className="w-full pl-9 pr-3 py-2 text-sm bg-canvas border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-text-primary"
+                />
+              </div>
+              <div className="max-h-72 overflow-y-auto -mx-1">
+                {searching ? (
+                  <p className="text-xs text-text-muted px-2 py-3">Searching…</p>
+                ) : searchQ.trim().length < 2 ? (
+                  <p className="text-xs text-text-muted px-2 py-3">Type at least 2 characters to search.</p>
+                ) : searchResults.length === 0 ? (
+                  <p className="text-xs text-text-muted px-2 py-3">No users found.</p>
+                ) : (
+                  searchResults.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => startConversationWith(u)}
+                      disabled={contacting === u.id}
+                      className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-canvas transition-colors text-left disabled:opacity-50"
+                    >
+                      <UserAvatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-text-primary truncate">{u.name}</p>
+                        <p className="text-xs text-text-muted truncate">{u.username ? `@${u.username} · ` : ''}{u.email}</p>
+                      </div>
+                      {contacting === u.id && <span className="text-[10px] text-text-muted">Opening…</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-[20rem_1fr] gap-4 h-[calc(100vh-12rem)]">
         {/* Conversation list */}
@@ -213,6 +319,26 @@ export default function AdminSupportPage() {
                 {buildChatTimeline(thread.messages, { status: thread.status }).map((item) =>
                   item.kind !== 'message' ? (
                     <ChatDivider key={item.key} kind={item.kind} at={item.at} />
+                  ) : item.msg.kind === 'refund_request' ? (
+                    <div key={item.key} className="flex justify-end">
+                      <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-br-sm text-sm bg-primary/10 border border-primary/30 text-text-primary">
+                        <p className="text-[11px] font-semibold text-primary mb-0.5">
+                          Refund address requested{(item.msg.metadata?.orderRef as string | undefined) ? ` · ${item.msg.metadata!.orderRef as string}` : ''}
+                        </p>
+                        <span className="whitespace-pre-wrap break-words">{item.msg.body}</span>
+                        <span className="block text-[10px] opacity-60 mt-0.5">{fmtTime(item.msg.createdAt)}</span>
+                      </div>
+                    </div>
+                  ) : item.msg.kind === 'refund_response' ? (
+                    <div key={item.key} className="flex justify-start">
+                      <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-bl-sm text-sm bg-success/10 border border-success/30 text-text-primary">
+                        <p className="text-[11px] font-semibold text-success mb-0.5">Refund address submitted</p>
+                        <p className="font-mono text-xs break-all">{item.msg.metadata?.address as string ?? item.msg.body}</p>
+                        <p className="text-[10px] text-text-muted mt-0.5">
+                          Network: {(item.msg.metadata?.network as string) ?? '—'} · {fmtTime(item.msg.createdAt)}
+                        </p>
+                      </div>
+                    </div>
                   ) : item.msg.sender === 'system' ? (
                     item.msg.rating != null ? (
                       <SupportRatingChip key={item.key} rating={item.msg.rating} at={item.msg.createdAt} />

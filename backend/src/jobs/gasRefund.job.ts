@@ -25,8 +25,8 @@ function planRefund(order: { paymentNetwork: string }): RefundPlan {
   return null // no automated refund path for this payment network
 }
 
-export async function processGasRefund(job: Job<{ orderId: string; toAddressOverride?: string }>) {
-  const { orderId, toAddressOverride } = job.data
+export async function processGasRefund(job: Job<{ orderId: string; toAddressOverride?: string; networkOverride?: string }>) {
+  const { orderId, toAddressOverride, networkOverride } = job.data
 
   // CAS claim: only proceed if status is still refund_pending.
   // jobId dedup (gas-refund-{orderId}) prevents duplicate jobs, but the CAS
@@ -61,7 +61,11 @@ export async function processGasRefund(job: Job<{ orderId: string; toAddressOver
   // Resolve the chain the USDT actually arrived on (payment network), NOT the
   // gas-delivery chain. For a TON gas order paid via BEP20, this is BSC; for an
   // Aptos-paid order it's the Aptos fungible-asset rail.
-  const plan = planRefund(order)
+  //
+  // networkOverride: a manual refund to a user-chosen USDT rail. Essential for
+  // PKR-paid orders — those have no crypto payment network to settle on, so the
+  // admin (with the address the user supplied in chat) picks the rail explicitly.
+  const plan = planRefund(networkOverride ? { paymentNetwork: networkOverride } : order)
   if (!plan) {
     logger.warn({ orderId, paymentNetwork: order.paymentNetwork }, 'processGasRefund: no auto-refund support for payment network — manual refund required')
     await db.gasFeeOrder.update({

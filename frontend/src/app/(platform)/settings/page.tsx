@@ -15,8 +15,9 @@ import { PriceAlertsManager, CtmPriceAlertsManager } from '@/components/ui/Price
 import { WereYouReferred } from '@/components/referral/WereYouReferred'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { toast } from '@/lib/toast'
-import { Lock, Camera, Mail, Send, Check } from 'lucide-react'
+import { Lock, Camera, Mail, Send, Check, Download } from 'lucide-react'
 import { SUPPORT_EMAIL, openSupportEmail } from '@/lib/contact'
+import { openInstallPrompt, isRunningStandalone } from '@/lib/installApp'
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
 
@@ -372,8 +373,33 @@ function SecurityTab() {
 // ─── Notifications Tab ────────────────────────────────────────────────────────
 
 function NotificationsTab() {
+  const installed = typeof window !== 'undefined' && isRunningStandalone()
   return (
     <div className="space-y-6">
+      {/* Install app (PWA / Add to Home Screen) */}
+      <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="flex-shrink-0 w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+              <Download className="w-5 h-5 text-primary" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-text-primary">Install the app</h3>
+              <p className="text-sm text-text-muted">
+                {installed
+                  ? 'RupChain is already installed on this device.'
+                  : 'Add RupChain to your home screen for faster, full-screen access.'}
+              </p>
+            </div>
+          </div>
+          {!installed && (
+            <Button size="sm" variant="secondary" onClick={() => openInstallPrompt()} className="flex-shrink-0">
+              Install
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Push Notifications */}
       <div className="bg-surface shadow-card border border-border rounded-xl p-5 space-y-3">
         <h3 className="text-base font-semibold text-text-primary">Push Notifications</h3>

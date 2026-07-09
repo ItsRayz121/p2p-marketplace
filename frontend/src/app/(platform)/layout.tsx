@@ -9,6 +9,7 @@ import { marketplaceApi } from '@/lib/api'
 import { Web3Provider } from '@/lib/web3/Web3Provider'
 import { useAuthStore } from '@/store/auth.store'
 import { PushOptInBanner } from '@/components/ui/PushOptInBanner'
+import { InstallAppBanner } from '@/components/ui/InstallAppBanner'
 import { AnnouncementBanner } from '@/components/ui/AnnouncementBanner'
 
 interface SiteConfig {
@@ -136,6 +137,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         </div>
         <BottomNav />
         {user && <PushOptInBanner />}
+        <InstallAppBanner />
       </div>
     </Web3Provider>
   )

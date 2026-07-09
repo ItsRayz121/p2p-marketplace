@@ -2442,8 +2442,24 @@ export const adminApi = {
     apiRequest<unknown>(`/admin/gas/orders/${ref}`),
   retryGasOrder: (id: string) =>
     apiRequest<void>(`/admin/gas/orders/${id}/retry`, { method: 'POST' }),
-  refundGasOrder: (id: string, opts?: { mode?: 'auto' | 'manual'; toAddress?: string }) =>
+  refundGasOrder: (id: string, opts?: { mode?: 'auto' | 'manual'; toAddress?: string; toNetwork?: string }) =>
     apiRequest<{ message?: string }>(`/admin/gas/orders/${id}/refund`, { method: 'POST', body: JSON.stringify(opts ?? {}) }),
+
+  // Admin-initiated user contact + structured refund-address request
+  searchSupportUsers: (q: string) =>
+    apiRequest<{ id: string; name: string; username: string | null; email: string; avatarUrl: string | null }[]>(
+      `/admin/support/users/search?q=${encodeURIComponent(q)}`,
+    ),
+  contactSupportUser: (userId: string, body?: string) =>
+    apiRequest<{ conversationId: string }>('/admin/support/contact', {
+      method: 'POST',
+      body: JSON.stringify({ userId, ...(body ? { body } : {}) }),
+    }),
+  requestRefundAddress: (userId: string, orderRef: string, body?: string) =>
+    apiRequest<{ conversationId: string; messageId: string }>('/admin/support/refund-request', {
+      method: 'POST',
+      body: JSON.stringify({ userId, orderRef, ...(body ? { body } : {}) }),
+    }),
   approvePkrOrder: (id: string) =>
     apiRequest<{ status: string }>(`/admin/gas/orders/${id}/approve-pkr`, { method: 'POST' }),
   rejectPkrOrder: (id: string, reason?: string) =>

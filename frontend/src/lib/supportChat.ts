@@ -17,8 +17,16 @@ export interface SupportMessage {
   sender: 'user' | 'admin' | 'system'
   body: string
   rating?: number | null
+  // Structured messages: 'refund_request' renders a refund-destination form for the
+  // user; 'refund_response' is their submitted answer. Plain chat omits kind ('text').
+  kind?: 'text' | 'refund_request' | 'refund_response'
+  metadata?: Record<string, unknown> | null
   createdAt: string
 }
+
+// USDT rails a user may pick when submitting a refund address.
+export const REFUND_NETWORKS = ['BEP20', 'ERC20', 'TRC20', 'APTOS'] as const
+export type RefundNetwork = (typeof REFUND_NETWORKS)[number]
 
 export interface SupportChatState {
   conversation: { id: string; status: string; unreadByUser: boolean; lastMessageAt: string } | null
@@ -125,5 +133,10 @@ export const supportChatApi = {
     apiRequest<unknown>('/support/chat/rate', {
       method: 'POST',
       body: JSON.stringify({ score }),
+    }),
+  refundResponse: (requestId: string, network: RefundNetwork, address: string) =>
+    apiRequest<SupportMessage>('/support/chat/refund-response', {
+      method: 'POST',
+      body: JSON.stringify({ requestId, network, address }),
     }),
 }

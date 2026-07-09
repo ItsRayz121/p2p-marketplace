@@ -9,7 +9,8 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { fmtDateTime } from '@/lib/fmt'
-import { MessageSquare } from 'lucide-react'
+import { openSupportChat } from '@/lib/supportChat'
+import { MessageSquare, BadgeCheck, Headphones } from 'lucide-react'
 
 export default function MessagesInboxPage() {
   const { user } = useAuth()
@@ -46,6 +47,23 @@ export default function MessagesInboxPage() {
       <p className="text-sm text-text-muted mb-4">
         Your conversations with people you&apos;ve traded with. Each person keeps one thread across all your trades.
       </p>
+
+      {/* Official RupChain channel — always pinned at the top, opens live support */}
+      <button
+        onClick={() => openSupportChat()}
+        className="w-full flex items-center gap-3 p-3 mb-2 rounded-lg bg-primary/5 border border-primary/30 hover:border-primary/50 transition-colors text-left"
+      >
+        <span className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+          <Headphones className="w-5 h-5 text-primary" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-text-primary">RupChain Official</span>
+            <BadgeCheck className="w-4 h-4 text-sky-500" aria-label="Verified" />
+          </div>
+          <p className="text-xs text-text-muted truncate mt-0.5">Support &amp; account help — tap to chat with our team.</p>
+        </div>
+      </button>
 
       {items.length === 0 ? (
         <EmptyState

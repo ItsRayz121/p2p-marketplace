@@ -3,6 +3,12 @@
 self.addEventListener('install', () => { self.skipWaiting() })
 self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()) })
 
+// Minimal pass-through fetch handler. We don't cache (no offline strategy yet) —
+// its purpose is to satisfy the browser's PWA-installability check so the
+// `beforeinstallprompt` event fires and users can install the app to their home
+// screen / desktop.
+self.addEventListener('fetch', () => { /* network passthrough */ })
+
 self.addEventListener('push', (event) => {
   if (!event.data) return
 

@@ -6,8 +6,10 @@ import { useAuth } from '@/hooks/useAuth'
 import { useSSE } from '@/hooks/useSSE'
 import { supportChatApi, SUPPORT_CHAT_OPEN_EVENT, SUPPORT_RATINGS, buildChatTimeline, type SupportMessage } from '@/lib/supportChat'
 import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
+import { RefundAddressForm } from '@/components/support/RefundAddressForm'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 import { fmtTime } from '@/lib/fmt'
+import { BadgeCheck } from 'lucide-react'
 
 export default function SupportChatWidget() {
   const { isAuthenticated } = useAuth()
@@ -33,6 +35,14 @@ export default function SupportChatWidget() {
     }
     return sawReal
   })()
+
+  // Find the user's submitted answer (if any) for a given refund_request message.
+  function answerFor(requestId: string): SupportMessage | null {
+    for (const m of messages) {
+      if (m.kind === 'refund_response' && (m.metadata?.requestId as string | undefined) === requestId) return m
+    }
+    return null
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -140,7 +150,10 @@ export default function SupportChatWidget() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-primary text-white flex-shrink-0">
             <div>
-              <p className="font-semibold text-sm">RupChain Support</p>
+              <p className="font-semibold text-sm flex items-center gap-1">
+                RupChain Official
+                <BadgeCheck className="w-4 h-4 text-sky-300" aria-label="Verified" />
+              </p>
               <p className="text-xs text-white/70">We typically reply within a few hours</p>
             </div>
             <button onClick={() => setOpen(false)} aria-label="Close chat" className="p-1 hover:bg-white/10 rounded-lg">
@@ -159,6 +172,16 @@ export default function SupportChatWidget() {
               buildChatTimeline(messages, { status: status ?? undefined }).map((item) =>
                 item.kind !== 'message' ? (
                   <ChatDivider key={item.key} kind={item.kind} at={item.at} />
+                ) : item.msg.kind === 'refund_request' ? (
+                  <RefundAddressForm
+                    key={item.key}
+                    request={item.msg}
+                    answer={answerFor(item.msg.id)}
+                    onSubmitted={(msg) => setMessages((prev) => [...prev, msg])}
+                  />
+                ) : item.msg.kind === 'refund_response' ? (
+                  // Rendered inside the request form's "answered" state — skip the standalone bubble.
+                  null
                 ) : item.msg.sender === 'system' ? (
                   item.msg.rating != null ? (
                     <SupportRatingChip key={item.key} rating={item.msg.rating} at={item.msg.createdAt} />

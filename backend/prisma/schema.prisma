@@ -1217,6 +1217,12 @@ model SupportMessage {
   senderId       String?
   body           String
   rating         Int?                // 1=bad 2=okay 3=great — only on sender="system" satisfaction messages
+  // Structured message kind. "text" (default) is a plain chat bubble. "refund_request"
+  // is an admin-issued prompt that renders as a refund-destination form in the user's
+  // chat (metadata: { orderRef, chain, paymentNetwork }). "refund_response" is the
+  // user's structured answer (metadata: { requestId, address, network, orderRef }).
+  kind           String              @default("text")
+  metadata       Json?
   createdAt      DateTime            @default(now())
 
   @@index([conversationId, createdAt])
@@ -1629,6 +1635,12 @@ model GasFeeOrder {
   // request an immediate refund. Before this, the system keeps retrying delivery
   // and the UI shows a countdown. See lib/gas/gas.refundWindow.ts.
   refundEligibleAt    DateTime?
+  // Refund destination the user supplied via the in-chat refund-address form (see
+  // support refund_request/refund_response). Used to pre-fill the admin manual
+  // refund modal — critical for PKR-paid orders that have no on-chain payer to
+  // auto-resolve. The network is the USDT rail the user chose (BEP20/ERC20/TRC20/APTOS).
+  suggestedRefundAddress String?
+  suggestedRefundNetwork String?
 
   status              GasFeeOrderStatus @default(created)
   failureReason       String?
