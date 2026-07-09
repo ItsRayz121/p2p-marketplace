@@ -1302,7 +1302,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
             <div className="flex gap-3">
               <button onClick={() => setShowModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
-              <button onClick={handleStartTrade} disabled={submitting} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
+              <button onClick={handleStartTrade} disabled={submitting || !wizStep1Done || !wizStep2Done || !wizStep3Done} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
                 {submitting ? 'Starting…' : 'Start Trade'}
               </button>
             </div>
