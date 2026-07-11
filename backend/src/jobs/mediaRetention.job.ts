@@ -70,92 +70,80 @@ export async function runMediaRetention(
   let deleted = 0
   let scanned = 0
 
-  // ── USDT trade payment / delivery proofs ─────────────────────────────────
-  const usdtTrades = await db.trade.findMany({
-    where: {
-      status: { in: [...TERMINAL_USDT] },
-      updatedAt: { lt: cutoff },
-      OR: [{ paymentProofUrl: { not: null } }, { sellerDeliveryProofUrl: { not: null } }],
-    },
-    select: { id: true, paymentProofUrl: true, sellerDeliveryProofUrl: true },
-    take: BATCH,
-  })
+  // ── Phase 1: gather all eligible media (READS ONLY) ──────────────────────
+  // Every read runs BEFORE any delete/update. Purging a proof bumps its row's
+  // `updatedAt` (Prisma @updatedAt), so if we interleaved reads and writes a
+  // just-purged trade would be wrongly excluded from a later same-run query (its
+  // chat images would then wait a whole extra retention window). Snapshotting the
+  // eligibility set up-front makes each media type independent.
+  const [usdtTrades, usdtMsgs, ctmTrades, ctmProofs, ctmMsgs, gasOrders, instantBuys] = await Promise.all([
+    db.trade.findMany({
+      where: {
+        status: { in: [...TERMINAL_USDT] },
+        updatedAt: { lt: cutoff },
+        OR: [{ paymentProofUrl: { not: null } }, { sellerDeliveryProofUrl: { not: null } }],
+      },
+      select: { id: true, paymentProofUrl: true, sellerDeliveryProofUrl: true },
+      take: BATCH,
+    }),
+    db.tradeMessage.findMany({
+      where: { attachmentUrl: { not: null }, trade: { status: { in: [...TERMINAL_USDT] }, updatedAt: { lt: cutoff } } },
+      select: { id: true, attachmentUrl: true },
+      take: BATCH,
+    }),
+    db.ctmTrade.findMany({
+      where: { status: { in: [...TERMINAL_CTM] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
+      select: { id: true, paymentProofUrl: true },
+      take: BATCH,
+    }),
+    db.ctmTradeProof.findMany({
+      where: { fileUrl: { not: null }, trade: { status: { in: [...TERMINAL_CTM] }, updatedAt: { lt: cutoff } } },
+      select: { id: true, fileUrl: true },
+      take: BATCH,
+    }),
+    db.ctmTradeMessage.findMany({
+      where: { attachmentUrl: { not: null }, trade: { status: { in: [...TERMINAL_CTM] }, updatedAt: { lt: cutoff } } },
+      select: { id: true, attachmentUrl: true },
+      take: BATCH,
+    }),
+    db.gasFeeOrder.findMany({
+      where: { status: { in: [...TERMINAL_GAS] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
+      select: { id: true, paymentProofUrl: true },
+      take: BATCH,
+    }),
+    db.instantBuyOrder.findMany({
+      where: { status: { in: [...TERMINAL_INSTANT_BUY] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
+      select: { id: true, paymentProofUrl: true },
+      take: BATCH,
+    }),
+  ])
+
+  // ── Phase 2: purge (deletes + nulls) ─────────────────────────────────────
   for (const t of usdtTrades) {
     scanned++
     if (await purgeAndClear(t.paymentProofUrl, () => db.trade.update({ where: { id: t.id }, data: { paymentProofUrl: null } }))) deleted++
     if (await purgeAndClear(t.sellerDeliveryProofUrl, () => db.trade.update({ where: { id: t.id }, data: { sellerDeliveryProofUrl: null } }))) deleted++
   }
-
-  // ── USDT trade-chat images ───────────────────────────────────────────────
-  const usdtMsgs = await db.tradeMessage.findMany({
-    where: {
-      attachmentUrl: { not: null },
-      trade: { status: { in: [...TERMINAL_USDT] }, updatedAt: { lt: cutoff } },
-    },
-    select: { id: true, attachmentUrl: true },
-    take: BATCH,
-  })
   for (const m of usdtMsgs) {
     scanned++
     if (await purgeAndClear(m.attachmentUrl, () => db.tradeMessage.update({ where: { id: m.id }, data: { attachmentUrl: null } }))) deleted++
   }
-
-  // ── CTM trade payment proofs ─────────────────────────────────────────────
-  const ctmTrades = await db.ctmTrade.findMany({
-    where: { status: { in: [...TERMINAL_CTM] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
-    select: { id: true, paymentProofUrl: true },
-    take: BATCH,
-  })
   for (const t of ctmTrades) {
     scanned++
     if (await purgeAndClear(t.paymentProofUrl, () => db.ctmTrade.update({ where: { id: t.id }, data: { paymentProofUrl: null } }))) deleted++
   }
-
-  // ── CTM structured proofs (CtmTradeProof.fileUrl) ────────────────────────
-  const ctmProofs = await db.ctmTradeProof.findMany({
-    where: {
-      fileUrl: { not: null },
-      trade: { status: { in: [...TERMINAL_CTM] }, updatedAt: { lt: cutoff } },
-    },
-    select: { id: true, fileUrl: true },
-    take: BATCH,
-  })
   for (const p of ctmProofs) {
     scanned++
     if (await purgeAndClear(p.fileUrl, () => db.ctmTradeProof.update({ where: { id: p.id }, data: { fileUrl: null } }))) deleted++
   }
-
-  // ── CTM trade-chat images ────────────────────────────────────────────────
-  const ctmMsgs = await db.ctmTradeMessage.findMany({
-    where: {
-      attachmentUrl: { not: null },
-      trade: { status: { in: [...TERMINAL_CTM] }, updatedAt: { lt: cutoff } },
-    },
-    select: { id: true, attachmentUrl: true },
-    take: BATCH,
-  })
   for (const m of ctmMsgs) {
     scanned++
     if (await purgeAndClear(m.attachmentUrl, () => db.ctmTradeMessage.update({ where: { id: m.id }, data: { attachmentUrl: null } }))) deleted++
   }
-
-  // ── Gas-order (CryptoGasPies) PKR payment proofs ─────────────────────────
-  const gasOrders = await db.gasFeeOrder.findMany({
-    where: { status: { in: [...TERMINAL_GAS] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
-    select: { id: true, paymentProofUrl: true },
-    take: BATCH,
-  })
   for (const o of gasOrders) {
     scanned++
     if (await purgeAndClear(o.paymentProofUrl, () => db.gasFeeOrder.update({ where: { id: o.id }, data: { paymentProofUrl: null } }))) deleted++
   }
-
-  // ── Instant-buy (OTC) payment proofs ─────────────────────────────────────
-  const instantBuys = await db.instantBuyOrder.findMany({
-    where: { status: { in: [...TERMINAL_INSTANT_BUY] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
-    select: { id: true, paymentProofUrl: true },
-    take: BATCH,
-  })
   for (const o of instantBuys) {
     scanned++
     if (await purgeAndClear(o.paymentProofUrl, () => db.instantBuyOrder.update({ where: { id: o.id }, data: { paymentProofUrl: null } }))) deleted++
