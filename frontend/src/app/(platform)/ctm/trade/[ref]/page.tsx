@@ -708,7 +708,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     )
   }
 
-  const renderBuyerAccountBlock = () => {
+  const renderBuyerAccountBlock = (isBuyerView = true) => {
     const b = trade.buyerPaymentSnapshot
     // BUY listings can record more than one pay-from account (lister picked several).
     if (b?.accounts && b.accounts.length > 0) {
@@ -733,7 +733,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     // G1: for a USDT trade, surface the payer's OWN saved account(s) for the
     // seller's rail (e.g. their Gate UID) so "Your Sending Account" is concrete,
     // not a generic instruction. Falls back to the plain message when none match.
-    if (isUsdtTrade) {
+    // Only valid on the payer's OWN screen — mySavedAddresses are the current
+    // viewer's, so we must never surface them to the seller as the *buyer's* account.
+    if (isUsdtTrade && isBuyerView) {
       const method = (trade.usdtDeliveryMethod ?? '').toLowerCase()
       const mine = mySavedAddresses.filter((a) => a.network.toLowerCase() === method && a.coin.toUpperCase() === 'USDT')
       const usdtMine = mine.length > 0 ? mine : mySavedAddresses.filter((a) => a.network.toLowerCase() === method)
@@ -760,7 +762,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     return (
       <div className="bg-surface rounded-xl p-3 text-sm text-text-muted">
         {isUsdtTrade ? (
-          <>Send the USDT from your own account to the seller&apos;s address / UID above.</>
+          isBuyerView
+            ? <>Send the USDT from your own account to the seller&apos;s address / UID above.</>
+            : <>The buyer will send USDT from their own account to your address / UID above.</>
         ) : (
           <>Method: <span className="font-medium text-text-primary">{prettyMethod(trade.paymentMethod)}</span></>
         )}
@@ -1304,17 +1308,18 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <p className="text-xs text-text-muted mb-2">You will receive {payAmountLabel} from the buyer.</p>
                   {renderSellerAccountBlock(false)}
                 </div>
-                {/* Buyer's PKR sending account — not tracked for USDT payments. */}
-                {!isUsdtTrade && (
+                {/* Buyer's sending account — shown for both fiat and USDT payments
+                    (parity with the buyer's Send-Payment card). renderBuyerAccountBlock
+                    surfaces the buyer's own USDT rail for USDT trades, or a plain
+                    instruction when no snapshot exists, so it is always safe to show. */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
                     <p className="text-sm font-semibold text-text-primary">Buyer&apos;s Sending Account</p>
                   </div>
-                  <p className="text-xs text-text-muted mb-2">Buyer will send PKR from this account. Watch for incoming payment here.</p>
-                  {renderBuyerAccountBlock()}
+                  <p className="text-xs text-text-muted mb-2">Buyer will send {isUsdtTrade ? 'USDT' : 'PKR'} from this account. Watch for incoming payment here.</p>
+                  {renderBuyerAccountBlock(false)}
                 </div>
-                )}
                 {!myTurn && isAction('send_fiat') && (
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-yellow-800 dark:text-yellow-300 mb-1">Waiting for buyer payment</p>
@@ -1489,7 +1494,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 </div>
                 <div className="border-t border-border pt-3">
                   <p className="text-xs font-medium text-text-muted mb-2">Buyer Sending</p>
-                  {renderBuyerAccountBlock()}
+                  {renderBuyerAccountBlock(false)}
                 </div>
               </div>
               <div className="bg-surface shadow-card border border-border rounded-xl p-5">

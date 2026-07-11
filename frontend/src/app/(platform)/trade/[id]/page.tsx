@@ -1024,18 +1024,21 @@ export default function TradePage() {
                   </div>
                 </div>
                 {/* 🟠 Seller Receiving Account — the rail the PKR is sent to, with a
-                    Method row that carries the payment-method logo (parity with CTM). */}
-                {sellerAccount && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
-                      <p className="text-sm font-semibold text-text-primary">{isUserBuyer ? 'Seller Receiving Account' : 'Your Receiving Account'}</p>
-                    </div>
-                    <p className="text-xs text-text-muted mb-2">
-                      {isUserBuyer
-                        ? `Send PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} to this account.`
-                        : 'The buyer will send your PKR payment to this account.'}
-                    </p>
+                    Method row that carries the payment-method logo (parity with CTM).
+                    Always rendered: when there is no account snapshot we still show
+                    the labelled block with the bare method, so the payer is never
+                    left with just the summary (matches the CTM room). */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+                    <p className="text-sm font-semibold text-text-primary">{isUserBuyer ? 'Seller Receiving Account' : 'Your Receiving Account'}</p>
+                  </div>
+                  <p className="text-xs text-text-muted mb-2">
+                    {isUserBuyer
+                      ? `Send PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} to this account.`
+                      : 'The buyer will send your PKR payment to this account.'}
+                  </p>
+                  {sellerAccount ? (
                     <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-text-muted flex-shrink-0">Method</span>
@@ -1050,19 +1053,28 @@ export default function TradePage() {
                       {sellerAccount.ibanNumber && <PayToRow label="IBAN" value={sellerAccount.ibanNumber} copy />}
                       {sellerAccount.bankName && <PayToRow label="Bank" value={sellerAccount.bankName} />}
                     </div>
-                    {myTurn && isAction('send_fiat') && (
-                      <p className="text-xs text-text-muted leading-snug pt-2">
-                        Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof.
-                      </p>
-                    )}
-                  </div>
-                )}
+                  ) : (
+                    <div className="bg-surface-alt/40 rounded-lg p-3 text-sm text-text-muted">
+                      <span className="inline-flex items-center gap-1.5">
+                        <EntityLogo type="payment_method" slug={pmLabel} size="xs" className="flex-shrink-0" />
+                        Payment via <span className="font-medium text-text-primary">{pmLabel}</span>
+                      </span>
+                    </div>
+                  )}
+                  {myTurn && isAction('send_fiat') && sellerAccount && (
+                    <p className="text-xs text-text-muted leading-snug pt-2">
+                      Send exactly <span className="font-semibold text-text-primary">PKR {Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}</span> to this account, then upload your payment proof.
+                    </p>
+                  )}
+                </div>
                 {/* 🔵 Sending Account — the account the PKR is (or will be) paid FROM.
                     One block for both sides (buyer sees "Your", seller sees "Buyer's"),
-                    each account carrying its Method-with-logo row. */}
-                {trade.buyerPaymentSnapshot && (() => {
-                  const b = trade.buyerPaymentSnapshot!
-                  const accounts = b.accounts && b.accounts.length > 0 ? b.accounts : [b]
+                    each account carrying its Method-with-logo row. Always rendered:
+                    when no pay-from snapshot exists we still show the labelled block
+                    with a plain instruction, so the block never silently vanishes. */}
+                {(() => {
+                  const b = trade.buyerPaymentSnapshot
+                  const accounts = b ? (b.accounts && b.accounts.length > 0 ? b.accounts : [b]) : []
                   return (
                     <div>
                       <div className="flex items-center gap-2 mb-2">
@@ -1074,24 +1086,32 @@ export default function TradePage() {
                           ? `You will send payment from ${accounts.length > 1 ? 'one of these accounts' : 'this account'}, so the seller can match it.`
                           : `The buyer will pay from ${accounts.length > 1 ? 'one of these accounts' : 'this account'} — match it against your incoming payment.`}
                       </p>
-                      <div className="space-y-2">
-                        {accounts.map((acc, i) => (
-                          <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-text-muted flex-shrink-0">Method</span>
-                              <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
-                                <EntityLogo type={acc.bankName || acc.ibanNumber ? 'bank' : 'payment_method'} slug={acc.label} size="xs" className="flex-shrink-0" />
-                                {acc.bankName || acc.ibanNumber ? 'Bank Transfer' : acc.label}
-                              </span>
+                      {accounts.length > 0 ? (
+                        <div className="space-y-2">
+                          {accounts.map((acc, i) => (
+                            <div key={i} className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-text-muted flex-shrink-0">Method</span>
+                                <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                                  <EntityLogo type={acc.bankName || acc.ibanNumber ? 'bank' : 'payment_method'} slug={acc.label} size="xs" className="flex-shrink-0" />
+                                  {acc.bankName || acc.ibanNumber ? 'Bank Transfer' : acc.label}
+                                </span>
+                              </div>
+                              <PayToRow label="Account name" value={acc.accountName} />
+                              {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
+                              {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
+                              {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
+                              {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
                             </div>
-                            <PayToRow label="Account name" value={acc.accountName} />
-                            {acc.mobileNumber && <PayToRow label="Payment number" value={acc.mobileNumber} copy />}
-                            {acc.accountNumber && <PayToRow label="Account number" value={acc.accountNumber} copy />}
-                            {acc.ibanNumber && <PayToRow label="IBAN" value={acc.ibanNumber} copy />}
-                            {acc.bankName && <PayToRow label="Bank" value={acc.bankName} />}
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="bg-surface-alt/40 rounded-lg p-3 text-sm text-text-muted">
+                          {isUserBuyer
+                            ? `Send PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()} from your own ${pmLabel} account so the seller can match it.`
+                            : `The buyer will send from their own ${pmLabel} account — match the incoming payment against the amount above.`}
+                        </div>
+                      )}
                     </div>
                   )
                 })()}
