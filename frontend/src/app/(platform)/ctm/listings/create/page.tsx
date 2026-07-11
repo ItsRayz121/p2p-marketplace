@@ -129,6 +129,10 @@ function CreateListingInner() {
           const l = listingRes as EditListing
           setEditListing(l)
           const deliveryType = (l.tokenDeliveryType ?? '') as 'blockchain' | 'email' | 'username' | ''
+          // Only prefill PKR methods the maker STILL owns — a method deleted since the
+          // listing was posted would otherwise stay silently selected and make the
+          // backend's ownership check reject the whole edit (even a lone price change).
+          const ownedIds = new Set((Array.isArray(methodsRes) ? methodsRes : []).map((m) => m.id))
           setForm((f) => ({
             ...f,
             tokenId: l.token.id,
@@ -138,7 +142,7 @@ function CreateListingInner() {
             minOrderTokens: String(l.minOrderTokens ?? ''),
             maxOrderTokens: String(l.maxOrderTokens ?? ''),
             tokenDeliveryType: deliveryType,
-            paymentMethods: Array.isArray(l.paymentMethods) ? l.paymentMethods : [],
+            paymentMethods: (Array.isArray(l.paymentMethods) ? l.paymentMethods : []).filter((id) => ownedIds.has(id)),
             tradeWindowMins: l.tradeWindowMins ?? 45,
             terms: l.terms ?? '',
             settlementMethod: l.settlementMethod ?? '',
@@ -326,6 +330,18 @@ function CreateListingInner() {
   }
 
   if (loadingInit) return <div className="max-w-2xl mx-auto px-4 py-12 text-center text-text-muted">Loading…</div>
+
+  // Edit mode but the listing couldn't be loaded (not found, not yours, network) —
+  // don't render a half-blank form ("Selling undefined"); send the user back.
+  if (isEdit && !editListing) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-12 text-center">
+        <h1 className="text-xl font-bold text-text-primary mb-3">Listing not found</h1>
+        <p className="text-text-muted mb-6">We couldn’t load this listing to edit. It may have been removed.</p>
+        <a href="/my-ads?tab=ctm" className="bg-primary text-white px-5 py-2.5 rounded-lg font-semibold">Back to My Ads</a>
+      </div>
+    )
+  }
 
   if (user?.kycStatus !== 'approved') {
     return (
