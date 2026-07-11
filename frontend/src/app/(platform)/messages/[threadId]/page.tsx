@@ -11,8 +11,10 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Button } from '@/components/ui/Button'
+import { useFileUpload } from '@/hooks/useFileUpload'
+import { isTrustedImageUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock } from 'lucide-react'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Loader2 } from 'lucide-react'
 
 type TimelineItem =
   | { kind: 'message'; at: number; msg: ThreadMessage }
@@ -34,6 +36,12 @@ export default function MessageThreadPage() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Pending image attachment — uploaded to Cloudinary the moment it's picked, then
+  // sent with the next message (as an optional-caption attachment).
+  const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const { upload, uploading } = useFileUpload('chat-image')
 
   // Locally-dismissed rate prompts — once the user taps "Rate", the prompt
   // disappears for good (persisted so it stays gone across reloads/polls), even
@@ -107,16 +115,32 @@ export default function MessageThreadPage() {
 
   const send = async () => {
     const body = draft.trim()
-    if (!body || sending) return
+    // A message needs either text or an image attachment.
+    if ((!body && !pendingImage) || sending) return
     setSending(true)
     try {
-      await messagingApi.postMessage(threadId, body)
+      await messagingApi.postMessage(threadId, body, pendingImage ?? undefined)
       setDraft('')
+      setPendingImage(null)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to send')
     } finally {
       setSending(false)
+    }
+  }
+
+  // Pick + upload an image; the returned Cloudinary URL waits in pendingImage
+  // until the user hits send (so they can add a caption first).
+  const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    try {
+      const url = await upload(file)
+      setPendingImage(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Image upload failed')
     }
   }
 
@@ -237,10 +261,17 @@ export default function MessageThreadPage() {
             )
           }
           const mine = m.senderId === user?.id
+          const hasImage = isTrustedImageUrl(m.attachmentUrl)
           return (
             <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'}`}>
-                <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                {hasImage && (
+                  <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={m.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
+                  </a>
+                )}
+                {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                 <p className={`text-[10px] mt-0.5 ${mine ? 'text-white/70' : 'text-text-muted'}`}>{fmtTime(m.createdAt)}</p>
               </div>
             </div>
@@ -250,18 +281,61 @@ export default function MessageThreadPage() {
 
       {/* Composer — always pinned at the bottom of the thread container, which
           already clears the mobile BottomNav via the container's padding. */}
-      <div className="flex items-center gap-2 px-3 py-3 border-t border-border bg-surface">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-          placeholder="Type a message…"
-          maxLength={2000}
-          className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:border-primary"
-        />
-        <Button size="sm" onClick={() => void send()} disabled={sending || !draft.trim()} aria-label="Send">
-          <Send className="w-4 h-4" />
-        </Button>
+      <div className="border-t border-border bg-surface">
+        {/* Pending-image preview — sits above the input until sent. */}
+        {(pendingImage || uploading) && (
+          <div className="px-3 pt-3">
+            <div className="relative inline-block">
+              {uploading ? (
+                <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-border bg-muted">
+                  <Loader2 className="w-5 h-5 text-text-muted animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={pendingImage!} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setPendingImage(null)}
+                    aria-label="Remove image"
+                    className="absolute -right-2 -top-2 rounded-full bg-text-primary text-surface p-0.5 shadow"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-3 py-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={onPickImage}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading || sending}
+            aria-label="Attach image"
+            className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <ImagePlus className="w-5 h-5" />
+          </button>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
+            placeholder="Type a message…"
+            maxLength={2000}
+            className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:border-primary"
+          />
+          <Button size="sm" onClick={() => void send()} disabled={sending || uploading || (!draft.trim() && !pendingImage)} aria-label="Send">
+            <Send className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
     </div>
   )

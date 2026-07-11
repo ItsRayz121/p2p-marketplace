@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Eye, EyeOff, Trash2, Plus, ShieldCheck, ChevronDown } from 'lucide-react'
+import { Eye, EyeOff, Trash2, Plus, ShieldCheck, ChevronDown, Share2 } from 'lucide-react'
 import { socialLinksApi, type SocialLinkItem } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Button } from '@/components/ui/Button'
@@ -79,7 +79,8 @@ export function SocialProfilesManager() {
 
   return (
     <section className="bg-surface border border-border rounded-xl overflow-hidden">
-      {/* Collapsible header — chevron opens the body; the public toggle stays reachable here. */}
+      {/* Collapsible header — icon + title on the left; the public toggle and the
+          chevron sit together on the right (chevron rightmost, matching the other cards). */}
       <div className="flex items-center justify-between gap-3 px-5 py-3">
         <button
           type="button"
@@ -87,7 +88,7 @@ export function SocialProfilesManager() {
           aria-expanded={expanded}
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
         >
-          <ChevronDown size={18} className={`text-text-muted shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          <Share2 size={16} className="text-text-muted shrink-0" />
           <span className="flex items-center gap-2 min-w-0">
             <h2 className="text-base font-semibold text-text-primary">Social Profiles</h2>
             {links.length > 0 && <span className="text-[11px] text-text-muted">· {links.length}</span>}
@@ -96,16 +97,28 @@ export function SocialProfilesManager() {
             )}
           </span>
         </button>
-        {/* Public toggle */}
-        <button
-          type="button"
-          role="switch"
-          aria-checked={isPublic}
-          onClick={togglePublic}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${isPublic ? 'bg-primary' : 'bg-border'}`}
-        >
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isPublic ? 'translate-x-6' : 'translate-x-1'}`} />
-        </button>
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          {/* Public toggle */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPublic}
+            onClick={togglePublic}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isPublic ? 'bg-primary' : 'bg-border'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isPublic ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+          {/* Expand / collapse chevron */}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Collapse' : 'Expand'}
+            className="p-0.5 -mr-1"
+          >
+            <ChevronDown size={18} className={`text-text-muted transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {expanded && (
@@ -148,19 +161,22 @@ export function SocialProfilesManager() {
       )}
 
       {open ? (
-        <div className="rounded-lg border border-border p-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <EntityLogo type="social" slug={platform} size="xs" />
+        <div className="rounded-lg border border-border p-3 space-y-2.5">
+          {/* Line 1 — the platform logo sits OUTSIDE the boxes; the select + URL
+              input are equal-width so the row reads as a tidy pair. */}
+          <div className="flex items-center gap-2.5">
+            <EntityLogo type="social" slug={platform} size="sm" className="flex-shrink-0" />
+            <div className="grid grid-cols-2 gap-2 flex-1 min-w-0">
+              <select value={platform} onChange={(e) => setPlatform(e.target.value)} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary">
+                {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="w-full min-w-0 px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
-            <select value={platform} onChange={(e) => setPlatform(e.target.value)} className="px-2 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary">
-              {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="flex-1 min-w-0 px-3 py-2 text-sm border border-border rounded-lg bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
-          <div className="flex gap-2">
-            <Button size="sm" loading={adding} onClick={add}>Add profile</Button>
-            <Button size="sm" variant="secondary" onClick={() => { setOpen(false); setUrl('') }}>Cancel</Button>
+          {/* Line 2 — equal-width action buttons aligned under the row above. */}
+          <div className="grid grid-cols-2 gap-2">
+            <Button size="sm" fullWidth loading={adding} onClick={add}>Add profile</Button>
+            <Button size="sm" variant="secondary" fullWidth onClick={() => { setOpen(false); setUrl('') }}>Cancel</Button>
           </div>
         </div>
       ) : (

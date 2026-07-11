@@ -10,7 +10,7 @@ import { ReferralLinks } from '@/components/referral/ReferralLinks'
 import { ReferralEarnings, ReferralEarningsSummary } from '@/components/referral/ReferralEarnings'
 import { CommunityGiveaways } from '@/components/referral/CommunityGiveaways'
 import { SocialProfilesManager } from '@/components/referral/SocialProfilesManager'
-import { ChevronDown, Users, Send, Globe } from 'lucide-react'
+import { ChevronDown, Users, Send, Globe, HelpCircle, Gift } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -189,6 +189,7 @@ function ReferralPageInner() {
           aria-expanded={showRewards}
         >
           <span className="flex items-center gap-2 text-base font-semibold text-text-primary">
+            <Gift size={16} className="text-text-muted" />
             Referral rewards
             <Badge variant="success" size="sm">Active</Badge>
           </span>
@@ -217,7 +218,10 @@ function ReferralPageInner() {
           className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-alt transition-colors"
           aria-expanded={showHowItWorks}
         >
-          <span className="text-base font-semibold text-text-primary">How It Works</span>
+          <span className="flex items-center gap-2 text-base font-semibold text-text-primary">
+            <HelpCircle size={16} className="text-text-muted" />
+            How It Works
+          </span>
           <ChevronDown size={18} className={`text-text-muted transition-transform ${showHowItWorks ? 'rotate-180' : ''}`} />
         </button>
         {showHowItWorks && (

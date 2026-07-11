@@ -95,10 +95,10 @@ export const messagingApi = {
   getSummary: () => apiRequest<InboxSummary>('/messages/summary'),
   getInbox: () => apiRequest<InboxItem[]>('/messages'),
   getThread: (threadId: string) => apiRequest<ThreadView>(`/messages/${threadId}`),
-  postMessage: (threadId: string, body: string) =>
+  postMessage: (threadId: string, body: string, attachmentUrl?: string) =>
     apiRequest<ThreadMessage>(`/messages/${threadId}`, {
       method: 'POST',
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}) }),
     }),
 }
 
