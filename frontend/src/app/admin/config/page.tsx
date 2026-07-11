@@ -908,12 +908,13 @@ export default function ConfigPage() {
       >
         <div className="p-5 space-y-5">
           <p className="text-xs text-text-muted">
-            Trade media (payment/delivery proofs + trade-chat images) is only useful while a trade is
-            live or could still be disputed. When ON, a daily sweep deletes that media for trades in a
-            <strong> settled state</strong> (completed / cancelled / resolved / expired) that are older than the
-            window below. It <strong>never</strong> touches a <strong>disputed</strong> trade, and it <strong>never</strong> touches
-            <strong> KYC documents</strong> or support-chat images. Cloudinary charges nothing per delete, so this is
-            pure storage saving.
+            Payment proofs + trade-chat images are only useful while an order is live or could still be
+            disputed/refunded. When ON, a daily sweep deletes that media across <strong>every payment-proof
+            surface</strong> — USDT marketplace, CTM marketplace, gas orders (CryptoGasPies) and instant-buy — for
+            orders in a <strong>settled state</strong> older than the window below. It <strong>never</strong> touches an order
+            with an <strong>open dispute or pending refund</strong>, and it <strong>never</strong> touches <strong>KYC documents</strong>,
+            <strong> admin uploads (logos)</strong> or support-chat images. Cloudinary charges nothing per delete, so
+            this is pure storage saving.
           </p>
 
           <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">

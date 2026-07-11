@@ -2,11 +2,13 @@ import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import { deleteCloudinaryAsset } from '../lib/cloudinary'
 
-// Trade media (payment proofs + trade-chat images) is only useful while a trade
-// is live or could still be disputed. Once a trade has been SETTLED for long
-// enough, its images are dead weight in Cloudinary storage. This job purges them
-// on a rolling basis. KYC is never touched (compliance) and support-chat media is
-// out of scope — only trade-scoped media is purged.
+// Payment proofs + trade-chat images are only useful while an order is live or
+// could still be disputed/refunded. Once it has been SETTLED long enough, that
+// media is dead weight in Cloudinary storage. This job purges it on a rolling
+// basis across ALL payment-proof surfaces: USDT marketplace, CTM marketplace,
+// gas orders (CryptoGasPies) and instant-buy (OTC). KYC documents are NEVER
+// touched (compliance), admin-uploaded media (logos etc.) is never touched, and
+// support-chat media is out of scope — only order-scoped media is purged.
 //
 // SAFETY: only terminal trades are eligible, and NEVER `disputed` (an open
 // dispute). We anchor on `updatedAt`, which stops changing once a trade is
@@ -16,6 +18,10 @@ import { deleteCloudinaryAsset } from '../lib/cloudinary'
 
 const TERMINAL_USDT = ['crypto_released', 'cancelled', 'dispute_resolved'] as const
 const TERMINAL_CTM = ['completed', 'cancelled', 'dispute_resolved', 'expired'] as const
+// Gas orders: settled states only — never an in-flight refund (awaiting_refund /
+// refund_pending), which still needs its payment proof for the refund flow.
+const TERMINAL_GAS = ['delivered', 'expired', 'failed', 'refunded', 'cancelled'] as const
+const TERMINAL_INSTANT_BUY = ['completed', 'rejected', 'expired'] as const
 
 const DEFAULT_RETENTION_DAYS = 30
 const BATCH = 400 // bounded work per daily run; drains over successive runs
@@ -131,6 +137,28 @@ export async function runMediaRetention(
   for (const m of ctmMsgs) {
     scanned++
     if (await purgeAndClear(m.attachmentUrl, () => db.ctmTradeMessage.update({ where: { id: m.id }, data: { attachmentUrl: null } }))) deleted++
+  }
+
+  // ── Gas-order (CryptoGasPies) PKR payment proofs ─────────────────────────
+  const gasOrders = await db.gasFeeOrder.findMany({
+    where: { status: { in: [...TERMINAL_GAS] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
+    select: { id: true, paymentProofUrl: true },
+    take: BATCH,
+  })
+  for (const o of gasOrders) {
+    scanned++
+    if (await purgeAndClear(o.paymentProofUrl, () => db.gasFeeOrder.update({ where: { id: o.id }, data: { paymentProofUrl: null } }))) deleted++
+  }
+
+  // ── Instant-buy (OTC) payment proofs ─────────────────────────────────────
+  const instantBuys = await db.instantBuyOrder.findMany({
+    where: { status: { in: [...TERMINAL_INSTANT_BUY] }, updatedAt: { lt: cutoff }, paymentProofUrl: { not: null } },
+    select: { id: true, paymentProofUrl: true },
+    take: BATCH,
+  })
+  for (const o of instantBuys) {
+    scanned++
+    if (await purgeAndClear(o.paymentProofUrl, () => db.instantBuyOrder.update({ where: { id: o.id }, data: { paymentProofUrl: null } }))) deleted++
   }
 
   if (scanned > 0) {
