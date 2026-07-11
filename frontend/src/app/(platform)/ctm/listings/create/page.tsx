@@ -470,13 +470,33 @@ export default function CreateListingPage() {
               })}
             </div>
             {form.side === 'sell' && usdtMethods.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {usdtMethods.map((m) => {
                   const opt = CTM_USDT_METHOD_OPTS.find((o) => o.value === m)
+                  // Tap-to-fill from the user's saved delivery addresses whose network
+                  // matches this rail (BEP20↔BEP20, Binance↔Binance, OKX↔OKX, …). The
+                  // saved-address `network` maps 1:1 to the CTM USDT method value, so we
+                  // reuse the same address book the PKR-accounts / token-delivery pickers use.
+                  const matching = savedAddresses.filter((a) => a.network === m)
                   return (
-                    <input key={m} value={usdtDests[m] ?? ''} onChange={(e) => setUsdtDests((d) => ({ ...d, [m]: e.target.value }))}
-                      placeholder={`${opt?.label ?? m} — ${opt?.placeholder ?? 'address / UID'}`}
-                      className="w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                    <div key={m}>
+                      {matching.length > 0 && (
+                        <div className="mb-1.5">
+                          <p className="text-xs text-text-muted mb-1">Your saved {opt?.label ?? m} — tap to fill:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {matching.map((a) => (
+                              <button key={a.id} type="button" onClick={() => setUsdtDests((d) => ({ ...d, [m]: a.address }))}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${usdtDests[m] === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                                {a.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <input value={usdtDests[m] ?? ''} onChange={(e) => setUsdtDests((d) => ({ ...d, [m]: e.target.value }))}
+                        placeholder={`${opt?.label ?? m} — ${opt?.placeholder ?? 'address / UID'}`}
+                        className="w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                    </div>
                   )
                 })}
               </div>
