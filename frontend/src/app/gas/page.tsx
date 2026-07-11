@@ -70,7 +70,7 @@ export default function GasPage() {
   const [pkrError, setPkrError]         = useState('')
   const [networkFee, setNetworkFee]     = useState<GasNetworkFee | null>(null)
 
-  const { upload, uploading, error: uploadError } = useFileUpload('payment-proof')
+  const { upload, uploading, error: uploadError, progress: uploadProgress } = useFileUpload('payment-proof')
   const [proofUrl, setProofUrl]             = useState('')
   const [submittingProof, setSubmittingProof] = useState(false)
   const [proofError, setProofError]         = useState('')
@@ -472,7 +472,7 @@ export default function GasPage() {
     address, setAddress, addressError, setAddressError, validateAddressField, networkFee,
     pkrMethods, cryptoMethods, methodsLoading,
     selectedPkrMethod, setSelectedPkrMethod, creatingPkr, pkrError,
-    proofUrl, setProofUrl, submittingProof, proofError, uploading, uploadError,
+    proofUrl, setProofUrl, submittingProof, proofError, uploading, uploadProgress, uploadError,
     handleCreatePkrOrder, handleUploadFile, handleSubmitProof,
     selectedCryptoNetwork, setSelectedCryptoNetwork, creatingCrypto, cryptoError,
     qrFailed, setQrFailed, paymentSent, setPaymentSent,

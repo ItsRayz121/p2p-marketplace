@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 
 // Actionable section for the order tracking page: lets a user RESUME an unpaid order
 // (upload PKR proof / see the crypto payment instructions) and CANCEL it — instead of
@@ -42,7 +43,7 @@ export function GasOrderActions({ order, trackingToken, onChanged }: {
   onChanged: () => void
 }) {
   const isPkr = order.paymentCoin === 'PKR'
-  const { upload, uploading } = useFileUpload('payment-proof')
+  const { upload, uploading, progress } = useFileUpload('payment-proof')
 
   // ── PKR proof state ──
   const [pkrMethods, setPkrMethods] = useState<GasPkrMethods | null>(null)
@@ -149,6 +150,7 @@ export function GasOrderActions({ order, trackingToken, onChanged }: {
                 : <><svg className="w-7 h-7 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><p className="text-xs text-text-muted">Click to upload screenshot</p></>
               }
             </label>
+            {uploading && progress && <UploadProgress progress={progress} className="mt-2" />}
             {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
           </div>
 

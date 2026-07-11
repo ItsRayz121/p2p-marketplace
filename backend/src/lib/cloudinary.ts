@@ -102,6 +102,33 @@ function parseCloudinaryUrl(storedUrl: string): {
 }
 
 /**
+ * Permanently delete a stored Cloudinary asset. Used by the media-retention job
+ * to reclaim storage on old, settled trades. Cloudinary charges nothing per
+ * deletion (only storage/bandwidth), so this is pure cost saving.
+ *
+ * Returns 'deleted' on success, 'skipped' for a non-Cloudinary/unparseable URL
+ * (nothing to do), or 'error' if the destroy call failed (caller may retry).
+ * `invalidate` also purges the CDN cache so the image stops being served.
+ */
+export async function deleteCloudinaryAsset(
+  storedUrl: string | null | undefined,
+): Promise<'deleted' | 'skipped' | 'error'> {
+  if (!storedUrl) return 'skipped'
+  const parsed = parseCloudinaryUrl(storedUrl)
+  if (!parsed) return 'skipped'
+  try {
+    await cloudinary.uploader.destroy(parsed.publicId, {
+      resource_type: parsed.resourceType,
+      type: parsed.deliveryType,
+      invalidate: true,
+    })
+    return 'deleted'
+  } catch {
+    return 'error'
+  }
+}
+
+/**
  * Retrieve the raw bytes of a stored Cloudinary asset server-side. For
  * authenticated (private) KYC assets it tries the signed delivery URL first,
  * then falls back to a signed private-download URL — so the admin reviewer's

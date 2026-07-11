@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { toast } from '@/lib/toast'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -39,7 +40,7 @@ export default function GasGiveawaysAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(blankForm())
-  const { upload: uploadThumb, uploading: uploadingThumb } = useFileUpload('giveaway-image')
+  const { upload: uploadThumb, uploading: uploadingThumb, progress: thumbProgress } = useFileUpload('giveaway-image')
   const [chains, setChains] = useState<AdminGasChain[]>([])
   const [selChain, setSelChain] = useState<AdminGasChain | null>(null)
   const [tokens, setTokens] = useState<AdminGasToken[]>([])
@@ -235,6 +236,7 @@ export default function GasGiveawaysAdminPage() {
                 {uploadingThumb ? 'Uploading…' : form.thumbnailUrl ? 'Change image' : 'Upload image'}
                 <input type="file" accept="image/*" onChange={onThumb} className="hidden" disabled={uploadingThumb} />
               </label>
+              {uploadingThumb && thumbProgress && <div className="basis-full"><UploadProgress progress={thumbProgress} /></div>}
               {form.thumbnailUrl && (
                 <button type="button" onClick={() => setForm((f) => ({ ...f, thumbnailUrl: '' }))} className="text-xs text-text-muted hover:text-danger">Remove</button>
               )}

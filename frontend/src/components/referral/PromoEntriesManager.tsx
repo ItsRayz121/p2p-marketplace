@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { toast } from '@/lib/toast'
 import { fmtDateTime } from '@/lib/fmt'
 import { Button } from '@/components/ui/Button'
@@ -24,7 +25,7 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
   const [proofUrl, setProofUrl] = useState(giveaway.resultsSheetUrl ?? '')
   const [bulkStatus, setBulkStatus] = useState<PromoEntryStatus>('sent')
   const [bulkBusy, setBulkBusy] = useState(false)
-  const { upload, uploading } = useFileUpload('giveaway-image')
+  const { upload, uploading, progress } = useFileUpload('giveaway-image')
 
   const load = useCallback(async () => {
     try {
@@ -132,6 +133,7 @@ export function PromoEntriesManager({ giveaway, onChanged }: { giveaway: PromoGi
           <ImageUp size={13} /> {uploading ? 'Uploading…' : proofUrl ? 'Replace proof sheet' : 'Upload proof sheet'}
           <input type="file" accept="image/*" onChange={onProof} className="hidden" disabled={uploading} />
         </label>
+        {uploading && progress && <div className="basis-full"><UploadProgress progress={progress} /></div>}
         {proofUrl && (
           <button onClick={removeProof} className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-danger">
             <X size={13} /> Remove proof

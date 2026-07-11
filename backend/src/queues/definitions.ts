@@ -45,6 +45,7 @@ export const QUEUE_NAMES = {
   MODERATION_EXPIRY:                'moderation-expiry',
   ANNOUNCEMENT_BROADCAST:           'announcement-broadcast',
   SUPPORT_IDLE_CLOSE:               'support-idle-close',
+  MEDIA_RETENTION:                  'media-retention',
 } as const
 
 export const queues = {
@@ -138,5 +139,9 @@ export const queues = {
   supportIdleClose: new Queue(QUEUE_NAMES.SUPPORT_IDLE_CLOSE, {
     connection,
     defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
+  }),
+  mediaRetention: new Queue(QUEUE_NAMES.MEDIA_RETENTION, {
+    connection,
+    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 20 }, removeOnFail: { count: 50 } },
   }),
 }

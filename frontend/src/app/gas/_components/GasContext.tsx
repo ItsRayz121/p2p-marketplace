@@ -89,6 +89,7 @@ export interface GasFlowCtx {
   submittingProof: boolean
   proofError: string
   uploading: boolean
+  uploadProgress: import('@/hooks/useFileUpload').UploadProgress | null
   uploadError: string | null
   handleCreatePkrOrder: () => Promise<void>
   handleUploadFile: (file: File) => Promise<void>

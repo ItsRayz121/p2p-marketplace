@@ -10,6 +10,7 @@ import { useSSE } from '@/hooks/useSSE'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { useOfflineDetection } from '@/hooks/useOfflineDetection'
 import { CountdownTimer } from '@/components/ui/CountdownTimer'
 import { Badge } from '@/components/ui/Badge'
@@ -434,8 +435,8 @@ export default function TradePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatImageInputRef = useRef<HTMLInputElement>(null)
   const prevMsgCountRef = useRef(0)
-  const { upload, uploading } = useFileUpload('payment-proof')
-  const { upload: uploadChatImage, uploading: uploadingChatImage } = useFileUpload('chat-image')
+  const { upload, uploading, progress: proofProgress } = useFileUpload('payment-proof')
+  const { upload: uploadChatImage, uploading: uploadingChatImage, progress: chatImageProgress } = useFileUpload('chat-image')
 
   const fetchTrade = useCallback(async () => {
     try {
@@ -1121,6 +1122,7 @@ export default function TradePage() {
                     <Button fullWidth loading={uploading} disabled={uploading || actionLoading} onClick={() => fileInputRef.current?.click()}>
                       Upload Payment Proof
                     </Button>
+                    {proofProgress && <UploadProgress progress={proofProgress} className="mt-2" />}
                     {canCancel && (
                       <Button variant="ghost" fullWidth onClick={() => setShowCancelModal(true)}>Cancel Trade</Button>
                     )}
@@ -1530,7 +1532,11 @@ export default function TradePage() {
           </div>
 
           {/* Send box */}
-          <div className="px-3 py-3 border-t border-border flex gap-2 items-center">
+          <div className="border-t border-border">
+            {uploadingChatImage && chatImageProgress && (
+              <div className="px-3 pt-2"><UploadProgress progress={chatImageProgress} /></div>
+            )}
+            <div className="px-3 py-3 flex gap-2 items-center">
             {/* Hidden image input */}
             <input
               ref={chatImageInputRef}
@@ -1563,6 +1569,7 @@ export default function TradePage() {
               className="flex-1 min-w-0 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-surface"
             />
             <Button size="sm" className="flex-shrink-0" loading={sendingMsg} onClick={handleSendMessage}>Send</Button>
+            </div>
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 'use client'
 import { Spinner } from '@/components/ui/Spinner'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { useGasCtx } from './GasContext'
@@ -11,7 +12,7 @@ export function GasPkrProofStep() {
   const {
     order, selectedPkrMethod, pkrMethods,
     effectivePkr, getPkrDetails,
-    proofUrl, uploading, uploadError,
+    proofUrl, uploading, uploadProgress, uploadError,
     handleUploadFile, handleSubmitProof,
     submittingProof, proofError,
   } = useGasCtx()
@@ -76,6 +77,7 @@ export function GasPkrProofStep() {
             : <><svg className="w-8 h-8 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><p className="text-xs text-text-muted">Click to upload screenshot</p><p className="text-xs text-text-muted">JPEG, PNG, WebP · Max 10MB</p></>
           }
         </label>
+        {uploading && uploadProgress && <UploadProgress progress={uploadProgress} className="mt-2" />}
         {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
       </div>
 

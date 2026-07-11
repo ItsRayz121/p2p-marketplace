@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { blogApi, ctmApi, gasApi, type BlogPost, type BlogUpsert, type GasChain, ApiError } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { BlogEditor } from './BlogEditor'
 import { SeoChecklist } from './SeoChecklist'
 import { cn } from '@/lib/utils'
@@ -151,7 +152,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
     setPreviewOpened(true)
   }
 
-  const { upload: uploadCover, uploading: uploadingCover } = useFileUpload('blog-image')
+  const { upload: uploadCover, uploading: uploadingCover, progress: coverProgress } = useFileUpload('blog-image')
 
   async function handleCover(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -281,7 +282,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
             <span className="sr-only">Upload cover</span>
             <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleCover} className="block w-full text-xs text-text-muted file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-primary/10 file:text-primary file:text-xs file:font-semibold" />
           </label>
-          {uploadingCover && <p className="text-xs text-text-muted">Uploading…</p>}
+          {uploadingCover && (coverProgress ? <UploadProgress progress={coverProgress} className="mt-1" /> : <p className="text-xs text-text-muted">Uploading…</p>)}
           {coverImageUrl && (
             <>
               <div>

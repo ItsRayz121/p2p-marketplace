@@ -14,6 +14,7 @@ import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
 import { PriceAlertsManager, CtmPriceAlertsManager } from '@/components/ui/PriceAlertsPanel'
 import { WereYouReferred } from '@/components/referral/WereYouReferred'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { toast } from '@/lib/toast'
 import { Lock, Camera, Mail, Send, Check, Download } from 'lucide-react'
 import { SUPPORT_EMAIL, openSupportEmail } from '@/lib/contact'
@@ -46,7 +47,7 @@ function ProfileTab() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const avatarInputRef = useRef<HTMLInputElement>(null)
-  const { upload: uploadAvatar, uploading: uploadingAvatar, error: uploadAvatarError } = useFileUpload('avatar')
+  const { upload: uploadAvatar, uploading: uploadingAvatar, error: uploadAvatarError, progress: avatarProgress } = useFileUpload('avatar')
 
   const usernameChangedAt = user?.usernameChangedAt ? new Date(user.usernameChangedAt) : null
   const usernameNextAllowed = usernameChangedAt
@@ -127,6 +128,7 @@ function ProfileTab() {
         <div>
           <p className="text-sm font-medium text-text-primary">{user?.fullName || user?.username || 'Profile Photo'}</p>
           <p className="text-xs text-text-muted">JPEG, PNG or WebP, max 10MB</p>
+          {uploadingAvatar && avatarProgress && <UploadProgress progress={avatarProgress} className="mt-1 max-w-[12rem]" />}
           {uploadAvatarError && <p className="text-xs text-danger mt-0.5">{uploadAvatarError}</p>}
         </div>
       </div>

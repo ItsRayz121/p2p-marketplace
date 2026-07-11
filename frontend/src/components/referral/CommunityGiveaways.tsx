@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { gasApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -147,7 +148,7 @@ function GiveawayRow({ g, onChanged }: { g: PromoGiveaway; onChanged: () => void
 
 // ─── Create form ─────────────────────────────────────────────────────────────
 function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
-  const { upload, uploading } = useFileUpload('giveaway-image')
+  const { upload, uploading, progress } = useFileUpload('giveaway-image')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [thumbnailUrl, setThumbnailUrl] = useState('')
@@ -248,6 +249,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
             {uploading ? 'Uploading…' : thumbnailUrl ? 'Change image' : 'Upload image'}
             <input type="file" accept="image/*" onChange={onThumb} className="hidden" disabled={uploading} />
           </label>
+          {uploading && progress && <div className="basis-full"><UploadProgress progress={progress} /></div>}
         </div>
       </div>
 

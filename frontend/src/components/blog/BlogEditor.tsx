@@ -16,6 +16,7 @@ import {
   Quote, Code, Link2, ImagePlus, Youtube as YoutubeIcon, Undo2, Redo2, Minus, RemoveFormatting, Wand2,
 } from 'lucide-react'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { cn } from '@/lib/utils'
 
 // Heuristic: does this pasted plain text look like Markdown worth converting?
@@ -136,7 +137,7 @@ function ToolbarButton({
 
 function Toolbar({ editor }: { editor: Editor }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const { upload, uploading } = useFileUpload('blog-image')
+  const { upload, uploading, progress } = useFileUpload('blog-image')
   const [imgError, setImgError] = useState<string | null>(null)
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -241,6 +242,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton title="Redo" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 size={16} /></ToolbarButton>
       <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} />
       {imgError && <span className="text-xs text-rose-500 ml-2">{imgError}</span>}
+      {uploading && progress && <div className="basis-full px-1 pt-1"><UploadProgress progress={progress} /></div>}
     </div>
   )
 }

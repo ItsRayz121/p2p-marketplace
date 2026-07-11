@@ -25,6 +25,7 @@ import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
 import { runModerationExpiry } from '../jobs/moderationExpiry.job'
 import { runSupportIdleClose } from '../jobs/supportIdleClose.job'
+import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runAnnouncementBroadcast } from '../services/announcement.service'
 import { env } from '../lib/env'
 
@@ -104,6 +105,22 @@ export function startWorkers() {
   createWorker(QUEUE_NAMES.SUPPORT_IDLE_CLOSE, async () => {
     await runSupportIdleClose()
   }, { max: 1, duration: 60_000 })
+
+  // Media-retention sweep — daily. Purges payment proofs + trade-chat images for
+  // long-settled trades to reclaim Cloudinary storage. Gated OFF by default
+  // (`media_retention_enabled`); KYC media is never touched.
+  queues.mediaRetention
+    .add('media-retention-sweep', {}, { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: 'media-retention-daily-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule media-retention daily job'))
+
+  createWorker(QUEUE_NAMES.MEDIA_RETENTION, async () => {
+    await runMediaRetention()
+  }, { max: 1, duration: 60_000 })
+
+  // Seed the retention config keys at startup (safe: gated OFF, so this only
+  // creates `media_retention_enabled` / `media_retention_days` in Platform Config
+  // for the admin to flip — it deletes nothing while disabled).
+  void runMediaRetention().catch((err) => logger.error({ err }, 'Media-retention startup seed failed'))
 
   createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {
     await recalculateUserBadge(job.data.userId as string)
