@@ -51,9 +51,14 @@ async function purgeAndClear(url: string | null, clear: () => Promise<unknown>):
   return result === 'deleted'
 }
 
-export async function runMediaRetention(): Promise<{ deleted: number; scanned: number } | null> {
+export async function runMediaRetention(
+  opts: { force?: boolean } = {},
+): Promise<{ deleted: number; scanned: number; days: number } | null> {
   const { enabled, days } = await getConfig()
-  if (!enabled) return null
+  // The scheduled daily run only fires when enabled. A `force` run (admin "Run
+  // purge now" button) proceeds regardless, but STILL honours the days window —
+  // so it can only ever touch trades already past the retention cutoff.
+  if (!enabled && !opts.force) return null
 
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
   let deleted = 0
@@ -131,5 +136,13 @@ export async function runMediaRetention(): Promise<{ deleted: number; scanned: n
   if (scanned > 0) {
     logger.info({ deleted, scanned, retentionDays: days }, 'Media-retention sweep: purged old trade media')
   }
-  return { deleted, scanned }
+
+  // Record the last run so the admin panel can show when it last ran + counts.
+  await db.platformConfig.upsert({
+    where: { key: 'media_retention_last_run' },
+    update: { value: JSON.stringify({ at: new Date().toISOString(), deleted, scanned, days, forced: !!opts.force }) },
+    create: { key: 'media_retention_last_run', value: JSON.stringify({ at: new Date().toISOString(), deleted, scanned, days, forced: !!opts.force }) },
+  }).catch(() => {})
+
+  return { deleted, scanned, days }
 }

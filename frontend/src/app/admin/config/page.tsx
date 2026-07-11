@@ -54,6 +54,8 @@ const STRUCTURED_KEYS = new Set([
   'ctm_usdt_payment_enabled', 'messaging_inbox_enabled', 'admin_email_notifs_enabled',
   'taker_first_settlement_enabled', 'nokyc_taker_enabled',
   'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
+  // Media retention (see "Media Retention & Storage" panel)
+  'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
 
 const SENSITIVE_PATTERNS = ['private_key', 'secret', 'password', 'token', 'api_key']
@@ -267,6 +269,14 @@ export default function ConfigPage() {
   const [nokycMaxOpen, setNokycMaxOpen] = useState('1')
   const [betaSaving, setBetaSaving] = useState(false)
 
+  // ── Media Retention & Storage ─────────────────────────────────────────────────
+  const [mediaOpen, setMediaOpen] = useState(false)
+  const [mediaEnabled, setMediaEnabled] = useState(false)
+  const [mediaDays, setMediaDays] = useState('30')
+  const [mediaSaving, setMediaSaving] = useState(false)
+  const [mediaRunning, setMediaRunning] = useState(false)
+  const [mediaLastRun, setMediaLastRun] = useState<{ at: string; deleted: number; scanned: number; days: number; forced?: boolean } | null>(null)
+
   // ── Homepage Top Offers ─────────────────────────────────────────────────────
   const [offersMode, setOffersMode] = useState<'top' | 'latest' | 'pinned'>('top')
   const [pinnedAdIds, setPinnedAdIds] = useState('')
@@ -388,6 +398,9 @@ export default function ConfigPage() {
       setMaxConcurrent(m['max_concurrent_trades'] ?? '3')
       setMaxConcurrentDispute(m['max_concurrent_trades_with_dispute'] ?? '1')
       setBypassUserIds(m['trade_limit_bypass_user_ids'] ?? '')
+      setMediaEnabled(m['media_retention_enabled'] === 'true')
+      setMediaDays(m['media_retention_days'] ?? '30')
+      try { setMediaLastRun(m['media_retention_last_run'] ? JSON.parse(m['media_retention_last_run']) : null) } catch { setMediaLastRun(null) }
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load config')
@@ -585,6 +598,35 @@ export default function ConfigPage() {
       showToast('Trade limits saved.')
     } catch { showToast('Failed to save trade limits.', false) }
     finally { setLimitsSaving(false) }
+  }
+
+  async function saveMediaRetention() {
+    setMediaSaving(true)
+    try {
+      const days = Math.max(parseInt(mediaDays, 10) || 0, 1)
+      await saveKeys([
+        { key: 'media_retention_enabled', value: mediaEnabled ? 'true' : 'false' },
+        { key: 'media_retention_days', value: String(days) },
+      ])
+      setMediaDays(String(days))
+      showToast(mediaEnabled ? `Auto-purge is ON — trade media older than ${days} days will be deleted daily.` : 'Auto-purge is OFF.')
+    } catch { showToast('Failed to save media retention settings.', false) }
+    finally { setMediaSaving(false) }
+  }
+
+  async function runMediaRetentionNow() {
+    if (!window.confirm(`Purge trade media (payment proofs + trade-chat images) for settled trades older than ${Math.max(parseInt(mediaDays, 10) || 0, 1)} days now?\n\nKYC and support-chat media are never touched. This cannot be undone.`)) return
+    setMediaRunning(true)
+    try {
+      const res = await adminApi.runMediaRetention()
+      if (res) {
+        setMediaLastRun({ at: new Date().toISOString(), deleted: res.deleted, scanned: res.scanned, days: res.days, forced: true })
+        showToast(`Purge complete — ${res.deleted} image(s) deleted across ${res.scanned} record(s).`)
+      } else {
+        showToast('Purge ran but returned no result.', false)
+      }
+    } catch (e) { showToast(e instanceof Error ? e.message : 'Purge failed.', false) }
+    finally { setMediaRunning(false) }
   }
 
   async function saveEdit(key: string) {
@@ -852,6 +894,49 @@ export default function ConfigPage() {
 
           <div className="flex justify-end">
             <Button size="sm" loading={betaSaving} onClick={saveBeta}>Save Feature Settings</Button>
+          </div>
+        </div>
+      </Accordion>
+
+      {/* ══ Media Retention & Storage ═════════════════════════════════════════ */}
+      <Accordion
+        title="Media Retention & Storage"
+        subtitle="Auto-delete old trade images to reclaim Cloudinary storage (KYC is never touched)"
+        open={mediaOpen}
+        onToggle={() => setMediaOpen((v) => !v)}
+        badge={mediaEnabled ? <Badge variant="success" size="sm">ON · {mediaDays || '30'}d</Badge> : <Badge variant="outline" size="sm">OFF</Badge>}
+      >
+        <div className="p-5 space-y-5">
+          <p className="text-xs text-text-muted">
+            Trade media (payment/delivery proofs + trade-chat images) is only useful while a trade is
+            live or could still be disputed. When ON, a daily sweep deletes that media for trades in a
+            <strong> settled state</strong> (completed / cancelled / resolved / expired) that are older than the
+            window below. It <strong>never</strong> touches a <strong>disputed</strong> trade, and it <strong>never</strong> touches
+            <strong> KYC documents</strong> or support-chat images. Cloudinary charges nothing per delete, so this is
+            pure storage saving.
+          </p>
+
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={mediaEnabled} onChange={(e) => setMediaEnabled(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Enable daily auto-purge <span className="font-mono text-xs text-text-muted">media_retention_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">OFF by default. Turning it on schedules a daily purge; turning it off stops future purges (already-deleted images are gone).</p>
+            </div>
+          </label>
+
+          <Field label="Retention window (days)" hint="Delete trade media this many days AFTER a trade settles. Recommended ≥30 to protect the dispute window.">
+            <input className={inputCls} type="number" min="1" value={mediaDays} onChange={(e) => setMediaDays(e.target.value)} placeholder="30" />
+          </Field>
+
+          {mediaLastRun && (
+            <div className="rounded-xl border border-border bg-surface/50 p-3 text-xs text-text-muted">
+              <span className="font-semibold text-text-primary">Last run:</span> {fmtDateTime(mediaLastRun.at)} · deleted <strong>{mediaLastRun.deleted}</strong> image(s) across {mediaLastRun.scanned} record(s) (window {mediaLastRun.days}d{mediaLastRun.forced ? ', manual' : ''}).
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="secondary" loading={mediaRunning} onClick={runMediaRetentionNow}>Run purge now</Button>
+            <Button size="sm" loading={mediaSaving} onClick={saveMediaRetention}>Save Retention Settings</Button>
           </div>
         </div>
       </Accordion>

@@ -2248,6 +2248,8 @@ export const adminApi = {
     apiRequest<Array<{ id: string; key: string; value: string; updatedAt: string }>>('/admin/config'),
   updateConfig: (data: { key: string; value: string }) =>
     apiRequest<{ id: string; key: string; value: string; updatedAt: string }>('/admin/config', { method: 'PATCH', body: JSON.stringify(data) }),
+  runMediaRetention: () =>
+    apiRequest<{ deleted: number; scanned: number; days: number } | null>('/admin/media-retention/run', { method: 'POST' }),
 
   // Analytics
   getAnalytics: (params?: Record<string, string | number | undefined>) =>

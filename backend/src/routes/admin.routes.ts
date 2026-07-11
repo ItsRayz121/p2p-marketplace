@@ -14,6 +14,7 @@ import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.se
 import { clawbackTradePoints } from '../services/airdrop.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
+import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
@@ -3371,6 +3372,16 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'CONFIG_UPDATED', 'PlatformConfig', updated.id, { key: parsed.data.key, value: parsed.data.value }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true, data: updated })
+  })
+
+  // POST /admin/media-retention/run — manually trigger the trade-media purge now.
+  // Forces a run even while the daily schedule is disabled, but still honours the
+  // `media_retention_days` window, so it can only ever delete already-settled,
+  // past-cutoff trade media (never KYC, never recent/disputed trades).
+  app.post('/admin/media-retention/run', { preHandler: superStepUp }, async (req, reply) => {
+    const result = await runMediaRetention({ force: true })
+    await createAuditLog(req.user!.id, 'MEDIA_RETENTION_RUN', 'PlatformConfig', 'media_retention', result ?? {}, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: result })
   })
 
   // ── Analytics ──────────────────────────────────────────────────────────────
