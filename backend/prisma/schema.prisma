@@ -1216,6 +1216,13 @@ model SupportMessage {
   sender         String              // "user" | "admin" | "system"
   senderId       String?
   body           String
+  // Optional image attachment (Cloudinary URL). A message may carry an image with
+  // an empty body (image-only) or alongside a caption.
+  attachmentUrl  String?
+  // Soft delete: set when a party retracts their own message. The row (body +
+  // attachmentUrl) is RETAINED for admin / dispute review; regular users see a
+  // "message was deleted" tombstone in its place. Never hard-deleted.
+  deletedAt      DateTime?
   rating         Int?                // 1=bad 2=okay 3=great — only on sender="system" satisfaction messages
   // Structured message kind. "text" (default) is a plain chat bubble. "refund_request"
   // is an admin-issued prompt that renders as a refund-destination form in the user's
@@ -1512,6 +1519,9 @@ model ChatThreadMessage {
   senderId      String     // the author's user id ("" for platform/system lines)
   body          String     @db.VarChar(2000)
   attachmentUrl String?
+  // Soft delete: retracted by its author. Row is retained; the counterparty sees a
+  // "message was deleted" tombstone. Never hard-deleted (dispute evidence).
+  deletedAt     DateTime?
   isSystem      Boolean    @default(false)
   createdAt     DateTime   @default(now())
 

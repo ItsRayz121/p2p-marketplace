@@ -9,10 +9,44 @@ const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm']
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024 // 50 MB
 
+/** Live upload progress in bytes. `pct` is 0–100 (0 until the first tick). */
+export interface UploadProgress {
+  loaded: number
+  total: number
+  pct: number
+}
+
 interface UseFileUploadReturn {
   upload: (file: File) => Promise<string>
   uploading: boolean
   error: string | null
+  /** Non-null while an upload is in flight — drives the progress bar + MB readout. */
+  progress: UploadProgress | null
+}
+
+// POST a multipart form to Cloudinary with real upload-progress events. `fetch`
+// can't report progress, so we drop to XHR for the transfer itself.
+function xhrUpload(
+  url: string,
+  form: FormData,
+  onProgress: (p: UploadProgress) => void,
+): Promise<{ ok: boolean; status: number; body: { secure_url?: string; error?: { message?: string } } }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress({ loaded: e.loaded, total: e.total, pct: Math.round((e.loaded / e.total) * 100) })
+      }
+    }
+    xhr.onload = () => {
+      let body: { secure_url?: string; error?: { message?: string } } = {}
+      try { body = JSON.parse(xhr.responseText) } catch { /* ignore */ }
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body })
+    }
+    xhr.onerror = () => reject(new Error('Network error during upload. Please try again.'))
+    xhr.send(form)
+  })
 }
 
 interface PresignResponse {
@@ -33,6 +67,7 @@ interface PresignResponse {
 export function useFileUpload(type: UploadType): UseFileUploadReturn {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<UploadProgress | null>(null)
 
   const upload = useCallback(async (file: File): Promise<string> => {
     setError(null)
@@ -56,6 +91,9 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
     }
 
     setUploading(true)
+    // Seed a 0% tick immediately so the bar shows the total size before the first
+    // network progress event lands.
+    setProgress({ loaded: 0, total: file.size, pct: 0 })
     try {
       const { url, publicUrl, fields } = await apiRequest<PresignResponse>('/upload/presign', {
         method: 'POST',
@@ -73,9 +111,8 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
       if (fields.type) form.append('type', String(fields.type))
       form.append('file', file)
 
-      const cloudRes = await fetch(url, { method: 'POST', body: form })
-      let cloudData: { secure_url?: string; error?: { message?: string } } = {}
-      try { cloudData = await cloudRes.json() } catch { /* ignore */ }
+      const cloudRes = await xhrUpload(url, form, setProgress)
+      const cloudData = cloudRes.body
 
       if (!cloudRes.ok || !cloudData.secure_url) {
         const msg = cloudData.error?.message ?? `Upload failed (HTTP ${cloudRes.status}). Please try again.`
@@ -89,8 +126,9 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
       throw err
     } finally {
       setUploading(false)
+      setProgress(null)
     }
   }, [type])
 
-  return { upload, uploading, error }
+  return { upload, uploading, error, progress }
 }

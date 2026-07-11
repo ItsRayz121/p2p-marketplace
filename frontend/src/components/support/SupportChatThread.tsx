@@ -1,13 +1,26 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send } from 'lucide-react'
+import { Send, ImagePlus, X, Trash2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSSE } from '@/hooks/useSSE'
 import { supportChatApi, SUPPORT_RATINGS, buildChatTimeline, type SupportMessage } from '@/lib/supportChat'
 import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { RefundAddressForm } from '@/components/support/RefundAddressForm'
+import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
+import { isTrustedImageUrl } from '@/lib/utils'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 import { fmtTime } from '@/lib/fmt'
+
+// Messages can only be retracted within this window of sending (mirrors backend).
+const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
+
+// A plain user message (text and/or image) the sender may retract — own, not
+// deleted, plain text/image, and still inside the delete window.
+function canDeleteOwn(m: SupportMessage): boolean {
+  if (m.sender !== 'user' || m.deletedAt || (m.kind && m.kind !== 'text')) return false
+  return Date.now() - new Date(m.createdAt).getTime() < MESSAGE_DELETE_WINDOW_MS
+}
 
 /**
  * The support conversation body: messages timeline + satisfaction prompt + composer.
@@ -24,6 +37,12 @@ export function SupportChatThread() {
   const [sending, setSending] = useState(false)
   const [rating, setRating] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Pending image attachment — uploaded to Cloudinary the moment it's picked, then
+  // sent with the next message (optionally with a caption).
+  const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const { upload, uploading, progress } = useFileUpload('chat-image')
 
   // The current (closed) session can be rated once. Scan the trailing block of
   // system notes (e.g. the survey message) from newest: a system message WITH a
@@ -84,26 +103,56 @@ export function SupportChatThread() {
 
   async function handleSend() {
     const text = draft.trim()
-    if (!text || sending) return
+    const image = pendingImage
+    // A message needs text OR an image.
+    if ((!text && !image) || sending) return
     setSending(true)
     setDraft('')
+    setPendingImage(null)
     // Optimistic append
     const optimistic: SupportMessage = {
       id: `tmp-${Date.now()}`,
       sender: 'user',
       body: text,
+      attachmentUrl: image,
       createdAt: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, optimistic])
     setStatus('open') // sending reopens the conversation — drop any stale closed marker
     try {
-      await supportChatApi.send(text)
+      await supportChatApi.send(text, image ?? undefined)
       await refresh()
     } catch {
       setDraft(text)
+      setPendingImage(image)
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
     } finally {
       setSending(false)
+    }
+  }
+
+  // Pick + upload an image; the returned URL waits in pendingImage until send.
+  async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    try {
+      setPendingImage(await upload(file))
+    } catch {
+      /* useFileUpload surfaces the error; nothing to attach */
+    }
+  }
+
+  // Retract one of the user's own messages (soft delete → tombstone).
+  async function handleDelete(id: string) {
+    if (!window.confirm('Delete this message? It will be removed for the support team too.')) return
+    // Optimistic tombstone.
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, deletedAt: new Date().toISOString(), body: '', attachmentUrl: null } : m)))
+    try {
+      await supportChatApi.deleteMessage(id)
+      await refresh()
+    } catch {
+      await refresh() // reconcile on failure
     }
   }
 
@@ -158,16 +207,38 @@ export function SupportChatThread() {
               ) : (
                 <SupportSystemNote key={item.key} body={item.msg.body} at={item.msg.createdAt} />
               )
-            ) : (
+            ) : item.msg.deletedAt ? (
+              // Tombstone — the original was retained server-side (admin/dispute view).
               <div key={item.key} className={`flex ${item.msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className="max-w-[80%] px-3 py-2 rounded-2xl text-xs italic text-text-muted bg-muted/60 border border-dashed border-border">
+                  🚫 {item.msg.sender === 'user' ? 'You deleted this message' : 'This message was deleted'}
+                </div>
+              </div>
+            ) : (
+              <div key={item.key} className={`group flex items-center gap-1.5 ${item.msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {canDeleteOwn(item.msg) && !item.msg.id.startsWith('tmp-') && (
+                  <button
+                    onClick={() => handleDelete(item.msg.id)}
+                    aria-label="Delete message"
+                    className="order-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-1 rounded-full text-text-muted hover:text-danger hover:bg-muted flex-shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <div
-                  className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
+                  className={`order-2 max-w-[80%] px-3 py-2 rounded-2xl text-sm break-words ${
                     item.msg.sender === 'user'
                       ? 'bg-primary text-white rounded-br-sm'
                       : 'bg-surface border border-border text-text-primary rounded-bl-sm'
                   }`}
                 >
-                  {item.msg.body}
+                  {isTrustedImageUrl(item.msg.attachmentUrl) && (
+                    <a href={item.msg.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={item.msg.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
+                    </a>
+                  )}
+                  {item.msg.body && <span className="whitespace-pre-wrap">{item.msg.body}</span>}
                   <span className="block text-[10px] opacity-60 mt-0.5">{fmtTime(item.msg.createdAt)}</span>
                 </div>
               </div>
@@ -198,28 +269,67 @@ export function SupportChatThread() {
       </div>
 
       {/* Composer */}
-      <div className="flex items-end gap-2 p-3 border-t border-border bg-surface flex-shrink-0">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
-          rows={1}
-          placeholder="Type a message…"
-          className="flex-1 resize-none max-h-24 px-3 py-2 text-sm bg-canvas border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-text-primary"
-        />
-        <button
-          onClick={handleSend}
-          disabled={!draft.trim() || sending}
-          aria-label="Send message"
-          className="p-2.5 rounded-xl bg-primary text-white disabled:opacity-40 hover:bg-primary/90 transition-colors flex-shrink-0"
-        >
-          <Send className="w-4 h-4" />
-        </button>
+      <div className="border-t border-border bg-surface flex-shrink-0">
+        {/* Pending image: live upload progress, then a preview thumbnail. */}
+        {(pendingImage || uploading) && (
+          <div className="px-3 pt-3">
+            {uploading && progress ? (
+              <UploadProgress progress={progress} />
+            ) : pendingImage ? (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPendingImage(null)}
+                  aria-label="Remove image"
+                  className="absolute -right-2 -top-2 rounded-full bg-text-primary text-surface p-0.5 shadow"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
+        <div className="flex items-end gap-2 p-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={onPickImage}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading || sending}
+            aria-label="Attach image"
+            className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50 flex-shrink-0"
+          >
+            <ImagePlus className="w-5 h-5" />
+          </button>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSend()
+              }
+            }}
+            rows={1}
+            placeholder="Type a message…"
+            className="flex-1 resize-none max-h-24 px-3 py-2 text-sm bg-canvas border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-text-primary"
+          />
+          <button
+            onClick={handleSend}
+            disabled={(!draft.trim() && !pendingImage) || sending || uploading}
+            aria-label="Send message"
+            className="p-2.5 rounded-xl bg-primary text-white disabled:opacity-40 hover:bg-primary/90 transition-colors flex-shrink-0"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   )

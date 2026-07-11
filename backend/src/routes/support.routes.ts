@@ -24,9 +24,21 @@ async function emitToAdmins(data: unknown): Promise<void> {
 
 const MAX_BODY = 2000
 
-const sendSchema = z.object({
-  body: z.string().trim().min(1).max(MAX_BODY),
-})
+// A message can only be retracted within this window of being sent. The original
+// is retained for dispute review regardless; the window additionally prevents
+// yanking an old message the other party may already have acted on.
+export const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
+
+// A message needs text OR an image (image-only messages allowed). Cloudinary
+// URLs only — reject anything that isn't an https link to our upload host.
+const sendSchema = z
+  .object({
+    body: z.string().trim().max(MAX_BODY).optional().default(''),
+    attachmentUrl: z.string().url().max(500).optional(),
+  })
+  .refine((v) => v.body.trim().length > 0 || !!v.attachmentUrl, {
+    message: 'Message is empty',
+  })
 
 const rateSchema = z.object({
   score: z.number().int().min(1).max(3), // 1=bad 2=okay 3=great
@@ -60,22 +72,33 @@ function displayName(u: { fullName: string | null; username: string | null; emai
 
 // Uniform message shape for both the user widget and the admin inbox. `kind` and
 // `metadata` drive structured messages (refund_request form / refund_response).
-function serializeMessage(m: {
-  id: string
-  sender: string
-  body: string
-  rating: number | null
-  kind: string
-  metadata: unknown
-  createdAt: Date
-}) {
+function serializeMessage(
+  m: {
+    id: string
+    sender: string
+    body: string
+    attachmentUrl?: string | null
+    deletedAt?: Date | null
+    rating: number | null
+    kind: string
+    metadata: unknown
+    createdAt: Date
+  },
+  // Admins/dispute resolution always see the original content of a deleted
+  // message (with a `deletedAt` marker). Regular users get it redacted to a
+  // tombstone so a retracted message/image cannot be read by the other party.
+  opts?: { viewerIsAdmin?: boolean },
+) {
+  const redacted = !!m.deletedAt && !opts?.viewerIsAdmin
   return {
     id: m.id,
     sender: m.sender,
-    body: m.body,
+    body: redacted ? '' : m.body,
+    attachmentUrl: redacted ? null : (m.attachmentUrl ?? null),
+    deletedAt: m.deletedAt ?? null,
     rating: m.rating,
-    kind: m.kind,
-    metadata: m.metadata ?? null,
+    kind: redacted ? 'text' : m.kind,
+    metadata: redacted ? null : (m.metadata ?? null),
     createdAt: m.createdAt,
   }
 }
@@ -123,7 +146,7 @@ export async function supportRoutes(app: FastifyInstance) {
           unreadByUser: conversation.unreadByUser,
           lastMessageAt: conversation.lastMessageAt,
         },
-        messages: [...conversation.messages].reverse().map(serializeMessage),
+        messages: [...conversation.messages].reverse().map((m) => serializeMessage(m)),
       },
     })
   })
@@ -131,7 +154,7 @@ export async function supportRoutes(app: FastifyInstance) {
   // POST /support/chat/messages — send a message (creates conversation on first send)
   app.post('/support/chat/messages', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
-    const { body } = sendSchema.parse(req.body)
+    const { body, attachmentUrl } = sendSchema.parse(req.body)
 
     // One conversation box per user, forever: reuse the user's most recent
     // conversation regardless of status. A closed conversation is reopened below
@@ -149,7 +172,7 @@ export async function supportRoutes(app: FastifyInstance) {
     const alreadyUnread = conversation.unreadByAdmin
 
     const message = await db.supportMessage.create({
-      data: { conversationId: conversation.id, sender: 'user', senderId: userId, body },
+      data: { conversationId: conversation.id, sender: 'user', senderId: userId, body, ...(attachmentUrl ? { attachmentUrl } : {}) },
     })
     await db.supportConversation.update({
       where: { id: conversation.id },
@@ -169,10 +192,11 @@ export async function supportRoutes(app: FastifyInstance) {
         select: { fullName: true, username: true, email: true },
       })
       const name = sender ? displayName(sender) : 'A user'
+      const preview = body.trim() ? body.slice(0, 120) : '📷 Photo'
       void createAdminNotif({
         category: 'SYSTEM',
         title: 'New support message',
-        body: `${name}: ${body.slice(0, 120)}`,
+        body: `${name}: ${preview}`,
         href: '/admin/support',
         metadata: { userId, conversationId: conversation.id },
         roles: ['support_agent', 'admin', 'super_admin'],
@@ -182,8 +206,45 @@ export async function supportRoutes(app: FastifyInstance) {
 
     return reply.send({
       success: true,
-      data: { id: message.id, sender: 'user', body: message.body, createdAt: message.createdAt },
+      data: serializeMessage(message),
     })
+  })
+
+  // POST /support/chat/messages/:id/delete — user retracts their OWN message.
+  // Soft delete: the row is retained (admins/dispute still see the original); the
+  // message renders as a "deleted" tombstone for everyone else.
+  app.post('/support/chat/messages/:id/delete', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const message = await db.supportMessage.findUnique({
+      where: { id },
+      include: { conversation: { select: { userId: true } } },
+    })
+    // Only the author (a real user message they own) can retract it; never a
+    // system note, refund form, or an admin/support message.
+    if (
+      !message ||
+      message.conversation.userId !== userId ||
+      message.sender !== 'user' ||
+      message.senderId !== userId ||
+      message.kind !== 'text'
+    ) {
+      throw Errors.NOT_FOUND('Message')
+    }
+    if (message.deletedAt) return reply.send({ success: true }) // idempotent
+    if (Date.now() - message.createdAt.getTime() > MESSAGE_DELETE_WINDOW_MS) {
+      throw Errors.VALIDATION_ERROR('Messages can only be deleted within 15 minutes of sending.')
+    }
+
+    await db.supportMessage.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    // Let any admin viewing the thread see the tombstone appear live.
+    void emitToAdmins({
+      type: 'support_message',
+      payload: { scope: 'admin', conversationId: message.conversationId, sender: 'user' },
+    })
+
+    return reply.send({ success: true })
   })
 
   // POST /support/chat/read — user marks admin replies as read
@@ -529,25 +590,27 @@ export async function supportRoutes(app: FastifyInstance) {
             email: conversation.user.email,
             avatarUrl: conversation.user.avatarUrl,
           },
-          messages: [...conversation.messages].reverse().map(serializeMessage),
+          // Admin/dispute view: deleted messages keep their original content (with
+          // a deletedAt marker) so retracted evidence stays visible here.
+          messages: [...conversation.messages].reverse().map((m) => serializeMessage(m, { viewerIsAdmin: true })),
         },
       })
     },
   )
 
-  // POST /admin/support/conversations/:id/messages — admin reply
+  // POST /admin/support/conversations/:id/messages — admin reply (text and/or image)
   app.post(
     '/admin/support/conversations/:id/messages',
     { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      const { body } = sendSchema.parse(req.body)
+      const { body, attachmentUrl } = sendSchema.parse(req.body)
 
       const conversation = await db.supportConversation.findUnique({ where: { id } })
       if (!conversation) throw Errors.NOT_FOUND('Conversation')
 
       const message = await db.supportMessage.create({
-        data: { conversationId: id, sender: 'admin', senderId: req.user!.id, body },
+        data: { conversationId: id, sender: 'admin', senderId: req.user!.id, body, ...(attachmentUrl ? { attachmentUrl } : {}) },
       })
       await db.supportConversation.update({
         where: { id },
@@ -562,7 +625,7 @@ export async function supportRoutes(app: FastifyInstance) {
         payload: {
           scope: 'user',
           conversationId: id,
-          message: { id: message.id, sender: 'admin', body: message.body, createdAt: message.createdAt },
+          message: serializeMessage(message),
         },
       })
 
@@ -571,14 +634,52 @@ export async function supportRoutes(app: FastifyInstance) {
         conversation.userId,
         'support',
         'New reply from Support',
-        body.slice(0, 140),
+        body.trim() ? body.slice(0, 140) : '📷 Photo',
         { conversationId: id },
       )
 
       return reply.send({
         success: true,
-        data: { id: message.id, sender: 'admin', body: message.body, createdAt: message.createdAt },
+        data: serializeMessage(message),
       })
+    },
+  )
+
+  // POST /admin/support/conversations/:id/messages/:msgId/delete — admin retracts
+  // their OWN support message. Soft delete: the user's widget shows a tombstone;
+  // the row is retained here for the audit trail.
+  app.post(
+    '/admin/support/conversations/:id/messages/:msgId/delete',
+    { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
+    async (req, reply) => {
+      const { id, msgId } = req.params as { id: string; msgId: string }
+      const message = await db.supportMessage.findUnique({ where: { id: msgId } })
+      if (
+        !message ||
+        message.conversationId !== id ||
+        message.sender !== 'admin' ||
+        message.senderId !== req.user!.id ||
+        message.kind !== 'text'
+      ) {
+        throw Errors.NOT_FOUND('Message')
+      }
+      if (message.deletedAt) return reply.send({ success: true }) // idempotent
+      if (Date.now() - message.createdAt.getTime() > MESSAGE_DELETE_WINDOW_MS) {
+        throw Errors.VALIDATION_ERROR('Messages can only be deleted within 15 minutes of sending.')
+      }
+
+      await db.supportMessage.update({ where: { id: msgId }, data: { deletedAt: new Date() } })
+
+      const conversation = await db.supportConversation.findUnique({ where: { id }, select: { userId: true } })
+      if (conversation) {
+        // Push the tombstone to the user's widget instantly.
+        sseEmit(conversation.userId, {
+          type: 'support_message',
+          payload: { scope: 'user', conversationId: id, deletedMessageId: msgId },
+        })
+      }
+
+      return reply.send({ success: true })
     },
   )
 

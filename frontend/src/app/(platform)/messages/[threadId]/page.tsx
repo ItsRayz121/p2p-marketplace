@@ -12,9 +12,10 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Button } from '@/components/ui/Button'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Loader2 } from 'lucide-react'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2 } from 'lucide-react'
 
 type TimelineItem =
   | { kind: 'message'; at: number; msg: ThreadMessage }
@@ -41,7 +42,7 @@ export default function MessageThreadPage() {
   // Pending image attachment — uploaded to Cloudinary the moment it's picked, then
   // sent with the next message (as an optional-caption attachment).
   const [pendingImage, setPendingImage] = useState<string | null>(null)
-  const { upload, uploading } = useFileUpload('chat-image')
+  const { upload, uploading, progress } = useFileUpload('chat-image')
 
   // Locally-dismissed rate prompts — once the user taps "Rate", the prompt
   // disappears for good (persisted so it stays gone across reloads/polls), even
@@ -141,6 +142,20 @@ export default function MessageThreadPage() {
       setPendingImage(url)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Image upload failed')
+    }
+  }
+
+  // Retract your own message (soft delete → tombstone). Only the thread's own
+  // free-chat messages are deletable — folded trade-room lines (tm_/cm_) are not.
+  const deleteMessage = async (id: string) => {
+    if (id.startsWith('tm_') || id.startsWith('cm_')) return
+    if (!window.confirm('Delete this message? The other trader will see it was removed.')) return
+    setData((prev) => prev && { ...prev, messages: prev.messages.map((m) => (m.id === id ? { ...m, deletedAt: new Date().toISOString(), body: '', attachmentUrl: null } : m)) })
+    try {
+      await messagingApi.deleteMessage(threadId, id)
+      await load()
+    } catch {
+      await load()
     }
   }
 
@@ -261,10 +276,32 @@ export default function MessageThreadPage() {
             )
           }
           const mine = m.senderId === user?.id
+          if (m.deletedAt) {
+            return (
+              <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div className="max-w-[75%] rounded-2xl px-3 py-2 text-xs italic text-text-muted bg-muted/60 border border-dashed border-border">
+                  🚫 {mine ? 'You deleted this message' : 'This message was deleted'}
+                </div>
+              </div>
+            )
+          }
           const hasImage = isTrustedImageUrl(m.attachmentUrl)
+          // Own free-chat message (not a folded trade line) still inside the 15-min window.
+          const deletable =
+            mine && !m.id.startsWith('tm_') && !m.id.startsWith('cm_') &&
+            Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000
           return (
-            <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'}`}>
+            <div key={m.id} className={`group flex items-center gap-1.5 ${mine ? 'justify-end' : 'justify-start'}`}>
+              {deletable && (
+                <button
+                  onClick={() => deleteMessage(m.id)}
+                  aria-label="Delete message"
+                  className="order-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-1 rounded-full text-text-muted hover:text-danger hover:bg-muted flex-shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <div className={`order-2 max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'}`}>
                 {hasImage && (
                   <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -285,26 +322,22 @@ export default function MessageThreadPage() {
         {/* Pending-image preview — sits above the input until sent. */}
         {(pendingImage || uploading) && (
           <div className="px-3 pt-3">
-            <div className="relative inline-block">
-              {uploading ? (
-                <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-border bg-muted">
-                  <Loader2 className="w-5 h-5 text-text-muted animate-spin" />
-                </div>
-              ) : (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={pendingImage!} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setPendingImage(null)}
-                    aria-label="Remove image"
-                    className="absolute -right-2 -top-2 rounded-full bg-text-primary text-surface p-0.5 shadow"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-            </div>
+            {uploading && progress ? (
+              <UploadProgress progress={progress} />
+            ) : pendingImage ? (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPendingImage(null)}
+                  aria-label="Remove image"
+                  className="absolute -right-2 -top-2 rounded-full bg-text-primary text-surface p-0.5 shadow"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
         <div className="flex items-center gap-2 px-3 py-3">

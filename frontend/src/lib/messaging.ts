@@ -32,6 +32,8 @@ export interface ThreadMessage {
   senderId: string
   body: string
   attachmentUrl: string | null
+  /** Set when the author retracted the message — render a tombstone. */
+  deletedAt?: string | null
   isSystem: boolean
   createdAt: string
 }
@@ -100,6 +102,8 @@ export const messagingApi = {
       method: 'POST',
       body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}) }),
     }),
+  deleteMessage: (threadId: string, messageId: string) =>
+    apiRequest<unknown>(`/messages/${threadId}/${messageId}/delete`, { method: 'POST' }),
 }
 
 /** Deep link to a trade room from an episode. */

@@ -194,7 +194,7 @@ export async function getThread(userId: string, threadId: string) {
       id: true, userAId: true, userBId: true,
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true } },
+      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, createdAt: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },
   })
@@ -238,13 +238,18 @@ export async function getThread(userId: string, threadId: string) {
       : Promise.resolve([]),
   ])
 
-  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; isSystem: boolean; createdAt: Date }
+  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date }
   // Prefix trade-message ids so they can never collide with thread-message ids.
+  // Only the thread's own messages support soft delete; folded trade-room lines
+  // never carry a deletedAt.
   const messages: Msg[] = [
-    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, isSystem: m.isSystem, createdAt: m.createdAt })),
-    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, isSystem: m.isSystem, createdAt: m.createdAt })),
-    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, isSystem: m.isSystem, createdAt: m.createdAt })),
+    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt })),
+    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt })),
+    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    // Redact retracted messages to a tombstone in the inbox view (the row itself
+    // is retained in the DB for dispute review).
+    .map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null } : m))
 
   // Live status for ACTIVE episodes so the thread can show a progress bar (H1).
   // The episode's own `outcome` stays 'active' the whole time, so we join to the
@@ -307,6 +312,37 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
     }),
   ])
   return message
+}
+
+// Retraction is only allowed within this window of sending (matches the support
+// chat). The original row is retained for dispute review regardless.
+const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
+
+/**
+ * Soft-delete (retract) one of the viewer's own thread messages. Only the
+ * thread's own free-chat messages are deletable — folded trade-room lines (ids
+ * prefixed tm_/cm_) and the counterparty's messages are not. The row is retained
+ * for dispute review; the inbox renders a tombstone in its place.
+ */
+export async function deleteThreadMessage(userId: string, threadId: string, messageId: string) {
+  // Folded trade-room messages carry a prefix and live in another table — never
+  // retractable from the inbox.
+  if (messageId.startsWith('tm_') || messageId.startsWith('cm_')) {
+    throw new AppError('NOT_FOUND', 'Message not found', 404)
+  }
+  const message = await db.chatThreadMessage.findUnique({
+    where: { id: messageId },
+    select: { id: true, threadId: true, senderId: true, isSystem: true, deletedAt: true, createdAt: true },
+  })
+  if (!message || message.threadId !== threadId || message.senderId !== userId || message.isSystem) {
+    throw new AppError('NOT_FOUND', 'Message not found', 404)
+  }
+  if (message.deletedAt) return { ok: true } // idempotent
+  if (Date.now() - message.createdAt.getTime() > MESSAGE_DELETE_WINDOW_MS) {
+    throw new AppError('VALIDATION_ERROR', 'Messages can only be deleted within 15 minutes of sending.', 400)
+  }
+  await db.chatThreadMessage.update({ where: { id: messageId }, data: { deletedAt: new Date() } })
+  return { ok: true }
 }
 
 /**

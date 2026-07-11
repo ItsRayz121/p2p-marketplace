@@ -16,6 +16,10 @@ export interface SupportMessage {
   id: string
   sender: 'user' | 'admin' | 'system'
   body: string
+  /** Optional image attachment (Cloudinary URL). Null when redacted (deleted) or absent. */
+  attachmentUrl?: string | null
+  /** Set when the message was retracted — the client renders a tombstone. */
+  deletedAt?: string | null
   rating?: number | null
   // Structured messages: 'refund_request' renders a refund-destination form for the
   // user; 'refund_response' is their submitted answer. Plain chat omits kind ('text').
@@ -123,11 +127,13 @@ export function buildChatTimeline<M extends { id: string; createdAt: string; sen
 
 export const supportChatApi = {
   get: () => apiRequest<SupportChatState>('/support/chat'),
-  send: (body: string) =>
+  send: (body: string, attachmentUrl?: string) =>
     apiRequest<SupportMessage>('/support/chat/messages', {
       method: 'POST',
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}) }),
     }),
+  deleteMessage: (id: string) =>
+    apiRequest<unknown>(`/support/chat/messages/${id}/delete`, { method: 'POST' }),
   markRead: () => apiRequest<unknown>('/support/chat/read', { method: 'POST' }),
   rate: (score: number) =>
     apiRequest<unknown>('/support/chat/rate', {

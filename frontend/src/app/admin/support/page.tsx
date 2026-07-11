@@ -13,7 +13,10 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { adminApi } from '@/lib/api'
-import { Send, UserPlus, Search, X } from 'lucide-react'
+import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
+import { isTrustedImageUrl } from '@/lib/utils'
+import { Send, UserPlus, Search, X, ImagePlus, Trash2 } from 'lucide-react'
 
 interface ConversationSummary {
   id: string
@@ -28,6 +31,9 @@ interface ThreadMessage {
   id: string
   sender: 'user' | 'admin' | 'system'
   body: string
+  attachmentUrl?: string | null
+  // Admin view keeps deleted messages visible (original content) with this marker.
+  deletedAt?: string | null
   rating?: number | null
   kind?: 'text' | 'refund_request' | 'refund_response'
   metadata?: Record<string, unknown> | null
@@ -56,6 +62,9 @@ export default function AdminSupportPage() {
   const [thread, setThread] = useState<Thread | null>(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const { upload, uploading, progress } = useFileUpload('chat-image')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [closing, setClosing] = useState(false)
   const [merging, setMerging] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
@@ -153,19 +162,44 @@ export default function AdminSupportPage() {
 
   async function handleSend() {
     const text = draft.trim()
-    if (!text || !activeId || sending) return
+    const image = pendingImage
+    if ((!text && !image) || !activeId || sending) return
     setSending(true)
     setDraft('')
+    setPendingImage(null)
     try {
       await apiRequest(`/admin/support/conversations/${activeId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({ body: text, ...(image ? { attachmentUrl: image } : {}) }),
       })
       await fetchThread(activeId)
     } catch {
       setDraft(text)
+      setPendingImage(image)
     } finally {
       setSending(false)
+    }
+  }
+
+  async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      setPendingImage(await upload(file))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Image upload failed')
+    }
+  }
+
+  // Retract the admin's own support message (soft delete → tombstone for the user).
+  async function handleDeleteMessage(msgId: string) {
+    if (!activeId || !window.confirm('Delete this message? The user will see a “message was deleted” note.')) return
+    try {
+      await apiRequest(`/admin/support/conversations/${activeId}/messages/${msgId}/delete`, { method: 'POST' })
+      await fetchThread(activeId)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not delete message')
     }
   }
 
@@ -346,15 +380,36 @@ export default function AdminSupportPage() {
                       <SupportSystemNote key={item.key} body={item.msg.body} at={item.msg.createdAt} />
                     )
                   ) : (
-                    <div key={item.key} className={`flex ${item.msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                    <div key={item.key} className={`group flex items-center gap-1.5 ${item.msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                      {item.msg.sender === 'admin' && !item.msg.deletedAt && (!item.msg.kind || item.msg.kind === 'text') && Date.now() - new Date(item.msg.createdAt).getTime() < 15 * 60 * 1000 && (
+                        <button
+                          onClick={() => handleDeleteMessage(item.msg.id)}
+                          aria-label="Delete message"
+                          className="order-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full text-text-muted hover:text-danger hover:bg-canvas flex-shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <div
-                        className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
+                        className={`order-2 max-w-[75%] px-3 py-2 rounded-2xl text-sm break-words ${
+                          item.msg.deletedAt ? 'opacity-60 ring-1 ring-dashed ring-danger/40' : ''
+                        } ${
                           item.msg.sender === 'admin'
                             ? 'bg-primary text-white rounded-br-sm'
                             : 'bg-surface border border-border text-text-primary rounded-bl-sm'
                         }`}
                       >
-                        {item.msg.body}
+                        {/* Admin/dispute view keeps the original of a deleted message, flagged. */}
+                        {item.msg.deletedAt && (
+                          <span className="block text-[10px] font-semibold uppercase tracking-wide mb-0.5 opacity-80">🚫 Deleted · original retained</span>
+                        )}
+                        {isTrustedImageUrl(item.msg.attachmentUrl) && (
+                          <a href={item.msg.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={item.msg.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
+                          </a>
+                        )}
+                        {item.msg.body && <span className="whitespace-pre-wrap">{item.msg.body}</span>}
                         <span className="block text-[10px] opacity-60 mt-0.5">{fmtTime(item.msg.createdAt)}</span>
                       </div>
                     </div>
@@ -362,27 +417,65 @@ export default function AdminSupportPage() {
                 )}
               </div>
 
-              <div className="flex items-end gap-2 p-3 border-t border-border flex-shrink-0">
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSend()
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Type your reply…"
-                  className="flex-1 resize-none max-h-24 px-3 py-2 text-sm bg-canvas border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-text-primary"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!draft.trim() || sending}
-                  className="p-2.5 rounded-xl bg-primary text-white disabled:opacity-40 hover:bg-primary/90 transition-colors flex-shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+              <div className="border-t border-border flex-shrink-0">
+                {(pendingImage || uploading) && (
+                  <div className="px-3 pt-3">
+                    {uploading && progress ? (
+                      <UploadProgress progress={progress} />
+                    ) : pendingImage ? (
+                      <div className="relative inline-block">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setPendingImage(null)}
+                          aria-label="Remove image"
+                          className="absolute -right-2 -top-2 rounded-full bg-text-primary text-surface p-0.5 shadow"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+                <div className="flex items-end gap-2 p-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={onPickImage}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading || sending}
+                    aria-label="Attach image"
+                    className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-canvas transition-colors disabled:opacity-50 flex-shrink-0"
+                  >
+                    <ImagePlus className="w-5 h-5" />
+                  </button>
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSend()
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Type your reply…"
+                    className="flex-1 resize-none max-h-24 px-3 py-2 text-sm bg-canvas border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-text-primary"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={(!draft.trim() && !pendingImage) || sending || uploading}
+                    className="p-2.5 rounded-xl bg-primary text-white disabled:opacity-40 hover:bg-primary/90 transition-colors flex-shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </>
           )}

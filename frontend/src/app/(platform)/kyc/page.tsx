@@ -4,6 +4,7 @@ import { kycApi, marketplaceApi, socialLinksApi } from '@/lib/api'
 import type { KycDocument } from '@/lib/api'
 import { analytics } from '@/lib/analytics'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { usePolling } from '@/hooks/usePolling'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
@@ -109,7 +110,7 @@ function FileUploadField({
   const isVideo = uploadType === 'kyc-video'
   const maxBytes = isVideo ? 50 * 1024 * 1024 : MAX_FILE_SIZE
   const maxLabel = isVideo ? '50 MB' : '10 MB'
-  const { upload, uploading, error } = useFileUpload(uploadType)
+  const { upload, uploading, error, progress } = useFileUpload(uploadType)
   const [preview, setPreview] = useState<string | null>(null)
   const [uploaded, setUploaded] = useState(false)
   const [lastFile, setLastFile] = useState<File | null>(null)
@@ -160,9 +161,15 @@ function FileUploadField({
       <p className="text-xs text-text-muted mb-2">{hint}</p>
       <label className={`block w-full border-2 border-dashed rounded-xl p-4 cursor-pointer text-center transition-colors ${borderClass}`}>
         {uploading ? (
-          <div className="flex flex-col items-center gap-2 py-4">
-            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs text-text-muted">Uploading...</span>
+          <div className="flex flex-col items-center gap-2 py-4 px-2">
+            {progress ? (
+              <UploadProgress progress={progress} className="max-w-xs" />
+            ) : (
+              <>
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-text-muted">Uploading...</span>
+              </>
+            )}
           </div>
         ) : preview ? (
           <div className="space-y-2">

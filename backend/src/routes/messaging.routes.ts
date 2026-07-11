@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
-import { getInbox, getInboxSummary, getThread, postThreadMessage } from '../services/chatThread.service'
+import { getInbox, getInboxSummary, getThread, postThreadMessage, deleteThreadMessage } from '../services/chatThread.service'
 
 const postSchema = z.object({
   body: z.string().max(2000).optional().default(''),
@@ -55,5 +55,13 @@ export async function messagingRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl)
     return reply.code(201).send({ success: true, data: message })
+  })
+
+  // POST /api/v1/messages/:threadId/:messageId/delete — retract your own message
+  app.post('/messages/:threadId/:messageId/delete', { preHandler: [authenticate] }, async (req, reply) => {
+    await assertEnabled()
+    const { threadId, messageId } = req.params as { threadId: string; messageId: string }
+    const data = await deleteThreadMessage(req.user!.id, threadId, messageId)
+    return reply.send({ success: true, data })
   })
 }
