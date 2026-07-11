@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ctmApi, apiRequest, savedTermsApi, walletApi } from '@/lib/api'
 import type { SavedTerms, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -43,10 +43,33 @@ function methodSubline(m: SavedPaymentMethod): string {
 // Only surfaced when /ctm/config reports usdtPaymentEnabled.
 const CTM_USDT_METHOD_OPTS = CTM_USDT_METHODS
 
-export default function CreateListingPage() {
+// Shape of a listing loaded for editing (subset of getListingById we prefill from).
+interface EditListing {
+  id: string
+  side: 'buy' | 'sell'
+  pricePerUnit: string
+  totalAmount: string
+  minOrderTokens: string
+  maxOrderTokens: string
+  tokenDeliveryType?: string | null
+  settlementMethod?: string | null
+  paymentMethods: string[]
+  tradeWindowMins?: number
+  terms?: string | null
+  usdtPaymentMethods?: string[] | null
+  usdtSettlementDestinations?: { method: string; address: string; label?: string }[] | null
+  token: { id: string; name: string; symbol: string; logoUrl?: string }
+}
+
+function CreateListingInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editId = searchParams.get('edit')
+  const isEdit = !!editId
   const { user } = useAuth()
   const [tokens, setTokens] = useState<CtmToken[]>([])
+  // Read-only context shown when editing (token/side/delivery are fixed once posted).
+  const [editListing, setEditListing] = useState<EditListing | null>(null)
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([])
   const [savedAddresses, setSavedAddresses] = useState<SavedDeliveryAddress[]>([])
   const [savedTerms, setSavedTerms] = useState<SavedTerms[]>([])
@@ -86,24 +109,78 @@ export default function CreateListingPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [tokensRes, methodsRes, termsRes, addrRes, cfgRes] = await Promise.all([
+        const [tokensRes, methodsRes, termsRes, addrRes, cfgRes, listingRes] = await Promise.all([
           ctmApi.getTokens({ limit: 100 }),
           apiRequest<SavedPaymentMethod[]>('/wallet/payment-methods'),
           savedTermsApi.getAll().catch(() => [] as SavedTerms[]),
           walletApi.getSavedAddresses().catch(() => [] as SavedDeliveryAddress[]),
           ctmApi.getCtmConfig().catch(() => ({ usdtPaymentEnabled: false })),
+          editId ? ctmApi.getListing(editId).catch(() => null) : Promise.resolve(null),
         ])
         setTokens((tokensRes as { tokens: CtmToken[] }).tokens ?? [])
         setSavedMethods(Array.isArray(methodsRes) ? methodsRes : [])
         setSavedTerms(Array.isArray(termsRes) ? termsRes : [])
         setSavedAddresses(Array.isArray(addrRes) ? addrRes : [])
         setUsdtEnabled(!!cfgRes?.usdtPaymentEnabled)
+
+        // Edit mode: prefill every editable field from the existing listing. Token,
+        // side and delivery method are shown read-only below (fixed once posted).
+        if (listingRes) {
+          const l = listingRes as EditListing
+          setEditListing(l)
+          const deliveryType = (l.tokenDeliveryType ?? '') as 'blockchain' | 'email' | 'username' | ''
+          setForm((f) => ({
+            ...f,
+            tokenId: l.token.id,
+            side: l.side,
+            pricePerUnit: String(l.pricePerUnit ?? ''),
+            totalAmount: String(l.totalAmount ?? ''),
+            minOrderTokens: String(l.minOrderTokens ?? ''),
+            maxOrderTokens: String(l.maxOrderTokens ?? ''),
+            tokenDeliveryType: deliveryType,
+            paymentMethods: Array.isArray(l.paymentMethods) ? l.paymentMethods : [],
+            tradeWindowMins: l.tradeWindowMins ?? 45,
+            terms: l.terms ?? '',
+            settlementMethod: l.settlementMethod ?? '',
+          }))
+          const methods = Array.isArray(l.usdtPaymentMethods) ? l.usdtPaymentMethods : []
+          setUsdtMethods(methods)
+          const dests = Array.isArray(l.usdtSettlementDestinations) ? l.usdtSettlementDestinations : []
+          const destMap: Record<string, string> = {}
+          for (const d of dests) if (d?.method) destMap[d.method] = d.address ?? ''
+          setUsdtDests(destMap)
+          // Show whichever group has selections first (exchange if any exchange method).
+          if (methods.some((m) => CTM_USDT_METHOD_OPTS.find((o) => o.value === m)?.kind === 'exchange')) {
+            setUsdtKind('exchange')
+          }
+        }
       } finally {
         setLoadingInit(false)
       }
     }
     init()
-  }, [])
+  }, [editId])
+
+  // Auto-fill each selected USDT method's receive box from a matching saved address
+  // (network === method value). Runs only when the method set or the saved-address
+  // list changes, and only fills BLANK boxes — so a maker who has saved an address
+  // never has to re-tap it, and a box they deliberately cleared/typed is left alone.
+  // This is what stops the "Add a USDT receiving address/UID" error from firing for
+  // methods the maker already has on file.
+  useEffect(() => {
+    if (savedAddresses.length === 0 || usdtMethods.length === 0) return
+    setUsdtDests((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const m of usdtMethods) {
+        if (!(next[m] ?? '').trim()) {
+          const match = savedAddresses.find((a) => a.network === m)
+          if (match) { next[m] = match.address; changed = true }
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [usdtMethods, savedAddresses])
 
   // A listing can offer PKR account(s) and/or USDT method(s) together; the taker
   // picks one rail at trade time. USDT groups are only offered when the feature is on.
@@ -172,14 +249,16 @@ export default function CreateListingPage() {
       const missing = usdtMethods.some((m) => !(usdtDests[m] ?? '').trim())
       if (missing) { setError('Add a USDT receiving address/UID for each selected method'); return }
     }
-    if (!form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
-    if (form.side === 'buy' && !form.settlementMethod.trim()) {
+    // Delivery method + the buy-side receiving address are fixed once a listing is
+    // posted, so they're read-only in edit mode — skip their (re-)validation there.
+    if (!isEdit && !form.tokenDeliveryType) { setError('Please select how you will deliver tokens'); return }
+    if (!isEdit && form.side === 'buy' && !form.settlementMethod.trim()) {
       setError('Enter your token receiving address so sellers know where to send tokens'); return
     }
     // Validate the receiving address format up-front for blockchain delivery, so an
     // invalid address (e.g. a phone number) can't create the ad. Mirrors the backend
     // guardrail; a malformed/absent pattern fails open (backend re-checks anyway).
-    if (form.side === 'buy' && form.tokenDeliveryType === 'blockchain') {
+    if (!isEdit && form.side === 'buy' && form.tokenDeliveryType === 'blockchain') {
       const tok = tokens.find((t) => t.id === form.tokenId)
       const addr = form.settlementMethod.trim()
       if (tok?.addressRegex) {
@@ -194,6 +273,30 @@ export default function CreateListingPage() {
 
     setSubmitting(true)
     try {
+      if (isEdit && editId) {
+        // Send only the fields the backend allows changing. Price is omitted unless
+        // it actually changed (the backend 409s on any price field while trades are
+        // active). Total amount is likewise sent only on change.
+        await ctmApi.updateListing(editId, {
+          ...(editListing && parseFloat(form.pricePerUnit) !== parseFloat(editListing.pricePerUnit) ? { pricePerUnit: parseFloat(form.pricePerUnit) } : {}),
+          minOrderTokens: parseFloat(form.minOrderTokens),
+          maxOrderTokens: parseFloat(form.maxOrderTokens),
+          ...(editListing && parseFloat(form.totalAmount) !== parseFloat(editListing.totalAmount) ? { totalAmount: parseFloat(form.totalAmount) } : {}),
+          tradeWindowMins: form.tradeWindowMins,
+          terms: form.terms.trim(),
+          paymentMethods: form.paymentMethods,
+          ...(usdtEnabled
+            ? {
+                usdtPaymentMethods: usdtMethods,
+                usdtSettlementDestinations: usdtMethods
+                  .map((m) => ({ method: m, address: (usdtDests[m] ?? '').trim(), label: m }))
+                  .filter((d) => d.address),
+              }
+            : {}),
+        })
+        router.push('/my-ads?tab=ctm')
+        return
+      }
       const res = await ctmApi.createListing({
         ...form,
         settlementType: 'MANUAL',
@@ -236,29 +339,47 @@ export default function CreateListingPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-text-primary mb-6">Create Listing</h1>
+      <h1 className="text-2xl font-bold text-text-primary mb-1.5">{isEdit ? 'Edit Listing' : 'Create Listing'}</h1>
+      {isEdit && (
+        <p className="text-sm text-text-muted mb-6">Token, side and delivery method are fixed once a listing is posted — everything else can be changed below.</p>
+      )}
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className={isEdit ? 'space-y-5' : 'space-y-5 mt-6'}>
         {error && <div className="bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 rounded-xl p-3 text-sm">{error}</div>}
 
-        {/* Token */}
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">Token *</label>
-          <TokenSelect tokens={tokens} value={form.tokenId} onChange={(id) => setForm((f) => ({ ...f, tokenId: id }))} placeholder="Select a token" />
-        </div>
-
-        {/* Side */}
-        <div>
-          <label className="block text-sm font-medium text-text-primary mb-1.5">I want to *</label>
-          <div className="flex gap-3">
-            {(['sell', 'buy'] as const).map((s) => (
-              <button type="button" key={s} onClick={() => setForm((f) => ({ ...f, side: s }))}
-                className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}>
-                {s === 'sell' ? 'Sell Tokens' : 'Buy Tokens'}
-              </button>
-            ))}
+        {isEdit ? (
+          /* Read-only token + side summary (fixed once posted) */
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-alt/40 px-4 py-3">
+            {editListing && <EntityLogo type="token" slug={editListing.token.symbol} size="md" logoUrl={editListing.token.logoUrl} />}
+            <div className="min-w-0">
+              <p className="font-semibold text-text-primary truncate">
+                {form.side === 'sell' ? 'Selling' : 'Buying'} {editListing?.token.name} <span className="text-text-muted font-normal">({editListing?.token.symbol})</span>
+              </p>
+              <p className="text-xs text-text-muted">This listing&apos;s token and side can&apos;t be changed.</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Token */}
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">Token *</label>
+              <TokenSelect tokens={tokens} value={form.tokenId} onChange={(id) => setForm((f) => ({ ...f, tokenId: id }))} placeholder="Select a token" />
+            </div>
+
+            {/* Side */}
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">I want to *</label>
+              <div className="flex gap-3">
+                {(['sell', 'buy'] as const).map((s) => (
+                  <button type="button" key={s} onClick={() => setForm((f) => ({ ...f, side: s }))}
+                    className={`flex-1 py-2.5 rounded-xl border font-semibold text-sm transition-colors ${form.side === s ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface'}`}>
+                    {s === 'sell' ? 'Sell Tokens' : 'Buy Tokens'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Market insight */}
         {form.tokenId && (() => {
@@ -273,10 +394,12 @@ export default function CreateListingPage() {
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1.5">Price per token (PKR) *</label>
             <input type="number" min="0" step="0.01" value={form.pricePerUnit} onChange={(e) => setForm((f) => ({ ...f, pricePerUnit: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+            {isEdit && <p className="mt-1 text-xs text-text-muted">Price can’t be changed while there are active trades on this listing.</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1.5">Total amount (tokens) *</label>
             <input type="number" min="0" step="0.000001" value={form.totalAmount} onChange={(e) => setForm((f) => ({ ...f, totalAmount: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
+            {isEdit && <p className="mt-1 text-xs text-text-muted">Can’t be set below what’s already committed to active trades.</p>}
           </div>
         </div>
 
@@ -306,7 +429,16 @@ export default function CreateListingPage() {
               ? 'How will you send tokens to buyers after payment is confirmed?'
               : 'How should sellers send tokens to you?'}
           </p>
-          {(() => {
+          {/* Read-only delivery summary in edit mode — the method is fixed once posted. */}
+          {isEdit && (
+            <div className="rounded-xl border border-border bg-surface-alt/40 px-4 py-2.5 text-sm font-medium text-text-primary">
+              {form.tokenDeliveryType === 'blockchain' ? 'Wallet / Blockchain'
+                : form.tokenDeliveryType === 'email' ? 'Internal Transfer · Email'
+                : form.tokenDeliveryType === 'username' ? 'Internal Transfer · Username'
+                : '—'}
+            </div>
+          )}
+          {!isEdit && (() => {
             const isInternal = form.tokenDeliveryType === 'email' || form.tokenDeliveryType === 'username'
             return (
               <>
@@ -363,7 +495,7 @@ export default function CreateListingPage() {
                  'Your username on the token platform'}
               </label>
               {/* Tap-to-fill saved addresses (blockchain delivery only) */}
-              {form.tokenDeliveryType === 'blockchain' && (() => {
+              {!isEdit && form.tokenDeliveryType === 'blockchain' && (() => {
                 const tok = tokens.find((t) => t.id === form.tokenId)
                 if (!tok) return null
                 const matching = savedAddresses.filter((a) => a.network === 'CTM' && a.coin === tok.symbol)
@@ -392,16 +524,17 @@ export default function CreateListingPage() {
                 })()}
                 value={form.settlementMethod}
                 onChange={(e) => setForm((f) => ({ ...f, settlementMethod: e.target.value }))}
-                className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                readOnly={isEdit}
+                className={`w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${isEdit ? 'bg-surface-alt/40 text-text-muted cursor-not-allowed' : ''}`}
               />
               <p className="mt-1 text-xs text-text-muted">
-                Sellers will send tokens here when they take your listing.
+                {isEdit ? 'Your receiving address is fixed for this listing. ' : 'Sellers will send tokens here when they take your listing.'}
                 {form.tokenDeliveryType === 'blockchain' && (() => {
                   const tok = tokens.find((t) => t.id === form.tokenId)
                   return tok?.addressExample ? <> Format example: <span className="font-mono">{tok.addressExample}</span></> : null
                 })()}
               </p>
-              {form.tokenDeliveryType === 'blockchain' && (() => {
+              {!isEdit && form.tokenDeliveryType === 'blockchain' && (() => {
                 const tok = tokens.find((t) => t.id === form.tokenId)
                 if (!tok) return null
                 return (
@@ -640,10 +773,26 @@ export default function CreateListingPage() {
           )}
         </div>
 
-        <button type="submit" disabled={submitting} className="w-full bg-primary text-white py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-60">
-          {submitting ? 'Creating…' : 'Create Listing'}
-        </button>
+        <div className="flex gap-3 pt-1">
+          {isEdit && (
+            <button type="button" onClick={() => router.push('/my-ads?tab=ctm')} disabled={submitting}
+              className="flex-1 border border-border py-3 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors disabled:opacity-60">
+              Cancel
+            </button>
+          )}
+          <button type="submit" disabled={submitting} className="flex-1 bg-primary text-white py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-60">
+            {submitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Listing'}
+          </button>
+        </div>
       </form>
     </div>
+  )
+}
+
+export default function CreateListingPage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl mx-auto px-4 py-12 text-center text-text-muted">Loading…</div>}>
+      <CreateListingInner />
+    </Suspense>
   )
 }

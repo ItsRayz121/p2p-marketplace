@@ -377,28 +377,54 @@ export async function updateListing(userId: string, listingId: string, data: {
   pricePerUnit?: number
   minOrderTokens?: number
   maxOrderTokens?: number
+  totalAmount?: number
   terms?: string
   paymentMethods?: string[]
   settlementNote?: string
   tradeWindowMins?: number
+  // USDT-as-payment rails (flag gated — ignored unless isCtmUsdtPaymentEnabled()).
+  usdtPaymentMethods?: string[]
+  usdtSettlementDestinations?: { method: string; address: string; label?: string }[]
 }) {
   const listing = await db.ctmListing.findUnique({
     where: { id: listingId },
-    include: { merchantProfile: { select: { userId: true, tier: true } } },
+    include: {
+      merchantProfile: { select: { userId: true, tier: true } },
+      token: { select: { maxListingAmount: true } },
+    },
   })
   if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
   if (listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'Not your listing', 403)
 
   const effectivePrice = data.pricePerUnit ?? Number(listing.pricePerUnit)
-  if (data.maxOrderTokens) {
+  const effectiveMin = data.minOrderTokens ?? Number(listing.minOrderTokens)
+  const effectiveMax = data.maxOrderTokens ?? Number(listing.maxOrderTokens)
+  const effectiveTotal = data.totalAmount ?? Number(listing.totalAmount)
+
+  if (data.maxOrderTokens !== undefined) {
     const editor = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
     const maxPkrPerTrade = effectiveCapForTier(listing.merchantProfile.tier, editor?.kycLevel)
     if (data.maxOrderTokens * effectivePrice > maxPkrPerTrade) {
       throw new AppError('FORBIDDEN', `Your merchant tier allows max PKR ${maxPkrPerTrade} per trade`, 403)
     }
   }
-  if (data.minOrderTokens !== undefined && data.maxOrderTokens !== undefined && data.maxOrderTokens < data.minOrderTokens) {
+  if (effectiveMax < effectiveMin) {
     throw new AppError('VALIDATION_ERROR', 'Maximum tokens must be greater than or equal to minimum', 400)
+  }
+  if (effectiveMax > effectiveTotal) {
+    throw new AppError('VALIDATION_ERROR', 'Maximum tokens per order cannot exceed the total listing amount', 400)
+  }
+
+  // Total amount can be resized, but never below what's already committed to active
+  // trades (lockedAmount). availableAmount is recomputed as total − locked.
+  if (data.totalAmount !== undefined) {
+    const locked = Number(listing.lockedAmount)
+    if (data.totalAmount < locked) {
+      throw new AppError('VALIDATION_ERROR', `Total amount can't be below ${locked} — that much is committed to active trades`, 400)
+    }
+    if (listing.token.maxListingAmount && new Prisma.Decimal(data.totalAmount).gt(listing.token.maxListingAmount)) {
+      throw new AppError('VALIDATION_ERROR', `Total amount exceeds token max listing amount of ${listing.token.maxListingAmount}`, 400)
+    }
   }
 
   if (data.pricePerUnit) {
@@ -408,16 +434,68 @@ export async function updateListing(userId: string, listingId: string, data: {
     if (activeTrades > 0) throw new AppError('CONFLICT', 'Cannot change price while there are active trades', 409)
   }
 
+  // Validate any newly-selected PKR payment methods belong to this maker.
+  if (data.paymentMethods !== undefined && data.paymentMethods.length > 0) {
+    const owned = await db.paymentMethod.findMany({
+      where: { id: { in: data.paymentMethods }, userId },
+      select: { id: true },
+    })
+    if (owned.length !== data.paymentMethods.length) {
+      throw new AppError('VALIDATION_ERROR', 'One or more payment methods not found or not yours', 400)
+    }
+  }
+
+  // Payment rails — recompute when either PKR accounts or USDT methods change. USDT
+  // is only honored while the feature flag is ON; otherwise those columns are left
+  // untouched (inert). A SELL listing must always keep at least one rail.
+  const usdtEnabled = await isCtmUsdtPaymentEnabled()
+  const finalPkr = data.paymentMethods ?? listing.paymentMethods
+  let usdtFields: Record<string, unknown> = {}
+  const usdtChanged = usdtEnabled && (data.usdtPaymentMethods !== undefined || data.usdtSettlementDestinations !== undefined)
+  if (usdtChanged) {
+    const methods = [...new Set(data.usdtPaymentMethods ?? listing.usdtPaymentMethods)]
+      .filter((m) => CTM_USDT_METHOD_VALUES.includes(m as never))
+    const existingDests = (listing.usdtSettlementDestinations as unknown as { method: string; address: string; label?: string }[] | null) ?? []
+    const dests = (data.usdtSettlementDestinations ?? existingDests)
+      .filter((d) => d.address?.trim())
+      .filter((d) => methods.includes(d.method))
+    if (listing.side === 'sell' && methods.length > 0 && dests.length === 0) {
+      throw new AppError('VALIDATION_ERROR', 'Add at least one USDT receiving address', 400)
+    }
+    usdtFields = {
+      usdtPaymentMethods: methods,
+      usdtSettlementDestinations: dests,
+    }
+  }
+  // Keep paymentCurrency consistent whenever a rail changed: USDT only when there is
+  // no PKR rail left; hybrid/PKR listings stay 'PKR'.
+  if (data.paymentMethods !== undefined || usdtChanged) {
+    const finalUsdt = usdtChanged
+      ? (usdtFields.usdtPaymentMethods as string[])
+      : listing.usdtPaymentMethods.filter((m) => CTM_USDT_METHOD_VALUES.includes(m as never))
+    if (listing.side === 'sell' && finalPkr.length === 0 && finalUsdt.length === 0) {
+      throw new AppError('VALIDATION_ERROR', 'Select at least one payment method (PKR account or USDT method)', 400)
+    }
+    usdtFields.paymentCurrency = finalPkr.length > 0 ? 'PKR' : (finalUsdt.length > 0 ? 'USDT' : 'PKR')
+  }
+
   return db.ctmListing.update({
     where: { id: listingId },
     data: {
       ...(data.pricePerUnit !== undefined ? { pricePerUnit: new Prisma.Decimal(data.pricePerUnit) } : {}),
       ...(data.minOrderTokens !== undefined ? { minOrderTokens: new Prisma.Decimal(data.minOrderTokens) } : {}),
       ...(data.maxOrderTokens !== undefined ? { maxOrderTokens: new Prisma.Decimal(data.maxOrderTokens) } : {}),
+      ...(data.totalAmount !== undefined
+        ? {
+            totalAmount: new Prisma.Decimal(data.totalAmount),
+            availableAmount: new Prisma.Decimal(data.totalAmount).sub(listing.lockedAmount),
+          }
+        : {}),
       ...(data.terms !== undefined ? { terms: data.terms } : {}),
       ...(data.paymentMethods !== undefined ? { paymentMethods: data.paymentMethods } : {}),
       ...(data.settlementNote !== undefined ? { settlementNote: data.settlementNote } : {}),
       ...(data.tradeWindowMins !== undefined ? { tradeWindowMins: data.tradeWindowMins } : {}),
+      ...usdtFields,
     },
   })
 }

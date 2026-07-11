@@ -269,101 +269,6 @@ function UsdtAdsTab() {
   )
 }
 
-// ─── Edit CTM listing modal ───────────────────────────────────────────────────
-// The backend only lets a merchant change price, order limits, trade window and
-// terms (token / side / delivery are fixed once posted), so the editor is scoped
-// to exactly those fields. Payment methods are managed from the create flow.
-
-function EditCtmListingModal({ listing, onClose, onSaved }: { listing: CtmListing; onClose: () => void; onSaved: () => void }) {
-  const [price, setPrice] = useState(listing.pricePerUnit)
-  const [minTokens, setMinTokens] = useState(listing.minOrderTokens)
-  const [maxTokens, setMaxTokens] = useState(listing.maxOrderTokens)
-  const [tradeWindow, setTradeWindow] = useState(listing.tradeWindowMins ?? 45)
-  const [terms, setTerms] = useState(listing.terms ?? '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const fieldCls = 'w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30'
-  const labelCls = 'block text-sm font-medium text-text-primary mb-1.5'
-
-  const handleSave = async () => {
-    setError('')
-    const p = parseFloat(price), mn = parseFloat(minTokens), mx = parseFloat(maxTokens)
-    if (!(p > 0)) { setError('Enter a valid price'); return }
-    if (!(mn > 0) || !(mx > 0)) { setError('Enter valid order limits'); return }
-    if (mx < mn) { setError('Maximum tokens must be ≥ minimum'); return }
-    setSaving(true)
-    try {
-      await ctmApi.updateListing(listing.id, {
-        // Only send the price when it actually changed. The backend rejects ANY
-        // price field with a 409 while there are active trades on the listing, so
-        // always sending it would block edits to terms / window during a trade
-        // even when the price is untouched.
-        ...(p !== parseFloat(listing.pricePerUnit) ? { pricePerUnit: p } : {}),
-        minOrderTokens: mn,
-        maxOrderTokens: mx,
-        tradeWindowMins: tradeWindow,
-        terms: terms.trim(),
-      })
-      onSaved()
-    } catch (err: unknown) {
-      setError((err as Error).message ?? 'Failed to update listing')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-3">
-          <EntityLogo type="token" slug={listing.token.symbol} size="md" logoUrl={listing.token.logoUrl} />
-          <div>
-            <h2 className="font-bold text-text-primary">Edit listing</h2>
-            <p className="text-xs text-text-muted">{listing.side === 'sell' ? 'Selling' : 'Buying'} {listing.token.name}</p>
-          </div>
-        </div>
-
-        {error && <div className="bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 rounded-xl p-3 text-sm">{error}</div>}
-
-        <div>
-          <label className={labelCls}>Price per token (PKR)</label>
-          <input type="number" min="0" step="0.000001" value={price} onChange={(e) => setPrice(e.target.value)} className={fieldCls} />
-          <p className="mt-1 text-xs text-text-muted">Price can’t be changed while there are active trades on this listing.</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Min tokens / order</label>
-            <input type="number" min="0" step="0.000001" value={minTokens} onChange={(e) => setMinTokens(e.target.value)} className={fieldCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Max tokens / order</label>
-            <input type="number" min="0" step="0.000001" value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} className={fieldCls} />
-          </div>
-        </div>
-
-        <div>
-          <label className={labelCls}>Trade window (minutes)</label>
-          <select value={tradeWindow} onChange={(e) => setTradeWindow(parseInt(e.target.value))} className={fieldCls}>
-            {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m} minutes</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className={labelCls}>Terms (optional)</label>
-          <textarea rows={3} value={terms} onChange={(e) => setTerms(e.target.value)} maxLength={2000} className={`${fieldCls} resize-none`} placeholder="Any additional terms for this listing" />
-        </div>
-
-        <div className="flex gap-2 pt-1">
-          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button className="flex-1" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Tab: CTM Listings ────────────────────────────────────────────────────────
 
 function CtmListingsTab() {
@@ -372,7 +277,6 @@ function CtmListingsTab() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [editTarget, setEditTarget] = useState<CtmListing | null>(null)
 
   const fetchListings = useCallback(async () => {
     try {
@@ -444,14 +348,6 @@ function CtmListingsTab() {
         confirmVariant="danger"
       />
 
-      {editTarget && (
-        <EditCtmListingModal
-          listing={editTarget}
-          onClose={() => setEditTarget(null)}
-          onSaved={() => { setEditTarget(null); fetchListings() }}
-        />
-      )}
-
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : listings.length === 0 ? (
@@ -481,9 +377,9 @@ function CtmListingsTab() {
                 <div className="flex items-center gap-2">
                   <Link href={`/ctm/listings/${l.id}`} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface">View</Link>
                   {(l.status === 'active' || l.status === 'paused') && (
-                    <button onClick={() => setEditTarget(l)} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface">
+                    <Link href={`/ctm/listings/create?edit=${l.id}`} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface">
                       Edit
-                    </button>
+                    </Link>
                   )}
                   {l.status === 'active' && (
                     <button onClick={() => handleAction(l.id, 'pause')} disabled={actionLoading === l.id} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface disabled:opacity-50">

@@ -53,10 +53,19 @@ const updateListingSchema = z.object({
   pricePerUnit: z.number().positive().optional(),
   minOrderTokens: z.number().positive().optional(),
   maxOrderTokens: z.number().positive().optional(),
+  totalAmount: z.number().positive().optional(),
   terms: z.string().max(2000).optional(),
-  paymentMethods: z.array(z.string()).min(1).optional(),
+  // May be emptied to [] on a USDT-only listing — the service enforces that a SELL
+  // listing always keeps at least one rail (PKR account or USDT method).
+  paymentMethods: z.array(z.string()).optional(),
   settlementNote: z.string().max(1000).optional(),
   tradeWindowMins: z.number().int().min(15).max(240).optional(),
+  usdtPaymentMethods: z.array(z.string()).optional(),
+  usdtSettlementDestinations: z.array(z.object({
+    method: z.string(),
+    address: z.string(),
+    label: z.string().optional(),
+  })).optional(),
 })
 
 export async function ctmListingRoutes(app: FastifyInstance) {
