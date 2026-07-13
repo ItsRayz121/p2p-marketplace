@@ -2,10 +2,11 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import * as ToastPrimitive from '@radix-ui/react-toast'
-import { authApi, miniAppAuthenticate } from '@/lib/api'
+import { authApi, miniAppAuthenticate, isNetworkError } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { initPostHog, identifyUser } from '@/lib/analytics'
 import { isTelegramMiniApp } from '@/lib/telegram'
+import { initConnectionWarmup } from '@/lib/connectionWarmup'
 import { TotpPrompt } from '@/components/providers/TotpPrompt'
 
 interface ProvidersProps {
@@ -53,6 +54,10 @@ export default function Providers({ children }: ProvidersProps) {
     }
   }, [pathname, router])
 
+  // Replace connections the carrier reaped while we were backgrounded, BEFORE the
+  // page's real reads go out — see lib/connectionWarmup.
+  useEffect(() => initConnectionWarmup(), [])
+
   useEffect(() => {
     initPostHog()
 
@@ -88,9 +93,16 @@ export default function Providers({ children }: ProvidersProps) {
         if (isTelegramMiniApp()) {
           try { sessionStorage.setItem('tg_auth_error', err instanceof Error ? err.message : 'unknown') } catch { /* ignore */ }
         }
-        // Not logged in — drop any stale hint cookie so the middleware
-        // doesn't keep us on /dashboard with an expired backend session.
-        clearAuth()
+        // A transport failure means we never learned whether the session is valid —
+        // the refresh cookie is still sitting on the device. Clearing auth here would
+        // show a spurious "logged out" to someone whose only problem is a sleeping
+        // radio, and would drop the hint cookie the middleware uses to keep them on
+        // their page. Leave the session alone; the next request re-auths cleanly.
+        if (!isNetworkError(err)) {
+          // Not logged in — drop any stale hint cookie so the middleware
+          // doesn't keep us on /dashboard with an expired backend session.
+          clearAuth()
+        }
       }
 
       // Ensure CSRF has settled (it ran alongside auth) before we clear loading.

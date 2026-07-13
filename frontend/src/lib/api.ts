@@ -14,7 +14,7 @@ function resolveApiBase(): string {
   }
   return v.replace(/\/$/, '')
 }
-const API_BASE = resolveApiBase()
+export const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
 import type { AuthUser } from '../store/auth.store'
@@ -40,8 +40,166 @@ export function invalidateCsrfToken(): void {
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+// ─── Resilient transport ─────────────────────────────────────────────────────
+//
+// fetch() rejects with a bare TypeError ("Failed to fetch") whenever a request
+// never completes at the transport layer — socket reset, radio asleep, DNS/TLS
+// failure. It is NOT an HTTP error: there is no status and no body. Mobile users
+// (installed PWA + Telegram Mini App) hit this constantly, for one dominant
+// reason:
+//
+//   The frontend (Vercel) and the API (Railway) are separate origins, so the
+//   browser holds long-lived connections open to the API. Mobile radios sleep and
+//   carrier NATs (Pakistan is overwhelmingly CGNAT) silently reap idle TCP
+//   connections without telling the client. When the app is foregrounded the
+//   browser reuses a socket it believes is alive but which is already dead, and
+//   the first request fails instantly. That is precisely why tapping "Try again"
+//   always fixed it — the retry opens a fresh socket.
+//
+// So we retry transport failures here, in the one place every call passes
+// through, instead of letting a dead socket become a full-page error.
+
+const NETWORK_MESSAGE = 'Can’t reach RupChain. Check your connection and try again.'
+
+// A stalled request is expensive, so the first attempt gets a tighter deadline
+// and later ones get the headroom a cold Railway container + slow 4G needs.
+const READ_TIMEOUTS_MS = [15_000, 20_000, 20_000]
+const WRITE_TIMEOUT_MS = 20_000
+const MAX_ATTEMPTS = 3
+// Fast transport failures are cheap to replay; timeouts are not. Stop retrying
+// after this many attempts have actually run out the clock.
+const MAX_TIMED_OUT_ATTEMPTS = 2
+
+function networkError(): ApiError {
+  return new ApiError('NETWORK_ERROR', NETWORK_MESSAGE, 0)
+}
+
+/** True when a request never reached the server (no response at all). */
+export function isNetworkError(err: unknown): boolean {
+  return err instanceof ApiError && err.code === 'NETWORK_ERROR'
+}
+
+// Replaying a request is only safe when a second delivery cannot produce a
+// second side-effect. GET/HEAD are idempotent by definition, and an unsafe
+// method qualifies only when it carries an idempotency key the backend de-dupes
+// on. Everything else (create trade, place bid, release crypto) is delivered
+// exactly once — a dropped connection there surfaces to the user rather than
+// risking a duplicate.
+function isReplayable(method: string, headers: Record<string, string>, path: string): boolean {
+  if (method === 'GET' || method === 'HEAD') return true
+  if (headers['X-Idempotency-Key']) return true
+  // Both re-auth endpoints are pure lookups: /auth/refresh validates the refresh
+  // cookie and only slides the session expiry (it does NOT rotate the token), and
+  // /miniapp/auth re-validates HMAC-signed launch data. Replaying either is a
+  // no-op, and NOT retrying them is what turns a dead socket into a spurious
+  // logout — the worst failure of all.
+  return path === '/auth/refresh' || path === '/miniapp/auth'
+}
+
+/** Park until the device reports a network again — capped, so we never hang. */
+async function waitForOnline(maxWaitMs = 8_000): Promise<void> {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return
+  if (navigator.onLine) return
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      window.removeEventListener('online', done)
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(done, maxWaitMs)
+    window.addEventListener('online', done)
+  })
+}
+
+const jitteredBackoff = (attempt: number) => 400 * attempt + Math.random() * 250
+
+/**
+ * fetch() + per-attempt timeout + automatic replay of transport failures.
+ *
+ * Resolves with the Response for ANY HTTP status — a 4xx/5xx is an answer, not a
+ * failure, and callers handle it. Throws only NETWORK_ERROR, and only once the
+ * request genuinely could not be delivered.
+ */
+async function resilientFetch(
+  url: string,
+  init: RequestInit,
+  method: string,
+  headers: Record<string, string>,
+  path: string,
+): Promise<Response> {
+  const isWrite = UNSAFE_METHODS.has(method)
+  const attempts = isReplayable(method, headers, path) ? MAX_ATTEMPTS : 1
+  const external = init.signal ?? undefined
+
+  let timedOutAttempts = 0
+  let lastErr: unknown
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController()
+    const timeoutMs = isWrite ? WRITE_TIMEOUT_MS : (READ_TIMEOUTS_MS[attempt - 1] ?? WRITE_TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+    // A caller-supplied signal must still be able to cancel us mid-flight.
+    const onExternalAbort = () => controller.abort()
+    if (external) {
+      if (external.aborted) controller.abort()
+      else external.addEventListener('abort', onExternalAbort, { once: true })
+    }
+
+    try {
+      return await fetch(url, {
+        ...init,
+        method,
+        headers,
+        credentials: 'include',
+        signal: controller.signal,
+      })
+    } catch (err) {
+      lastErr = err
+      // A caller cancelled deliberately — honour it, never retry.
+      if (external?.aborted) throw err
+
+      if (controller.signal.aborted) timedOutAttempts += 1
+      if (attempt === attempts) break
+      if (timedOutAttempts >= MAX_TIMED_OUT_ATTEMPTS) break
+
+      await waitForOnline()
+      await new Promise((r) => setTimeout(r, jitteredBackoff(attempt)))
+    } finally {
+      clearTimeout(timer)
+      external?.removeEventListener('abort', onExternalAbort)
+    }
+  }
+
+  // eslint-disable-next-line no-console
+  console.warn('[RupChain] request failed after retries:', method, path, lastErr)
+  throw networkError()
+}
+
+/** resilientFetch + envelope unwrap + ApiError on a non-2xx. Used by every retry path. */
+async function sendAndParse<T>(
+  url: string,
+  init: RequestInit,
+  method: string,
+  headers: Record<string, string>,
+  path: string,
+): Promise<T> {
+  const res = await resilientFetch(url, init, method, headers, path)
+  let data: unknown = {}
+  try { data = await res.json() } catch { /* empty or non-JSON body */ }
+  if (!res.ok) {
+    throw new ApiError(
+      (data as { error?: string }).error ?? 'UNKNOWN_ERROR',
+      (data as { message?: string }).message ?? 'An error occurred',
+      res.status,
+      (data as { requestId?: string }).requestId,
+    )
+  }
+  return unwrapEnvelope<T>(data)
+}
+
 let isRefreshing = false
-let refreshQueue: Array<(token: string) => void> = []
+let refreshQueue: Array<{ resolve: (token: string) => void; reject: (err: unknown) => void }> = []
 
 // Cached CSRF fetch so concurrent requests don't all fire at once
 let csrfFetchPromise: Promise<string> | null = null
@@ -50,12 +208,14 @@ async function fetchCsrfToken(): Promise<string> {
   if (!csrfFetchPromise) {
     csrfFetchPromise = (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/auth/csrf`, { credentials: 'include' })
+        const res = await resilientFetch(
+          `${API_BASE}/api/v1/auth/csrf`, {}, 'GET', {}, '/auth/csrf',
+        )
         if (res.ok) {
           const raw = await res.json() as { data?: { token: string }; token?: string }
           return raw.data?.token ?? (raw as { token?: string }).token ?? ''
         }
-      } catch { /* ignore */ }
+      } catch { /* ignore — CSRF is re-fetched on demand */ }
       return ''
     })()
     csrfFetchPromise.finally(() => { csrfFetchPromise = null })
@@ -91,13 +251,9 @@ function unwrapEnvelope<T>(raw: unknown): T {
 }
 
 async function doRefresh(): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error('Refresh failed')
-  const raw = await res.json()
-  const data = unwrapEnvelope<{ accessToken: string }>(raw)
+  const data = await sendAndParse<{ accessToken: string }>(
+    `${API_BASE}/api/v1/auth/refresh`, {}, 'POST', {}, '/auth/refresh',
+  )
   return data.accessToken
 }
 
@@ -112,27 +268,31 @@ export async function miniAppAuthenticate(): Promise<{ accessToken: string; user
   // a single opaque "couldn't sign you in".
   if (!initData) throw new Error('NO_INITDATA: launch data not found on this device')
 
-  // Many users open the Mini App over a VPN / carrier-grade-NAT mobile
-  // connection where a single request can transiently fail or hit a 5xx. The
-  // initData is HMAC-validated server-side, so retrying is safe — re-issue a few
-  // times with linear backoff before surfacing the "couldn't sign you in" error.
-  // A 4xx (bad/stale initData, banned account) is a definitive answer: don't retry.
+  // Transport failures are replayed by resilientFetch (initData is HMAC-validated
+  // server-side, so a replay is a no-op). A 5xx is a real answer, not a transport
+  // failure, so it still needs its own retry: the Mini App is the very first
+  // request a user makes, often against a cold Railway container.
   const maxAttempts = 3
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let res: Response
     try {
-      res = await fetch(`${API_BASE}/api/v1/miniapp/auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData }),
-        credentials: 'include',
-      })
+      res = await resilientFetch(
+        `${API_BASE}/api/v1/miniapp/auth`,
+        { body: JSON.stringify({ initData }) },
+        'POST',
+        { 'Content-Type': 'application/json' },
+        '/miniapp/auth',
+      )
     } catch (networkErr) {
-      if (attempt === maxAttempts) {
-        throw new Error(`NETWORK: ${networkErr instanceof Error ? networkErr.message : 'request failed'}`)
-      }
-      await new Promise((r) => setTimeout(r, 700 * attempt))
-      continue
+      // Keep the "NETWORK:" prefix the Mini App bridge surfaces for diagnostics,
+      // but carry it as a typed NETWORK_ERROR so callers (and the 401 re-auth
+      // path) can tell "no connection" apart from "session is genuinely dead"
+      // and never sign the user out over a dropped socket.
+      throw new ApiError(
+        'NETWORK_ERROR',
+        `NETWORK: ${networkErr instanceof Error ? networkErr.message : 'request failed'}`,
+        0,
+      )
     }
     if (res.status >= 500 && attempt < maxAttempts) {
       await new Promise((r) => setTimeout(r, 700 * attempt))
@@ -183,23 +343,9 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
     if (csrf) headers['X-CSRF-Token'] = csrf
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 15_000)
+  const res = await resilientFetch(url, options ?? {}, method, headers, path)
 
-  let res: Response
-  try {
-    res = await fetch(url, {
-      ...options,
-      method,
-      headers,
-      credentials: 'include',
-      signal: controller.signal,
-    })
-  } finally {
-    clearTimeout(timeoutId)
-  }
-
-  // Handle 401 with refresh + retry
+  // Handle 401 with re-auth + retry
   if (res.status === 401) {
     // Public auth endpoints return 401 for legitimate failures (wrong password, etc.).
     // Do not attempt a refresh for them — just surface the backend error directly.
@@ -214,42 +360,25 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       )
     }
 
+    let newToken: string
+
     if (!isRefreshing) {
       isRefreshing = true
       try {
-        const newToken = await reauth()
-        useAuthStore.getState().setAccessToken(newToken)
-        refreshQueue.forEach((cb) => cb(newToken))
-        refreshQueue = []
+        newToken = await reauth()
+      } catch (err) {
         isRefreshing = false
-        // Retry original request with new token
-        headers['Authorization'] = 'Bearer ' + newToken
-        const retryController = new AbortController()
-        const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
-        try {
-          const retryRes = await fetch(url, {
-            ...options,
-            method,
-            headers,
-            credentials: 'include',
-            signal: retryController.signal,
-          })
-          const retryData = await retryRes.json()
-          if (!retryRes.ok) {
-            throw new ApiError(
-              (retryData as { error?: string }).error ?? 'UNKNOWN_ERROR',
-              (retryData as { message?: string }).message ?? 'An error occurred',
-              retryRes.status,
-              (retryData as { requestId?: string }).requestId,
-            )
-          }
-          return unwrapEnvelope<T>(retryData)
-        } finally {
-          clearTimeout(retryTimeout)
-        }
-      } catch {
-        isRefreshing = false
+        // Hand the failure to everyone waiting behind us. The old code cleared the
+        // queue WITHOUT settling it, so every queued caller hung forever.
+        const waiting = refreshQueue
         refreshQueue = []
+        waiting.forEach((q) => q.reject(err))
+
+        // A dropped connection is NOT an expired session. Signing a user out
+        // because their radio slept is the worst possible outcome, so surface it
+        // as a network error and leave the session untouched.
+        if (isNetworkError(err)) throw err
+
         const wasAuthenticated = !!useAuthStore.getState().user
         useAuthStore.getState().clearAuth()
         // Only redirect to login if the user had an active session — avoids
@@ -263,41 +392,24 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
           401,
         )
       }
+
+      useAuthStore.getState().setAccessToken(newToken)
+      isRefreshing = false
+      const waiting = refreshQueue
+      refreshQueue = []
+      waiting.forEach((q) => q.resolve(newToken))
     } else {
-      // Queue this request until refresh completes
-      return new Promise<T>((resolve, reject) => {
-        refreshQueue.push(async (newToken: string) => {
-          headers['Authorization'] = 'Bearer ' + newToken
-          try {
-            const retryController = new AbortController()
-            const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
-            try {
-              const retryRes = await fetch(url, {
-                ...options,
-                method,
-                headers,
-                credentials: 'include',
-                signal: retryController.signal,
-              })
-              const retryData = await retryRes.json()
-              if (!retryRes.ok) {
-                reject(new ApiError(
-                  (retryData as { error?: string }).error ?? 'UNKNOWN_ERROR',
-                  (retryData as { message?: string }).message ?? 'An error occurred',
-                  retryRes.status,
-                ))
-              } else {
-                resolve(unwrapEnvelope<T>(retryData))
-              }
-            } finally {
-              clearTimeout(retryTimeout)
-            }
-          } catch (err) {
-            reject(err)
-          }
-        })
+      // A re-auth is already in flight — wait for it instead of starting a second.
+      newToken = await new Promise<string>((resolve, reject) => {
+        refreshQueue.push({ resolve, reject })
       })
     }
+
+    // Replay the original request with the fresh token. A failure here is a real
+    // answer from the server, not an auth failure — it must never trigger a logout,
+    // which is exactly what the old catch-all around this retry did.
+    headers['Authorization'] = 'Bearer ' + newToken
+    return sendAndParse<T>(url, options ?? {}, method, headers, path)
   }
 
   let data: unknown
@@ -360,15 +472,10 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
           const retryHeaders = { ...headers }
           if (withCode) retryHeaders['X-TOTP-Code'] = trimmed
           else delete retryHeaders['X-TOTP-Code']
-          const retryController = new AbortController()
-          const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
-          try {
-            const retryRes = await fetch(url, { ...options, method, headers: retryHeaders, credentials: 'include', signal: retryController.signal })
-            const retryData = await retryRes.json()
-            return { ok: retryRes.ok, status: retryRes.status, data: retryData }
-          } finally {
-            clearTimeout(retryTimeout)
-          }
+          const retryRes = await resilientFetch(url, options ?? {}, method, retryHeaders, path)
+          let retryData: unknown = {}
+          try { retryData = await retryRes.json() } catch { /* empty body */ }
+          return { ok: retryRes.ok, status: retryRes.status, data: retryData }
         }
 
         let r = await runRetry(true)
@@ -395,22 +502,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       if (freshCsrf) {
         useAuthStore.getState().setCsrfToken(freshCsrf)
         headers['X-CSRF-Token'] = freshCsrf
-        const retryController = new AbortController()
-        const retryTimeout = setTimeout(() => retryController.abort(), 15_000)
-        try {
-          const retryRes = await fetch(url, { ...options, method, headers, credentials: 'include', signal: retryController.signal })
-          const retryData = await retryRes.json()
-          if (!retryRes.ok) {
-            throw new ApiError(
-              (retryData as { error?: string }).error ?? 'UNKNOWN_ERROR',
-              (retryData as { message?: string }).message ?? 'An error occurred',
-              retryRes.status,
-            )
-          }
-          return unwrapEnvelope<T>(retryData)
-        } finally {
-          clearTimeout(retryTimeout)
-        }
+        return sendAndParse<T>(url, options ?? {}, method, headers, path)
       }
     }
 
@@ -435,13 +527,7 @@ export async function apiRequestBlob(path: string): Promise<string> {
   const doFetch = async (token: string | null): Promise<Response> => {
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = 'Bearer ' + token
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 20_000)
-    try {
-      return await fetch(url, { method: 'GET', headers, credentials: 'include', signal: controller.signal })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    return resilientFetch(url, {}, 'GET', headers, path)
   }
 
   let res = await doFetch(useAuthStore.getState().accessToken)
@@ -450,7 +536,9 @@ export async function apiRequestBlob(path: string): Promise<string> {
       const newToken = await reauth()
       useAuthStore.getState().setAccessToken(newToken)
       res = await doFetch(newToken)
-    } catch {
+    } catch (err) {
+      // Same rule as apiRequest: a dead connection is not a dead session.
+      if (isNetworkError(err)) throw err
       throw new ApiError('UNAUTHORIZED', 'Session expired. Please log in again.', 401)
     }
   }
@@ -3151,17 +3239,7 @@ async function appealRequest<T>(path: string, token: string, options?: RequestIn
     const csrf = await fetchCsrfToken()
     if (csrf) headers['X-CSRF-Token'] = csrf
   }
-  const res = await fetch(`${API_BASE}/api/v1${path}`, { ...options, method, headers, credentials: 'include' })
-  const raw = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new ApiError(
-      (raw as { error?: string }).error ?? 'UNKNOWN_ERROR',
-      (raw as { message?: string }).message ?? 'An error occurred',
-      res.status,
-      (raw as { requestId?: string }).requestId,
-    )
-  }
-  return unwrapEnvelope<T>(raw)
+  return sendAndParse<T>(`${API_BASE}/api/v1${path}`, options ?? {}, method, headers, path)
 }
 
 export const appealApi = {

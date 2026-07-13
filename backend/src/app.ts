@@ -44,6 +44,17 @@ export async function buildApp() {
     origin: [env.FRONTEND_URL],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    // Every API call carries an `Authorization: Bearer` header, which is NOT a
+    // CORS-safelisted request header — so the browser fires a preflight OPTIONS
+    // before EVERY request, including plain GETs. Without Access-Control-Max-Age
+    // the preflight result is cached for ~5s (Chrome's default), so a page that
+    // makes 6 reads pays for 12 round trips. On a slow/lossy mobile link (our
+    // audience: 4G + CGNAT) that doubles both the latency and the number of
+    // chances to hit a dead connection and fail with "Failed to fetch".
+    // Caching the preflight halves the request count. Browsers clamp this to
+    // their own ceiling (Chrome 2h, Firefox 24h) — asking for 24h just means
+    // "as long as you'll allow".
+    maxAge: 86400,
     // Without this, the browser hides these from fetch() (they are not CORS-safelisted).
     // The client reads Retry-After to show an accurate "retry after Ns" countdown on a
     // 429 (otherwise it degrades to a bare "Please wait before retrying."), and
