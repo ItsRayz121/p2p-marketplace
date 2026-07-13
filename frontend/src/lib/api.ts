@@ -65,6 +65,12 @@ const NETWORK_MESSAGE = 'Can’t reach RupChain. Check your connection and try a
 // and later ones get the headroom a cold Railway container + slow 4G needs.
 const READ_TIMEOUTS_MS = [15_000, 20_000, 20_000]
 const WRITE_TIMEOUT_MS = 20_000
+// A file upload is not a stalled request — it is a slow one. CTM payment/token
+// proofs post a FormData image (up to the backend's 10MB multipart limit), and on
+// the 4G links our users are actually on that takes far longer than a write
+// deadline meant for a JSON POST. Capping those at 20s aborted people mid-upload
+// and surfaced as the very "can't reach" error this file exists to kill.
+const UPLOAD_TIMEOUT_MS = 90_000
 const MAX_ATTEMPTS = 3
 // Fast transport failures are cheap to replay; timeouts are not. Stop retrying
 // after this many attempts have actually run out the clock.
@@ -128,16 +134,22 @@ async function resilientFetch(
   path: string,
 ): Promise<Response> {
   const isWrite = UNSAFE_METHODS.has(method)
+  const isUpload = typeof FormData !== 'undefined' && init.body instanceof FormData
   const attempts = isReplayable(method, headers, path) ? MAX_ATTEMPTS : 1
   const external = init.signal ?? undefined
+
+  const timeoutFor = (attempt: number): number => {
+    if (isUpload) return UPLOAD_TIMEOUT_MS
+    if (isWrite) return WRITE_TIMEOUT_MS
+    return READ_TIMEOUTS_MS[attempt - 1] ?? WRITE_TIMEOUT_MS
+  }
 
   let timedOutAttempts = 0
   let lastErr: unknown
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const controller = new AbortController()
-    const timeoutMs = isWrite ? WRITE_TIMEOUT_MS : (READ_TIMEOUTS_MS[attempt - 1] ?? WRITE_TIMEOUT_MS)
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const timer = setTimeout(() => controller.abort(), timeoutFor(attempt))
 
     // A caller-supplied signal must still be able to cancel us mid-flight.
     const onExternalAbort = () => controller.abort()
