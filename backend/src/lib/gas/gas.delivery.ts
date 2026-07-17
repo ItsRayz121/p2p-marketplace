@@ -64,7 +64,7 @@ const EVM_TOKEN_CHAINS: Record<string, { chain: Chain; rpc: string }> = {
 
 /** True when the delivery engine can send a non-native token on this chain. */
 export function tokenDeliverySupported(dbChain: string): boolean {
-  return dbChain === 'TRON' || dbChain === 'APT' || dbChain in EVM_TOKEN_CHAINS
+  return dbChain === 'TRON' || dbChain === 'APT' || dbChain === 'SOL' || dbChain in EVM_TOKEN_CHAINS
 }
 
 const ERC20_TRANSFER_ABI = [
@@ -250,6 +250,7 @@ async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: numbe
 
   if (order.chain === 'TRON') return deliverTronToken(order, contract, decimals, hdIndex)
   if (order.chain === 'APT')  return deliverAptosToken(order, contract, decimals)
+  if (order.chain === 'SOL')  return deliverSolToken(order, contract, decimals)
   return deliverEvmToken(order, contract, decimals, hdIndex)
 }
 
@@ -457,6 +458,70 @@ async function deliverSol(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
       preflightCommitment: 'confirmed',
     })
     return signature
+  } finally {
+    seed.fill(0)
+    if (privateKeySeed) privateKeySeed.fill(0)
+  }
+}
+
+// SPL token transfer (USDT / USDC on Solana). Sends from the hot wallet's token
+// account holding the largest balance for the mint (funding via a plain wallet
+// transfer lands in the ATA, but don't assume) and creates the recipient's
+// associated token account when missing — the hot wallet pays the ~0.002 SOL rent.
+async function deliverSolToken(order: GasFeeOrder, mintAddress: string, decimals: number): Promise<string> {
+  const { Connection, Keypair, PublicKey, Transaction } = await import('@solana/web3.js')
+  const {
+    TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID,
+    getAssociatedTokenAddressSync,
+    createAssociatedTokenAccountIdempotentInstruction,
+    createTransferCheckedInstruction,
+  } = await import('@solana/spl-token')
+
+  // toFixed avoids float drift before scaling to base units (mirrors the Aptos path).
+  const amount = BigInt(Math.round(Number(Number(order.gasAmountNative).toFixed(decimals)) * 10 ** decimals))
+  if (amount <= 0n) throw new Error(`deliverSolToken: non-positive amount for ${order.gasAmountNative}`)
+
+  const seed = decryptGasSeed()
+  let privateKeySeed: Buffer | null = null
+  try {
+    privateKeySeed = deriveSolanaPrivateKeyForDelivery(seed)
+    const keypair = Keypair.fromSeed(new Uint8Array(privateKeySeed))
+    const connection = new Connection(env.SOL_RPC_URL, 'confirmed')
+
+    const mint = new PublicKey(mintAddress)
+    const recipient = new PublicKey(order.toAddress)
+
+    // Classic SPL and Token-2022 mints live under different token programs — read
+    // the mint's owner so ATA derivation and the transfer target the right one.
+    const mintInfo = await connection.getAccountInfo(mint)
+    if (!mintInfo) throw new Error(`deliverSolToken: mint ${mintAddress} not found on-chain`)
+    const programId = mintInfo.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID
+
+    const accts = await connection.getParsedTokenAccountsByOwner(keypair.publicKey, { mint })
+    let source = getAssociatedTokenAddressSync(mint, keypair.publicKey, false, programId)
+    let sourceBalance = -1n
+    for (const { pubkey, account } of accts.value) {
+      const raw = BigInt(account.data.parsed?.info?.tokenAmount?.amount ?? '0')
+      if (raw > sourceBalance) { sourceBalance = raw; source = pubkey }
+    }
+    if (sourceBalance < amount) {
+      // deliverToken() already gated on the aggregate balance, so this only fires
+      // when funds are fragmented across token accounts — surface it clearly.
+      throw new Error(`deliverSolToken: largest hot-wallet token account holds ${sourceBalance < 0n ? 0n : sourceBalance} base units, need ${amount}`)
+    }
+
+    // allowOwnerOffCurve so PDA recipients (e.g. exchange deposit addresses) work.
+    const destAta = getAssociatedTokenAddressSync(mint, recipient, true, programId)
+    const { blockhash } = await connection.getLatestBlockhash('confirmed')
+    const tx = new Transaction({ recentBlockhash: blockhash, feePayer: keypair.publicKey })
+      .add(createAssociatedTokenAccountIdempotentInstruction(keypair.publicKey, destAta, recipient, mint, programId))
+      .add(createTransferCheckedInstruction(source, mint, destAta, keypair.publicKey, amount, decimals, [], programId))
+
+    tx.sign(keypair)
+    return await connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed',
+    })
   } finally {
     seed.fill(0)
     if (privateKeySeed) privateKeySeed.fill(0)

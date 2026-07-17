@@ -6050,6 +6050,13 @@ export async function adminRoutes(app: FastifyInstance) {
         // Going delivery-live moves real funds — confirm a real token lives at the
         // address on-chain first. Blocks the "wrong address" class of failures.
         if (goingLive) {
+          // Refuse the flip when the delivery engine has no token sender for this
+          // chain — otherwise the token stays "coming soon" publicly despite every
+          // admin badge showing green, with nothing actually deliverable.
+          const { tokenDeliverySupported } = await import('../lib/gas/gas.delivery')
+          if (!tokenDeliverySupported(chain.backendChainId ?? '')) {
+            throw new AppError('VALIDATION_ERROR', `Cannot enable delivery: token delivery is not implemented for ${chain.slug} yet — the token would still show "coming soon" publicly.`, 400)
+          }
           if (!effContract) throw new AppError('VALIDATION_ERROR', 'Cannot enable delivery: token has no contract address.', 400)
           const owner = await resolveGasHotWalletOwner(chain.backendChainId ?? '')
           if (!owner) throw new AppError('VALIDATION_ERROR', `Cannot verify token: no hot wallet configured for ${chain.slug}.`, 400)
