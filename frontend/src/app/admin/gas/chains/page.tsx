@@ -2150,7 +2150,13 @@ export default function GasChainsAdminPage() {
                             <Badge variant={t.isVisibleToUsers !== false ? 'outline' : 'warning'} size="sm">
                               {t.isVisibleToUsers !== false ? 'Visible' : 'Hidden'}
                             </Badge>
-                            {t.tokenType !== 'native' && (
+                            {t.tokenType !== 'native' && t.engineSupported === false ? (
+                              // The delivery engine has no sender for this chain — the token
+                              // stays "coming soon" publicly no matter what flags are green.
+                              <span title="The delivery engine cannot send tokens on this chain yet — this token shows as 'coming soon' on the public gas page regardless of other flags.">
+                                <Badge variant="danger" size="sm">No Delivery Engine</Badge>
+                              </span>
+                            ) : t.tokenType !== 'native' && (
                               <Badge variant={t.deliveryLive ? 'success' : 'warning'} size="sm">
                                 {t.deliveryLive ? 'Delivery Live' : 'Delivery Off'}
                               </Badge>
@@ -2177,14 +2183,26 @@ export default function GasChainsAdminPage() {
                               {archiving[t.id] ? '…' : 'Archive'}
                             </Button>
                             {isSuperAdmin && t.tokenType !== 'native' && (
-                              <Button
-                                size="sm"
-                                variant={t.deliveryLive ? 'ghost' : 'primary'}
-                                disabled={togglingLive[t.id]}
-                                onClick={() => void toggleTokenDeliveryLive(t)}
-                              >
-                                {togglingLive[t.id] ? '…' : t.deliveryLive ? 'Take Offline' : 'Go Live'}
-                              </Button>
+                              // Keep "Take Offline" available even when the engine is
+                              // unsupported (to clear a stale flag), but never offer
+                              // "Go Live" on a chain the engine can't deliver on.
+                              (t.engineSupported !== false || t.deliveryLive) ? (
+                                <Button
+                                  size="sm"
+                                  variant={t.deliveryLive ? 'ghost' : 'primary'}
+                                  disabled={togglingLive[t.id]}
+                                  onClick={() => void toggleTokenDeliveryLive(t)}
+                                >
+                                  {togglingLive[t.id] ? '…' : t.deliveryLive ? 'Take Offline' : 'Go Live'}
+                                </Button>
+                              ) : (
+                                <span
+                                  className="text-xs text-text-muted"
+                                  title="Token delivery is not implemented for this chain yet — Go Live is unavailable."
+                                >
+                                  Engine pending
+                                </span>
+                              )
                             )}
                             {isSuperAdmin && (
                               <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteToken(t)}>Delete</Button>

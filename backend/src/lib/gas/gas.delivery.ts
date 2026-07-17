@@ -64,7 +64,7 @@ const EVM_TOKEN_CHAINS: Record<string, { chain: Chain; rpc: string }> = {
 
 /** True when the delivery engine can send a non-native token on this chain. */
 export function tokenDeliverySupported(dbChain: string): boolean {
-  return dbChain === 'TRON' || dbChain === 'APT' || dbChain === 'SOL' || dbChain in EVM_TOKEN_CHAINS
+  return dbChain === 'TRON' || dbChain === 'APT' || dbChain === 'SOL' || dbChain === 'SUI' || dbChain in EVM_TOKEN_CHAINS
 }
 
 const ERC20_TRANSFER_ABI = [
@@ -251,6 +251,7 @@ async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: numbe
   if (order.chain === 'TRON') return deliverTronToken(order, contract, decimals, hdIndex)
   if (order.chain === 'APT')  return deliverAptosToken(order, contract, decimals)
   if (order.chain === 'SOL')  return deliverSolToken(order, contract, decimals)
+  if (order.chain === 'SUI')  return deliverSuiToken(order, contract, decimals)
   return deliverEvmToken(order, contract, decimals, hdIndex)
 }
 
@@ -620,6 +621,67 @@ async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
     const tx = new Transaction()
     const [coin] = tx.splitCoins(tx.gas, [mistAmount])
     tx.transferObjects([coin], order.toAddress)
+
+    const result = await client.signAndExecuteTransaction({
+      signer: keypair,
+      transaction: tx,
+      requestType: 'WaitForLocalExecution',
+      options: { showEffects: true },
+    })
+    return result.digest
+  } finally {
+    seed.fill(0)
+    if (privateKeySeed) privateKeySeed.fill(0)
+  }
+}
+
+// SUI Coin<T> transfer (USDC etc.). Gathers the hot wallet's coin objects of this
+// type (merging when the balance is fragmented), splits off the exact amount and
+// transfers it — gas is paid from the wallet's native SUI coins as usual.
+async function deliverSuiToken(order: GasFeeOrder, coinType: string, decimals: number): Promise<string> {
+  const { SuiClient } = await import('@mysten/sui/client')
+  const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519')
+  const { Transaction } = await import('@mysten/sui/transactions')
+
+  // toFixed avoids float drift before scaling to base units (mirrors the Aptos path).
+  const amount = BigInt(Math.round(Number(Number(order.gasAmountNative).toFixed(decimals)) * 10 ** decimals))
+  if (amount <= 0n) throw new Error(`deliverSuiToken: non-positive amount for ${order.gasAmountNative}`)
+
+  const seed = decryptGasSeed()
+  let privateKeySeed: Buffer | null = null
+  try {
+    privateKeySeed = deriveSuiPrivateKeyForDelivery(seed)
+    const keypair = Ed25519Keypair.fromSecretKey(new Uint8Array(privateKeySeed))
+    const client = new SuiClient({ url: env.SUI_RPC_URL })
+    const owner = keypair.getPublicKey().toSuiAddress()
+
+    // Collect coin objects of this type until they cover the amount (largest first
+    // keeps the merge set small; paginate in case holdings are fragmented).
+    const coins: Array<{ coinObjectId: string; balance: bigint }> = []
+    let cursor: string | null | undefined
+    do {
+      const page = await client.getCoins({ owner, coinType, ...(cursor ? { cursor } : {}) })
+      for (const c of page.data) coins.push({ coinObjectId: c.coinObjectId, balance: BigInt(c.balance) })
+      cursor = page.hasNextPage ? page.nextCursor : null
+    } while (cursor)
+    coins.sort((a, b) => (b.balance > a.balance ? 1 : b.balance < a.balance ? -1 : 0))
+
+    const picked: string[] = []
+    let covered = 0n
+    for (const c of coins) {
+      picked.push(c.coinObjectId)
+      covered += c.balance
+      if (covered >= amount) break
+    }
+    if (covered < amount) {
+      throw new Error(`deliverSuiToken: hot wallet holds ${covered} base units of ${coinType}, need ${amount}`)
+    }
+
+    const tx = new Transaction()
+    const primary = tx.object(picked[0]!)
+    if (picked.length > 1) tx.mergeCoins(primary, picked.slice(1).map((id) => tx.object(id)))
+    const [out] = tx.splitCoins(primary, [amount])
+    tx.transferObjects([out!], order.toAddress)
 
     const result = await client.signAndExecuteTransaction({
       signer: keypair,

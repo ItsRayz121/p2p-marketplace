@@ -2053,10 +2053,13 @@ export interface AdminGasToken {
   isVisibleToUsers: boolean
   isArchived?: boolean
   deliveryLive?: boolean
+  // False when the backend delivery engine cannot send this token on its chain —
+  // the token stays "coming soon" publicly regardless of any admin flags.
+  engineSupported?: boolean
   displayOrder: number
   createdAt: string
   updatedAt: string
-  chain?: { name: string; slug: string }
+  chain?: { name: string; slug: string; backendChainId?: string | null }
 }
 
 export const adminApi = {

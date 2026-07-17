@@ -5940,9 +5940,17 @@ export async function adminRoutes(app: FastifyInstance) {
     const tokens = await db.gasTokenConfig.findMany({
       where: chainId ? { chainConfigId: chainId } : {},
       orderBy: [{ chain: { displayOrder: 'asc' } }, { displayOrder: 'asc' }],
-      include: { chain: { select: { name: true, slug: true } } },
+      include: { chain: { select: { name: true, slug: true, backendChainId: true } } },
     })
-    return reply.send({ success: true, data: { tokens } })
+    // engineSupported tells the admin UI whether the delivery engine can actually
+    // send this token — a non-native token on an unsupported chain stays "coming
+    // soon" publicly no matter what flags are set, so the UI must say so.
+    const { tokenDeliverySupported } = await import('../lib/gas/gas.delivery')
+    const withEngine = tokens.map((t) => ({
+      ...t,
+      engineSupported: t.tokenType === 'native' ? true : tokenDeliverySupported(t.chain?.backendChainId ?? ''),
+    }))
+    return reply.send({ success: true, data: { tokens: withEngine } })
   })
 
   // POST /admin/gas/tokens — create token
