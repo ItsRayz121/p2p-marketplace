@@ -603,7 +603,10 @@ export default function CtmHomePage() {
   const fetchListings = useCallback(async (p = 1, append = false) => {
     try {
       const params: Record<string, string | number | undefined> = { page: p, limit: PAGE_SIZE }
-      if (side) params.side = side
+      // The toggle is the VIEWER's intent but listings are stored by the MAKER's
+      // side: "Buy Tokens" must show maker SELL listings (cards the viewer can
+      // buy from), and "Sell Tokens" the maker BUY listings.
+      if (side) params.side = side === 'buy' ? 'sell' : 'buy'
       if (tokenId) params.tokenId = tokenId
       if (paymentMethod) params.paymentMethod = paymentMethod
       // PKR filters map to the listing service's minPricePkr/maxPricePkr if supported;
@@ -631,7 +634,8 @@ export default function CtmHomePage() {
   const pollFn = useCallback(async () => {
     try {
       const params: Record<string, string | number | undefined> = { page: 1, limit: PAGE_SIZE }
-      if (side) params.side = side
+      // Same viewer-intent → maker-side inversion as fetchListings above.
+      if (side) params.side = side === 'buy' ? 'sell' : 'buy'
       if (tokenId) params.tokenId = tokenId
       if (paymentMethod) params.paymentMethod = paymentMethod
       if (minAmount) params.minAmount = minAmount

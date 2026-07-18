@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client'
 import { notify } from '../lib/notify'
 import { generateOrderRef } from '../lib/hash'
 import { assertCanOpenTrade } from './tradeConcurrency.service'
+import { assertNoKycTakerAllowed } from './nokycTaker.service'
+import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode } from './chatThread.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
 import { getNumberConfig } from './platformFlags.service'
@@ -130,6 +132,13 @@ export async function confirmBidDetails(
   await assertCanOpenTrade(bid.bidderId, 'self')      // the bidder confirming (taker)
   await assertCanOpenTrade(ad.userId, 'counterparty') // the ad owner (maker)
 
+  // KYC gate (taker = the bidder) — mirrors createTrade(): only the MAKER is ever
+  // hard-blocked on KYC (enforced in-tx below). The taker is either verified or
+  // allowed within no-KYC limits when they send their leg first (sell ads always;
+  // buy ads once taker-first settlement is enabled).
+  const takerSendsFirst = isSellAd || (await isTakerFirstForMarket('usdt'))
+  await assertNoKycTakerAllowed({ takerId: bid.bidderId, fiatAmount: bid.fiatAmount, takerSendsFirst })
+
   // Resolve the buyer's USDT receiving destination so the Send-Crypto step always
   // knows where to deliver.
   //  • SELL ad: the bidder IS the buyer and supplied "method:address" above.
@@ -180,7 +189,10 @@ export async function confirmBidDetails(
     if (!buyerRow) throw new AppError('NOT_FOUND', 'Buyer not found', 404)
     if (buyerRow.isBanned) throw new AppError('ACCOUNT_BANNED', 'Account is banned', 403)
     if (buyerRow.isSuspended) throw new AppError('ACCOUNT_SUSPENDED', 'Account is suspended', 403)
-    if (buyerRow.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
+    // On a BUY ad the buyer is the ad owner (the maker) and must be KYC-approved.
+    // On a SELL ad the buyer is the bidder (the taker), whose KYC gate is handled
+    // by assertNoKycTakerAllowed() above — so we do NOT hard-block here.
+    if (!isSellAd && buyerRow.kycStatus !== 'approved') throw new AppError('KYC_REQUIRED', 'KYC verification required to trade', 403)
 
     const now = new Date()
     const needsReset = buyerRow.dailyBuyReset && now > buyerRow.dailyBuyReset
